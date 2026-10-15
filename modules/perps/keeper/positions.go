@@ -292,24 +292,12 @@ func positionSettle(account *types.Account, position *types.Position, price, fun
 	before := account.Collateral.ToBig()
 	size := position.SizeBase.ToBig()
 
-	basis := positionRound(new(big.Int).Mul(size, signedBig(fundingIndex)), position.IsLong)
-	received := new(big.Int).Sub(basis, signedBig(position.FundingBasis))
-	if position.IsLong {
-		received.Neg(received)
-	}
-	if err := positionBook(account, books, received); err != nil {
-		return TradeSettlement{}, err
-	}
-	fundingBasis, err := positionSignedWord(basis)
+	received, funding, err := positionSettleFunding(account, position, fundingIndex, books)
 	if err != nil {
 		return TradeSettlement{}, err
 	}
-	position.FundingBasis = fundingBasis
-	if received.Sign() != 0 {
-		result.Events = append(result.Events, types.EventRecord{Name: types.EventPositionFundingApplied, Args: []any{
-			position.ID.ToBig(), position.Account, new(big.Int).SetUint64(position.MarketID), new(big.Int).Set(received),
-			new(big.Int).Mul(account.Collateral.ToBig(), positionUsdlUnit), account.Collateral.ToBig(),
-		}})
+	if funding != nil {
+		result.Events = append(result.Events, *funding)
 	}
 
 	cost := positionRound(new(big.Int).Mul(size, price.ToBig()), !position.IsLong)
@@ -330,6 +318,35 @@ func positionSettle(account *types.Account, position *types.Position, price, fun
 		FundingUsd:      received,
 		CollateralDelta: new(big.Int).Sub(account.Collateral.ToBig(), before),
 	}, nil
+}
+
+// positionSettleFunding books the funding of the position since its funding
+// basis at the cumulative index into the account's collateral, the new
+// funding basis rounded up for a long and down for a short, toward the venue.
+// It returns the funding received (negative when paid) and
+// PositionFundingApplied when that is non-zero.
+func positionSettleFunding(account *types.Account, position *types.Position, fundingIndex uint256.Int,
+	books *types.VenueBooks) (*big.Int, *types.EventRecord, error) {
+	basis := positionRound(new(big.Int).Mul(position.SizeBase.ToBig(), signedBig(fundingIndex)), position.IsLong)
+	received := new(big.Int).Sub(basis, signedBig(position.FundingBasis))
+	if position.IsLong {
+		received.Neg(received)
+	}
+	if err := positionBook(account, books, received); err != nil {
+		return nil, nil, err
+	}
+	fundingBasis, err := positionSignedWord(basis)
+	if err != nil {
+		return nil, nil, err
+	}
+	position.FundingBasis = fundingBasis
+	if received.Sign() == 0 {
+		return received, nil, nil
+	}
+	return received, &types.EventRecord{Name: types.EventPositionFundingApplied, Args: []any{
+		position.ID.ToBig(), position.Account, new(big.Int).SetUint64(position.MarketID), new(big.Int).Set(received),
+		new(big.Int).Mul(account.Collateral.ToBig(), positionUsdlUnit), account.Collateral.ToBig(),
+	}}, nil
 }
 
 // positionBook books amountUsd into the account's collateral: a credit

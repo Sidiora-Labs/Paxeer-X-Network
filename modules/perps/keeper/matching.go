@@ -109,13 +109,22 @@ func (k *Keeper) match(ctx sdk.Context, market types.Market, taker types.Order) 
 		takerPosition  uint256.Int
 		lastTradePrice uint256.Int
 	)
-	for _, maker := range candidates {
+	for _, candidate := range candidates {
 		if remaining.IsZero() {
 			break
 		}
 		if uint64(len(result.Fills)) == params.MaxFillsPerOrder {
 			capped = true
 			break
+		}
+		// An earlier fill's ReconcileReduceOnly may have cancelled or shrunk a
+		// reduce-only candidate of its account.
+		maker, err := k.GetOrder(ctx, candidate.ID)
+		if err != nil {
+			return MatchResult{}, err
+		}
+		if maker.Status != types.OrderStatusResting || !maker.FilledBase.Lt(&maker.SizeBase) {
+			continue
 		}
 		if maker.Account == taker.Account {
 			event, err := k.cancelResting(ctx, maker)
@@ -166,9 +175,10 @@ func (k *Keeper) match(ctx sdk.Context, market types.Market, taker types.Order) 
 	}
 	switch {
 	case remaining.IsZero():
-		if taker, err = k.releaseOrder(ctx, taker, types.OrderStatusFilled); err != nil {
+		if err := k.closeOrder(ctx, taker, types.OrderStatusFilled); err != nil {
 			return MatchResult{}, err
 		}
+		taker.Status = types.OrderStatusFilled
 	case resting && !capped:
 		taker.Status = types.OrderStatusResting
 		if err := k.BookInsert(ctx, taker); err != nil {
@@ -176,11 +186,19 @@ func (k *Keeper) match(ctx sdk.Context, market types.Market, taker types.Order) 
 		}
 		result.Rested = true
 	default:
-		if taker, err = k.releaseOrder(ctx, taker, types.OrderStatusCancelled); err != nil {
+		if err := k.closeOrder(ctx, taker, types.OrderStatusCancelled); err != nil {
 			return MatchResult{}, err
 		}
+		taker.Status = types.OrderStatusCancelled
 		result.Cancelled = append(result.Cancelled, taker.ID)
 		result.Events = append(result.Events, orderCancelled(taker))
+	}
+	if len(result.Fills) > 0 {
+		reconciled, err := k.ReconcileReduceOnly(ctx, taker.Account, market.ID)
+		if err != nil {
+			return MatchResult{}, err
+		}
+		result.Events = append(result.Events, reconciled...)
 	}
 	result.Taker = taker
 	return result, nil
@@ -384,14 +402,21 @@ func (k *Keeper) fillMaker(ctx sdk.Context, marketID uint64, maker, taker types.
 		return FillResult{}, nil, err
 	}
 
-	makerPosition, makerEvents, err := k.ApplyFill(ctx, maker.Account, marketID, maker.IsLong, size, price, *notional)
+	makerApplied, err := k.ApplyFill(ctx, PositionFill{
+		Account: maker.Account, MarketID: marketID, IsLong: maker.IsLong, SizeBase: size, Price: price,
+		Leverage: maker.Leverage, Kind: FillKindTrade,
+	})
 	if err != nil {
 		return FillResult{}, nil, err
 	}
-	takerPosition, takerEvents, err := k.ApplyFill(ctx, taker.Account, marketID, taker.IsLong, size, price, *notional)
+	takerApplied, err := k.ApplyFill(ctx, PositionFill{
+		Account: taker.Account, MarketID: marketID, IsLong: taker.IsLong, SizeBase: size, Price: price,
+		Leverage: taker.Leverage, Kind: FillKindTrade,
+	})
 	if err != nil {
 		return FillResult{}, nil, err
 	}
+	makerPosition, takerPosition := makerApplied.PositionID, takerApplied.PositionID
 	makerFee, err := k.MakerFee(ctx, makerPosition, maker.Account, marketID, *notional)
 	if err != nil {
 		return FillResult{}, nil, err
@@ -401,8 +426,10 @@ func (k *Keeper) fillMaker(ctx sdk.Context, marketID uint64, maker, taker types.
 		return FillResult{}, nil, err
 	}
 	makerFeeUsd := makerFee.FeeUsd.ToBig()
+	makerFeeTokens := makerFee.Tokens.ToBig()
 	if makerFee.FeeType == FeeTypeMakerRebate {
 		makerFeeUsd.Neg(makerFeeUsd)
+		makerFeeTokens.Neg(makerFeeTokens)
 	}
 
 	maker.FilledBase.Add(&maker.FilledBase, &size)
@@ -410,11 +437,15 @@ func (k *Keeper) fillMaker(ctx sdk.Context, marketID uint64, maker, taker types.
 		if err := k.BookRemove(ctx, maker); err != nil {
 			return FillResult{}, nil, err
 		}
-		if _, err := k.releaseOrder(ctx, maker, types.OrderStatusFilled); err != nil {
+		if err := k.closeOrder(ctx, maker, types.OrderStatusFilled); err != nil {
 			return FillResult{}, nil, err
 		}
 	} else {
-		ctx.KVStore(k.storeKey).Set(types.OrderKey(maker.ID), maker.Marshal())
+		k.setOrder(ctx, maker)
+	}
+	reconciled, err := k.ReconcileReduceOnly(ctx, maker.Account, marketID)
+	if err != nil {
+		return FillResult{}, nil, err
 	}
 
 	fill := FillResult{
@@ -436,10 +467,13 @@ func (k *Keeper) fillMaker(ctx sdk.Context, marketID uint64, maker, taker types.
 	if oiEvent != nil {
 		events = append(events, *oiEvent)
 	}
-	events = append(events, makerEvents...)
-	events = append(events, takerEvents...)
+	events = append(events, makerApplied.Events...)
+	events = append(events, takerApplied.Events...)
 	events = append(events, makerFee.Events...)
 	events = append(events, takerFee.Events...)
+	events = append(events, makerApplied.TradeSettledEvents(makerFeeUsd, makerFeeTokens)...)
+	events = append(events, takerApplied.TradeSettledEvents(takerFee.FeeUsd.ToBig(), takerFee.Tokens.ToBig())...)
+	events = append(events, reconciled...)
 	events = append(events, orderExecuted(maker.ID, makerPosition, price))
 	return fill, events, nil
 }
@@ -489,36 +523,10 @@ func (k *Keeper) cancelResting(ctx sdk.Context, order types.Order) (types.EventR
 	if err := k.BookRemove(ctx, order); err != nil {
 		return types.EventRecord{}, err
 	}
-	order, err := k.releaseOrder(ctx, order, types.OrderStatusCancelled)
-	if err != nil {
+	if err := k.closeOrder(ctx, order, types.OrderStatusCancelled); err != nil {
 		return types.EventRecord{}, err
 	}
 	return orderCancelled(order), nil
-}
-
-// releaseOrder ends the open life of an order: it stores the order with its
-// final status, drops it from the account's open order index and lowers the
-// account's open order count.
-func (k *Keeper) releaseOrder(ctx sdk.Context, order types.Order, status types.OrderStatus) (types.Order, error) {
-	store := ctx.KVStore(k.storeKey)
-	bz := store.Get(types.AccountKey(order.Account))
-	if bz == nil {
-		return types.Order{}, fmt.Errorf("%w: %s", types.ErrNoAccount, order.Account)
-	}
-	var account types.Account
-	if err := account.Unmarshal(bz); err != nil {
-		return types.Order{}, fmt.Errorf("%w: corrupt account %s: %v", types.ErrInvalidParams, order.Account, err)
-	}
-	if account.OpenOrderCount == 0 {
-		return types.Order{}, fmt.Errorf("%w: account %s has no open order to release for order %s",
-			types.ErrInvalidParams, order.Account, order.ID.Dec())
-	}
-	account.OpenOrderCount--
-	order.Status = status
-	store.Set(types.AccountKey(order.Account), account.Marshal())
-	store.Delete(types.AccountOrderKey(order.Account, order.ID))
-	store.Set(types.OrderKey(order.ID), order.Marshal())
-	return order, nil
 }
 
 // recordFillVolume books every fill notional to the 14-day buckets once the

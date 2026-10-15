@@ -15,7 +15,6 @@ import (
 // Insurance sources of InsuranceContribution, numbered as contracts/perps.md
 // section 2.
 const (
-	InsuranceSourceTradingFee     uint8 = 0
 	InsuranceSourceBackstopMargin uint8 = 1
 	InsuranceSourceBackstopProfit uint8 = 2
 )
@@ -70,7 +69,8 @@ func (k *Keeper) Backstop(ctx sdk.Context, address common.Address) ([]types.Even
 			return nil, err
 		}
 	}
-	if err := k.Settle(ctx, address); err != nil {
+	events, err := k.Settle(ctx, address)
+	if err != nil {
 		return nil, err
 	}
 	below, err := k.belowBackstopLine(ctx, params, address)
@@ -85,16 +85,20 @@ func (k *Keeper) Backstop(ctx sdk.Context, address common.Address) ([]types.Even
 		return nil, err
 	}
 	for _, orderID := range orderIDs {
-		if err := k.CancelOrder(ctx, address, orderID); err != nil {
+		cancelled, err := k.CancelOrder(ctx, address, orderID)
+		if err != nil {
 			return nil, err
 		}
+		events = append(events, cancelled)
 	}
 	if _, err := k.insuranceFundAccount(ctx); err != nil {
 		return nil, err
 	}
-	if err := k.Settle(ctx, insuranceAddress); err != nil {
+	fundSettled, err := k.Settle(ctx, insuranceAddress)
+	if err != nil {
 		return nil, err
 	}
+	events = append(events, fundSettled...)
 
 	if positions, err = k.liquidationAccountPositions(ctx, address); err != nil {
 		return nil, err
@@ -122,7 +126,6 @@ func (k *Keeper) Backstop(ctx sdk.Context, address common.Address) ([]types.Even
 	takenUsd := new(big.Int).Mul(account.Collateral.ToBig(), insuranceUsdPerUsdl)
 	shares := insuranceShares(takenUsd, notionals)
 
-	var events []types.EventRecord
 	for i, position := range positions {
 		oiEvent, err := k.backstopTakeOver(ctx, &account, &fund, position, marks[i], now)
 		if err != nil {
@@ -342,12 +345,7 @@ func (k *Keeper) backstopClose(ctx sdk.Context, params types.Params, position ty
 	if err != nil {
 		return nil, err
 	}
-	orderID, err := k.NextOrderID(ctx)
-	if err != nil {
-		return nil, err
-	}
 	order := types.Order{
-		ID:          orderID,
 		Account:     position.Account,
 		MarketID:    position.MarketID,
 		IsLong:      !position.IsLong,
@@ -358,7 +356,12 @@ func (k *Keeper) backstopClose(ctx sdk.Context, params types.Params, position ty
 		SizeBase:    closeBase,
 		Leverage:    position.Leverage,
 	}
-	if _, err := k.Match(ctx, market, &order); err != nil {
+	if err := k.admitOrder(ctx, &order); err != nil {
+		return nil, err
+	}
+	k.setOrder(ctx, order)
+	matched, err := k.Match(ctx, market, order)
+	if err != nil {
 		return nil, err
 	}
 	store := k.store(ctx)
@@ -372,7 +375,7 @@ func (k *Keeper) backstopClose(ctx sdk.Context, params types.Params, position ty
 	if err != nil {
 		return nil, err
 	}
-	var events []types.EventRecord
+	events := matched.Events
 	switch after.Collateral.Cmp(&before.Collateral) {
 	case 1:
 		var profit uint256.Int
@@ -570,14 +573,12 @@ func insuranceRankScore(position types.Position, mark uint256.Int, accountValue 
 // belowBackstopLine reports whether equity x denominator < numerator x
 // maintenance margin at mark.
 func (k *Keeper) belowBackstopLine(ctx sdk.Context, params types.Params, address common.Address) (bool, error) {
-	equity, err := k.Equity(ctx, address)
+	summary, err := k.AccountMargin(ctx, address)
 	if err != nil {
 		return false, err
 	}
-	maintenance, err := k.MaintenanceMargin(ctx, address)
-	if err != nil {
-		return false, err
-	}
+	equity := summary.Equity
+	maintenance := summary.MaintenanceMargin
 	left := new(big.Int).Mul(equity.BigInt(), new(big.Int).SetUint64(params.BackstopRatioDenominator))
 	right := new(big.Int).Mul(maintenance.BigInt(), new(big.Int).SetUint64(params.BackstopRatioNumerator))
 	return left.Cmp(right) < 0, nil

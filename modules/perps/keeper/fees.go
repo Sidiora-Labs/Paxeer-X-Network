@@ -234,7 +234,10 @@ func (k *Keeper) FeeTier(ctx sdk.Context, account common.Address) (AccountFeeTie
 	if err != nil {
 		return AccountFeeTier{}, err
 	}
-	params := k.GetParams(ctx)
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return AccountFeeTier{}, err
+	}
 	if len(params.FeeTiers) == 0 {
 		return AccountFeeTier{}, fmt.Errorf("%w: no fee tiers", types.ErrInvalidParams)
 	}
@@ -330,7 +333,10 @@ func (k *Keeper) chargeFee(ctx sdk.Context, positionID uint256.Int, account comm
 	if ratePpm == 0 {
 		return booking, nil
 	}
-	params := k.GetParams(ctx)
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return FeeBooking{}, err
+	}
 	feeUsd := feeUsdOf(notionalUsd, ratePpm, true)
 	debit, debitResidue, err := types.UsdToUsdlUp(feeUsd)
 	if err != nil {
@@ -383,7 +389,10 @@ func (k *Keeper) payRebate(ctx sdk.Context, positionID uint256.Int, account comm
 	if notionalUsd.IsZero() {
 		return FeeBooking{}, fmt.Errorf("%w: zero fill notional", types.ErrZeroAmount)
 	}
-	params := k.GetParams(ctx)
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return FeeBooking{}, err
+	}
 	rebateUsd := feeUsdOf(notionalUsd, rebatePpm, false)
 	credit, creditResidue, err := types.UsdToUsdlDown(rebateUsd)
 	if err != nil {

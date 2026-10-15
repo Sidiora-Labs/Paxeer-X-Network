@@ -182,14 +182,11 @@ func (k *Keeper) LiquidationPrice(ctx sdk.Context, positionID uint256.Int) (uint
 	if err != nil {
 		return uint256.Int{}, err
 	}
-	equity, err := k.Equity(ctx, position.Account)
+	summary, err := k.AccountMargin(ctx, position.Account)
 	if err != nil {
 		return uint256.Int{}, err
 	}
-	maintenance, err := k.MaintenanceMargin(ctx, position.Account)
-	if err != nil {
-		return uint256.Int{}, err
-	}
+	equity, maintenance := summary.Equity, summary.MaintenanceMargin
 	bps, err := liquidationTierBps(market, liquidationNotional(position.SizeBase, mark))
 	if err != nil {
 		return uint256.Int{}, err
@@ -236,7 +233,8 @@ func liquidationPriceFormula(isLong bool, mark, size uint256.Int, available *big
 // number of closing orders sent.
 func (k *Keeper) liquidateAccount(ctx sdk.Context, params types.Params, account, keeper common.Address,
 	now, sliceBudget uint64) ([]types.EventRecord, uint64, error) {
-	if err := k.Settle(ctx, account); err != nil {
+	events, err := k.Settle(ctx, account)
+	if err != nil {
 		return nil, 0, err
 	}
 	orderIDs, err := k.liquidationOpenOrders(ctx, account)
@@ -244,15 +242,16 @@ func (k *Keeper) liquidateAccount(ctx sdk.Context, params types.Params, account,
 		return nil, 0, err
 	}
 	for _, orderID := range orderIDs {
-		if err := k.CancelOrder(ctx, account, orderID); err != nil {
+		cancelled, err := k.CancelOrder(ctx, account, orderID)
+		if err != nil {
 			return nil, 0, err
 		}
+		events = append(events, cancelled)
 	}
 	positions, err := k.liquidationAccountPositions(ctx, account)
 	if err != nil {
 		return nil, 0, err
 	}
-	var events []types.EventRecord
 	var slices uint64
 	for _, position := range positions {
 		if slices >= sliceBudget {
@@ -271,11 +270,11 @@ func (k *Keeper) liquidateAccount(ctx sdk.Context, params types.Params, account,
 				continue
 			}
 		}
-		event, err := k.liquidationClose(ctx, position, closeBase, large, keeper, now)
+		closed, err := k.liquidationClose(ctx, position, closeBase, large, keeper, now)
 		if err != nil {
 			return nil, 0, err
 		}
-		events = append(events, event)
+		events = append(events, closed...)
 		slices++
 	}
 	return events, slices, nil
@@ -285,21 +284,16 @@ func (k *Keeper) liquidateAccount(ctx sdk.Context, params types.Params, account,
 // against the book, records the slice time of a large position that stays
 // open and drops the cooldown of a position the order closed.
 func (k *Keeper) liquidationClose(ctx sdk.Context, position types.Position, closeBase uint256.Int, large bool,
-	keeper common.Address, now uint64) (types.EventRecord, error) {
+	keeper common.Address, now uint64) ([]types.EventRecord, error) {
 	market, err := k.GetMarket(ctx, position.MarketID)
 	if err != nil {
-		return types.EventRecord{}, err
+		return nil, err
 	}
 	mark, err := k.liquidationMark(ctx, position.MarketID)
 	if err != nil {
-		return types.EventRecord{}, err
-	}
-	orderID, err := k.NextOrderID(ctx)
-	if err != nil {
-		return types.EventRecord{}, err
+		return nil, err
 	}
 	order := types.Order{
-		ID:          orderID,
 		Account:     position.Account,
 		MarketID:    position.MarketID,
 		IsLong:      !position.IsLong,
@@ -310,8 +304,13 @@ func (k *Keeper) liquidationClose(ctx sdk.Context, position types.Position, clos
 		SizeBase:    closeBase,
 		Leverage:    position.Leverage,
 	}
-	if _, err := k.Match(ctx, market, &order); err != nil {
-		return types.EventRecord{}, err
+	if err := k.admitOrder(ctx, &order); err != nil {
+		return nil, err
+	}
+	k.setOrder(ctx, order)
+	matched, err := k.Match(ctx, market, order)
+	if err != nil {
+		return nil, err
 	}
 	store := k.store(ctx)
 	cooldownKey := types.LiquidationCooldownKey(position.ID)
@@ -320,11 +319,11 @@ func (k *Keeper) liquidationClose(ctx sdk.Context, position types.Position, clos
 	} else {
 		store.Delete(cooldownKey)
 	}
-	return types.EventRecord{
+	return append(matched.Events, types.EventRecord{
 		Name: types.EventLiquidation,
 		Args: []any{position.ID.ToBig(), position.Account, new(big.Int).SetUint64(position.MarketID),
 			mark.ToBig(), new(big.Int), keeper},
-	}, nil
+	}), nil
 }
 
 // liquidationCloseSize reports whether the position's notional at mark is
@@ -386,14 +385,11 @@ func (k *Keeper) liquidationRebucket(ctx sdk.Context, address common.Address) (b
 		store.Set(types.AccountKey(address), account.Marshal())
 		return false, nil
 	}
-	equity, err := k.Equity(ctx, address)
+	summary, err := k.AccountMargin(ctx, address)
 	if err != nil {
 		return false, err
 	}
-	maintenance, err := k.MaintenanceMargin(ctx, address)
-	if err != nil {
-		return false, err
-	}
+	equity, maintenance := summary.Equity, summary.MaintenanceMargin
 	account.MarginRatioBucket = marginRatioBucket(equity.BigInt(), maintenance.BigInt())
 	store.Set(types.AccountKey(address), account.Marshal())
 	store.Set(types.MarginRatioIndexKey(account.MarginRatioBucket, address), []byte{})

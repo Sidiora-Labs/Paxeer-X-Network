@@ -99,15 +99,6 @@ func ValidateTriggerPrice(market types.Market, order types.Order, mark uint256.I
 	return nil
 }
 
-func triggerKey(order types.Order) ([]byte, error) {
-	direction, err := TriggerDirection(order)
-	if err != nil {
-		return nil, err
-	}
-	priceKey := types.BookPriceKey(direction == types.TriggerFalling, order.TriggerPrice)
-	return types.TriggerKey(order.MarketID, direction, priceKey, order.Sequence), nil
-}
-
 // TriggerInsert adds an UNTRIGGERED order to the trigger index of prefix
 // 0x0B under its market, direction, trigger price key and placement sequence.
 func (k *Keeper) TriggerInsert(ctx sdk.Context, order types.Order) error {
@@ -117,10 +108,10 @@ func (k *Keeper) TriggerInsert(ctx sdk.Context, order types.Order) error {
 	if order.TriggerPrice.IsZero() {
 		return fmt.Errorf("%w: order %s has no trigger price", types.ErrInvalidTriggerPrice, order.ID.Dec())
 	}
-	key, err := triggerKey(order)
-	if err != nil {
+	if _, err := TriggerDirection(order); err != nil {
 		return err
 	}
+	key := triggerKey(order)
 	id := order.ID.Bytes32()
 	k.store(ctx).Set(key, id[:])
 	return nil
@@ -128,10 +119,10 @@ func (k *Keeper) TriggerInsert(ctx sdk.Context, order types.Order) error {
 
 // TriggerRemove deletes the trigger index entry of an order.
 func (k *Keeper) TriggerRemove(ctx sdk.Context, order types.Order) error {
-	key, err := triggerKey(order)
-	if err != nil {
+	if _, err := TriggerDirection(order); err != nil {
 		return err
 	}
+	key := triggerKey(order)
 	k.store(ctx).Delete(key)
 	return nil
 }
@@ -342,26 +333,24 @@ func (k *Keeper) triggerOrder(ctx sdk.Context, market types.Market, order types.
 			return uint256.Int{}, nil, err
 		}
 		if crosses {
-			_, matchEvents, err := k.Match(ctx, market, &order)
+			matched, err := k.Match(ctx, market, order)
 			if err != nil {
 				return uint256.Int{}, nil, err
 			}
-			events = append(events, matchEvents...)
-		}
-		if order.Status == types.OrderStatusResting && order.FilledBase.Lt(&order.SizeBase) {
-			k.setTriggerOrderRecord(ctx, order)
-			if err := k.BookInsert(ctx, order); err != nil {
-				return uint256.Int{}, nil, err
-			}
+			order = matched.Taker
+			events = append(events, matched.Events...)
+		} else if err := k.BookInsert(ctx, order); err != nil {
+			return uint256.Int{}, nil, err
 		}
 	case types.OrderTypeStopMarket, types.OrderTypeTakeProfit, types.OrderTypeStopLoss:
 		order.TimeInForce = types.TimeInForceIOC
 		k.setTriggerOrderRecord(ctx, order)
-		_, matchEvents, err := k.Match(ctx, market, &order)
+		matched, err := k.Match(ctx, market, order)
 		if err != nil {
 			return uint256.Int{}, nil, err
 		}
-		events = append(events, matchEvents...)
+		order = matched.Taker
+		events = append(events, matched.Events...)
 		if order.Type != types.OrderTypeStopMarket && !order.FilledBase.IsZero() && !positionBefore.IsZero() {
 			ocoEvents, err := k.cancelOtherLeg(ctx, positionBefore, order.ID)
 			if err != nil {

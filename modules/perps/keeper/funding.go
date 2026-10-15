@@ -19,8 +19,6 @@ var (
 	fixedOne      = big.NewInt(1e18)
 	ppmToFixed    = big.NewInt(1e12)
 	usdlUnitInUsd = big.NewInt(1e12)
-	int256Max     = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 255), big.NewInt(1))
-	int256Min     = new(big.Int).Neg(new(big.Int).Lsh(big.NewInt(1), 255))
 )
 
 // FundingPayment is the funding of one position since its last settlement.
@@ -74,7 +72,7 @@ func (k *Keeper) SamplePremium(ctx sdk.Context, market types.Market) (bool, erro
 	}
 	premium := premiumOf(oracle, impactBid, impactAsk)
 	sum := new(big.Int).Add(signedOf(state.PremiumSum), premium)
-	if state.PremiumSum, err = signedWord(sum); err != nil {
+	if state.PremiumSum, err = signedWord(sum, market.ID); err != nil {
 		return false, err
 	}
 	if state.PremiumCount == ^uint64(0) {
@@ -191,14 +189,14 @@ func (k *Keeper) SettleFunding(ctx sdk.Context, market types.Market) ([]types.Ev
 		meanPremium.Quo(signedOf(state.PremiumSum), new(big.Int).SetUint64(state.PremiumCount))
 	}
 	rate := hourlyRate(meanPremium, params, market)
-	if state.HourlyRate, err = signedWord(rate); err != nil {
+	if state.HourlyRate, err = signedWord(rate, market.ID); err != nil {
 		return nil, err
 	}
 	step := new(big.Int).Mul(state.IndexPrice.ToBig(), rate)
 	step.Mul(step, new(big.Int).SetUint64(elapsed))
 	step.Quo(step, fixedOne)
 	index := new(big.Int).Add(signedOf(state.FundingIndex), step)
-	if state.FundingIndex, err = signedWord(index); err != nil {
+	if state.FundingIndex, err = signedWord(index, market.ID); err != nil {
 		return nil, err
 	}
 	state.PremiumSum = uint256.Int{}
@@ -252,7 +250,7 @@ func clampAbs(value, bound *big.Int) *big.Int {
 // and receives at most the exact amount; the USDL amount rounds a payment up
 // and a receipt down, the remainder being the residue.
 func FundingOwed(position types.Position, fundingIndex uint256.Int) (FundingPayment, error) {
-	basis, err := fundingBasis(position.IsLong, position.SizeBase, fundingIndex)
+	basis, err := fundingBasis(position.IsLong, position.MarketID, position.SizeBase, fundingIndex)
 	if err != nil {
 		return FundingPayment{}, err
 	}
@@ -282,7 +280,7 @@ func FundingOwed(position types.Position, fundingIndex uint256.Int) (FundingPaym
 
 // fundingBasis is size x index / 1e18 in USD, rounded up for a long and down
 // for a short, the funding basis a settlement stores.
-func fundingBasis(isLong bool, size, fundingIndex uint256.Int) (uint256.Int, error) {
+func fundingBasis(isLong bool, marketID uint64, size, fundingIndex uint256.Int) (uint256.Int, error) {
 	product := new(big.Int).Mul(size.ToBig(), signedOf(fundingIndex))
 	quotient, remainder := new(big.Int).QuoRem(product, fixedOne, new(big.Int))
 	if isLong && remainder.Sign() > 0 {
@@ -291,7 +289,7 @@ func fundingBasis(isLong bool, size, fundingIndex uint256.Int) (uint256.Int, err
 	if !isLong && remainder.Sign() < 0 {
 		quotient.Sub(quotient, big.NewInt(1))
 	}
-	return signedWord(quotient)
+	return signedWord(quotient, marketID)
 }
 
 // SettlePositionFunding books the funding of the position since its last
@@ -306,46 +304,18 @@ func (k *Keeper) SettlePositionFunding(ctx sdk.Context, account *types.Account, 
 	if account.Address != position.Account {
 		return nil, fmt.Errorf("%w: position %s", types.ErrNotPositionHolder, position.ID.Dec())
 	}
-	payment, err := FundingOwed(*position, fundingIndex)
-	if err != nil {
-		return nil, err
-	}
-	position.FundingBasis = payment.Basis
-	if payment.Usd.IsZero() {
-		return nil, nil
-	}
 	books, err := k.fundingVenueBooks(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if books.ResidueUsd, err = addWord(books.ResidueUsd, payment.ResidueUsd.BigInt()); err != nil {
+	_, event, err := positionSettleFunding(account, position, fundingIndex, &books)
+	if err != nil {
 		return nil, err
 	}
-	amount := new(big.Int).Abs(payment.Usdl.BigInt())
-	collateral := account.Collateral.ToBig()
-	if payment.Usdl.IsPositive() {
-		if account.Collateral, err = addWord(account.Collateral, amount); err != nil {
-			return nil, err
-		}
-	} else if collateral.Cmp(amount) >= 0 {
-		account.Collateral.SetFromBig(collateral.Sub(collateral, amount))
-	} else {
-		shortfall := new(big.Int).Sub(amount, collateral)
-		shortfall.Mul(shortfall, usdlUnitInUsd)
-		account.Collateral = uint256.Int{}
-		if account.DeficitUsd, err = addWord(account.DeficitUsd, shortfall); err != nil {
-			return nil, err
-		}
-		if books.DeficitSumUsd, err = addWord(books.DeficitSumUsd, shortfall); err != nil {
-			return nil, err
-		}
+	if event != nil {
+		k.setFundingVenueBooks(ctx, books)
 	}
-	k.setFundingVenueBooks(ctx, books)
-	collateralUsd := new(big.Int).Mul(account.Collateral.ToBig(), usdlUnitInUsd)
-	return &types.EventRecord{Name: types.EventPositionFundingApplied, Args: []any{
-		position.ID.ToBig(), position.Account, new(big.Int).SetUint64(position.MarketID),
-		payment.Usd.BigInt(), collateralUsd, account.Collateral.ToBig(),
-	}}, nil
+	return event, nil
 }
 
 func (k *Keeper) fundingMarketState(ctx sdk.Context, marketID uint64) (types.MarketState, error) {
@@ -388,36 +358,4 @@ func signedOf(word uint256.Int) *big.Int {
 	var magnitude uint256.Int
 	magnitude.Neg(&word)
 	return new(big.Int).Neg(magnitude.ToBig())
-}
-
-// signedWord writes an int256 as a uint256 word in two's complement.
-func signedWord(value *big.Int) (uint256.Int, error) {
-	if value.Cmp(int256Max) > 0 || value.Cmp(int256Min) < 0 {
-		return uint256.Int{}, fmt.Errorf("%w: %s outside int256", types.ErrOverflow, value)
-	}
-	var word uint256.Int
-	word.SetFromBig(new(big.Int).Abs(value))
-	if value.Sign() < 0 {
-		word.Neg(&word)
-	}
-	return word, nil
-}
-
-func addWord(word uint256.Int, amount *big.Int) (uint256.Int, error) {
-	var addend, sum uint256.Int
-	if amount.Sign() < 0 || addend.SetFromBig(amount) {
-		return uint256.Int{}, fmt.Errorf("%w: %s", types.ErrOverflow, amount)
-	}
-	if _, overflow := sum.AddOverflow(&word, &addend); overflow {
-		return uint256.Int{}, fmt.Errorf("%w: %s plus %s", types.ErrOverflow, word.Dec(), amount)
-	}
-	return sum, nil
-}
-
-func ceilDiv(numerator, denominator *big.Int) *big.Int {
-	quotient, remainder := new(big.Int).QuoRem(numerator, denominator, new(big.Int))
-	if remainder.Sign() > 0 {
-		quotient.Add(quotient, big.NewInt(1))
-	}
-	return quotient
 }

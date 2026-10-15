@@ -116,9 +116,10 @@ func rebuildIndexes(gs types.GenesisState) (types.GenesisState, error) {
 				Sequence: order.Sequence, OrderID: order.ID,
 			})
 		case types.OrderStatusUntriggered:
-			direction, err := triggerDirection(order)
+			direction, err := TriggerDirection(order)
 			if err != nil {
-				return types.GenesisState{}, err
+				return types.GenesisState{}, fmt.Errorf("%w: untriggered order %s: %w", types.ErrInvalidGenesis,
+					order.ID.Dec(), err)
 			}
 			full.TriggerEntries = append(full.TriggerEntries, types.TriggerEntry{
 				MarketID: order.MarketID, Direction: direction, TriggerPrice: order.TriggerPrice,
@@ -151,26 +152,6 @@ func rebuildIndexes(gs types.GenesisState) (types.GenesisState, error) {
 		}
 	}
 	return full, nil
-}
-
-// triggerDirection is the index direction of an untriggered order, IsLong
-// being the order's own side: a buy stop and the take-profit of a long (a
-// sell) fire at mark >= trigger, a sell stop and the take-profit of a short
-// (a buy) at mark <= trigger, and a stop-loss closes like a stop of its side.
-func triggerDirection(order types.Order) (byte, error) {
-	rising := order.IsLong
-	switch order.Type {
-	case types.OrderTypeStopLimit, types.OrderTypeStopMarket, types.OrderTypeStopLoss:
-	case types.OrderTypeTakeProfit:
-		rising = !order.IsLong
-	default:
-		return 0, fmt.Errorf("%w: untriggered order %s of type %d has no trigger", types.ErrInvalidGenesis,
-			order.ID.Dec(), order.Type)
-	}
-	if rising {
-		return types.TriggerRising, nil
-	}
-	return types.TriggerFalling, nil
 }
 
 // matchSuppliedIndexes refuses derived entries in gs that differ from the
@@ -255,11 +236,6 @@ func marginRatioEntry(e types.MarginRatioEntry) indexEntry {
 
 func adlRankEntry(e types.AdlRankEntry) indexEntry {
 	return indexEntry{key: types.AdlRankIndexKey(e.MarketID, e.Side, e.RankScore, e.PositionID), value: []byte{}}
-}
-
-func wordBytes(value uint256.Int) []byte {
-	word := value.Bytes32()
-	return word[:]
 }
 
 // ExportGenesis exports every stored prefix except the derived book, cloid,

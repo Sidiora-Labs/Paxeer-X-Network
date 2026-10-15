@@ -129,8 +129,18 @@ func (k *Keeper) PlaceOrder(ctx sdk.Context, account common.Address, p OrderPara
 		if err := k.checkReduceOnly(ctx, order); err != nil {
 			return PlaceResult{}, err
 		}
-	} else if err := k.CheckOpen(ctx, order); err != nil {
-		return PlaceResult{}, err
+	} else {
+		tier, err := k.FeeTier(ctx, account)
+		if err != nil {
+			return PlaceResult{}, err
+		}
+		if err := k.CheckOpen(ctx, OpenRequest{
+			Account: account, MarketID: order.MarketID, IsLong: order.IsLong,
+			NotionalUsd: sdk.NewIntFromBigInt(order.SizeUsd.ToBig()), Leverage: order.Leverage,
+			TakerFeePpm: tier.TakerFeePpm,
+		}); err != nil {
+			return PlaceResult{}, err
+		}
 	}
 
 	if err := k.admitOrder(ctx, &order); err != nil {
@@ -155,12 +165,12 @@ func (k *Keeper) PlaceOrder(ctx sdk.Context, account common.Address, p OrderPara
 		}
 		return result, nil
 	}
-	if result.Fills, err = k.Match(ctx, market, &order); err != nil {
+	matched, err := k.Match(ctx, market, order)
+	if err != nil {
 		return PlaceResult{}, err
 	}
-	if err := k.settleTaker(ctx, order); err != nil {
-		return PlaceResult{}, err
-	}
+	result.Fills = matched.Fills
+	result.Events = append(result.Events, matched.Events...)
 	return result, nil
 }
 
@@ -429,25 +439,6 @@ func (k *Keeper) takesLiquidity(ctx sdk.Context, order types.Order) (bool, error
 	return ok && !bid.Lt(&order.LimitPrice), err
 }
 
-// settleTaker books the taker after Match: a filled order closes FILLED, a
-// GTC or POST_ONLY remainder rests at its limit price and any other remainder,
-// cancelled by Match, closes CANCELLED.
-func (k *Keeper) settleTaker(ctx sdk.Context, order types.Order) error {
-	var remaining uint256.Int
-	if _, underflow := remaining.SubOverflow(&order.SizeBase, &order.FilledBase); underflow {
-		return fmt.Errorf("%w: order %s filled above its size", types.ErrOverflow, order.ID.Dec())
-	}
-	if remaining.IsZero() {
-		return k.closeOrder(ctx, order, types.OrderStatusFilled)
-	}
-	rests := order.TimeInForce == types.TimeInForceGTC || order.TimeInForce == types.TimeInForcePostOnly
-	if rests && order.Status == types.OrderStatusResting {
-		k.setOrder(ctx, order)
-		return k.BookInsert(ctx, order)
-	}
-	return k.closeOrder(ctx, order, types.OrderStatusCancelled)
-}
-
 // CancelOrder cancels an open order of account, the role of
 // lx_perps_order_cancel_execute: only the placer may cancel, the order leaves
 // the book or the trigger index, its reserved margin is released and its
@@ -584,10 +575,6 @@ func (k *Keeper) closeOrder(ctx sdk.Context, order types.Order, status types.Ord
 		store.Delete(types.ExpiryKey(order.Deadline, order.ID))
 	}
 	return nil
-}
-
-func (k *Keeper) setOrder(ctx sdk.Context, order types.Order) {
-	k.store(ctx).Set(types.OrderKey(order.ID), order.Marshal())
 }
 
 // triggerDirection is the trigger index direction of a trigger order: a

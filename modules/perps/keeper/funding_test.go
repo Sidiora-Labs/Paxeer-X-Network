@@ -38,7 +38,7 @@ func usd18(units int64) uint256.Int {
 
 func word(t *testing.T, value *big.Int) uint256.Int {
 	t.Helper()
-	out, err := signedWord(value)
+	out, err := signedWord(value, 0)
 	require.NoError(t, err)
 	return out
 }
