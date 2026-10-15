@@ -27,6 +27,11 @@ var (
 	opticalAfterSwap  = crypto.Keccak256([]byte("afterSwap(address,address,bool,uint256,uint256)"))[:4]
 	// inputAdjustmentTopic is SidioraPool.InputAdjustment(uint256,uint256).
 	inputAdjustmentTopic = crypto.Keccak256Hash([]byte("InputAdjustment(uint256,uint256)"))
+	// feeRecordedTopic and opticalSurplusRecordedTopic are IFeeAccumulator
+	// events, depositedTopic is ITreasury.Deposited.
+	feeRecordedTopic            = crypto.Keccak256Hash([]byte("FeeRecorded(address,uint256,uint256,uint256)"))
+	opticalSurplusRecordedTopic = crypto.Keccak256Hash([]byte("OpticalSurplusRecorded(address,uint256)"))
+	depositedTopic              = crypto.Keccak256Hash([]byte("Deposited(address,address,uint256)"))
 )
 
 // SwapState is the state of the precompile run a swap holds its pool lock in
@@ -328,6 +333,23 @@ func (k *Keeper) Swap(ctx sdk.Context, caller NestedCaller, locks SwapState, den
 				return ctx, SwapResult{}, err
 			}
 			result.ProtocolCut, result.PoolCut = protocolCut.BigInt(), poolCut.BigInt()
+			// FeeAccumulator.recordFee logs OpticalSurplusRecorded, Treasury
+			// Deposited from the accumulator, then FeeRecorded
+			// (Launch-x:contracts/contracts/data/FeeAccumulator.sol:112-165).
+			if divert := fee.Sub(protocolCut).Sub(poolCut); divert.IsPositive() {
+				locks.AddLog(&ethtypes.Log{Address: accumulator,
+					Topics: []common.Hash{opticalSurplusRecordedTopic, common.BytesToHash(pool.Bytes())},
+					Data:   amountWord(divert.BigInt())})
+			}
+			if protocolCut.IsPositive() {
+				locks.AddLog(&ethtypes.Log{Address: k.TreasuryContract(), Topics: []common.Hash{depositedTopic,
+					common.BytesToHash(k.quoteToken(ctx).Bytes()), common.BytesToHash(accumulator.Bytes())},
+					Data: amountWord(protocolCut.BigInt())})
+			}
+			locks.AddLog(&ethtypes.Log{Address: accumulator,
+				Topics: []common.Hash{feeRecordedTopic, common.BytesToHash(pool.Bytes())},
+				Data: append(append(amountWord(result.FeeAmount), amountWord(result.ProtocolCut)...),
+					amountWord(result.PoolCut)...)})
 		}
 	} else {
 		ctx, err = k.PayQuote(ctx, caller, HeldQuoteLedger(pool), recipient, sdk.NewIntFromBigInt(result.AmountOut))

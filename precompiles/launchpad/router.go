@@ -222,7 +222,7 @@ func entryRevert(err error) []byte {
 // Router (Launch-x:contracts/contracts/periphery/Router.sol:155-175).
 func (p PrecompileExecutor) routerCreateMarket(c *call, nested launchpadkeeper.NestedCaller) ([]byte, error) {
 	market, err := p.createMarket(c, nested, c.caller, c.args[0].(string), c.args[1].(string), c.args[2].(uint8),
-		c.args[3].(common.Address))
+		c.args[3].(common.Address), true)
 	if err != nil {
 		return nil, err
 	}
@@ -548,7 +548,7 @@ func (p PrecompileExecutor) factoryHandler(c *call) ([]byte, error) {
 			return nil, err
 		}
 		market, err := p.createMarket(c, nested, c.caller, c.args[0].(string), c.args[1].(string),
-			c.args[2].(uint8), c.args[3].(common.Address))
+			c.args[2].(uint8), c.args[3].(common.Address), true)
 		if err != nil {
 			return nil, err
 		}
@@ -566,7 +566,7 @@ func (p PrecompileExecutor) factoryHandler(c *call) ([]byte, error) {
 			return nil, err
 		}
 		market, err := p.createMarket(c, nested, creator, c.args[1].(string), c.args[2].(string),
-			c.args[3].(uint8), c.args[4].(common.Address))
+			c.args[3].(uint8), c.args[4].(common.Address), false)
 		if err != nil {
 			return nil, err
 		}
@@ -590,11 +590,14 @@ func packMarket(c *call, market types.Market) ([]byte, error) {
 // the EventEmitter family, TokenDeployed and MarketCreated of the family, and
 // MarketCreated at the factory (Launch-x:contracts/contracts/core/SidioraFactory.sol:72-163).
 func (p PrecompileExecutor) createMarket(c *call, nested launchpadkeeper.NestedCaller, creator common.Address, name,
-	symbol string, strategy uint8, optical common.Address) (types.Market, error) {
+	symbol string, strategy uint8, optical common.Address, charge bool) (types.Market, error) {
 	nonce := p.keeper.FactoryNonce(c.ctx, creator)
 	fee := p.keeper.GetParams(c.ctx).CreationFee
-	ctx, market, err := p.keeper.CreateMarket(c.ctx, nested, c.evm, creator, name, symbol, types.FeeStrategy(strategy),
-		optical)
+	create := p.keeper.CreateMarket
+	if !charge {
+		fee, create = sdk.ZeroInt(), p.keeper.CreateMarketFor
+	}
+	ctx, market, err := create(c.ctx, nested, c.evm, creator, name, symbol, types.FeeStrategy(strategy), optical)
 	if err != nil {
 		return types.Market{}, err
 	}

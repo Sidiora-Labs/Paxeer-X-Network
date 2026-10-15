@@ -154,8 +154,11 @@ func TestPoolTokensStayAtThePool(t *testing.T) {
 		market := h.market(pool)
 		require.Zero(t, h.balanceOf(token, h.custody()).Sign(), "%s: custody holds no pool token", stage)
 		require.Zero(t, h.balanceOf(token, factory).Sign(), "%s: the factory keeps no pool token", stage)
-		require.Equal(t, new(big.Int).Add(market.TokenReserve.BigInt(), market.AccumulatedTokenFees.BigInt()),
-			h.balanceOf(token, pool), "%s: the pool holds its reserve and its token fees", stage)
+		// A sell adds its full input, fee included, to tokenReserve and only
+		// counts the fee in accumulatedTokenFees, so the pool holds exactly its
+		// reserve (Launch-x:contracts/contracts/core/SidioraPool.sol:234-243, 268).
+		require.Equal(t, market.TokenReserve.BigInt(), h.balanceOf(token, pool),
+			"%s: the pool holds its reserve", stage)
 	}
 	stays("created")
 	in := big.NewInt(100_000_000)
@@ -402,7 +405,7 @@ func TestNewMarketTokenAddress(t *testing.T) {
 	require.Len(t, deployed, 1)
 	require.Equal(t, []common.Hash{deployed[0].Topics[0], addressTopic(token), addressTopic(pool),
 		addressTopic(h.caller)}, deployed[0].Topics)
-	same(t, []interface{}{salt, name, symbol, 6, supply, genesisTime.Unix(), h.ctx().BlockHeight()},
+	same(t, []interface{}{[32]byte(salt), name, symbol, 6, supply, genesisTime.Unix(), h.ctx().BlockHeight()},
 		eventData(t, directRole, "TokenDeployed", deployed[0]))
 }
 
@@ -466,8 +469,8 @@ func TestNewMarketFeeRightAndLogs(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, launchpadkeeper.PoolMetadata{Creator: h.caller, Token: token, Optical: common.Address{},
 		NFTID: id.Uint64(), CreatedAt: genesisTime.Unix(), CreatedBlock: h.ctx().BlockHeight()}, metadata)
-	same(t, []interface{}{map[string]interface{}{"Creator": h.caller, "Token": token, "Optical": common.Address{},
-		"NftId": id, "CreatedAt": genesisTime.Unix(), "CreatedBlock": h.ctx().BlockHeight()}},
+	same(t, []interface{}{map[string]interface{}{"creator": h.caller, "token": token, "optical": common.Address{},
+		"nftId": id, "createdAt": genesisTime.Unix(), "createdBlock": h.ctx().BlockHeight()}},
 		h.view(poolRegistry, types.RolePoolRegistry, "getPoolMetadata", pool))
 	market := h.market(pool)
 	require.Equal(t, id.Uint64(), market.FeeRightID)

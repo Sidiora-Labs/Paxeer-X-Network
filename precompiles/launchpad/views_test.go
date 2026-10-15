@@ -219,6 +219,21 @@ func (e *viewEnv) refused(want *sdkerrors.Error, detail string, role string, cal
 	e.t.Helper()
 	got := e.call(role, caller, name, args...)
 	require.True(e.t, got.reverted, "%s.%s did not revert", role, name)
+	// A contract error reverts with its custom error, as the contract does;
+	// detail is checked against its arguments, and an error without
+	// arguments is the bare selector.
+	if contractError, ok := types.ContractErrorOf(want); ok {
+		require.GreaterOrEqual(e.t, len(got.ret), 4, "%s.%s", role, name)
+		require.Equal(e.t, contractError.Selector[:], got.ret[:4], "%s.%s", role, name)
+		if len(contractError.Inputs) == 0 {
+			require.Len(e.t, got.ret, 4, "%s.%s", role, name)
+			return
+		}
+		values, err := contractError.Inputs.Unpack(got.ret[4:])
+		require.NoError(e.t, err)
+		require.Contains(e.t, fmt.Sprint(values...), detail, "%s.%s", role, name)
+		return
+	}
 	reason, err := abi.UnpackRevert(got.ret)
 	require.NoError(e.t, err)
 	require.Contains(e.t, reason, want.Error(), "%s.%s", role, name)
@@ -233,7 +248,11 @@ func (e *viewEnv) adminRefused(role string, caller common.Address, name string, 
 	revert, err := roleErr.Revert()
 	require.NoError(e.t, err)
 	require.Equal(e.t, []byte{0xe2, 0x51, 0x7d, 0x3f}, revert[:4])
-	e.refused(types.ErrAccessControlUnauthorizedAccount, refusal.Error(), role, caller, name, args...)
+	// AccessControl reverts with the custom error
+	// AccessControlUnauthorizedAccount(account, neededRole), not Error(string).
+	got := e.call(role, caller, name, args...)
+	require.True(e.t, got.reverted, "%s.%s did not revert", role, name)
+	require.Equal(e.t, revert, got.ret, "%s.%s", role, name)
 }
 
 func viewMulDiv(a, b, c *big.Int) *big.Int { return new(big.Int).Div(new(big.Int).Mul(a, b), c) }
@@ -305,7 +324,7 @@ func TestViewRolesServeEverySelector(t *testing.T) {
 		contract := launchpadkeeper.Generation2Surfaces[role]
 		require.Equal(t, [32]byte{}, e.one(role, stranger, "DEFAULT_ADMIN_ROLE"))
 		require.Equal(t, [32]byte{}, e.one(role, stranger, "getRoleAdmin", [32]byte(launchpad.FactoryRole)))
-		require.Equal(t, n(0), e.one(role, stranger, "registeredDefaultAdminCount"))
+		same(t, n(0), e.one(role, stranger, "registeredDefaultAdminCount"))
 		require.Equal(t, role == types.RolePoolRegistry,
 			e.one(role, stranger, "hasRole", [32]byte(launchpad.FactoryRole), holder))
 		require.Equal(t, false, e.one(role, stranger, "hasRole", [32]byte{}, holder))
@@ -320,12 +339,9 @@ func TestViewRolesServeEverySelector(t *testing.T) {
 		}
 		e.refused(types.ErrAlreadyInitialized, "", role, stranger, "initialize", initArgs...)
 
-		missing := e.call(role, stranger, "renounceRole", [32]byte(launchpad.FactoryRole), holder)
-		require.True(t, missing.reverted)
-		reason, err := abi.UnpackRevert(missing.ret)
-		require.NoError(t, err)
-		require.Contains(t, reason, types.ErrMissingRole.Error())
-		require.Contains(t, reason, stranger.Hex())
+		// MissingRole(msg.sender, role) (Launch-x:contracts/contracts/base/AccessControl.sol:68-71).
+		e.refused(types.ErrMissingRole, stranger.Hex(), role, stranger, "renounceRole", [32]byte(launchpad.FactoryRole),
+			holder)
 		logs := len(e.stateDB.GetAllLogs())
 		require.Empty(t, e.values(role, stranger, "renounceRole", [32]byte(launchpad.FactoryRole), stranger))
 		require.Len(t, e.stateDB.GetAllLogs(), logs)
@@ -395,9 +411,9 @@ func TestViewRolesServeEverySelector(t *testing.T) {
 	require.Equal(t, []common.Address{poolD}, e.one(reg, stranger, "getAllPools", n(3), n(5)))
 	require.Equal(t, []common.Address{}, e.one(reg, stranger, "getAllPools", n(4), n(1)))
 	require.Equal(t, []common.Address{}, e.one(reg, stranger, "getAllPools", new(big.Int).Lsh(n(1), 200), n(1)))
-	require.Equal(t, n(4), e.one(reg, stranger, "getPoolCount"))
-	require.Equal(t, n(2), e.one(reg, stranger, "getPoolCountByCreator", other))
-	require.Equal(t, n(0), e.one(reg, stranger, "getPoolCountByCreator", stranger))
+	same(t, n(4), e.one(reg, stranger, "getPoolCount"))
+	same(t, n(2), e.one(reg, stranger, "getPoolCountByCreator", other))
+	same(t, n(0), e.one(reg, stranger, "getPoolCountByCreator", stranger))
 	require.Equal(t, []common.Address{poolC, poolD}, e.one(reg, stranger, "getPoolsByCreator", other))
 	require.Equal(t, []common.Address{}, e.one(reg, stranger, "getPoolsByCreator", stranger))
 	require.Equal(t, []common.Address{poolD}, e.one(reg, stranger, "getPoolsByCreatorPage", other, n(1), n(5)))
@@ -409,12 +425,12 @@ func TestViewRolesServeEverySelector(t *testing.T) {
 	require.Equal(t, true, e.one(reg, stranger, "isRegisteredPool", poolC))
 	require.Equal(t, false, e.one(reg, stranger, "isRegisteredPool", notPool))
 	require.Equal(t, false, e.one(reg, stranger, "isRegisteredPool", viewQuoter))
-	require.Equal(t, n(int64(marketA.FeeRightID)), e.one(reg, stranger, "getNftIdByPool", poolA))
-	require.Equal(t, n(int64(marketB.FeeRightID)), e.one(reg, stranger, "getNftIdByPool", poolB))
-	require.Equal(t, n(0), e.one(reg, stranger, "getNftIdByPool", notPool))
+	same(t, n(int64(marketA.FeeRightID)), e.one(reg, stranger, "getNftIdByPool", poolA))
+	same(t, n(int64(marketB.FeeRightID)), e.one(reg, stranger, "getNftIdByPool", poolB))
+	same(t, n(0), e.one(reg, stranger, "getNftIdByPool", notPool))
 	metadata := abi.ConvertType(e.one(reg, stranger, "getPoolMetadata", notPool),
 		new(launchpad.RegistryPoolMetadata)).(*launchpad.RegistryPoolMetadata)
-	require.Equal(t, launchpad.RegistryPoolMetadata{NftId: n(0), CreatedAt: n(0), CreatedBlock: n(0)}, *metadata)
+	same(t, launchpad.RegistryPoolMetadata{NftId: n(0), CreatedAt: n(0), CreatedBlock: n(0)}, *metadata)
 	e.refused(types.ErrInvalidMarket, "no registry metadata", reg, stranger, "getPoolMetadata", poolA)
 
 	newPool, newToken := address(0x77), address(0x78)
@@ -426,7 +442,7 @@ func TestViewRolesServeEverySelector(t *testing.T) {
 	e.refused(types.ErrDuplicatePool, poolB.Hex(), reg, holder, "register", poolB, newToken, creator, zero, n(1))
 	e.refused(types.ErrInvalidConfiguration, newPool.Hex(), reg, holder, "register", newPool, newToken, creator, zero,
 		n(1))
-	require.Equal(t, n(4), e.one(reg, stranger, "getPoolCount"))
+	same(t, n(4), e.one(reg, stranger, "getPoolCount"))
 
 	logs := len(e.stateDB.GetAllLogs())
 	require.Empty(t, e.values(reg, holder, "renounceRole", [32]byte(launchpad.FactoryRole), holder))
@@ -446,16 +462,16 @@ func TestViewRolesServeEverySelector(t *testing.T) {
 	u := func(value uint64) *big.Int { return new(big.Int).SetUint64(value) }
 	require.Equal(t, common.HexToAddress(params.QuoteToken), e.one(cfg, stranger, "usdlAddress"))
 	require.Equal(t, common.HexToAddress(types.DefaultQuoteToken), e.one(cfg, stranger, "usdlAddress"))
-	require.Equal(t, params.VirtualQuoteDefault.BigInt(), e.one(cfg, stranger, "virtualUsdlDefault"))
-	require.Equal(t, params.VirtualTokenDefault.BigInt(), e.one(cfg, stranger, "virtualTokenDefault"))
-	require.Equal(t, u(params.MinFeeBps), e.one(cfg, stranger, "minFeeBps"))
-	require.Equal(t, u(params.MaxFeeBps), e.one(cfg, stranger, "maxFeeBps"))
-	require.Equal(t, u(params.BaseFeeBps), e.one(cfg, stranger, "baseFeeBps"))
-	require.Equal(t, u(params.ProtocolFeeBps), e.one(cfg, stranger, "protocolFeeBps"))
-	require.Equal(t, u(params.FeeDecayRate), e.one(cfg, stranger, "feeDecayRate"))
-	require.Equal(t, u(params.VolatilityWeight), e.one(cfg, stranger, "volatilityWeight"))
-	require.Equal(t, u(params.ConcentrationWeight), e.one(cfg, stranger, "concentrationWeight"))
-	require.Equal(t, params.CreationFee.BigInt(), e.one(cfg, stranger, "creationFee"))
+	same(t, params.VirtualQuoteDefault.BigInt(), e.one(cfg, stranger, "virtualUsdlDefault"))
+	same(t, params.VirtualTokenDefault.BigInt(), e.one(cfg, stranger, "virtualTokenDefault"))
+	same(t, u(params.MinFeeBps), e.one(cfg, stranger, "minFeeBps"))
+	same(t, u(params.MaxFeeBps), e.one(cfg, stranger, "maxFeeBps"))
+	same(t, u(params.BaseFeeBps), e.one(cfg, stranger, "baseFeeBps"))
+	same(t, u(params.ProtocolFeeBps), e.one(cfg, stranger, "protocolFeeBps"))
+	same(t, u(params.FeeDecayRate), e.one(cfg, stranger, "feeDecayRate"))
+	same(t, u(params.VolatilityWeight), e.one(cfg, stranger, "volatilityWeight"))
+	same(t, u(params.ConcentrationWeight), e.one(cfg, stranger, "concentrationWeight"))
+	same(t, params.CreationFee.BigInt(), e.one(cfg, stranger, "creationFee"))
 	require.Equal(t, viewEmitter, e.one(cfg, stranger, "eventEmitter"))
 	e.adminRefused(cfg, stranger, "setBaseFeeBps", u(params.BaseFeeBps))
 	e.adminRefused(cfg, holder, "setCreationFee", n(1))

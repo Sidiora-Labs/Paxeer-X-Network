@@ -124,6 +124,20 @@ func (k *Keeper) PoolByToken(ctx sdk.Context, token common.Address) (common.Addr
 // one-off EVM deploys the token. It returns the context the run continues on.
 func (k *Keeper) CreateMarket(ctx sdk.Context, caller NestedCaller, evm *vm.EVM, creator common.Address, name,
 	symbol string, strategy types.FeeStrategy, optical common.Address) (sdk.Context, types.Market, error) {
+	return k.createMarket(ctx, caller, evm, creator, name, symbol, strategy, optical, true)
+}
+
+// CreateMarketFor is SidioraFactory.createMarketFor: CreateMarket without the
+// creation fee, which the Router already charged
+// (Launch-x:contracts/contracts/core/SidioraFactory.sol:87-96).
+func (k *Keeper) CreateMarketFor(ctx sdk.Context, caller NestedCaller, evm *vm.EVM, creator common.Address, name,
+	symbol string, strategy types.FeeStrategy, optical common.Address) (sdk.Context, types.Market, error) {
+	return k.createMarket(ctx, caller, evm, creator, name, symbol, strategy, optical, false)
+}
+
+func (k *Keeper) createMarket(ctx sdk.Context, caller NestedCaller, evm *vm.EVM, creator common.Address, name,
+	symbol string, strategy types.FeeStrategy, optical common.Address, charge bool) (sdk.Context, types.Market,
+	error) {
 	if creator == (common.Address{}) {
 		return ctx, types.Market{}, types.ErrZeroAddress
 	}
@@ -131,7 +145,7 @@ func (k *Keeper) CreateMarket(ctx sdk.Context, caller NestedCaller, evm *vm.EVM,
 		return ctx, types.Market{}, err
 	}
 	params := k.GetParams(ctx)
-	if params.CreationFee.IsPositive() {
+	if charge && params.CreationFee.IsPositive() {
 		next, received, err := k.PullQuote(ctx, caller, creator, TreasuryHeldLedger(), params.CreationFee)
 		if err != nil {
 			return ctx, types.Market{}, err

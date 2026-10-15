@@ -394,25 +394,35 @@ func TestOpticalFactoryAfterUpgrade(t *testing.T) {
 	require.True(t, retBool(t, h.view(feeAccumulatorSurface, "hasRole(bytes32,address)", opticalClaimRole, optical)))
 	require.Equal(t, big.NewInt(1), retUint(t, h.view(factory, "getDeployedCount()"), 0))
 
+	// The creation transfer of the virtual token supply to the pool runs the
+	// optical's beforeTokenTransfer, which records the start once
+	// (Launch-x:contracts/contracts/core/SidioraFactory.sol:150-154,
+	// Launch-x:contracts/contracts/opticals/presets/LaunchpadOptical.sol:179-202);
+	// later swaps find it recorded.
+	mark := h.logCount()
 	token, pool := h.createMarket(h.creator, "Optical Token", "OPTX", optical)
+	started := func(mark int) int {
+		count := 0
+		for _, log := range h.logsSince(mark) {
+			if log.Address == optical && log.Topics[0] == poolStartTimeTopic {
+				require.Equal(t, common.BytesToHash(pool.Bytes()), log.Topics[1])
+				require.Equal(t, big.NewInt(retainedTime.Unix()), new(big.Int).SetBytes(log.Data))
+				count++
+			}
+		}
+		return count
+	}
+	require.Equal(t, 1, started(mark))
 	metadata := h.view(poolRegistrySurface, "getPoolMetadata(address)", pool)
 	require.Equal(t, h.creator, retAddress(t, metadata, 0))
 	require.Equal(t, token, retAddress(t, metadata, 1))
 	require.Equal(t, optical, retAddress(t, metadata, 2))
 	require.Equal(t, optical, retAddress(t, h.view(pool, "opticalAddress()"), 0))
 
-	mark := h.logCount()
+	mark = h.logCount()
 	bought := h.buy(h.trader, pool, 1_000_000)
 	require.Equal(t, bought, h.balanceOf(token, h.trader))
-	started := 0
-	for _, log := range h.logsSince(mark) {
-		if log.Address == optical && log.Topics[0] == poolStartTimeTopic {
-			require.Equal(t, common.BytesToHash(pool.Bytes()), log.Topics[1])
-			require.Equal(t, big.NewInt(retainedTime.Unix()), new(big.Int).SetBytes(log.Data))
-			started++
-		}
-	}
-	require.Equal(t, 1, started)
+	require.Zero(t, started(mark))
 	h.buy(h.trader, pool, 1_000_000)
 }
 

@@ -310,11 +310,27 @@ func TestPoolRoleServesEverySelector(t *testing.T) {
 	release()
 	logs := e.logCount()
 	require.Equal(t, []interface{}{amountOut}, e.write(e.holder, "swap", n(paid), n(1), true, e.recipient, swapDeadline))
-	require.Equal(t, []common.Address{e.usdl, e.token, precompile}, e.newLogs(logs))
+	// The fee runs FeeAccumulator.recordFee: Deposited at the Treasury from
+	// the accumulator, then FeeRecorded at the accumulator
+	// (Launch-x:contracts/contracts/data/FeeAccumulator.sol:112-165).
+	roles := e.k.Generation2()
+	require.Equal(t, []common.Address{e.usdl, e.token, roles.Treasury, roles.FeeAccumulator, precompile},
+		e.newLogs(logs))
 	custody := e.k.ModuleEVMAddress(e.ctx())
 	e.requireTransfer(logs, e.pool, custody, n(paid))
 	e.requireTransfer(logs+1, e.pool, e.recipient, amountOut)
-	swapLog := e.stateDB.GetAllLogs()[logs+2]
+	protocolCut := new(big.Int).Div(new(big.Int).Mul(fee, new(big.Int).SetUint64(e.k.GetParams(e.ctx()).ProtocolFeeBps)),
+		n(10_000))
+	deposited := e.stateDB.GetAllLogs()[logs+2]
+	require.Equal(t, []common.Hash{crypto.Keccak256Hash([]byte("Deposited(address,address,uint256)")),
+		common.BytesToHash(e.usdl.Bytes()), common.BytesToHash(roles.FeeAccumulator.Bytes())}, deposited.Topics)
+	require.Equal(t, common.LeftPadBytes(protocolCut.Bytes(), 32), deposited.Data)
+	recorded := e.stateDB.GetAllLogs()[logs+3]
+	require.Equal(t, []common.Hash{crypto.Keccak256Hash([]byte("FeeRecorded(address,uint256,uint256,uint256)")),
+		common.BytesToHash(e.pool.Bytes())}, recorded.Topics)
+	require.Equal(t, append(append(common.LeftPadBytes(fee.Bytes(), 32), common.LeftPadBytes(protocolCut.Bytes(), 32)...),
+		common.LeftPadBytes(new(big.Int).Sub(fee, protocolCut).Bytes(), 32)...), recorded.Data)
+	swapLog := e.stateDB.GetAllLogs()[logs+4]
 	price := mulDiv(new(big.Int).Add(n(poolVirtualQuote), afterFee), wad,
 		new(big.Int).Sub(n(poolTokenReserve), amountOut))
 	swapEvent := e.emitter.Events["Swap"]
@@ -363,10 +379,11 @@ func TestPoolRoleServesEverySelector(t *testing.T) {
 	logs = e.logCount()
 	require.Equal(t, []interface{}{quoted.AmountOut},
 		e.write(e.router, "swapFor", n(routed), n(1), true, e.holder, e.recipient, swapDeadline))
-	require.Equal(t, []common.Address{e.usdl, e.token, precompile}, e.newLogs(logs))
+	require.Equal(t, []common.Address{e.usdl, e.token, roles.Treasury, roles.FeeAccumulator, precompile},
+		e.newLogs(logs))
 	e.requireTransfer(logs, e.pool, custody, n(routed))
 	e.requireTransfer(logs+1, e.pool, e.recipient, quoted.AmountOut)
-	require.Equal(t, common.BytesToHash(e.holder.Bytes()), e.stateDB.GetAllLogs()[logs+2].Topics[2])
+	require.Equal(t, common.BytesToHash(e.holder.Bytes()), e.stateDB.GetAllLogs()[logs+4].Topics[2])
 	require.Equal(t, new(big.Int).Add(amountOut, quoted.AmountOut), e.balance(e.token, e.recipient))
 	require.Equal(t, n(paid+routed), e.view("cumulativeBuyUsdlVolume"))
 

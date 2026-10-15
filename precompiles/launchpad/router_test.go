@@ -402,9 +402,16 @@ func TestRouterAndFactoryRolesServeEverySelector(t *testing.T) {
 		amountIn, intermediate, swapped)
 	r.requireLog(len(logs)-1, precompile, r.family("RouterTrade"), uint8(2), poolA, r.trader, tokenA, tokenB,
 		amountIn, swapped, intermediate, ts, bn)
-	out = r.ok(types.RoleRouter, r.router, r.trader, "swapTokenForTokenWithPermit", tokenB, tokenA, common.Big1, zero,
+	// The failed permit is ignored and the pull needs an allowance to 0x1017
+	// (Launch-x:contracts/contracts/periphery/Router.sol:129-139, 251, 292-314).
+	back := new(big.Int).Rsh(swapped, 1)
+	r.refused(customError(t, "TransferFromFailed()"), types.RoleRouter, r.router, r.trader,
+		"swapTokenForTokenWithPermit", tokenB, tokenA, back, zero, deadline, badPermit)
+	r.erc20(r.trader, tokenB, "approve(address,uint256)", addressWord(precompile), common.LeftPadBytes(back.Bytes(), 32))
+	out = r.ok(types.RoleRouter, r.router, r.trader, "swapTokenForTokenWithPermit", tokenB, tokenA, back, zero,
 		deadline, badPermit)
 	require.Len(t, out, 2)
+	require.Equal(t, new(big.Int).Sub(tokenBBefore, new(big.Int).Sub(back, swapped)), r.tokenBalance(tokenB, r.trader))
 
 	// multicall serves each entry as a Router call of the same caller and
 	// reverts MulticallFailed(index, revert data of the entry).

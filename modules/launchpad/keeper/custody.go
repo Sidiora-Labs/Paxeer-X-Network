@@ -198,7 +198,7 @@ func callQuote(ctx sdk.Context, caller NestedCaller, from, token common.Address,
 	failure error) (sdk.Context, error) {
 	next, ret, err := caller.Call(ctx, from, token, input)
 	if err != nil {
-		return ctx, fmt.Errorf("%w: %w", failure, err)
+		return ctx, fmt.Errorf("%w: %v", failure, err)
 	}
 	if len(ret) != 32 || new(big.Int).SetBytes(ret).Cmp(big.NewInt(1)) != 0 {
 		return ctx, fmt.Errorf("%w: return data %x", failure, ret)
