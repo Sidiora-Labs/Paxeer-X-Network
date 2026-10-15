@@ -21432,7 +21432,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.17]
 title = "Set 1000x leverage, the precompile enum labels and remove the Diamond-era tables from the perpetuals configuration"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.2.4", "6.2.14"]
