@@ -6276,7 +6276,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.0.3]
 title = "Copy the role ABIs of FeesRouter, FeeAccumulator, PoolRegistry and test their counts"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
