@@ -420,3 +420,52 @@ command = "go test ./platform/perps-data/internal/delivery/ ./platform/perps-dat
 exit_code = 1
 log_path = "fleet/logs/fix-7.0.2-verify-1.log"
 observed_and_assumption = "The outbox identity is now the Perps-Seq bigint across enqueue, lease and claim, with the migration and tests updated, but TestMigrate and TestStore need a PostgreSQL database the worker sandbox could not start. Assumption: the gate is rerun once against a throwaway local cluster before 7.1.6 is unheld."
+
+[finding.2.1.5]
+revision = "1a78ba69020aeebb8495feb16027ec1ce0fde16a"
+command = "go build ./modules/launchpad/... ./precompiles/launchpad/..."
+exit_code = 1
+log_path = "fleet/logs/2.1.5-build-1.log"
+observed_and_assumption = "swap.go calls Keeper.RecordFee, which task 2.1.7 owns and which had not landed, and the custody Swap signature leaves the precompile, the keeper test env and the node airdrop test on the old shape until tasks 2.2.3 and 2.1.13 port them. Assumption: both gates are rerun once after 2.1.7 lands, and acceptance 2.18.4 is reconciled with requirement 2021.1 in the spec correction lane."
+
+[finding.2.1.6]
+revision = "2f0513cc9502f45bb96aa589aed455b29b123057"
+command = "go build ./modules/launchpad/... ./precompiles/launchpad/..."
+exit_code = 1
+log_path = "fleet/logs/2.1.6-build-1.log"
+observed_and_assumption = "The build, vet and verify runs failed with no space left on device, and the keeper also needs TreasuryCreditFee and TreasuryGetBalance from task 2.1.16 and the pool surface dispatch from task 2.2.3 for its success path. Assumption: the gates are rerun once after disk space is restored and those two tasks land."
+
+[finding.2.1.7]
+revision = "5731063d1acaf81fec2f37e92068af3da51e7d1e"
+command = "go build ./modules/launchpad/... ./precompiles/launchpad/..."
+exit_code = 1
+log_path = "fleet/logs/2.1.7-build-1.log"
+observed_and_assumption = "fees.go calls Keeper.TreasuryCreditFee, which task 2.1.16 owns and which had not landed when the gate ran. Assumption: both gates are rerun once now that 2.1.16 is on main."
+
+[finding.3.1.10]
+revision = "05523841d5f9fa267a7f792562190005ea3d65f4"
+command = "go build ./modules/perps/..."
+exit_code = 1
+log_path = "fleet/logs/3.1.10-build-1.log"
+observed_and_assumption = "The compile failed with no space left on device, and the perps keeper type from task 3.1.1 was not on the base. Assumption: both gates are rerun once after the perps keeper package compiles on main."
+
+[finding.3.1.12]
+revision = "7ea0915a548147733131d134e46ab951cb897a7c"
+command = "go build ./modules/perps/..."
+exit_code = 1
+log_path = "fleet/logs/3.1.12-build-1.log"
+observed_and_assumption = "funding.go builds on the perps Keeper (3.1.1), the book iteration and insert (3.1.5), IsLiquidatable (3.1.4) and LiquidationScan (3.1.14), none of which were on the base, so their signatures are assumed. Assumption: both gates are rerun once after the perps keeper package compiles on main and the assumed signatures are reconciled."
+
+[finding.3.1.13]
+revision = "3e9122d8f4c2d0f8fc02a6be71e67884e03ecad1"
+command = "go build ./modules/perps/..."
+exit_code = 1
+log_path = "fleet/logs/3.1.13-build-1.log"
+observed_and_assumption = "openinterest.go needs the perps Keeper from task 3.1.1, which was not on the base. Assumption: both gates are rerun once after the perps keeper package compiles on main."
+
+[finding.3.1.14]
+revision = "3b607684093b36739aa7142b07a33ca7e5249964"
+command = "go build ./modules/perps/..."
+exit_code = 1
+log_path = "fleet/logs/3.1.14-build-1.log"
+observed_and_assumption = "liquidation.go needs the perps Keeper, margin, matching, mark, account and order symbols of tasks 3.1.1, 3.1.4, 3.1.6, 3.1.11, 3.1.3 and 3.1.7, and acceptance 3.13.2 expects a second 200,000 USD slice while the contract's prefix 0x0F keeps only the last slice time, which yields 160,000 USD. Assumption: both gates are rerun once after the perps keeper package compiles on main, and the slice value is settled in the spec correction lane."
