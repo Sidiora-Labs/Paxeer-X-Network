@@ -29378,7 +29378,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.6]
 title = "Stage the release binary, keep the previous one and report automation and the old feeder"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["8.4.5", "8.4.17"]
