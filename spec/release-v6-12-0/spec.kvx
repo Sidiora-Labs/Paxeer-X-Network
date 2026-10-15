@@ -21136,7 +21136,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.6]
 title = "Move deposit and withdrawal to the perpetuals account hook"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.0.4", "6.0.7", "6.2.4"]
