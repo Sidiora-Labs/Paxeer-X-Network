@@ -523,3 +523,35 @@ exit = 1
 log = "fleet/logs/issue-603-verify-1.log"
 observed = "The types test binary pulled in the launchpad keeper from a base revision that lacked Keeper.TotalLiabilities; the fix itself was already on main."
 assumption = "Keeper.TotalLiabilities is on main now, so the regression test is rerun from a fresh worktree before the issue is closed."
+
+[finding.3.1.16]
+revision = "00cdb1c98c7b4a32ce8e2c0d7e23c887f1bc1e02"
+command = "go test -p 2 ./modules/perps/keeper/ -run 'TestAdl'"
+exit = 1
+log = "fleet/logs/3.1.16-verify-1.log"
+observed = "The perps keeper package did not compile on the base revision (Keeper, ApplyFill, CoverDeficit and positions.go absent), so the three ADL golden cases never ran."
+assumption = "ApplyFill(ctx, Order, sizeBase, price, uint8) ([]EventRecord, error) and CoverDeficit(ctx, account) ([]EventRecord, error) are the prerequisite shapes; rerun after the keeper reconciliation pass."
+
+[finding.3.1.17]
+revision = "00cdb1c98c7b4a32ce8e2c0d7e23c887f1bc1e02"
+command = "go test -p 2 ./modules/perps/keeper/ -run 'TestQuotes'"
+exit = 1
+log = "fleet/logs/3.1.17-verify-1.log"
+observed = "Package compilation failed on the absent Keeper, Deposit, GetParams, GetMarket, RequireFresh, FeeTier, PlaceOrder, LiquidationPrice, ClosePosition, PartialClose and PricefeedKeeper.GetPrice."
+assumption = "MarketQuote also needs an oracle TWAP read that no contract declares; that interface is settled in the reconciliation pass before the rerun."
+
+[finding.3.1.18]
+revision = "00cdb1c98c7b4a32ce8e2c0d7e23c887f1bc1e02"
+command = "go test -p 2 ./modules/perps/keeper/ -run 'TestPause'"
+exit = 1
+log = "fleet/logs/3.1.18-verify-1.log"
+observed = "CheckPause and its exit-set test compile against the 3.1.1 Keeper, GetParams and setParams, which were absent on the base revision."
+assumption = "Rerun once the keeper package compiles on main."
+
+[finding.fix-core-gates]
+revision = "e3b755679f06f1e56378da82b97c6d8affddd8db"
+command = "make workspace-inventory-check"
+exit = 2
+log = "fleet/logs/fix-core-gates-verify-2.log"
+observed = "check-core-gates.sh now passes on its own; the make target still fails earlier in check-paxeer-manifests.sh (fixed by issue 597) and check-platform-dependencies.sh (manifest list differs from tools/workspace/platform-dependency-roots.txt at line 24)."
+assumption = "A separate fix lane corrects the platform dependency inventory, after which the make target is rerun once."
