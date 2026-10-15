@@ -6621,7 +6621,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.1.9]
 title = "Add the fee-right store keyed by collection and id"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["2.1.1"]
