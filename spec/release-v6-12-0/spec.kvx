@@ -21056,7 +21056,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.3]
 title = "Read quotes from Chainflow with the perpetuals precompile fallback"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.0.2"]
