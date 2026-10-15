@@ -21511,7 +21511,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.3.2]
 title = "Bound spot IOC and FOK orders by the limit price and read stable decimals from metadata"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["6.2.11", "6.2.12", "6.2.15"]
