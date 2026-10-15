@@ -1379,7 +1379,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.6]
 title = "Serve synthetic EndBlock and activation receipts through eth_getLogs, pax_getLogs, eth_getBlockReceipts, eth_getTransactionReceipt and the bloom"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["1.0.1"]
@@ -26797,7 +26797,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.5]
 title = "Migration runner and the delivery tables"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["7.0.4"]

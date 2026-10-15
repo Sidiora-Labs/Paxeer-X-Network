@@ -266,3 +266,38 @@ command = "go test ./modules/launchpad/keeper/testdata/v6120/record/... -run 'Te
 exit_code = 0
 log_path = "fleet/logs/fix-2.2.15-verify-1.log"
 observed_and_assumption = "The recorder now carries a caller plan for the permit, guardian, NFT and fee-claim trace families beside the swap paths, resolves overloaded methods by signature, and still refuses on supply mismatch; the permit traces use an unsigned permit and the legacy airdrop claim an empty proof because the tree holds no key or proof fixture, so those record the refusal path at the halt height. Assumption: the golden capture itself runs once an endpoint with the debug API at the halt height is approved."
+
+[fix.1.0.6]
+revision = "28e77d007554400af3635342232a1284b09a5699"
+command = "go test ./modules/evm/keeper/ ./rpc/ -run 'TestVenueSyntheticReceipt'"
+exit_code = 0
+log_path = "fleet/logs/fix-1.0.6-verify-1.log"
+observed_and_assumption = "GetEvmTxIndex now resolves the synthetic venue receipt index and log offset, so the six synthetic receipt tests pass. Assumption: the earlier failure came only from the unresolved index."
+
+[fix.2.3.1]
+revision = "0aa493de7390ce6ef7f434ba75a6db183a452c66"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --lib && cargo build --locked --manifest-path human/Cargo.toml -p layerx-intents --tests"
+exit_code = 101
+log_path = "fleet/logs/fix-agentd-verify-1.log"
+observed_and_assumption = "agentd reads requested_rung per the agent API contract and builds again; the api lib passes 14 tests and the remaining 18 errors are all in the intents router test that task 2.3.2 rewrites. Assumption: the 2.3.2 gate rerun on the merged revision settles both tasks."
+
+[fix.7.0.4]
+revision = "609507210f23758aea7958d2fe0a4903150ae513"
+command = "go test -count=1 ./platform/perps-data/migrations/ -run 'TestSchemaFiles' && PERPS_DATA_TEST_DATABASE_URL=<local throwaway cluster> go test -count=1 ./platform/perps-data/internal/store/ -run 'TestMigrate'"
+exit_code = 0
+log_path = "fleet/logs/fix-7.0.4-verify-2.log"
+observed_and_assumption = "Perps amounts are typed with uint256 and int256 domains so a fractional insert is refused by the domain check; both gates pass, which also covers the 7.0.5 migrate gate. Assumption: the req 7002.3 ac_3 wording numeric(78,0) is aligned to the domain by the spec correction lane."
+
+[finding.2.0.7]
+revision = "b820c4249"
+command = "go test ./modules/launchpad/legacy/v610/..."
+exit_code = 1
+log_path = "fleet/logs/fix-2.0.7-modules-legacy.log"
+observed_and_assumption = "TestAirdropHoldingHistory/refusals fails at history_test.go:206: the bank send refusal carries the live module ErrHoldingHistory while the legacy test targets the legacy sentinel, because the test app bank hooks reach the live keeper and the legacy codespace now differs. Assumption: the legacy harness must exercise the legacy keeper hook, or the copied test is wrong; the types package passes."
+
+[finding.2.1.2]
+revision = "ece483d6f874c8592ce0a3bd51654e3c3e6c6f55"
+command = "go test ./modules/launchpad/keeper/..."
+exit_code = 1
+log_path = "fleet/logs/fix-2.1.2-verify-1.log"
+observed_and_assumption = "Beyond the re-pinned swap vectors, keeper tests fail on treasury pins that assume a 100000000 creation fee while DefaultParams is 1000000 per req ac, and Market.validatePool refuses native markets the keeper itself writes with 'native market sets pool fields' (nil checks on cumulative volume Ints that a store round trip returns as zero), aborting TestSwapRejections in InitGenesis. Assumption: the pins follow the required default and the native check must accept zero-valued fields."
