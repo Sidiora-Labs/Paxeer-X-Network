@@ -16074,7 +16074,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.0.5]
 title = "Freeze the PECORVault ABI served at 0x1025 and its selector and topic golden fixture"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["4.0.1"]
