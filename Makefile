@@ -3141,7 +3141,7 @@ test-group-%:
 paxeer-build:
 	GOPROXY=off $(PAXEER_MAKE) build
 
-.PHONY: paxd-native-libs paxd-build test-lxphost paxd-version-check
+.PHONY: paxd-native-libs paxd-build test-lxphost test-paxd-domain paxd-version-check
 paxd-native-libs: $(LIBRARY) $(CHECKPOINT_SETTLEMENT_HEADER) programs-release-build
 
 paxd-build: paxd-native-libs
@@ -3150,6 +3150,10 @@ paxd-build: paxd-native-libs
 
 test-lxphost: paxd-native-libs
 	CGO_ENABLED=1 go test ./modules/lxphost/...
+
+test-paxd-domain: paxd-native-libs
+	$(MAKE) test-lxphost
+	CGO_ENABLED=1 go test ./node/... ./modules/layerxcustody/... ./modules/evm/keeper/... ./rpc/...
 
 paxd-version-check:
 	@want=$$(jq -er .version tools/release/version.json) && \
