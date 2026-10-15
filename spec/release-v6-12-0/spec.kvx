@@ -20835,7 +20835,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.0.2]
 title = "Generate the perpetuals precompile ABI with its tuples, enumerations and custom errors"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
