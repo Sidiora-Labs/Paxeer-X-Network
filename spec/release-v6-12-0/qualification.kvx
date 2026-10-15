@@ -1099,3 +1099,35 @@ exit = 1
 log = "fleet/logs/4.2.8-verify-1.log"
 observed = "errors.go packs every spot custom error and adds checkFeeCollector, but the test binary cannot build while the spot keeper does not compile."
 assumption = "The collectFees handlers of 4.2.2 through 4.2.4 call checkFeeCollector; rerun afterwards."
+
+[finding.3.2.6]
+revision = "44664a88d3a716654d431419b0733b1c3779257c"
+command = "go build ./precompiles/perps/..."
+exit = 1
+log = "fleet/logs/3.2.6-build-1.log"
+observed = "views.go registers the thirty view handlers against assumed exported keeper readers GetPosition, AccountPositions and AccountOpenOrders that the keeper keeps unexported, and the perps keeper does not compile; getOrder collateralAmount and getMarketConfig lotSize cannot reproduce the contract example values."
+assumption = "The perps reconciliation exports the three readers; the two example values need a ruling."
+
+[finding.2.2.19]
+revision = "f1d1796be"
+command = "go test ./precompiles/launchpad/... -run 'SurfaceParity|TestPayFirstSwapSweepsPool|...|TestNewMarketFeeRightAndLogs'"
+exit = 1
+log = "fleet/logs/2.2.19-verify-2.log"
+observed = "The ported and parity tests compile, but the test binary panics at init with launchpad: keepers do not provide the launchpad keeper (precompiles/launchpad/setup.go:22 through node/app.go:970), which stops every test binary that imports testutil/keeper; only the SidioraPool role handler is registered and poolSwap does not call the optical hooks."
+assumption = "The launchpad precompile reconciliation lane fixes the keeper provider and registers the role handlers; rerun afterwards."
+
+[finding.fix-spot-keeper]
+revision = "02db6f13c"
+command = "go vet ./modules/spot/keeper/ && go test ./modules/spot/keeper/ -count=1 -p 2"
+exit = 1
+log = "fleet/logs/fix-spot-keeper-verify-1.log"
+observed = "The spot keeper builds and vets clean after the reconciliation, but the test binary panics at init in precompiles/launchpad setup.go:22 before any spot test runs; the spot module is not wired into node/app.go and no governance path registers new tokens."
+assumption = "Rerun after the launchpad keeper provider fix; the wiring belongs to 1.3.100 and the token-listing path needs a ruling."
+
+[finding.fix-launchpad-keeper-tests]
+revision = "ffd101593faeac9237306169e9bd60681669d9b1"
+command = "go test ./modules/launchpad/keeper/ -count=1 -p 2"
+exit = 1
+log = "fleet/logs/fix-launchpad-keeper-tests-verify-1.log"
+observed = "The keeper test package type-checks clean, but the binary panics at init with launchpad: keepers do not provide the launchpad keeper."
+assumption = "Rerun after the launchpad keeper provider fix."
