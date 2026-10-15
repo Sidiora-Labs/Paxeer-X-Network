@@ -16156,7 +16156,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1.2]
 title = "Add the spot order records, the ABI custom error values and the genesis state"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
