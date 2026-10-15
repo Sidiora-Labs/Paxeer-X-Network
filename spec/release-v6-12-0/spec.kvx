@@ -1435,7 +1435,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.2.2]
 title = "Add the giga fail-fast set that covers 0x1020-0x1025"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["1.0.1"]
