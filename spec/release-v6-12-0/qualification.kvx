@@ -1643,3 +1643,19 @@ exit = 1
 log = fleet/logs/fix-launchpad-quotedenom-verify-1.log
 observed = Vet and the types package pass; the keeper test binary panics at init because the node precompile keepers do not provide the launchpad v6.10 keeper.
 assumption = The keeper gate reruns after the launchpad test lane that adds that keeper method lands.
+
+[finding.fix-rehearsal-merge]
+revision = b4f2d63c375781298322bf9e12103b7348107575
+command = python3 tools/release/tests/test_programme.py && bash tools/release/tests/rehearse.test.sh
+exit = 1
+log = fleet/logs/fix-rehearsal-merge-verify-1.log
+observed = The programme suite passes 19 of 19; the rehearsal runner passes its unit case and fails thirteen cases that need the fleet check helper, a rehearsal environment over a stopped node copy and a local fixture chain that reaches height 8.
+assumption = The rehearsal gate runs on the rehearsal fleet once the release build and the halt export exist.
+
+[finding.contract-pool-parity]
+revision = b4f2d63c375781298322bf9e12103b7348107575
+command = bash tools/release/tests/rehearse.test.sh
+exit = 1
+log = fleet/logs/fix-rehearsal-merge-verify-1.log
+observed = The release contract's rehearsal item 7 requires pool reserves equal to getReserves at the halt height while the launchpad contract section 8 caps real reserves at the held balance; the tooling follows the launchpad contract.
+assumption = The release contract text is aligned to the launchpad contract by a contract ruling.
