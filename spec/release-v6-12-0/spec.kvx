@@ -7718,7 +7718,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.8]
 title = "Bind the generation 2 roles and the precompile in the chain client"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = []
