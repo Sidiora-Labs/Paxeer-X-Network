@@ -342,7 +342,7 @@ func writeAccounting(ctx sdk.Context, k *Keeper, pools []v6120Pool, accounting m
 // readParams sets the parameters read from the generation 2 ProtocolConfig
 // and records every generation 1 field that differs.
 func readParams(ctx sdk.Context, k *Keeper, evm EVMReader) error {
-	params, diffs, err := ParamsFromProtocolConfig(ctx, evm, k.GetParams(ctx).QuoteDenom)
+	params, diffs, err := ParamsFromProtocolConfig(ctx, evm)
 	if err != nil {
 		return err
 	}

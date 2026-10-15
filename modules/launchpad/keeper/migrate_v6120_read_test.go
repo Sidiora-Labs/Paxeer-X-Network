@@ -70,9 +70,9 @@ func TestParamsFromProtocolConfig(t *testing.T) {
 	set(generation1, values)
 	set(generation1, map[int64]common.Hash{6: word(150), 11: word(2_000_000)})
 
-	params, diffs, err := keeper.ParamsFromProtocolConfig(e.ctx, evm, "uusdl")
+	params, diffs, err := keeper.ParamsFromProtocolConfig(e.ctx, evm)
 	require.NoError(t, err)
-	require.Equal(t, types.Params{QuoteDenom: "uusdl", VirtualQuoteDefault: sdk.NewIntFromBigInt(virtualQuote),
+	require.Equal(t, types.Params{VirtualQuoteDefault: sdk.NewIntFromBigInt(virtualQuote),
 		VirtualTokenDefault: sdk.NewIntFromBigInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(27), nil)),
 		MinFeeBps:           30, MaxFeeBps: 300, BaseFeeBps: 100, ProtocolFeeBps: 2000, FeeDecayRate: 500,
 		VolatilityWeight: 1000, ConcentrationWeight: 0, CreationFee: sdk.NewInt(1_000_000),
@@ -83,7 +83,7 @@ func TestParamsFromProtocolConfig(t *testing.T) {
 	}, diffs)
 
 	set(generation2, map[int64]common.Hash{10: word(1)})
-	_, _, err = keeper.ParamsFromProtocolConfig(e.ctx, evm, "uusdl")
+	_, _, err = keeper.ParamsFromProtocolConfig(e.ctx, evm)
 	require.ErrorIs(t, err, types.ErrInvalidParams)
 	require.ErrorContains(t, err, "concentration weight must be 0")
 }

@@ -443,7 +443,7 @@ func (k *Keeper) ExecuteBurn(ctx sdk.Context, caller sdk.AccAddress, denom strin
 
 // ExecuteAirdrop is FeesRouter.executeAirdrop: the AIRDROP strategy opens a
 // new epoch holding the accumulated fees for token holders to claim. The
-// epoch's holder history, supply and payout denomination are fixed in the
+// epoch's holder history, supply and payout token are fixed in the
 // same write set, so later mints, burns and transfers cannot change it.
 func (k *Keeper) ExecuteAirdrop(ctx sdk.Context, caller sdk.AccAddress, denom string) (sdk.Int, error) {
 	market, err := k.requireFeeRightsHolder(ctx, caller, denom, types.FeeStrategyAirdrop)
@@ -467,7 +467,7 @@ func (k *Keeper) ExecuteAirdrop(ctx sdk.Context, caller sdk.AccAddress, denom st
 		return sdk.Int{}, err
 	}
 	k.setAirdropBasis(cacheCtx, types.AirdropEpochBasis{Denom: denom, Epoch: market.AirdropEpoch, Supply: supply,
-		PayoutDenom: types.DefaultQuoteDenom, Height: ctx.BlockHeight(), Paid: sdk.ZeroInt()})
+		PayoutToken: k.quoteToken(ctx).Hex(), Height: ctx.BlockHeight(), Paid: sdk.ZeroInt()})
 	write()
 	ctx.EventManager().EmitEvent(sdk.NewEvent(types.EventTypeAirdropTriggered,
 		sdk.NewAttribute(types.AttributeKeyDenom, denom),

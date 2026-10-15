@@ -218,7 +218,7 @@ func TestV640ToV66UpgradeServesTheExchangeBridgeAndLaunchpadPrecompiles(t *testi
 	require.Empty(t, a.LayerXBridgeKeeper.GetAttestorSet(ctx).Attestors)
 	require.Empty(t, a.LayerXBridgeKeeper.GetCaps(ctx))
 	launchpadParams := a.LaunchpadKeeper.GetParams(ctx)
-	require.Equal(t, launchpadtypes.DefaultParams().QuoteDenom, launchpadParams.QuoteDenom)
+	require.Equal(t, launchpadtypes.DefaultParams().QuoteToken, launchpadParams.QuoteToken)
 	require.True(t, launchpadtypes.DefaultParams().CreationFee.Equal(launchpadParams.CreationFee))
 
 	caller := a.AccountKeeper.GetModuleAddress(evmtypes.ModuleName)

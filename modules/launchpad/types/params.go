@@ -21,11 +21,9 @@ const MaxFeeWeight = 10_000
 var maxUint112 = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 112), big.NewInt(1))
 
 // Params are KindleLaunch's ProtocolConfig fields. QuoteToken is the USDL
-// ERC20 contract address; QuoteDenom is the bank denom that played USDL.
-// Params change only through UpdateParams, which accepts the governance module
+// ERC20 contract address. Params change only through UpdateParams, which accepts the governance module
 // account alone.
 type Params struct {
-	QuoteDenom          string  `json:"quote_denom"`
 	VirtualQuoteDefault sdk.Int `json:"virtual_quote_default"`
 	VirtualTokenDefault sdk.Int `json:"virtual_token_default"`
 	MinFeeBps           uint64  `json:"min_fee_bps"`
@@ -39,16 +37,12 @@ type Params struct {
 	QuoteToken          string  `json:"quote_token"`
 }
 
-// DefaultQuoteDenom is the bank base denom of USDL on Paxeer.
-const DefaultQuoteDenom = "uusdl"
-
 // DefaultQuoteToken is the USDL ERC20 contract address.
 const DefaultQuoteToken = "0x85FcD13735F4309833A503EE804ea32395851479"
 
 // DefaultParams are ProtocolConfig.initialize's values.
 func DefaultParams() Params {
 	return Params{
-		QuoteDenom:          DefaultQuoteDenom,
 		VirtualQuoteDefault: sdk.NewInt(10_000_000_000),
 		VirtualTokenDefault: sdk.NewInt(1_000_000_000_000_000),
 		MinFeeBps:           10,
@@ -64,9 +58,6 @@ func DefaultParams() Params {
 }
 
 func (p Params) Validate() error {
-	if err := sdk.ValidateDenom(p.QuoteDenom); err != nil {
-		return fmt.Errorf("%w: quote denom: %v", ErrInvalidParams, err)
-	}
 	if len(p.QuoteToken) != 42 || !strings.HasPrefix(p.QuoteToken, "0x") || !common.IsHexAddress(p.QuoteToken) {
 		return fmt.Errorf("%w: quote token %q is not a 0x-prefixed 20-byte hex address", ErrInvalidParams, p.QuoteToken)
 	}

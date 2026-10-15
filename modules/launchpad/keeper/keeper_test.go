@@ -1253,7 +1253,7 @@ func TestAirdropEntitlements(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, found)
 		require.Equal(t, supply, basis.Supply)
-		require.Equal(t, h.k.GetParams(h.ctx).QuoteDenom, basis.PayoutDenom)
+		require.Equal(t, common.HexToAddress(h.k.GetParams(h.ctx).QuoteToken).Hex(), basis.PayoutToken)
 		require.Equal(t, h.ctx.BlockHeight(), basis.Height)
 		require.True(t, basis.Paid.IsZero())
 		funded := h.k.GetAirdropEpochAmount(h.ctx, h.denom, epoch)

@@ -14,6 +14,7 @@ import (
 
 	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	typesv610 "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/legacy/v610/types"
 	launchpadtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	bridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
 	layerxgovtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxgov/types"
@@ -244,8 +245,8 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 		_, err := msgRouter.Handler(&launchpadtypes.MsgUpdateParams{})(ctx, &launchpadtypes.MsgUpdateParams{Authority: ordinary, Params: updated})
 		require.ErrorIs(t, err, launchpadtypes.ErrUnauthorized)
 
-		// Invalid fee, cap, denom and quote token combinations from the
-		// governance authority.
+		// Invalid fee, cap and quote token combinations from the governance
+		// authority.
 		invalid := []func(*launchpadtypes.Params){
 			func(p *launchpadtypes.Params) { p.MinFeeBps, p.MaxFeeBps = 301, 300 },
 			func(p *launchpadtypes.Params) { p.BaseFeeBps = p.MaxFeeBps + 1 },
@@ -253,7 +254,7 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 			func(p *launchpadtypes.Params) { p.ProtocolFeeBps = launchpadtypes.MaxProtocolFeeBps + 1 },
 			func(p *launchpadtypes.Params) { p.CreationFee = sdk.NewInt(-1) },
 			func(p *launchpadtypes.Params) { p.VirtualQuoteDefault = sdk.ZeroInt() },
-			func(p *launchpadtypes.Params) { p.QuoteDenom = "1!bad" },
+			func(p *launchpadtypes.Params) { p.QuoteToken = launchpadtypes.DefaultQuoteToken[:41] },
 			func(p *launchpadtypes.Params) { p.QuoteToken = common.Address{}.Hex() },
 			func(p *launchpadtypes.Params) { p.QuoteToken = "1!bad" },
 		}
@@ -270,7 +271,7 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 		}
 
 		// Unregistered message: not a governance message, refused before dispatch.
-		send := &banktypes.MsgSend{FromAddress: authority, ToAddress: ordinary, Amount: sdk.NewCoins(sdk.NewInt64Coin(launchpadtypes.DefaultQuoteDenom, 1))}
+		send := &banktypes.MsgSend{FromAddress: authority, ToAddress: ordinary, Amount: sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseCoinUnit, 1))}
 		_, err = layerxgovtypes.NewLayerXProposal("Unregistered", "Bank send", send)
 		require.Error(t, err)
 		require.Error(t, handler(ctx, rawLayerXProposal(t, &launchpadtypes.MsgUpdateParams{Authority: authority, Params: updated}, send)))
@@ -315,12 +316,17 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 		require.Equal(t, updated, a.LaunchpadKeeper.GetParams(ctx))
 		exported := a.LaunchpadKeeper.ExportGenesis(ctx)
 		require.Equal(t, updated, exported.Params)
-		// The v6.10 upgrade handler sets QuoteDenom through UpdateParams with
-		// Keeper.Authority(); that call stays valid on governed parameters.
+		// The v6.10 upgrade handler sets the typesv610.Params quote denom
+		// through the v6.10 keeper's UpdateParams with its Authority(), the
+		// governance authority; on a branch that write leaves the governed
+		// parameters as they are.
+		legacy := a.LaunchpadV610Keeper()
+		require.Equal(t, a.LaunchpadKeeper.Authority(), legacy.Authority())
 		upgrade, _ := ctx.CacheContext()
-		v610 := a.LaunchpadKeeper.GetParams(upgrade)
+		v610 := typesv610.DefaultParams()
 		v610.QuoteDenom = appparams.BaseCoinUnit
-		require.NoError(t, a.LaunchpadKeeper.UpdateParams(upgrade, a.LaunchpadKeeper.Authority(), v610))
+		require.NoError(t, legacy.UpdateParams(upgrade, legacy.Authority(), v610))
+		require.Equal(t, v610, legacy.GetParams(upgrade))
 		require.Equal(t, updated, a.LaunchpadKeeper.GetParams(ctx))
 	})
 	height := a.LastBlockHeight()
