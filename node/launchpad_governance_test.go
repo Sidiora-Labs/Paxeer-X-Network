@@ -3,8 +3,11 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"math/big"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"testing"
 	"time"
@@ -20,6 +23,9 @@ import (
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
 )
@@ -50,12 +56,110 @@ func launchpadGovBlock(t *testing.T, a *App, at time.Time, body func(sdk.Context
 	require.NoError(t, err)
 }
 
-func launchpadGovFund(t *testing.T, a *App, ctx sdk.Context, name string, amount int64) sdk.AccAddress {
-	acc := sdk.AccAddress(authtypes.NewModuleAddress(name))
-	coins := sdk.NewCoins(sdk.NewCoin(launchpadtypes.DefaultQuoteDenom, sdk.NewInt(amount)))
-	require.NoError(t, a.BankKeeper.MintCoins(ctx, "evm", coins))
-	require.NoError(t, a.BankKeeper.SendCoinsFromModuleToAccount(ctx, "evm", acc, coins))
-	return acc
+// launchpadUSDLSupply is the USDL supply launchpadDeployUSDL mints to
+// launchpadUSDLReserve.
+const launchpadUSDLSupply int64 = 1_000_000_000_000_000
+
+var launchpadUSDLReserve = common.BytesToAddress(crypto.Keccak256([]byte("launchpad usdl reserve"))[12:])
+
+// launchpadDeployUSDL deploys a USDL ERC20 from the SidioraERC20 creation code
+// the launchpad keeper deploys pool tokens with, its whole supply at
+// launchpadUSDLReserve, and names it in Params.QuoteToken through the
+// governance authority.
+func launchpadDeployUSDL(t *testing.T, a *App, ctx sdk.Context) common.Address {
+	t.Helper()
+	source, err := os.ReadFile(filepath.Join("..", "modules", "launchpad", "keeper", "market.go"))
+	require.NoError(t, err)
+	match := regexp.MustCompile(`var sidioraERC20Creation = common\.FromHex\("(0x[0-9a-f]+)"\)`).FindSubmatch(source)
+	require.Len(t, match, 2)
+	stringType, err := abi.NewType("string", "", nil)
+	require.NoError(t, err)
+	uintType, err := abi.NewType("uint256", "", nil)
+	require.NoError(t, err)
+	addressType, err := abi.NewType("address", "", nil)
+	require.NoError(t, err)
+	args, err := abi.Arguments{{Type: stringType}, {Type: stringType}, {Type: uintType}, {Type: addressType}}.
+		Pack("USD Ledger", "USDL", big.NewInt(launchpadUSDLSupply), launchpadUSDLReserve)
+	require.NoError(t, err)
+	deployer := common.BytesToAddress(crypto.Keccak256([]byte("launchpad usdl deployer"))[12:])
+	nonce := a.EvmKeeper.GetNonce(ctx, deployer)
+	_, err = a.EvmKeeper.CallEVM(ctx, deployer, nil, nil, append(common.FromHex(string(match[1])), args...))
+	require.NoError(t, err)
+	usdl := crypto.CreateAddress(deployer, nonce)
+	require.NotEmpty(t, a.EvmKeeper.GetCode(ctx, usdl))
+	params := a.LaunchpadKeeper.GetParams(ctx)
+	params.QuoteToken = usdl.Hex()
+	require.NoError(t, a.LaunchpadKeeper.UpdateParams(ctx, a.LaunchpadKeeper.Authority(), params))
+	return usdl
+}
+
+func launchpadWord(value *big.Int) []byte { return common.LeftPadBytes(value.Bytes(), 32) }
+
+func launchpadCalldata(signature string, words ...[]byte) []byte {
+	input := crypto.Keccak256([]byte(signature))[:4]
+	for _, word := range words {
+		input = append(input, word...)
+	}
+	return input
+}
+
+// launchpadERC20Send calls a state-changing ERC20 method of token from from
+// and requires it to return true.
+func launchpadERC20Send(t *testing.T, a *App, ctx sdk.Context, token, from common.Address, signature string,
+	words ...[]byte) {
+	t.Helper()
+	ret, err := a.EvmKeeper.CallEVM(ctx, from, &token, nil, launchpadCalldata(signature, words...))
+	require.NoError(t, err)
+	require.Equal(t, launchpadWord(big.NewInt(1)), ret)
+}
+
+// launchpadERC20Balance is token.balanceOf(holder).
+func launchpadERC20Balance(t *testing.T, a *App, ctx sdk.Context, token, holder common.Address) sdk.Int {
+	t.Helper()
+	ret, err := a.EvmKeeper.StaticCallEVM(ctx, a.LaunchpadKeeper.ModuleAddress(), &token,
+		launchpadCalldata("balanceOf(address)", common.LeftPadBytes(holder.Bytes(), 32)))
+	require.NoError(t, err)
+	require.Len(t, ret, 32)
+	return sdk.NewIntFromBigInt(new(big.Int).SetBytes(ret))
+}
+
+// launchpadUSDLBalance is the Params.QuoteToken USDL balance of holder.
+func launchpadUSDLBalance(t *testing.T, a *App, ctx sdk.Context, holder common.Address) sdk.Int {
+	t.Helper()
+	return launchpadERC20Balance(t, a, ctx, common.HexToAddress(a.LaunchpadKeeper.GetParams(ctx).QuoteToken), holder)
+}
+
+// launchpadUSDLFund sends amount Params.QuoteToken USDL from the reserve to
+// holder and grants the launchpad an unlimited allowance of it, the approval
+// USDL.transferFrom of the creation fee spends.
+func launchpadUSDLFund(t *testing.T, a *App, ctx sdk.Context, holder common.Address, amount int64) {
+	t.Helper()
+	usdl := common.HexToAddress(a.LaunchpadKeeper.GetParams(ctx).QuoteToken)
+	before := launchpadUSDLBalance(t, a, ctx, holder)
+	launchpadERC20Send(t, a, ctx, usdl, launchpadUSDLReserve, "transfer(address,uint256)",
+		common.LeftPadBytes(holder.Bytes(), 32), launchpadWord(big.NewInt(amount)))
+	launchpadERC20Send(t, a, ctx, usdl, holder, "approve(address,uint256)",
+		common.LeftPadBytes(common.HexToAddress(launchpadtypes.LaunchpadAddress).Bytes(), 32),
+		launchpadWord(launchpadtypes.MaxUint256()))
+	require.Equal(t, before.Add(sdk.NewInt(amount)), launchpadUSDLBalance(t, a, ctx, holder))
+}
+
+// launchpadGovFund is the EVM address named name, funded with amount USDL.
+func launchpadGovFund(t *testing.T, a *App, ctx sdk.Context, name string, amount int64) common.Address {
+	holder := common.BytesToAddress(authtypes.NewModuleAddress(name))
+	launchpadUSDLFund(t, a, ctx, holder, amount)
+	return holder
+}
+
+// launchpadCreateMarket is Router.createMarket for creator without an optical,
+// run through the module caller outside an EVM run.
+func launchpadCreateMarket(t *testing.T, a *App, ctx sdk.Context, creator common.Address, name, symbol string,
+	strategy launchpadtypes.FeeStrategy) launchpadtypes.Market {
+	t.Helper()
+	_, market, err := a.LaunchpadKeeper.CreateMarket(ctx, a.LaunchpadKeeper.ModuleCaller(), nil, creator, name, symbol,
+		strategy, common.Address{})
+	require.NoError(t, err)
+	return market
 }
 
 func rawLayerXProposal(t *testing.T, msgs ...sdk.Msg) *layerxgovtypes.LayerXProposal {
@@ -86,13 +190,18 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 	authority := layerxgovtypes.GovernanceAuthority()
 	require.Equal(t, authority, a.LaunchpadKeeper.Authority())
 	var market launchpadtypes.Market
+	var usdl common.Address
 	launchpadGovBlock(t, a, start, func(ctx sdk.Context) {
+		usdl = launchpadDeployUSDL(t, a, ctx)
 		creator := launchpadGovFund(t, a, ctx, "launchpad-gov-creator", 1_000_000_000)
-		market, err = a.LaunchpadKeeper.CreateMarket(ctx, nil, creator, "Governed Token", "GOVT", launchpadtypes.FeeStrategyBurn)
-		require.NoError(t, err)
+		market = launchpadCreateMarket(t, a, ctx, creator, "Governed Token", "GOVT", launchpadtypes.FeeStrategyBurn)
+		require.Equal(t, sdk.NewInt(1_000_000_000).Sub(launchpadtypes.DefaultParams().CreationFee),
+			launchpadUSDLBalance(t, a, ctx, creator))
 	})
 
-	updated := launchpadtypes.DefaultParams()
+	deployed := launchpadtypes.DefaultParams()
+	deployed.QuoteToken = usdl.Hex()
+	updated := deployed
 	updated.CreationFee = sdk.NewInt(250_000_000)
 	updated.VirtualQuoteDefault = sdk.NewInt(20_000_000_000)
 	updated.ProtocolFeeBps = 2_000
@@ -101,7 +210,7 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 
 	launchpadGovBlock(t, a, start.Add(time.Minute), func(ctx sdk.Context) {
 		before := a.LaunchpadKeeper.GetParams(ctx)
-		require.Equal(t, launchpadtypes.DefaultParams(), before)
+		require.Equal(t, deployed, before)
 		router := a.GovKeeper.Router()
 		require.True(t, router.HasRoute(layerxgovtypes.RouterKey))
 		handler := router.GetRoute(layerxgovtypes.RouterKey)
@@ -135,7 +244,8 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 		_, err := msgRouter.Handler(&launchpadtypes.MsgUpdateParams{})(ctx, &launchpadtypes.MsgUpdateParams{Authority: ordinary, Params: updated})
 		require.ErrorIs(t, err, launchpadtypes.ErrUnauthorized)
 
-		// Invalid fee, cap and denom combinations from the governance authority.
+		// Invalid fee, cap, denom and quote token combinations from the
+		// governance authority.
 		invalid := []func(*launchpadtypes.Params){
 			func(p *launchpadtypes.Params) { p.MinFeeBps, p.MaxFeeBps = 301, 300 },
 			func(p *launchpadtypes.Params) { p.BaseFeeBps = p.MaxFeeBps + 1 },
@@ -144,6 +254,8 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 			func(p *launchpadtypes.Params) { p.CreationFee = sdk.NewInt(-1) },
 			func(p *launchpadtypes.Params) { p.VirtualQuoteDefault = sdk.ZeroInt() },
 			func(p *launchpadtypes.Params) { p.QuoteDenom = "1!bad" },
+			func(p *launchpadtypes.Params) { p.QuoteToken = common.Address{}.Hex() },
+			func(p *launchpadtypes.Params) { p.QuoteToken = "1!bad" },
 		}
 		for _, mutate := range invalid {
 			params := updated
@@ -254,10 +366,9 @@ func TestLaunchpadGovernanceReopenedProcess(t *testing.T) {
 		require.True(t, found)
 		require.Equal(t, market, got)
 		creator := launchpadGovFund(t, a, ctx, "launchpad-gov-reopened-creator", 1_000_000_000)
-		balance := a.BankKeeper.GetBalance(ctx, creator, want.QuoteDenom).Amount
-		created, err := a.LaunchpadKeeper.CreateMarket(ctx, nil, creator, "Reopened Token", "REOP", launchpadtypes.FeeStrategyBurn)
-		require.NoError(t, err)
-		require.Equal(t, want.CreationFee, balance.Sub(a.BankKeeper.GetBalance(ctx, creator, want.QuoteDenom).Amount))
+		balance := launchpadUSDLBalance(t, a, ctx, creator)
+		created := launchpadCreateMarket(t, a, ctx, creator, "Reopened Token", "REOP", launchpadtypes.FeeStrategyBurn)
+		require.Equal(t, want.CreationFee, balance.Sub(launchpadUSDLBalance(t, a, ctx, creator)))
 		require.Equal(t, want.VirtualQuoteDefault, created.VirtualQuoteReserve)
 		require.Equal(t, uint64(2), a.LaunchpadKeeper.GetMarketCount(ctx))
 	})
