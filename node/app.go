@@ -486,6 +486,9 @@ type App struct {
 	// is live in state.
 	customPrecompiles map[common.Address]putils.VersionedPrecompiles
 
+	// v6120HookTable is the ordered hook table the v6.12.0 plan runs.
+	v6120HookTable []v6120Hook
+
 	BeginBlockKeepers legacyabci.BeginBlockKeepers
 	EndBlockKeepers   legacyabci.EndBlockKeepers
 	CheckTxKeepers    legacyabci.CheckTxKeepers

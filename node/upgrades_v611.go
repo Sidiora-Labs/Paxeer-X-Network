@@ -10,18 +10,16 @@ import (
 	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
 	tokenfactorytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
-	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-// sidHoldersJSON is the SID holder snapshot the v6.11 plan migrates.
+// sidHoldersJSON is the SID holder snapshot the v6.12.0 plan migrates.
 //
 //go:embed testdata/sid-holders.json
 var sidHoldersJSON []byte
 
-// SidioraProxyAddress is the SID ERC-20 proxy whose legacy balances the v6.11
+// SidioraProxyAddress is the SID ERC-20 proxy whose legacy balances the v6.12.0
 // plan moves into the usid bank denom.
 var SidioraProxyAddress = common.HexToAddress("0x21f7b20a555199fa73A238B1a91FD0f549068fEe")
 
@@ -31,7 +29,7 @@ var SidioraProxyAddress = common.HexToAddress("0x21f7b20a555199fa73A238B1a91FD0f
 var sidLegacyERC20Location = erc7201Location("openzeppelin.storage.ERC20")
 
 // sidLegacyMigrationLocation is the ERC-7201 location, in the SID proxy's
-// storage, of the record the v6.11 plan leaves: the height it migrated at in
+// storage, of the record the v6.12.0 plan leaves: the height it migrated at in
 // +0 and the legacy supply it could not attribute to any listed holder in +1,
 // which the contract's migrateLegacy path may claim later.
 var sidLegacyMigrationLocation = erc7201Location("paxeer.storage.SidioraLegacyMigration")
@@ -90,23 +88,6 @@ func parseSIDHolders(raw []byte) ([]common.Address, []sdk.Int, error) {
 		balances = append(balances, balance)
 	}
 	return addresses, balances, nil
-}
-
-// runV611Upgrade runs the module migrations, moves the usid mint authority to
-// the bridge module account and migrates the legacy SID ERC-20 balances of the
-// embedded holder list into usid.
-func (app *App) runV611Upgrade(ctx sdk.Context, _ upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
-	newVM, err := app.mm.RunMigrations(ctx, app.configurator, fromVM)
-	if err != nil {
-		return newVM, err
-	}
-	if err := app.moveSidioraMintAuthority(ctx); err != nil {
-		return newVM, fmt.Errorf("upgrade %s: %w", V611Upgrade, err)
-	}
-	if err := app.migrateSIDHolders(ctx, sidHoldersJSON); err != nil {
-		return newVM, fmt.Errorf("upgrade %s: %w", V611Upgrade, err)
-	}
-	return newVM, nil
 }
 
 // moveSidioraMintAuthority makes the bridge module account the only admin of

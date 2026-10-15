@@ -101,16 +101,6 @@ const ActivationUpgrade = "v6.9"
 // and, like the activation plan, carries no entry in the embedded tag list.
 const V610Upgrade = "v6.10"
 
-// V611Upgrade is the plan from whose height the chain executes the custody
-// module's governance proposal, CustodyProposal, through the proposal handler
-// on the governance router, so a passed proposal can set the custody asset map
-// and parameters, the deposit root authority among them. It runs the module
-// migrations, moves the usid mint authority to the bridge module account and
-// migrates the legacy SID ERC-20 balances of the embedded holder snapshot into
-// usid. It adds, deletes and renames no store and carries no entry in the
-// embedded tag list.
-const V611Upgrade = layerxcustodytypes.GovernanceActivationUpgrade
-
 // MergeUpgrade is the plan that merges the LayerX kernel into the chain at the
 // sequencer activation height: from its height on the chain serves the ledger,
 // pay, auth and programs precompiles and the eight agent-function precompiles.
@@ -201,9 +191,9 @@ func (app *App) RegisterUpgradeHandlers() {
 	// The v6.10 plan is registered the same way, beside the activation plan and
 	// the handlers the tag list registers.
 	app.UpgradeKeeper.SetUpgradeHandler(V610Upgrade, app.runV610Upgrade)
-	// The v6.11 plan gates the custody proposal content and its messages and
-	// migrates the legacy SID ERC-20 balances into usid.
-	app.UpgradeKeeper.SetUpgradeHandler(V611Upgrade, app.runV611Upgrade)
+	// The v6.12.0 plan gates the custody proposal content and its messages,
+	// migrates the legacy SID ERC-20 balances into usid and runs the venue hooks.
+	app.UpgradeKeeper.SetUpgradeHandler(V6120Upgrade, app.runV6120Upgrade)
 	// The merge plan brings the sequencer module up from the genesis its plan
 	// carries.
 	app.UpgradeKeeper.SetUpgradeHandler(MergeUpgrade, app.mergeUpgradePlan)
@@ -530,7 +520,7 @@ func mergePrecompileGate() evmkeeper.CustomPrecompileActivation {
 // knownUpgradePlans names, in the order they apply, the plans the application
 // applies from the upgrade info file an operator leaves on disk.
 func knownUpgradePlans() []string {
-	return []string{ActivationUpgrade, V610Upgrade, V611Upgrade, MergeUpgrade}
+	return []string{ActivationUpgrade, V610Upgrade, V6120Upgrade, MergeUpgrade}
 }
 
 // upgradePlanPending reports whether the named plan is one of those the
