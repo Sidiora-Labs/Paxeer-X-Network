@@ -118,10 +118,7 @@ func handleAddCollateral(p PrecompileExecutor, ctx sdk.Context, method *abi.Meth
 	if err != nil {
 		return nil, err
 	}
-	if err := p.depositLeg(ctx, evm, caller, params.CollateralToken, amount); err != nil {
-		return nil, err
-	}
-	records, err := p.keeper.Deposit(ctx, caller, amount)
+	records, err := p.depositLeg(ctx, evm, caller, params.CollateralToken, amount.ToBig())
 	if err != nil {
 		return nil, fmt.Errorf("position %s: %w", positionID.Dec(), err)
 	}
@@ -140,12 +137,9 @@ func handleRemoveCollateral(p PrecompileExecutor, ctx sdk.Context, method *abi.M
 	if err != nil {
 		return nil, err
 	}
-	records, err := p.keeper.Withdraw(ctx, caller, amount)
+	records, err := p.withdrawalLeg(ctx, evm, caller, amount)
 	if err != nil {
 		return nil, fmt.Errorf("position %s: %w", positionID.Dec(), err)
-	}
-	if err := p.withdrawalLeg(ctx, evm, caller, amount); err != nil {
-		return nil, err
 	}
 	if err := p.emitPositionRecords(evm, records); err != nil {
 		return nil, err
@@ -271,16 +265,14 @@ func (p PrecompileExecutor) compatibilityOpen(ctx sdk.Context, evm *vm.EVM, call
 	if amount.IsZero() {
 		return perpskeeper.PlaceResult{}, fmt.Errorf("%w: collateral", types.ErrZeroAmount)
 	}
-	if err := p.depositLeg(ctx, evm, caller, token, amount); err != nil {
-		return perpskeeper.PlaceResult{}, err
-	}
-	records, err := p.keeper.Deposit(ctx, caller, amount)
+	records, err := p.depositLeg(ctx, evm, caller, token, amount.ToBig())
 	if err != nil {
 		return perpskeeper.PlaceResult{}, err
 	}
 	if err := p.emitPositionRecords(evm, records); err != nil {
 		return perpskeeper.PlaceResult{}, err
 	}
+	ctx = accountResume(ctx, evm)
 	sizeUsd, err := p.compatibilitySize(ctx, caller, marketID, isLong, amount, leverage)
 	if err != nil {
 		return perpskeeper.PlaceResult{}, err

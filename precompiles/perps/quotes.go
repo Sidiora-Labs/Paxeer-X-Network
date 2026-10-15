@@ -20,46 +20,6 @@ func init() {
 	handlers["quotePartialClose"] = quotePartialClose
 }
 
-// marketQuoteTuple is the MarketQuote tuple of Hyperpax:src/hooks/perps/useQuoter.ts:30-42.
-type marketQuoteTuple struct {
-	IndexPrice           *big.Int
-	MarkPrice            *big.Int
-	OracleTWAP           *big.Int
-	FundingRatePerSecond *big.Int
-	FundingRate24h       *big.Int
-	LongOI               *big.Int
-	ShortOI              *big.Int
-	MaxLeverage          *big.Int
-	MaintenanceMarginBps *big.Int
-	Enabled              bool
-	PriceStale           bool
-}
-
-// openPositionQuoteTuple is the OpenPositionQuote tuple of Hyperpax:src/hooks/perps/useQuoter.ts:7-18.
-type openPositionQuoteTuple struct {
-	EntryPrice           *big.Int
-	SizeUsd              *big.Int
-	CollateralUsd        *big.Int
-	Leverage             *big.Int
-	TradingFee           *big.Int
-	TradingFeeUsd        *big.Int
-	PriceImpact          *big.Int
-	LiquidationPrice     *big.Int
-	EstimatedFunding24h  *big.Int
-	MaintenanceMarginBps *big.Int
-}
-
-// closePositionQuoteTuple is the ClosePositionQuote tuple of Hyperpax:src/hooks/perps/useQuoter.ts:20-28.
-type closePositionQuoteTuple struct {
-	ExitPrice       *big.Int
-	UnrealizedPnl   *big.Int
-	TradingFee      *big.Int
-	TradingFeeUsd   *big.Int
-	FundingOwed     *big.Int
-	NetPnl          *big.Int
-	EstimatedPayout *big.Int
-}
-
 // quoteMarket serves quoteMarket(uint256 marketId), the call of
 // Hyperpax:src/hooks/perps/useQuoter.ts:119; priceStale reports a pricefeed
 // price that is not fresh instead of reverting.
@@ -76,19 +36,7 @@ func quoteMarket(p PrecompileExecutor, ctx sdk.Context, method *abi.Method, _ co
 	if err != nil {
 		return nil, err
 	}
-	return method.Outputs.Pack(marketQuoteTuple{
-		IndexPrice:           quote.IndexPrice.ToBig(),
-		MarkPrice:            quote.MarkPrice.ToBig(),
-		OracleTWAP:           quote.OracleTWAP.ToBig(),
-		FundingRatePerSecond: new(big.Int).Set(quote.FundingRatePerSecond),
-		FundingRate24h:       new(big.Int).Set(quote.FundingRate24h),
-		LongOI:               quote.LongOI.ToBig(),
-		ShortOI:              quote.ShortOI.ToBig(),
-		MaxLeverage:          new(big.Int).SetUint64(quote.MaxLeverage),
-		MaintenanceMarginBps: new(big.Int).SetUint64(quote.MaintenanceMarginBps),
-		Enabled:              quote.Enabled,
-		PriceStale:           quote.PriceStale,
-	})
+	return method.Outputs.Pack(quote)
 }
 
 // quoteOpenPosition serves quoteOpenPosition(uint256 marketId, address
@@ -128,22 +76,11 @@ func quoteOpenPosition(p PrecompileExecutor, ctx sdk.Context, method *abi.Method
 	if token != params.CollateralToken {
 		return nil, fmt.Errorf("%w: %s", types.ErrUnsupportedCollateral, token)
 	}
-	quote, err := p.keeper.QuoteOpen(ctx, caller, marketID, collateralAmount, leverage, isLong)
+	quote, err := p.keeper.QuoteOpen(ctx, caller, marketID, token, collateralAmount, leverage, isLong)
 	if err != nil {
 		return nil, err
 	}
-	return method.Outputs.Pack(openPositionQuoteTuple{
-		EntryPrice:           quote.EntryPrice.ToBig(),
-		SizeUsd:              quote.SizeUsd.ToBig(),
-		CollateralUsd:        quote.CollateralUsd.ToBig(),
-		Leverage:             quote.Leverage.ToBig(),
-		TradingFee:           quote.TradingFee.ToBig(),
-		TradingFeeUsd:        quote.TradingFeeUsd.ToBig(),
-		PriceImpact:          quote.PriceImpact.ToBig(),
-		LiquidationPrice:     quote.LiquidationPrice.ToBig(),
-		EstimatedFunding24h:  new(big.Int).Set(quote.EstimatedFunding24h),
-		MaintenanceMarginBps: new(big.Int).SetUint64(quote.MaintenanceMarginBps),
-	})
+	return method.Outputs.Pack(quote)
 }
 
 // quoteClosePosition serves quoteClosePosition(uint256 positionId), the call
@@ -163,15 +100,7 @@ func quoteClosePosition(p PrecompileExecutor, ctx sdk.Context, method *abi.Metho
 	if err != nil {
 		return nil, err
 	}
-	return method.Outputs.Pack(closePositionQuoteTuple{
-		ExitPrice:       quote.ExitPrice.ToBig(),
-		UnrealizedPnl:   new(big.Int).Set(quote.UnrealizedPnl),
-		TradingFee:      quote.TradingFee.ToBig(),
-		TradingFeeUsd:   quote.TradingFeeUsd.ToBig(),
-		FundingOwed:     new(big.Int).Set(quote.FundingOwed),
-		NetPnl:          new(big.Int).Set(quote.NetPnl),
-		EstimatedPayout: quote.EstimatedPayout.ToBig(),
-	})
+	return method.Outputs.Pack(quote)
 }
 
 // quotePartialClose serves quotePartialClose(uint256 positionId, uint256
@@ -194,8 +123,7 @@ func quotePartialClose(p PrecompileExecutor, ctx sdk.Context, method *abi.Method
 	if err != nil {
 		return nil, err
 	}
-	return method.Outputs.Pack(quote.ExitPrice.ToBig(), new(big.Int).Set(quote.ClosedPnl), quote.Fee.ToBig(),
-		quote.EstimatedPayout.ToBig())
+	return method.Outputs.Pack(quote.ExitPrice, quote.ClosedPnl, quote.Fee, quote.EstimatedPayout)
 }
 
 // quoteMarketID reads a uint256 market id; an id above the uint64 range names

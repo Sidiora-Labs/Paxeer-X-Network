@@ -116,11 +116,8 @@ func withdraw(p PrecompileExecutor, ctx sdk.Context, method *abi.Method, caller 
 	if err != nil {
 		return nil, err
 	}
-	events, err := p.keeper.Withdraw(ctx, caller, amount)
+	events, err := p.withdrawalLeg(ctx, evm, caller, amount)
 	if err != nil {
-		return nil, err
-	}
-	if err := p.payLeg(evm, token, caller, amount); err != nil {
 		return nil, err
 	}
 	return p.packAccountEvents(method, evm, events)
@@ -336,6 +333,27 @@ func (p PrecompileExecutor) depositLeg(ctx sdk.Context, evm *vm.EVM, caller, tok
 		return nil, err
 	}
 	return p.keeper.Deposit(accountResume(ctx, evm), caller, value)
+}
+
+// withdrawalLeg books the withdrawal of amount USDL units within the
+// account's withdrawable collateral with Withdraw, then pays them to the
+// account by the payLeg transfer of Params.CollateralToken from the perps
+// module EVM address. It returns the Withdraw events, which the caller emits
+// after the token leg's Transfer log.
+func (p PrecompileExecutor) withdrawalLeg(ctx sdk.Context, evm *vm.EVM, account common.Address,
+	amount uint256.Int) ([]types.EventRecord, error) {
+	params, err := p.keeper.GetParams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	events, err := p.keeper.Withdraw(ctx, account, amount)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.payLeg(evm, params.CollateralToken, account, amount); err != nil {
+		return nil, err
+	}
+	return events, nil
 }
 
 // payLeg runs transfer(to, amount) on the USDL contract as a nested call from
