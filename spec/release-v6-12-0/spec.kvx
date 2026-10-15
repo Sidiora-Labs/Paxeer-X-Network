@@ -10380,7 +10380,7 @@ mark = "The venue mark is median(Index + EMA150s(mid - Index), median(bid, ask, 
 
 [task.3.0.1]
 title = "Declare the perpetuals interface in Perps.sol and embed its ABI in the leaf package precompiles/perps/abi"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
