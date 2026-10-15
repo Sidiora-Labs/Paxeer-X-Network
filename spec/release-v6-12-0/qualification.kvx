@@ -133,3 +133,10 @@ command = "go test -count=1 ./platform/perps-data/internal/rest/ -run 'TestSpotU
 exit_code = -1
 log_path = "none, stopped before the build stage"
 observed_and_assumption = "The spot user REST routes need the average-cost fold package, the node RPC source client and the store projection that write the spot order tables, and all three come from pending tasks the block does not list in requires, so no code was written. Assumption: this task is re-queued after those three tasks land, with its requires read as including them."
+
+[finding.6.2.10]
+revision = "83ac606bf88e24c3f415f32856ebdf431bfd62b6"
+command = "node --test --import tsx tests/precompiles.test.ts"
+exit_code = 1
+log_path = "fleet logs 6.2.10-verify-1"
+observed_and_assumption = "Four of five precompile address checks pass; the one-address check fails because the address table carries no hex address yet for the native and SID denom pointer ERC20s, so the PAX entry keeps the native placeholder at 18 decimals, and the no-WPAX9 part of the acceptance is owned by the token removal task. Assumption: the baseline address table task records the two pointer addresses and the token removal task lands, after which this verify command is rerun unchanged."
