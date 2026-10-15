@@ -11,6 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/nats-io/nats-server/v2/server"
+	"github.com/nats-io/nats.go"
+
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/config"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/gateway"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/httpx"
@@ -47,15 +51,39 @@ func serverDB(t *testing.T) *sql.DB {
 	return db
 }
 
-// gatewayServer serves a gateway built from gateway.NewServer over db. It has
-// no JetStream consumer attached, so its readiness answers 503.
+// gatewayServer serves a gateway built from gateway.NewServer over db, an
+// in-process JetStream server and the node of PERPS_DATA_TEST_RPC. It is never
+// run, so no consumer is attached and its readiness answers 503.
 func gatewayServer(t *testing.T, db *sql.DB) *httptest.Server {
 	t.Helper()
+	rpcURL := os.Getenv("PERPS_DATA_TEST_RPC")
+	if rpcURL == "" {
+		t.Fatal("PERPS_DATA_TEST_RPC is unset")
+	}
+	node, err := ethclient.DialContext(t.Context(), rpcURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(node.Close)
+	ns, err := server.NewServer(&server.Options{Host: "127.0.0.1", Port: server.RANDOM_PORT, JetStream: true, StoreDir: t.TempDir(), NoLog: true, NoSigs: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go ns.Start()
+	t.Cleanup(ns.Shutdown)
+	if !ns.ReadyForConnections(10 * time.Second) {
+		t.Fatal("nats server not ready")
+	}
+	nc, err := nats.Connect(ns.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(nc.Close)
 	metrics, err := telemetry.New(config.Gateway)
 	if err != nil {
 		t.Fatal(err)
 	}
-	gw, err := gateway.NewServer(gateway.Deps{DB: db, ChainID: serverTestChainID, AuthSecret: serverTestAuthSecret, Metrics: metrics})
+	gw, err := gateway.NewServer(t.Context(), gateway.Options{DB: db, NATS: nc, Chain: serverTestChainID, AuthSecret: serverTestAuthSecret, Node: node, Metrics: metrics})
 	if err != nil {
 		t.Fatal(err)
 	}

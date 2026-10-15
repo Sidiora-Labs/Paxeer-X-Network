@@ -27,15 +27,17 @@ import (
 	gqlgo "github.com/graph-gophers/graphql-go"
 	gqlerrors "github.com/graph-gophers/graphql-go/errors"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/auth"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/feeds"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/graphql"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/httpx"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/ratelimit"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/rest"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/source"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/stream"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/telemetry"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/ws"
 )
@@ -82,8 +84,8 @@ type Options struct {
 	NATS       *nats.Conn
 	Chain      uint64
 	AuthSecret string
-	// RPC reads the node for the spot holdings route.
-	RPC     *source.RPC
+	// Node reads the node for the spot holdings and positions routes.
+	Node    rest.SpotNode
 	Metrics *telemetry.Metrics
 	Logger  *slog.Logger
 }
@@ -92,28 +94,42 @@ type Options struct {
 type Server struct {
 	db        *sql.DB
 	nats      *nats.Conn
+	js        jetstream.JetStream
 	providers *feeds.Providers
 	hub       *ws.Hub
 	feed      *graphql.Feed
 	schema    *gqlgo.Schema
 	transport *graphql.TransportWS
 	spotUser  *ws.SpotUser
+	// data serves the shared topic protocol through the hub.
+	data *ws.Server
 	// closer closes every socket it upgrades with 1013 and a retry-after
 	// reason; it serves new sockets while the gateway is not ready.
-	closer  *ws.Server
-	metrics *telemetry.Metrics
-	sockets prometheus.Gauge
-	gqlTime *prometheus.HistogramVec
-	limiter *windowLimiter
-	api     http.Handler
-	mux     *http.ServeMux
-	ready   atomic.Bool
+	closer        *ws.Server
+	metrics       *telemetry.Metrics
+	sockets       prometheus.Gauge
+	subscriptions prometheus.Gauge
+	gqlTime       *prometheus.HistogramVec
+	limiter       *windowLimiter
+	api           http.Handler
+	mux           *http.ServeMux
+	ready         atomic.Bool
+	// running is the time, in Unix nanoseconds, Run attached the hub, zero
+	// while the hub is not running; applied is the time the hub last applied
+	// a stream message. Together they bound the consumer lag.
+	running atomic.Int64
+	applied atomic.Int64
 	// socketRoutes lists the patterns served as long-lived sockets: they bypass
 	// the request budget, the in-flight cap and the request counter.
 	socketRoutes map[string]bool
 
 	opsMu sync.Mutex
 	ops   map[string]bool
+
+	// held is the topic count of every open data socket, the source of the
+	// subscriptions gauge.
+	heldMu sync.Mutex
+	held   map[*ws.Socket]int
 }
 
 // NewServer builds the gateway over opts. It reads the market set of
@@ -126,8 +142,8 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 		return nil, errors.New("gateway: nil nats connection")
 	case opts.Chain == 0:
 		return nil, errors.New("gateway: zero chain id")
-	case opts.RPC == nil:
-		return nil, errors.New("gateway: nil rpc source")
+	case opts.Node == nil:
+		return nil, errors.New("gateway: nil node")
 	case opts.Metrics == nil:
 		return nil, errors.New("gateway: nil metrics")
 	}
@@ -142,10 +158,8 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 
 	sockets := prometheus.NewGauge(prometheus.GaugeOpts{Name: "perps_gateway_sockets", Help: "Open sockets."})
 	subscriptions := prometheus.NewGauge(prometheus.GaugeOpts{Name: "perps_gateway_subscriptions", Help: "Topic subscriptions held by open sockets."})
-	frames := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "perps_gateway_frames_total", Help: "Topic frames sent, by topic family."}, []string{"family"})
-	resyncs := prometheus.NewCounter(prometheus.CounterOpts{Name: "perps_gateway_resyncs_total", Help: "Fresh snapshots sent after a rewind, a gap or a stale frame."})
 	gqlTime := prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "perps_gateway_graphql_duration_seconds", Help: "GraphQL request duration, by operation.", Buckets: prometheus.DefBuckets}, []string{"operation"})
-	for _, c := range []prometheus.Collector{sockets, subscriptions, frames, resyncs, gqlTime} {
+	for _, c := range []prometheus.Collector{sockets, subscriptions, gqlTime} {
 		if err := opts.Metrics.Register(c); err != nil {
 			return nil, fmt.Errorf("gateway metrics: %w", err)
 		}
@@ -155,18 +169,16 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	js, err := jetstream.New(opts.NATS)
+	if err != nil {
+		return nil, fmt.Errorf("gateway: jetstream: %w", err)
+	}
+	hub, err := ws.NewHub(hubProvider{providers}, opts.Chain, snapshotID, logger)
+	if err != nil {
+		return nil, err
+	}
 	limits := ws.DefaultLimits()
-	hub, err := ws.NewHub(ws.HubConfig{
-		NATS:          opts.NATS,
-		Chain:         opts.Chain,
-		SnapshotID:    snapshotID,
-		Provider:      providers,
-		Limits:        limits,
-		Frames:        frames,
-		Resyncs:       resyncs,
-		Subscriptions: subscriptions,
-		Logger:        logger,
-	})
+	data, err := ws.NewServer(snapshotID, providers.Served, limits)
 	if err != nil {
 		return nil, err
 	}
@@ -192,15 +204,11 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	spotUsers, err := rest.NewSpotUsers(opts.DB, opts.RPC)
+	spotUsers, err := rest.NewSpotUsers(opts.DB, opts.Node)
 	if err != nil {
 		return nil, err
 	}
 	account, err := rest.NewAccountV2(opts.DB, signIn, time.Now)
-	if err != nil {
-		return nil, err
-	}
-	spotUser, err := ws.NewSpotUser(opts.DB, hub)
 	if err != nil {
 		return nil, err
 	}
@@ -215,13 +223,26 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 	transport := &graphql.TransportWS{Schema: schema, Feed: feed}
 
 	s := &Server{
-		db: opts.DB, nats: opts.NATS, providers: providers, hub: hub, feed: feed,
-		schema: schema, transport: transport, spotUser: spotUser, closer: closer,
-		metrics: opts.Metrics, sockets: sockets, gqlTime: gqlTime,
+		db: opts.DB, nats: opts.NATS, js: js, providers: providers, hub: hub, feed: feed,
+		schema: schema, transport: transport, spotUser: &ws.SpotUser{}, data: data, closer: closer,
+		metrics: opts.Metrics, sockets: sockets, subscriptions: subscriptions, gqlTime: gqlTime,
 		limiter:      &windowLimiter{max: clientRequests, window: clientWindow, entries: map[string]windowEntry{}},
 		mux:          http.NewServeMux(),
 		socketRoutes: map[string]bool{"GET /graphql": true, "GET /graphql-ws": true, "GET /v1/ws": true},
 		ops:          map[string]bool{},
+		held:         map[*ws.Socket]int{},
+	}
+	data.OnSubscribe = func(sock *ws.Socket, f ws.ClientFrame) {
+		hub.Subscribe(sock, f)
+		s.hold(sock, sock.Subscriptions())
+	}
+	data.OnUnsubscribe = func(sock *ws.Socket, topic string) {
+		hub.Unsubscribe(sock, topic)
+		s.hold(sock, sock.Subscriptions())
+	}
+	data.OnClose = func(sock *ws.Socket) {
+		hub.Leave(sock)
+		s.hold(sock, 0)
 	}
 	s.api = ratelimit.NewLimiter(maxInFlight).Middleware(http.HandlerFunc(s.limited))
 
@@ -245,7 +266,7 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 		s.mux.HandleFunc(pattern, s.dataSocket)
 		s.socketRoutes[pattern] = true
 	}
-	s.mux.Handle("GET /v1/ws", s.gated(spotUser))
+	s.mux.Handle("GET /v1/ws", s.gated(s.spotUser))
 
 	httpx.RegisterHealth(s.mux, httpx.HealthDeps{Postgres: opts.DB.PingContext, Custom: map[string]httpx.Check{"consumer": s.consumerReady}})
 	s.mux.Handle("GET /metrics", opts.Metrics)
@@ -255,16 +276,19 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 // Handler returns the handler of every gateway route.
 func (s *Server) Handler() http.Handler { return http.HandlerFunc(s.serve) }
 
-// Run consumes the stream into the topic hub and the GraphQL subscription
-// feed and keeps the readiness of the socket gate current until ctx ends or
-// the hub stops.
+// Run consumes the stream through the topic hub, which also feeds the
+// GraphQL subscriptions, and keeps the readiness of the socket gate current
+// until ctx ends or the hub stops.
 func (s *Server) Run(ctx context.Context) error {
 	defer s.ready.Store(false)
-	if err := s.feed.Start(ctx, s.nats); err != nil {
-		return fmt.Errorf("graphql feed: %w", err)
-	}
+	stopFeed := s.hub.Listen(s.feed.Deliver)
+	defer stopFeed()
+	stopApplied := s.hub.Listen(func(string, delivery.Envelope) { s.applied.Store(time.Now().UnixNano()) })
+	defer stopApplied()
+	s.running.Store(time.Now().UnixNano())
+	defer s.running.Store(0)
 	hubErr := make(chan error, 1)
-	go func() { hubErr <- s.hub.Run(ctx) }()
+	go func() { hubErr <- s.hub.Run(ctx, s.nats) }()
 	tick := time.NewTicker(readyInterval)
 	defer tick.Stop()
 	for {
@@ -288,15 +312,45 @@ func (s *Server) evaluate(ctx context.Context) bool {
 	return s.db.PingContext(ctx) == nil && s.consumerReady(ctx) == nil
 }
 
+// consumerReady is nil while the hub runs and has applied every stream
+// message, or the oldest message it may not have applied is at most ReadyLag
+// old: the stream head is newer than both the attach and the last applied
+// message only while a message is pending, and that message is no older than
+// the later of the two.
 func (s *Server) consumerReady(ctx context.Context) error {
-	lag, err := s.hub.Lag(ctx)
-	if err != nil {
-		return err
+	running := s.running.Load()
+	if running == 0 {
+		return errors.New("gateway: consumer not attached")
 	}
-	if lag > ReadyLag {
+	str, err := s.js.Stream(ctx, stream.Name)
+	if err != nil {
+		return fmt.Errorf("gateway: stream: %w", err)
+	}
+	info, err := str.Info(ctx)
+	if err != nil {
+		return fmt.Errorf("gateway: stream: %w", err)
+	}
+	mark := time.Unix(0, max(running, s.applied.Load()))
+	if !info.State.LastTime.After(mark) {
+		return nil
+	}
+	if lag := time.Since(mark); lag > ReadyLag {
 		return fmt.Errorf("gateway: consumer %s behind the stream head", lag)
 	}
 	return nil
+}
+
+// hold sets the topic count of sock to n, zero once it closes, and moves the
+// subscriptions gauge by the difference.
+func (s *Server) hold(sock *ws.Socket, n int) {
+	s.heldMu.Lock()
+	defer s.heldMu.Unlock()
+	s.subscriptions.Add(float64(n - s.held[sock]))
+	if n == 0 {
+		delete(s.held, sock)
+		return
+	}
+	s.held[sock] = n
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
@@ -355,12 +409,11 @@ func publicSnapshot(pattern string) bool {
 	return true
 }
 
-// dataSocket serves the shared topic protocol, subscribing the socket on open
-// to the topics of its path; while the gateway is not ready it closes the new
-// socket with 1013 and a retry-after reason.
+// dataSocket serves the shared topic protocol on the socket paths whose
+// topics the providers serve; while the gateway is not ready it closes the
+// new socket with 1013 and a retry-after reason.
 func (s *Server) dataSocket(w http.ResponseWriter, r *http.Request) {
-	topics, ok := s.providers.SocketTopics(r.URL.Path)
-	if !ok {
+	if _, ok := s.providers.SocketTopics(r.URL.Path); !ok {
 		writeError(w, http.StatusNotFound, "Unknown symbol: "+strings.ToUpper(r.PathValue("symbol")))
 		return
 	}
@@ -368,7 +421,24 @@ func (s *Server) dataSocket(w http.ResponseWriter, r *http.Request) {
 		s.closer.ServeHTTP(w, r)
 		return
 	}
-	s.hub.ServeSocket(w, r, topics)
+	s.data.ServeHTTP(w, r)
+}
+
+// hubProvider serves the hub from the topic providers, whose frames have the
+// fields of ws.Frame.
+type hubProvider struct{ *feeds.Providers }
+
+func (p hubProvider) Message(ctx context.Context, subject string, env delivery.Envelope) ([]ws.Frame, []string, error) {
+	frames, resnap, err := p.Providers.Message(ctx, subject, env)
+	out := make([]ws.Frame, len(frames))
+	for i, f := range frames {
+		out[i] = ws.Frame(f)
+	}
+	return out, resnap, err
+}
+
+func (p hubProvider) Run(ctx context.Context, emit func(ws.Frame)) error {
+	return p.Providers.Run(ctx, func(f feeds.Frame) { emit(ws.Frame(f)) })
 }
 
 // gated closes new sockets of next with 1013 while the gateway is not ready.

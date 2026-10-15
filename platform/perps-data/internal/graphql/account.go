@@ -58,25 +58,6 @@ type accountDailyPnl struct {
 	Trades *int32
 }
 
-type accountStats struct {
-	Address             *string
-	TotalPnl            *accountAmount
-	TotalVolume         *accountAmount
-	TotalFeesPaid       *accountAmount
-	WinCount            *int32
-	LossCount           *int32
-	LiquidationCount    *int32
-	UserAddress         string
-	TotalPositions      int32
-	OpenPositions       int32
-	ClosedPositions     int32
-	LiquidatedPositions int32
-	TotalTrades         int32
-	TotalRealizedPnl    accountAmount
-	TotalOrders         int32
-	ActiveOrders        int32
-}
-
 type accountAlert struct {
 	ID          *int32
 	AlertType   *string
@@ -211,48 +192,6 @@ func (r *Resolver) UserDailyPnl(ctx context.Context, args struct {
 		out = append(out, row)
 	}
 	return out, rows.Err()
-}
-
-func (r *Resolver) UserStats(ctx context.Context, args struct {
-	UserAddress *string
-	Address     *string
-}) (*accountStats, error) {
-	if (args.UserAddress == nil) == (args.Address == nil) {
-		return nil, errors.New("exactly one of userAddress and address is required")
-	}
-	raw := args.Address
-	if raw == nil {
-		raw = args.UserAddress
-	}
-	address, err := accountAddress(*raw)
-	if err != nil {
-		return nil, err
-	}
-	var out accountStats
-	err = r.DB.QueryRowContext(ctx, `SELECT '0x' || encode(s.account, 'hex'), '0x' || encode(s.account, 'hex'),
-        trunc(s.total_pnl)::text, trunc(s.volume_usd)::text, trunc(s.fees_usd)::text,
-        s.win_count, s.loss_count, s.liquidations, s.trades_count, trunc(s.realized_pnl)::text,
-        p.total, p.open, p.closed, p.liquidated, o.total, o.active
-        FROM perps.user_stats s CROSS JOIN LATERAL (
-            SELECT count(*) AS total, count(*) FILTER (WHERE status = 'open') AS open,
-                count(*) FILTER (WHERE status = 'closed') AS closed,
-                count(*) FILTER (WHERE status = 'liquidated') AS liquidated
-            FROM perps.positions_current WHERE account = s.account
-        ) p CROSS JOIN LATERAL (
-            SELECT count(*) AS total, count(*) FILTER (WHERE status = 'active') AS active
-            FROM perps.orders WHERE account = s.account
-        ) o WHERE s.account = $1`, address.Bytes()).Scan(
-		&out.Address, &out.UserAddress, &out.TotalPnl, &out.TotalVolume, &out.TotalFeesPaid,
-		&out.WinCount, &out.LossCount, &out.LiquidationCount, &out.TotalTrades, &out.TotalRealizedPnl,
-		&out.TotalPositions, &out.OpenPositions, &out.ClosedPositions, &out.LiquidatedPositions,
-		&out.TotalOrders, &out.ActiveOrders)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
 }
 
 func (r *Resolver) UserAlerts(ctx context.Context, args struct{ Address string }) ([]*accountAlert, error) {

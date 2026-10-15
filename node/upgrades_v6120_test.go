@@ -21,12 +21,14 @@ import (
 	layerxbridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
 	layerxexchangetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types"
 	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	perpskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
 	perpstypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
 	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
 	spotkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/keeper"
 	spottypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/legacyabci"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version"
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
@@ -586,4 +588,75 @@ func TestV6120AppliesThePlanOnTheHaltExport(t *testing.T) {
 	var resp evmtypes.MsgEVMTransactionResponse
 	require.NoError(t, resp.Unmarshal(msgData.Data[0].Data))
 	require.Equal(t, want, resp.ReturnData)
+}
+
+func TestV6120InitialisesTheNewModulesOnAPreUpgradeChain(t *testing.T) {
+	w := seedV6120FromExport(t, v6120HaltExportPath)
+	a, ctx := w.App, w.Ctx
+	halt := v6120HaltHeight(t, v6120HaltExportPath)
+
+	// A chain built before v6.12.0 records no version for the modules the plan
+	// adds, and their stores are empty.
+	versionStore := prefix.NewStore(ctx.KVStore(a.GetKey(upgradetypes.StoreKey)), []byte{upgradetypes.VersionMapByte})
+	stores := map[string][]byte{
+		pricefeedtypes.ModuleName: pricefeedtypes.ParamsKey,
+		perpstypes.ModuleName:     perpstypes.ParamsKey,
+		spottypes.ModuleName:      spottypes.ParamsKey,
+	}
+	for _, name := range v6120NewModules {
+		versionStore.Delete([]byte(name))
+		require.False(t, ctx.KVStore(a.GetKey(name)).Has(stores[name]), name)
+	}
+	before := a.UpgradeKeeper.GetModuleVersionMap(ctx)
+	for _, name := range v6120NewModules {
+		require.NotContains(t, before, name)
+	}
+
+	valPub := secp256k1.GenPrivKey().PubKey()
+	writeV6120UpgradeInfo(t, a, halt+1)
+	next := ctx.WithBlockHeight(halt + 1)
+	recordPreviousProposer(a, next, valPub)
+	a.BeginBlock(next, halt+1, nil, nil, false)
+	require.Equal(t, halt+1, a.UpgradeKeeper.GetDoneHeight(next, V6120Upgrade))
+	require.True(t, a.v6120Live)
+
+	after := a.UpgradeKeeper.GetModuleVersionMap(next)
+	for _, name := range v6120NewModules {
+		require.Equal(t, uint64(1), after[name], name)
+	}
+	for name, version := range before {
+		require.Equal(t, version, after[name], name)
+	}
+
+	// The hooks wrote the v6.12.0 initial state and InitGenesis did not run:
+	// the counters InitGenesis writes are absent and read their first values.
+	require.Equal(t, pricefeedtypes.DefaultParams(pricefeedtypes.DefaultAuthority()), a.PricefeedKeeper.GetParams(next))
+	markets := 0
+	require.NoError(t, a.PerpsKeeper.IterateMarkets(next, func(perpstypes.Market) bool {
+		markets++
+		return false
+	}))
+	require.Equal(t, 18, markets)
+	perpsParams, err := a.PerpsKeeper.GetParams(next)
+	require.NoError(t, err)
+	require.Equal(t, perpstypes.DefaultParams(), perpsParams)
+	require.False(t, next.KVStore(a.GetKey(perpstypes.StoreKey)).Has(perpstypes.SequenceKey(perpstypes.SequencePlacement)))
+	spotParams, err := a.SpotKeeper.GetParams(next)
+	require.NoError(t, err)
+	require.Len(t, spotParams.Tokens, 3)
+	require.False(t, next.KVStore(a.GetKey(spottypes.StoreKey)).Has(spottypes.NextOrderIDKey))
+	nextOrder, err := a.SpotKeeper.NextOrderID(next)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), nextOrder)
+
+	// The state was written once: a second spot run refuses and a second
+	// perps seed adds no market.
+	require.ErrorIs(t, spotkeeper.InitV6120(next, *a.SpotKeeper), spotkeeper.ErrAlreadyInitialised)
+	require.NoError(t, perpskeeper.SeedV6120(next, *a.PerpsKeeper))
+	markets = 0
+	require.NoError(t, a.PerpsKeeper.IterateMarkets(next, func(perpstypes.Market) bool {
+		markets++
+		return false
+	}))
+	require.Equal(t, 18, markets)
 }

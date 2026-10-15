@@ -17,12 +17,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gorilla/websocket"
-	"github.com/nats-io/nats-server/v2/server"
-	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/stream"
 )
 
 const (
@@ -79,37 +76,9 @@ func TestSubscriptions(t *testing.T) {
 	if err := store.Migrate(ctx, db); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	ns, err := server.NewServer(&server.Options{Host: "127.0.0.1", Port: server.RANDOM_PORT, JetStream: true, StoreDir: t.TempDir(), NoLog: true, NoSigs: true})
-	if err != nil {
-		t.Fatalf("nats server: %v", err)
-	}
-	go ns.Start()
-	t.Cleanup(ns.Shutdown)
-	if !ns.ReadyForConnections(subWait) {
-		t.Fatal("nats server not ready")
-	}
-	nc, err := nats.Connect(ns.ClientURL())
-	if err != nil {
-		t.Fatalf("nats connect: %v", err)
-	}
-	t.Cleanup(nc.Close)
-	js, err := jetstream.New(nc)
-	if err != nil {
-		t.Fatalf("jetstream: %v", err)
-	}
-	// One in-process server cannot hold three replicas; every other setting
-	// is the PERPS_V1 configuration.
-	cfg := stream.Config(subChain)
-	cfg.Replicas = 1
-	if _, err := js.CreateStream(ctx, cfg); err != nil {
-		t.Fatalf("create stream: %v", err)
-	}
 	feed, err := NewFeed(subChain, nil)
 	if err != nil {
 		t.Fatalf("NewFeed: %v", err)
-	}
-	if err := feed.Start(ctx, nc); err != nil {
-		t.Fatalf("feed Start: %v", err)
 	}
 	schema, err := NewSchema(db)
 	if err != nil {
@@ -181,9 +150,7 @@ func TestSubscriptions(t *testing.T) {
 	publish := func(t *testing.T, subjects ...string) {
 		t.Helper()
 		for _, s := range subjects {
-			if _, err := js.Publish(ctx, "perps.7."+s, []byte("{}")); err != nil {
-				t.Fatalf("publish %s: %v", s, err)
-			}
+			feed.Deliver("perps.7."+s, delivery.Envelope{})
 		}
 	}
 	listeners := func(t *testing.T, n int) {

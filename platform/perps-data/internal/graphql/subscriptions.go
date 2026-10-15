@@ -16,9 +16,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/lib/pq"
-	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/stream"
 )
 
@@ -63,37 +62,10 @@ func NewFeed(chain uint64, logger *slog.Logger) (*Feed, error) {
 	return &Feed{prefix: "perps." + strconv.FormatUint(chain, 10) + ".", logger: logger, listeners: map[*listener]struct{}{}}, nil
 }
 
-// Start attaches an ordered ephemeral consumer of PERPS_V1 delivering the
-// headers of every new message of the chain and returns once it consumes;
-// the consumer stops when ctx ends.
-func (f *Feed) Start(ctx context.Context, nc *nats.Conn) error {
-	if ctx == nil || nc == nil || nc.IsClosed() {
-		return errors.New("graphql: feed needs a context and an open connection")
-	}
-	js, err := jetstream.New(nc)
-	if err != nil {
-		return err
-	}
-	consumer, err := js.OrderedConsumer(ctx, stream.Name, jetstream.OrderedConsumerConfig{
-		FilterSubjects: []string{f.prefix + ">"},
-		DeliverPolicy:  jetstream.DeliverNewPolicy,
-		HeadersOnly:    true,
-	})
-	if err != nil {
-		return fmt.Errorf("graphql: feed consumer: %w", err)
-	}
-	consuming, err := consumer.Consume(func(msg jetstream.Msg) { f.dispatch(msg.Subject()) },
-		jetstream.ConsumeErrHandler(func(_ jetstream.ConsumeContext, err error) {
-			f.logger.Error("graphql feed consumer", slog.Any("err", err))
-		}))
-	if err != nil {
-		return fmt.Errorf("graphql: feed consume: %w", err)
-	}
-	context.AfterFunc(ctx, consuming.Stop)
-	return nil
-}
-
-func (f *Feed) dispatch(subject string) {
+// Deliver wakes the subscriptions of subject. It is the (*ws.Hub).Listen
+// callback of the gateway, so the Feed sees the messages the hub applies, in
+// stream order.
+func (f *Feed) Deliver(subject string, _ delivery.Envelope) {
 	rewind := subject == f.prefix+"chain.rewind"
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -436,7 +408,7 @@ type subMarket struct {
 	FundingRate *subFundingRate
 }
 
-const marketSQL = `SELECT m.market_id::int4, m.name, m.symbol, m.max_leverage::text, m.enabled,
+const subMarketSQL = `SELECT m.market_id::int4, m.name, m.symbol, m.max_leverage::text, m.enabled,
     mp.index_price::text, floor(extract(epoch FROM mp.block_time))::int4, mp.block::int4, mp.block_time,
     fr.row_id::int4, fr.new_rate_per_second::text, fr.funding_rate24h::text, fr.block::int4, '0x' || encode(fr.tx_hash, 'hex'), fr.block_time
 FROM perps.markets m
@@ -453,7 +425,7 @@ func loadMarket(ctx context.Context, db *sql.DB, id int32) (*subMarket, error) {
 	var price, rate, rate24h, rateTx sql.NullString
 	var onchain, priceBlock, rateID, rateBlock sql.NullInt32
 	var priceAt, rateAt sql.NullTime
-	err := db.QueryRowContext(ctx, marketSQL, strconv.FormatInt(int64(id), 10)).Scan(&m.MarketID, &m.Name, &m.Symbol, &m.MaxLeverage, &m.Enabled,
+	err := db.QueryRowContext(ctx, subMarketSQL, strconv.FormatInt(int64(id), 10)).Scan(&m.MarketID, &m.Name, &m.Symbol, &m.MaxLeverage, &m.Enabled,
 		&price, &onchain, &priceBlock, &priceAt, &rateID, &rate, &rate24h, &rateBlock, &rateTx, &rateAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -705,9 +677,9 @@ type subOrder struct {
 	ResolvedTxHash *string
 }
 
-// orderTypeNames are the labels of the orderType numbering of
+// orderTypeLabels are the labels of the orderType numbering of
 // contracts/perps.md section 2.
-var orderTypeNames = map[int32]string{0: "Limit", 1: "Stop-Limit", 2: "Take Profit", 3: "Stop Loss", 4: "Market", 5: "Stop Market"}
+var orderTypeLabels = map[int32]string{0: "Limit", 1: "Stop-Limit", 2: "Take Profit", 3: "Stop Loss", 4: "Market", 5: "Stop Market"}
 
 const ordersSQL = `SELECT o.order_id::text, '0x' || encode(o.account, 'hex'), o.market_id::int4, o.order_type::int4, o.is_long, o.trigger_price::text,
     o.size_usd::text, o.status, o.position_id::text, o.execution_price::text, o.remaining_size_usd::text, o.placed_block::int4, o.closed_block::int4,
@@ -736,7 +708,7 @@ func scanOrder(s scanner) (*subOrder, error) {
 		&remaining, &placedBlock, &resolvedBlock, &placed, &resolved, &placedTx, &resolvedTx, &changed); err != nil {
 		return nil, err
 	}
-	if name, ok := orderTypeNames[o.OrderType]; ok {
+	if name, ok := orderTypeLabels[o.OrderType]; ok {
 		o.OrderTypeName = &name
 	}
 	o.PositionID, o.ExecutionPrice, o.RemainingSize = optDecimal(position), optDecimal(execution), optDecimal(remaining)
@@ -844,10 +816,6 @@ type subTrade struct {
 	BlockTimestamp subTime
 }
 
-// tradeTypeNames are the tradeType names of contracts/data-services.md
-// section 13; a value outside the enumeration is named by its number.
-var tradeTypeNames = map[int32]string{0: "open", 1: "close", 2: "liquidation", 3: "reduce", 4: "increase", 5: "adl", 6: "backstop"}
-
 const tradeColumns = `SELECT t.row_id, t.row_id::int4, t.position_id::text, '0x' || encode(t."user", 'hex'), t.market_id::int4, t.trade_type::int4, p.is_long,
     t.size_usd::text, t.execution_price::text, t.gross_pnl::text, t.total_fees_usd::text, t.block::int4, '0x' || encode(t.tx_hash, 'hex'), t.block_time
 FROM perps.trade_settlements t LEFT JOIN perps.positions_current p ON p.position_id = t.position_id`
@@ -863,9 +831,10 @@ func scanTrade(s scanner) (*subTrade, int64, error) {
 		&t.TxHash, &t.BlockTimestamp.Time); err != nil {
 		return nil, 0, err
 	}
-	t.TradeType = tradeTypeNames[tradeType]
-	if t.TradeType == "" {
-		t.TradeType = strconv.FormatInt(int64(tradeType), 10)
+	// A tradeType outside the enumeration is named by its number.
+	t.TradeType = strconv.FormatInt(int64(tradeType), 10)
+	if tradeType >= 0 && int(tradeType) < len(tradeTypeNames) {
+		t.TradeType = tradeTypeNames[tradeType]
 	}
 	price := t.Price
 	t.ExecutionPrice, t.UserAddress, t.MarketID, t.RealizedPnl, t.FeeUsd = &price, &user, &market, &pnl, &fee
