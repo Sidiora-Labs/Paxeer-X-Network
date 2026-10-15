@@ -21350,7 +21350,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.14]
 title = "Rebuild the positions panel actions on the precompile and remove margin transfer and mode"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.2.1"]
