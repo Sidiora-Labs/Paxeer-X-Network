@@ -6250,7 +6250,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.0.2]
 title = "Copy the role ABIs of SidioraNFT, Router, Quoter and test their counts"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
