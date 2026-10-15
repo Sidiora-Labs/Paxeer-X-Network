@@ -1299,3 +1299,35 @@ exit = 1
 log = "fleet/logs/7.3.2-verify-1.log"
 observed = "The portal server and command are written against assumed portal.Pages and gateway.NewServer shapes; the 7.3.1 pages were not on the task base and the 7.2.13 gateway has not landed, so the package does not compile."
 assumption = "Rerun after 7.2.13 lands, retargeting to the landed portal pages where they differ."
+
+[finding.1.3.103]
+revision = "5ab7848ce9d8f187adcccbae2ca8bdde6806fab4"
+command = "go build ./node/..."
+exit = 1
+log = "fleet/logs/1.3.103-verify-1.log"
+observed = "The end-block wiring is written, but modules/spot/keeper does not compile on main (orderKey undefined in execute.go), so no package importing the spot module builds."
+assumption = "Rerun after the spot keeper build reconciliation and 1.3.100 land."
+
+[finding.1.3.101]
+revision = "a4f47e166fe276fe7879c1127e5ae2b6c40dc2b0"
+command = "go test ./node/ -run TestPrecompileKeepersV6120Accessors"
+exit = 1
+log = "fleet/logs/1.3.101-verify-1.log"
+observed = "The keeper accessors are written, but the test never compiles: precompiles/perps, precompiles/pricefeed and modules/spot/keeper do not build on main, and the App fields come from 1.3.100; the perps and spot keeper interfaces cannot live in precompiles/utils because of an import cycle through the evm keeper."
+assumption = "Lands after 1.3.100; rerun after the three build reconciliations land."
+
+[finding.7.2.13]
+revision = "7a499b05b9bd3c521508fe40b433697c809db28c"
+command = "go test -count=1 ./platform/perps-data/internal/gateway/ -run TestGatewayServer"
+exit = 1
+log = "fleet/logs/7.2.13-verify-1.log"
+observed = "The gateway process and server are written against the landed rest, feeds and graphql packages and an assumed ws hub, but rest and feeds form an import cycle on main (venue.go imports feeds, topics.go imports rest), and the suite needs a test RPC node."
+assumption = "Rerun after the rest and feeds layering fix and 7.2.2 land; the per-client budget and in-flight cap are constants until the spec names them."
+
+[finding.1.3.99]
+revision = "fa1c2e02fcb51149b40e52b93e080bc73cbce4f4"
+command = "make test-paxd-domain"
+exit = 2
+log = "fleet/logs/1.3.99-verify-1.log"
+observed = "The target and its native-libs dependency are in place; nine packages pass and eleven fail: node/launchpad_airdrop_test.go calls the pre-reconciliation CreateMarket and Swap signatures, nine packages panic at init on the missing launchpad keeper accessor, and node/genesis TestEmbeddedGenesisDigests reports changed embedded genesis digests."
+assumption = "Rerun after the launchpad test lane and 1.3.100 land; the airdrop test port and the genesis digest check need their own lane."
