@@ -7208,7 +7208,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.14]
 title = "Record the USDL, holder, layout and pool fixtures"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
