@@ -26824,7 +26824,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.6]
 title = "One service Dockerfile for the six binaries"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
