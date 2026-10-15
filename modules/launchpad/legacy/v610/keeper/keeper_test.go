@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	gigabankkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/xbank/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/launchpadtest"
 	keeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/legacy/v610/keeper"
 	types "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/legacy/v610/types"
@@ -25,6 +26,8 @@ import (
 	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	bankkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
@@ -41,19 +44,42 @@ var (
 )
 
 // env is the launchpad keeper on the real bank, tokenfactory and EVM keepers
-// of the test application, on a branch of its state.
+// of the test application, on a branch of its state. bank and giga are the
+// regular and Giga bank keepers whose balance-change hook is k.
 type env struct {
-	t   *testing.T
-	ctx sdk.Context
-	k   *keeper.Keeper
+	t    *testing.T
+	ctx  sdk.Context
+	k    *keeper.Keeper
+	bank bankkeeper.BaseKeeper
+	giga *gigabankkeeper.BaseKeeper
 }
 
-// newKeeper builds the v6.10 launchpad keeper over the test app's real bank,
+// newKeeper builds the v6.10 launchpad keeper over the test app's real
 // tokenfactory and EVM keepers and returns ctx carrying its store.
 func newKeeper(testApp *nodeapp.App, ctx sdk.Context) (*keeper.Keeper, sdk.Context) {
+	k, _, _, ctx := newHookedKeeper(testApp, ctx)
+	return k, ctx
+}
+
+// newHookedKeeper builds the v6.10 launchpad keeper over regular and Giga
+// bank keepers on the test app's bank store whose balance-change hook is that
+// keeper, as the v6.10 app wired it, so bank writes reach the legacy hook and
+// never the live module's.
+func newHookedKeeper(testApp *nodeapp.App, ctx sdk.Context) (*keeper.Keeper, bankkeeper.BaseKeeper, *gigabankkeeper.BaseKeeper, sdk.Context) {
+	cdc := testApp.AppCodec()
+	bankKey := testApp.GetKey(banktypes.StoreKey)
+	subspace := testApp.GetSubspace(banktypes.ModuleName)
+	deferred := testApp.GetMemKey(banktypes.DeferredCacheStoreKey)
+	bank := bankkeeper.NewBaseKeeperWithDeferredCache(cdc, bankKey, testApp.AccountKeeper, subspace, testApp.ModuleAccountAddrs(), deferred)
+	bank.RegisterRecipientChecker(testApp.EvmKeeper.CanAddressReceive)
+	giga := gigabankkeeper.NewBaseKeeperWithDeferredCache(cdc, bankKey, testApp.AccountKeeper, subspace, testApp.ModuleAccountAddrs(), deferred)
+	giga.UseRegularStore = true
+	giga.RegisterRecipientChecker(testApp.GigaEvmKeeper.CanAddressReceive)
 	key := sdk.NewKVStoreKey(types.StoreKey)
-	k := keeper.NewKeeper(key, testApp.BankKeeper, tokenfactorykeeper.NewMsgServerImpl(testApp.TokenFactoryKeeper), &testApp.EvmKeeper)
-	return k, launchpadtest.WithStore(ctx, key)
+	k := keeper.NewKeeper(key, bank, tokenfactorykeeper.NewMsgServerImpl(testApp.TokenFactoryKeeper), &testApp.EvmKeeper)
+	bank.RegisterBalanceChangeHook(types.ModuleName, k.BeforeBalanceChange)
+	giga.RegisterBalanceChangeHook(types.ModuleName, k.BeforeBalanceChange)
+	return k, bank, &giga, launchpadtest.WithStore(ctx, key)
 }
 
 func newEnv(t *testing.T) *env {
@@ -61,9 +87,9 @@ func newEnv(t *testing.T) *env {
 	app := testkeeper.EVMTestApp
 	ctx := app.GetContextForDeliverTx([]byte{}).WithBlockTime(genesisTime)
 	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
-	k, ctx := newKeeper(app, ctx)
+	k, bank, giga, ctx := newHookedKeeper(app, ctx)
 	k.InitGenesis(ctx, *types.DefaultGenesis())
-	return &env{t: t, ctx: ctx, k: k}
+	return &env{t: t, ctx: ctx, k: k, bank: bank, giga: giga}
 }
 
 func (e *env) account(quoteAmount int64) sdk.AccAddress {
@@ -637,7 +663,7 @@ func TestAirdropSharesByHolding(t *testing.T) {
 	require.Equal(t, b(30), result.FeeBps)
 	require.Equal(t, b(10_000_000), result.FeeAmount)
 	require.Equal(t, b(768_696_993), result.AmountOut)
-	require.NoError(t, testkeeper.EVMTestApp.BankKeeper.SendCoins(e.ctx, alice, bob,
+	require.NoError(t, e.bank.SendCoins(e.ctx, alice, bob,
 		sdk.NewCoins(sdk.NewCoin(denom, i(168_696_993)))))
 	require.Equal(t, i(600_000_000), e.balance(alice, denom))
 
@@ -897,7 +923,6 @@ func airdropPaid(t *testing.T, e *env, denom string, epoch uint64) sdk.Int {
 
 func TestAirdropEntitlements(t *testing.T) {
 	app := testkeeper.EVMTestApp
-	bank := app.BankKeeper
 	nextEntitlementEpoch := func(h *historyEnv) uint64 {
 		h.t.Helper()
 		h.swap(h.trader, h.denom, true, 100_000_000)
@@ -911,8 +936,8 @@ func TestAirdropEntitlements(t *testing.T) {
 		h := newHistoryEnv(t)
 		a := h.account(0)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
-		require.NoError(t, h.send(bank, h.trader, a, 700_000))
-		supply := bank.GetSupply(h.ctx, h.denom).Amount
+		require.NoError(t, h.send(h.bank, h.trader, a, 700_000))
+		supply := h.bank.GetSupply(h.ctx, h.denom).Amount
 		epoch := nextEntitlementEpoch(h)
 		basis, found, err := h.k.GetAirdropBasis(h.ctx, h.denom, epoch)
 		require.NoError(t, err)
@@ -932,23 +957,23 @@ func TestAirdropEntitlements(t *testing.T) {
 		h := newHistoryEnv(t)
 		a, b2, c := h.account(0), h.account(0), h.account(0)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
-		require.NoError(t, h.send(bank, h.trader, a, 600_000))
-		require.NoError(t, h.send(bank, h.trader, b2, 400_000))
+		require.NoError(t, h.send(h.bank, h.trader, a, 600_000))
+		require.NoError(t, h.send(h.bank, h.trader, b2, 400_000))
 		epoch := nextEntitlementEpoch(h)
 		funded := h.k.GetAirdropEpochAmount(h.ctx, h.denom, epoch)
-		supply := bank.GetSupply(h.ctx, h.denom).Amount
+		supply := h.bank.GetSupply(h.ctx, h.denom).Amount
 		aShare, err := h.k.ClaimAirdrop(h.ctx, a, h.denom)
 		require.NoError(t, err)
 		require.Equal(t, funded.Mul(i(600_000)).Quo(supply), aShare)
-		require.NoError(t, h.send(bank, a, c, 600_000))
+		require.NoError(t, h.send(h.bank, a, c, 600_000))
 		_, err = h.k.ClaimAirdrop(h.ctx, c, h.denom)
 		require.ErrorIs(t, err, types.ErrZeroAmount)
 		require.False(t, h.k.HasClaimedAirdrop(h.ctx, h.denom, c, epoch))
 		// Many transfers among the holders never raise anyone's entitlement.
 		for round := 0; round < 8; round++ {
-			require.NoError(t, h.send(bank, c, b2, 75_000))
-			require.NoError(t, h.send(bank, b2, a, 50_000))
-			require.NoError(t, h.send(bank, a, c, 50_000))
+			require.NoError(t, h.send(h.bank, c, b2, 75_000))
+			require.NoError(t, h.send(h.bank, b2, a, 50_000))
+			require.NoError(t, h.send(h.bank, a, c, 50_000))
 		}
 		_, err = h.k.ClaimAirdrop(h.ctx, a, h.denom)
 		require.ErrorIs(t, err, types.ErrAlreadyClaimed)
@@ -972,7 +997,7 @@ func TestAirdropEntitlements(t *testing.T) {
 		h := newHistoryEnv(t)
 		a := h.account(0)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
-		require.NoError(t, h.send(bank, h.trader, a, 900_000))
+		require.NoError(t, h.send(h.bank, h.trader, a, 900_000))
 		epoch := nextEntitlementEpoch(h)
 		before, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, epoch)
 		require.NoError(t, err)
@@ -982,8 +1007,8 @@ func TestAirdropEntitlements(t *testing.T) {
 		require.NoError(t, err)
 		_, err = tf.Burn(sdk.WrapSDKContext(h.ctx), tokenfactorytypes.NewMsgBurn(admin, sdk.NewCoin(h.denom, i(9_000_000))))
 		require.NoError(t, err)
-		require.NoError(t, h.send(bank, h.k.ModuleAddress(), a, 123_456))
-		require.NoError(t, h.send(bank, a, h.trader, 1_000))
+		require.NoError(t, h.send(h.bank, h.k.ModuleAddress(), a, 123_456))
+		require.NoError(t, h.send(h.bank, a, h.trader, 1_000))
 		after, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, epoch)
 		require.NoError(t, err)
 		require.Equal(t, before, after)
@@ -996,7 +1021,7 @@ func TestAirdropEntitlements(t *testing.T) {
 		h := newHistoryEnv(t)
 		a := h.account(0)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
-		require.NoError(t, h.send(bank, h.trader, a, 800_000))
+		require.NoError(t, h.send(h.bank, h.trader, a, 800_000))
 		_, err := h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, 1)
 		require.ErrorIs(t, err, types.ErrInvalidAirdropEpoch)
 		epoch := nextEntitlementEpoch(h)
@@ -1013,7 +1038,7 @@ func TestAirdropEntitlements(t *testing.T) {
 		escrow := h.k.ModuleAddress()
 		held := h.balance(escrow, quote)
 		sink := h.account(0)
-		require.NoError(t, bank.SendCoins(h.ctx, escrow, sink, sdk.NewCoins(sdk.NewCoin(quote, held))))
+		require.NoError(t, h.bank.SendCoins(h.ctx, escrow, sink, sdk.NewCoins(sdk.NewCoin(quote, held))))
 		marketBefore := h.market(h.denom)
 		quoteBefore := h.balance(a, quote)
 		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, epoch)
@@ -1022,7 +1047,7 @@ func TestAirdropEntitlements(t *testing.T) {
 		require.True(t, airdropPaid(t, h.env, h.denom, epoch).IsZero())
 		sameJSON(t, marketBefore, h.market(h.denom))
 		require.Equal(t, quoteBefore, h.balance(a, quote))
-		require.NoError(t, bank.SendCoins(h.ctx, sink, escrow, sdk.NewCoins(sdk.NewCoin(quote, held))))
+		require.NoError(t, h.bank.SendCoins(h.ctx, sink, escrow, sdk.NewCoins(sdk.NewCoin(quote, held))))
 
 		got, err := h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, epoch)
 		require.NoError(t, err)
@@ -1037,11 +1062,11 @@ func TestAirdropEntitlements(t *testing.T) {
 		h := newHistoryEnv(t)
 		a, b2 := h.account(0), h.account(0)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
-		require.NoError(t, h.send(bank, h.trader, a, 500_000))
+		require.NoError(t, h.send(h.bank, h.trader, a, 500_000))
 		first := nextEntitlementEpoch(h)
 		want, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, first)
 		require.NoError(t, err)
-		require.NoError(t, h.send(bank, a, b2, 500_000))
+		require.NoError(t, h.send(h.bank, a, b2, 500_000))
 		second := nextEntitlementEpoch(h)
 		_, err = h.k.ClaimAirdrop(h.ctx, a, h.denom)
 		require.ErrorIs(t, err, types.ErrZeroAmount)
@@ -1061,11 +1086,11 @@ func TestAirdropEntitlements(t *testing.T) {
 		h := newHistoryEnv(t)
 		a, b2 := h.account(0), h.account(0)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
-		require.NoError(t, h.send(bank, h.trader, a, 300_000))
+		require.NoError(t, h.send(h.bank, h.trader, a, 300_000))
 		epoch := nextEntitlementEpoch(h)
 		aShare, err := h.k.ClaimAirdrop(h.ctx, a, h.denom)
 		require.NoError(t, err)
-		require.NoError(t, h.send(bank, a, b2, 300_000))
+		require.NoError(t, h.send(h.bank, a, b2, 300_000))
 		gs := h.k.ExportGenesis(h.ctx)
 		require.NoError(t, gs.Validate())
 		require.Len(t, gs.AirdropBases, 1)
