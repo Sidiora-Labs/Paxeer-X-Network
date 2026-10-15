@@ -38,7 +38,7 @@ type PoolKeeper interface {
 	GetQuoteLedger(ctx sdk.Context, ledger launchpadkeeper.QuoteLedger) (sdk.Int, error)
 	HasRole(ctx sdk.Context, contract common.Address, role [32]byte, account common.Address) bool
 	LockHeld(store launchpadkeeper.TransientStore, lock launchpadkeeper.Lock) bool
-	Swap(ctx sdk.Context, caller launchpadkeeper.NestedCaller, locks launchpadkeeper.TransientStore, denom string,
+	Swap(ctx sdk.Context, caller launchpadkeeper.NestedCaller, locks launchpadkeeper.SwapState, denom string,
 		isBuy bool, amountIn, minAmountOut *big.Int, trader, recipient common.Address,
 		deadline uint64) (sdk.Context, launchpadkeeper.SwapResult, error)
 	SyncReserves(ctx sdk.Context, caller launchpadkeeper.NestedCaller, locks launchpadkeeper.TransientStore,

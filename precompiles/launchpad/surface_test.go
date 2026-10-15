@@ -142,6 +142,7 @@ func newSurfaceHarness(t *testing.T) *surfaceHarness {
 		migratedMarket(1, types.Generation1, s.pools[0], s.tokens[0], creator, k.Generation2()),
 		migratedMarket(2, types.Generation2, s.pools[1], s.tokens[1], creator, k.Generation2()),
 	}
+	gs.FeeRights = types.FeeRightCollection{NextTokenID: 3, PoolIndexMigrationCursor: 3, PoolIndexReady: true}
 	k.InitGenesis(ctx, *gs)
 	require.NoError(t, launchpad.InstallRoleSurfaces(ctx, evmKeeper, k))
 	for i, market := range gs.Markets {

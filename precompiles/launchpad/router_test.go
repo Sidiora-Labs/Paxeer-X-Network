@@ -227,7 +227,7 @@ func TestRouterAndFactoryRolesServeEverySelector(t *testing.T) {
 	require.Equal(t, []interface{}{[32]byte{}}, r.ok(types.RoleRouter, r.router, r.trader, "getRoleAdmin", routerRole))
 	require.Equal(t, []interface{}{false},
 		r.ok(types.RoleRouter, r.router, r.trader, "hasRole", routerRole, r.routerHolder))
-	require.Equal(t, []interface{}{zero}, r.ok(types.RoleRouter, r.router, r.trader, "registeredDefaultAdminCount"))
+	same(t, []interface{}{zero}, r.ok(types.RoleRouter, r.router, r.trader, "registeredDefaultAdminCount"))
 
 	require.Equal(t, []interface{}{[32]byte{}}, r.ok(types.RoleFactory, r.factory, r.trader, "DEFAULT_ADMIN_ROLE"))
 	require.Equal(t, []interface{}{routerRole}, r.ok(types.RoleFactory, r.factory, r.trader, "ROUTER_ROLE"))
@@ -246,8 +246,8 @@ func TestRouterAndFactoryRolesServeEverySelector(t *testing.T) {
 	require.Equal(t, []interface{}{true},
 		r.ok(types.RoleFactory, r.factory, r.trader, "hasRole", routerRole, r.routerHolder))
 	require.Equal(t, []interface{}{false}, r.ok(types.RoleFactory, r.factory, r.trader, "hasRole", routerRole, r.trader))
-	require.Equal(t, []interface{}{zero}, r.ok(types.RoleFactory, r.factory, r.trader, "registeredDefaultAdminCount"))
-	require.Equal(t, []interface{}{zero}, r.ok(types.RoleFactory, r.factory, r.trader, "getNonce", r.trader))
+	same(t, []interface{}{zero}, r.ok(types.RoleFactory, r.factory, r.trader, "registeredDefaultAdminCount"))
+	same(t, []interface{}{zero}, r.ok(types.RoleFactory, r.factory, r.trader, "getNonce", r.trader))
 
 	// Administration is refused under ruling 7; the proxies are initialized
 	// and serve no UUPS entry point.

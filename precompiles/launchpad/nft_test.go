@@ -359,7 +359,7 @@ func TestCollectionServesEverySelector(t *testing.T) {
 			require.Equal(t, [32]byte(crypto.Keccak256Hash([]byte("MINTER_ROLE"))), e.view("MINTER_ROLE()"))
 			require.Equal(t, [32]byte(crypto.Keccak256Hash([]byte("STRATEGY_SETTER_ROLE"))), e.view("STRATEGY_SETTER_ROLE()"))
 			require.Equal(t, [32]byte{}, e.view("getRoleAdmin(bytes32)", nftMinterRole))
-			require.Equal(t, big.NewInt(0), e.view("registeredDefaultAdminCount()"))
+			same(t, big.NewInt(0), e.view("registeredDefaultAdminCount()"))
 		}},
 		{[]string{"hasRole(bytes32,address)"}, func() {
 			require.Equal(t, true, e.view("hasRole(bytes32,address)", nftMinterRole, nftFactory))
@@ -395,7 +395,7 @@ func TestCollectionServesEverySelector(t *testing.T) {
 		}},
 		{[]string{"balanceOf(address)", "ownerOf(uint256)", "getApproved(uint256)", "isApprovedForAll(address,address)"}, func() {
 			require.Equal(t, big.NewInt(1), e.view("balanceOf(address)", nftOwner))
-			require.Equal(t, big.NewInt(0), e.view("balanceOf(address)", nftStranger))
+			same(t, big.NewInt(0), e.view("balanceOf(address)", nftStranger))
 			e.refused(errNFTZeroAddress, nftStranger, "balanceOf(address)", common.Address{})
 			require.Equal(t, nftOwner, e.view("ownerOf(uint256)", big.NewInt(1)))
 			e.refused(errNFTNotFound, nftStranger, "ownerOf(uint256)", big.NewInt(2))
@@ -411,7 +411,7 @@ func TestCollectionServesEverySelector(t *testing.T) {
 			require.Equal(t, nftPool, e.view("getPoolAddress(uint256)", big.NewInt(1)))
 			e.refused(errNFTNotFound, nftStranger, "getPoolAddress(uint256)", nftTooLarge)
 			require.Equal(t, big.NewInt(1), e.view("poolTokenId(address)", nftPool))
-			require.Equal(t, big.NewInt(0), e.view("poolTokenId(address)", nftPoolB))
+			same(t, big.NewInt(0), e.view("poolTokenId(address)", nftPoolB))
 		}},
 		{[]string{"nextTokenId()", "poolIndexMigrationCursor()", "poolIndexReady()", "totalSupply()"}, func() {
 			require.Equal(t, big.NewInt(2), e.view("nextTokenId()"))
@@ -486,7 +486,7 @@ func TestCollectionServesEverySelector(t *testing.T) {
 			e.requireLog(logs[0], "Transfer", nil, nftWord(common.Address{}), nftWord(nftOwner), nftID(2))
 			e.requireLog(logs[1], "PoolNFTMinted", nil, nftID(2), nftWord(nftOwner), nftWord(nftReceiver))
 			require.Equal(t, uint8(types.FeeStrategyAirdrop), e.view("getFeeStrategy(uint256)", big.NewInt(2)))
-			require.Equal(t, big.NewInt(0), e.receiverView("calls"))
+			same(t, big.NewInt(0), e.receiverView("calls"))
 			out, _ = e.emits(nftFactory, mint, nftOwner, nftPoolB, uint8(1))
 			require.Equal(t, []interface{}{big.NewInt(3)}, out)
 			require.Equal(t, big.NewInt(4), e.view("nextTokenId()"))
@@ -556,7 +556,7 @@ func TestFeeRightReceiverHook(t *testing.T) {
 	// Migrated fee rights are imported into the store without the hook.
 	require.Equal(t, nftReceiver, e.view("ownerOf(uint256)", big.NewInt(1)))
 	require.Equal(t, big.NewInt(1), e.view("balanceOf(address)", nftReceiver))
-	require.Equal(t, big.NewInt(0), e.receiverView("calls"))
+	same(t, big.NewInt(0), e.receiverView("calls"))
 
 	// The SidioraFactory address minting to a contract receiver is the operator.
 	require.Equal(t, common.HexToAddress("0x3993D004166738d1069B5C4e0a923f7B9D5D8830"), nftFactory)
@@ -584,7 +584,7 @@ func TestFeeRightReceiverHook(t *testing.T) {
 		e.receiverCall("setMode", refusal.mode)
 		e.refused(refusal.want, nftFactory, mint, nftReceiver, nftPoolC, uint8(0))
 		require.Equal(t, big.NewInt(3), e.view("nextTokenId()"))
-		require.Equal(t, big.NewInt(0), e.view("poolTokenId(address)", nftPoolC))
+		same(t, big.NewInt(0), e.view("poolTokenId(address)", nftPoolC))
 		require.Equal(t, big.NewInt(2), e.view("balanceOf(address)", nftReceiver))
 		require.Equal(t, big.NewInt(1), e.receiverView("calls"))
 	}

@@ -48,11 +48,11 @@ const (
 )
 
 const (
-	retainedGas    uint64 = 30_000_000
-	usdlSupply     int64  = 1_000_000_000_000_000
-	traderUSDL     int64  = 1_000_000_000_000
-	pauseGasBudget uint64 = 150_000
-	statusGas      uint64 = 30_000
+	retainedGas        uint64 = 30_000_000
+	retainedUSDLSupply int64  = 1_000_000_000_000_000
+	traderUSDL         int64  = 1_000_000_000_000
+	pauseGasBudget     uint64 = 150_000
+	statusGas          uint64 = 30_000
 )
 
 var (
@@ -198,7 +198,7 @@ func newRetainedHarness(t *testing.T) *retainedHarness {
 	}
 
 	h.usdl = h.deploy(h.admin, retainedUSDLCreation, packArgs(t, "string,string,uint256,address", "USD Ledger", "USDL",
-		big.NewInt(usdlSupply), h.admin))
+		big.NewInt(retainedUSDLSupply), h.admin))
 	params := h.keeper.GetParams(h.ctx())
 	params.QuoteToken = h.usdl.Hex()
 	require.NoError(t, h.keeper.UpdateParams(h.ctx(), h.keeper.Authority(), params))
@@ -542,7 +542,7 @@ func TestSidioraAdapterAfterRepoint(t *testing.T) {
 	_, _, err := h.try(h.trader, adapter, retainedGas, calldata(t, executeSwap, h.usdl, token, amountIn, big.NewInt(0),
 		h.trader, h.trader, big.NewInt(0), route))
 	require.ErrorIs(t, err, vm.ErrExecutionReverted)
-	require.Equal(t, big.NewInt(0), h.balanceOf(token, h.trader))
+	same(t, big.NewInt(0), h.balanceOf(token, h.trader))
 
 	h.reverts(h.trader, adapter, revertData("MissingRole(address,bytes32)", addressWord(h.trader), make([]byte, 32)),
 		"setSidioraRouter(address)", launchpadAddress)
@@ -557,8 +557,8 @@ func TestSidioraAdapterAfterRepoint(t *testing.T) {
 	require.Positive(t, amountOut.Sign())
 	require.Equal(t, amountOut, h.balanceOf(token, h.trader))
 	require.Equal(t, new(big.Int).Sub(usdlBefore, amountIn), h.balanceOf(h.usdl, h.trader))
-	require.Equal(t, big.NewInt(0), h.balanceOf(h.usdl, adapter))
-	require.Equal(t, big.NewInt(0), h.balanceOf(token, adapter))
-	require.Equal(t, big.NewInt(0), retUint(t, h.view(h.usdl, "allowance(address,address)", adapter, launchpadAddress), 0))
+	same(t, big.NewInt(0), h.balanceOf(h.usdl, adapter))
+	same(t, big.NewInt(0), h.balanceOf(token, adapter))
+	same(t, big.NewInt(0), retUint(t, h.view(h.usdl, "allowance(address,address)", adapter, launchpadAddress), 0))
 	require.Equal(t, pool, retAddress(t, h.view(poolRegistrySurface, "getPoolByToken(address)", token), 0))
 }
