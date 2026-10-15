@@ -67,7 +67,3 @@ func (app *App) runV6120Upgrade(ctx sdk.Context, _ upgradetypes.Plan, fromVM mod
 	app.setV6120Live(true)
 	return newVM, nil
 }
-
-// setV6120Live switches the v6.12.0 precompile set; it serves nothing until the
-// precompile set exists.
-func (app *App) setV6120Live(bool) {}

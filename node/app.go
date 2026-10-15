@@ -489,6 +489,11 @@ type App struct {
 	// v6120HookTable is the ordered hook table the v6.12.0 plan runs.
 	v6120HookTable []v6120Hook
 
+	// v6120Live reports whether the v6.12.0 precompile set is served, and
+	// v6120Next holds, per address, the contracts that set adds or switches.
+	v6120Live bool
+	v6120Next map[common.Address][2]vm.PrecompiledContract
+
 	BeginBlockKeepers legacyabci.BeginBlockKeepers
 	EndBlockKeepers   legacyabci.EndBlockKeepers
 	CheckTxKeepers    legacyabci.CheckTxKeepers
