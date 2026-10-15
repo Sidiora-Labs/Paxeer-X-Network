@@ -1,39 +1,44 @@
 # Launchpad contract: the launchpad precompile at 0x1017 in release v6.12.0
 
-Version 1.0.0. This file binds the launchpad of the Paxeer X Network to the interface of the Launch-x contracts (github.com/Sidiora-Labs/Launch-x, commit c5eb7c7) of the manifest-active generation 2, served by the precompile at 0x1017 and its surfaces, with uusdl as the bank form of USDL, opticals, ERC721 fee rights and ERC20 pool tokens, and the v6.12.0 migration of every generation 1 and generation 2 pool.
+Version 1.1.0. This file binds the launchpad of the Paxeer X Network to the interface of the Launch-x contracts (github.com/Sidiora-Labs/Launch-x, commit c5eb7c7) of the manifest-active generation 2, served by the precompile at 0x1017 and its surfaces at the generation 2 role addresses and every pool address. USDL stays the ERC20 contract and the launchpad holds it in custody at the launchpad module EVM address through nested ERC20 calls; pool tokens stay the deployed SidioraERC20 contracts; opticals, ERC721 fee rights and the Treasury are served as the contracts define them; and the v6.12.0 migration brings every generation 1 and generation 2 pool into generation 2.
 
 Citations use `Launch-x:path:line` at c5eb7c7 and plain `path:line` for this repository at 211acbc6c. A "required change" names the current code and the target behaviour. The launchpad backend binds the precompile by manifest role.
 
+Changes from 1.0.0: no bank denom, mint or native pointer for USDL (section 5); one generation 2 set serves every pool (section 1); the Treasury role (sections 2 and 20); DEFAULT_ADMIN_ROLE methods revert AccessControlUnauthorizedAccount and administration runs through governance (sections 12 and 23); per-pool and per-role re-entrancy locks (section 19); retired generation 1 addresses (section 21); retained contracts (section 22); book-held deltas and the fee-right id map in the migration record (section 8); distinct error counts in section 2.
+
 ## 1. Scope and addresses
 
-| Role | Generation 1 | Generation 2 | Markets created after the upgrade |
-|---|---|---|---|
-| SidioraFactory | `0x8a1A09CEe72c1D39dF33B8284E38baeF8371f465` | `0x3993D004166738d1069B5C4e0a923f7B9D5D8830` | 0x1017 |
-| Router | `0xCC7298801112682e10ee14b8a520309caD80336d` | `0x78FB06f525cD964388f2305A489035263E31C6e4` | 0x1017 |
-| Quoter | `0xB768e183b6EfDeDf8b2AA7af732039D1C3c452d0` | `0x793006f4F321b8863F26DBD75b11bAa01DA181dc` | 0x1017 |
-| FeesRouter | `0x02Df12a44F2658080E76fbcF7D6B34Baa97843b6` | `0x05681dA6f611C2dfFD3E92611F6dE2d247647927` | 0x1017 |
-| FeeAccumulator | `0x50C69dF6637b3DCE6a7407C5A4b4F99E68514A76` | `0x7b14808b72f61664cDb79D25E6d1587655571a66` | 0x1017 |
-| PoolRegistry | `0x7684382c89f79104574D8EF9b31eFf2eD2C2BA0b` | `0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7` | 0x1017 |
-| ProtocolConfig | `0xEeDF5409cFD30bd14D0399318c7d2150265575e5` | `0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6` | 0x1017 |
-| SidioraNFT | `0xDF73b354ed9dcB473cc9D01541c46f507591e190` | `0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B` | generation 2 collection |
-| EventEmitter | `0x0E10286EE51F99c666CDcAb52451e58AbdA4048F` | `0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6` | 0x1017 (launchpad events) |
+| Role | Generation 1 (retired, section 21) | Generation 2 (served by 0x1017) |
+|---|---|---|
+| SidioraFactory | `0x8a1A09CEe72c1D39dF33B8284E38baeF8371f465` (Launch-x:protocol/addresses.go:22) | `0x3993D004166738d1069B5C4e0a923f7B9D5D8830` (Launch-x:shared/config/deployment/current.json:37) |
+| Router | `0xCC7298801112682e10ee14b8a520309caD80336d` (Launch-x:protocol/addresses.go:23) | `0x78FB06f525cD964388f2305A489035263E31C6e4` (Launch-x:shared/config/deployment/current.json:23) |
+| Quoter | `0xB768e183b6EfDeDf8b2AA7af732039D1C3c452d0` (Launch-x:protocol/addresses.go:24) | `0x793006f4F321b8863F26DBD75b11bAa01DA181dc` (Launch-x:shared/config/deployment/current.json:30) |
+| FeesRouter | `0x02Df12a44F2658080E76fbcF7D6B34Baa97843b6` (Launch-x:protocol/addresses.go:28) | `0x05681dA6f611C2dfFD3E92611F6dE2d247647927` (Launch-x:shared/config/deployment/current.json:65) |
+| FeeAccumulator | `0x50C69dF6637b3DCE6a7407C5A4b4F99E68514A76` (Launch-x:protocol/addresses.go:26) | `0x7b14808b72f61664cDb79D25E6d1587655571a66` (Launch-x:shared/config/deployment/current.json:51) |
+| PoolRegistry | `0x7684382c89f79104574D8EF9b31eFf2eD2C2BA0b` (Launch-x:protocol/addresses.go:21) | `0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7` (Launch-x:shared/config/deployment/current.json:44) |
+| ProtocolConfig | `0xEeDF5409cFD30bd14D0399318c7d2150265575e5` (Launch-x:protocol/addresses.go:25) | `0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6` (Launch-x:shared/config/deployment/current.json:16) |
+| SidioraNFT | `0xDF73b354ed9dcB473cc9D01541c46f507591e190` (Launch-x:protocol/addresses.go:27) | `0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B` (Launch-x:shared/config/deployment/current.json:58) |
+| Treasury | `0x15405D535ce533BfFb98c83e42f4DD242AA5e079` (Launch-x:protocol/addresses.go:84) | read from SidioraFactory slot 6 (Launch-x:contracts/contracts/core/SidioraFactory.sol:30), recorded in modules/launchpad/keeper/testdata/v6120/layout.json |
+| OpticalRegistry | `0x4CdA6e48632d51Ee4Fa735D81BF09F7543f644a1` (Launch-x:protocol/addresses.go:95) | `0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0` (Launch-x:shared/config/deployment/current.json:72), retained contract (section 22) |
+| EventEmitter | `0x0E10286EE51F99c666CDcAb52451e58AbdA4048F` (Launch-x:protocol/addresses.go:20), keeps its code | `0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6` (Launch-x:shared/config/deployment/current.json:9), retained contract (section 22) |
+| PoolBeacon | `0xf11f08afe33e020Cab22bCaffBbAfC471c75E9d4` (Launch-x:protocol/addresses.go:29), keeps its code | `0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE` (Launch-x:shared/config/deployment/current.json:79), retained contract (section 22) |
 
-USDL: `0x85FcD13735F4309833A503EE804ea32395851479` (Launch-x:shared/config/deployment/current.json:86). After the upgrade this address is the ERC20 native pointer of the bank denom uusdl.
+USDL: `0x85FcD13735F4309833A503EE804ea32395851479` (Launch-x:shared/config/deployment/current.json:86) stays the ERC20 contract with its code and storage; there is no bank denom, no mint and no native pointer for it. The launchpad holds its USDL as the ERC20 balance of the launchpad module EVM address (GetEVMAddressOrDefault, modules/evm/keeper/address.go:41, of authtypes.NewModuleAddress(ModuleName), modules/launchpad/keeper/keeper.go:40; contracts/address-table.md, module accounts) (section 5).
 
 - The launchpad is served at 0x0000000000000000000000000000000000001017 (modules/launchpad/types/keys.go:26), registered at precompiles/setup.go:14.
-- Ten contract roles are served with their Launch-x ABIs: SidioraPool 42 functions, SidioraFactory 23, SidioraERC20 19, SidioraNFT 37, Router 23, Quoter 19, FeesRouter 20, FeeAccumulator 54, PoolRegistry 22, ProtocolConfig 27 (the pool entry point at Launch-x:contracts/contracts/core/SidioraPool.sol:147).
-- Direct calls to 0x1017 resolve through abi.json, 113 selectors, role order Router, SidioraFactory, Quoter, PoolRegistry, FeesRouter, FeeAccumulator, ProtocolConfig, replacing the method set of precompiles/launchpad/launchpad.go:46.
-- Each market carries generation 1 (Launch-x:protocol/addresses.go:22), generation 2 (Launch-x:shared/config/deployment/current.json:37) or 3 (created after the upgrade, roles at 0x1017); role surfaces of a generation answer for that generation.
-- Fee rights are ERC721 tokens in the generation 1 collection 0xDF73…e190 and the generation 2 collection 0xe8Dc…409B; markets created after the upgrade mint in the generation 2 collection from nextTokenId (base Launch-x:contracts/contracts/base/ERC721Base.sol:11).
-- Pool tokens are ERC20 tokens whose bank denoms are tokenfactory denoms with subdenom lp<index> (modules/launchpad/keeper/market.go:18) and whose old addresses are native pointers or token surfaces.
+- Eleven contract roles are served with their Launch-x ABIs: SidioraPool 42 functions, SidioraFactory 23, SidioraNFT 37, Router 23, Quoter 19, FeesRouter 20, FeeAccumulator 54, PoolRegistry 22, ProtocolConfig 27 and Treasury 17 (Launch-x:contracts/contracts/protocol/Treasury.sol:13); the SidioraERC20 file (19 functions) encodes nested calls to the pool-token contracts, which stay deployed (the pool entry point at Launch-x:contracts/contracts/core/SidioraPool.sol:147).
+- Direct calls to 0x1017 resolve through abi.json, 113 selectors, role order Router, SidioraFactory, Quoter, PoolRegistry, FeesRouter, FeeAccumulator, ProtocolConfig with first-role-wins for the 21 shared signatures, replacing the method set of precompiles/launchpad/launchpad.go:46.
+- Every market reads generation 2 after the upgrade: the generation 2 role addresses of Launch-x:shared/config/deployment/current.json:9-79 (SidioraFactory at :37) serve every pool, those of generation 1 (Launch-x:protocol/addresses.go:20-29) are retired (requirement 2.36), and markets created after the upgrade join the same generation 2 set.
+- Fee rights are ERC721 tokens of the generation 2 collection 0xe8Dc…409B (Launch-x:shared/config/deployment/current.json:58); generation 1 rights are imported under new ids from nextTokenId with an id map, and markets created after the upgrade mint from nextTokenId (base Launch-x:contracts/contracts/base/ERC721Base.sol:11).
+- Pool tokens stay the deployed SidioraERC20 contracts with their code and storage; new markets deploy one by CREATE2 from the generation 2 SidioraFactory (Launch-x:contracts/contracts/core/SidioraFactory.sol:120-125).
 
 ## 2. Interface by role
 
-Every function, event and custom error of each role, with its selector (function and error: 4 bytes; event: topic 0). The ABI goldens of task 2.0.1 freeze these tables.
+Every function, event and custom error of each role, with its selector (function and error: 4 bytes; event: topic 0). The ABI golden file of task 2.0.5 freezes these tables: 549 lines for the ten launchpad role files and the twelve EventEmitter launchpad events, 44 for Treasury and 2 for the chain-defined errors of section 12, 595 in all.
 
 ### SidioraPool
 
-42 functions, 6 events, 21 errors.
+42 functions, 25 events, 0 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -95,8 +100,6 @@ Every function, event and custom error of each role, with its selector (function
 | `DeadlineExpired()` | `0x1ab7da6b` | Launch-x:contracts/contracts/interfaces/ISidioraPool.sol:8 |
 | `DivisionByZero()` | `0x23d359a3` | Launch-x:contracts/contracts/libraries/SidioraMath.sol:9 |
 | `InsufficientInput()` | `0xf8b3bb61` | Launch-x:contracts/contracts/interfaces/ISidioraPool.sol:11 |
-| `InsufficientInput()` | `0xf8b3bb61` | Launch-x:contracts/contracts/interfaces/ISidioraPool.sol:11 |
-| `InsufficientLiquidity()` | `0xbb55fd27` | Launch-x:contracts/contracts/interfaces/ISidioraPool.sol:10 |
 | `InsufficientLiquidity()` | `0xbb55fd27` | Launch-x:contracts/contracts/interfaces/ISidioraPool.sol:10 |
 | `InvalidBalance()` | `0xc52e3eff` | Launch-x:contracts/contracts/core/SidioraPool.sol:45 |
 | `InvalidConfiguration()` | `0xc52a9bd3` | Launch-x:contracts/contracts/core/SidioraPool.sol:44 |
@@ -115,7 +118,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### SidioraFactory
 
-23 functions, 6 events, 17 errors.
+23 functions, 22 events, 0 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -158,7 +161,6 @@ Every function, event and custom error of each role, with its selector (function
 | `DuplicateToken()` | `0x464e3f6a` | Launch-x:contracts/contracts/interfaces/ISidioraFactory.sol:10 |
 | `InsufficientCreationFee()` | `0x535b7470` | Launch-x:contracts/contracts/interfaces/ISidioraFactory.sol:9 |
 | `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
-| `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
 | `InvalidRoleAccount()` | `0xeccda526` | Launch-x:contracts/contracts/base/AccessControl.sol:23 |
 | `LastDefaultAdmin()` | `0x9c88180d` | Launch-x:contracts/contracts/base/AccessControl.sol:22 |
 | `MissingRole(address,bytes32)` | `0x0161a64a` | Launch-x:contracts/contracts/base/AccessControl.sol:36 |
@@ -174,7 +176,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### SidioraERC20
 
-19 functions, 2 events, 7 errors.
+19 functions, 9 events, 0 errors. Not served by the precompile: these are the functions of the deployed pool-token contracts, which keep their code and storage and which the precompile reaches by nested calls (requirement 2.12).
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -215,7 +217,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### SidioraNFT
 
-37 functions, 10 events, 23 errors.
+37 functions, 32 events, 0 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -277,7 +279,6 @@ Every function, event and custom error of each role, with its selector (function
 | `DuplicatePool()` | `0xb82a4746` | Launch-x:contracts/contracts/core/SidioraNFT.sol:26 |
 | `IndexOutOfBounds()` | `0x4e23d035` | Launch-x:contracts/contracts/base/ERC721Enumerable.sol:14 |
 | `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
-| `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
 | `InvalidRoleAccount()` | `0xeccda526` | Launch-x:contracts/contracts/base/AccessControl.sol:23 |
 | `InvalidStrategy()` | `0x4e236e9a` | Launch-x:contracts/contracts/interfaces/ISidioraNFT.sol:8 |
 | `LastDefaultAdmin()` | `0x9c88180d` | Launch-x:contracts/contracts/base/AccessControl.sol:22 |
@@ -298,7 +299,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### Router
 
-23 functions, 9 events, 22 errors.
+23 functions, 30 events, 0 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -344,7 +345,6 @@ Every function, event and custom error of each role, with its selector (function
 | `DeadlineExpired()` | `0x1ab7da6b` | Launch-x:contracts/contracts/interfaces/IRouter.sol:10 |
 | `InsufficientBalance()` | `0xf4d678b8` | Launch-x:contracts/contracts/interfaces/IRouter.sol:12 |
 | `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
-| `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
 | `InvalidRoleAccount()` | `0xeccda526` | Launch-x:contracts/contracts/base/AccessControl.sol:23 |
 | `LastDefaultAdmin()` | `0x9c88180d` | Launch-x:contracts/contracts/base/AccessControl.sol:22 |
 | `MissingRole(address,bytes32)` | `0x0161a64a` | Launch-x:contracts/contracts/base/AccessControl.sol:36 |
@@ -365,7 +365,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### Quoter
 
-19 functions, 5 events, 19 errors.
+19 functions, 23 events, 0 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -404,7 +404,6 @@ Every function, event and custom error of each role, with its selector (function
 | `InsufficientInput()` | `0xf8b3bb61` | Launch-x:contracts/contracts/interfaces/ISidioraPool.sol:11 |
 | `InsufficientLiquidity()` | `0xbb55fd27` | Launch-x:contracts/contracts/interfaces/ISidioraPool.sol:10 |
 | `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
-| `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
 | `InvalidRoleAccount()` | `0xeccda526` | Launch-x:contracts/contracts/base/AccessControl.sol:23 |
 | `LastDefaultAdmin()` | `0x9c88180d` | Launch-x:contracts/contracts/base/AccessControl.sol:22 |
 | `MissingRole(address,bytes32)` | `0x0161a64a` | Launch-x:contracts/contracts/base/AccessControl.sol:36 |
@@ -421,7 +420,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### FeesRouter
 
-20 functions, 12 events, 17 errors.
+20 functions, 28 events, 0 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -465,7 +464,6 @@ Every function, event and custom error of each role, with its selector (function
 |---|---|---|
 | `AlreadyInitialized()` | `0x0dc149f0` | Launch-x:contracts/contracts/base/Initializable.sol:18 |
 | `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
-| `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
 | `InvalidRoleAccount()` | `0xeccda526` | Launch-x:contracts/contracts/base/AccessControl.sol:23 |
 | `LastDefaultAdmin()` | `0x9c88180d` | Launch-x:contracts/contracts/base/AccessControl.sol:22 |
 | `MissingRole(address,bytes32)` | `0x0161a64a` | Launch-x:contracts/contracts/base/AccessControl.sol:36 |
@@ -483,7 +481,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### FeeAccumulator
 
-54 functions, 17 events, 24 errors.
+54 functions, 40 events, 0 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -570,7 +568,6 @@ Every function, event and custom error of each role, with its selector (function
 | `ApproveFailed()` | `0x3e3f8f73` | Launch-x:contracts/contracts/libraries/TransferHelper.sol:10 |
 | `InsufficientSurplus()` | `0x94290ab9` | Launch-x:contracts/contracts/interfaces/IFeeAccumulator.sol:15 |
 | `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
-| `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
 | `InvalidRoleAccount()` | `0xeccda526` | Launch-x:contracts/contracts/base/AccessControl.sol:23 |
 | `LastDefaultAdmin()` | `0x9c88180d` | Launch-x:contracts/contracts/base/AccessControl.sol:22 |
 | `MissingRole(address,bytes32)` | `0x0161a64a` | Launch-x:contracts/contracts/base/AccessControl.sol:36 |
@@ -591,7 +588,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### PoolRegistry
 
-22 functions, 7 events, 17 errors.
+22 functions, 23 events, 0 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -634,7 +631,6 @@ Every function, event and custom error of each role, with its selector (function
 | `DuplicatePool()` | `0xb82a4746` | Launch-x:contracts/contracts/interfaces/IPoolRegistry.sol:11 |
 | `DuplicateToken()` | `0x464e3f6a` | Launch-x:contracts/contracts/interfaces/IPoolRegistry.sol:10 |
 | `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
-| `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
 | `InvalidRoleAccount()` | `0xeccda526` | Launch-x:contracts/contracts/base/AccessControl.sol:23 |
 | `LastDefaultAdmin()` | `0x9c88180d` | Launch-x:contracts/contracts/base/AccessControl.sol:22 |
 | `MissingRole(address,bytes32)` | `0x0161a64a` | Launch-x:contracts/contracts/base/AccessControl.sol:36 |
@@ -650,7 +646,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### ProtocolConfig
 
-27 functions, 6 events, 14 errors.
+27 functions, 19 events, 0 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -696,7 +692,6 @@ Every function, event and custom error of each role, with its selector (function
 | `AlreadyInitialized()` | `0x0dc149f0` | Launch-x:contracts/contracts/base/Initializable.sol:18 |
 | `FeeOutOfRange()` | `0x0c8249ad` | Launch-x:contracts/contracts/interfaces/IProtocolConfig.sol:8 |
 | `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
-| `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
 | `InvalidRoleAccount()` | `0xeccda526` | Launch-x:contracts/contracts/base/AccessControl.sol:23 |
 | `LastDefaultAdmin()` | `0x9c88180d` | Launch-x:contracts/contracts/base/AccessControl.sol:22 |
 | `MissingRole(address,bytes32)` | `0x0161a64a` | Launch-x:contracts/contracts/base/AccessControl.sol:36 |
@@ -708,9 +703,66 @@ Every function, event and custom error of each role, with its selector (function
 | `UpgradeInitializationFailed()` | `0xcc1cf440` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:21 |
 | `ZeroAddress()` | `0xd92e233d` | Launch-x:contracts/contracts/interfaces/IProtocolConfig.sol:9 |
 
+### Treasury
+
+17 functions, 8 events, 19 errors. Served at the generation 2 Treasury address over the keeper Treasury ledger (section 20).
+
+| Function | Selector | Mutability | Returns | Declared |
+|---|---|---|---|---|
+| `DEFAULT_ADMIN_ROLE()` | `0xa217fddf` | view | `(bytes32)` | Launch-x:contracts/contracts/base/AccessControl.sol:9 |
+| `DEPOSITOR_ROLE()` | `0xa3b0b5a3` | view | `(bytes32)` | Launch-x:contracts/contracts/protocol/Treasury.sol:14 |
+| `deposit(address,uint256)` | `0x47e7ef24` | nonpayable | `()` | Launch-x:contracts/contracts/protocol/Treasury.sol:46 |
+| `eventEmitter()` | `0x9ff78c30` | view | `(address)` | Launch-x:contracts/contracts/protocol/Treasury.sol:18 |
+| `getBalance(address)` | `0xf8b2cb4f` | view | `(uint256)` | Launch-x:contracts/contracts/protocol/Treasury.sol:73 |
+| `getRoleAdmin(bytes32)` | `0x248a9ca3` | view | `(bytes32)` | Launch-x:contracts/contracts/base/AccessControl.sol:53 |
+| `grantRole(bytes32,address)` | `0x2f2ff15d` | nonpayable | `()` | Launch-x:contracts/contracts/base/AccessControl.sol:58 |
+| `hasRole(bytes32,address)` | `0x91d14854` | view | `(bool)` | Launch-x:contracts/contracts/base/AccessControl.sol:48 |
+| `initialize(address,address)` | `0x485cc955` | nonpayable | `()` | Launch-x:contracts/contracts/protocol/Treasury.sol:38 |
+| `proxiableUUID()` | `0x52d1902d` | view | `(bytes32)` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:41 |
+| `recordDeposit(address,uint256)` | `0x1e578bae` | nonpayable | `()` | Launch-x:contracts/contracts/protocol/Treasury.sol:79 |
+| `recoverSurplus(address,address,uint256)` | `0x72df7f5b` | nonpayable | `()` | Launch-x:contracts/contracts/protocol/Treasury.sol:87 |
+| `registeredDefaultAdminCount()` | `0xc0cb71b6` | view | `(uint256)` | Launch-x:contracts/contracts/base/AccessControl.sol:32 |
+| `renounceRole(bytes32,address)` | `0x36568abe` | nonpayable | `()` | Launch-x:contracts/contracts/base/AccessControl.sol:68 |
+| `revokeRole(bytes32,address)` | `0xd547741f` | nonpayable | `()` | Launch-x:contracts/contracts/base/AccessControl.sol:63 |
+| `upgradeToAndCall(address,bytes)` | `0x4f1ef286` | payable | `()` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:48 |
+| `withdraw(address,address,uint256)` | `0xd9caed12` | nonpayable | `()` | Launch-x:contracts/contracts/protocol/Treasury.sol:58 |
+
+| Event | Topic 0 | Declared |
+|---|---|---|
+| `Deposited(address,address,uint256)` | `0x8752a472e571a816aea92eec8dae9baf628e840f4929fbcc2d155e6233ff68a7` | Launch-x:contracts/contracts/interfaces/ITreasury.sol:14 |
+| `Initialized(uint64)` | `0xc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d2` | Launch-x:contracts/contracts/base/Initializable.sol:21 |
+| `RoleAdminChanged(bytes32,bytes32,bytes32)` | `0xbd79b86ffe0ab8e8776151514217cd7cacd52c909f66475c3af44e129f0b00ff` | Launch-x:contracts/contracts/base/AccessControl.sol:40 |
+| `RoleGranted(bytes32,address,address)` | `0x2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d` | Launch-x:contracts/contracts/base/AccessControl.sol:38 |
+| `RoleRevoked(bytes32,address,address)` | `0xf6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b` | Launch-x:contracts/contracts/base/AccessControl.sol:39 |
+| `SurplusRecovered(address,address,uint256)` | `0x00c571bcd43634ce4043e2bd7088ab9a1d36bd5dc21f5f4246e9eddda3c222f6` | Launch-x:contracts/contracts/protocol/Treasury.sol:22 |
+| `Upgraded(address)` | `0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b` | Launch-x:contracts/contracts/base/ERC1967Utils.sol:23 |
+| `Withdrawn(address,address,uint256)` | `0xd1c19fbcd4551a5edfb66d43d2e337c04837afda3482b42bdf569a8fccdae5fb` | Launch-x:contracts/contracts/interfaces/ITreasury.sol:15 |
+
+| Error | Selector | Declared |
+|---|---|---|
+| `AlreadyInitialized()` | `0x0dc149f0` | Launch-x:contracts/contracts/base/Initializable.sol:18 |
+| `InsufficientBalance()` | `0xf4d678b8` | Launch-x:contracts/contracts/interfaces/ITreasury.sol:8 |
+| `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
+| `InvalidRoleAccount()` | `0xeccda526` | Launch-x:contracts/contracts/base/AccessControl.sol:23 |
+| `InvalidToken()` | `0xc1ab6dc1` | Launch-x:contracts/contracts/protocol/Treasury.sol:20 |
+| `LastDefaultAdmin()` | `0x9c88180d` | Launch-x:contracts/contracts/base/AccessControl.sol:22 |
+| `MissingRole(address,bytes32)` | `0x0161a64a` | Launch-x:contracts/contracts/base/AccessControl.sol:36 |
+| `NonPayableUpgrade()` | `0x93738d49` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:20 |
+| `NotInitializing()` | `0xd7e6bcf8` | Launch-x:contracts/contracts/base/Initializable.sol:19 |
+| `ReentrantCall()` | `0x37ed32e8` | Launch-x:contracts/contracts/protocol/Treasury.sol:21 |
+| `TransferFailed()` | `0x90b8ec18` | Launch-x:contracts/contracts/libraries/TransferHelper.sol:8 |
+| `TransferFromFailed()` | `0x7939f424` | Launch-x:contracts/contracts/libraries/TransferHelper.sol:9 |
+| `UUPSNotThroughActiveProxy()` | `0x45a93fc9` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:18 |
+| `UUPSNotThroughProxy()` | `0x4f083858` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:17 |
+| `Unauthorized()` | `0x82b42900` | Launch-x:contracts/contracts/interfaces/ITreasury.sol:9 |
+| `UnauthorizedUpgrade()` | `0x3a617a54` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:16 |
+| `UpgradeInitializationFailed()` | `0xcc1cf440` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:21 |
+| `ZeroAddress()` | `0xd92e233d` | Launch-x:contracts/contracts/interfaces/ITreasury.sol:10 |
+| `ZeroAmount()` | `0x1f2a2005` | Launch-x:contracts/contracts/interfaces/ITreasury.sol:11 |
+
 ### EventEmitter
 
-63 functions, 39 events, 13 errors.
+63 functions, 51 events, 0 errors. The EventEmitter contracts stay deployed (section 22); the twelve launchpad events are emitted at 0x1017 (section 11).
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -824,7 +876,6 @@ Every function, event and custom error of each role, with its selector (function
 |---|---|---|
 | `AlreadyInitialized()` | `0x0dc149f0` | Launch-x:contracts/contracts/base/Initializable.sol:18 |
 | `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
-| `InvalidImplementation()` | `0x68155f9a` | Launch-x:contracts/contracts/base/UUPSUpgradeable.sol:19 |
 | `InvalidRoleAccount()` | `0xeccda526` | Launch-x:contracts/contracts/base/AccessControl.sol:23 |
 | `LastDefaultAdmin()` | `0x9c88180d` | Launch-x:contracts/contracts/base/AccessControl.sol:22 |
 | `MissingRole(address,bytes32)` | `0x0161a64a` | Launch-x:contracts/contracts/base/AccessControl.sol:36 |
@@ -838,7 +889,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### LaunchpadOptical
 
-30 functions, 5 events, 10 errors.
+30 functions, 15 events, 0 errors. Not served by the precompile: the optical contracts stay deployed and the precompile calls their hooks by nested calls (section 13).
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -894,9 +945,11 @@ Every function, event and custom error of each role, with its selector (function
 | `TooManyTeamWallets()` | `0x1f4941f9` | Launch-x:contracts/contracts/opticals/presets/LaunchpadOptical.sol:31 |
 | `VestingExceeded()` | `0x45446fb4` | Launch-x:contracts/contracts/opticals/presets/LaunchpadOptical.sol:27 |
 
-- precompiles/launchpad/abi/ holds the compiled ABI of each of the ten served roles (SidioraPool, SidioraFactory, SidioraERC20, SidioraNFT, Router, Quoter, FeesRouter, FeeAccumulator, PoolRegistry, ProtocolConfig) copied from the Launch-x build at c5eb7c7 (the sources of Launch-x:contracts/contracts), and each file is loaded with MustGetABI (precompiles/common/precompiles.go:449) through the embed.FS of precompiles/launchpad/launchpad.go:94. (req 2.1.1)
-- precompiles/launchpad/testdata/abi_golden.txt lists one line per function (role, signature, 4-byte selector), per event (role, signature, topic0) and per custom error (role, signature, selector), 547 lines for the ten roles plus the twelve EventEmitter launchpad events; any change to a role file that alters a line fails the test. (req 2.1.2)
-- precompiles/launchpad/abi.json becomes the ABI of direct calls to 0x1017: the union of the Router, SidioraFactory, Quoter, PoolRegistry, FeesRouter, FeeAccumulator and ProtocolConfig functions taken in that order with the first role winning a shared signature (113 distinct selectors, the 22 shared signatures listed in contracts/launchpad.md section 3), plus the twelve EventEmitter launchpad events; the current abi.json and Launchpad.sol (precompiles/launchpad/launchpad.go:94) move to precompiles/launchpad/legacy/v610. (req 2.1.3)
+Requirement 2.1, The interface is frozen as one ABI file per contract role with a golden selector file:
+
+- precompiles/launchpad/abi/ holds the compiled ABI of eleven role files copied from the Launch-x build at c5eb7c7 (the sources of Launch-x:contracts/contracts): the ten served roles SidioraPool, SidioraFactory, SidioraNFT, Router, Quoter, FeesRouter, FeeAccumulator, PoolRegistry, ProtocolConfig and Treasury (Launch-x:contracts/contracts/protocol/Treasury.sol:13), and SidioraERC20, which is not served but encodes the nested calls the precompile makes to pool-token contracts; each file is loaded with MustGetABI (precompiles/common/precompiles.go:449) through the embed.FS of precompiles/launchpad/launchpad.go:94. (req 2.1.1)
+- precompiles/launchpad/testdata/abi_golden.txt lists one line per function (role, signature, 4-byte selector), per event (role, signature, topic0) and per distinct custom error (role, signature, selector), each error written once per role even where the artifact lists it twice: 549 lines for SidioraPool, SidioraFactory, SidioraERC20, SidioraNFT, Router, Quoter, FeesRouter, FeeAccumulator, PoolRegistry, ProtocolConfig and the twelve EventEmitter launchpad events, 44 lines for Treasury (17 functions, 8 events, 19 errors) and 2 lines for the chain-defined errors AccessControlUnauthorizedAccount(address,bytes32) 0xe2517d3f and Retired(address) 0xda9d2e31, 595 lines in all; any change to a role file that alters a line fails the test. (req 2.1.2)
+- precompiles/launchpad/abi.json becomes the ABI of direct calls to 0x1017: the union of the Router, SidioraFactory, Quoter, PoolRegistry, FeesRouter, FeeAccumulator and ProtocolConfig functions taken in that order with the first role winning a shared signature (113 distinct selectors, the 21 shared signatures listed in contracts/launchpad.md section 3), plus the twelve EventEmitter launchpad events; the current abi.json and Launchpad.sol (precompiles/launchpad/launchpad.go:94) are copied to precompiles/launchpad/legacy/v610 by task 2.0.7 before they change. (req 2.1.3)
 - Two signatures with one selector never appear in one role or at 0x1017; the golden test asserts the selector set of each role and of 0x1017 has no duplicate. (req 2.1.4)
 
 ## 3. Direct calls to 0x1017
@@ -929,105 +982,128 @@ A call sent to 0x1017 itself resolves the selector in role order Router, Sidiora
 
 No two different signatures share a selector.
 
+The Treasury and SidioraNFT roles are not direct roles: they are served only at their generation 2 surface addresses. Pool functions are served only at pool addresses.
+
 ## 4. Surfaces
 
-- Every contract address of the launchpad holds the 41-byte runtime 0x363d3d373360601b36523d3d601436013d3d6110175af13d600060003e6024573d6000fd5b3d6000f3 after the upgrade, written with SetCode (modules/evm/keeper/code.go:23).
+- Every generation 2 role address and every pool address holds the 41-byte runtime 0x363d3d373360601b36523d3d601436013d3d6110175af13d600060003e6024573d6000fd5b3d6000f3 after the upgrade, written with SetCode (modules/evm/keeper/code.go:23); retired generation 1 addresses hold the same runtime and revert Retired(address).
 - The precompile reads the original caller from the last 20 bytes only when its EVM caller is a registered surface, otherwise the EVM caller (precompiles/launchpad/launchpad.go:232).
 - Delegatecall reverts, writes under staticcall revert and value reverts (precompiles/common/precompiles.go:374).
 - An unknown selector reverts with empty revert data.
-- MigrateV6120 replaces the runtime code at every pool address of generations 1 and 2, at both fee-right collections and at the Factory, Router, Quoter, FeesRouter, FeeAccumulator, PoolRegistry and ProtocolConfig addresses of both generations (Launch-x:protocol/addresses.go:22, Launch-x:shared/config/deployment/current.json:37) with the 41-byte surface runtime 0x363d3d373360601b36523d3d601436013d3d6110175af13d600060003e6024573d6000fd5b3d6000f3, written with SetCode (modules/evm/keeper/code.go:23); the runtime copies calldata, appends CALLER and CALLs 0x1017 with all gas, returning or reverting with the callee data. (req 2.2.1)
-- The precompile treats the last 20 bytes of calldata as the original caller only when its own caller is a registered surface address (a keeper set written by MigrateV6120 and by market creation, keyed as MarketPointerPrefix is in modules/launchpad/types/keys.go:41); for any other caller the calldata is decoded whole and the caller is the EVM caller, so no account can claim another caller by appending bytes. (req 2.2.2)
-- A call arriving from a surface selects the role ABI of that surface (pool, collection, token, or the generation role of the address) and the market generation of the address, so the same selector resolves per role; direct calls to 0x1017 resolve through abi.json in the order Router, SidioraFactory, Quoter, PoolRegistry, FeesRouter, FeeAccumulator, ProtocolConfig. (req 2.2.3)
+- MigrateV6120 replaces the runtime code at every pool address of generations 1 and 2, at the generation 2 fee-right collection 0xe8Dc…409B (Launch-x:shared/config/deployment/current.json:58) and at the generation 2 SidioraFactory, Router, Quoter, FeesRouter, FeeAccumulator, PoolRegistry and ProtocolConfig addresses (Launch-x:shared/config/deployment/current.json:16-51, Launch-x:shared/config/deployment/current.json:65) and the generation 2 Treasury address read from SidioraFactory slot 6 (Launch-x:contracts/contracts/core/SidioraFactory.sol:30) and recorded in modules/launchpad/keeper/testdata/v6120/layout.json, with the 41-byte surface runtime 0x363d3d373360601b36523d3d601436013d3d6110175af13d600060003e6024573d6000fd5b3d6000f3, written with SetCode (modules/evm/keeper/code.go:23); the runtime copies calldata, appends CALLER and CALLs 0x1017 with all gas, returning or reverting with the callee data; pool-token contracts and USDL keep their code, and the generation 1 role addresses receive the retirement surface of requirement 2.36. (req 2.2.1)
+- The precompile treats the last 20 bytes of calldata as the original caller only when its own caller is a registered surface address (a keeper set written by MigrateV6120 and by market creation under a new prefix beside those of modules/launchpad/types/keys.go:36-48); for any other caller the calldata is decoded whole and the caller is the EVM caller, so no account can claim another caller by appending bytes. (req 2.2.2)
+- A call arriving from a surface selects the role ABI of that surface (pool, the generation 2 collection, or the generation 2 role of the address), so the same selector resolves per role; the generation 2 role surfaces serve the markets of every generation, migrated generation 1 pools included; direct calls to 0x1017 resolve through abi.json in the order Router, SidioraFactory, Quoter, PoolRegistry, FeesRouter, FeeAccumulator, ProtocolConfig. (req 2.2.3)
 - Delegatecall into 0x1017 reverts and a write under staticcall reverts, as precompiles/launchpad/launchpad.go:232 does today; a view selector under staticcall is served; value attached to any call reverts, matching ValidateNonPayable (precompiles/common/precompiles.go:374) and the non-payable functions of the contracts (the only payable function, upgradeToAndCall, reverts for every caller). (req 2.2.4)
 - An unknown selector at a surface or at 0x1017 reverts with empty revert data, as a contract without a fallback does; the registered surface set is exported and imported by genesis (modules/launchpad/keeper/genesis.go:53). (req 2.2.5)
 
 ## 5. Quote asset
 
-- The quote denom is uusdl (modules/launchpad/types/params.go:31), six decimals (Launch-x:shared/config/deployment/current.json:98).
-- The ERC20 native pointer of uusdl is 0x85FcD13735F4309833A503EE804ea32395851479 (Launch-x:shared/config/deployment/current.json:86), returned by GetERC20NativePointer (precompiles/utils/expected_keepers.go:127).
-- Each EVM address holds uusdl in its bank account from GetPaxAddressOrDefault (modules/evm/keeper/address.go:58); pools keep reserves in the bank account of the pool address.
-- Quote moves with BankKeeper.SendCoins (modules/launchpad/types/expected_keepers.go:16) between the accounts of the contract flow.
-- Router and Factory surfaces move the caller's own funds without an allowance; allowances held on the old USDL contract are not carried.
-- Params.QuoteDenom is "uusdl" (modules/launchpad/types/params.go:31) from H+1: MigrateV6120 sets it back from the base coin that the v6.10 handler wrote (node/upgrades.go:351), through UpdateParams (modules/launchpad/keeper/keeper.go:76). (req 2.18.1)
-- uusdl has six decimals, the settlement asset of the deployment manifest (Launch-x:shared/config/deployment/current.json:97-Launch-x:shared/config/deployment/current.json:98); its bank metadata is set with display "USDL" and exponent 6, and GetERC20NativePointer(ctx, "uusdl") (precompiles/utils/expected_keepers.go:127) returns 0x85FcD13735F4309833A503EE804ea32395851479. (req 2.18.2)
-- Every pool, FeeAccumulator, Treasury and account holds its USDL as uusdl in the bank account of its EVM address (GetPaxAddressOrDefault, modules/evm/keeper/address.go:58), so the pay-first balance check of the pool (Launch-x:contracts/contracts/core/SidioraPool.sol:178) reads the bank balance of the pool address and contracts that call transfer on USDL keep working through the pointer. (req 2.18.3)
-- The launchpad keeper moves quote and pool tokens with BankKeeper.SendCoins (modules/launchpad/types/expected_keepers.go:16) between the bank accounts of the EVM addresses of the contract flow (caller, pool, FeeAccumulator, recipient, Treasury, `0x000000000000000000000000000000000000dEaD`); no escrow in the module account is kept for pool reserves. (req 2.18.4)
-- Router and Factory surfaces move the caller's own uusdl and pool tokens without consulting an allowance, because the caller is authenticated by the surface; the contract transferFrom calls (Launch-x:contracts/contracts/periphery/Router.sol:188, Launch-x:contracts/contracts/periphery/Router.sol:165) become bank sends from the caller, and the *WithPermit variants decode the permit tuple and then run as their plain variant. (req 2.18.5)
+- The quote asset is the USDL ERC20 contract at 0x85FcD13735F4309833A503EE804ea32395851479 (Launch-x:shared/config/deployment/current.json:86), six decimals (Launch-x:shared/config/deployment/current.json:98), named by Params.QuoteToken; it has no bank denom and no native pointer, and its code and storage stay the contract's.
+- The launchpad module EVM address holds the launchpad USDL as an ERC20 balance, split in the keeper ledgers HeldQuote per pool, FeeHeld and TreasuryHeld; USDL.balanceOf(launchpad module EVM address) covers their sum.
+- USDL moves only by nested ERC20 calls: transferFrom(user, launchpad module EVM address, amount) and transfer(to, amount) with caller the launchpad module EVM address inside the precompile run through evm.Call (precompiles/xweb/xweb.go:482), and CallEVM (modules/evm/keeper/evm.go:81) in the upgrade handler; moves between ledgers write no log.
+- Router and Factory surfaces pull the caller's USDL with the allowance granted to 0x1017; allowances granted to the old Router contracts stay on USDL but are not spent, so a user grants a new allowance to 0x1017 once.
+- Params.QuoteDenom (modules/launchpad/types/params.go:17, value "uusdl" at modules/launchpad/types/params.go:31, checked by ValidateDenom at modules/launchpad/types/params.go:51) is replaced by Params.QuoteToken, the USDL contract address 0x85FcD13735F4309833A503EE804ea32395851479 (contracts/libraries/Constants.sol:14, Launch-x:shared/config/deployment/current.json:86), and the quote_denom field of api/launchpad/tx.proto becomes quote_token; MigrateV6120 writes QuoteToken over the base coin that the v6.10 handler set (node/upgrades.go:350-354), and no uusdl denom, bank metadata or pointer exists. (req 2.18.1)
+- USDL keeps its code, storage, six decimals, allowances and permit nonces; the launchpad never mints, burns or writes USDL storage, and every USDL movement is a call into the USDL contract: transferFrom(user, launchpad module EVM address, amount) with msg.sender 0x1017 against the allowance the user grants to 0x1017, and transfer(to, amount) with caller the launchpad module EVM address or a pool address, as nested calls of the precompile run (the nested-call form of precompiles/xweb/xweb.go:482) or through CallEVM in the upgrade handler (modules/evm/keeper/evm.go:81). (req 2.18.2)
+- The keeper holds custody ledgers for the USDL at the launchpad module EVM address: HeldQuote per pool, FeeHeld for the generation 2 FeeAccumulator, and TreasuryLedger and TreasuryHeld per token for the Treasury; USDL.balanceOf(launchpad module EVM address) is at least the sum of every HeldQuote, FeeHeld and TreasuryHeld(USDL), and moves between a pool, the FeeAccumulator and the Treasury are ledger moves inside custody that emit no USDL Transfer log. (req 2.18.3)
+- Pay-first input keeps working: before swap, swapFor and syncReserves the precompile sweeps the pool address with a nested call whose caller is the pool address, USDL.transfer(launchpad module EVM address, USDL.balanceOf(pool)) when the balance is nonzero, and adds the amount to HeldQuote(pool), so USDL sent straight to the pool address before a swap counts as prepaid input as at Launch-x:contracts/contracts/core/SidioraPool.sol:175-178; the generation 2 FeeAccumulator address and the Treasury address are swept the same way before every balance read of theirs. (req 2.18.4)
+- Pool tokens stay at the pool address: sell input arrives by token.transferFrom(user, pool) or by a prior transfer to the pool, buy output leaves by token.transfer(recipient, amount) with caller the pool address (Launch-x:contracts/contracts/core/SidioraPool.sol:217), and the pool balance checks read token.balanceOf(pool) through a nested staticcall. (req 2.18.5)
+- Router and Factory pulls use allowances to 0x1017: USDL.transferFrom(caller, launchpad module EVM address, amount) for buys and creation fees (Launch-x:contracts/contracts/periphery/Router.sol:188, Launch-x:contracts/contracts/periphery/Router.sol:165, Launch-x:contracts/contracts/core/SidioraFactory.sol:81) and token.transferFrom(caller, pool, amount) for sells and the first leg of a token-for-token swap (Launch-x:contracts/contracts/periphery/Router.sol:215, Launch-x:contracts/contracts/periphery/Router.sol:251); the *WithPermit variants call permit(holder, 0x1017, value, deadline, v, r, s) on the token contract through a nested call and ignore its failure as Launch-x:contracts/contracts/periphery/Router.sol:292-314 does, then pull; the intermediate USDL of a token-for-token swap (Launch-x:contracts/contracts/periphery/Router.sol:263) is a ledger move from HeldQuote of the first pool to HeldQuote of the second. (req 2.18.6)
+- Pool and FeeAccumulator USDL payouts are real USDL.transfer calls from the launchpad module EVM address to the recipient: sell output (Launch-x:contracts/contracts/core/SidioraPool.sol:239), claim, burn to `0x000000000000000000000000000000000000dEaD`, airdrop claims, optical surplus claims and legacy airdrop claims (Launch-x:contracts/contracts/data/FeeAccumulator.sol:180, Launch-x:contracts/contracts/data/FeeAccumulator.sol:196, Launch-x:contracts/contracts/data/FeeAccumulator.sol:266, Launch-x:contracts/contracts/data/FeeAccumulator.sol:389, Launch-x:contracts/contracts/data/FeeAccumulator.sol:463); the buy fee is a ledger move from HeldQuote(pool) to FeeHeld (Launch-x:contracts/contracts/core/SidioraPool.sol:220-224) and sendLpRewards a ledger move from FeeHeld to HeldQuote(pool) (Launch-x:contracts/contracts/data/FeeAccumulator.sol:282). (req 2.18.7)
 
 ## 6. Swap
 
 - Swap checks in contract order: deadline (Launch-x:contracts/contracts/core/SidioraPool.sol:171), zero input (Launch-x:contracts/contracts/core/SidioraPool.sol:172), zero recipient (Launch-x:contracts/contracts/core/SidioraPool.sol:173), prepaid input (Launch-x:contracts/contracts/core/SidioraPool.sol:178), then the optical beforeSwap reduction rules (Launch-x:contracts/contracts/core/SidioraPool.sol:186-195), each reverting with the same custom error. (req 2.19.1)
-- The fee is taken on the input with mulDiv(amountIn, feeBps, 10000) (Launch-x:contracts/contracts/core/SidioraPool.sol:201); a buy prices amountIn minus fee against virtual plus real USDL (Launch-x:contracts/contracts/core/SidioraPool.sol:208-213), moves the fee to the FeeAccumulator of the market generation and records it (Launch-x:contracts/contracts/core/SidioraPool.sol:220-224); a sell keeps fee tokens in the pool (Launch-x:contracts/contracts/core/SidioraPool.sol:241-244). (req 2.19.2)
+- The fee is taken on the input with mulDiv(amountIn, feeBps, 10000) (Launch-x:contracts/contracts/core/SidioraPool.sol:201); a buy prices amountIn minus fee against virtual plus real USDL (Launch-x:contracts/contracts/core/SidioraPool.sol:208-213), moves the fee from HeldQuote(pool) to FeeHeld of the generation 2 FeeAccumulator and records it (Launch-x:contracts/contracts/core/SidioraPool.sol:220-224); a sell keeps fee tokens in the pool (Launch-x:contracts/contracts/core/SidioraPool.sol:241-244). (req 2.19.2)
 - A sell whose output exceeds real USDL reverts VirtualFloorBreached() (Launch-x:contracts/contracts/core/SidioraPool.sol:232); a buy whose output exceeds the token reserve reverts InsufficientLiquidity() (Launch-x:contracts/contracts/core/SidioraPool.sol:211); zero output reverts InsufficientInput() and output below minAmountOut reverts SlippageExceeded() (Launch-x:contracts/contracts/core/SidioraPool.sol:247-248). (req 2.19.3)
 - USDL volume is paidInput on buys and amountOut on sells, added to cumulativeVolume and to the buy or sell cumulative field (Launch-x:contracts/contracts/core/SidioraPool.sol:250-254); the price snapshot is taken only when volume is at least 1 bps of effective USDL and 60 seconds passed since the last snapshot (Launch-x:contracts/contracts/core/SidioraPool.sol:406-415), into an eight-slot ring. (req 2.19.4)
-- After the swap the precompile emits InputAdjustment when paidInput differs from amountIn (Launch-x:contracts/contracts/core/SidioraPool.sol:257), calls afterSwap and requires its selector (Launch-x:contracts/contracts/core/SidioraPool.sol:259-263), checks the bank balances of the pool against realUsdlBalance and tokenReserve (Launch-x:contracts/contracts/core/SidioraPool.sol:268), and emits Swap at 0x1017 (Launch-x:contracts/contracts/core/SidioraPool.sol:273). (req 2.19.5)
+- After the swap the precompile emits InputAdjustment when paidInput differs from amountIn (Launch-x:contracts/contracts/core/SidioraPool.sol:257), calls afterSwap and requires its selector (Launch-x:contracts/contracts/core/SidioraPool.sol:259-263), reverts InvalidBalance() unless HeldQuote(pool) is at least realUsdlBalance and token.balanceOf(pool) is at least tokenReserve (Launch-x:contracts/contracts/core/SidioraPool.sol:268), and emits Swap at 0x1017 (Launch-x:contracts/contracts/core/SidioraPool.sol:273). (req 2.19.5)
 - The dynamic fee uses ProtocolConfig parameters with the holder concentration term fixed at 0 (Launch-x:contracts/contracts/core/SidioraPool.sol:375-396) through FeeLib (Launch-x:contracts/contracts/libraries/FeeLib.sol:22), which the keeper implements in CalculateDynamicFee (modules/launchpad/types/math.go:179). (req 2.19.6)
-- syncReserves sets realUsdlBalance and tokenReserve to the bank balances of the pool address and emits PoolStateUpdated at 0x1017 (Launch-x:contracts/contracts/core/SidioraPool.sol:279-291). (req 2.19.7)
+- syncReserves sweeps the pool address, sets realUsdlBalance to HeldQuote(pool) and tokenReserve to token.balanceOf(pool), and emits PoolStateUpdated at 0x1017 (Launch-x:contracts/contracts/core/SidioraPool.sol:279-291). (req 2.19.7)
 
 ## 7. Market creation
 
-- createMarket through the Router or Factory surface or 0x1017 validates name and symbol (modules/launchpad/types/market.go:36), charges the creation fee in uusdl from the caller to the Treasury address of the generation 2 Factory (Factory slot 6, the field at Launch-x:contracts/contracts/core/SidioraFactory.sol:30), and reverts with the contract error when the fee cannot be paid. (req 2.20.1)
-- The pool token is a tokenfactory denom with subdenom "lp"+index (modules/launchpad/keeper/market.go:18) minted to the pool account with the virtual token default supply; its ERC20 address is the native pointer from UpsertERCNativePointer (modules/evm/keeper/pointer_upgrade.go:49) when the optical has no BEFORE_TOKEN_TRANSFER flag, and a token surface at the CREATE2 address of 0x1017 with salt keccak256(name,symbol,creator,nonce) (Launch-x:contracts/contracts/core/SidioraFactory.sol:121) otherwise. (req 2.20.2)
-- The pool address of a new market is the CREATE2 address of 0x1017 with salt keccak256(token) (Launch-x:contracts/contracts/core/SidioraFactory.sol:143) and the surface runtime hash, registered as a surface and in the PoolRegistry role at 0x1017 with metadata creator, token, optical, nftId, createdAt and createdBlock (Launch-x:contracts/contracts/interfaces/IPoolRegistry.sol:15). (req 2.20.3)
-- The fee right is minted in the generation 2 collection with id nextTokenId (collection slot 11) and its fee strategy (slot 12) and pool (slot 13); NftMint, TokenDeployed, MarketCreated and PoolRegistered are emitted at 0x1017 in the contract order (Launch-x:contracts/contracts/core/SidioraFactory.sol:159, Launch-x:contracts/contracts/core/SidioraFactory.sol:160). (req 2.20.4)
+- createMarket through the Router or Factory surface or 0x1017 validates name and symbol (modules/launchpad/types/market.go:36) and the virtual defaults, fee strategy and optical code as Launch-x:contracts/contracts/core/SidioraFactory.sol:115-117 does (reverting ZeroAddress()), and charges the creation fee by USDL.transferFrom(caller, launchpad module EVM address, creationFee) credited to TreasuryLedger and TreasuryHeld of the generation 2 Treasury address read from SidioraFactory slot 6 (Launch-x:contracts/contracts/core/SidioraFactory.sol:30) and recorded in modules/launchpad/keeper/testdata/v6120/layout.json, with Deposited(USDL, depositor, creationFee) emitted at the Treasury address (Launch-x:contracts/contracts/periphery/Router.sol:163-167, Launch-x:contracts/contracts/core/SidioraFactory.sol:79-83); a failed pull reverts with the USDL revert data wrapped as TransferFromFailed() as TransferHelper does. (req 2.20.1)
+- The pool token is a real SidioraERC20 contract created by a nested CREATE2 with caller the generation 2 SidioraFactory address 0x3993…8830 (Launch-x:shared/config/deployment/current.json:37), salt keccak256(abi.encodePacked(creator, name, symbol, nonce)) with the per-creator nonce of Launch-x:contracts/contracts/core/SidioraFactory.sol:120-121, and init code SidioraERC20(name, symbol, virtualToken, factory) (Launch-x:contracts/contracts/core/SidioraFactory.sol:123-125), so its deploymentFactory is 0x3993…8830 (Launch-x:shared/config/deployment/current.json:37) and its whole supply starts at that address with six decimals (Launch-x:contracts/contracts/core/SidioraERC20.sol:40-49). (req 2.20.2)
+- The pool address is the exact address predictPoolAddress(token, creator, optical) returns (Launch-x:contracts/contracts/core/SidioraFactory.sol:166-173): CREATE2 from 0x3993…8830 (Launch-x:shared/config/deployment/current.json:37) with salt keccak256(abi.encodePacked(token)) over the beacon proxy init code of 0x0c60…71BE (Launch-x:shared/config/deployment/current.json:79) and initialize calldata built with the generation 2 role addresses (Launch-x:contracts/contracts/core/SidioraFactory.sol:128-144); the precompile installs the 41-byte surface there with SetCode (modules/evm/keeper/code.go:23) and nonce 1, and when the address already holds code or a nonzero nonce the call reverts with empty revert data as Launch-x:contracts/contracts/core/SidioraFactory.sol:182 does. (req 2.20.3)
+- In the contract order of Launch-x:contracts/contracts/core/SidioraFactory.sol:147-163 the precompile authorizes the pool at the generation 2 FeeAccumulator, mints the fee right in the generation 2 collection at nextTokenId (slot 11) with its strategy (slot 12) and pool (slot 13), writes the PoolRegistry metadata creator, token, optical, nftId, createdAt and createdBlock (Launch-x:contracts/contracts/interfaces/IPoolRegistry.sol:15) and the keeper market record, then runs bindPool(pool) and transfer(pool, virtualToken) on the token with caller 0x3993…8830 (Launch-x:shared/config/deployment/current.json:37) (Launch-x:contracts/contracts/core/SidioraFactory.sol:153-154), so the token transfer reads opticalAddress() from a pool that already exists (Launch-x:contracts/contracts/core/SidioraERC20.sol:26-34). (req 2.20.4)
+- Market creation emits Initialized(1) at the pool address, PoolNFTMinted and Transfer at the collection, NftMint, PoolRegistered, TokenDeployed and MarketCreated of the EventEmitter family at 0x1017, and MarketCreated(address,address,address,uint256,address) at 0x3993…8830 (Launch-x:shared/config/deployment/current.json:37) (Launch-x:contracts/contracts/core/SidioraFactory.sol:159-163); the token contract emits its own ERC20 Transfer logs; no pointer is registered, so the pointer gas term of requirement 2.26 is 0 for market creation. (req 2.20.5)
 
 ## 8. Migration record
 
-- MigrateV6120 runs step 1 (USDL), step 2 (pools and pool tokens), step 3 (fee rights, roles, accounting) in one cached context.
-- Step 1 reads holder balances with GetState (modules/evm/keeper/state.go:10), mints uusdl, clears the contract storage and installs the native pointer at 0x85FcD13735F4309833A503EE804ea32395851479 (modules/evm/keeper/pointer.go:29).
-- Step 2 enumerates pools from each PoolRegistry (Launch-x:contracts/contracts/data/PoolRegistry.sol:23) and reads every pool slot.
-- Allowances, permit nonces, token checkpoint arrays (beyond open airdrop entitlements) and DEFAULT_ADMIN_ROLE memberships are not carried.
+- MigrateV6120 runs step 1 (USDL custody), step 2 (pools and pool tokens), step 3 (fee rights, roles, accounting, pause state) and step 4 (surfaces and retirement) in one cached context, once.
+- Step 1 moves the USDL of every pool and FeeAccumulator to the launchpad module EVM address by USDL.transfer through CallEVM from the holding address, drains both Treasuries by withdraw and recoverSurplus through CallEVM from the fixture admin, and credits the ledgers; USDL code and storage outside those balances are unchanged.
+- Step 2 enumerates pools from each PoolRegistry (Launch-x:contracts/contracts/data/PoolRegistry.sol:23), reads every pool slot, sets reserves to min(book, held) and records the book-held delta with no top-up.
+- DEFAULT_ADMIN_ROLE memberships, the factory link of migrateFactory and the old contract storage behind the surfaces are not carried; pool-token storage, USDL allowances and nonces stay in their contracts.
 
-### Step 1, USDL
+### Step 1, USDL custody
 
-- migrateUSDL reads the holder list of modules/launchpad/keeper/testdata/v6120/holders.json, reads each balance from the USDL contract storage with GetState (modules/evm/keeper/state.go:10) at keccak256(holder, balanceSlot), with the balance slot and total-supply slot taken from modules/launchpad/keeper/testdata/v6120/usdl.json, and refuses with "upgrade v6.12.0: launchpad: usdl holder list incomplete" when the sum differs from the total-supply slot. (req 2.23.1)
-- For each holder with a nonzero balance it mints the balance in uusdl to the launchpad module account and sends it to the bank account of the holder address (modules/evm/keeper/address.go:58); the bank supply of uusdl after the step equals the total-supply slot exactly. (req 2.23.2)
-- The step clears the storage of the old USDL address with IterateState and SetState (modules/evm/keeper/state.go:39, modules/evm/keeper/state.go:30), records 0x85FcD13735F4309833A503EE804ea32395851479 as the native pointer of uusdl with SetERC20NativePointer (modules/evm/keeper/pointer.go:29) and then runs UpsertERCNativePointer, whose existing-pointer branch writes the pointer runtime at that address (modules/evm/keeper/pointer_upgrade.go:101-108). (req 2.23.3)
-- Allowances and permit nonces of the USDL contract are not migrated: `allowance(address,address)` returns 0 after the step and holders approve again; the migration record of contracts/launchpad.md lists both. (req 2.23.4)
-- The step runs before pool migration inside MigrateV6120, its module account needs Minter permission and BankKeeper needs MintCoins (required change to modules/launchpad/types/expected_keepers.go:15), and the uusdl bank metadata (base uusdl, display USDL, exponent 6) is written once. (req 2.23.5)
+- Step 1 reads USDL.balanceOf of every pool address of generations 1 and 2, of both FeeAccumulator addresses and of both Treasury addresses (0x15405D535ce533BfFb98c83e42f4DD242AA5e079 (Launch-x:protocol/addresses.go:84) and the generation 2 Treasury address read from SidioraFactory slot 6 (Launch-x:contracts/contracts/core/SidioraFactory.sol:30) and recorded in modules/launchpad/keeper/testdata/v6120/layout.json) by StaticCallEVM (modules/evm/keeper/evm.go:157) and refuses with "upgrade v6.12.0: launchpad: usdl balance differs from golden" when a balance differs from modules/launchpad/keeper/testdata/v6120/usdl.json. (req 2.23.1)
+- For each pool and FeeAccumulator address with a nonzero balance the step calls CallEVM (modules/evm/keeper/evm.go:81) with from the holding contract and data USDL.transfer(launchpad module EVM address, balance), before any surface is installed, and credits HeldQuote(pool) or FeeHeld; the contracts have no withdraw function, which is why the transfer runs from their address (head decision 3). (req 2.23.2)
+- For each Treasury the step calls withdraw(token, 0x1017, getBalance(token)) and then recoverSurplus(token, 0x1017, surplus) (Launch-x:contracts/contracts/protocol/Treasury.sol:58-70, Launch-x:contracts/contracts/protocol/Treasury.sol:87-94) through CallEVM from the DEFAULT_ADMIN_ROLE holder named in the fixture, after a hasRole(0x00, holder) staticcall confirms the holding, for every token the fixture lists; the withdrawn ledger amounts are credited to TreasuryLedger of the generation 2 Treasury and the full amounts to TreasuryHeld, so nothing stays behind a retired address. (req 2.23.3)
+- USDL allowances and permit nonces are untouched because USDL storage is untouched; users who traded through the Router grant a new allowance to 0x1017, the spender of the pulls of requirement 2.18, and the migration record of contracts/launchpad.md lists this. (req 2.23.4)
+- Step 1 runs first inside MigrateV6120, needs no Minter permission and no MintCoins, and its result is checked: USDL.balanceOf(launchpad module EVM address) after the step equals its value before plus the sum moved, and the custody invariant of requirement 2.28 holds. (req 2.23.5)
 
 ### Step 2, pools and pool tokens
 
 - migratePools lists the pools of each generation from the PoolRegistry _allPools array (slot 6, Launch-x:contracts/contracts/data/PoolRegistry.sol:23) of 0x7684…BA0b and 0x1dC3…4Ba7 and refuses when a pool code hash is not the code hash of a generation pool proxy recorded in modules/launchpad/keeper/testdata/v6120/layout.json. (req 2.24.1)
 - Each pool state field is read from its slot (tokenAddress 0, usdlAddress 1, opticalAddress 2, feeAccumulator 3, eventEmitter 4, protocolConfig 5, guardian 6, virtualUsdlReserve 7, realUsdlBalance 8, tokenReserve 9, creationTimestamp 10, cumulativeVolume 11, priceSnapshots 12-19, snapshotIndex 20, snapshotCount 21, accumulatedUsdlFees 22, accumulatedTokenFees 23, factory 24, pendingGuardian 25, lastSnapshotTimestamp 26, cumulativeBuyUsdlVolume 27, cumulativeSellUsdlVolume 28) as layout.json records them for the generation implementation, into the keeper Market record. (req 2.24.2)
-- Each pool token becomes the tokenfactory denom of its market: holders from holders.json are verified against balanceOf (SidioraERC20 slot 3, Launch-x:contracts/contracts/base/ERC20Base.sol:13) with their sum equal to totalSupply (slot 2), the balances are minted to the holder accounts, and the old token address becomes the native pointer of the denom or, for markets with the BEFORE_TOKEN_TRANSFER flag, a token surface. (req 2.24.3)
-- The uusdl balance of each pool address after step 1 equals its realUsdlBalance plus any surplus the contract held, and the pool-token balance of the pool address equals its tokenReserve plus surplus, so InvalidBalance (Launch-x:contracts/contracts/core/SidioraPool.sol:268) holds for every migrated pool. (req 2.24.4)
-- Pool-token allowances (slot 4), permit nonces (slot 5) and the checkpoint arrays (slots 6 and 7) are not carried as storage; past balances needed by open airdrop epochs are written as entitlements, and getPastBalance, getPastTotalSupply, getPastVotes, permit, nonces, DOMAIN_SEPARATOR and PERMIT_TYPEHASH are listed as not served in the migration record. (req 2.24.5)
+- Pool tokens stay the deployed SidioraERC20 contracts with code and storage unchanged; step 2 reads token.balanceOf(pool) and totalSupply by StaticCallEVM (modules/evm/keeper/evm.go:157), checks holders.json against balanceOf with their sum equal to totalSupply, and writes nothing at the token address. (req 2.24.3)
+- For each pool the step sets RealQuote to min(realUsdlBalance, the USDL moved from the pool in step 1) and TokenReserve to min(tokenReserve, token.balanceOf(pool)), and records the book-held delta of requirement 2.38 when book and held differ, so InvalidBalance (Launch-x:contracts/contracts/core/SidioraPool.sol:268) holds for every migrated pool. (req 2.24.4)
+- Every migrated pool becomes a generation 2 pool (ruling 5): its factory, feeAccumulator, protocolConfig and eventEmitter fields are set to 0x3993…8830 (Launch-x:shared/config/deployment/current.json:37), 0x7b14…1a66 (Launch-x:shared/config/deployment/current.json:51), 0xF366…20C6 (Launch-x:shared/config/deployment/current.json:16) and 0x622E…3EF6 (Launch-x:shared/config/deployment/current.json:9), its fee right moves to the generation 2 collection, it is authorized at the generation 2 FeeAccumulator and registered at the generation 2 PoolRegistry, and the generation 1 ProtocolConfig values that differ from generation 2 are written to the migration log. (req 2.24.5)
+- Pool-token allowances, permit nonces and checkpoints stay in the token contracts, so getPastBalance, getPastTotalSupply, getPastVotes, permit, nonces, DOMAIN_SEPARATOR and PERMIT_TYPEHASH keep answering at the token addresses; Paused (the Pausable slot of Launch-x:contracts/contracts/base/Pausable.sol:13) and guardian state of each pool migrate into the market record. (req 2.24.6)
 
 ### Step 3, fee rights, roles and accounting
 
-- Fee rights of both collections migrate keyed by (collection, id): holder from _owners (slot 2), approval from _tokenApprovals (slot 4), operator approvals from _operatorApprovals (slot 5) for the operators listed in the fixture, strategy from _feeStrategy (slot 12), pool from _poolAddress (slot 13) and nextTokenId (slot 11), declared at Launch-x:contracts/contracts/core/SidioraNFT.sol:30 and its base Launch-x:contracts/contracts/base/ERC721Base.sol:11. (req 2.25.1)
-- Role memberships other than DEFAULT_ADMIN_ROLE migrate from each role _roles mapping (slot 0, or slot 10 in the collection) for the accounts listed in the fixture and verified by storage read; DEFAULT_ADMIN_ROLE is not carried, so registeredDefaultAdminCount() returns 0 at every role address. (req 2.25.2)
-- FeeAccumulator accounting migrates per generation: _accumulatedFees, _protocolFeesPending, _airdropBalance, _airdropEpoch, _airdropEpochAmount, _airdropClaimed (for the fixture claimants), _lpRewardsBalance, _opticalSurplus, totalLiabilities, the airdrop snapshot fields (slots 15 to 18), accountingInitialized and the legacy airdrop fields (slots 22 to 24). (req 2.25.3)
-- Each pool keeps its optical address; optical contracts stay deployed and unchanged and are called by the precompile with the callers they accept (Launch-x:contracts/contracts/opticals/BaseOptical.sol:86), and the PoolRegistry metadata (slot 4) of every pool migrates with nftId, createdAt and createdBlock. (req 2.25.4)
-- MigrateV6120 returns its first error wrapped as "upgrade v6.12.0: launchpad: <error>" by the caller in the upgrade handler; it writes nothing outside the launchpad, bank and EVM stores, and the whole migration is one cached context committed only on success. (req 2.25.5)
+- Fee rights of the generation 2 collection keep their ids; fee rights of the generation 1 collection 0xDF73…e190 (Launch-x:protocol/addresses.go:27) are minted again in the generation 2 collection at nextTokenId in generation 1 id order, each with holder from _owners (slot 2), approval from _tokenApprovals (slot 4), operator approvals from _operatorApprovals (slot 5) for the fixture operators, strategy from _feeStrategy (slot 12) and pool from _poolAddress (slot 13), and the collection fields of slots 2-9, 11-13, 15 and 16-17 of Launch-x:contracts/contracts/core/SidioraNFT.sol:18-30 and Launch-x:contracts/contracts/base/ERC721Base.sol:11 migrate, among them the per-holder _balances (Launch-x:contracts/contracts/base/ERC721Base.sol:14), the enumeration arrays _allTokens, _allTokensIndex, _ownedTokens and _ownedTokensIndex (Launch-x:contracts/contracts/base/ERC721Enumerable.sol:9-12) rebuilt over the merged ids, poolTokenId per pool and poolIndexMigrationCursor (Launch-x:contracts/contracts/core/SidioraNFT.sol:25-29), and poolIndexReady set true once every pool is indexed (Launch-x:contracts/contracts/core/SidioraNFT.sol:30); the fee-right receiver hook is not called on import. (req 2.25.1)
+- Role memberships other than DEFAULT_ADMIN_ROLE migrate from each role _roles mapping (slot 0, or slot 10 in the collection) for the accounts listed in the fixture and verified by storage read, generation 1 holders merged into the generation 2 role; DEFAULT_ADMIN_ROLE is not carried, so registeredDefaultAdminCount() returns 0 at every role address and administration runs through requirement 2.40. (req 2.25.2)
+- FeeAccumulator accounting of both generations merges into the generation 2 FeeAccumulator: _accumulatedFees, _protocolFeesPending, _airdropBalance, _airdropEpoch, _airdropEpochAmount, _airdropClaimed (for the fixture claimants), _lpRewardsBalance, _opticalSurplus, totalLiabilities, the airdrop snapshot fields (slots 15 to 18), accountingInitialized and the legacy airdrop fields (slots 22 to 24). (req 2.25.3)
+- Each pool keeps its optical address; optical contracts stay deployed and unchanged and are called by the precompile with the callers they accept (Launch-x:contracts/contracts/opticals/BaseOptical.sol:86), the PoolRegistry metadata (slot 4) of every pool migrates with nftId (the new id for a generation 1 fee right), createdAt and createdBlock, and OPTICAL_GRANTER_ROLE of LaunchpadOpticalFactory (Launch-x:contracts/contracts/opticals/LaunchpadOpticalFactory.sol:106) migrates to the generation 2 FeeAccumulator role table. (req 2.25.4)
+- MigrateV6120 returns its first error wrapped as "upgrade v6.12.0: launchpad: <error>" by the caller in the upgrade handler; it writes nothing outside the launchpad and EVM stores, USDL balances change only through the nested ERC20 calls of step 1, and the whole migration is one cached context committed only on success. (req 2.25.5)
+- The map from each generation 1 fee-right id to its generation 2 id is written to the migration log and stored in the keeper, served by a keeper query, and exported and imported by genesis. (req 2.25.6)
+
+### Book-held deltas
+
+- For every migrated pool MigrateV6120 compares the book (realUsdlBalance, tokenReserve) with the held amounts (USDL moved from the pool in step 1, token.balanceOf(pool)), uses the smaller value of each pair, and stores the book-held delta (pool, asset, book, held, delta) in a keeper record, writes it to the migration log and serves it by a keeper query; nothing is minted or topped up. (req 2.38.1)
+- modules/launchpad/keeper/testdata/v6120/pools.json lists the known deltas at the survey height: USDL 0x90665CF0… minus 100, 0x67e1b3d8… minus 50 and 0x26Fd86Ef… minus 1,508.850948, and pool tokens 0x67e1b3d8… minus 130,368,747,608 and 0x7bF2f964… minus 5e12 (base units), and the step refuses when a pool not listed at the halt height shows a delta larger than the fixture tolerance. (req 2.38.2)
+- The golden fixture includes generation 1 pool 0xEeA16aC55AaE47c484EBef02eb1186aD606e1BF9 and generation 2 pool 0xCE20Da50F92D21d8BeE497910c782E9Aa25b6263 with their reads at H, and the golden pool count is the 45 generation 1 and 4 generation 2 pools of the registries. (req 2.38.3)
+
+### Guards, pause state and legacy replay
+
+- MigrateV6120 refuses with "upgrade v6.12.0: launchpad: native markets exist" when GetMarketCount (modules/launchpad/keeper/keeper.go:99-102) is above 0 at the halt height, so no native market created before the upgrade collides with the imported indexes. (req 2.39.1)
+- The pause flag of every pool (the Pausable slot at Launch-x:contracts/contracts/base/Pausable.sol:13) and the guardian and pending guardian migrate into the market record, so paused() and emergencyPaused() return the halt-height values and a paused pool refuses swaps after the upgrade. (req 2.39.2)
+- The v6.10 keeper and types are copied by task 2.0.7 at 211acbc6c into modules/launchpad/legacy/v610/keeper and modules/launchpad/legacy/v610/types (packages keeperv610 and typesv610) over the same store key, the legacy precompile of requirement 2.27 is built on them, and a legacy accessor beside LaunchpadK() (precompiles/utils/expected_keepers.go:54) exposes them, so blocks below the v6.12.0 height replay with the code that produced them. (req 2.39.3)
 
 ### Not migrated
 
-| Item | Replacement |
+| Item | After the upgrade |
 |---|---|
-| USDL and pool-token allowances | holders approve again; Router and Factory surfaces move the caller funds without an allowance |
-| permit nonces and permit signatures | holders sign again; the *WithPermit surfaces decode the permit tuple and act as the plain variant |
-| pool-token checkpoint arrays | past balances for airdrops come from the holding history |
-| DEFAULT_ADMIN_ROLE memberships | parameters change through MsgUpdateParams; admin-gated writes revert MissingRole(caller, 0x00) |
-| `permit`, `nonces`, `DOMAIN_SEPARATOR`, `PERMIT_TYPEHASH`, `getPastBalance`, `getPastTotalSupply`, `getPastVotes`, `pool`, `deploymentFactory`, `bindPool` of SidioraERC20 | not served by the native pointer |
+| DEFAULT_ADMIN_ROLE memberships | administration runs through MsgUpdateParams and MsgTreasuryWithdraw (section 23); admin methods revert AccessControlUnauthorizedAccount(address,bytes32) |
+| the factory link of migrateFactory | migrateFactory reverts Unauthorized() for every caller |
+| the storage of the old contracts behind the surfaces | left in place and no longer read after the migration |
+| USDL allowances granted to the old Router contracts | kept on USDL but not spent: pulls run with spender 0x1017 |
+
+### What holders do
+
+- Grant a new allowance to 0x1017 on USDL, or on the pool token for sells, once before the first buy, sell or market creation after the upgrade; the *WithPermit variants take a permit with spender 0x1017.
+- Fee rights of generation 1 carry new ids in the generation 2 collection; the id map is served by a keeper query and listed in the migration log.
+- Calls to a retired generation 1 address revert Retired(address) carrying the generation 2 address to call instead (section 21).
 
 ## 9. Fees and airdrops
 
-- recordFee splits the buy fee into protocol cut protocolFeeBps/10000 and pool cut, applies the optical beforeFeeDistribution adjustment with InsufficientSurplus when it raises the pool cut (Launch-x:contracts/contracts/data/FeeAccumulator.sol:135), calls afterFeeDistribution and requires its selector (Launch-x:contracts/contracts/data/FeeAccumulator.sol:161) and emits FeeRecorded (Launch-x:contracts/contracts/data/FeeAccumulator.sol:164) at the generation FeeAccumulator address. (req 2.21.1)
-- claim pays the accumulated pool fees to the recipient and reverts NoFeesAccumulated() at zero (Launch-x:contracts/contracts/data/FeeAccumulator.sol:169-184); burn sends them to `0x000000000000000000000000000000000000dEaD` (Launch-x:contracts/contracts/data/FeeAccumulator.sol:187-200); sendLpRewards moves them to the pool reserve (Launch-x:contracts/contracts/data/FeeAccumulator.sol:272-286). (req 2.21.2)
-- The FeesRouter role checks the caller holds the fee right of the pool in the collection of its market (ownerOf) and the strategy of that fee right, and emits FeeDistributed at 0x1017 (Launch-x:contracts/contracts/periphery/FeesRouter.sol:124); the keeper requireFeeRightsHolder (modules/launchpad/keeper/fees.go:12) reads the fee-right store keyed by collection and id. (req 2.21.3)
-- Each FeeAccumulator role keeps totalLiabilities and requires its uusdl bank balance to cover it plus the new amount (Launch-x:contracts/contracts/data/FeeAccumulator.sol:478-480); the mirror FeeFlow event is emitted at 0x1017 (Launch-x:contracts/contracts/data/FeeAccumulator.sol:470). (req 2.21.4)
-- triggerAirdrop opens epoch e+1 for the pool with the airdrop balance, the eligible supply and the snapshot height (Launch-x:contracts/contracts/data/FeeAccumulator.sol:203-230); the keeper records the epoch through OpenHoldingHistory (modules/launchpad/keeper/history.go:83). (req 2.22.1)
-- claimAirdrop pays holder balance at the snapshot times the epoch amount over the eligible supply, refuses the pool, the `0x000000000000000000000000000000000000dEaD` address and zero (Launch-x:contracts/contracts/data/FeeAccumulator.sol:250), refuses a second claim with AlreadyClaimed() (Launch-x:contracts/contracts/data/FeeAccumulator.sol:251) and gives the rounding residue to the final claimant (Launch-x:contracts/contracts/data/FeeAccumulator.sol:248-269); balances at the snapshot come from EpochBalance (modules/launchpad/keeper/history.go:155). (req 2.22.2)
-- Open airdrop epochs of migrated pools keep their snapshot: MigrateV6120 writes each holder entitlement from the token checkpoint array (SidioraERC20 slot 6) at airdropSnapshotBlock (FeeAccumulator slot 15) into the airdrop basis store (modules/launchpad/keeper/keeper.go:302), so a claim after the upgrade pays what the contract would have paid. (req 2.22.3)
+- recordFee splits the buy fee into protocol cut protocolFeeBps/10000 and pool cut, applies the optical beforeFeeDistribution adjustment with InsufficientSurplus when it raises the pool cut (Launch-x:contracts/contracts/data/FeeAccumulator.sol:135), moves the protocol cut from FeeHeld to TreasuryLedger and TreasuryHeld of the Treasury with Deposited(USDL, 0x7b14…1a66, cut) emitted at the Treasury address (Launch-x:contracts/contracts/data/FeeAccumulator.sol:150-155), calls afterFeeDistribution and requires its selector (Launch-x:contracts/contracts/data/FeeAccumulator.sol:161) and emits FeeRecorded (Launch-x:contracts/contracts/data/FeeAccumulator.sol:164) at the generation 2 FeeAccumulator address 0x7b14…1a66 (Launch-x:shared/config/deployment/current.json:51). (req 2.21.1)
+- claim pays the accumulated pool fees to the recipient by USDL.transfer from the launchpad module EVM address and reverts NoFeesAccumulated() at zero (Launch-x:contracts/contracts/data/FeeAccumulator.sol:169-184); burn transfers them to `0x000000000000000000000000000000000000dEaD` (Launch-x:contracts/contracts/data/FeeAccumulator.sol:187-200); sendLpRewards moves them from FeeHeld to HeldQuote of the pool reserve (Launch-x:contracts/contracts/data/FeeAccumulator.sol:272-286). (req 2.21.2)
+- The FeesRouter role checks the caller holds the fee right of the pool in the generation 2 collection (ownerOf) and the strategy of that fee right, and emits FeeDistributed at 0x1017 (Launch-x:contracts/contracts/periphery/FeesRouter.sol:124); the keeper requireFeeRightsHolder (modules/launchpad/keeper/fees.go:12) reads the fee-right store keyed by collection and id. (req 2.21.3)
+- The FeeAccumulator keeps one totalLiabilities and requires FeeHeld to cover it plus the new amount (Launch-x:contracts/contracts/data/FeeAccumulator.sol:478-480); the mirror FeeFlow event is emitted at 0x1017 (Launch-x:contracts/contracts/data/FeeAccumulator.sol:470). (req 2.21.4)
+- triggerAirdrop opens epoch e+1 for the pool with the airdrop balance, the eligible supply and the snapshot block block.number-1 as Launch-x:contracts/contracts/data/FeeAccumulator.sol:203-230 does, reading getPastTotalSupply and getPastBalance of the pool and dead addresses from the pool-token contract by nested staticcall; the keeper stores the epoch fields of FeeAccumulator slots 15 to 18 and no entitlement table. (req 2.22.1)
+- claimAirdrop pays holder balance at the snapshot times the epoch amount over the eligible supply by USDL.transfer from the launchpad module EVM address, refuses the pool, the `0x000000000000000000000000000000000000dEaD` address and zero (Launch-x:contracts/contracts/data/FeeAccumulator.sol:250), refuses a second claim with AlreadyClaimed() (Launch-x:contracts/contracts/data/FeeAccumulator.sol:251) and gives the rounding residue to the final claimant (Launch-x:contracts/contracts/data/FeeAccumulator.sol:248-269); the holder balance at the snapshot is getPastBalance(holder, snapshotBlock) read from the pool-token contract by nested staticcall. (req 2.22.2)
+- Open airdrop epochs of migrated pools keep their snapshot: MigrateV6120 carries airdropSnapshotBlock and the epoch fields (FeeAccumulator slots 15 to 18), and a claim after the upgrade reads the same token checkpoints the contract read, so it pays what the contract would have paid; modules/launchpad/keeper/history.go and its BeforeBalanceChange hook (node/app.go:808-809) stay as they are for the other launchpad flows. (req 2.22.3)
 - claimLegacyAirdrop verifies the Merkle proof over keccak256(pool, epoch, holder, amount) (Launch-x:contracts/contracts/data/FeeAccumulator.sol:453) against legacyAirdropRoot (slot 23) and legacyAirdropRemaining (slot 24), both migrated. (req 2.22.4)
 
 ## 10. Parameters
 
-- Parameters equal ProtocolConfig.initialize (Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:45-54); ConcentrationWeight 0 and CreationFee 1000000 are required changes to modules/launchpad/types/params.go:34.
+- Parameters equal ProtocolConfig.initialize (Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:45-54); ConcentrationWeight 0 and CreationFee 1000000 are required changes to modules/launchpad/types/params.go:34, and QuoteToken names USDL.
 - Validate enforces the ProtocolConfig setter bounds (Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:84, Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:100, Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:67).
-- Parameters change through MsgUpdateParams only (modules/launchpad/keeper/msg_server.go:14).
+- Parameters, role grants and revokes change through MsgUpdateParams only (modules/launchpad/keeper/msg_server.go:14); Treasury payouts run through MsgTreasuryWithdraw.
 
 | Parameter | ProtocolConfig.initialize | DefaultParams today | v6.12.0 |
 |---|---|---|---|
@@ -1043,40 +1119,72 @@ No two different signatures share a selector.
 | CreationFee | Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:54 | modules/launchpad/types/params.go:46 | 1000000 (required change) |
 
 - DefaultParams (modules/launchpad/types/params.go:34) sets ConcentrationWeight 0 and CreationFee 1000000, the ProtocolConfig values (Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:45-54); today it holds 100 and 100000000, a required change. (req 2.29.1)
-- MigrateV6120 writes the parameters read from the generation 2 ProtocolConfig storage (slots 2 to 11) and refuses when they fail Validate (modules/launchpad/types/params.go:50). (req 2.29.2)
-- Validate adds the ProtocolConfig bounds: concentrationWeight must be 0 (Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:84), virtual defaults fit uint112 (Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:100), protocolFeeBps at most 5000 (modules/launchpad/types/params.go:11) and baseFeeBps within min and max (Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:60). (req 2.29.3)
+- MigrateV6120 writes one parameter set read from the generation 2 ProtocolConfig storage (slots 2 to 11) and refuses when it fails Validate (modules/launchpad/types/params.go:50); the generation 1 ProtocolConfig values that differ are written to the migration log and not applied (ruling 5). (req 2.29.2)
+- Validate adds the ProtocolConfig bounds: concentrationWeight must be 0 (Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:84), decay and volatility weights at most 10000 (Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:79-90), virtual defaults fit uint112 (Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:100), protocolFeeBps at most 5000 (modules/launchpad/types/params.go:11) and baseFeeBps within min and max (Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:60). (req 2.29.3)
 - Parameters change only through MsgUpdateParams from the governance authority (modules/launchpad/keeper/msg_server.go:14), which emits ConfigUpdated at 0x1017 for each changed key. (req 2.29.4)
 
 ## 11. Events
 
-- Contract-native events are emitted at the address that emitted them before, through EmitEVMLog (precompiles/common/evm_events.go:16).
+- Contract-native events are emitted at the generation 2 address of the role, or at the pool address, through EmitEVMLog (precompiles/common/evm_events.go:16); ERC20 logs of USDL and pool tokens come from those contracts.
 - The twelve EventEmitter launchpad events are emitted at 0x1017 with block timestamp and number appended (Launch-x:contracts/contracts/data/EventEmitter.sol:365); the EventEmitter contracts stay deployed for the other systems.
-- Logs of one call appear in the contract order of the call.
+- Logs of one call appear in the contract order of the call, nested contract logs included.
+- SidioraPool events are emitted at the pool address; Initialized only at pools created after the upgrade.
+- SidioraFactory events at 0x3993…8830; Router events at the address the caller called (0x78FB…C6e4 or 0x1017); FeesRouter events at the address the caller called (0x0568…7927 or 0x1017); FeeAccumulator events at 0x7b14…1a66; PoolRegistry events at 0x1dC3…4Ba7; ProtocolConfig events at 0x1017; SidioraNFT events at 0xe8Dc…409B; Treasury events at the generation 2 Treasury address.
+- RoleGranted and RoleRevoked are emitted at the surface of the role only from MsgUpdateParams administration and renounceRole; RoleAdminChanged, Upgraded and MirrorFailed are not emitted after the upgrade.
+- ERC20 Approval and Transfer logs of USDL and pool tokens come from those token contracts.
+- EventEmitter event `Swap(bytes32,address,bool,uint256,uint256,uint256,uint256,uint256,uint256)` (topic0 0xa234ab85728295548823d8a26077ecc77aa5815f9ed8f4c5e6fd390ac851d4cc, declared at Launch-x:contracts/contracts/interfaces/IEventEmitter.sol:21) is emitted at 0x1017 by the precompile wherever the contract flow called emitSwap (Launch-x:contracts/contracts/core/SidioraPool.sol:273), with the arguments emitSwap adds (block.timestamp and block.number, Launch-x:contracts/contracts/data/EventEmitter.sol:365); the EventEmitter contracts stay deployed and unchanged for the other systems that use them. (req 2.16.1)
+- EventEmitter event `PoolStateUpdated(bytes32,uint256,uint256,uint256,uint256,uint256,uint256)` (topic0 0x8155a4b38a877d212b271811786986f8f7d78074c82fce4526c58defcc6d7ebd, declared at Launch-x:contracts/contracts/interfaces/IEventEmitter.sol:70) is emitted at 0x1017 by the precompile wherever the contract flow called emitPoolStateUpdated (Launch-x:contracts/contracts/core/SidioraPool.sol:288), with the arguments emitPoolStateUpdated adds (block.timestamp and block.number, Launch-x:contracts/contracts/data/EventEmitter.sol:409); the EventEmitter contracts stay deployed and unchanged for the other systems that use them. (req 2.16.2)
+- EventEmitter event `TokenDeployed(address,address,address,bytes32,string,string,uint8,uint256,uint256,uint256)` (topic0 0xad187874b793634c55d977f35d4828526eb48170a9531c71d88f8fd10cf9c237, declared at Launch-x:contracts/contracts/interfaces/IEventEmitter.sol:619) is emitted at 0x1017 by the precompile wherever the contract flow called emitTokenDeployed (Launch-x:contracts/contracts/core/SidioraFactory.sol:159), with the arguments emitTokenDeployed adds (block.timestamp and block.number, Launch-x:contracts/contracts/data/EventEmitter.sol:831); the EventEmitter contracts stay deployed and unchanged for the other systems that use them. (req 2.16.3)
+- EventEmitter event `MarketCreated(bytes32,address,address,address,address,uint256,uint256)` (topic0 0xb0a9c7605389f1127c2299d4a3ed85f0b2fc19894ab5411d76b453bb29f9f47b, declared at Launch-x:contracts/contracts/interfaces/IEventEmitter.sol:11) is emitted at 0x1017 by the precompile wherever the contract flow called emitMarketCreated (Launch-x:contracts/contracts/core/SidioraFactory.sol:160), with the arguments emitMarketCreated adds (block.timestamp and block.number, Launch-x:contracts/contracts/data/EventEmitter.sol:354); the EventEmitter contracts stay deployed and unchanged for the other systems that use them. (req 2.16.4)
+- EventEmitter event `NftMint(uint256,address,address,uint8,uint256,uint256)` (topic0 0xd2917d37031c0dfe5016665c7a83360cbf2ff32063096b2caf61ba66c06832e5, declared at Launch-x:contracts/contracts/interfaces/IEventEmitter.sol:600) is emitted at 0x1017 by the precompile wherever the contract flow called emitNftMint (Launch-x:contracts/contracts/core/SidioraNFT.sol:81), with the arguments emitNftMint adds (block.timestamp and block.number, Launch-x:contracts/contracts/data/EventEmitter.sol:800); the EventEmitter contracts stay deployed and unchanged for the other systems that use them. (req 2.16.5)
+- EventEmitter event `FeeStrategyChanged(bytes32,uint256,uint8,uint8,uint256,uint256)` (topic0 0x337fd9f9304e9da4c04886a5b8bf56e74032b459758212a860bc61d3544353dd, declared at Launch-x:contracts/contracts/interfaces/IEventEmitter.sol:52) is emitted at 0x1017 by the precompile wherever the contract flow called emitFeeStrategyChanged (Launch-x:contracts/contracts/core/SidioraNFT.sol:123), with the arguments emitFeeStrategyChanged adds (block.timestamp and block.number, Launch-x:contracts/contracts/data/EventEmitter.sol:399); the EventEmitter contracts stay deployed and unchanged for the other systems that use them. (req 2.16.6)
+- EventEmitter event `NftTransfer(address,address,address,uint256,uint256,uint256)` (topic0 0x021f03e8a1315704c74c03e8c022c12bc80c4a2bd4fec8bd36b217322c340ad3, declared at Launch-x:contracts/contracts/interfaces/IEventEmitter.sol:482) is emitted at 0x1017 by the precompile wherever the contract flow called emitNftTransfer (Launch-x:contracts/contracts/core/SidioraNFT.sol:144), with the arguments emitNftTransfer adds (block.timestamp and block.number, Launch-x:contracts/contracts/data/EventEmitter.sol:700); the EventEmitter contracts stay deployed and unchanged for the other systems that use them. (req 2.16.7)
+- EventEmitter event `PoolRegistered(address,address,address,address,uint256,uint256,uint256)` (topic0 0xda5568642b67660133b1de538c867c58f3037a5722b0e231a959ee8ca11b2ed7, declared at Launch-x:contracts/contracts/interfaces/IEventEmitter.sol:609) is emitted at 0x1017 by the precompile wherever the contract flow called emitPoolRegistered (Launch-x:contracts/contracts/data/PoolRegistry.sol:68), with the arguments emitPoolRegistered adds (block.timestamp and block.number, Launch-x:contracts/contracts/data/EventEmitter.sol:813); the EventEmitter contracts stay deployed and unchanged for the other systems that use them. (req 2.16.8)
+- EventEmitter event `RouterTrade(uint8,address,address,address,address,uint256,uint256,uint256,uint256,uint256)` (topic0 0x17c1899a3fd431f2b2200b90e738d270bb856a4222040c5650bfa208acb3b650, declared at Launch-x:contracts/contracts/interfaces/IEventEmitter.sol:587) is emitted at 0x1017 by the precompile wherever the contract flow called emitRouterTrade (Launch-x:contracts/contracts/periphery/Router.sol:282), with the arguments emitRouterTrade adds (block.timestamp and block.number, Launch-x:contracts/contracts/data/EventEmitter.sol:782); the EventEmitter contracts stay deployed and unchanged for the other systems that use them. (req 2.16.9)
+- EventEmitter event `ConfigUpdated(bytes32,uint256,uint256,uint256,uint256)` (topic0 0x2903b3642d2105b7fbd127326de888ab50e8d975bf819398337fb58407c1b10e, declared at Launch-x:contracts/contracts/interfaces/IEventEmitter.sol:80) is emitted at 0x1017 by the precompile wherever the contract flow called emitConfigUpdated (Launch-x:contracts/contracts/protocol/ProtocolConfig.sol:63), with the arguments emitConfigUpdated adds (block.timestamp and block.number, Launch-x:contracts/contracts/data/EventEmitter.sol:431); the EventEmitter contracts stay deployed and unchanged for the other systems that use them. (req 2.16.10)
+- EventEmitter event `FeeFlow(uint8,address,address,uint256,uint256,uint256,uint256,uint256,uint256)` (topic0 0x626e3fd5d9323ca4b7ffa3ca51c21c02766b638d15eb8896a36a4e0e97ae6de4, declared at Launch-x:contracts/contracts/interfaces/IEventEmitter.sol:573) is emitted at 0x1017 by the precompile wherever the contract flow called emitFeeFlow (Launch-x:contracts/contracts/data/FeeAccumulator.sol:470), with the arguments emitFeeFlow adds (block.timestamp and block.number, Launch-x:contracts/contracts/data/EventEmitter.sol:766); the EventEmitter contracts stay deployed and unchanged for the other systems that use them. (req 2.16.11)
+- EventEmitter event `FeeDistributed(bytes32,uint256,uint8,uint256,address,uint256,uint256)` (topic0 0xf7ab826cedf9d005102eddf95e65f43597aef36a55ff09ee4f452204c83f4afc, declared at Launch-x:contracts/contracts/interfaces/IEventEmitter.sol:42) is emitted at 0x1017 by the precompile wherever the contract flow called emitFeeDistributed (Launch-x:contracts/contracts/periphery/FeesRouter.sol:124), with the arguments emitFeeDistributed adds (block.timestamp and block.number, Launch-x:contracts/contracts/data/EventEmitter.sol:388); the EventEmitter contracts stay deployed and unchanged for the other systems that use them. (req 2.16.12)
 
 ## 12. Errors
 
 - Every refusal returns the contract custom error selector and ABI arguments as revert data; keeper errors keep their LXP_LAUNCHPAD_ codes (modules/launchpad/types/errors.go:7).
-- Admin-gated writes revert MissingRole(caller, 0x00) (0x0161a64a, Launch-x:contracts/contracts/base/AccessControl.sol:42); initialize reverts AlreadyInitialized() (0x0dc149f0).
-- Guardian functions revert Unauthorized() (0x82b42900, Launch-x:contracts/contracts/core/SidioraPool.sol:297) for other callers.
+- DEFAULT_ADMIN_ROLE methods (grantRole, revokeRole, upgradeToAndCall and every admin setter) revert `AccessControlUnauthorizedAccount(address,bytes32)` (0xe2517d3f) carrying the caller and 0x00 (ruling 7); non-admin role checks revert MissingRole(caller, role) (0x0161a64a, Launch-x:contracts/contracts/base/AccessControl.sol:73); initialize reverts AlreadyInitialized() (0x0dc149f0).
+- Guardian functions revert Unauthorized() (0x82b42900, Launch-x:contracts/contracts/core/SidioraPool.sol:43) for other callers, and migrateFactory reverts it for every caller (Launch-x:contracts/contracts/core/SidioraPool.sol:126-129).
+- A pool-token or USDL error raised inside a TransferHelper call of a surface is wrapped as TransferFromFailed() (0x7939f424) or TransferFailed() (0x90b8ec18) (Launch-x:contracts/contracts/libraries/TransferHelper.sol:8-9); a direct interface call returns it unchanged.
+
+Chain-defined errors (no Launch-x declaration):
+
+| Error | Selector | Raised |
+|---|---|---|
+| `AccessControlUnauthorizedAccount(address,bytes32)` | `0xe2517d3f` | every DEFAULT_ADMIN_ROLE method at a surface, with the caller and 0x00 |
+| `Retired(address)` | `0xda9d2e31` | every call to a retired generation 1 address, with the generation 2 address of the same role |
+
+Errors added by the custody and Treasury model:
+
+| Error | Selector | Declared | Raised |
+|---|---|---|---|
+| `ReentrancyGuardReentrantCall()` | `0x3ee5aeb5` | Launch-x:contracts/contracts/base/ReentrancyGuard.sol:15 | a second entry while a pool or role lock is held (section 19) |
+| `ReentrantCall()` | `0x37ed32e8` | Launch-x:contracts/contracts/protocol/Treasury.sol:21 | a second entry while the Treasury lock is held |
+| `InvalidToken()` | `0xc1ab6dc1` | Launch-x:contracts/contracts/protocol/Treasury.sol:20 | a token without code, or whose balanceOf staticcall fails, at the Treasury |
+| `NonERC721Receiver()` | `0x80526d0c` | Launch-x:contracts/contracts/base/ERC721Base.sol:28 | a fee-right receiver that does not return 0x150b7a02 |
 
 ## 13. Optical hooks
 
 - The precompile calls `getFlags()` (selector 0x6cc7149d, implemented at Launch-x:contracts/contracts/opticals/presets/LaunchpadOptical.sol:151) on the market optical through evm.Call with caller the pool address, at the point of the contract flow Launch-x:contracts/contracts/core/SidioraPool.sol:179, only when the optical flags carry every flag (Launch-x:contracts/contracts/libraries/BitFlag.sol:16); the optical code stays deployed unchanged and its sender checks pass (Launch-x:contracts/contracts/opticals/BaseOptical.sol:86). (req 2.17.1)
 - The precompile calls `beforeSwap(address,address,bool,uint256)` (selector 0xae7e71d9, implemented at Launch-x:contracts/contracts/opticals/presets/LaunchpadOptical.sol:159) on the market optical through evm.Call with caller the pool address, at the point of the contract flow Launch-x:contracts/contracts/core/SidioraPool.sol:188, only when the optical flags carry BEFORE_SWAP (1) (Launch-x:contracts/contracts/libraries/BitFlag.sol:16); the optical code stays deployed unchanged and its sender checks pass (Launch-x:contracts/contracts/opticals/BaseOptical.sol:86). (req 2.17.2)
 - The precompile calls `afterSwap(address,address,bool,uint256,uint256)` (selector 0xf74c1c1a, implemented at Launch-x:contracts/contracts/opticals/presets/LaunchpadOptical.sol:172) on the market optical through evm.Call with caller the pool address, at the point of the contract flow Launch-x:contracts/contracts/core/SidioraPool.sol:262, only when the optical flags carry AFTER_SWAP (2) (Launch-x:contracts/contracts/libraries/BitFlag.sol:16); the optical code stays deployed unchanged and its sender checks pass (Launch-x:contracts/contracts/opticals/BaseOptical.sol:86). (req 2.17.3)
-- The precompile calls `beforeFeeDistribution(address,uint256)` (selector 0xf80d2cc7, implemented at Launch-x:contracts/contracts/opticals/presets/LaunchpadOptical.sol:208) on the market optical through evm.Call with caller the market generation FeeAccumulator address, at the point of the contract flow Launch-x:contracts/contracts/data/FeeAccumulator.sol:134, only when the optical flags carry BEFORE_FEE_DISTRIBUTION (4) (Launch-x:contracts/contracts/libraries/BitFlag.sol:16); the optical code stays deployed unchanged and its sender checks pass (Launch-x:contracts/contracts/opticals/BaseOptical.sol:86). (req 2.17.4)
-- The precompile calls `afterFeeDistribution(address,uint256)` (selector 0xae3bd4bd, implemented at Launch-x:contracts/contracts/opticals/BaseOptical.sol:72) on the market optical through evm.Call with caller the market generation FeeAccumulator address, at the point of the contract flow Launch-x:contracts/contracts/data/FeeAccumulator.sol:161, only when the optical flags carry AFTER_FEE_DISTRIBUTION (8) (Launch-x:contracts/contracts/libraries/BitFlag.sol:16); the optical code stays deployed unchanged and its sender checks pass (Launch-x:contracts/contracts/opticals/BaseOptical.sol:86). (req 2.17.5)
-- The precompile calls `beforeTokenTransfer(address,address,address,uint256)` (selector 0x37be75a0, implemented at Launch-x:contracts/contracts/opticals/presets/LaunchpadOptical.sol:179) on the market optical through evm.Call with caller the pool-token address, at the point of the contract flow Launch-x:contracts/contracts/core/SidioraERC20.sol:30, only when the optical flags carry BEFORE_TOKEN_TRANSFER (16) (Launch-x:contracts/contracts/libraries/BitFlag.sol:16); the optical code stays deployed unchanged and its sender checks pass (Launch-x:contracts/contracts/opticals/BaseOptical.sol:86). (req 2.17.6)
+- The precompile calls `beforeFeeDistribution(address,uint256)` (selector 0xf80d2cc7, implemented at Launch-x:contracts/contracts/opticals/presets/LaunchpadOptical.sol:208) on the market optical through evm.Call with caller the generation 2 FeeAccumulator address 0x7b14…1a66 (Launch-x:shared/config/deployment/current.json:51), which serves the markets of every generation, at the point of the contract flow Launch-x:contracts/contracts/data/FeeAccumulator.sol:134, only when the optical flags carry BEFORE_FEE_DISTRIBUTION (4) (Launch-x:contracts/contracts/libraries/BitFlag.sol:16); the optical code stays deployed unchanged and its sender checks pass (Launch-x:contracts/contracts/opticals/BaseOptical.sol:86). (req 2.17.4)
+- The precompile calls `afterFeeDistribution(address,uint256)` (selector 0xae3bd4bd, implemented at Launch-x:contracts/contracts/opticals/BaseOptical.sol:72) on the market optical through evm.Call with caller the generation 2 FeeAccumulator address 0x7b14…1a66 (Launch-x:shared/config/deployment/current.json:51), at the point of the contract flow Launch-x:contracts/contracts/data/FeeAccumulator.sol:161, only when the optical flags carry AFTER_FEE_DISTRIBUTION (8) (Launch-x:contracts/contracts/libraries/BitFlag.sol:16); the optical code stays deployed unchanged and its sender checks pass (Launch-x:contracts/contracts/opticals/BaseOptical.sol:86). (req 2.17.5)
+- `beforeTokenTransfer(address,address,address,uint256)` (selector 0x37be75a0, implemented at Launch-x:contracts/contracts/opticals/presets/LaunchpadOptical.sol:179) is called by the pool-token contract itself at Launch-x:contracts/contracts/core/SidioraERC20.sol:26-34, unchanged, when the optical flags carry BEFORE_TOKEN_TRANSFER (16); the token reads opticalAddress() from the pool surface, which the precompile answers from the keeper market record, so every pool-token transfer, the nested ones the precompile makes included, runs the hook with the token contract as caller and the optical sender checks pass (Launch-x:contracts/contracts/opticals/BaseOptical.sol:86). (req 2.17.6)
 
 ## 14. Storage
 
 - Market records extend modules/launchpad/types/market.go:58 under MarketPrefix (modules/launchpad/types/keys.go:39).
-- Surface and role records are new prefixes beside modules/launchpad/types/keys.go:48.
-- Holding history stays under HoldingHistoryPrefix (modules/launchpad/types/keys.go:45) and backs past balances of airdrops.
-- Pool storage slots read by the migration are those of contracts/launchpad.md section 14, from the Launch-x build of each generation implementation.
+- Surface, role, custody, Treasury, book-held delta, fee-right id map and retired records are new prefixes beside modules/launchpad/types/keys.go:48.
+- Holding history stays under HoldingHistoryPrefix (modules/launchpad/types/keys.go:45) for the reads of tasks 3.2.10 and 12.3.29; airdrops read past balances from the pool-token checkpoints.
+- Pool storage slots read by the migration are those of contracts/launchpad.md section 14, from the Launch-x build of each generation implementation; old storage is left in place.
 
 Storage slots of the generation 2 implementations read by the migration (slot, field):
-
 
 - SidioraERC20: 0 `name`, 1 `symbol`, 2 `totalSupply`, 3 `balanceOf`, 4 `allowance`, 5 `nonces`, 6 `_balanceCheckpoints`, 7 `_supplyCheckpoints`, 8 `pool`.
 
@@ -1098,53 +1206,103 @@ Storage slots of the generation 2 implementations read by the migration (slot, f
 
 - ProtocolConfig: 0 `_roles`, 1 `usdlAddress`, 2 `virtualUsdlDefault`, 3 `virtualTokenDefault`, 4 `minFeeBps`, 5 `maxFeeBps`, 6 `baseFeeBps`, 7 `protocolFeeBps`, 8 `feeDecayRate`, 9 `volatilityWeight`, 10 `concentrationWeight`, 11 `creationFee`, 12 `eventEmitter`.
 
+- Treasury: 0 `_roles`, 1 `_balances`, 2 `eventEmitter` (Launch-x:contracts/storage-layout/core/Treasury.json).
+
 The generation 1 layout is a release input in modules/launchpad/keeper/testdata/v6120/layout.json; the migration refuses a pool whose code hash is not listed there.
 
 ## 15. Gas
 
-- RequiredGas is Gas(inputBytes, writes, pointers) with BaseGas 3000, GasPerByte 16, GasPerWrite 5000, GasPerPointer 9000000 (precompiles/launchpad/launchpad.go:15-18).
-- Optical calls are nested EVM calls metered by the EVM (precompiles/xweb/xweb.go:482).
-- RequiredGas stays Gas(inputBytes, writes, pointers) with BaseGas 3000, GasPerByte 16, GasPerWrite 5000 and GasPerPointer 9000000 (precompiles/launchpad/launchpad.go:15-18, precompiles/launchpad/launchpad.go:224), and the Writes table (precompiles/launchpad/launchpad.go:196) lists every state-changing method of the ten roles. (req 2.26.1)
-- Pointers counts 1 for createMarket and createMarketWithPermit, the methods that register a new pointer (precompiles/launchpad/launchpad.go:216); nested evm.Call gas for optical hooks is metered by the EVM, as the xweb precompile meters its callback (precompiles/xweb/xweb.go:482). (req 2.26.2)
+- RequiredGas is Gas(inputBytes, writes) with BaseGas 3000, GasPerByte 16 and GasPerWrite 5000 (precompiles/launchpad/launchpad.go:15-17); the pointer term of precompiles/launchpad/launchpad.go:18 goes.
+- Optical, USDL, pool-token and receiver-hook calls are nested EVM calls metered by the EVM (precompiles/xweb/xweb.go:482).
+- RequiredGas is Gas(inputBytes, writes) with BaseGas 3000, GasPerByte 16 and GasPerWrite 5000 (precompiles/launchpad/launchpad.go:15-17, precompiles/launchpad/launchpad.go:224); GasPerPointer and the pointer argument (precompiles/launchpad/launchpad.go:18) go because no pointer is registered, and the Writes table (precompiles/launchpad/launchpad.go:196) lists every state-changing method of the eleven role files. (req 2.26.1)
+- Nested evm.Call and CREATE2 gas for token deployment, USDL and pool-token transfers, optical hooks and the fee-right receiver hook is metered by the EVM, as the xweb precompile meters its callback (precompiles/xweb/xweb.go:482). (req 2.26.2)
 - The current pinned gas test (precompiles/launchpad/launchpad_test.go:177) moves to the legacy version with its precompile and keeps its values there. (req 2.26.3)
 
 ## 16. Activation
 
 - 0x1017 stays behind activationPrecompileGate (node/upgrades.go:498).
-- GetVersioned (precompiles/launchpad/setup.go:10) keeps the current precompile under v6.10 in legacy/v610.
-- The v6.12.0 handler calls MigrateV6120(ctx, k, evm) first and wraps its error as "upgrade v6.12.0: launchpad: <error>".
-- GetVersioned (precompiles/launchpad/setup.go:10) returns the new precompile for the latest upgrade and the current one under "v6.10" from precompiles/launchpad/legacy/v610, following the pattern of precompiles/p256/setup.go:22; precompiles/launchpad/versions gains v6.12.0 after v6.5 (precompiles/launchpad/versions:1). (req 2.27.1)
-- 0x1017 stays behind activationPrecompileGate (node/upgrades.go:498), the registration of precompiles/setup.go:14 is unchanged, and the plan names v6.9 (node/upgrades.go:93) and v6.10 (node/upgrades.go:102) stay as they are. (req 2.27.2)
-- The v6.12.0 handler calls launchpad MigrateV6120 first and then pricefeed InitV6120, perps SeedV6120 and spot InitV6120, wrapping each error as "upgrade v6.12.0: <hook>: <error>"; this domain supplies MigrateV6120 and its EVMReader interface only. (req 2.27.3)
+- GetVersioned (precompiles/launchpad/setup.go:10) keeps the current precompile under v6.10 in legacy/v610 over the copied keeper and types, and the handler switches the versioned set to v6.12.0 explicitly.
+- The v6.12.0 handler (baseline task 1.0.3) runs RunMigrations, moveSidioraMintAuthority and migrateSIDHolders, then its hook table in the order the createV6120Pointers hook of baseline task 1.2.4, launchpad MigrateV6120(ctx, k, evm), pricefeed InitV6120, perps SeedV6120 and spot InitV6120, so MigrateV6120 is the first domain hook; MigrateV6120 uses CallEVM as its nested caller and wraps its error as "upgrade v6.12.0: launchpad: <error>"; the launchpad module account gains no new permission.
+- GetVersioned (precompiles/launchpad/setup.go:10-14) returns the new precompile under the key "v6.12.0" and the current one under "v6.10" from precompiles/launchpad/legacy/v610, which task 2.0.7 copies at 211acbc6c before any change, following the pattern of precompiles/p256/setup.go:15-24; precompiles/launchpad/versions gains v6.12.0 after v6.5 (precompiles/launchpad/versions:1) and the registration of precompiles/setup.go:183 is unchanged. (req 2.27.1)
+- 0x1017 stays behind activationPrecompileGate (node/upgrades.go:498); the v6.12.0 handler switches the versioned set live explicitly and a node restarted after the upgrade restores it from state, as xweb is switched (node/upgrades.go:216-236, node/upgrades.go:276-282); no node/tags entry is added and the handler never reads GetDoneHeight; the plan names v6.9 (node/upgrades.go:93) and v6.10 (node/upgrades.go:102) stay as they are. (req 2.27.2)
+- The v6.12.0 handler (baseline task 1.0.3) runs RunMigrations, moveSidioraMintAuthority and migrateSIDHolders, then its hook table in the order the createV6120Pointers hook of baseline task 1.2.4, launchpad MigrateV6120, pricefeed InitV6120, perps SeedV6120 and spot InitV6120, so MigrateV6120 is the first domain hook, wrapping each error as "upgrade v6.12.0: <hook>: <error>"; this domain supplies MigrateV6120, its EVMReader interface and the legacy keeper accessor that task 1.3.100 wires in node/app.go. (req 2.27.3)
 - Task 2.3.99 runs go test ./modules/launchpad/... ./precompiles/launchpad/... once after every other task of the domain is done. (req 2.33.1)
 - TestLaunchpadDomainWiring builds the keeper and the precompile together and runs createMarket, buy, sell, claimFees and a migrated pool read in one store. (req 2.33.2)
 
 ## 17. Invariants
 
-- Bank balances of each pool cover realUsdlBalance and tokenReserve (Launch-x:contracts/contracts/core/SidioraPool.sol:268, modules/launchpad/keeper/invariants.go:20).
-- Bank uusdl of each FeeAccumulator covers totalLiabilities (Launch-x:contracts/contracts/data/FeeAccumulator.sol:478-480).
-- The uusdl supply after step 1 equals the USDL total-supply slot at the halt height.
-- SolvencyInvariant (modules/launchpad/keeper/invariants.go:20) checks, for every market, that the uusdl bank balance of the pool address is at least realUsdlBalance and the pool-token balance is at least tokenReserve, the condition of Launch-x:contracts/contracts/core/SidioraPool.sol:268. (req 2.28.1)
-- A second invariant checks that the uusdl bank balance of each FeeAccumulator address is at least its totalLiabilities, the condition of Launch-x:contracts/contracts/data/FeeAccumulator.sol:478-480, and is registered in RegisterInvariants (modules/launchpad/keeper/invariants.go:13). (req 2.28.2)
-- The pool-token supply of every market equals the sum of holder balances, and the bank supply of uusdl changes only by mint in step 1 of MigrateV6120 and by sends afterwards. (req 2.28.3)
+- HeldQuote(pool) covers realUsdlBalance and token.balanceOf(pool) covers tokenReserve (Launch-x:contracts/contracts/core/SidioraPool.sol:268, modules/launchpad/keeper/invariants.go:20).
+- FeeHeld covers totalLiabilities (Launch-x:contracts/contracts/data/FeeAccumulator.sol:478-480) and TreasuryHeld covers the Treasury ledger.
+- USDL.balanceOf(launchpad module EVM address) covers the sum of HeldQuote, FeeHeld and TreasuryHeld(USDL); USDL totalSupply is unchanged by the upgrade.
+- SolvencyInvariant (modules/launchpad/keeper/invariants.go:20) checks, for every market, that HeldQuote(pool) is at least realUsdlBalance and token.balanceOf(pool) is at least tokenReserve, the condition of Launch-x:contracts/contracts/core/SidioraPool.sol:268. (req 2.28.1)
+- LiabilitiesInvariant checks that FeeHeld is at least totalLiabilities (Launch-x:contracts/contracts/data/FeeAccumulator.sol:478-480) and that TreasuryHeld is at least TreasuryLedger for every token, and is registered in RegisterInvariants (modules/launchpad/keeper/invariants.go:13). (req 2.28.2)
+- CustodyInvariant checks that USDL.balanceOf(launchpad module EVM address), read by StaticCallEVM, is at least the sum of every HeldQuote, FeeHeld and TreasuryHeld(USDL), and that the custody ledgers change only by sweeps, pulls, payouts and the ledger moves of requirement 2.18. (req 2.28.3)
 
 ## 18. Dependents and backend binding
 
-- Decision 2 is met by building to the generation 2 interface and migrating both generations (req 2.24, req 2.25).
-- Decision 3 is met by uusdl as the bank form of the USDL ERC20 with its pointer at the USDL address (req 2.18, req 2.23), opticals (req 2.17), ERC721 fee rights (req 2.11).
-- Programme req 1 ac 1 is met by req 2.1 to req 2.17.
-- Programme req 1 ac 2 is met by req 2.18 to req 2.21; graduation is not part of the contracts or the manifest (Launch-x:shared/config/deployment/current.json:107), so no graduation path is served.
-- Programme req 1 ac 3 is met by req 2.23 to req 2.25.
+- Decision 2 is met by building to the generation 2 interface and migrating both generations into it (req 2.24, req 2.25).
+- Decision 3 is met by USDL staying the ERC20 contract held in custody at the launchpad module EVM address (req 2.18, req 2.23), opticals (req 2.17) and ERC721 fee rights (req 2.11).
+- Programme req 1 ac 1 is met by req 2.1 to req 2.17 and req 2.34 to req 2.35.
+- Programme req 1 ac 2 is met by req 2.18 to req 2.21: the pool lifecycle is exactly the one the Launch-x contracts and manifest define (Launch-x:shared/config/deployment/current.json:107), with no stage the contracts do not have.
+- Programme req 1 ac 3 is met by req 2.23 to req 2.25 and req 2.36 to req 2.40.
 - Programme req 1 ac 4 is met by req 2.11 and req 2.12.
 - Programme req 1 ac 5 is met by req 2.30 to req 2.32.
-- The launchpad decode of the intents crate (human/crates/layerx-intents/src/precompile.rs:557) decodes the twelve EventEmitter launchpad events emitted at LAUNCHPAD_PRECOMPILE (human/crates/layerx-intents/src/precompile.rs:24) and PrecompileEventKind (human/crates/layerx-intents/src/precompile.rs:28) lists them with their topic0. (req 2.30.1)
+- The launchpad decode of the intents crate (human/crates/layerx-intents/src/precompile.rs:557) decodes the twelve EventEmitter launchpad events emitted at LAUNCHPAD_PRECOMPILE (human/crates/layerx-intents/src/precompile.rs:24), which replace the logs the generation 2 EventEmitter emitted for launchpad flows, and PrecompileEventKind (human/crates/layerx-intents/src/precompile.rs:28) lists them with their topic0. (req 2.30.1)
 - The intent map (human/crates/layerx-intents/src/precompile.rs:1005-1014) maps Swap to LaunchpadSwap, MarketCreated to LaunchpadCreate, FeeStrategyChanged to LaunchpadFeeStrategy and FeeDistributed by strategy to LaunchpadFeesClaim, LaunchpadFeesBurn, LaunchpadAirdropExecute and LaunchpadLpRewards, with the vocabulary variants of human/crates/layerx-intents/src/vocabulary.rs:134-145. (req 2.30.2)
 - every_abi_event_is_declared_with_its_computed_topic (human/crates/layerx-intents/tests/precompile_router.rs:203) keeps passing with LAUNCHPAD_ABI (human/crates/layerx-intents/tests/precompile_router.rs:26) now the new abi.json. (req 2.30.3)
 - The hosted indexer registry entry ("launchpad", 0x1017) (platform/hosted/indexer/src/abi.rs:41) loads the new abi.json, and signatures_and_topics_match_solidity (platform/hosted/indexer/src/abi.rs:637) covers the twelve launchpad events. (req 2.31.1)
 - The gateway launchpad probe changes from getMarketCount() (platform/hosted/gateway/src/capabilities.rs:40) to getPoolCount() of the new interface, selector 0x8eec5d70, sent to LAUNCHPAD_PRECOMPILE (platform/hosted/gateway/src/evm.rs:47), and its answer still decodes as one word (platform/hosted/gateway/src/capabilities.rs:87). (req 2.31.2)
 - The indexer ingest test replays a Swap and a MarketCreated log at 0x1017 and stores one row each. (req 2.31.3)
-- The deployment manifest gains role kind "precompile" for roles served at 0x1017: Validate (Launch-x:shared/config/deployment/manifest.go:113) accepts it for the nine contract roles, exempts it from role_address_conflict (Launch-x:shared/config/deployment/manifest.go:160) and from the runtime hash check, and requires the implementation fields to be empty as for "direct" (Launch-x:shared/config/deployment/manifest.go:177). (req 2.32.1)
-- current.json (Launch-x:shared/config/deployment/current.json:107) gains a third generation entry with the nine roles at 0x1017 kind "precompile", SidioraNFT kept at the generation 2 collection with kind "surface", USDL kept at 0x85FcD13735F4309833A503EE804ea32395851479 kind "direct" (Launch-x:shared/config/deployment/current.json:86), and settlement USDL six decimals unchanged. (req 2.32.2)
-- The decode registry (Launch-x:core/indexer/internal/decode/registry.go:158) accepts several roles at one address with overlapping epochs when the deployment kind is "precompile" and dispatches each log by topic0 to its role, instead of refusing (Launch-x:core/indexer/internal/decode/registry.go:234). (req 2.32.3)
-- parseContractAddresses (Launch-x:shared/chain/contracts.go:67) accepts the same address for several roles, and CreateContracts (Launch-x:shared/chain/contracts.go:93) binds each role to 0x1017 with its role ABI. (req 2.32.4)
-- protocol/addresses.go keeps the generation 1 addresses (Launch-x:protocol/addresses.go:23) for historical decoding and adds the precompile address as the active address of the nine roles. (req 2.32.5)
+- The deployment manifest accepts role kind "surface" for the mandatory roles and adds role LaunchpadPrecompile at 0x0000000000000000000000000000000000001017 with kind "precompile": Validate (Launch-x:shared/config/deployment/manifest.go:113) accepts both kinds, exempts them from the runtime hash check and requires the implementation fields to be empty as for "direct" (Launch-x:shared/config/deployment/manifest.go:177). (req 2.32.1)
+- current.json keeps one generation: every role keeps its generation 2 address with kind "surface" (the SidioraPool family served by the pool surfaces, SidioraNFT at the generation 2 collection), USDL stays at 0x85FcD13735F4309833A503EE804ea32395851479 kind "direct" (Launch-x:shared/config/deployment/current.json:86), LaunchpadPrecompile is added, deploymentVersion and activationHeight (Launch-x:shared/config/deployment/current.json:3-6) take the v6.12.0 values, settlement USDL six decimals stays, and the governance block (Launch-x:shared/config/deployment/current.json:101-107) stays. (req 2.32.2)
+- The decode registry (Launch-x:core/indexer/internal/decode/registry.go:158) binds LaunchpadPrecompile at 0x1017 to the EventEmitter ABI and dispatches each log there by topic0 to its event, beside the generation 2 EventEmitter binding that keeps decoding the logs of other systems (Launch-x:core/indexer/internal/decode/registry.go:234). (req 2.32.3)
+- parseContractAddresses (Launch-x:shared/chain/contracts.go:67) accepts kind "surface" and the LaunchpadPrecompile role, and CreateContracts (Launch-x:shared/chain/contracts.go:93) binds each role at its generation 2 address with its role ABI and binds the EventEmitter ABI at 0x1017 for the launchpad family events. (req 2.32.4)
+- protocol/addresses.go keeps the generation 1 addresses (Launch-x:protocol/addresses.go:20-29) for historical decoding, marks them retired from the v6.12.0 height, and adds the precompile address 0x1017 and the generation 2 role addresses as the active set. (req 2.32.5)
+
+## 19. Custody and re-entrancy
+
+- swap, swapFor and syncReserves of a pool run under a per-pool lock held in the transient store of the precompile run; a second state-changing entry for the same pool while the lock is held, from an optical hook, a token hook or any nested call, reverts ReentrancyGuardReentrantCall() (0x3ee5aeb5) as the nonReentrant guard of Launch-x:contracts/contracts/core/SidioraPool.sol:152, Launch-x:contracts/contracts/core/SidioraPool.sol:159 and Launch-x:contracts/contracts/core/SidioraPool.sol:279 does (Launch-x:contracts/contracts/base/ReentrancyGuard.sol:15). (req 2.34.1)
+- The FeeAccumulator role holds one lock across recordFee, claim, burn, triggerAirdrop, claimAirdrop, claimAirdropEpoch, sendLpRewards, claimOpticalSurplus, claimLegacyAirdrop and allocateLegacyAirdrop as its nonReentrant functions do (Launch-x:contracts/contracts/data/FeeAccumulator.sol:112, :172, :189, :205, :236, :242, :274, :364, :380, :449), the Treasury role holds the lock of Launch-x:contracts/contracts/protocol/Treasury.sol:23-31 and reverts ReentrantCall() (0x37ed32e8), and the Router and FeesRouter roles hold the locks of their nonReentrant entry points. (req 2.34.2)
+- Locks live only for one precompile run and are released on return and on revert; view functions are answered while a lock is held, so the opticalAddress() read of a pool-token transfer and the getReserves() read of an optical hook succeed during a swap. (req 2.34.3)
+- Before each nested call (optical hook, USDL or pool-token transfer, permit, fee-right receiver hook) the precompile writes every keeper change of the run so far, so the nested call and any view it makes see the committed outer state, in the order of the contract flow: reserves and snapshot before afterSwap, fee split before afterFeeDistribution. (req 2.34.4)
+- A nested call that reverts reverts the whole precompile call with the nested revert data, except the permit of the *WithPermit variants, whose failure the contract ignores (Launch-x:contracts/contracts/periphery/Router.sol:292-314); the fee-right receiver hook follows the contract rule: a wrong return value or an empty revert gives NonERC721Receiver() (0x80526d0c) and any other revert data is returned unchanged (Launch-x:contracts/contracts/core/SidioraNFT.sol:71-77, Launch-x:contracts/contracts/base/ERC721Base.sol:81-92). (req 2.34.5)
+
+## 20. Treasury
+
+- The generation 2 Treasury address read from SidioraFactory slot 6 (Launch-x:contracts/contracts/core/SidioraFactory.sol:30) and recorded in modules/launchpad/keeper/testdata/v6120/layout.json holds the surface runtime and serves the Treasury ABI of Launch-x:contracts/contracts/protocol/Treasury.sol:13 (17 functions, 8 events, 19 errors, the eleventh role file of requirement 2.1) for the treasury of every generation, the generation 1 Treasury 0x15405D535ce533BfFb98c83e42f4DD242AA5e079 (Launch-x:protocol/addresses.go:84) being retired by requirement 2.36. (req 2.35.1)
+- deposit(token, amount) (0x47e7ef24) pulls token.transferFrom(caller, launchpad module EVM address, amount) for a DEPOSITOR_ROLE caller, credits the received amount measured by balanceOf before and after to TreasuryLedger and TreasuryHeld and emits Deposited(token, caller, received) at the Treasury address (Launch-x:contracts/contracts/protocol/Treasury.sol:46-54, ITreasury.sol:14); recordDeposit(token, amount) (0x1e578bae) sweeps the Treasury address, requires amount at most TreasuryHeld minus TreasuryLedger and credits the ledger (Launch-x:contracts/contracts/protocol/Treasury.sol:79-85). (req 2.35.2)
+- getBalance(token) (0xf8b2cb4f) returns TreasuryLedger(token) (Launch-x:contracts/contracts/protocol/Treasury.sol:73-75) and rises after every createMarket by the creation fee and after every recordFee by the protocol cut; eventEmitter() (0x9ff78c30) returns 0x622E…3EF6 (Launch-x:shared/config/deployment/current.json:9); DEPOSITOR_ROLE(), hasRole and getRoleAdmin answer from the migrated role table; a token address without code, or whose balanceOf staticcall fails or returns other than 32 bytes, reverts InvalidToken() (0xc1ab6dc1) as _actualBalance does (Launch-x:contracts/contracts/protocol/Treasury.sol:96-101). (req 2.35.3)
+- withdraw (0xd9caed12, Launch-x:contracts/contracts/protocol/Treasury.sol:58-70) and recoverSurplus (0x72df7f5b, Launch-x:contracts/contracts/protocol/Treasury.sol:87-94) revert `AccessControlUnauthorizedAccount(address,bytes32)` (0xe2517d3f) with the caller and 0x00 at the surface (ruling 7) and run only through MsgTreasuryWithdraw of requirement 2.40; initialize (0x485cc955, Launch-x:contracts/contracts/protocol/Treasury.sol:38-42) reverts AlreadyInitialized() and upgradeToAndCall reverts as in requirement 2.13. (req 2.35.4)
+- MigrateV6120 carries the Treasury _balances ledger (Launch-x:contracts/contracts/protocol/Treasury.sol:16) of both generations per token listed in the fixture into TreasuryLedger, and the DEPOSITOR_ROLE members of both generations into the role table of the generation 2 Treasury. (req 2.35.5)
+
+## 21. Retired addresses
+
+| Generation 1 address | Role | Replacement |
+|---|---|---|
+| `0x8a1A09CEe72c1D39dF33B8284E38baeF8371f465` (Launch-x:protocol/addresses.go:22) | SidioraFactory | `0x3993D004166738d1069B5C4e0a923f7B9D5D8830` |
+| `0xCC7298801112682e10ee14b8a520309caD80336d` (Launch-x:protocol/addresses.go:23) | Router | `0x78FB06f525cD964388f2305A489035263E31C6e4` |
+| `0xB768e183b6EfDeDf8b2AA7af732039D1C3c452d0` (Launch-x:protocol/addresses.go:24) | Quoter | `0x793006f4F321b8863F26DBD75b11bAa01DA181dc` |
+| `0xEeDF5409cFD30bd14D0399318c7d2150265575e5` (Launch-x:protocol/addresses.go:25) | ProtocolConfig | `0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6` |
+| `0x50C69dF6637b3DCE6a7407C5A4b4F99E68514A76` (Launch-x:protocol/addresses.go:26) | FeeAccumulator | `0x7b14808b72f61664cDb79D25E6d1587655571a66` |
+| `0x7684382c89f79104574D8EF9b31eFf2eD2C2BA0b` (Launch-x:protocol/addresses.go:21) | PoolRegistry | `0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7` |
+| `0xDF73b354ed9dcB473cc9D01541c46f507591e190` (Launch-x:protocol/addresses.go:27) | SidioraNFT | `0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B` |
+| `0x02Df12a44F2658080E76fbcF7D6B34Baa97843b6` (Launch-x:protocol/addresses.go:28) | FeesRouter | `0x05681dA6f611C2dfFD3E92611F6dE2d247647927` |
+| `0x15405D535ce533BfFb98c83e42f4DD242AA5e079` (Launch-x:protocol/addresses.go:84) | Treasury | read from SidioraFactory slot 6 (Launch-x:contracts/contracts/core/SidioraFactory.sol:30), recorded in modules/launchpad/keeper/testdata/v6120/layout.json |
+| `0x4CdA6e48632d51Ee4Fa735D81BF09F7543f644a1` (Launch-x:protocol/addresses.go:95) | OpticalRegistry | `0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0` |
+
+- MigrateV6120 installs at the generation 1 SidioraFactory, Router, Quoter, ProtocolConfig, FeeAccumulator, PoolRegistry, fee-right collection and FeesRouter addresses (Launch-x:protocol/addresses.go:20-29), the generation 1 Treasury 0x15405D535ce533BfFb98c83e42f4DD242AA5e079 (Launch-x:protocol/addresses.go:84) and the generation 1 OpticalRegistry (Launch-x:protocol/addresses.go:95) the fixed retirement runtime that reverts Retired(address) (0xda9d2e31) carrying the generation 2 address of the same role, for every selector, after their USDL is moved in step 1. (req 2.36.1)
+- Storage at the retired addresses is left as it was at the halt height, the generation 1 EventEmitter (Launch-x:protocol/addresses.go:20) and PoolBeacon (Launch-x:protocol/addresses.go:29) keep their code, the Timelock and GovernanceModule (Launch-x:protocol/addresses.go:85-86) keep their code, and generation 1 pool addresses are not retired: they serve as generation 2 pools by requirement 2.24. (req 2.36.2)
+- The retired list (address, role, replacement) is written to the migration log, served by a keeper query and listed in contracts/launchpad.md section 21, and the release runbook announces it before the halt. (req 2.36.3)
+
+## 22. Retained contracts
+
+- The generation 2 EventEmitter 0x622E…3EF6 (Launch-x:shared/config/deployment/current.json:9) stays deployed and keeps serving the other systems; its authorization reads (_isAuthorized, _requireTyped and _requirePool at Launch-x:contracts/contracts/data/EventEmitter.sol:165-190 and Launch-x:contracts/contracts/data/EventEmitter.sol:216-227) go to the PoolRegistry, FeeAccumulator and Factory surfaces, which answer from the keeper, and the launchpad family events are emitted at 0x1017 by requirement 2.16, so MirrorFailed (Launch-x:contracts/contracts/data/FeeAccumulator.sol:471, Launch-x:contracts/contracts/data/PoolRegistry.sol:69, Launch-x:contracts/contracts/periphery/FeesRouter.sol:19) is never emitted after the upgrade. (req 2.37.1)
+- The generation 2 OpticalRegistry 0x0FB5…fcF0 (Launch-x:shared/config/deployment/current.json:72), LaunchpadOpticalFactory and every optical keep their code; createLaunchpadOptical (Launch-x:contracts/contracts/opticals/LaunchpadOpticalFactory.sol:79) calls authorizeOptical (Launch-x:contracts/contracts/opticals/LaunchpadOpticalFactory.sol:106) at the generation 2 FeeAccumulator surface, which accepts it through the migrated OPTICAL_GRANTER_ROLE, and onlyAttachedPool (Launch-x:contracts/contracts/opticals/BaseOptical.sol:86) passes because isRegisteredPool at the generation 2 PoolRegistry surface answers for pools of every generation. (req 2.37.2)
+- The generation 2 PoolBeacon 0x0c60…71BE (Launch-x:shared/config/deployment/current.json:79) keeps its code and is the beacon named in the predicted pool address of requirement 2.20; BeaconCallFailed and the beacon functions answer as the contract does. (req 2.37.3)
+- Operations queued in the Timelock or GovernanceModule that call a DEFAULT_ADMIN_ROLE method at a surface revert `AccessControlUnauthorizedAccount(address,bytes32)` (0xe2517d3f) when executed; EmergencyPauseController.pauseTargets (Launch-x:contracts/contracts/protocol/EmergencyPauseController.sol:44, :87-95) calling pause() at a pool surface reverts Unauthorized() unless the controller is the pool guardian, exactly as at the halt height, within the 150000 and 30000 gas budgets of the controller. (req 2.37.4)
+- The meta-ag SidioraAdapter reads the Router, Quoter and PoolRegistry addresses it holds (Launch-x:contracts/contracts/meta-ag/adapters/SidioraAdapter.sol:92), which are generation 2 surfaces, and approves its Router (Launch-x:contracts/contracts/meta-ag/adapters/SidioraAdapter.sol:257-258); since pulls run with spender 0x1017, the release runbook calls setSidioraRouter(0x0000000000000000000000000000000000001017) through its admin, and getPoolByToken answers for tokens of every generation. (req 2.37.5)
+
+## 23. Governance administration
+
+- MsgUpdateParams (modules/launchpad/keeper/msg_server.go:14) is the only path for role administration: its role_grants and role_revokes fields grant and revoke non-admin roles in the migrated role table under the governance authority and emit RoleGranted and RoleRevoked at the surface of the role, and every DEFAULT_ADMIN_ROLE method at a surface reverts `AccessControlUnauthorizedAccount(address,bytes32)` (0xe2517d3f), the single accepted divergence (ruling 7). (req 2.40.1)
+- MsgTreasuryWithdraw (authority, token, to, amount, surplus flag), declared in api/launchpad/tx.proto and registered in modules/launchpad/types/codec.go beside MsgUpdateParams (modules/launchpad/types/codec.go:16, modules/launchpad/types/codec.go:19), runs only under the governance authority, pays out from TreasuryHeld by token.transfer from the launchpad module EVM address, debits TreasuryLedger for a withdraw and only the surplus for a recovery, and emits Withdrawn (Launch-x:contracts/contracts/interfaces/ITreasury.sol:15) or SurplusRecovered (Launch-x:contracts/contracts/protocol/Treasury.sol:22) at the Treasury address. (req 2.40.2)

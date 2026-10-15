@@ -7892,3 +7892,13 @@ fix = "check git status --short before the commit and amend or soft-reset if the
 area = "codify"
 symptom = "cg spec lint on one lane part of a multi-part spec reports requires-unknown-task errors for every cross-part task id"
 fix = "lint all parts together through the assembler before judging a part; a part-only lint is for syntax only"
+
+[gotcha.1664]
+area = "codify"
+symptom = "a part-check that pipes cg spec lint through grep and tail returns the pipeline's exit code, so a killed or silent lint still shows exit 0 and PASS"
+fix = "read the lint summary line itself (N error(s), M warning(s)); treat a missing summary as not linted, never as passed"
+
+[gotcha.1665]
+area = "codify"
+symptom = "cg spec lint on a 31k-line spec is single-threaded and runs 30 minutes or more even on a quiet box"
+fix = "run it once per spec revision in the background with no timeout and continue other work; never run it per lane"
