@@ -238,3 +238,10 @@ command = "go test ./modules/perps/types/ -run 'TestTiers|TestUsdToUsdl'"
 exit_code = 0
 log_path = "fleet/logs/fix-3.0.5-verify-1.log"
 observed_and_assumption = "UsdToUsdlDown and UsdToUsdlUp exist in the perps types with exact integer rounding and overflow refusal, and Market.Validate uses them for the decimals bound. Assumption: none."
+
+[fix.1.0.1]
+revision = "0455127a8091b0a063de045983dc8562a23b721e"
+command = "make paxd-build && make paxd-version-check"
+exit_code = 0
+log_path = "fleet/logs/fix-1.0.1-verify-1.log"
+observed_and_assumption = "version.json now reads v6.12.0 and the built binary reports it; the upgrade plan name was set to v6.12.0 to match the registered V6120Upgrade constant, since the release check requires the two to be identical. Assumption: the release tasks that own version.json keep these values."
