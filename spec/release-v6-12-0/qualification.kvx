@@ -1331,3 +1331,19 @@ exit = 2
 log = "fleet/logs/1.3.99-verify-1.log"
 observed = "The target and its native-libs dependency are in place; nine packages pass and eleven fail: node/launchpad_airdrop_test.go calls the pre-reconciliation CreateMarket and Swap signatures, nine packages panic at init on the missing launchpad keeper accessor, and node/genesis TestEmbeddedGenesisDigests reports changed embedded genesis digests."
 assumption = "Rerun after the launchpad test lane and 1.3.100 land; the airdrop test port and the genesis digest check need their own lane."
+
+[finding.6.2.15]
+revision = 54e3e318b10987aca1dcc2f27e57b25f4c85088e
+command = node --test --import tsx tests/spot-tokens.test.ts
+exit = 1
+log = fleet/logs/6.2.15-verify-1.log
+observed = Four of five pass; spotTokensAreUsdlPaxSid fails because the PAX spot entry still carries the zero placeholder, and tsc fails only on the useVault import 6.3.1 left in useAutoCollateral.
+assumption = The address table gains the uhpx and SID denom pointer hex once recorded from the upgrade EVM instance, and a follow-up lane repairs the useVault import.
+
+[finding.6.3.3]
+revision = abb8d1373ded06651ea4c5bf0ef02f240dcc1d64
+command = node --test --import tsx tests/rest-bases.test.ts
+exit = 1
+log = fleet/logs/6.3.3-verify-1.log
+observed = Six of seven pass; indexerGraphqlOnGateway fails because SUBGRAPH_URL is still exported for useSubgraph.ts, which no task owns, and thirteen hook test files now throw at load without NEXT_PUBLIC_PERPS_GATEWAY_URL set.
+assumption = A follow-up lane moves useSubgraph onto INDEXER_GRAPHQL and deletes SUBGRAPH_URL, and the wave run sets the gateway variable.
