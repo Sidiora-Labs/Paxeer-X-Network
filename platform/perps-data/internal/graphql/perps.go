@@ -1195,21 +1195,21 @@ func (r *Resolver) UserStats(ctx context.Context, args struct {
 	if (args.UserAddress == nil) == (args.Address == nil) {
 		return nil, errors.New("exactly one of userAddress or address is required")
 	}
-	name, raw := "userAddress", args.UserAddress
+	raw := args.UserAddress
 	if raw == nil {
-		name, raw = "address", args.Address
+		raw = args.Address
 	}
-	user, err := addressArg(name, raw)
-	if err != nil {
-		return nil, err
+	if !common.IsHexAddress(*raw) {
+		return nil, errors.New("invalid address")
 	}
+	user := common.HexToAddress(*raw).Bytes()
 	var (
 		s                          UserStats
 		found                      bool
 		pnl, volume, fees          BigDecimal
 		wins, losses, liquidations int32
 	)
-	err = r.DB.QueryRowContext(ctx, userStatsSQL, user).Scan(&found, &pnl, &volume, &fees, &wins, &losses, &liquidations,
+	err := r.DB.QueryRowContext(ctx, userStatsSQL, user).Scan(&found, &pnl, &volume, &fees, &wins, &losses, &liquidations,
 		&s.TotalPositions, &s.OpenPositions, &s.ClosedPositions, &s.LiquidatedPositions, &s.TotalTrades, &s.TotalRealizedPnl,
 		&s.TotalOrders, &s.ActiveOrders)
 	if err != nil {
@@ -1218,7 +1218,7 @@ func (r *Resolver) UserStats(ctx context.Context, args struct {
 	if !found && s.TotalPositions == 0 && s.TotalOrders == 0 {
 		return nil, nil
 	}
-	address := strings.ToLower(common.BytesToAddress(user.([]byte)).Hex())
+	address := strings.ToLower(common.BytesToAddress(user).Hex())
 	s.Address, s.UserAddress = &address, address
 	s.TotalPnl, s.TotalVolume, s.TotalFeesPaid = &pnl, &volume, &fees
 	s.WinCount, s.LossCount, s.LiquidationCount = &wins, &losses, &liquidations

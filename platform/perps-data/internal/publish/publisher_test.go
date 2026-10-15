@@ -158,6 +158,29 @@ func startCluster(t *testing.T) *nats.Conn {
 	return nc
 }
 
+// deleteStream deletes the perps stream and waits until the cluster answers
+// it not found, so the next create of the name does not race the removal of
+// the stream assignment across the three servers.
+func deleteStream(t *testing.T, ctx context.Context, js jetstream.JetStream) {
+	t.Helper()
+	if err := js.DeleteStream(ctx, stream.Name); err != nil {
+		t.Fatalf("delete %s: %v", stream.Name, err)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		attempt, cancel := context.WithTimeout(ctx, 2*time.Second)
+		_, err := js.Stream(attempt, stream.Name)
+		cancel()
+		if errors.Is(err, jetstream.ErrStreamNotFound) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s still answers after delete: %v", stream.Name, err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 func reset(t *testing.T, ctx context.Context, db *sql.DB) {
 	t.Helper()
 	if _, err := db.ExecContext(ctx, `TRUNCATE perps.delivery_outbox, perps.delivery_inbox, perps.delivery_quarantine RESTART IDENTITY`); err != nil {
@@ -360,9 +383,7 @@ func TestPublisher(t *testing.T) {
 			{"retention", func(c *jetstream.StreamConfig) { c.Retention = jetstream.InterestPolicy }, "stream drift: retention Interest want Limits"},
 			{"subjects", func(c *jetstream.StreamConfig) { c.Subjects = []string{"perps.126.>"} }, "stream drift: subjects [perps.126.>] want [perps.125.>]"},
 		} {
-			if err := js.DeleteStream(ctx, stream.Name); err != nil {
-				t.Fatalf("%s: delete: %v", c.name, err)
-			}
+			deleteStream(t, ctx, js)
 			cfg := stream.Config(chain)
 			c.mutate(&cfg)
 			if _, err := js.CreateStream(ctx, cfg); err != nil {
@@ -373,9 +394,7 @@ func TestPublisher(t *testing.T) {
 				t.Fatalf("%s: EnsureStream = %v, want %s", c.name, err, c.want)
 			}
 		}
-		if err := js.DeleteStream(ctx, stream.Name); err != nil {
-			t.Fatal(err)
-		}
+		deleteStream(t, ctx, js)
 		if err := EnsureStream(ctx, nc, chain); err != nil {
 			t.Fatalf("EnsureStream after the drifted stream was removed: %v", err)
 		}

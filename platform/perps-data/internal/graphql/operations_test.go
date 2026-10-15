@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -618,9 +619,15 @@ func (s *opSeed) insert(table string, f decode.Fact, cols string, vals ...any) {
     account, tx_from, `+cols+`) VALUES (`+strings.Join(marks, ", ")+`)`, args...)
 }
 
+// put writes a decoded row into its fact table and, as store.WriteFacts does
+// for each decoded log, its perps.protocol_events row.
 func (s *opSeed) put(row decode.Row, cols string, vals ...any) {
 	s.t.Helper()
-	s.insert(row.Table(), row.Common(), cols, vals...)
+	f := row.Common()
+	s.insert(row.Table(), f, cols, vals...)
+	if f.Sub == 0 {
+		s.insert("protocol_events", f, "event_name, args", strings.TrimSuffix(reflect.TypeOf(row).Name(), "Row"), "{}")
+	}
 	s.rows = append(s.rows, row)
 }
 

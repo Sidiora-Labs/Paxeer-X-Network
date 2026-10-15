@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -36,19 +37,49 @@ type column struct {
 	typ  string
 }
 
+// testDB opens a fresh database of this package next to the one named by
+// PERPS_DATA_TEST_DATABASE_URL, so the schema other packages leave in that
+// database never reaches these tests; it is dropped when the test ends.
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
-	url := os.Getenv(testDatabaseEnv)
-	if url == "" {
+	raw := os.Getenv(testDatabaseEnv)
+	if raw == "" {
 		t.Fatal("TestMigrate requires " + testDatabaseEnv)
 	}
-	db, err := Open(url)
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse %s: %v", testDatabaseEnv, err)
+	}
+	base := strings.TrimPrefix(u.Path, "/")
+	if base == "" {
+		t.Fatalf("%s names no database", testDatabaseEnv)
+	}
+	name := pq.QuoteIdentifier(base + "_store")
+	admin, err := Open(raw)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := admin.Close(); err != nil {
+			t.Errorf("close: %v", err)
+		}
+	})
+	for _, stmt := range []string{`DROP DATABASE IF EXISTS ` + name + ` WITH (FORCE)`, `CREATE DATABASE ` + name} {
+		if _, err := admin.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	u.Path = "/" + base + "_store"
+	db, err := Open(u.String())
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := db.Close(); err != nil {
 			t.Errorf("close: %v", err)
+		}
+		if _, err := admin.Exec(`DROP DATABASE ` + name + ` WITH (FORCE)`); err != nil {
+			t.Errorf("drop %s: %v", name, err)
 		}
 	})
 	return db

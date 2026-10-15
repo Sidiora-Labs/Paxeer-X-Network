@@ -6,10 +6,8 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"os"
 	"reflect"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -23,7 +21,6 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/decode"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/pnl"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/migrations"
 )
 
 var (
@@ -106,24 +103,14 @@ func openPerpsDB(t *testing.T, url string) *sql.DB {
 	if _, err := db.Exec(`DROP SCHEMA IF EXISTS perps CASCADE`); err != nil {
 		t.Fatal(err)
 	}
-	files, err := fs.Glob(migrations.FS, "*.sql")
-	if err != nil {
+	if err := store.Migrate(context.Background(), db); err != nil {
 		t.Fatal(err)
-	}
-	slices.Sort(files)
-	for _, name := range files {
-		body, err := migrations.FS.ReadFile(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(string(body)); err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
 	}
 	return db
 }
 
-// seedPerps writes blocks 100 to 102 through store.WriteBlock: trader A opens
+// seedPerps writes blocks 100 to 102 the way the follower commits them, the
+// perps.blocks row, store.WriteBlock and the head cursor: trader A opens
 // position 1 on ETH from a filled market order, receives funding, cancels a
 // limit order and closes at a profit; trader B opens short position 2 on SOL
 // and is liquidated in the EndBlock of block 101.
@@ -212,10 +199,21 @@ func seedPerps(t *testing.T, db *sql.DB, now time.Time) (b100, b101, b102 time.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		header := store.Block{Number: b.n, Hash: blockHash(b.n), ParentHash: parent, Time: b.at, Proposer: "AB01", TxCount: 3}
+		header := store.Block{Number: b.n, Hash: blockHash(b.n), ParentHash: parent, Time: b.at, Proposer: strings.Repeat("AB", 20), TxCount: 3}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO perps.blocks (number, hash, parent_hash, time, proposer, tx_count) VALUES ($1, $2, $3, $4, $5, $6)`,
+			int64(header.Number), header.Hash.Bytes(), header.ParentHash.Bytes(), header.Time, header.Proposer, header.TxCount); err != nil {
+			_ = tx.Rollback()
+			t.Fatalf("block row %d: %v", b.n, err)
+		}
 		if err := store.WriteBlock(ctx, tx, header, &b.res); err != nil {
 			_ = tx.Rollback()
 			t.Fatalf("WriteBlock %d: %v", b.n, err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO perps.cursors (name, height, hash, updated_at) VALUES ($1, $2, $3, now())
+ON CONFLICT (name) DO UPDATE SET height = EXCLUDED.height, hash = EXCLUDED.hash, updated_at = now()`,
+			headCursor, int64(header.Number), header.Hash.Bytes()); err != nil {
+			_ = tx.Rollback()
+			t.Fatalf("head cursor %d: %v", b.n, err)
 		}
 		if err := tx.Commit(); err != nil {
 			t.Fatal(err)
