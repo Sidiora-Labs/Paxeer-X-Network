@@ -63,3 +63,10 @@ command = "go test ./modules/pricefeed/types/ -run 'TestLXPName'"
 exit_code = 0
 log_path = "fleet logs 5.1.2-verify-1"
 observed_and_assumption = "No pricefeed task declares the module's ModuleName or StoreKey constants although the errors, keys and codec steps depend on them; ModuleName is now declared beside the errors. Assumption: StoreKey is declared by the first keeper or state task that needs it, with its line named in that task's report."
+
+[finding.4.1.1]
+revision = "bf08f2044bd1f0e335d0b7026ed7c8b4e93ce502"
+command = "go test ./modules/spot/types/ -run '^(TestParamsValidate|TestParamsValidateBounds)$'"
+exit_code = 0
+log_path = "fleet logs 4.1.1-verify-1"
+observed_and_assumption = "The native-pointer refusal of do_4 needs the msg server and EVM keeper owned by the spot msg-server task, and contracts/perps-parameters.md#spot-fees bounds priceImpactScalarBps at 10000 while contracts/spot.md and PECOR.sol bound it at 500. Assumption: the msg-server task implements the refusal, and 500 from PECOR.sol binds under ruling 9 (LP economics exactly PECOR.sol)."
