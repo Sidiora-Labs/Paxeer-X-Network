@@ -20919,7 +20919,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.0.5]
 title = "Add the pure perpetuals order plan and its confirmation content"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["6.0.4"]
