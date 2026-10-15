@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use layerx_indexer::abi::AbiRegistry;
 use layerx_indexer::api;
+use layerx_indexer::codec::hex0x;
 use layerx_indexer::follow::{FollowPolicy, StepOutcome};
 use layerx_indexer::layerx::LayerXIngester;
 use layerx_indexer::paxeer::{AttributeEncoding, PaxeerIngester};
@@ -745,6 +746,232 @@ fn a_dropped_in_abi_is_decoded_without_code_changes() {
     assert_eq!(decoded.contract, "launchpad");
     assert_eq!(decoded.arg("supply"), Some(&json!("9")));
     let _ = std::fs::remove_dir_all(&directory);
+}
+
+fn word(value: u128) -> String {
+    format!("{value:064x}")
+}
+
+fn address_word(address: &str) -> String {
+    format!("{:0>64}", address.trim_start_matches("0x"))
+}
+
+const LAUNCHPAD: &str = "0x0000000000000000000000000000000000001017";
+const POOL_ID: &str = "0x5f1c3a0e9d27b4c86a1e0f3d92b7c54e18a6d0f2c39b74e5a1d806f2c4b9e317";
+const TOKEN: &str = "0x4b2f8a91c7e3d5f06a1b9c2e8d7f3a5b6c0e1d24";
+const CREATOR: &str = "0xa7dcef9aef26202fce82a7c7d6672afb3a149db2";
+const POOL: &str = "0x9c3e71d5a2b84f6e0d1c7a3b5e9f2d8c4a6b1e07";
+const OPTICAL: &str = "0x2d6a9e4c1b7f3e8a5d0c6b2f9e4a7d1c3b8e5f60";
+const BLOCK_HASH: &str = "0x3e8f1a2b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7";
+const PARENT_HASH: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
+const TX_HASH: &str = "0x7a1d4e9b2c6f3a8e5d0b7c4f1a9e6d3b8c5f2a7e4d1b9c6f3a8e5d2b7c4f1a96";
+
+fn launchpad_v6120_block_and_receipt() -> (Value, Value) {
+    let created = layerx_indexer::abi::keccak(
+        b"MarketCreated(bytes32,address,address,address,address,uint256,uint256)",
+    );
+    let swapped = layerx_indexer::abi::keccak(
+        b"Swap(bytes32,address,bool,uint256,uint256,uint256,uint256,uint256,uint256)",
+    );
+    let log = |index: &str, topics: Vec<String>, data: String| {
+        json!({
+            "address": LAUNCHPAD,
+            "topics": topics,
+            "data": data,
+            "blockNumber": "0x1",
+            "blockHash": BLOCK_HASH,
+            "transactionHash": TX_HASH,
+            "transactionIndex": "0x0",
+            "logIndex": index,
+            "removed": false,
+        })
+    };
+    let receipt = json!({
+        "transactionHash": TX_HASH,
+        "blockHash": BLOCK_HASH,
+        "blockNumber": "0x1",
+        "transactionIndex": "0x0",
+        "from": CREATOR,
+        "to": LAUNCHPAD,
+        "status": "0x1",
+        "gasUsed": "0x5208",
+        "cumulativeGasUsed": "0x5208",
+        "logs": [
+            log(
+                "0x0",
+                vec![
+                    hex0x(&created),
+                    POOL_ID.to_owned(),
+                    format!("0x{}", address_word(TOKEN)),
+                    format!("0x{}", address_word(CREATOR)),
+                ],
+                format!(
+                    "0x{}{}{}{}",
+                    address_word(POOL),
+                    address_word(OPTICAL),
+                    word(1_760_000_000),
+                    word(1)
+                ),
+            ),
+            log(
+                "0x1",
+                vec![
+                    hex0x(&swapped),
+                    POOL_ID.to_owned(),
+                    format!("0x{}", address_word(CREATOR)),
+                ],
+                format!(
+                    "0x{}{}{}{}{}{}{}",
+                    word(1),
+                    word(5_000_000),
+                    word(812_345_678_901_234_567_890),
+                    word(50_000),
+                    word(6_093),
+                    word(1_760_000_000),
+                    word(1)
+                ),
+            ),
+        ],
+        "type": "0x2",
+        "contractAddress": null,
+        "effectiveGasPrice": "0x3b9aca00",
+    });
+    let block = json!({
+        "number": "0x1",
+        "hash": BLOCK_HASH,
+        "parentHash": PARENT_HASH,
+        "timestamp": "0x68e8c800",
+        "transactions": [{
+            "hash": TX_HASH,
+            "blockHash": BLOCK_HASH,
+            "blockNumber": "0x1",
+            "from": CREATOR,
+            "to": LAUNCHPAD,
+            "value": "0x0",
+            "input": "0x",
+            "nonce": "0x0",
+            "transactionIndex": "0x0",
+            "type": "0x2",
+            "chainId": "0xe5",
+        }],
+    });
+    (block, receipt)
+}
+
+fn launchpad_v6120_server() -> String {
+    let (block, receipt) = launchpad_v6120_block_and_receipt();
+    serve_fixture(Arc::new(move |method, _, body| {
+        assert_eq!(method, "POST");
+        let request: Value = serde_json::from_slice(body).unwrap_or_else(|error| panic!("{error}"));
+        let params = &request["params"];
+        let result = match request["method"].as_str().unwrap_or_default() {
+            "eth_chainId" => json!("0xe5"),
+            "eth_blockNumber" => json!("0x1"),
+            "eth_getBlockByNumber" if params[0] == "0x1" => block.clone(),
+            "eth_getTransactionReceipt" if params[0] == TX_HASH => receipt.clone(),
+            "eth_getBlockByNumber" | "eth_getTransactionReceipt" => Value::Null,
+            other => panic!("unexpected JSON-RPC method {other}"),
+        };
+        (
+            200,
+            json!({ "jsonrpc": "2.0", "id": request["id"], "result": result }),
+        )
+    }))
+}
+
+#[test]
+fn launchpad_v6120_logs_ingest() {
+    let rpc = launchpad_v6120_server();
+    let store = Store::open_in_memory().unwrap_or_else(|error| panic!("{error}"));
+    let registry = AbiRegistry::load_dir(&precompiles()).unwrap_or_else(|error| panic!("{error}"));
+    let ingester = PaxeerIngester::new(
+        endpoint(&rpc),
+        None,
+        registry,
+        FollowPolicy {
+            finality_depth: 1,
+            max_units_per_step: 16,
+        },
+        1,
+        Some(0xe5),
+        AttributeEncoding::Base64,
+    );
+
+    assert_eq!(
+        step_ok(|| ingester.step(&store)),
+        StepOutcome::Advanced {
+            units: 1,
+            position: 1
+        }
+    );
+    assert_eq!(step_ok(|| ingester.step(&store)), StepOutcome::Idle);
+
+    let events = store
+        .events("paxeer")
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(by(&events, "name", "undecodable").is_empty(), "{events:?}");
+    let launchpad = by(&events, "contract", "launchpad");
+    assert_eq!(launchpad.len(), 2);
+
+    let markets = by(&launchpad, "name", "MarketCreated");
+    assert_eq!(markets.len(), 1);
+    let market = &markets[0];
+    assert_eq!(market["source"], "evm-log");
+    assert_eq!(market["height_or_seq"], "1");
+    assert_eq!(market["tx_id"], TX_HASH);
+    assert_eq!(market["ordinal"], "1");
+    assert_eq!(market["account"], TOKEN);
+    assert_eq!(market["decoded"]["address"], LAUNCHPAD);
+    assert_eq!(market["decoded"]["log_index"], "0");
+    assert_eq!(
+        market["decoded"]["signature"],
+        "MarketCreated(bytes32,address,address,address,address,uint256,uint256)"
+    );
+    assert_eq!(
+        market["decoded"]["args"],
+        json!({
+            "poolId": POOL_ID,
+            "token": TOKEN,
+            "creator": CREATOR,
+            "pool": POOL,
+            "optical": OPTICAL,
+            "timestamp": "1760000000",
+            "blockNumber": "1",
+        })
+    );
+
+    let swaps = by(&launchpad, "name", "Swap");
+    assert_eq!(swaps.len(), 1);
+    let swap = &swaps[0];
+    assert_eq!(swap["source"], "evm-log");
+    assert_eq!(swap["height_or_seq"], "1");
+    assert_eq!(swap["tx_id"], TX_HASH);
+    assert_eq!(swap["ordinal"], "2");
+    assert_eq!(swap["account"], CREATOR);
+    assert_eq!(swap["decoded"]["address"], LAUNCHPAD);
+    assert_eq!(swap["decoded"]["log_index"], "1");
+    assert_eq!(
+        swap["decoded"]["signature"],
+        "Swap(bytes32,address,bool,uint256,uint256,uint256,uint256,uint256,uint256)"
+    );
+    assert_eq!(
+        swap["decoded"]["args"],
+        json!({
+            "poolId": POOL_ID,
+            "sender": CREATOR,
+            "isBuy": true,
+            "amountIn": "5000000",
+            "amountOut": "812345678901234567890",
+            "fee": "50000",
+            "price": "6093",
+            "timestamp": "1760000000",
+            "blockNumber": "1",
+        })
+    );
+    assert!(store
+        .transfers("paxeer")
+        .unwrap_or_else(|error| panic!("{error}"))
+        .is_empty());
 }
 
 #[test]

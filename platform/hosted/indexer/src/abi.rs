@@ -633,6 +633,70 @@ mod tests {
         registry
     }
 
+    const LAUNCHPAD_EVENTS: [(&str, &str); 12] = [
+        (
+            "ConfigUpdated(bytes32,uint256,uint256,uint256,uint256)",
+            "2903b3642d2105b7fbd127326de888ab50e8d975bf819398337fb58407c1b10e",
+        ),
+        (
+            "FeeDistributed(bytes32,uint256,uint8,uint256,address,uint256,uint256)",
+            "f7ab826cedf9d005102eddf95e65f43597aef36a55ff09ee4f452204c83f4afc",
+        ),
+        (
+            "FeeFlow(uint8,address,address,uint256,uint256,uint256,uint256,uint256,uint256)",
+            "626e3fd5d9323ca4b7ffa3ca51c21c02766b638d15eb8896a36a4e0e97ae6de4",
+        ),
+        (
+            "FeeStrategyChanged(bytes32,uint256,uint8,uint8,uint256,uint256)",
+            "337fd9f9304e9da4c04886a5b8bf56e74032b459758212a860bc61d3544353dd",
+        ),
+        (
+            "MarketCreated(bytes32,address,address,address,address,uint256,uint256)",
+            "b0a9c7605389f1127c2299d4a3ed85f0b2fc19894ab5411d76b453bb29f9f47b",
+        ),
+        (
+            "NftMint(uint256,address,address,uint8,uint256,uint256)",
+            "d2917d37031c0dfe5016665c7a83360cbf2ff32063096b2caf61ba66c06832e5",
+        ),
+        (
+            "NftTransfer(address,address,address,uint256,uint256,uint256)",
+            "021f03e8a1315704c74c03e8c022c12bc80c4a2bd4fec8bd36b217322c340ad3",
+        ),
+        (
+            "PoolRegistered(address,address,address,address,uint256,uint256,uint256)",
+            "da5568642b67660133b1de538c867c58f3037a5722b0e231a959ee8ca11b2ed7",
+        ),
+        (
+            "PoolStateUpdated(bytes32,uint256,uint256,uint256,uint256,uint256,uint256)",
+            "8155a4b38a877d212b271811786986f8f7d78074c82fce4526c58defcc6d7ebd",
+        ),
+        (
+            "RouterTrade(uint8,address,address,address,address,uint256,uint256,uint256,uint256,uint256)",
+            "17c1899a3fd431f2b2200b90e738d270bb856a4222040c5650bfa208acb3b650",
+        ),
+        (
+            "Swap(bytes32,address,bool,uint256,uint256,uint256,uint256,uint256,uint256)",
+            "a234ab85728295548823d8a26077ecc77aa5815f9ed8f4c5e6fd390ac851d4cc",
+        ),
+        (
+            "TokenDeployed(address,address,address,bytes32,string,string,uint8,uint256,uint256,uint256)",
+            "ad187874b793634c55d977f35d4828526eb48170a9531c71d88f8fd10cf9c237",
+        ),
+    ];
+
+    fn repository_precompiles() -> AbiRegistry {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../precompiles");
+        AbiRegistry::load_dir(&root).unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    fn launchpad_abi(registry: &AbiRegistry) -> &LoadedAbi {
+        registry
+            .abis()
+            .iter()
+            .find(|abi| abi.contract == "launchpad")
+            .unwrap_or_else(|| panic!("launchpad ABI not loaded"))
+    }
+
     #[test]
     fn signatures_and_topics_match_solidity() {
         let registry = registry_from(
@@ -649,6 +713,28 @@ mod tests {
             hex(&event.topic),
             "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
         );
+
+        let precompiles = repository_precompiles();
+        let launchpad = launchpad_abi(&precompiles);
+        let declared: Vec<(&str, String)> = launchpad
+            .events
+            .iter()
+            .map(|event| (event.signature.as_str(), hex(&event.topic)))
+            .collect();
+        let expected: Vec<(&str, String)> = LAUNCHPAD_EVENTS
+            .iter()
+            .map(|(signature, topic)| (*signature, (*topic).to_owned()))
+            .collect();
+        assert_eq!(declared, expected);
+        for (signature, topic) in LAUNCHPAD_EVENTS {
+            let topic = unhex_fixed::<32>(topic).unwrap_or_else(|error| panic!("{error}"));
+            assert_eq!(
+                precompiles
+                    .lookup(precompile_address(0x1017), topic)
+                    .map(|event| (event.contract.as_str(), event.signature.as_str())),
+                Some(("launchpad", signature))
+            );
+        }
     }
 
     #[test]
@@ -716,8 +802,7 @@ mod tests {
 
     #[test]
     fn every_repository_precompile_abi_loads_and_a_dropped_in_abi_is_picked_up() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../precompiles");
-        let registry = AbiRegistry::load_dir(&root).unwrap_or_else(|error| panic!("{error}"));
+        let registry = repository_precompiles();
         let names: Vec<&str> = registry
             .abis()
             .iter()
@@ -729,6 +814,7 @@ mod tests {
             "ibc",
             "layerxanchor",
             "layerxcustody",
+            "launchpad",
             "layerxverify",
             "oracle",
             "pointer",
@@ -748,6 +834,17 @@ mod tests {
             .is_none());
         let bound = keccak(b"LayerXBound(address,bytes32,uint64)");
         assert!(registry.lookup(precompile_address(0x1004), bound).is_some());
+        let launchpad = launchpad_abi(&registry);
+        assert_eq!(launchpad.address, Some(precompile_address(0x1017)));
+        assert_eq!(launchpad.events.len(), 12);
+        let swap = keccak(LAUNCHPAD_EVENTS[10].0.as_bytes());
+        assert_eq!(
+            registry
+                .lookup(precompile_address(0x1017), swap)
+                .map(|event| event.name.as_str()),
+            Some("Swap")
+        );
+        assert!(registry.lookup(precompile_address(0x1015), swap).is_none());
 
         let scratch = std::env::temp_dir().join(format!(
             "layerx-indexer-abi-{}-{}",
