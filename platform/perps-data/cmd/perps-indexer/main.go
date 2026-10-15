@@ -26,6 +26,7 @@ import (
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/config"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/decode"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/httpx"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/indexer"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/markets"
@@ -45,7 +46,7 @@ const (
 	publishIdleInterval = 50 * time.Millisecond
 	shutdownTimeout     = 5 * time.Second
 	readHeaderTimeout   = 5 * time.Second
-	moduleName          = "perps"
+	cometTimeout        = 2 * time.Second
 	holderPrefix        = "perps-indexer-"
 	holderEntropyBytes  = 8
 	natsConnectionName  = "perps-indexer"
@@ -96,22 +97,27 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	registry, err := decode.NewRegistry(metrics, moduleAddress(moduleName))
-	if err != nil {
-		return err
-	}
 	rpc, err := source.NewRPC(ctx, source.RPCOptions{URLs: cfg.RPCURLs, Logger: logger})
 	if err != nil {
 		return fmt.Errorf("rpc source: %w", err)
 	}
 	defer rpc.Close()
-	comet, err := source.NewComet(cfg.CometURLs)
+	registry, err := decode.NewRegistry(metrics, decode.Options{
+		PerpsModule:     moduleAddress("perps"),
+		SpotModule:      moduleAddress("spot"),
+		PricefeedModule: moduleAddress("pricefeed"),
+		State:           rpc,
+	})
+	if err != nil {
+		return err
+	}
+	comet, err := source.NewComet(cfg.CometURLs, cometTimeout)
 	if err != nil {
 		return fmt.Errorf("comet source: %w", err)
 	}
-	follower, err := source.NewFollower(source.FollowerConfig{DB: db, RPC: rpc, Comet: comet, Chain: cfg.ChainID, Logger: logger})
+	outbox, err := delivery.NewStore(db, "perps", store.Policy(cfg.ChainID))
 	if err != nil {
-		return fmt.Errorf("follower: %w", err)
+		return fmt.Errorf("outbox: %w", err)
 	}
 	publisher, err := publish.New(db, nc, store.Policy(cfg.ChainID), publish.Config{
 		Owner:          holder,
@@ -126,9 +132,12 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("publisher: %w", err)
 	}
-	ix, err := indexer.New(indexer.Deps{
+	ix, err := indexer.New(ctx, indexer.Deps{
 		DB:          db,
-		Follower:    follower,
+		RPC:         rpc,
+		Comet:       comet,
+		Outbox:      outbox,
+		ChainID:     cfg.ChainID,
 		Registry:    registry,
 		Publisher:   publisher,
 		Metrics:     metrics,

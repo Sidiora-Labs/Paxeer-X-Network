@@ -58,7 +58,7 @@ func newTestRegistry(t *testing.T) (*Registry, *telemetry.Metrics) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := NewRegistry(m, testModule)
+	r, err := NewRegistry(m, Options{PerpsModule: testModule, SpotModule: ModuleAddress("spot"), PricefeedModule: ModuleAddress("pricefeed")})
 	if err != nil {
 		t.Fatal(err)
 	}

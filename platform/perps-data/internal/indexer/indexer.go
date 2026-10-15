@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/decode"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/httpx"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/publish"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/source"
@@ -30,9 +31,8 @@ import (
 
 // Bounds of contracts/data-services.md sections 5 and 19.
 const (
-	// MaxBatch is the largest range of one follower step; a caught-up
-	// follower steps one height at the head cadence.
-	MaxBatch = 500
+	// IdleInterval separates two follower steps of a caught-up indexer.
+	IdleInterval = 100 * time.Millisecond
 	// MaxLagBlocks is the largest lag to the node head of a ready indexer.
 	MaxLagBlocks = 30
 	// MaxOutboxAge is the largest age of the oldest pending outbox row of a
@@ -68,7 +68,6 @@ WHERE perps.writer_lease.holder = EXCLUDED.holder OR perps.writer_lease.expires_
 RETURNING holder`
 	renewSQL = `UPDATE perps.writer_lease SET expires_at = clock_timestamp() + $3::bigint * interval '1 millisecond'
 WHERE name = $1 AND holder = $2 AND expires_at > clock_timestamp()`
-	fenceSQL   = `SELECT 1 FROM perps.writer_lease WHERE name = $1 AND holder = $2 AND expires_at > clock_timestamp() FOR SHARE`
 	releaseSQL = `DELETE FROM perps.writer_lease WHERE name = $1 AND holder = $2`
 	outboxSQL  = `SELECT count(*), COALESCE(EXTRACT(EPOCH FROM clock_timestamp() - min(created_at)) * 1000, 0)::bigint
 FROM perps.delivery_outbox WHERE state = 'pending'`
@@ -77,7 +76,10 @@ FROM perps.delivery_outbox WHERE state = 'pending'`
 // Deps wires an Indexer. Every field except Logger is required.
 type Deps struct {
 	DB        *sql.DB
-	Follower  *source.Follower
+	RPC       *source.RPC
+	Comet     *source.Comet
+	Outbox    *delivery.Store
+	ChainID   uint64
 	Registry  *decode.Registry
 	Publisher *publish.Publisher
 	Metrics   *telemetry.Metrics
@@ -91,12 +93,17 @@ type Deps struct {
 // Indexer is the perps indexer process loop.
 type Indexer struct {
 	db        *sql.DB
+	rpc       *source.RPC
 	follower  *source.Follower
 	registry  *decode.Registry
 	publisher *publish.Publisher
 	holder    string
 	start     uint64
 	logger    *slog.Logger
+
+	// written holds the rows by table of each block written in the current
+	// step, in block order; the follower commits them in that order.
+	written []map[string]int
 
 	held    atomic.Bool
 	head    atomic.Uint64
@@ -111,12 +118,14 @@ type Indexer struct {
 	outboxPending prometheus.Gauge
 }
 
-// New builds an Indexer and registers its metrics on d.Metrics. The decoder
-// counters perps_indexer_unknown_logs_total and perps_indexer_enum_unknown_total
-// are registered by decode.NewRegistry on the same Metrics.
-func New(d Deps) (*Indexer, error) {
-	if d.DB == nil || d.Follower == nil || d.Registry == nil || d.Publisher == nil || d.Metrics == nil {
-		return nil, errors.New("indexer: database, follower, registry, publisher and metrics are required")
+// New builds an Indexer over a follower of d.RPC and d.Comet whose block
+// write and rewind rebuild are the indexer's, and registers its metrics on
+// d.Metrics. The decoder counters perps_indexer_unknown_logs_total and
+// perps_indexer_enum_unknown_total are registered by decode.NewRegistry on the
+// same Metrics.
+func New(ctx context.Context, d Deps) (*Indexer, error) {
+	if d.DB == nil || d.RPC == nil || d.Comet == nil || d.Outbox == nil || d.Registry == nil || d.Publisher == nil || d.Metrics == nil {
+		return nil, errors.New("indexer: database, rpc, comet, outbox, registry, publisher and metrics are required")
 	}
 	if d.Holder == "" || len(d.Holder) > 128 {
 		return nil, errors.New("indexer: holder must be 1 to 128 bytes")
@@ -130,7 +139,7 @@ func New(d Deps) (*Indexer, error) {
 	}
 	ix := &Indexer{
 		db:        d.DB,
-		follower:  d.Follower,
+		rpc:       d.RPC,
 		registry:  d.Registry,
 		publisher: d.Publisher,
 		holder:    d.Holder,
@@ -167,6 +176,14 @@ func New(d Deps) (*Indexer, error) {
 			return nil, fmt.Errorf("indexer: register metric: %w", err)
 		}
 	}
+	follower, err := source.NewFollower(ctx, source.FollowerOptions{
+		DB: d.DB, RPC: d.RPC, Comet: d.Comet, Outbox: d.Outbox, ChainID: d.ChainID, StartHeight: uint64(d.StartHeight),
+		Logger: logger, Write: ix.write, Rebuild: ix.rebuild,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("indexer: follower: %w", err)
+	}
+	ix.follower = follower
 	return ix, nil
 }
 
@@ -254,8 +271,8 @@ func (ix *Indexer) observeOutbox(ctx context.Context) (int64, time.Duration, err
 	return pending, time.Duration(oldestMs) * time.Millisecond, nil
 }
 
-// resume returns the first height to index: the cursor plus one, or the start
-// height on an empty cursor.
+// resume reads the cursor into the cursor gauge; the follower indexes from
+// the cursor plus one, or from the start height on an empty cursor.
 func (ix *Indexer) resume(ctx context.Context) (uint64, error) {
 	height, ok, err := store.Cursor(ctx, ix.db)
 	if err != nil {
@@ -269,9 +286,9 @@ func (ix *Indexer) resume(ctx context.Context) (uint64, error) {
 	return next, nil
 }
 
-// follow steps the follower from next until ctx ends or the lease is lost. A
-// failed step or block write is logged and retried at the same height after
-// StepRetryDelay; nothing of a failed block is committed.
+// follow steps the follower from next until ctx ends, the lease is lost or a
+// synthetic receipt mismatch stops the follower. A failed step is logged and
+// retried after StepRetryDelay; nothing of a failed block is committed.
 func (ix *Indexer) follow(ctx context.Context, next uint64) error {
 	for {
 		if err := ctx.Err(); err != nil {
@@ -284,92 +301,91 @@ func (ix *Indexer) follow(ctx context.Context, next uint64) error {
 		}
 		n, err := ix.step(ctx, next)
 		if err != nil {
-			if ctx.Err() != nil {
+			var mismatch *source.SyntheticMismatchError
+			switch {
+			case ctx.Err() != nil:
 				return ctx.Err()
-			}
-			if errors.Is(err, ErrLeaseLost) {
+			case errors.Is(err, ErrLeaseLost), errors.As(err, &mismatch):
 				return err
 			}
 			ix.logger.Error("perps indexer step failed, retrying", slog.Uint64("height", next), slog.Any("err", err))
 			if !sleep(ctx, StepRetryDelay) {
 				return ctx.Err()
 			}
+			continue
+		}
+		if n == next && !sleep(ctx, IdleInterval) {
+			return ctx.Err()
 		}
 		next = n
 	}
 }
 
-// step runs one follower step from next and writes its blocks, returning the
-// next height to index. After a rewind the next height is the fork height.
+// step runs one follower step, which writes its blocks through write and
+// rewinds through rebuild, and returns the next height to index read back
+// from the cursor; a cursor below next-1 after the step is a rewind.
 func (ix *Indexer) step(ctx context.Context, next uint64) (uint64, error) {
-	res, err := ix.follower.Step(ctx, next, MaxBatch)
-	if err != nil {
-		return next, fmt.Errorf("follower step at %d: %w", next, err)
-	}
-	ix.setHead(res.Head)
-	if res.Rewind != nil {
-		fork := *res.Rewind
-		if fork > next {
-			return next, fmt.Errorf("indexer: rewind fork height %d above next height %d", fork, next)
-		}
-		ix.rewinds.Inc()
-		ix.setCursor(int64(fork) - 1)
-		ix.logger.Warn("perps indexer rewound", slog.Uint64("fork_height", fork))
-		return fork, nil
-	}
-	if len(res.Blocks) > MaxBatch {
-		return next, fmt.Errorf("indexer: follower returned %d blocks, above %d", len(res.Blocks), MaxBatch)
-	}
-	for _, b := range res.Blocks {
-		if b.Header.Number != next {
-			return next, fmt.Errorf("indexer: follower returned height %d, want %d", b.Header.Number, next)
-		}
-		counts, err := ix.writeBlock(ctx, b)
-		if err != nil {
-			return next, fmt.Errorf("write block %d: %w", next, err)
-		}
+	ix.written = ix.written[:0]
+	stored, err := ix.follower.Step(ctx)
+	for _, counts := range ix.written[:min(stored, len(ix.written))] {
 		for table, n := range counts {
 			ix.logs.WithLabelValues(table).Add(float64(n))
 		}
-		ix.setCursor(int64(next))
-		next++
 	}
-	if len(res.Blocks) > 0 {
+	if err != nil {
+		return next, fmt.Errorf("follower step at %d: %w", next, err)
+	}
+	height, ok, err := store.Cursor(ctx, ix.db)
+	if err != nil {
+		return next, fmt.Errorf("indexer: read cursor: %w", err)
+	}
+	after := ix.start
+	if ok {
+		after = height + 1
+	}
+	if after < next {
+		ix.rewinds.Inc()
+		ix.logger.Warn("perps indexer rewound", slog.Uint64("fork_height", after))
+	}
+	ix.setCursor(int64(after) - 1)
+	if head, err := ix.rpc.Head(ctx); err == nil {
+		ix.setHead(head)
+	} else {
+		ix.logger.Warn("perps indexer head read failed", slog.Any("err", err))
+	}
+	if stored > 0 {
 		if _, _, err := ix.observeOutbox(ctx); err != nil {
 			ix.logger.Warn("perps indexer outbox read failed", slog.Any("err", err))
 		}
 	}
-	return next, nil
+	return after, nil
 }
 
-// writeBlock decodes b and writes its block row, facts, raw logs, projections,
-// outbox rows and cursor in one transaction fenced by the writer lease, and
-// returns the written rows by table.
-func (ix *Indexer) writeBlock(ctx context.Context, b source.Block) (map[string]int, error) {
-	tx, err := ix.db.BeginTx(ctx, nil)
+// fence holds the writer lease for the rest of tx and reports ErrLeaseLost
+// when this instance no longer holds it.
+func (ix *Indexer) fence(ctx context.Context, tx *sql.Tx) error {
+	err := store.Fence(ctx, tx, leaseName, ix.holder)
+	if errors.Is(err, store.ErrLeaseHeld) {
+		ix.held.Store(false)
+		return fmt.Errorf("%w: %w", ErrLeaseLost, err)
+	}
+	return err
+}
+
+// write is the follower's block write: under the lease fence it decodes b and
+// writes its facts, raw logs, projections and outbox rows in tx, after the
+// follower's perps.blocks row and before its cursor.
+func (ix *Indexer) write(ctx context.Context, tx *sql.Tx, b *source.Block) error {
+	if err := ix.fence(ctx, tx); err != nil {
+		return err
+	}
+	rows, err := ix.registry.DecodeBlock(ctx, tx, decode.BlockInput{Number: b.Number, Hash: b.Hash, Time: b.Time, Logs: b.Logs, Events: b.FinalizeBlockEvents})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	var one int
-	if err := tx.QueryRowContext(ctx, fenceSQL, leaseName, ix.holder).Scan(&one); err != nil {
-		rollback(tx)
-		if errors.Is(err, sql.ErrNoRows) {
-			ix.held.Store(false)
-			return nil, ErrLeaseLost
-		}
-		return nil, err
-	}
-	rows, err := ix.registry.Decode(ctx, tx, b.Logs)
-	if err != nil {
-		rollback(tx)
-		return nil, err
-	}
-	if err := store.WriteBlock(ctx, tx, b.Header, rows); err != nil {
-		rollback(tx)
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
+	header := store.Block{Number: b.Number, Hash: b.Hash, ParentHash: b.ParentHash, Time: b.Time, Proposer: b.Proposer, TxCount: b.TxCount}
+	if err := store.WriteBlock(ctx, tx, header, rows); err != nil {
+		return err
 	}
 	counts := map[string]int{}
 	for _, d := range rows.Decoded {
@@ -380,7 +396,17 @@ func (ix *Indexer) writeBlock(ctx context.Context, b source.Block) (map[string]i
 	if len(rows.Raw) > 0 {
 		counts[rawLogsTable] += len(rows.Raw)
 	}
-	return counts, nil
+	ix.written = append(ix.written, counts)
+	return nil
+}
+
+// rebuild is the follower's rewind rebuild: under the lease fence it
+// re-projects the stored facts after the rewound blocks are deleted.
+func (ix *Indexer) rebuild(ctx context.Context, tx *sql.Tx, a source.Affected) error {
+	if err := ix.fence(ctx, tx); err != nil {
+		return err
+	}
+	return store.Rebuild(ctx, tx, int64(a.From), int64(a.From))
 }
 
 // acquire takes the writer lease, waiting AcquireInterval between attempts
@@ -462,10 +488,6 @@ func lag(head uint64, cursor int64) uint64 {
 	}
 	return head - uint64(cursor)
 }
-
-// database/sql rolls a transaction back when its context ends, and the
-// rollback of a failed write carries nothing the caller can act on.
-func rollback(tx *sql.Tx) { _ = tx.Rollback() }
 
 func sleep(ctx context.Context, d time.Duration) bool {
 	t := time.NewTimer(d)

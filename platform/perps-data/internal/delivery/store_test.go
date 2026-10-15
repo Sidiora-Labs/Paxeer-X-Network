@@ -1,4 +1,4 @@
-package delivery
+package delivery_test
 
 import (
 	"bytes"
@@ -18,6 +18,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/stream"
 )
@@ -29,20 +30,20 @@ const (
 	relayOwner      = "relay-test"
 )
 
-func testPolicy() Policy {
-	return Policy{
+func testPolicy() delivery.Policy {
+	return delivery.Policy{
 		Subjects:   map[string]bool{fillSubject: true, orderSubject: true},
 		EventTypes: map[string]bool{"fill": true, "order": true},
 	}
 }
 
-func testEnvelope(id, kind string, height int) Envelope {
+func testEnvelope(id, kind string, height int) delivery.Envelope {
 	p := json.RawMessage(`{"price":"115792089237316195423570985008687907853269984665640564039457584007913129639935","market":"7"}`)
-	return Envelope{
+	return delivery.Envelope{
 		EventID: id, EventType: kind, SchemaVersion: 1, ChainID: 125,
-		SourceOrder: SourceOrder{strconv.Itoa(height), "0", "1"},
+		SourceOrder: delivery.SourceOrder{strconv.Itoa(height), "0", "1"},
 		EmittedAt:   time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
-		TraceID:     "trace-" + id, PayloadHash: Hash(p), Payload: p,
+		TraceID:     "trace-" + id, PayloadHash: delivery.Hash(p), Payload: p,
 	}
 }
 
@@ -78,7 +79,7 @@ func count(t *testing.T, db *sql.DB, query string, args ...any) int {
 	return n
 }
 
-func enqueueCommitted(t *testing.T, ctx context.Context, db *sql.DB, s *Store, subject string, envelopes ...Envelope) {
+func enqueueCommitted(t *testing.T, ctx context.Context, db *sql.DB, s *delivery.Store, subject string, envelopes ...delivery.Envelope) {
 	t.Helper()
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -95,7 +96,7 @@ func enqueueCommitted(t *testing.T, ctx context.Context, db *sql.DB, s *Store, s
 	}
 }
 
-func claimOne(t *testing.T, ctx context.Context, s *Store) Lease {
+func claimOne(t *testing.T, ctx context.Context, s *delivery.Store) delivery.Lease {
 	t.Helper()
 	leases, err := s.Claim(ctx, relayOwner, 1, 30*time.Second)
 	if err != nil {
@@ -107,7 +108,7 @@ func claimOne(t *testing.T, ctx context.Context, s *Store) Lease {
 	return leases[0]
 }
 
-func wantNoClaim(t *testing.T, ctx context.Context, s *Store) {
+func wantNoClaim(t *testing.T, ctx context.Context, s *delivery.Store) {
 	t.Helper()
 	leases, err := s.Claim(ctx, relayOwner, 10, 30*time.Second)
 	if err != nil {
@@ -123,12 +124,12 @@ type jetStreamPublisher struct {
 	stream string
 }
 
-func (p jetStreamPublisher) Publish(ctx context.Context, subject, eventID string, wire []byte) (PersistenceAck, error) {
+func (p jetStreamPublisher) Publish(ctx context.Context, subject, eventID string, wire []byte) (delivery.PersistenceAck, error) {
 	ack, err := p.js.Publish(ctx, subject, wire, jetstream.WithMsgID(eventID), jetstream.WithExpectStream(p.stream))
 	if err != nil {
-		return PersistenceAck{}, err
+		return delivery.PersistenceAck{}, err
 	}
-	return PersistenceAck{Stream: ack.Stream, Sequence: ack.Sequence}, nil
+	return delivery.PersistenceAck{Stream: ack.Stream, Sequence: ack.Sequence}, nil
 }
 
 type brokerDelivery struct{ msg jetstream.Msg }
@@ -213,14 +214,14 @@ func TestDeliveryStore(t *testing.T) {
 	if _, err = db.ExecContext(ctx, `TRUNCATE perps.delivery_outbox, perps.delivery_inbox, perps.delivery_quarantine`); err != nil {
 		t.Fatal(err)
 	}
-	s, err := NewStore(db, "perps", testPolicy())
+	s, err := delivery.NewStore(db, "perps", testPolicy())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = NewStore(nil, "perps", testPolicy()); err == nil {
+	if _, err = delivery.NewStore(nil, "perps", testPolicy()); err == nil {
 		t.Fatal("NewStore accepted a nil database")
 	}
-	if _, err = NewStore(db, "perps;drop", testPolicy()); err == nil {
+	if _, err = delivery.NewStore(db, "perps;drop", testPolicy()); err == nil {
 		t.Fatal("NewStore accepted an invalid schema")
 	}
 	js := startBroker(t, ctx)
@@ -244,7 +245,7 @@ func TestDeliveryStore(t *testing.T) {
 			t.Fatalf("rolled back enqueue left %d rows", n)
 		}
 		enqueueCommitted(t, ctx, db, s, fillSubject, e)
-		want, err := e.Encode(s.policy, fillSubject)
+		want, err := e.Encode(testPolicy(), fillSubject)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -269,23 +270,23 @@ func TestDeliveryStore(t *testing.T) {
 			t.Fatal(err)
 		}
 		changed := testEnvelope("enqueue-1", "fill", 101)
-		if _, err = s.Enqueue(ctx, tx, fillSubject, changed); !errors.Is(err, ErrIntegrity) {
+		if _, err = s.Enqueue(ctx, tx, fillSubject, changed); !errors.Is(err, delivery.ErrIntegrity) {
 			t.Fatalf("changed envelope under same id: %v", err)
 		}
-		if _, err = s.Enqueue(ctx, tx, orderSubject, testEnvelope("enqueue-1", "fill", 100)); !errors.Is(err, ErrIntegrity) {
+		if _, err = s.Enqueue(ctx, tx, orderSubject, testEnvelope("enqueue-1", "fill", 100)); !errors.Is(err, delivery.ErrIntegrity) {
 			t.Fatalf("same id on another subject: %v", err)
 		}
-		if _, err = s.Enqueue(ctx, tx, "perps.125.8.fill", testEnvelope("enqueue-2", "fill", 100)); !errors.Is(err, ErrAuthorization) {
+		if _, err = s.Enqueue(ctx, tx, "perps.125.8.fill", testEnvelope("enqueue-2", "fill", 100)); !errors.Is(err, delivery.ErrAuthorization) {
 			t.Fatalf("unapproved subject: %v", err)
 		}
 		tampered := testEnvelope("enqueue-3", "fill", 100)
-		tampered.PayloadHash = Hash([]byte(`{}`))
-		if _, err = s.Enqueue(ctx, tx, fillSubject, tampered); !errors.Is(err, ErrIntegrity) {
+		tampered.PayloadHash = delivery.Hash([]byte(`{}`))
+		if _, err = s.Enqueue(ctx, tx, fillSubject, tampered); !errors.Is(err, delivery.ErrIntegrity) {
 			t.Fatalf("payload hash mismatch: %v", err)
 		}
 		oversized := testEnvelope("enqueue-4", "fill", 100)
-		oversized.Payload = json.RawMessage(`{"pad":"` + string(bytes.Repeat([]byte("a"), MaxEnvelopeBytes)) + `"}`)
-		oversized.PayloadHash = Hash(oversized.Payload)
+		oversized.Payload = json.RawMessage(`{"pad":"` + string(bytes.Repeat([]byte("a"), delivery.MaxEnvelopeBytes)) + `"}`)
+		oversized.PayloadHash = delivery.Hash(oversized.Payload)
 		if _, err = s.Enqueue(ctx, tx, fillSubject, oversized); err == nil || err.Error() != "delivery: invalid or oversized payload" {
 			t.Fatalf("oversized envelope: %v", err)
 		}
@@ -293,7 +294,7 @@ func TestDeliveryStore(t *testing.T) {
 			t.Fatal(err)
 		}
 		lease := claimOne(t, ctx, s)
-		if err = s.MarkPublished(ctx, lease, PersistenceAck{Stream: "cleanup", Sequence: 1}); err != nil {
+		if err = s.MarkPublished(ctx, lease, delivery.PersistenceAck{Stream: "cleanup", Sequence: 1}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -308,7 +309,7 @@ func TestDeliveryStore(t *testing.T) {
 			t.Fatal("Claim accepted an invalid owner")
 		}
 		lease := claimOne(t, ctx, s)
-		want, err := e.Encode(s.policy, fillSubject)
+		want, err := e.Encode(testPolicy(), fillSubject)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -316,25 +317,25 @@ func TestDeliveryStore(t *testing.T) {
 			t.Fatalf("lease = %+v", lease)
 		}
 		wantNoClaim(t, ctx, s)
-		if err = s.MarkPublished(ctx, lease, PersistenceAck{}); err == nil || err.Error() != "delivery: persistence acknowledgement required" {
+		if err = s.MarkPublished(ctx, lease, delivery.PersistenceAck{}); err == nil || err.Error() != "delivery: persistence acknowledgement required" {
 			t.Fatalf("empty ack: %v", err)
 		}
-		if err = s.MarkPublished(ctx, lease, PersistenceAck{Stream: stream.Name, Sequence: 1 << 63}); err == nil {
+		if err = s.MarkPublished(ctx, lease, delivery.PersistenceAck{Stream: stream.Name, Sequence: 1 << 63}); err == nil {
 			t.Fatal("MarkPublished accepted a sequence above int64")
 		}
 		stale := lease
 		stale.Fence = 2
-		if err = s.MarkPublished(ctx, stale, PersistenceAck{Stream: stream.Name, Sequence: 7}); !errors.Is(err, ErrLease) {
+		if err = s.MarkPublished(ctx, stale, delivery.PersistenceAck{Stream: stream.Name, Sequence: 7}); !errors.Is(err, delivery.ErrLease) {
 			t.Fatalf("stale fence: %v", err)
 		}
-		if err = s.MarkPublished(ctx, lease, PersistenceAck{Stream: stream.Name, Sequence: 7}); err != nil {
+		if err = s.MarkPublished(ctx, lease, delivery.PersistenceAck{Stream: stream.Name, Sequence: 7}); err != nil {
 			t.Fatal(err)
 		}
 		r := readOutbox(t, db, e.EventID)
 		if r.state != "published" || !r.published || r.brokerStream != stream.Name || r.brokerSequence != 7 || r.failureClass != "" {
 			t.Fatalf("published row = %+v", r)
 		}
-		if err = s.MarkPublished(ctx, lease, PersistenceAck{Stream: stream.Name, Sequence: 8}); !errors.Is(err, ErrLease) {
+		if err = s.MarkPublished(ctx, lease, delivery.PersistenceAck{Stream: stream.Name, Sequence: 8}); !errors.Is(err, delivery.ErrLease) {
 			t.Fatalf("second MarkPublished: %v", err)
 		}
 		if _, err = db.ExecContext(ctx, `UPDATE perps.delivery_outbox SET envelope=$2 WHERE event_id=$1`, e.EventID, []byte(`{}`)); err == nil {
@@ -347,20 +348,20 @@ func TestDeliveryStore(t *testing.T) {
 		e := testEnvelope("retry-1", "fill", 300)
 		enqueueCommitted(t, ctx, db, s, fillSubject, e)
 		lease := claimOne(t, ctx, s)
-		if err := s.Retry(ctx, lease, Transient, 3, 500*time.Millisecond); err == nil || err.Error() != "delivery: invalid retry bounds" {
+		if err := s.Retry(ctx, lease, delivery.Transient, 3, 500*time.Millisecond); err == nil || err.Error() != "delivery: invalid retry bounds" {
 			t.Fatalf("short delay: %v", err)
 		}
-		if err := s.Retry(ctx, lease, FailureClass("unknown"), 3, time.Second); err == nil || err.Error() != "delivery: invalid failure class" {
+		if err := s.Retry(ctx, lease, delivery.FailureClass("unknown"), 3, time.Second); err == nil || err.Error() != "delivery: invalid failure class" {
 			t.Fatalf("unknown class: %v", err)
 		}
-		if err := s.Retry(ctx, lease, Transient, 3, 2*time.Second); err != nil {
+		if err := s.Retry(ctx, lease, delivery.Transient, 3, 2*time.Second); err != nil {
 			t.Fatal(err)
 		}
 		r := readOutbox(t, db, e.EventID)
 		if r.state != "pending" || r.failureClass != "transient" || r.attempts != 1 || r.availableInMS < 1000 || r.availableInMS > 2000 {
 			t.Fatalf("after transient retry = %+v", r)
 		}
-		if err := s.Retry(ctx, lease, Transient, 3, time.Second); !errors.Is(err, ErrLease) {
+		if err := s.Retry(ctx, lease, delivery.Transient, 3, time.Second); !errors.Is(err, delivery.ErrLease) {
 			t.Fatalf("retry of released lease: %v", err)
 		}
 		wantNoClaim(t, ctx, s)
@@ -369,7 +370,7 @@ func TestDeliveryStore(t *testing.T) {
 		if second.EventID != e.EventID || second.PerpsSeq != lease.PerpsSeq || second.Fence != 2 || second.Attempts != 2 {
 			t.Fatalf("reclaim = %+v", second)
 		}
-		if err := s.Retry(ctx, second, Transient, 2, time.Second); err != nil {
+		if err := s.Retry(ctx, second, delivery.Transient, 2, time.Second); err != nil {
 			t.Fatal(err)
 		}
 		if r = readOutbox(t, db, e.EventID); r.state != "quarantined" || r.failureClass != "transient" || r.attempts != 2 {
@@ -378,7 +379,7 @@ func TestDeliveryStore(t *testing.T) {
 		poison := testEnvelope("retry-2", "fill", 301)
 		enqueueCommitted(t, ctx, db, s, fillSubject, poison)
 		lease = claimOne(t, ctx, s)
-		if err := s.Retry(ctx, lease, SchemaViolation, 3, time.Second); err != nil {
+		if err := s.Retry(ctx, lease, delivery.SchemaViolation, 3, time.Second); err != nil {
 			t.Fatal(err)
 		}
 		if r = readOutbox(t, db, poison.EventID); r.state != "quarantined" || r.failureClass != "schema_violation" || r.attempts != 1 {
@@ -393,7 +394,7 @@ func TestDeliveryStore(t *testing.T) {
 			t.Fatal(err)
 		}
 		e := testEnvelope("consume-1", "order", 400)
-		wire, err := e.Encode(s.policy, orderSubject)
+		wire, err := e.Encode(testPolicy(), orderSubject)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -404,14 +405,14 @@ func TestDeliveryStore(t *testing.T) {
 			}
 		}
 		effects := 0
-		effect := func(ctx context.Context, tx *sql.Tx, got Envelope) error {
+		effect := func(ctx context.Context, tx *sql.Tx, got delivery.Envelope) error {
 			if got.EventID != e.EventID || !bytes.Equal(got.Payload, e.Payload) {
 				return errors.New("effect received a different envelope")
 			}
 			effects++
 			return nil
 		}
-		failing := func(context.Context, *sql.Tx, Envelope) error { return errors.New("projection failed") }
+		failing := func(context.Context, *sql.Tx, delivery.Envelope) error { return errors.New("projection failed") }
 
 		first := fetchOne(t, c)
 		if err = s.Consume(ctx, "consumer-a", "gen-1", orderSubject, first.Data(), brokerDelivery{first}, failing); err == nil || err.Error() != "projection failed" {
@@ -437,7 +438,7 @@ func TestDeliveryStore(t *testing.T) {
 			t.Fatalf("ack pending after duplicate = %d, want 0", n)
 		}
 		var hash string
-		if err = db.QueryRow(`SELECT envelope_hash FROM perps.delivery_inbox WHERE consumer_id='consumer-a' AND projection_generation='gen-1' AND event_id=$1`, e.EventID).Scan(&hash); err != nil || hash != Hash(wire) {
+		if err = db.QueryRow(`SELECT envelope_hash FROM perps.delivery_inbox WHERE consumer_id='consumer-a' AND projection_generation='gen-1' AND event_id=$1`, e.EventID).Scan(&hash); err != nil || hash != delivery.Hash(wire) {
 			t.Fatalf("inbox hash = %q, %v", hash, err)
 		}
 		if err = s.Consume(ctx, "consumer-a", "gen-2", orderSubject, wire, brokerDelivery{second}, effect); !errors.Is(err, jetstream.ErrMsgAlreadyAckd) {
@@ -449,7 +450,7 @@ func TestDeliveryStore(t *testing.T) {
 
 		conflict := testEnvelope("consume-1", "order", 400)
 		conflict.TraceID = "trace-other"
-		conflictWire, err := conflict.Encode(s.policy, orderSubject)
+		conflictWire, err := conflict.Encode(testPolicy(), orderSubject)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -457,7 +458,7 @@ func TestDeliveryStore(t *testing.T) {
 			t.Fatal(err)
 		}
 		third := fetchOne(t, c)
-		if err = s.Consume(ctx, "consumer-a", "gen-1", orderSubject, third.Data(), brokerDelivery{third}, effect); !errors.Is(err, ErrIntegrity) {
+		if err = s.Consume(ctx, "consumer-a", "gen-1", orderSubject, third.Data(), brokerDelivery{third}, effect); !errors.Is(err, delivery.ErrIntegrity) {
 			t.Fatalf("conflicting envelope: %v", err)
 		}
 		if effects != 2 {
@@ -468,19 +469,19 @@ func TestDeliveryStore(t *testing.T) {
 		}
 		var class string
 		var quarantined []byte
-		if err = db.QueryRow(`SELECT failure_class,envelope FROM perps.delivery_quarantine WHERE consumer_id='consumer-a' AND projection_generation='gen-1' AND envelope_hash=$1`, Hash(conflictWire)).Scan(&class, &quarantined); err != nil || class != string(IntegrityConflict) || !bytes.Equal(quarantined, conflictWire) {
+		if err = db.QueryRow(`SELECT failure_class,envelope FROM perps.delivery_quarantine WHERE consumer_id='consumer-a' AND projection_generation='gen-1' AND envelope_hash=$1`, delivery.Hash(conflictWire)).Scan(&class, &quarantined); err != nil || class != string(delivery.IntegrityConflict) || !bytes.Equal(quarantined, conflictWire) {
 			t.Fatalf("conflict quarantine = %q, %v", class, err)
 		}
-		if err = s.Consume(ctx, "consumer-a", "gen-1", "perps.125.9.order", wire, brokerDelivery{third}, effect); !errors.Is(err, ErrAuthorization) {
+		if err = s.Consume(ctx, "consumer-a", "gen-1", "perps.125.9.order", wire, brokerDelivery{third}, effect); !errors.Is(err, delivery.ErrAuthorization) {
 			t.Fatalf("unapproved subject: %v", err)
 		}
-		if err = db.QueryRow(`SELECT failure_class FROM perps.delivery_quarantine WHERE subject='perps.125.9.order'`).Scan(&class); err != nil || class != string(Authorization) {
+		if err = db.QueryRow(`SELECT failure_class FROM perps.delivery_quarantine WHERE subject='perps.125.9.order'`).Scan(&class); err != nil || class != string(delivery.Authorization) {
 			t.Fatalf("authorization quarantine = %q, %v", class, err)
 		}
 		if err = s.Consume(ctx, "consumer-a", "gen-1", orderSubject, []byte(`{"event_id":"x"`), brokerDelivery{third}, effect); err == nil {
 			t.Fatal("malformed envelope accepted")
 		}
-		if err = db.QueryRow(`SELECT failure_class FROM perps.delivery_quarantine WHERE envelope_hash=$1`, Hash([]byte(`{"event_id":"x"`))).Scan(&class); err != nil || class != string(SchemaViolation) {
+		if err = db.QueryRow(`SELECT failure_class FROM perps.delivery_quarantine WHERE envelope_hash=$1`, delivery.Hash([]byte(`{"event_id":"x"`))).Scan(&class); err != nil || class != string(delivery.SchemaViolation) {
 			t.Fatalf("schema quarantine = %q, %v", class, err)
 		}
 		if err = s.Consume(ctx, "consumer a", "gen-1", orderSubject, wire, brokerDelivery{third}, effect); err == nil || err.Error() != "delivery: invalid consumer configuration" {
@@ -490,7 +491,7 @@ func TestDeliveryStore(t *testing.T) {
 
 	t.Run("relay_run_once", func(t *testing.T) {
 		publisher := jetStreamPublisher{js: js, stream: stream.Name}
-		relay := Relay{Store: s, Publisher: publisher, Owner: relayOwner, Batch: 10, LeaseDuration: 30 * time.Second, PublishTimeout: 5 * time.Second, RetryDelay: time.Second, MaxAttempts: 3}
+		relay := delivery.Relay{Store: s, Publisher: publisher, Owner: relayOwner, Batch: 10, LeaseDuration: 30 * time.Second, PublishTimeout: 5 * time.Second, RetryDelay: time.Second, MaxAttempts: 3}
 		invalid := relay
 		invalid.PublishTimeout = invalid.LeaseDuration
 		if err := invalid.RunOnce(ctx); err == nil || err.Error() != "delivery: invalid relay configuration" {
@@ -505,7 +506,7 @@ func TestDeliveryStore(t *testing.T) {
 			t.Fatal(err)
 		}
 		base := info.State.LastSeq
-		var envelopes []Envelope
+		var envelopes []delivery.Envelope
 		for i := 0; i < 5; i++ {
 			envelopes = append(envelopes, testEnvelope("relay-"+strconv.Itoa(i), "fill", 500+i))
 		}
@@ -527,7 +528,7 @@ func TestDeliveryStore(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want, err := e.Encode(s.policy, fillSubject)
+			want, err := e.Encode(testPolicy(), fillSubject)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -600,19 +601,19 @@ func TestStore(t *testing.T) {
  ALTER TABLE perps.delivery_outbox ALTER COLUMN created_at SET DEFAULT transaction_timestamp()`); err != nil {
 			t.Fatal(err)
 		}
-		s, err := NewStore(db, "perps", testPolicy())
+		s, err := delivery.NewStore(db, "perps", testPolicy())
 		if err != nil {
 			t.Fatal(err)
 		}
-		var envelopes []Envelope
+		var envelopes []delivery.Envelope
 		for block := 400; block < 410; block++ {
 			tx, err := db.BeginTx(ctx, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer rollback(tx)
+			defer func() { _ = tx.Rollback() }()
 			for log := 0; log < 5; log++ {
-				id := Hash([]byte(strconv.Itoa(block) + ":" + strconv.Itoa(log)))
+				id := delivery.Hash([]byte(strconv.Itoa(block) + ":" + strconv.Itoa(log)))
 				e := testEnvelope(id, "fill", block)
 				e.SourceOrder.TransactionIndex = strconv.Itoa(log / 2)
 				e.SourceOrder.LogIndex = strconv.Itoa(log)
@@ -646,7 +647,7 @@ func TestStore(t *testing.T) {
 			}
 			for i, lease := range leases {
 				e := envelopes[offset+i]
-				wire, err := e.Encode(s.policy, fillSubject)
+				wire, err := e.Encode(testPolicy(), fillSubject)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -671,13 +672,13 @@ func TestStore(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer rollback(tx)
+		defer func() { _ = tx.Rollback() }()
 		if sequence, err := s.Enqueue(ctx, tx, fillSubject, envelopes[0]); err != nil || sequence != 1 {
 			t.Fatalf("duplicate sequence %d, want 1: %v", sequence, err)
 		}
 		changed := envelopes[0]
 		changed.SourceOrder.Height = "410"
-		if sequence, err := s.Enqueue(ctx, tx, fillSubject, changed); !errors.Is(err, ErrIntegrity) || sequence != 0 {
+		if sequence, err := s.Enqueue(ctx, tx, fillSubject, changed); !errors.Is(err, delivery.ErrIntegrity) || sequence != 0 {
 			t.Fatalf("conflicting sequence %d, error %v, want 0 and ErrIntegrity", sequence, err)
 		}
 		if err = tx.Commit(); err != nil {
@@ -691,7 +692,7 @@ func TestStore(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer rollback(tx)
+		defer func() { _ = tx.Rollback() }()
 		sequence, err := s.Enqueue(ctx, tx, fillSubject, rolledBack)
 		if err != nil || sequence != 53 {
 			t.Fatalf("uncommitted sequence %d, want 53: %v", sequence, err)

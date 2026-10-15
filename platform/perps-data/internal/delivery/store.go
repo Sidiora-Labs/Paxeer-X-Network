@@ -21,7 +21,7 @@ func NewStore(db *sql.DB, schema string, policy Policy) (*Store, error) {
 		return nil, errors.New("delivery: invalid store configuration")
 	}
 	// Copy configured maps so callers cannot change admission policy after creation.
-	copyPolicy := Policy{Subjects: map[string]bool{}, EventTypes: map[string]bool{}}
+	copyPolicy := Policy{Subjects: map[string]bool{}, Patterns: append([]string(nil), policy.Patterns...), EventTypes: map[string]bool{}}
 	for k, v := range policy.Subjects {
 		copyPolicy.Subjects[k] = v
 	}
@@ -48,6 +48,15 @@ func (s *Store) table(name string) string { return s.schema + "." + name }
 // database/sql rolls a transaction back when its context is cancelled, and a
 // rollback after commit returns sql.ErrTxDone, so the error carries nothing.
 func rollback(tx *sql.Tx) { _ = tx.Rollback() }
+
+// EnqueueTx enqueues e as Store.Enqueue does, for a writer that holds only
+// the transaction: the block write of the indexer.
+func EnqueueTx(ctx context.Context, tx *sql.Tx, schema string, policy Policy, subject string, e Envelope) (int64, error) {
+	if !token.MatchString(schema) {
+		return 0, errors.New("delivery: invalid store configuration")
+	}
+	return (&Store{schema: pq.QuoteIdentifier(schema), policy: policy}).Enqueue(ctx, tx, subject, e)
+}
 
 // Enqueue participates in a service-owned transaction; it never commits alone.
 func (s *Store) Enqueue(ctx context.Context, tx *sql.Tx, subject string, e Envelope) (int64, error) {

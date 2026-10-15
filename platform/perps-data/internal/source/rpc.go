@@ -26,6 +26,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/decode"
 )
 
 // MaxLogRange is the largest inclusive block span of one eth_getLogs call.
@@ -388,7 +390,17 @@ func (s *RPC) getLogs(ctx context.Context, timeout time.Duration, addresses []st
 
 // Call runs eth_call of data at to on the latest block.
 func (s *RPC) Call(ctx context.Context, to common.Address, data []byte) ([]byte, error) {
-	raw, err := s.callWithFallback(ctx, s.timeout, "eth_call", map[string]string{"to": to.Hex(), "data": "0x" + common.Bytes2Hex(data)}, "latest")
+	return s.call(ctx, to, data, "latest")
+}
+
+// CallAt runs eth_call of data at to on block height. A node that no longer
+// holds the state of height answers decode.ErrStatePruned.
+func (s *RPC) CallAt(ctx context.Context, to common.Address, data []byte, height uint64) ([]byte, error) {
+	return s.call(ctx, to, data, fmt.Sprintf("0x%x", height))
+}
+
+func (s *RPC) call(ctx context.Context, to common.Address, data []byte, block string) ([]byte, error) {
+	raw, err := s.callWithFallback(ctx, s.timeout, "eth_call", map[string]string{"to": to.Hex(), "data": "0x" + common.Bytes2Hex(data)}, block)
 	if err != nil {
 		return nil, err
 	}
@@ -502,6 +514,7 @@ func (s *RPC) callWithFallback(ctx context.Context, timeout time.Duration, metho
 		return nil, err
 	}
 	var lastErr error
+	pruned := 0
 	for _, idx := range order {
 		t0 := s.now()
 		result, err := s.doRequest(ctx, timeout, s.slotURL(idx), body)
@@ -515,8 +528,16 @@ func (s *RPC) callWithFallback(ctx context.Context, timeout time.Duration, metho
 		if errors.Is(err, ErrResponseSize) {
 			return nil, err
 		}
-		s.markFailure(idx, err)
 		lastErr = err
+		if errors.Is(err, decode.ErrStatePruned) {
+			// A pruned height is the request's age, not the node's health.
+			pruned++
+			continue
+		}
+		s.markFailure(idx, err)
+	}
+	if pruned == len(order) {
+		return nil, lastErr
 	}
 	return nil, fmt.Errorf("source: all %d healthy node(s) failed for %s: %w", len(order), method, lastErr)
 }
@@ -555,9 +576,24 @@ func (s *RPC) doRequest(ctx context.Context, timeout time.Duration, url string, 
 		if sizeRefusal(out.Error.Message) {
 			return nil, fmt.Errorf("%w: %s", ErrResponseSize, out.Error.Message)
 		}
+		if prunedRefusal(out.Error.Message) {
+			return nil, fmt.Errorf("%w: %s", decode.ErrStatePruned, out.Error.Message)
+		}
 		return nil, fmt.Errorf("source: json-rpc error %d: %s", out.Error.Code, out.Error.Message)
 	}
 	return out.Result, nil
+}
+
+// prunedRefusal matches the node refusals of a call at a height whose state
+// the node no longer holds.
+func prunedRefusal(message string) bool {
+	m := strings.ToLower(message)
+	for _, s := range []string{"version does not exist", "pruned", "not available", "failed to load state", "missing trie node"} {
+		if strings.Contains(m, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // sizeRefusal matches the node refusals of a query by its size: "block range
