@@ -2,19 +2,57 @@ package launchpad_test
 
 import (
 	"encoding/hex"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	launchpadkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/launchpadtest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/launchpad"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 )
+
+type harness struct {
+	t          *testing.T
+	stateDB    *state.DBImpl
+	evm        *vm.EVM
+	precompile *launchpad.Precompile
+	keeper     *launchpadkeeper.Keeper
+	caller     common.Address
+	callerAcc  sdk.AccAddress
+}
+
+func newHarness(t *testing.T) *harness {
+	t.Helper()
+	app := testkeeper.EVMTestApp
+	ctx := app.GetContextForDeliverTx([]byte{}).WithBlockTime(genesisTime)
+	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
+	k, ctx := launchpadtest.NewKeeper(app, ctx)
+	k.InitGenesis(ctx, *types.DefaultGenesis())
+	h := &harness{t: t, keeper: k}
+	var err error
+	h.precompile, err = launchpad.NewPrecompile(keepers{Keepers: app.GetPrecompileKeepers(), launchpad: k})
+	require.NoError(t, err)
+	h.stateDB = state.NewDBImpl(ctx, &app.EvmKeeper, false)
+	blockCtx, err := app.EvmKeeper.GetVMBlockContext(ctx, core.GasPool(math.MaxUint64))
+	require.NoError(t, err)
+	cfg := evmtypes.DefaultChainConfig().EthereumConfig(app.EvmKeeper.ChainID(ctx))
+	h.evm = vm.NewEVM(*blockCtx, h.stateDB, cfg, vm.Config{}, app.EvmKeeper.CustomPrecompiles(ctx))
+	h.callerAcc, h.caller = h.fund(1_000_000_000)
+	return h
+}
 
 // retiredSet is the table of contracts/launchpad.md section 21; the Treasury
 // replacement is the generation 2 Treasury of

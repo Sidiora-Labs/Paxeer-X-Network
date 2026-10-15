@@ -156,9 +156,8 @@ func (p PrecompileExecutor) poolSwap(c poolCall, trader common.Address, amountIn
 		return ctx, nil, err
 	}
 	if common.HexToAddress(updated.EventEmitter) != (common.Address{}) {
-		if err := p.log(c.evm, "Swap", []common.Hash{poolID(c.pool()), addressTopic(trader)}, isBuy, amountIn,
-			result.AmountOut, result.FeeAmount, price, big.NewInt(ctx.BlockTime().Unix()),
-			big.NewInt(ctx.BlockHeight())); err != nil {
+		if err := p.emitFamily(c.evm, "Swap", poolID(c.pool()), trader, isBuy, amountIn, result.AmountOut,
+			result.FeeAmount, price); err != nil {
 			return ctx, nil, err
 		}
 	}
@@ -219,9 +218,8 @@ func (p PrecompileExecutor) syncReserves(c poolCall) (sdk.Context, []byte, error
 		return ctx, nil, err
 	}
 	if common.HexToAddress(market.EventEmitter) != (common.Address{}) {
-		if err := p.log(c.evm, "PoolStateUpdated", []common.Hash{poolID(c.pool())},
-			market.VirtualQuoteReserve.BigInt(), market.RealQuoteBalance.BigInt(), market.TokenReserve.BigInt(),
-			price, big.NewInt(ctx.BlockTime().Unix()), big.NewInt(ctx.BlockHeight())); err != nil {
+		if err := p.emitFamily(c.evm, "PoolStateUpdated", poolID(c.pool()), market.VirtualQuoteReserve.BigInt(),
+			market.RealQuoteBalance.BigInt(), market.TokenReserve.BigInt(), price); err != nil {
 			return ctx, nil, err
 		}
 	}

@@ -11,20 +11,16 @@
 // Gas is charged by the EVM from RequiredGas before Run:
 //
 //	gas = BaseGas
-//	    + GasPerByte    * len(calldata after the selector)
-//	    + GasPerWrite   * writes(method)
-//	    + GasPerPointer * pointers(method)
+//	    + GasPerByte  * len(calldata including the selector)
+//	    + GasPerWrite * Writes(method)
 //
-// writes is the fixed number of state slots a method may touch: createMarket
-// 12, buy 8, sell 6, claimFees and executeBurn 3, executeAirdrop and
-// claimAirdrop 4, setFeeStrategy, executeLpRewards, pause and unpause 1,
-// views 0. pointers is 1 for createMarket and 0 otherwise.
+// Writes is the fixed number of state slots a method may touch; views touch
+// none.
 package launchpad
 
 import (
 	"embed"
 	"errors"
-	"fmt"
 	"math"
 	"math/big"
 
@@ -35,17 +31,11 @@ import (
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/vm"
 )
 
 const (
 	LaunchpadAddress = types.LaunchpadAddress
 	PrecompileName   = "launchpad"
-
-	BaseGas       uint64 = 3000
-	GasPerByte    uint64 = 16
-	GasPerWrite   uint64 = 5000
-	GasPerPointer uint64 = 9_000_000
 )
 
 //go:embed abi.json
@@ -85,43 +75,6 @@ func NewPrecompileWithKeeper(k *launchpadkeeper.Keeper, evmKeeper utils.EVMKeepe
 		executor: p}, nil
 }
 
-// Writes returns the fixed state-slot bound of a method.
-func Writes(method string) uint64 {
-	switch method {
-	case "createMarket":
-		return 12
-	case "buy":
-		return 8
-	case "sell":
-		return 6
-	case "claimFees", "executeBurn":
-		return 3
-	case "executeAirdrop", "claimAirdrop", "claimAirdropForEpoch":
-		return 4
-	case "setFeeStrategy", "executeLpRewards", "pause", "unpause":
-		return 1
-	default:
-		return 0
-	}
-}
-
-// Pointers returns the ERC20 pointer deployments of a method.
-func Pointers(method string) uint64 {
-	if method == "createMarket" {
-		return 1
-	}
-	return 0
-}
-
-// Gas is the documented formula over already-measured quantities.
-func Gas(inputBytes, writes, pointers uint64) uint64 {
-	return BaseGas + GasPerByte*inputBytes + GasPerWrite*writes + GasPerPointer*pointers
-}
-
-func (p PrecompileExecutor) RequiredGas(input []byte, method *abi.Method) uint64 {
-	return Gas(uint64(len(input)), Writes(method.Name), Pointers(method.Name))
-}
-
 func clampUint64(value *big.Int) uint64 {
 	if !value.IsUint64() {
 		return math.MaxUint64
@@ -144,20 +97,6 @@ func (p PrecompileExecutor) evmAddress(ctx sdk.Context, bech32 string) common.Ad
 		return common.Address{}
 	}
 	return p.evmKeeper.GetEVMAddressOrDefault(ctx, account)
-}
-
-// log emits one ABI event from the launchpad address: indexed values become
-// topics in declaration order and the rest is ABI-encoded data.
-func (p PrecompileExecutor) log(evm *vm.EVM, name string, topics []common.Hash, data ...interface{}) error {
-	event, ok := p.abi.Events[name]
-	if !ok {
-		return fmt.Errorf("launchpad: unknown event %s", name)
-	}
-	packed, err := event.Inputs.NonIndexed().Pack(data...)
-	if err != nil {
-		return err
-	}
-	return pcommon.EmitEVMLog(evm, p.address, append([]common.Hash{event.ID}, topics...), packed)
 }
 
 func addressTopic(value common.Address) common.Hash { return common.BytesToHash(value.Bytes()) }

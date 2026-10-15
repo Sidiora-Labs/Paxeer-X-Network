@@ -97,69 +97,105 @@ type Precompile struct {
 	executor *PrecompileExecutor
 }
 
-var _ vm.PrecompiledContract = (*Precompile)(nil)
+var (
+	_ vm.PrecompiledContract           = (*Precompile)(nil)
+	_ vm.DynamicGasPrecompiledContract = (*Precompile)(nil)
+)
 
-// Run reads the original caller from the last 20 bytes of input only when the
-// EVM caller is a registered surface, resolves the selector through the ABI
-// of the surface's role or, for any other caller, through abi.json in the
-// direct role order, and serves the call. An unknown selector reverts with
-// empty revert data; any other failure reverts with its reason.
+// RunAndCalculateGas charges Gas over the calldata the caller sent and the
+// writes of the resolved method, then serves the call with one RunCaller
+// whose nested calls are metered out of the gas left. It returns the gas the
+// run did not use, also when the call reverts.
+func (p *Precompile) RunAndCalculateGas(evm *vm.EVM, caller common.Address, _ common.Address, input []byte,
+	suppliedGas uint64, value *big.Int, hooks *tracing.Hooks, readOnly bool, isFromDelegateCall bool,
+) ([]byte, uint64, error) {
+	return p.run(evm, caller, input, value, readOnly, isFromDelegateCall, hooks, &suppliedGas, true)
+}
+
+// Run serves the call without metering: the EVM runs the precompile through
+// RunAndCalculateGas, and a call through Run leaves its nested calls no gas.
 func (p *Precompile) Run(evm *vm.EVM, caller common.Address, _ common.Address, input []byte, value *big.Int,
-	readOnly bool, isFromDelegateCall bool, hooks *tracing.Hooks) (bz []byte, err error) {
+	readOnly bool, isFromDelegateCall bool, hooks *tracing.Hooks) ([]byte, error) {
+	var gas uint64
+	bz, _, err := p.run(evm, caller, input, value, readOnly, isFromDelegateCall, hooks, &gas, false)
+	return bz, err
+}
+
+// run reads the original caller from the last 20 bytes of input only when
+// the EVM caller is a registered surface, resolves the selector through the
+// ABI of the surface's role or, for any other caller, through abi.json in the
+// direct role order, and serves the call with the one RunCaller of the run
+// over gas. When charge is set, Gas of the calldata the caller sent and the
+// writes of the method is taken from gas first. An unknown selector reverts
+// with empty revert data; any other failure reverts with its revert data.
+func (p *Precompile) run(evm *vm.EVM, caller common.Address, input []byte, value *big.Int, readOnly bool,
+	isFromDelegateCall bool, hooks *tracing.Hooks, gas *uint64, charge bool) (bz []byte, left uint64, err error) {
 	operation := PrecompileName + "_unknown"
 	defer func() {
 		pcommon.HandlePrecompileError(err, evm, operation)
-		if err != nil {
+		if err != nil && !errors.Is(err, vm.ErrOutOfGas) {
 			bz, err = runRevert(err), vm.ErrExecutionReverted
 		}
 	}()
+	take := func(cost uint64) error {
+		if !charge {
+			return nil
+		}
+		if *gas < cost {
+			*gas = 0
+			return vm.ErrOutOfGas
+		}
+		*gas -= cost
+		return nil
+	}
 	sdb := state.GetDBImpl(evm.StateDB)
 	if sdb == nil {
-		return nil, errors.New("cannot get context from EVM")
+		return nil, 0, errors.New("cannot get context from EVM")
 	}
 	ctx := sdb.Ctx().WithEVMPrecompileCalledFromDelegateCall(isFromDelegateCall)
 	c, err := p.executor.resolve(ctx, caller, input)
 	if err != nil {
-		return nil, err
+		if gasErr := take(Gas(uint64(len(input)), 0)); gasErr != nil {
+			return nil, 0, gasErr
+		}
+		return nil, *gas, err
 	}
 	operation = c.method.Name
+	sent := uint64(len(input))
+	if c.target != p.executor.address {
+		sent -= common.AddressLength
+	}
+	if err := take(Gas(sent, Writes(c.method.RawName))); err != nil {
+		return nil, 0, err
+	}
+	if c.nested, err = NewRunCaller(evm, gas); err != nil {
+		return nil, *gas, err
+	}
 	em := ctx.EventManager()
 	c.ctx = ctx.WithEventManager(sdk.NewEventManager())
 	c.evm, c.hooks, c.readOnly = evm, hooks, readOnly
 	bz, err = p.executor.serve(c, value)
 	if err != nil {
-		return nil, err
+		return nil, *gas, err
 	}
 	if events := c.ctx.EventManager().Events(); len(events) > 0 {
 		em.EmitEvents(events)
 	}
-	return bz, nil
-}
-
-// reverter is an error that carries its own EVM revert data.
-type reverter interface {
-	Revert() ([]byte, error)
+	return bz, *gas, nil
 }
 
 // runRevert is the revert data of a failed run: empty for an unknown
-// selector, the revert data an error carries, the Launch-x custom error of a
-// launchpad keeper error and the reason of err otherwise.
+// selector and the revert data revertData maps err to otherwise; an error
+// whose custom error cannot be encoded reverts with its reason.
 func runRevert(err error) []byte {
 	if errors.Is(err, errUnknownSelector) {
 		return nil
 	}
-	var carried reverter
-	if errors.As(err, &carried) {
-		if data, revertErr := carried.Revert(); revertErr == nil {
-			return data
-		}
+	data, encodeErr := revertData(err)
+	if encodeErr != nil {
+		return pcommon.RevertReason(err)
 	}
-	if contractError, ok := types.ContractErrorOf(err); ok && len(contractError.Inputs) == 0 {
-		if data, revertErr := contractError.Revert(); revertErr == nil {
-			return data
-		}
-	}
-	return pcommon.RevertReason(err)
+	return data
 }
 
 // Execute serves a direct call to 0x1017 whose method the framework resolved
