@@ -1,0 +1,81 @@
+syntax = "proto3";
+package paxprotocol.paxchain.pricefeed;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types";
+
+// Msg defines the pricefeed module's gRPC message service. Feed key
+// registration and revocation are deliberately absent, because they enter
+// only through the pricefeed precompile.
+service Msg {
+  rpc SubmitPrices(MsgSubmitPrices) returns (MsgSubmitPricesResponse);
+  rpc SetParams(MsgSetParams) returns (MsgSetParamsResponse);
+}
+
+// Observation is one market's prices as the feeder read them from Chainflow.
+// Prices are decimal integers at 18 decimals; the timestamp is the Chainflow
+// updated_at in Unix milliseconds.
+message Observation {
+  uint64 market_id = 1;
+  uint64 sequence = 2;
+  string index_price = 3;
+  string mark_price = 4;
+  uint64 source_timestamp_ms = 5;
+}
+
+// MsgSubmitPrices carries the observations of one validator for one block.
+// The feeder is the bech32 feed account and the only signer.
+message MsgSubmitPrices {
+  string feeder = 1;
+  repeated Observation observations = 2 [(gogoproto.nullable) = false];
+}
+
+// MsgSubmitPricesResponse reports how many observations were accepted and
+// how many were refused.
+message MsgSubmitPricesResponse {
+  uint32 accepted = 1;
+  uint32 refused = 2;
+}
+
+// Market is one listed market. Its Go type is the module's market table type,
+// so a proposed market is stored exactly as it was proposed.
+message Market {
+  option (gogoproto.typedecl) = false;
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 id = 1 [(gogoproto.customname) = "ID"];
+  string symbol = 2;
+  string chainflow_symbol = 3;
+  string min_price = 4 [
+    (gogoproto.customtype) = "Int",
+    (gogoproto.nullable) = false
+  ];
+  string max_price = 5 [
+    (gogoproto.customtype) = "Int",
+    (gogoproto.nullable) = false
+  ];
+  bool enabled = 6;
+}
+
+// MsgSetParams replaces the whole parameter set: the markets, the staleness,
+// clock skew, source, divergence and deviation bounds, the submission bounds
+// and the mark price settings. The authority itself is unchanged. Authority
+// only.
+message MsgSetParams {
+  string authority = 1;
+  repeated Market markets = 2 [(gogoproto.nullable) = false];
+  uint64 staleness_window_ms = 3;
+  uint64 max_clock_skew_ms = 4;
+  uint32 min_sources = 5;
+  uint32 max_divergence_bps = 6;
+  uint32 max_deviation_bps = 7;
+  uint32 max_observations_per_submission = 8;
+  uint32 max_submission_bytes = 9;
+  uint64 mark_ema_tau_ms = 10;
+  uint32 max_mark_basis_bps = 11;
+  uint64 max_price_age_ms = 12;
+}
+
+// MsgSetParamsResponse is the MsgSetParams response.
+message MsgSetParamsResponse {}
