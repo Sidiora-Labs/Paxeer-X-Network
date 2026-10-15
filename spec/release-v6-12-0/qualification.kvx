@@ -1707,3 +1707,11 @@ exit = 1
 log = fleet/logs/4.3.2-verify-1.log
 observed = The spot keeper test package fails at setup on an import cycle through the pricefeed test utilities, and the test app panics at init on the launchpad keeper wiring.
 assumption = The invariant tests rerun once the spot keeper test cycle fix and the launchpad keeper wiring are both on main.
+
+[finding.fix-perps-data-graphql]
+revision = 6849cc6dbdc53f2119d66a2313404c981ef7333d
+command = go test ./platform/perps-data/internal/graphql/... ./platform/perps-data/internal/publish/... ./platform/perps-data/internal/store/... -count=1 -p 1
+exit = 1
+log = fleet/logs/fix-perps-data-graphql-verify-1.log
+observed = Publish and store pass; seven graphql subtests remain: the schema validator rejects every declared non-null variable, the TP/SL alias seed expects a position id the contract does not set, the user stats error text differs between test files, and one subscription test bypasses the transport feed.
+assumption = The schema validation tests and the user stats error text need a contract ruling; the position id and transport feed cases follow the contract as written.
