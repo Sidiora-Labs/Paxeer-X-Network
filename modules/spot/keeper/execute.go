@@ -29,7 +29,7 @@ type restingReceipts interface {
 
 func (k *Keeper) FillBackoff(ctx sdk.Context, id uint64) (types.FillBackoff, error) {
 	entry := types.FillBackoff{OrderID: id}
-	raw := k.store(ctx).Get(orderKey(types.FillBackoffPrefix, orderIDBytes(id)))
+	raw := k.store(ctx).Get(recordKey(types.FillBackoffPrefix, orderIDBytes(id)))
 	if raw == nil {
 		return entry, nil
 	}
@@ -58,7 +58,7 @@ func (k *Keeper) restingFailure(ctx sdk.Context, id, cap uint64) error {
 		return fmt.Errorf("spot: retry height out of range")
 	}
 	entry.NextRetryHeight = ctx.BlockHeight() + int64(delay)
-	return putOrderRecord(k.store(ctx), orderKey(types.FillBackoffPrefix, orderIDBytes(id)), entry)
+	return putOrderRecord(k.store(ctx), recordKey(types.FillBackoffPrefix, orderIDBytes(id)), entry)
 }
 
 func restingPrefix(index types.FillIndex) []byte {
@@ -76,7 +76,7 @@ func restingNext(store sdk.KVStore, prefix []byte, after uint64) (id uint64, mem
 	if after == math.MaxUint64 {
 		return 0, false, true, nil
 	}
-	it := store.Iterator(orderKey(prefix, orderIDBytes(after+1)), sdk.PrefixEndBytes(prefix))
+	it := store.Iterator(recordKey(prefix, orderIDBytes(after+1)), sdk.PrefixEndBytes(prefix))
 	defer it.Close()
 	if !it.Valid() {
 		return 0, false, true, nil
@@ -92,11 +92,11 @@ func restingNext(store sdk.KVStore, prefix []byte, after uint64) (id uint64, mem
 func (k *Keeper) restingCursors(ctx sdk.Context) (types.EndBlockCursors, error) {
 	var cursors types.EndBlockCursors
 	var err error
-	cursors.Activation, err = orderUint(k.store(ctx), orderKey(types.CursorPrefix, []byte{activationCursor}))
+	cursors.Activation, err = orderUint(k.store(ctx), recordKey(types.CursorPrefix, []byte{activationCursor}))
 	if err != nil {
 		return cursors, err
 	}
-	if raw := k.store(ctx).Get(orderKey(types.CursorPrefix, []byte{fillCursor})); raw != nil {
+	if raw := k.store(ctx).Get(recordKey(types.CursorPrefix, []byte{fillCursor})); raw != nil {
 		if len(raw) != 9 || raw[0] > byte(types.FillIndexStopLoss) {
 			return cursors, fmt.Errorf("spot: invalid fill cursor")
 		}
@@ -152,8 +152,8 @@ func (k *Keeper) ExecuteResting(ctx sdk.Context) (RestingExecution, error) {
 			return work, err
 		}
 	}
-	k.store(branch).Set(orderKey(types.CursorPrefix, []byte{activationCursor}), orderIDBytes(cursors.Activation))
-	k.store(branch).Set(orderKey(types.CursorPrefix, []byte{fillCursor}), append([]byte{byte(cursors.FillIndex)}, orderIDBytes(cursors.Fill)...))
+	k.store(branch).Set(recordKey(types.CursorPrefix, []byte{activationCursor}), orderIDBytes(cursors.Activation))
+	k.store(branch).Set(recordKey(types.CursorPrefix, []byte{fillCursor}), append([]byte{byte(cursors.FillIndex)}, orderIDBytes(cursors.Fill)...))
 	write()
 	ctx.EventManager().EmitEvents(branch.EventManager().Events())
 	return work, nil
@@ -187,12 +187,12 @@ func (k *Keeper) restingExpiries(ctx sdk.Context, params types.Params, work *Res
 		branch, write := ctx.CacheContext()
 		var events []LimitOrderEvent
 		switch {
-		case k.store(branch).Has(orderKey(types.LimitOrderPrefix, orderIDBytes(entry.OrderID))):
+		case k.store(branch).Has(recordKey(types.LimitOrderPrefix, orderIDBytes(entry.OrderID))):
 			events, err = k.ExpireLimit(branch, entry.OrderID)
-		case k.store(branch).Has(orderKey(types.StopLimitOrderPrefix, orderIDBytes(entry.OrderID))):
+		case k.store(branch).Has(recordKey(types.StopLimitOrderPrefix, orderIDBytes(entry.OrderID))):
 			err = k.ExpireStopLimit(branch, entry.OrderID)
 			events = []LimitOrderEvent{restingStopEvent("StopLimitCancelled", entry.OrderID)}
-		case k.store(branch).Has(orderKey(types.StopLossOrderPrefix, orderIDBytes(entry.OrderID))):
+		case k.store(branch).Has(recordKey(types.StopLossOrderPrefix, orderIDBytes(entry.OrderID))):
 			err = k.ExpireStopLoss(branch, entry.OrderID)
 			events = []LimitOrderEvent{restingStopEvent("StopLossOrderCancelled", entry.OrderID)}
 		default:
@@ -207,7 +207,7 @@ func (k *Keeper) restingExpiries(ctx sdk.Context, params types.Params, work *Res
 			}
 			continue
 		}
-		k.store(branch).Delete(orderKey(types.FillBackoffPrefix, orderIDBytes(entry.OrderID)))
+		k.store(branch).Delete(recordKey(types.FillBackoffPrefix, orderIDBytes(entry.OrderID)))
 		write()
 		ctx.EventManager().EmitEvents(branch.EventManager().Events())
 		work.Expired++
@@ -326,7 +326,7 @@ func (k *Keeper) restingFills(ctx sdk.Context, params types.Params, cursors *typ
 		if !filled {
 			continue
 		}
-		k.store(branch).Delete(orderKey(types.FillBackoffPrefix, orderIDBytes(id)))
+		k.store(branch).Delete(recordKey(types.FillBackoffPrefix, orderIDBytes(id)))
 		write()
 		ctx.EventManager().EmitEvents(branch.EventManager().Events())
 		work.FillAttempts++

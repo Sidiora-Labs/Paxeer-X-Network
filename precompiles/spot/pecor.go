@@ -242,8 +242,12 @@ func (p *pecorExecutor) trade(ctx sdk.Context, method *abi.Method, caller common
 		if accrued.IsZero() {
 			return nil, types.ErrNoFeesToCollect
 		}
-		if err := p.keeper.CollectFees(ctx, common.HexToAddress(types.PECORAddress), caller, token); err != nil {
+		logs, err := p.keeper.CollectFees(ctx, common.HexToAddress(types.PECORAddress), caller, token)
+		if err != nil {
 			return nil, err
+		}
+		for _, log := range logs {
+			evm.StateDB.AddLog(log)
 		}
 		return method.Outputs.Pack()
 	}

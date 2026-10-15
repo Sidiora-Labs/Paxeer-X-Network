@@ -444,3 +444,35 @@ func (p PriceResult) FeeEvents(rail, user, token common.Address, exactInput bool
 	}
 	return events, nil
 }
+
+// CollectFees pays the whole accrual of token on rail to collector, zeroes it
+// and releases its reservation (Launch-x:contracts/contracts/meta-ag/engine/PECOR.sol:246-253,
+// Launch-x:contracts/contracts/meta-ag/engine/PECOROrders.sol:516-524). A zero
+// accrual is NoFeesToCollect(). It returns the ReservesUpdated and Withdrawal
+// logs of the payout.
+func (k *Keeper) CollectFees(ctx sdk.Context, rail, collector, token common.Address) ([]*ethtypes.Log, error) {
+	kind, err := feeRail(rail)
+	if err != nil {
+		return nil, err
+	}
+	store := ctx.KVStore(k.storeKey)
+	amount, err := readFeeAccrual(store, kind, token)
+	if err != nil {
+		return nil, err
+	}
+	if amount.IsZero() {
+		return nil, types.ErrNoFeesToCollect
+	}
+	store.Delete(feeAccrualKey(kind, token))
+	book, before, err := k.debitPayout(ctx, token, amount.BigInt())
+	if err != nil {
+		return nil, err
+	}
+	if _, err := k.pushTokens(ctx, token, collector, amount); err != nil {
+		return nil, err
+	}
+	return []*ethtypes.Log{
+		reservesUpdatedLog(ctx, token, before, book.Reserves),
+		vaultLog(ctx, WithdrawalTopic, []common.Address{token, collector}, amount.BigInt(), book.Reserves.BigInt()),
+	}, nil
+}
