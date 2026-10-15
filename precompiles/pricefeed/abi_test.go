@@ -22,7 +22,7 @@ func argumentTypes(arguments abi.Arguments) string {
 }
 
 func TestPriceFeedABIGolden(t *testing.T) {
-	file, err := os.ReadFile("abi.json")
+	file, err := os.ReadFile("abi/abi.json")
 	require.NoError(t, err)
 	require.Equal(t, string(file), pfabi.JSON)
 
