@@ -9,6 +9,10 @@ license.workspace = true
 name = "layerx-oracle-feeder"
 path = "src/main.rs"
 
+[[bin]]
+name = "price-sidecar"
+path = "src/bin/price-sidecar/main.rs"
+
 [dependencies]
 base64 = "=0.22.1"
 ed25519-dalek.workspace = true
