@@ -725,7 +725,7 @@ python3 "$release/rehearsal/pool_parity.py" check --rpc "$(evm_url 0)" --block "
 	>>"$logs/pool-parity.log" 2>&1 || fail "pool parity failed: $(tail -n 1 "$logs/pool-parity.log")"
 pools=$(sed -nE 's/^pools ([0-9]+) of [0-9]+$/\1/p' "$logs/pool-parity.log")
 [[ "$pools" =~ ^[0-9]+$ ]] || fail "pool_parity.py printed no pool count; see $logs/pool-parity.log"
-log "launchpad pools $pools of $pools, reserves equal"
+log "launchpad pools $pools of $pools, reserves as migrated"
 
 feed_accounts=()
 for ((i = 0; i < nodes; i++)); do

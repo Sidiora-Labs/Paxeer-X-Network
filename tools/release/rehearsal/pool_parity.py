@@ -2,9 +2,12 @@
 """Launchpad pool parity of the v6.12.0 rehearsal.
 
 record reads, at the halt height, getPoolCount() and every getAllPools page of the two
-deployment-generation registries and getReserves() of every pool, and writes them as JSON.
+deployment-generation registries, getReserves() of every pool and the USDL and pool-token
+balanceOf(pool) it holds, and writes them as JSON.
 check reads, at the first upgraded height, getPoolCount() of the launchpad precompile and
-getReserves() of every recorded pool, and exits 1 naming the first difference.
+getReserves() of every recorded pool, and exits 1 naming the first pool whose reserves are not
+(virtualUsdl, min(realUsdl, held USDL), min(tokenReserve, held tokens)), the reserves the
+migration sets (contracts/launchpad.md, section 8, step 2).
 """
 
 import argparse
@@ -14,6 +17,7 @@ import urllib.error
 import urllib.request
 
 LAUNCHPAD = "0x0000000000000000000000000000000000001017"
+USDL = "0x85fcd13735f4309833a503ee804ea32395851479"
 GENERATION_REGISTRIES = (
     "0x7684382c89f79104574D8EF9b31eFf2eD2C2BA0b",
     "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
@@ -21,6 +25,8 @@ GENERATION_REGISTRIES = (
 GET_POOL_COUNT = "0x8eec5d70"
 GET_ALL_POOLS = "0xa7753f09"
 GET_RESERVES = "0x0902f1ac"
+TOKEN_ADDRESS = "0x9d76ea58"
+BALANCE_OF = "0x70a08231"
 RESERVE_FIELDS = ("virtualUsdl", "realUsdl", "tokenReserve")
 PAGE = 100
 WORD = 32
@@ -101,9 +107,27 @@ def read_reserves(rpc, pool, block):
     )
 
 
+def read_token_address(rpc, pool, block):
+    word = decode_words(eth_call(rpc, pool, TOKEN_ADDRESS, block), 1, f"tokenAddress() of {pool}")[0]
+    if word >> 160:
+        raise ParityError(f"tokenAddress() of {pool} returned {word:#x}, not an address")
+    return f"0x{word:040x}"
+
+
+def read_balance(rpc, token, holder, block):
+    data = BALANCE_OF + bytes(12).hex() + holder[2:]
+    return decode_words(eth_call(rpc, token, data, block), 1, f"balanceOf({holder}) of {token}")[0]
+
+
+def read_held(rpc, pool, block):
+    token = read_token_address(rpc, pool, block)
+    return (read_balance(rpc, USDL, pool, block), read_balance(rpc, token, pool, block))
+
+
 def record(rpc, block, registries):
     entries = []
     reserves = {}
+    held = {}
     for registry in registries:
         count = read_pool_count(rpc, registry, block)
         pools = read_pools(rpc, registry, count, block)
@@ -112,7 +136,8 @@ def record(rpc, block, registries):
             if pool in reserves:
                 raise ParityError(f"pool {pool} is listed twice")
             reserves[pool] = [str(value) for value in read_reserves(rpc, pool, block)]
-    return {"block": block, "registries": entries, "reserves": reserves}
+            held[pool] = [str(value) for value in read_held(rpc, pool, block)]
+    return {"block": block, "registries": entries, "reserves": reserves, "held": held}
 
 
 def check_pool_count(counts, served):
@@ -123,14 +148,26 @@ def check_pool_count(counts, served):
     return f"pools {served} of {expected}"
 
 
-def check_reserves(before, after):
-    """Requires every pool's (virtualUsdl, realUsdl, tokenReserve) to be equal word for word."""
+def expected_reserves(book, held):
+    """The reserves the migration sets: virtualUsdl kept, realUsdl and tokenReserve capped by the held amounts."""
+    virtual, real, token = book
+    held_usdl, held_token = held
+    return (virtual, min(real, held_usdl), min(token, held_token))
+
+
+def check_reserves(before, held, after):
+    """Requires every pool's reserves to equal expected_reserves of its halt-height book and held amounts."""
     for pool, words in before.items():
+        if pool not in held:
+            raise ParityError(f"pool {pool} has no held amounts at the halt height")
         if pool not in after:
             raise ParityError(f"pool {pool} has no reserves after the upgrade")
-        for field, old, new in zip(RESERVE_FIELDS, words, after[pool]):
-            if int(old) != int(new):
-                raise ParityError(f"pool {pool} {field}: {old} at the halt height, {new} after the upgrade")
+        expected = expected_reserves(words, held[pool])
+        for field, old, want, new in zip(RESERVE_FIELDS, words, expected, after[pool]):
+            if want != new:
+                raise ParityError(
+                    f"pool {pool} {field}: {want} expected from {old} at the halt height, {new} after the upgrade"
+                )
     return f"reserves {len(before)} of {len(before)}"
 
 
@@ -139,9 +176,12 @@ def load_record(path):
         data = json.load(handle)
     counts = [entry["count"] for entry in data["registries"]]
     before = {pool: tuple(int(value) for value in words) for pool, words in data["reserves"].items()}
+    held = {pool: tuple(int(value) for value in words) for pool, words in data["held"].items()}
     if sum(counts) != len(before):
         raise ParityError(f"{path} holds {len(before)} pools for registry counts {counts}")
-    return counts, before
+    if set(held) != set(before) or any(len(words) != 2 for words in held.values()):
+        raise ParityError(f"{path} holds held amounts for {len(held)} pools, reserves for {len(before)}")
+    return counts, before, held
 
 
 def main(argv):
@@ -167,10 +207,10 @@ def main(argv):
                 json.dump(data, handle, indent=1, sort_keys=True)
             print(f"pools at {args.block}: {len(data['reserves'])}")
             return 0
-        counts, before = load_record(args.record)
+        counts, before, held = load_record(args.record)
         print(check_pool_count(counts, read_pool_count(args.rpc, LAUNCHPAD, args.block)))
         after = {pool: read_reserves(args.rpc, pool, args.block) for pool in before}
-        print(check_reserves(before, after))
+        print(check_reserves(before, held, after))
         return 0
     except (ParityError, OSError, KeyError, ValueError) as err:
         print(f"pool_parity: {err}", file=sys.stderr)
