@@ -46,6 +46,10 @@ func (e *AbiError) Error() string { return e.code.Error() }
 // code mapping see the codespace and code.
 func (e *AbiError) Unwrap() error { return e.code }
 
+// Cause exposes the registered module error to this SDK's error chain, which
+// the ABCI code mapping walks through Cause rather than Unwrap.
+func (e *AbiError) Cause() error { return e.code }
+
 // Is matches any AbiError of the same selector, whatever its arguments.
 func (e *AbiError) Is(target error) bool {
 	other, ok := target.(*AbiError)
