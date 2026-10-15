@@ -31,6 +31,10 @@ while IFS='|' read -r kind path classification; do
             directory=${path%/package.json}
             grep -Fq '"'"$directory"'"' package.json
             ;;
+        locked-npm-independent)
+            test "$kind" = npm
+            test -s "${path%/package.json}/package-lock.json"
+            ;;
         covered-by-platform-cargo|covered-by-human-dashboard-lock|covered-by-agents-parent|covered-by-express-parent|covered-by-swift-lock|local-source-install|compile-only-manifest|install-resolved|local-replacements|environment-blocked-unverified-gradle) ;;
         *) echo "unknown Platform dependency classification: $classification" >&2; exit 1 ;;
     esac
