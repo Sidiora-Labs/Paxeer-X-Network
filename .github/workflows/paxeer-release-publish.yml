@@ -20,7 +20,7 @@ concurrency:
 jobs:
   releaser:
     name: Build and publish Paxeer release
-    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:

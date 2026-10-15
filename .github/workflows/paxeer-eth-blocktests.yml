@@ -154,7 +154,7 @@ env:
 
 jobs:
   runner-indexes:
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CI_LINUX_RUNNER || 'lx-runner' }}
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     name: Generate runner indexes
     defaults:
       run:
@@ -171,7 +171,7 @@ jobs:
 
   eth-blocktests:
     name: "Run ETH Blocktests ${{ matrix.runner-index }}"
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CI_LINUX_RUNNER || 'lx-runner' }}
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     needs: runner-indexes
     strategy:
       fail-fast: false
