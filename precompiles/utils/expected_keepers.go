@@ -11,6 +11,7 @@ import (
 	ibctypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/types"
 	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
 	launchpadkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
+	launchpadv610keeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/legacy/v610/keeper"
 	anchortypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxanchor/types"
 	layerxbridgekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/keeper"
 	layerxcustodykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/keeper"
@@ -54,6 +55,14 @@ type Keepers interface {
 	LaunchpadK() *launchpadkeeper.Keeper
 }
 
+// LaunchpadV610Keepers is implemented by keepers that carry the v6.10
+// launchpad keeper over the launchpad store key, so blocks below the v6.12.0
+// height replay with the code that produced them. The v6.10 launchpad
+// precompile refuses to build when the application's keepers do not.
+type LaunchpadV610Keepers interface {
+	LaunchpadV610K() *launchpadv610keeper.Keeper
+}
+
 // XWebKeepers is implemented by keepers that carry the xweb keeper. The xweb
 // precompile refuses every call when the application's keepers do not.
 type XWebKeepers interface {
@@ -90,6 +99,9 @@ func (ek *EmptyKeepers) LayerXBridgeK() *layerxbridgekeeper.Keeper {
 	return nil
 }
 func (ek *EmptyKeepers) LaunchpadK() *launchpadkeeper.Keeper {
+	return nil
+}
+func (ek *EmptyKeepers) LaunchpadV610K() *launchpadv610keeper.Keeper {
 	return nil
 }
 func (ek *EmptyKeepers) XWebK() *xwebkeeper.Keeper {

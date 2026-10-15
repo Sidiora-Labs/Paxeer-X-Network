@@ -121,12 +121,6 @@ type Keeper interface {
 
 var _ Keeper = (*launchpadkeeper.Keeper)(nil)
 
-// LaunchpadKeepers is the precompile keepers set once it carries the v6.10
-// launchpad keeper.
-type LaunchpadKeepers interface {
-	LaunchpadV610K() *launchpadkeeper.Keeper
-}
-
 // Market is the ABI tuple of a market.
 type Market struct {
 	Token                common.Address
@@ -178,7 +172,7 @@ type PrecompileExecutor struct {
 // NewPrecompile builds the precompile from a keepers set that provides
 // LaunchpadV610K.
 func NewPrecompile(keepers utils.Keepers) (*pcommon.Precompile, error) {
-	launchpadKeepers, ok := keepers.(LaunchpadKeepers)
+	launchpadKeepers, ok := keepers.(utils.LaunchpadV610Keepers)
 	if !ok {
 		return nil, errors.New("launchpad: keepers do not provide the launchpad keeper")
 	}
