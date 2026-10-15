@@ -27677,7 +27677,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.3.4]
 title = "NATS JetStream cluster image and configuration"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = []
