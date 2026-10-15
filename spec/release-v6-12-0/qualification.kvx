@@ -210,3 +210,10 @@ command = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-intent
 exit_code = 101
 log_path = "fleet/logs/2.3.1-verify-1.log"
 observed_and_assumption = "The intents crate builds, but its router test target still uses the removed v6.10 launchpad variants that the follow-up test task owns, and the layerx-agentd dev-dependency does not compile on the integration branch because WaitRequest has no requested_verification_level field. Assumption: the follow-up test task rewrites the router test and the agentd build break is fixed as its own correction, after which this gate is rerun unchanged."
+
+[fix.2.3.9]
+revision = "ef236702b8e6f24baeaf1287f9eb599a2130b219"
+command = "go build ./protocol/... && go vet ./protocol/... && go test ./protocol/... -run 'TestActiveAddresses'"
+exit_code = 0
+log_path = "fleet/logs/fix-2.3.9-verify-1.log"
+observed_and_assumption = "The coverage measure command exists again as a real package main, the protocol packages build and vet, the active address test passes with the generation 2 Treasury from the layout file, and the manifest task's build command passes on the merged branch (fleet/logs/2.3.6-build-2.log). Assumption: none."

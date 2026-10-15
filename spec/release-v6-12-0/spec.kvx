@@ -7665,7 +7665,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.6]
 title = "Mark the generation 2 roles as surfaces in current.json"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["2.3.5"]
@@ -7744,7 +7744,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.9]
 title = "Mark the active address set and the retired generation 1 addresses"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = []
