@@ -4,15 +4,22 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"math/big"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/testvectors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
+	custodytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
+	exchangetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types"
 	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxexchange"
@@ -23,6 +30,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 )
 
@@ -297,4 +306,277 @@ func TestVersionSwitchHeightSelection(t *testing.T) {
 	traced := ctx.WithBlockHeight(doneHeight - 1).WithIsTracing(true)
 	require.Equal(t, app.ActivationUpgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(traced)[exchange])
 	served(traced, legacy)
+}
+
+func loadVersionSwitchVectors(t *testing.T) v69Vectors {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/v69_vectors.json")
+	require.NoError(t, err)
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var vectors v69Vectors
+	require.NoError(t, decoder.Decode(&vectors))
+	require.Len(t, vectors.Cases, 8)
+	calls := 0
+	for _, c := range vectors.Cases {
+		require.NotEmpty(t, c.Calls, c.Name)
+		calls += len(c.Calls)
+	}
+	require.Equal(t, 34, calls)
+	require.Equal(t, common.HexToAddress(layerxexchange.ExchangeAddress).Hex(), vectors.Precompile)
+	return vectors
+}
+
+func versionSwitchContract(t *testing.T, a *app.App, ctx sdk.Context, version string) *pcommon.Precompile {
+	t.Helper()
+	address := common.HexToAddress(layerxexchange.ExchangeAddress)
+	require.Equal(t, version, a.EvmKeeper.GetCustomPrecompilesVersions(ctx)[address])
+	contract, ok := a.EvmKeeper.CustomPrecompiles(ctx)[address]
+	require.True(t, ok)
+	selected, ok := contract.(*pcommon.Precompile)
+	require.True(t, ok)
+	return selected
+}
+
+func activateVersionSwitch(t *testing.T, a *app.App, ctx sdk.Context) {
+	t.Helper()
+	plan := upgradetypes.Plan{Name: app.V6120Upgrade, Height: ctx.BlockHeight()}
+	require.NoError(t, a.UpgradeKeeper.ScheduleUpgrade(ctx, plan))
+	require.NotPanics(t, func() { a.UpgradeKeeper.ApplyUpgrade(ctx, plan) })
+	require.Equal(t, ctx.BlockHeight(), a.UpgradeKeeper.GetDoneHeight(ctx, app.V6120Upgrade))
+}
+
+func TestVersionSwitchConstructors(t *testing.T) {
+	const doneHeight = int64(1000)
+	vectors := loadVersionSwitchVectors(t)
+	a := app.Setup(t, false, true, false)
+	ctx := a.GetContextForDeliverTx(nil).WithBlockTime(time.Unix(vectors.Harness.BlockTimeUnix, 0).UTC())
+	a.UpgradeKeeper.SetDone(ctx.WithBlockHeight(vectors.Harness.BlockHeight-1), app.ActivationUpgrade)
+	keepers := a.GetPrecompileKeepers()
+	legacy, err := layerxexchange.NewPrecompile(keepers)
+	require.NoError(t, err)
+	next, err := perps.NewPrecompile(keepers)
+	require.NoError(t, err)
+	legacyJSON, err := os.ReadFile("../layerxexchange/abi.json")
+	require.NoError(t, err)
+	legacyABI, err := abi.JSON(bytes.NewReader(legacyJSON))
+	require.NoError(t, err)
+	nextABI, err := perpsabi.ABI()
+	require.NoError(t, err)
+	require.Equal(t, legacyABI, legacy.GetABI())
+	require.Equal(t, nextABI, next.GetABI())
+	require.NotEqual(t, legacy.GetABI(), next.GetABI())
+
+	t.Run("below_activation", func(t *testing.T) {
+		for _, tracing := range []bool{false, true} {
+			selected := versionSwitchContract(t, a, ctx.WithBlockHeight(doneHeight-1).WithIsTracing(tracing), app.ActivationUpgrade)
+			require.Equal(t, legacy, selected)
+			require.Equal(t, legacyABI, selected.GetABI())
+		}
+	})
+	t.Run("keeper_wiring", func(t *testing.T) {
+		provider, ok := interface{}(keepers).(perps.PerpsKeepers)
+		require.True(t, ok, "application keepers must expose PerpsK")
+		require.NotNil(t, provider.PerpsK())
+	})
+	t.Run("from_activation", func(t *testing.T) {
+		activateVersionSwitch(t, a, ctx.WithBlockHeight(doneHeight))
+		for _, height := range []int64{doneHeight, doneHeight + 1} {
+			for _, tracing := range []bool{false, true} {
+				selected := versionSwitchContract(t, a, ctx.WithBlockHeight(height).WithIsTracing(tracing), app.V6120Upgrade)
+				require.Equal(t, next, selected)
+				require.Equal(t, nextABI, selected.GetABI())
+			}
+		}
+		historical := versionSwitchContract(t, a, ctx.WithBlockHeight(doneHeight-1).WithIsTracing(true), app.ActivationUpgrade)
+		require.Equal(t, legacy, historical)
+		require.Equal(t, legacyABI, historical.GetABI())
+	})
+}
+
+func TestVersionSwitchV69Vectors(t *testing.T) {
+	vectors := loadVersionSwitchVectors(t)
+	fixture, err := testvectors.Load()
+	require.NoError(t, err)
+	require.NotEmpty(t, fixture["withdrawal"])
+	require.NotEmpty(t, fixture["exit"])
+	native, err := fixture["withdrawal"][0].Array32("asset")
+	require.NoError(t, err)
+	token, err := fixture["exit"][0].Array32("asset")
+	require.NoError(t, err)
+
+	for _, c := range vectors.Cases {
+		t.Run("legacy/"+c.Name, func(t *testing.T) {
+			a := app.Setup(t, false, true, false)
+			ctx := a.GetContextForDeliverTx(nil).
+				WithBlockHeight(vectors.Harness.BlockHeight).
+				WithBlockTime(time.Unix(vectors.Harness.BlockTimeUnix, 0).UTC())
+			require.Equal(t, vectors.Harness.ChainID, a.EvmKeeper.ChainID(ctx).String())
+			a.UpgradeKeeper.SetDone(ctx.WithBlockHeight(ctx.BlockHeight()-1), app.ActivationUpgrade)
+			require.Zero(t, a.UpgradeKeeper.GetDoneHeight(ctx, app.V6120Upgrade))
+			a.LayerXCustodyKeeper.SetAnchorReader(nil)
+			a.LayerXCustodyKeeper.InitGenesis(ctx, *custodytypes.DefaultGenesis())
+			a.LayerXExchangeKeeper.InitGenesis(ctx, *exchangetypes.DefaultGenesis())
+			require.NoError(t, a.LayerXCustodyKeeper.SetAsset(ctx, custodytypes.AssetMapping{
+				AssetId: custodytypes.Hash32(native), Denom: sdk.MustGetBaseDenom(), Enabled: true,
+			}))
+			require.NoError(t, a.LayerXCustodyKeeper.SetAsset(ctx, custodytypes.AssetMapping{
+				AssetId: custodytypes.Hash32(token), Denom: "ufoo", Pointer: common.HexToAddress("0xf00f0").Hex(), Enabled: true,
+			}))
+			for _, market := range []exchangetypes.Market{
+				{MarketId: custodytypes.Hash32([32]byte{0x6d, 0x01}), MarginAssetId: custodytypes.Hash32(native), Enabled: true},
+				{MarketId: custodytypes.Hash32([32]byte{0x6d, 0x02}), MarginAssetId: custodytypes.Hash32(token), Enabled: true},
+			} {
+				require.NoError(t, a.LayerXExchangeKeeper.SetMarket(ctx, market))
+			}
+			funded := map[common.Address]sdk.AccAddress{}
+			for _, call := range c.Calls {
+				require.True(t, common.IsHexAddress(call.Caller))
+				caller := common.HexToAddress(call.Caller)
+				account, err := sdk.AccAddressFromBech32(call.CallerPax)
+				require.NoError(t, err)
+				if previous, ok := funded[caller]; ok {
+					require.Equal(t, previous, account)
+					continue
+				}
+				a.EvmKeeper.SetAddressMapping(ctx, account, caller)
+				for _, denom := range []string{sdk.MustGetBaseDenom(), "ufoo"} {
+					coins := sdk.NewCoins(sdk.NewInt64Coin(denom, 50_000_000))
+					require.NoError(t, a.BankKeeper.MintCoins(ctx, "evm", coins))
+					require.NoError(t, a.BankKeeper.SendCoinsFromModuleToAccount(ctx, "evm", account, coins))
+				}
+				funded[caller] = account
+			}
+			for _, checkpoint := range c.Checkpoints {
+				root := decodeHex(t, "checkpoint", checkpoint.StateRoot)
+				require.Len(t, root, 32)
+				require.NoError(t, a.LayerXCustodyKeeper.RegisterCheckpoint(ctx, checkpoint.Batch, [32]byte(root), [32]byte{1}))
+			}
+			db := state.NewDBImpl(ctx.WithEventManager(sdk.NewEventManager()), &a.EvmKeeper, true)
+			for i, call := range c.Calls {
+				t.Run(fmt.Sprintf("%02d_%s", i, call.Method), func(t *testing.T) {
+					selected := versionSwitchContract(t, a, db.Ctx(), app.ActivationUpgrade)
+					require.Equal(t, layerxexchange.PrecompileName, selected.GetName())
+					if !call.Keeper {
+						missing, err := layerxexchange.NewPrecompile(bareKeepers{Keepers: a.GetPrecompileKeepers()})
+						require.NoError(t, err)
+						require.Equal(t, selected.GetABI(), missing.GetABI())
+						saved := *selected
+						*selected = *missing
+						t.Cleanup(func() { *selected = saved })
+						selected = versionSwitchContract(t, a, db.Ctx(), app.ActivationUpgrade)
+					}
+					input := decodeHex(t, "input", call.Input)
+					require.Equal(t, call.RequiredGas, selected.RequiredGas(input))
+					if !call.Executed {
+						require.False(t, call.Reverted)
+						require.Equal(t, "0x", call.Return)
+						require.Equal(t, "0x", call.Revert)
+						require.Empty(t, call.Logs)
+						return
+					}
+					caller := common.HexToAddress(call.Caller)
+					value, ok := new(big.Int).SetString(call.Value, 10)
+					require.True(t, ok)
+					require.GreaterOrEqual(t, value.Sign(), 0)
+					if value.Sign() > 0 {
+						base, wei := new(big.Int).QuoRem(value, big.NewInt(1_000_000_000_000), new(big.Int))
+						require.NoError(t, a.BankKeeper.SendCoinsAndWei(db.Ctx(), funded[caller],
+							a.EvmKeeper.GetPaxAddressOrDefault(db.Ctx(), common.HexToAddress(vectors.Precompile)),
+							sdk.NewIntFromBigInt(base), sdk.NewIntFromBigInt(wei)))
+					}
+					evm := &vm.EVM{StateDB: db, TxContext: vm.TxContext{Origin: caller}}
+					before := len(db.GetAllLogs())
+					output, err := selected.Run(evm, caller, caller, input, value, call.ReadOnly, call.Delegate, nil)
+					var returned, reverted []byte
+					if call.Reverted {
+						require.ErrorIs(t, err, vm.ErrExecutionReverted)
+						reverted = output
+					} else {
+						require.NoError(t, err)
+						returned = output
+					}
+					require.Equal(t, decodeHex(t, "return", call.Return), append([]byte{}, returned...))
+					require.Equal(t, decodeHex(t, "revert", call.Revert), append([]byte{}, reverted...))
+					logs := db.GetAllLogs()[before:]
+					require.Len(t, logs, len(call.Logs))
+					for j, want := range call.Logs {
+						require.Equal(t, decodeHex(t, "log address", want.Address), logs[j].Address.Bytes())
+						require.Len(t, logs[j].Topics, len(want.Topics))
+						for k, topic := range want.Topics {
+							require.Equal(t, decodeHex(t, "log topic", topic), logs[j].Topics[k].Bytes())
+						}
+						require.Equal(t, decodeHex(t, "log data", want.Data), logs[j].Data)
+					}
+				})
+			}
+		})
+	}
+
+	t.Run("live_rejects_legacy_selectors", func(t *testing.T) {
+		a := app.Setup(t, false, true, false)
+		ctx := a.GetContextForDeliverTx(nil).WithBlockHeight(vectors.Harness.BlockHeight).
+			WithBlockTime(time.Unix(vectors.Harness.BlockTimeUnix, 0).UTC())
+		a.UpgradeKeeper.SetDone(ctx.WithBlockHeight(ctx.BlockHeight()-1), app.ActivationUpgrade)
+		legacy, err := layerxexchange.NewPrecompile(a.GetPrecompileKeepers())
+		require.NoError(t, err)
+		ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+		activateVersionSwitch(t, a, ctx)
+		selected := versionSwitchContract(t, a, ctx, app.V6120Upgrade)
+		wantABI, err := perpsabi.ABI()
+		require.NoError(t, err)
+		require.Equal(t, wantABI, selected.GetABI())
+		refuse := func(t *testing.T, input []byte, value *big.Int, readOnly, delegate bool) {
+			t.Helper()
+			_, err := wantABI.MethodById(input[:4])
+			require.Error(t, err)
+			db := state.NewDBImpl(ctx.WithEventManager(sdk.NewEventManager()), &a.EvmKeeper, true)
+			caller := common.HexToAddress(vectors.Cases[0].Calls[0].Caller)
+			evm := &vm.EVM{StateDB: db, TxContext: vm.TxContext{Origin: caller}}
+			output, err := selected.Run(evm, caller, caller, input, value, readOnly, delegate, nil)
+			require.ErrorIs(t, err, vm.ErrExecutionReverted)
+			require.Empty(t, output)
+			require.Empty(t, db.GetAllLogs())
+		}
+		for _, c := range vectors.Cases {
+			for i, call := range c.Calls {
+				input := decodeHex(t, "input", call.Input)
+				if _, err := wantABI.MethodById(input[:4]); err == nil {
+					continue
+				}
+				t.Run(fmt.Sprintf("%s/%02d_%s", c.Name, i, call.Method), func(t *testing.T) {
+					value, ok := new(big.Int).SetString(call.Value, 10)
+					require.True(t, ok)
+					refuse(t, input, value, call.ReadOnly, call.Delegate)
+				})
+			}
+		}
+		for _, signature := range methodSigs(legacy.GetABI()) {
+			selector := crypto.Keccak256([]byte(signature))[:4]
+			if _, err := wantABI.MethodById(selector); err == nil {
+				continue
+			}
+			t.Run(signature, func(t *testing.T) {
+				method, err := legacy.MethodById(selector)
+				require.NoError(t, err)
+				args := make([]interface{}, len(method.Inputs))
+				for i, arg := range method.Inputs {
+					args[i] = reflect.Zero(arg.Type.GetType()).Interface()
+					if arg.Type.GetType() == reflect.TypeOf((*big.Int)(nil)) {
+						args[i] = new(big.Int)
+					}
+				}
+				packed, err := method.Inputs.Pack(args...)
+				require.NoError(t, err)
+				refuse(t, append(selector, packed...), nil, false, false)
+			})
+		}
+		t.Run("pushOracle(bytes,bytes)", func(t *testing.T) {
+			bytesType, err := abi.NewType("bytes", "", nil)
+			require.NoError(t, err)
+			packed, err := (abi.Arguments{{Type: bytesType}, {Type: bytesType}}).Pack(make([]byte, 72), make([]byte, 64))
+			require.NoError(t, err)
+			refuse(t, append(crypto.Keccak256([]byte("pushOracle(bytes,bytes)"))[:4], packed...), nil, false, false)
+		})
+	})
 }
