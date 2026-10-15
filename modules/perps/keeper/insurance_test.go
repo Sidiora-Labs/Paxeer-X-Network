@@ -1,4 +1,4 @@
-package keeper
+package keeper_test
 
 import (
 	"math/big"
@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/launchpadtest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
@@ -22,7 +23,8 @@ var insuranceGenesisTime = time.Unix(1_800_000_000, 0).UTC()
 type insuranceEnv struct {
 	t        *testing.T
 	ctx      sdk.Context
-	k        *Keeper
+	k        *keeper.Keeper
+	key      sdk.StoreKey
 	usdl     common.Address
 	sequence uint64
 	nextID   uint64
@@ -34,9 +36,9 @@ func newInsuranceEnv(t *testing.T, mark uint256.Int) *insuranceEnv {
 	ctx := app.GetContextForDeliverTx([]byte{}).WithBlockTime(insuranceGenesisTime)
 	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
 	key := sdk.NewKVStoreKey(types.StoreKey)
-	k := NewKeeper(key, &app.EvmKeeper, nil)
+	k := keeper.NewKeeper(key, &app.EvmKeeper, nil)
 	ctx = launchpadtest.WithStore(ctx, key)
-	e := &insuranceEnv{t: t, ctx: ctx, k: k, nextID: 100}
+	e := &insuranceEnv{t: t, ctx: ctx, k: k, key: key, nextID: 100}
 	require.NoError(t, k.SetMarket(ctx, k.Authority(), types.Market{
 		ID: 0, Symbol: "BTC", Name: "Bitcoin", OracleSymbol: "BTC", SzDecimals: 5, PxDecimals: 1,
 		MaxLeverage: types.VenueMaxLeverage, TierClass: types.TierClassA,
@@ -49,8 +51,8 @@ func newInsuranceEnv(t *testing.T, mark uint256.Int) *insuranceEnv {
 	e.usdl = params.CollateralToken
 	e.setMark(mark)
 	word := uint256.NewInt(10_000).Bytes32()
-	k.store(ctx).Set(types.SequenceKey(types.SequenceOrderID), word[:])
-	k.store(ctx).Set(types.SequenceKey(types.SequencePositionID), word[:])
+	ctx.KVStore(key).Set(types.SequenceKey(types.SequenceOrderID), word[:])
+	ctx.KVStore(key).Set(types.SequenceKey(types.SequencePositionID), word[:])
 	return e
 }
 
@@ -72,28 +74,28 @@ func insuranceBase(lots uint64) uint256.Int {
 func (e *insuranceEnv) setMark(mark uint256.Int) {
 	state := types.MarketState{MarketID: 0, IndexPrice: mark, PricefeedMark: mark, Fresh: true, MarkPrice: mark,
 		LastTradePrice: mark, PriceTimestampMs: uint64(e.ctx.BlockTime().UnixMilli())}
-	if bz := e.k.store(e.ctx).Get(types.MarketStateKey(0)); bz != nil {
+	if bz := e.ctx.KVStore(e.key).Get(types.MarketStateKey(0)); bz != nil {
 		var stored types.MarketState
 		require.NoError(e.t, stored.Unmarshal(bz))
 		state.LongOpenInterest, state.ShortOpenInterest = stored.LongOpenInterest, stored.ShortOpenInterest
 		state.FundingIndex = stored.FundingIndex
 	}
-	e.k.store(e.ctx).Set(types.MarketStateKey(0), state.Marshal())
+	e.ctx.KVStore(e.key).Set(types.MarketStateKey(0), state.Marshal())
 }
 
 func (e *insuranceEnv) at(d time.Duration) {
 	e.ctx = e.ctx.WithBlockTime(insuranceGenesisTime.Add(d))
 	var state types.MarketState
-	require.NoError(e.t, state.Unmarshal(e.k.store(e.ctx).Get(types.MarketStateKey(0))))
+	require.NoError(e.t, state.Unmarshal(e.ctx.KVStore(e.key).Get(types.MarketStateKey(0))))
 	e.setMark(state.MarkPrice)
 }
 
 func (e *insuranceEnv) addOpenInterest(size uint256.Int) {
 	var state types.MarketState
-	require.NoError(e.t, state.Unmarshal(e.k.store(e.ctx).Get(types.MarketStateKey(0))))
+	require.NoError(e.t, state.Unmarshal(e.ctx.KVStore(e.key).Get(types.MarketStateKey(0))))
 	state.LongOpenInterest.Add(&state.LongOpenInterest, &size)
 	state.ShortOpenInterest.Add(&state.ShortOpenInterest, &size)
-	e.k.store(e.ctx).Set(types.MarketStateKey(0), state.Marshal())
+	e.ctx.KVStore(e.key).Set(types.MarketStateKey(0), state.Marshal())
 }
 
 func (e *insuranceEnv) address(n uint64) common.Address {
@@ -103,27 +105,27 @@ func (e *insuranceEnv) address(n uint64) common.Address {
 // account stores an account holding collateral USDL units and deficitUsd.
 func (e *insuranceEnv) account(address common.Address, collateral uint64, deficitUsd uint256.Int) {
 	account := types.Account{Address: address, Created: true}
-	if bz := e.k.store(e.ctx).Get(types.AccountKey(address)); bz != nil {
+	if bz := e.ctx.KVStore(e.key).Get(types.AccountKey(address)); bz != nil {
 		require.NoError(e.t, account.Unmarshal(bz))
 	}
 	account.Collateral = *uint256.NewInt(collateral)
 	account.DeficitUsd = deficitUsd
-	e.k.store(e.ctx).Set(types.AccountKey(address), account.Marshal())
+	e.ctx.KVStore(e.key).Set(types.AccountKey(address), account.Marshal())
 	if !deficitUsd.IsZero() {
 		books := e.books()
 		books.DeficitSumUsd.Add(&books.DeficitSumUsd, &deficitUsd)
-		e.k.store(e.ctx).Set(types.VenueBooksKey, books.Marshal())
+		e.ctx.KVStore(e.key).Set(types.VenueBooksKey, books.Marshal())
 	}
 }
 
 func (e *insuranceEnv) readAccount(address common.Address) types.Account {
-	account, err := e.k.liquidationAccount(e.ctx, address)
+	account, err := e.k.LiquidationAccount(e.ctx, address)
 	require.NoError(e.t, err)
 	return account
 }
 
 func (e *insuranceEnv) books() types.VenueBooks {
-	books, err := e.k.insuranceVenueBooks(e.ctx)
+	books, err := e.k.InsuranceVenueBooks(e.ctx)
 	require.NoError(e.t, err)
 	return books
 }
@@ -138,7 +140,7 @@ func (e *insuranceEnv) position(id uint64, address common.Address, isLong bool, 
 	position := types.Position{ID: positionID, Account: address, MarketID: 0, IsLong: isLong, SizeBase: size,
 		ReferencePrice: price, CostBasisUsd: cost, EntryPrice: price,
 		Leverage: insuranceUsd(100), OpenedAt: uint64(e.ctx.BlockTime().Unix())}
-	store := e.k.store(e.ctx)
+	store := e.ctx.KVStore(e.key)
 	store.Set(types.PositionKey(positionID), position.Marshal())
 	store.Set(types.AdlRankIndexKey(0, types.SideOf(isLong), position.RankScore, positionID), []byte{})
 	word := positionID.Bytes32()
@@ -146,7 +148,7 @@ func (e *insuranceEnv) position(id uint64, address common.Address, isLong bool, 
 	account := e.readAccount(address)
 	account.PositionCount++
 	store.Set(types.AccountKey(address), account.Marshal())
-	_, err := e.k.liquidationRebucket(e.ctx, address)
+	_, err := e.k.LiquidationRebucket(e.ctx, address)
 	require.NoError(e.t, err)
 	return positionID
 }
@@ -154,7 +156,7 @@ func (e *insuranceEnv) position(id uint64, address common.Address, isLong bool, 
 // rank rewrites the stored rank score of a position and its ADL rank entry.
 func (e *insuranceEnv) rank(positionID, score uint256.Int) {
 	position := e.readPosition(positionID)
-	store := e.k.store(e.ctx)
+	store := e.ctx.KVStore(e.key)
 	side := types.SideOf(position.IsLong)
 	store.Delete(types.AdlRankIndexKey(0, side, position.RankScore, positionID))
 	position.RankScore = score
@@ -184,7 +186,7 @@ func (e *insuranceEnv) bid(n uint64, price, size uint256.Int) {
 	order := types.Order{ID: orderID, Account: maker, MarketID: 0, IsLong: true, Type: types.OrderTypeLimit,
 		TimeInForce: types.TimeInForceGTC, Status: types.OrderStatusResting, LimitPrice: price, SizeBase: size,
 		Leverage: insuranceUsd(10), Sequence: e.sequence}
-	store := e.k.store(e.ctx)
+	store := e.ctx.KVStore(e.key)
 	store.Set(types.OrderKey(orderID), order.Marshal())
 	word := orderID.Bytes32()
 	store.Set(types.BookKey(0, types.SideBuy, types.BookPriceKey(true, price), e.sequence), word[:])
@@ -195,13 +197,13 @@ func (e *insuranceEnv) bid(n uint64, price, size uint256.Int) {
 }
 
 func (e *insuranceEnv) readPosition(positionID uint256.Int) types.Position {
-	position, err := e.k.liquidationPosition(e.ctx, positionID)
+	position, err := e.k.LiquidationPosition(e.ctx, positionID)
 	require.NoError(e.t, err)
 	return position
 }
 
 func (e *insuranceEnv) fundPositionID() (uint256.Int, bool) {
-	bz := e.k.store(e.ctx).Get(types.AccountMarketPositionKey(e.k.InsuranceAccountAddress(), 0))
+	bz := e.ctx.KVStore(e.key).Get(types.AccountMarketPositionKey(e.k.InsuranceAccountAddress(), 0))
 	if bz == nil {
 		return uint256.Int{}, false
 	}
@@ -254,10 +256,10 @@ func TestInsuranceBackstopTakeover(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []types.EventRecord{
 		backstopEvent(holder, insuranceUsd(60_000), mark, insuranceUsd(18)),
-		contributionEvent(e.usdl, 18_000_000, InsuranceSourceBackstopMargin),
+		contributionEvent(e.usdl, 18_000_000, keeper.InsuranceSourceBackstopMargin),
 	}, events)
 
-	store := e.k.store(e.ctx)
+	store := e.ctx.KVStore(e.key)
 	account := e.readAccount(holder)
 	require.True(t, account.Collateral.IsZero())
 	require.True(t, account.DeficitUsd.IsZero())
@@ -292,7 +294,7 @@ func TestInsuranceBackstopTakeover(t *testing.T) {
 		{Name: types.EventOpenInterestChanged, Args: []any{new(big.Int), insuranceUsdBig(120_000),
 			insuranceUsdBig(120_000), insuranceUsdBig(24_000), false}},
 		backstopEvent(short, insuranceUsd(24_000), mark, insuranceWord("7200000000000000000")),
-		contributionEvent(e.usdl, 7_200_000, InsuranceSourceBackstopMargin),
+		contributionEvent(e.usdl, 7_200_000, keeper.InsuranceSourceBackstopMargin),
 	}, events)
 	require.False(t, store.Has(types.PositionKey(shortID)))
 	require.Nil(t, store.Get(types.AccountMarketPositionKey(short, 0)))
@@ -321,7 +323,7 @@ func TestInsuranceClosesBackstop(t *testing.T) {
 	require.Zero(t, result.Slices)
 	require.Empty(t, result.Events)
 	require.Empty(t, result.Failures)
-	require.True(t, e.k.store(e.ctx).Has(types.PositionKey(positionID)))
+	require.True(t, e.ctx.KVStore(e.key).Has(types.PositionKey(positionID)))
 
 	// At 61,000 the 61,000 USD position closes in one order: 1,000 USD profit
 	// less the 27.45 USD taker fee is booked to the fund.
@@ -332,11 +334,11 @@ func TestInsuranceClosesBackstop(t *testing.T) {
 	require.Empty(t, result.Failures)
 	require.Equal(t, uint64(1), result.Slices)
 	require.Equal(t, []types.EventRecord{
-		contributionEvent(e.usdl, 972_550_000, InsuranceSourceBackstopProfit),
+		contributionEvent(e.usdl, 972_550_000, keeper.InsuranceSourceBackstopProfit),
 	}, result.Events)
 	_, held := e.fundPositionID()
 	require.False(t, held)
-	require.False(t, e.k.store(e.ctx).Has(types.PositionKey(positionID)))
+	require.False(t, e.ctx.KVStore(e.key).Has(types.PositionKey(positionID)))
 	insurance := e.readAccount(e.k.InsuranceAccountAddress())
 	require.Equal(t, *uint256.NewInt(990_550_000), insurance.Collateral)
 	require.Zero(t, insurance.PositionCount)
@@ -357,11 +359,11 @@ func TestInsuranceClosesBackstop(t *testing.T) {
 	// The fill settles the whole position at 61,000 (3,000 USD) and charges
 	// 0.6 x 61,000 x 450 ppm = 16.47 USD.
 	require.Equal(t, []types.EventRecord{
-		contributionEvent(g.usdl, 2_983_530_000, InsuranceSourceBackstopProfit),
+		contributionEvent(g.usdl, 2_983_530_000, keeper.InsuranceSourceBackstopProfit),
 	}, result.Events)
 	require.Equal(t, insuranceBase(240_000), g.readPosition(largeID).SizeBase)
 	require.Equal(t, insuranceUint64(uint64(insuranceGenesisTime.Unix())),
-		g.k.store(g.ctx).Get(types.LiquidationCooldownKey(largeID)))
+		g.ctx.KVStore(g.key).Get(types.LiquidationCooldownKey(largeID)))
 
 	g.at(10 * time.Second)
 	result, err = g.k.CloseBackstopPositions(g.ctx)

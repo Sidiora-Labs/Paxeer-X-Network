@@ -1,4 +1,4 @@
-package keeper
+package keeper_test
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/launchpadtest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
@@ -23,7 +24,8 @@ var liquidationGenesisTime = time.Unix(1_800_000_000, 0).UTC()
 type liquidationEnv struct {
 	t        *testing.T
 	ctx      sdk.Context
-	k        *Keeper
+	k        *keeper.Keeper
+	key      sdk.StoreKey
 	sequence uint64
 	nextID   uint64
 }
@@ -34,9 +36,9 @@ func newLiquidationEnv(t *testing.T, mark uint256.Int) *liquidationEnv {
 	ctx := app.GetContextForDeliverTx([]byte{}).WithBlockTime(liquidationGenesisTime)
 	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
 	key := sdk.NewKVStoreKey(types.StoreKey)
-	k := NewKeeper(key, &app.EvmKeeper, nil)
+	k := keeper.NewKeeper(key, &app.EvmKeeper, nil)
 	ctx = launchpadtest.WithStore(ctx, key)
-	e := &liquidationEnv{t: t, ctx: ctx, k: k, nextID: 100}
+	e := &liquidationEnv{t: t, ctx: ctx, k: k, key: key, nextID: 100}
 	require.NoError(t, k.SetMarket(ctx, k.Authority(), types.Market{
 		ID: 0, Symbol: "BTC", Name: "Bitcoin", OracleSymbol: "BTC", SzDecimals: 5, PxDecimals: 1,
 		MaxLeverage: types.VenueMaxLeverage, TierClass: types.TierClassA,
@@ -46,8 +48,8 @@ func newLiquidationEnv(t *testing.T, mark uint256.Int) *liquidationEnv {
 	}))
 	e.setMark(mark)
 	word := uint256.NewInt(10_000).Bytes32()
-	k.store(ctx).Set(types.SequenceKey(types.SequenceOrderID), word[:])
-	k.store(ctx).Set(types.SequenceKey(types.SequencePositionID), word[:])
+	ctx.KVStore(key).Set(types.SequenceKey(types.SequenceOrderID), word[:])
+	ctx.KVStore(key).Set(types.SequenceKey(types.SequencePositionID), word[:])
 	return e
 }
 
@@ -63,21 +65,21 @@ func baseAmount(lots uint64) uint256.Int {
 func (e *liquidationEnv) setMark(mark uint256.Int) {
 	state := types.MarketState{MarketID: 0, IndexPrice: mark, PricefeedMark: mark, Fresh: true, MarkPrice: mark,
 		LastTradePrice: mark, PriceTimestampMs: uint64(e.ctx.BlockTime().UnixMilli())}
-	if bz := e.k.store(e.ctx).Get(types.MarketStateKey(0)); bz != nil {
+	if bz := e.ctx.KVStore(e.key).Get(types.MarketStateKey(0)); bz != nil {
 		var stored types.MarketState
 		require.NoError(e.t, stored.Unmarshal(bz))
 		state.LongOpenInterest, state.ShortOpenInterest = stored.LongOpenInterest, stored.ShortOpenInterest
 		state.FundingIndex = stored.FundingIndex
 	}
-	e.k.store(e.ctx).Set(types.MarketStateKey(0), state.Marshal())
+	e.ctx.KVStore(e.key).Set(types.MarketStateKey(0), state.Marshal())
 }
 
 func (e *liquidationEnv) addOpenInterest(size uint256.Int) {
 	var state types.MarketState
-	require.NoError(e.t, state.Unmarshal(e.k.store(e.ctx).Get(types.MarketStateKey(0))))
+	require.NoError(e.t, state.Unmarshal(e.ctx.KVStore(e.key).Get(types.MarketStateKey(0))))
 	state.LongOpenInterest.Add(&state.LongOpenInterest, &size)
 	state.ShortOpenInterest.Add(&state.ShortOpenInterest, &size)
-	e.k.store(e.ctx).Set(types.MarketStateKey(0), state.Marshal())
+	e.ctx.KVStore(e.key).Set(types.MarketStateKey(0), state.Marshal())
 }
 
 func (e *liquidationEnv) at(d time.Duration) {
@@ -91,15 +93,15 @@ func (e *liquidationEnv) address(n uint64) common.Address {
 // account stores an account holding collateral USDL units.
 func (e *liquidationEnv) account(address common.Address, collateral uint64) {
 	account := types.Account{Address: address, Collateral: *uint256.NewInt(collateral), Created: true}
-	if bz := e.k.store(e.ctx).Get(types.AccountKey(address)); bz != nil {
+	if bz := e.ctx.KVStore(e.key).Get(types.AccountKey(address)); bz != nil {
 		require.NoError(e.t, account.Unmarshal(bz))
 		account.Collateral = *uint256.NewInt(collateral)
 	}
-	e.k.store(e.ctx).Set(types.AccountKey(address), account.Marshal())
+	e.ctx.KVStore(e.key).Set(types.AccountKey(address), account.Marshal())
 }
 
 func (e *liquidationEnv) readAccount(address common.Address) types.Account {
-	account, err := e.k.liquidationAccount(e.ctx, address)
+	account, err := e.k.LiquidationAccount(e.ctx, address)
 	require.NoError(e.t, err)
 	return account
 }
@@ -114,14 +116,14 @@ func (e *liquidationEnv) position(id uint64, address common.Address, isLong bool
 	position := types.Position{ID: positionID, Account: address, MarketID: 0, IsLong: isLong, SizeBase: size,
 		ReferencePrice: price, CostBasisUsd: cost, EntryPrice: price,
 		Leverage: usdAmount(100), OpenedAt: uint64(e.ctx.BlockTime().Unix())}
-	store := e.k.store(e.ctx)
+	store := e.ctx.KVStore(e.key)
 	store.Set(types.PositionKey(positionID), position.Marshal())
 	word := positionID.Bytes32()
 	store.Set(types.AccountMarketPositionKey(address, 0), word[:])
 	account := e.readAccount(address)
 	account.PositionCount++
 	store.Set(types.AccountKey(address), account.Marshal())
-	_, err := e.k.liquidationRebucket(e.ctx, address)
+	_, err := e.k.LiquidationRebucket(e.ctx, address)
 	require.NoError(e.t, err)
 	return positionID
 }
@@ -145,7 +147,7 @@ func (e *liquidationEnv) order(address common.Address, isLong bool, price, size 
 	order := types.Order{ID: orderID, Account: address, MarketID: 0, IsLong: isLong, Type: types.OrderTypeLimit,
 		TimeInForce: types.TimeInForceGTC, Status: types.OrderStatusResting, LimitPrice: price, SizeBase: size,
 		Leverage: usdAmount(10), Sequence: e.sequence}
-	store := e.k.store(e.ctx)
+	store := e.ctx.KVStore(e.key)
 	store.Set(types.OrderKey(orderID), order.Marshal())
 	word := orderID.Bytes32()
 	store.Set(types.BookKey(0, types.SideOf(isLong), types.BookPriceKey(isLong, price), e.sequence), word[:])
@@ -165,7 +167,7 @@ func (e *liquidationEnv) maker(n uint64, price, size uint256.Int) common.Address
 }
 
 func (e *liquidationEnv) positionSize(id uint256.Int) (uint256.Int, bool) {
-	bz := e.k.store(e.ctx).Get(types.PositionKey(id))
+	bz := e.ctx.KVStore(e.key).Get(types.PositionKey(id))
 	if bz == nil {
 		return uint256.Int{}, false
 	}
@@ -200,7 +202,7 @@ func TestLiquidationAccountLevel(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []types.EventRecord{liquidationEvent(positionID, holder, mark, caller)}, events)
 
-	store := e.k.store(e.ctx)
+	store := e.ctx.KVStore(e.key)
 	_, open := e.positionSize(positionID)
 	require.False(t, open, "the one reduce-only IOC order closes the whole position")
 	require.Nil(t, store.Get(types.AccountMarketPositionKey(holder, 0)))
@@ -233,7 +235,7 @@ func TestLiquidationSlices(t *testing.T) {
 	size, open := e.positionSize(positionID)
 	require.True(t, open)
 	require.Equal(t, baseAmount(1_600_000), size, "the first slice closes 200,000 USD")
-	last := e.k.store(e.ctx).Get(types.LiquidationCooldownKey(positionID))
+	last := e.ctx.KVStore(e.key).Get(types.LiquidationCooldownKey(positionID))
 	require.Equal(t, uint64ToBytes(uint64(liquidationGenesisTime.Unix())), last)
 
 	e.at(10 * time.Second)
@@ -337,7 +339,7 @@ func TestLiquidationPriceFormula(t *testing.T) {
 	// 60,000 - (100 - 5) / (1/6) / (1 - 0.0005)
 	want := new(big.Rat).Sub(big.NewRat(60_000, 1),
 		new(big.Rat).Quo(new(big.Rat).Quo(big.NewRat(95, 1), big.NewRat(1, 6)), big.NewRat(9_995, 10_000)))
-	want.Mul(want, new(big.Rat).SetInt(usdUnit))
+	want.Mul(want, new(big.Rat).SetInt(keeper.USDUnit))
 	diff := new(big.Rat).Sub(new(big.Rat).SetInt(got.ToBig()), want)
 	require.True(t, diff.Abs(diff).Cmp(new(big.Rat).SetInt64(1_000_000_000_000)) <= 0,
 		"liquidation price %s within 1e-6 USD of %s", got.Dec(), want.FloatString(18))
@@ -380,9 +382,9 @@ func TestLiquidationHealthyRefused(t *testing.T) {
 	size, open := e.positionSize(positionID)
 	require.True(t, open)
 	require.Equal(t, baseAmount(100_000), size)
-	require.True(t, e.k.store(e.ctx).Has(types.AccountOrderKey(holder, restingAsk)))
+	require.True(t, e.ctx.KVStore(e.key).Has(types.AccountOrderKey(holder, restingAsk)))
 	require.Equal(t, *uint256.NewInt(31_000_000), e.readAccount(holder).Collateral)
-	require.Nil(t, e.k.store(e.ctx).Get(types.AccountKey(e.address(3))))
+	require.Nil(t, e.ctx.KVStore(e.key).Get(types.AccountKey(e.address(3))))
 
 	result, err := e.k.LiquidationScan(e.ctx)
 	require.NoError(t, err)

@@ -1,4 +1,4 @@
-package keeper
+package keeper_test
 
 import (
 	"encoding/json"
@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/launchpadtest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
 	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
 	pricefeedtestutil "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/testutil"
@@ -22,7 +23,7 @@ import (
 )
 
 // endblockHour is the whole hour of block time liquidationGenesisTime opens.
-var endblockHour = uint64(liquidationGenesisTime.Unix()) / secondsPerHour
+var endblockHour = uint64(liquidationGenesisTime.Unix()) / keeper.SecondsPerHour
 
 // endblockEnv is liquidationEnv over the real pricefeed keeper, each on its
 // own in-memory store, at block height 10 and liquidationGenesisTime.
@@ -42,7 +43,7 @@ func newEndblockEnv(t *testing.T, marketIDs ...uint64) *endblockEnv {
 	ctx = pricefeedtestutil.WithPriceFeedStore(ctx, pfKey)
 	key := sdk.NewKVStoreKey(types.StoreKey)
 	ctx = launchpadtest.WithStore(ctx, key)
-	k := NewKeeper(key, &app.EvmKeeper, pricefeed)
+	k := keeper.NewKeeper(key, &app.EvmKeeper, pricefeed)
 	for _, id := range marketIDs {
 		require.NoError(t, k.SetMarket(ctx, k.Authority(), types.Market{
 			ID: id, Symbol: fmt.Sprintf("M%d", id), Name: fmt.Sprintf("Market %d", id), OracleSymbol: fmt.Sprintf("M%d", id),
@@ -53,9 +54,9 @@ func newEndblockEnv(t *testing.T, marketIDs ...uint64) *endblockEnv {
 		}))
 	}
 	word := uint256.NewInt(10_000).Bytes32()
-	k.store(ctx).Set(types.SequenceKey(types.SequenceOrderID), word[:])
-	k.store(ctx).Set(types.SequenceKey(types.SequencePositionID), word[:])
-	return &endblockEnv{liquidationEnv: &liquidationEnv{t: t, ctx: ctx, k: k, nextID: 100}, pfKey: pfKey}
+	ctx.KVStore(key).Set(types.SequenceKey(types.SequenceOrderID), word[:])
+	ctx.KVStore(key).Set(types.SequenceKey(types.SequencePositionID), word[:])
+	return &endblockEnv{liquidationEnv: &liquidationEnv{t: t, ctx: ctx, k: k, key: key, nextID: 100}, pfKey: pfKey}
 }
 
 // setAggregate stores the pricefeed aggregate GetPrice reads for a market,
@@ -84,7 +85,7 @@ func (e *endblockEnv) marketState(marketID uint64) types.MarketState {
 func (e *endblockEnv) errorEvents() []map[string]string {
 	var out []map[string]string
 	for _, event := range e.ctx.EventManager().Events() {
-		if event.Type != eventTypeEndBlockError {
+		if event.Type != keeper.EventTypeEndBlockError {
 			continue
 		}
 		attributes := make(map[string]string, len(event.Attributes))
@@ -136,7 +137,7 @@ func TestEndblockStepOrder(t *testing.T) {
 		Type: types.OrderTypeStopLimit, TimeInForce: types.TimeInForceGTC, Status: types.OrderStatusUntriggered,
 		LimitPrice: usdAmount(61_000), TriggerPrice: usdAmount(59_500), SizeBase: baseAmount(10_000),
 		Leverage: usdAmount(10), Sequence: e.sequence}
-	store := e.k.store(e.ctx)
+	store := e.ctx.KVStore(e.key)
 	store.Set(types.OrderKey(stop.ID), stop.Marshal())
 	store.Set(types.AccountOrderKey(trader, stop.ID), []byte{})
 	traderAccount := e.readAccount(trader)
@@ -174,7 +175,7 @@ func TestEndblockStepOrder(t *testing.T) {
 	// 0.7375 USD per BTC on 1 BTC of open interest per side.
 	require.Equal(t, []string{types.EventFundingSettled, "0", "12500000000000", "-737500000000000000", "737500000000000000"},
 		endblockArgs(endblockFirst(t, records, types.EventFundingSettled)))
-	require.Equal(t, endblockArgs(orderTriggered(stop, mark)),
+	require.Equal(t, endblockArgs(keeper.OrderTriggered(stop, mark)),
 		endblockArgs(endblockFirst(t, records, types.EventOrderTriggered)))
 	require.Equal(t, endblockArgs(liquidationEvent(positionID, holder, mark, common.Address{})),
 		endblockArgs(endblockFirst(t, records, types.EventLiquidation)))
@@ -189,7 +190,7 @@ func TestEndblockStepOrder(t *testing.T) {
 	require.Equal(t, types.OrderStatusResting, triggered.Status, "the triggered STOP_LIMIT rests at its limit")
 	// The sweep settled positions 7 and 1,000,007 and the cursor moves past
 	// the highest one.
-	cursor := e.k.store(e.ctx).Get(types.SweepCursorKey)
+	cursor := e.ctx.KVStore(e.key).Get(types.SweepCursorKey)
 	want := uint256.NewInt(1_000_008).Bytes32()
 	require.Equal(t, want[:], cursor)
 }
@@ -220,9 +221,9 @@ func TestEndblockMarketIsolation(t *testing.T) {
 
 	failures := e.errorEvents()
 	require.Len(t, failures, 1)
-	require.Equal(t, stepFundingIndex, failures[0][attributeStep])
-	require.Equal(t, "3", failures[0][attributeMarketID])
-	require.Contains(t, failures[0][attributeError], types.ErrOverflow.Error())
+	require.Equal(t, keeper.StepFundingIndex, failures[0][keeper.AttributeStep])
+	require.Equal(t, "3", failures[0][keeper.AttributeMarketID])
+	require.Contains(t, failures[0][keeper.AttributeError], types.ErrOverflow.Error())
 
 	require.Equal(t, before, e.marketState(3), "market 3 keeps its state")
 	var settled []string
@@ -297,12 +298,12 @@ func TestEndblockNoBorrowingFields(t *testing.T) {
 	}
 
 	var steps []string
-	for _, step := range endBlockSteps {
-		noBorrowing("EndBlock", step.name)
-		steps = append(steps, step.name)
+	for _, name := range keeper.EndBlockStepNames() {
+		noBorrowing("EndBlock", name)
+		steps = append(steps, name)
 	}
 	require.Equal(t, []string{
-		stepPrices, stepPremiumSamples, stepFundingIndex, stepTriggers, stepExpiries,
-		stepSweep, stepLiquidation, stepDeficits, stepBackstopCloses,
+		keeper.StepPrices, keeper.StepPremiumSamples, keeper.StepFundingIndex, keeper.StepTriggers, keeper.StepExpiries,
+		keeper.StepSweep, keeper.StepLiquidation, keeper.StepDeficits, keeper.StepBackstopCloses,
 	}, steps)
 }
