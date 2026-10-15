@@ -168,3 +168,10 @@ command = "go test ./precompiles/launchpad/ -run 'TestDirectABIFile'"
 exit_code = 0
 log_path = "fleet logs 2.0.4-verify-2"
 observed_and_assumption = "The direct ABI files pass their gate, but the new launchpad abi.json no longer carries the v6.10 event names that the precompile still emits by name, so the existing launchpad flow tests fail until the precompile rewrite task lands, and the launchpad contract text states nineteen events and no errors for ProtocolConfig where its own tables and the artifact give six events and thirteen errors. Assumption: the precompile rewrite task restores the flow tests and the contract summary line is corrected to match its tables."
+
+[finding.1.0.6]
+revision = "1bc4bc3f91ed84e90a9fffba5dd83eba352655f3"
+command = "go test ./modules/evm/keeper/ ./rpc/ -run 'TestVenueSyntheticReceipt'"
+exit_code = 1
+log_path = "fleet logs 1.0.6-verify-3"
+observed_and_assumption = "Synthetic venue receipts are written and the log, block body and keeper subtests pass, but the receipt endpoints fail because the RPC transaction index lookup matches a receipt's index against the block's transaction positions and cannot find the synthetic index, which lives in rpc/tx.go outside this task's files, and the proto Log has no transaction index field so the index is checked through the receipt. Assumption: the RPC task that owns rpc/tx.go adds the synthetic branch to the index lookup, after which this verify command is rerun unchanged."
