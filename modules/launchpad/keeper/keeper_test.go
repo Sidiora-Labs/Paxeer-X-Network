@@ -227,12 +227,23 @@ func TestSwapVectors(t *testing.T) {
 	require.Equal(t, i(12_201_237_711_179), m.PriceSnapshots[2])
 
 	last := e.swap(alice, denom, false, 89_819_503_485_620)
-	require.Equal(t, b(300), last.FeeBps, "volatility of three snapshots lifts the fee to the cap")
-	require.Equal(t, b(969_715_592), last.AmountOut)
+	// FeeLib.calculateVolatility over the three snapshots: movements
+	// 96_713_918_307*1e6/10_194_940_899_999 = 9_486 and
+	// 2_103_010_729_487*1e6/10_098_226_981_692 = 208_255; sqrt((9_486^2 +
+	// 208_255^2)/2) = sqrt(21_730_064_610) = 147_411. FeeLib.calculateDynamicFee:
+	// base 30, age 500/(1+1000) = 0, threshold mulDiv(270, 1e6, 147_411) =
+	// 1_831 >= weight 100, so calculateVolatilityFactor adds 100*147_411/1e6 = 14.
+	require.Equal(t, b(44), last.FeeBps, "volatility of three snapshots adds 14 bps")
+	// SidioraPool.swapFor sell: fee 89_819_503_485_620*44/10000 =
+	// 395_205_815_336; ReserveLib.getAmountOut(905_377_089_561_820,
+	// 11_046_721_088, 89_424_297_670_284) = 993_007_536.
+	require.Equal(t, b(993_007_536), last.AmountOut)
 	m = e.market(denom)
-	require.Equal(t, i(77_005_496), m.RealQuoteBalance)
+	// 1_046_721_088 - 993_007_536.
+	require.Equal(t, i(53_713_552), m.RealQuoteBalance)
 	require.Equal(t, i(995_196_593_047_440), m.TokenReserve)
-	require.Equal(t, i(10_125_643_080_371), m.PriceSnapshots[3])
+	// ReserveLib.getPrice: (10_000_000_000+53_713_552)*1e18/995_196_593_047_440.
+	require.Equal(t, i(10_102_238_715_683), m.PriceSnapshots[3])
 	require.Equal(t, uint64(4), m.SnapshotCount)
 	require.Equal(t, i(100_000_000+4_803_406_952_560+1_000_000_000+89_819_503_485_620), m.CumulativeVolume)
 	e.solvent()
