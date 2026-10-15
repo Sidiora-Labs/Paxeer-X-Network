@@ -1227,3 +1227,67 @@ exit = 1
 log = "fleet/logs/fix-perps-data-build-1.log"
 observed = "No code could be changed under the first brief: store.WriteBlock, store.Rebuild and store.Policy are owned by 7.1.4 and the contract with no landed writer, the follower lives in internal/source, the two commands fail against the landed source package, and pnl_test.go forms an import cycle with store."
 assumption = "A second lane with rulings for every gap owns the whole indexing chain."
+
+[finding.7.2.7]
+revision = "290f67ce8c3c5cd691040bd0b9647b55e7945550"
+command = "go test -count=1 ./platform/perps-data/internal/graphql/ -run TestPerpsResolvers"
+exit = 1
+log = "fleet/logs/7.2.7-verify-1.log"
+observed = "The perps query roots and the BigDecimal and DateTime scalars are written, but the test binary fails on the missing store.WriteBlock and the schema refuses the resolver while the sibling roots are absent."
+assumption = "Rerun after the perps-data indexing chain reconciliation and the sibling resolver tasks land; sibling files reuse the scalars from perps.go."
+
+[finding.7.2.5]
+revision = "ded1b0d9f07b47de2288a0f05e0d636ed13f84f5"
+command = "go build ./platform/perps-data/..."
+exit = 1
+log = "fleet/logs/7.2.5-build-2.log"
+observed = "The feeds book, topics and twenty TestFeeds subtests pass, but the module build fails in internal/replay and internal/indexer, and the hub-facing provider API is assumed until the ws hub lands."
+assumption = "Rerun after the indexing chain reconciliation and 7.2.2 land; the market and chain records are shared with 7.2.4 and 7.2.11 then."
+
+[finding.7.2.14]
+revision = "1912c3b16df1c730db83533f3a949a6c22868528"
+command = "go test -p 2 -count=1 ./platform/perps-data/internal/rest/ -run TestVenueREST"
+exit = 1
+log = "fleet/logs/7.2.14-verify-1.log"
+observed = "The venue routes are written against an assumed feeds.Book snapshot shape, which 7.2.5 has since landed with a different provider API, so the rest package does not compile."
+assumption = "Rerun after the venue routes are retargeted to the landed feeds package."
+
+[finding.7.2.16]
+revision = "757f04034b6dec2f0cba5835f3def5ab66f7eb01"
+command = "go build ./platform/perps-data/..."
+exit = 1
+log = "fleet/logs/7.2.16-build-1.log"
+observed = "The spot user socket channels pass twelve subtests over the real NATS driver, but no production consumer calls SpotUser.Deliver until the ws hub of 7.2.2 lands, and the module build fails in internal/replay and internal/indexer."
+assumption = "Rerun after 7.2.2 and the indexing chain reconciliation land."
+
+[finding.7.2.19]
+revision = "5bc3b1c7f1e21d6699d7cf8d2c4bd07315d5e31e"
+command = "go test -p 2 -count=1 ./platform/perps-data/internal/graphql/ -run TestAccountResolvers"
+exit = 1
+log = "fleet/logs/7.2.19-verify-2.log"
+observed = "Fifteen account subtests pass on the account schema; the two endpoint integration checks fail because NewSchema refuses the resolver without the leaderboard root, and the tradeExecuted subscription waits on the ws hub."
+assumption = "Rerun after 7.2.7, 7.2.2 and 7.2.10 are together on main."
+
+[finding.3.3.2]
+revision = "569df73298ddd12436fe4d88c4691f43b2460682"
+command = "go test -p 2 ./modules/perps/keeper/ -run TestScenario"
+exit = 1
+log = "fleet/logs/3.3.2-verify-1.log"
+observed = "The seven scenario replays and their goldens were written on a base before the perps keeper reconciliation, where the keeper package did not compile."
+assumption = "Rerun on current main, where the keeper builds; the goldens are validated then."
+
+[finding.3.3.3]
+revision = "2f3a516793efcc5f700df7b98340d4d278112d49"
+command = "go test -p 2 ./modules/perps/keeper/ -run TestEventsReconstruct"
+exit = 1
+log = "fleet/logs/3.3.3-verify-1.log"
+observed = "The event reconstruction test was written on a base before the perps keeper reconciliation and without the 3.3.2 scenario runner, so it covers one deposit, open and full liquidation sequence rather than the golden replay."
+assumption = "Rerun on current main after 3.3.2 lands and extend to the golden replay."
+
+[finding.6.3.8]
+revision = "cd0bfb1c9982c47d9279357c56d6e536879d6b7f"
+command = "node --test --import tsx tests/v6120-invariants.test.ts"
+exit = 1
+log = "fleet/logs/6.3.8-verify-1.log"
+observed = "The invariant suite runs and finds eleven tree violations in files owned by 6.3.1, 6.3.3, 6.3.10, 6.2.1 and the env tasks: diamond addresses, host literals, facet ABI imports, direct position writes, sockets without a sequence guard and legacy token entries."
+assumption = "Rerun once the Hyperpax wave lands; a fix lane owns what still fails then."
