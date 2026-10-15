@@ -1,0 +1,527 @@
+# origin: Hyperpax src/hooks/perps/useSubgraph.ts
+
+  query GetPositions($userAddress: String!) {
+    positions(userAddress: $userAddress, status: "open") {
+      positionId userAddress marketId isLong sizeUsd leverage entryPrice
+      collateralToken collateralAmount collateralUsd status openedAt openTxHash
+      market { symbol }
+    }
+  }
+
+  query GetClosedPositions($userAddress: String!, $limit: Int, $offset: Int) {
+    positions(userAddress: $userAddress, status: "closed", limit: $limit, offset: $offset) {
+      positionId userAddress marketId isLong sizeUsd leverage entryPrice
+      collateralToken collateralAmount collateralUsd status realizedPnl exitPrice
+      openedAt closedAt closeTxHash market { symbol }
+    }
+  }
+
+  query GetTrades($userAddress: String!, $limit: Int, $offset: Int) {
+    trades(userAddress: $userAddress, limit: $limit, offset: $offset) {
+      id positionId userAddress marketId tradeType isLong sizeUsd price
+      realizedPnl feeUsd blockNumber txHash blockTimestamp
+    }
+  }
+
+  query GetOrders($userAddress: String!, $status: String) {
+    orders(userAddress: $userAddress, status: $status) {
+      orderId userAddress marketId orderType orderTypeName isLong triggerPrice sizeUsd status
+      positionId executionPrice failureReason placedAt resolvedAt placedTxHash resolvedTxHash
+    }
+  }
+
+  query GetMarketInfo($marketId: Int!) {
+    market(marketId: $marketId) {
+      marketId symbol maxLeverage
+      fundingRate { ratePerSecond rate24h }
+      poolState { baseReserve quoteReserve oraclePrice }
+    }
+    marketStats(marketId: $marketId) {
+      openPositions totalPositions totalTrades totalLiquidations totalVolume latestFundingRate
+    }
+  }
+
+  query GetMarkets {
+    markets {
+      marketId symbol name maxLeverage enabled createdAt
+      latestPrice { price onchainTimestamp }
+      fundingRate { ratePerSecond rate24h }
+    }
+  }
+
+  query GetGlobalStats {
+    globalStats {
+      totalMarkets totalPositions openPositions totalTrades totalLiquidations totalVolume totalUsers
+    }
+  }
+
+  query GetUserStats($userAddress: String!) {
+    userStats(userAddress: $userAddress) {
+      totalPositions openPositions closedPositions liquidatedPositions
+      totalTrades totalRealizedPnl totalOrders activeOrders
+    }
+  }
+
+  query GetUserVault($userAddress: String!) {
+    userVault(userAddress: $userAddress) {
+      userAddress vaultAddress createdAt blockNumber txHash
+    }
+  }
+
+  query GetFilledOrders($userAddress: String!, $limit: Int, $offset: Int) {
+    orders(userAddress: $userAddress, status: "filled", limit: $limit, offset: $offset) {
+      orderId userAddress marketId orderType isLong triggerPrice sizeUsd status
+      positionId executionPrice placedAt resolvedAt placedTxHash resolvedTxHash
+    }
+  }
+
+  query GetAllOrders($userAddress: String!, $limit: Int, $offset: Int) {
+    orders(userAddress: $userAddress, limit: $limit, offset: $offset) {
+      orderId userAddress marketId orderType isLong triggerPrice sizeUsd status
+      positionId executionPrice placedAt resolvedAt placedTxHash resolvedTxHash
+    }
+  }
+
+  query GetLiquidations($userAddress: String!, $limit: Int, $offset: Int) {
+    liquidations(userAddress: $userAddress, limit: $limit, offset: $offset) {
+      id positionId marketId price penalty keeper txHash blockTimestamp
+    }
+  }
+
+  query GetLatestPrices {
+    latestPrices {
+      marketId price onchainTimestamp blockNumber updatedAt
+    }
+  }
+
+  query GetVaultEvents($userAddress: String!, $limit: Int, $offset: Int) {
+    vaultEvents(userAddress: $userAddress, limit: $limit, offset: $offset) {
+      id eventType tokenAddress amount blockNumber txHash blockTimestamp
+    }
+  }
+
+  query GetAccountLedger($userAddress: String!, $limit: Int, $offset: Int) {
+    accountLedger(userAddress: $userAddress, limit: $limit, offset: $offset) {
+      entryId entryType tokenAddress amount positionId isDebit blockTimestamp txHash
+    }
+  }
+
+  query GetPositionLedger($positionId: String!, $limit: Int) {
+    accountLedger(positionId: $positionId, limit: $limit) {
+      entryId entryType tokenAddress amount isDebit blockTimestamp
+    }
+  }
+
+  query GetDelegates($userAddress: String!) {
+    delegates(userAddress: $userAddress) {
+      delegateAddress canTrade canWithdraw canModifyMargin expiry isActive blockTimestamp
+    }
+  }
+
+  query GetTradingAccountEvents($userAddress: String!, $limit: Int, $offset: Int) {
+    tradingAccountEvents(userAddress: $userAddress, limit: $limit, offset: $offset) {
+      eventType positionId tokenAddress amount blockTimestamp txHash
+    }
+  }
+
+  query GetKeeperCycles($limit: Int) {
+    keeperCycles(limit: $limit) {
+      onchainTimestamp marketsUpdated ordersExecuted liquidationsExecuted
+      ordersFailed liquidationsFailed blockTimestamp txHash
+    }
+  }
+
+  query GetTPSLOrders($userAddress: String!) {
+    takeProfits: orders(userAddress: $userAddress, status: "active", orderType: 2) {
+      orderId positionId triggerPrice marketId
+    }
+    stopLosses: orders(userAddress: $userAddress, status: "active", orderType: 3) {
+      orderId positionId triggerPrice marketId
+    }
+  }
+
+  query DashboardV2($userAddress: String!) {
+    userVault(userAddress: $userAddress) {
+      vaultAddress marginMode
+    }
+    positions(userAddress: $userAddress, status: "open") {
+      positionId marketId isLong sizeUsd entryPrice collateralUsd leverage
+      market { symbol latestPrice { price } }
+    }
+    orders(userAddress: $userAddress, status: "active") {
+      orderId marketId orderType orderTypeName isLong triggerPrice sizeUsd
+      positionId failureReason status
+    }
+    delegates(userAddress: $userAddress) {
+      delegateAddress canTrade canWithdraw canModifyMargin expiry
+    }
+    userStats(userAddress: $userAddress) {
+      totalPositions openPositions totalRealizedPnl totalTrades activeOrders
+    }
+  }
+
+  query GetAllOrdersV2($userAddress: String!, $status: String, $orderType: Int, $limit: Int, $offset: Int) {
+    orders(userAddress: $userAddress, status: $status, orderType: $orderType, limit: $limit, offset: $offset) {
+      orderId userAddress marketId orderType orderTypeName isLong triggerPrice sizeUsd status
+      positionId executionPrice failureReason placedAt resolvedAt placedTxHash resolvedTxHash
+    }
+  }
+
+  query GetLeaderboard($limit: Int, $offset: Int) {
+    leaderboard(limit: $limit, offset: $offset) {
+      rank userAddress totalRealizedPnl totalTrades winRate avgHoldTime
+      openPositions totalVolume
+    }
+  }
+
+  query GetFees($userAddress: String, $marketId: Int, $positionId: String, $feeType: Int, $limit: Int, $offset: Int) {
+    fees(userAddress: $userAddress, marketId: $marketId, positionId: $positionId, feeType: $feeType, limit: $limit, offset: $offset) {
+      id positionId userAddress marketId feeType feeTypeName feeUsd feeTokens
+      tokenAddress blockNumber txHash logIndex blockTimestamp
+    }
+  }
+
+  query GetTradeSettlements($userAddress: String, $marketId: Int, $positionId: String, $tradeType: Int, $limit: Int, $offset: Int) {
+    tradeSettlements(userAddress: $userAddress, marketId: $marketId, positionId: $positionId, tradeType: $tradeType, limit: $limit, offset: $offset) {
+      id positionId userAddress marketId tradeType tradeTypeName sizeUsd executionPrice
+      grossPnl totalFeesUsd borrowingFeeUsd fundingPaidUsd netPayoutTokens
+      blockNumber txHash blockTimestamp
+    }
+  }
+
+  query GetOiSnapshots($marketId: Int!, $limit: Int, $offset: Int) {
+    oiSnapshots(marketId: $marketId, limit: $limit, offset: $offset) {
+      id marketId longOi shortOi deltaUsd isIncrease blockNumber txHash blockTimestamp
+    }
+  }
+
+  query GetMarkPriceHistory($marketId: Int!, $limit: Int, $offset: Int) {
+    markPriceHistory(marketId: $marketId, limit: $limit, offset: $offset) {
+      id marketId markPrice indexPrice baseReserve quoteReserve blockNumber txHash blockTimestamp
+    }
+  }
+
+  query GetVaultBalanceHistory($tokenAddress: String, $vaultType: Int, $limit: Int, $offset: Int) {
+    vaultBalanceHistory(tokenAddress: $tokenAddress, vaultType: $vaultType, limit: $limit, offset: $offset) {
+      id tokenAddress vaultType vaultTypeName newBalance delta isIncrease
+      blockNumber txHash blockTimestamp
+    }
+  }
+
+  query GetFundingPayments($userAddress: String, $marketId: Int, $positionId: String, $limit: Int, $offset: Int) {
+    fundingPayments(userAddress: $userAddress, marketId: $marketId, positionId: $positionId, limit: $limit, offset: $offset) {
+      id positionId userAddress marketId fundingPaymentUsd newCollateralUsd
+      newCollateralAmount blockNumber txHash blockTimestamp
+    }
+  }
+
+  query GetMarketSnapshots($marketId: Int!, $limit: Int, $offset: Int) {
+    marketSnapshots(marketId: $marketId, limit: $limit, offset: $offset) {
+      id marketId longOi shortOi markPrice indexPrice fundingRatePerSecond
+      fundingRate24h volume24hUsd onchainTimestamp blockNumber blockTimestamp
+    }
+  }
+
+  query GetProtocolSnapshots($limit: Int, $offset: Int) {
+    protocolSnapshots(limit: $limit, offset: $offset) {
+      id totalPositions totalOpenPositions totalMarkets tvlUsd insuranceTotalUsd
+      onchainTimestamp blockNumber blockTimestamp
+    }
+  }
+
+  query GetEnrichedGlobalStats {
+    enrichedGlobalStats {
+      onchain {
+        totalMarkets totalPositions openPositions totalTrades totalLiquidations totalVolume totalUsers indexerBlock
+      }
+      orderly {
+        perp_volume_ytd perp_volume_ltd perp_volume_today
+        perp_volume_last_1_day perp_volume_last_7_days perp_volume_last_30_days
+      }
+    }
+  }
+
+  query GetEnrichedMarketStats($marketId: Int!) {
+    enrichedMarketStats(marketId: $marketId) {
+      onchain {
+        marketId symbol totalPositions openPositions totalTrades totalLiquidations
+        totalVolume latestPrice latestFundingRate
+      }
+      ticker {
+        symbol paxeerSymbol mark_price index_price est_funding_rate last_funding_rate
+        next_funding_time open_interest h24_open h24_close h24_high h24_low h24_amount h24_volume
+      }
+      fundingRate {
+        symbol paxeerSymbol est_funding_rate est_funding_rate_timestamp
+        last_funding_rate last_funding_rate_timestamp next_funding_time sum_unitary_funding
+      }
+      openInterest {
+        symbol paxeerSymbol long_oi short_oi
+      }
+      priceChange {
+        symbol paxeerSymbol last_price change_5m change_30m change_1h
+        change_4h change_24h change_3d change_7d change_30d
+      }
+    }
+  }
+
+  query GetOrderlyTickers {
+    orderlyTickers {
+      symbol paxeerSymbol mark_price index_price sum_unitary_funding est_funding_rate
+      last_funding_rate next_funding_time open_interest
+      h24_open h24_close h24_high h24_low h24_amount h24_volume
+    }
+  }
+
+  query GetOrderlyFundingRates {
+    orderlyFundingRates {
+      symbol paxeerSymbol est_funding_rate est_funding_rate_timestamp
+      last_funding_rate last_funding_rate_timestamp next_funding_time sum_unitary_funding
+    }
+  }
+
+  query GetOrderlyPriceChanges {
+    orderlyPriceChanges {
+      symbol paxeerSymbol last_price change_5m change_30m change_1h
+      change_4h change_24h change_3d change_7d change_30d
+    }
+  }
+
+  query GetOrderlyOpenInterests {
+    orderlyOpenInterests {
+      symbol paxeerSymbol long_oi short_oi
+    }
+  }
+
+  query GetSpotMarkets($status: String, $limit: Int, $offset: Int) {
+    spotMarkets(status: $status, limit: $limit, offset: $offset) {
+      marketId baseToken quoteToken mode modeName status
+      createdAt createdBlock createdTxHash
+      lastModeChangedAt lastModeChangeBlock lastModeChangeTx
+    }
+  }
+
+  query GetSpotMarket($marketId: String!) {
+    spotMarket(marketId: $marketId) {
+      marketId baseToken quoteToken mode modeName status
+      createdAt createdBlock createdTxHash
+      lastModeChangedAt lastModeChangeBlock lastModeChangeTx
+    }
+  }
+
+  query GetSpotOrders($traderAddress: String, $marketId: String, $status: String, $limit: Int, $offset: Int) {
+    spotOrders(traderAddress: $traderAddress, marketId: $marketId, status: $status, limit: $limit, offset: $offset) {
+      orderId traderAddress marketId side sideName orderType orderTypeName
+      offsetBps size filledSize status
+      placedAt placedBlock placedTxHash
+      resolvedAt resolvedBlock resolvedTxHash
+    }
+  }
+
+  query GetSpotOrder($orderId: String!) {
+    spotOrder(orderId: $orderId) {
+      orderId traderAddress marketId side sideName orderType orderTypeName
+      offsetBps size filledSize status
+      placedAt placedBlock placedTxHash
+      resolvedAt resolvedBlock resolvedTxHash
+      fills {
+        id orderId traderAddress marketId fillSize fillPrice fillScore
+        blockNumber txHash logIndex blockTimestamp
+      }
+    }
+  }
+
+  query GetSpotOrderFills($orderId: String, $traderAddress: String, $marketId: String, $limit: Int, $offset: Int) {
+    spotOrderFills(orderId: $orderId, traderAddress: $traderAddress, marketId: $marketId, limit: $limit, offset: $offset) {
+      id orderId traderAddress marketId fillSize fillPrice fillScore
+      blockNumber txHash logIndex blockTimestamp
+    }
+  }
+
+  query GetSpotBatchClearings($marketId: String, $limit: Int, $offset: Int) {
+    spotBatchClearings(marketId: $marketId, limit: $limit, offset: $offset) {
+      id marketId clearingOffsetBps clearingPrice matchedVolume
+      numBuysFilled numSellsFilled blockNumber txHash logIndex blockTimestamp
+    }
+  }
+
+  query GetSpotEpochSettlements($limit: Int, $offset: Int) {
+    spotEpochSettlements(limit: $limit, offset: $offset) {
+      epochNumber usersProcessed onchainBlock
+      blockNumber txHash logIndex blockTimestamp
+    }
+  }
+
+  query GetSpotFastSettlements($userAddress: String, $tokenAddress: String, $limit: Int, $offset: Int) {
+    spotFastSettlements(userAddress: $userAddress, tokenAddress: $tokenAddress, limit: $limit, offset: $offset) {
+      id userAddress tokenAddress amount fee
+      blockNumber txHash logIndex blockTimestamp
+    }
+  }
+
+  query GetSpotCollateralMovements($userAddress: String, $tokenAddress: String, $eventType: String, $limit: Int, $offset: Int) {
+    spotCollateralMovements(userAddress: $userAddress, tokenAddress: $tokenAddress, eventType: $eventType, limit: $limit, offset: $offset) {
+      id eventType userAddress tokenAddress amount
+      blockNumber txHash logIndex blockTimestamp
+    }
+  }
+
+  query GetSpotMarketModeChanges($marketId: String, $limit: Int, $offset: Int) {
+    spotMarketModeChanges(marketId: $marketId, limit: $limit, offset: $offset) {
+      id marketId oldMode newMode batchModeUntilBlock
+      blockNumber txHash logIndex blockTimestamp
+    }
+  }
+
+  query GetSpotPofqUpdates($entityAddress: String, $isVault: Boolean, $limit: Int, $offset: Int) {
+    spotPofqUpdates(entityAddress: $entityAddress, isVault: $isVault, limit: $limit, offset: $offset) {
+      id entityAddress newScore newWeight isVault
+      blockNumber txHash logIndex blockTimestamp
+    }
+  }
+
+  query GetSpotPLVs($isRegistered: Boolean, $limit: Int, $offset: Int) {
+    spotPLVs(isRegistered: $isRegistered, limit: $limit, offset: $offset) {
+      vaultAddress isRegistered
+      registeredAt registeredBlock registeredTxHash
+      deregisteredAt deregisteredBlock deregisteredTxHash
+    }
+  }
+
+  query GetSpotKeeperCycles($limit: Int, $offset: Int) {
+    spotKeeperCycles(limit: $limit, offset: $offset) {
+      id onchainTimestamp marketsEvaluated batchesCleared epochSettled
+      blockNumber txHash blockTimestamp
+    }
+  }
+
+  query GetSpotBatchClearFailures($marketId: String, $limit: Int, $offset: Int) {
+    spotBatchClearFailures(marketId: $marketId, limit: $limit, offset: $offset) {
+      id marketId reason blockNumber txHash logIndex blockTimestamp
+    }
+  }
+
+# origin: Hyperpax src/hooks/perps/usePerfdbUser.ts
+
+  query User($address: String!) {
+    user(address: $address) {
+      address
+      vaultAddress
+      referralCode
+      tier
+      feeDiscountBps
+    }
+  }
+
+# origin: Hyperpax src/hooks/perps/usePerfdbBalances.ts
+
+  query UserBalances($address: String!) {
+    userBalances(address: $address) {
+      token
+      balance
+      totalDeposited
+      totalWithdrawn
+      depositCount
+      withdrawCount
+    }
+  }
+
+# origin: Hyperpax src/hooks/perps/useDailyPnl.ts
+
+  query UserDailyPnl($address: String!, $limit: Int!) {
+    userDailyPnl(address: $address, limit: $limit) {
+      date
+      pnl
+      volume
+      trades
+    }
+  }
+
+# origin: Hyperpax src/hooks/perps/usePerfdbTraderStats.ts
+
+  query UserStats($address: String!) {
+    userStats(address: $address) {
+      address
+      totalPnl
+      totalVolume
+      totalFeesPaid
+      totalTrades
+      winCount
+      lossCount
+      liquidationCount
+      openPositions
+    }
+  }
+
+# origin: Hyperpax src/hooks/perps/usePerfdbAlerts.ts
+
+  query UserAlerts($address: String!) {
+    userAlerts(address: $address) {
+      id
+      alertType
+      marketId
+      threshold
+      enabled
+      triggeredAt
+    }
+  }
+
+# origin: Hyperpax src/hooks/perps/usePerfdbReferrals.ts
+
+  query UserReferrals($address: String!) {
+    userReferrals(address: $address) {
+      referralCode
+      tier
+      referralCount
+    }
+    referralTiers {
+      tier
+      minReferrals
+      minVolume
+      rewardBps
+      feeDiscountBps
+    }
+  }
+
+  query ReferralTiers {
+    referralTiers {
+      tier
+      minReferrals
+      minVolume
+      rewardBps
+      feeDiscountBps
+    }
+  }
+
+# origin: Hyperpax src/hooks/perps/usePerfdbCompetitions.ts
+
+  query Competitions {
+    competitions {
+      id
+      name
+      description
+      startAt
+      endAt
+      metric
+      prizePool
+      active
+    }
+  }
+
+  query Competition($id: String!) {
+    competition(id: $id) {
+      id
+      name
+      description
+      startAt
+      endAt
+      metric
+      prizePool
+      active
+      rankings {
+        rank
+        address
+        score
+      }
+    }
+  }
