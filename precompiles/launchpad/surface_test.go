@@ -407,7 +407,7 @@ func TestRoleAndGenerationSelection(t *testing.T) {
 	require.Equal(t, []interface{}{true}, s.decode("PoolRegistry", "isRegisteredPool", ret))
 }
 
-func TestCallKindRefusals(t *testing.T) {
+func TestSurfaceCallKindRefusals(t *testing.T) {
 	s := newSurfaceHarness(t)
 	getPoolCount := s.encode("PoolRegistry", "getPoolCount")
 
