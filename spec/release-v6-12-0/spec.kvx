@@ -6408,7 +6408,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.1.1]
 title = "Extend the market record and store keys"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["2.0.6"]
