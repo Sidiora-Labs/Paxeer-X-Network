@@ -322,3 +322,10 @@ command = "none (blocked before implementation)"
 exit_code = 0
 log_path = "fleet/reports/7.1.6.report"
 observed_and_assumption = "The delivery outbox from 7.0.5 has no Perps-Seq identity and Enqueue from 7.0.2 assigns none while Claim orders by created_at then the sha256 event id, so events sharing a timestamp publish in hash order and the contract's bigint from the outbox identity does not exist. Assumption: the outbox identity becomes the Perps-Seq bigint, recorded at enqueue, carried on the lease and used as Claim order."
+
+[fix.2.0.1]
+revision = "aad6f5dece3fd02165eeb97ce74eb797ea216a1c"
+command = "go test ./precompiles/launchpad/ -run 'TestCoreRoleABIFiles|TestDirectABIFile'"
+exit_code = 0
+log_path = "fleet/logs/fix-2.0.1-verify-2.log"
+observed_and_assumption = "All twelve launchpad contract headings that merged event and error counts now carry the artifact counts, re-counted from the ABI JSON and checked against each section's tables; the ABI file tests pass. Assumption: the spec lint runs once on main after the spec correction lane lands."
