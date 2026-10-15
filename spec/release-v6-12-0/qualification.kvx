@@ -915,3 +915,51 @@ exit = 1
 log = "fleet/logs/3.2.1-verify-1.log"
 observed = "The 0x1015 precompile shell, dispatch map and gas table are written, but modules/perps/keeper does not compile until the perps keeper reconciliation lands; acceptance 3.17.1 counts the selector in its gas figures while the contract charges argument bytes only."
 assumption = "Rerun after the perps keeper reconciliation; the 3.17.1 gas figures need a ruling and CheckPause from 3.1.18 is assumed."
+
+[finding.2.2.4]
+revision = "28f4298f40e9f652d9d9504bfbc503dfc6da12c4"
+command = "go test ./precompiles/launchpad/... -run 'TestRouterAndFactoryRolesServeEverySelector'"
+exit = 1
+log = "fleet/logs/2.2.4-verify-1.log"
+observed = "router.go registers the Router and SidioraFactory roles against the 2.2.1 run table, but the build on this base predates 2.2.1; createMarketFor charges the creation fee the contract does not, Router legs call Keeper.Swap directly because *keeper.Keeper lacked the PoolKeeper writers, and creation logs follow rather than interleave the nested ERC20 logs."
+assumption = "The launchpad precompile reconciliation pass reruns this on the merged package with the 2.2.22 RunCaller wired into Run; the fee-free createMarketFor path and log ordering need a ruling."
+
+[finding.2.2.7]
+revision = "0df54f3405080e9f2bb0d0808fa2f59c74637df0"
+command = "go test ./precompiles/launchpad/... -run 'TestCollectionServesEverySelector|TestFeeRightReceiverHook'"
+exit = 1
+log = "fleet/logs/2.2.7-verify-2.log"
+observed = "nft.go registers the collection role and delegates the receiver hook to the 2.2.22 RunCaller through call.nested, but the package build on this base predates 2.2.1 and Run does not yet set call.nested."
+assumption = "The launchpad precompile reconciliation pass wires RunCaller into Run and reruns this with 2.2.8 emitter logs and 2.2.9 revert mapping present."
+
+[finding.2.2.18]
+revision = "d1400e8aa"
+command = "go test ./modules/launchpad/keeper/... -run 'TestMigrateV6120Golden|TestMigrateV6120Usdl|TestMigrateV6120Roles|TestMigrateV6120Pools|TestMigrateV6120Refusals'"
+exit = 1
+log = "fleet/logs/2.2.18-verify-2.log"
+observed = "The migration tests are written against the 2.2.16 and 2.2.17 steps, but the keeper_test package does not compile: swap_test.go redeclares custodyEnv.deployToken and tokenTransfer already defined in invariants_test.go and airdrop_test.go, keeper_test.go still calls the pre-reconciliation CreateMarket shape, and testdata/v6120/golden.json from 2.2.15 is absent."
+assumption = "A launchpad keeper test reconciliation (single owners for the custodyEnv helpers, CreateMarket callers updated) runs before the rerun; the golden fixture waits on the 2.2.15 capture."
+
+[finding.2.2.23]
+revision = "f3627c7a5bee3429b73487e5bf1ddd320425a916"
+command = "go test ./precompiles/launchpad/... -run 'TestEventEmitterAuthorizationThroughSurfaces|TestOpticalFactoryAfterUpgrade|TestPoolBeaconRetained|TestPauseControllerAgainstSurfaces|TestSidioraAdapterAfterRepoint'"
+exit = 1
+log = "fleet/logs/2.2.23-verify-1.log"
+observed = "retained_test.go type-checks with the pre-2.2.1 interface methods overlaid out, but the package build on this base predates 2.2.1 and the test installs the generation-2 surfaces itself because MigrateV6120 was not in the tree."
+assumption = "Rerun on the merged launchpad precompile after 2.2.1 through 2.2.6, 2.2.17 and 2.2.22 land."
+
+[finding.3.2.13]
+revision = "a11d1e91e393b26c965ed1cce1b84fcb6af4956f"
+command = "go test ./precompiles/perps/ -run 'TestVersionSwitchNoVersionEntry|TestVersionSwitchHeightSelection'"
+exit = 1
+log = "fleet/logs/3.2.13-verify-1.log"
+observed = "The switch tests go through app.Setup and ApplyUpgrade because exchangeVersionSwitch is unexported, but the test binary did not compile on this base (precompiles/launchpad predates 2.2.1) and perps.NewPrecompile from 3.2.1 was absent."
+assumption = "Rerun after 3.2.1 and the perps keeper reconciliation land; the height selection also assumes 1.3.100 binds the v6.12.0 hooks."
+
+[finding.3.2.14]
+revision = "74be8f937747a27585ab4d8b29a6fbf96be8a323"
+command = "go test ./precompiles/perps/ -run 'TestEvent'"
+exit = 1
+log = "fleet/logs/3.2.14-verify-1.log"
+observed = "events_test.go covers every perps event through the precompile and EndBlock, but the test binary did not compile: modules/perps/keeper is mid-reconciliation and precompiles/launchpad on this base predates 2.2.1; the handlers of 3.2.3 through 3.2.5 and EndBlock of 3.2.9 are assumed."
+assumption = "Rerun after the perps keeper reconciliation and 3.2.3 through 3.2.9 land."
