@@ -1,9 +1,13 @@
 package types_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
@@ -12,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +32,7 @@ func TestLaunchpadErrorStrings(t *testing.T) {
 		selector  string
 		args      []interface{}
 	}{
-		{types.ErrInvalidParams, 2, "LXP_LAUNCHPAD_INVALID_PARAMS", "FeeOutOfRange()", "0x0c8249ad", nil},
+		{types.ErrInvalidParams, 2, "LXP_LAUNCHPAD_INVALID_PARAMS", "", "", nil},
 		{types.ErrOverflow, 3, "LXP_LAUNCHPAD_OVERFLOW", "Overflow()", "0x35278d12", nil},
 		{types.ErrDivisionByZero, 4, "LXP_LAUNCHPAD_DIVISION_BY_ZERO", "DivisionByZero()", "0x23d359a3", nil},
 		{types.ErrInsufficientInput, 5, "LXP_LAUNCHPAD_INSUFFICIENT_INPUT", "InsufficientInput()", "0xf8b3bb61", nil},
@@ -47,15 +52,15 @@ func TestLaunchpadErrorStrings(t *testing.T) {
 		{types.ErrNoFeesAccumulated, 19, "LXP_LAUNCHPAD_NO_FEES_ACCUMULATED", "NoFeesAccumulated()", "0xbe6fbbaf", nil},
 		{types.ErrAirdropNotTriggered, 20, "LXP_LAUNCHPAD_AIRDROP_NOT_TRIGGERED", "AirdropNotTriggered()", "0xceadfa6d", nil},
 		{types.ErrAlreadyClaimed, 21, "LXP_LAUNCHPAD_ALREADY_CLAIMED", "AlreadyClaimed()", "0x646cf558", nil},
-		{types.ErrInvalidMarket, 22, "LXP_LAUNCHPAD_INVALID_MARKET", "InvalidConfiguration()", "0xc52a9bd3", nil},
+		{types.ErrInvalidMarket, 22, "LXP_LAUNCHPAD_INVALID_MARKET", "", "", nil},
 		{types.ErrUnauthorized, 23, "LXP_LAUNCHPAD_UNAUTHORIZED", "Unauthorized()", "0x82b42900", nil},
-		{types.ErrInvalidGenesis, 24, "LXP_LAUNCHPAD_INVALID_GENESIS", "InvalidConfiguration()", "0xc52a9bd3", nil},
-		{types.ErrHoldingHistory, 25, "LXP_LAUNCHPAD_HOLDING_HISTORY", "UnsupportedSnapshotToken()", "0xe3aa7e40", nil},
-		{types.ErrUnsupportedHoldingEpoch, 26, "LXP_LAUNCHPAD_UNSUPPORTED_HOLDING_EPOCH", "UnsupportedSnapshotToken()", "0xe3aa7e40", nil},
+		{types.ErrInvalidGenesis, 24, "LXP_LAUNCHPAD_INVALID_GENESIS", "", "", nil},
+		{types.ErrHoldingHistory, 25, "LXP_LAUNCHPAD_HOLDING_HISTORY", "", "", nil},
+		{types.ErrUnsupportedHoldingEpoch, 26, "LXP_LAUNCHPAD_UNSUPPORTED_HOLDING_EPOCH", "", "", nil},
 		{types.ErrInvalidAirdropEpoch, 27, "LXP_LAUNCHPAD_INVALID_AIRDROP_EPOCH", "AirdropNotTriggered()", "0xceadfa6d", nil},
-		{types.ErrLegacyAirdropEpoch, 28, "LXP_LAUNCHPAD_LEGACY_AIRDROP_EPOCH", "UnsupportedSnapshotToken()", "0xe3aa7e40", nil},
-		{types.ErrAirdropBasis, 29, "LXP_LAUNCHPAD_AIRDROP_BASIS", "UnsupportedSnapshotToken()", "0xe3aa7e40", nil},
-		{types.ErrInvalidRange, 30, "LXP_LAUNCHPAD_INVALID_RANGE", "IndexOutOfBounds()", "0x4e23d035", nil},
+		{types.ErrLegacyAirdropEpoch, 28, "LXP_LAUNCHPAD_LEGACY_AIRDROP_EPOCH", "AirdropNotTriggered()", "0xceadfa6d", nil},
+		{types.ErrAirdropBasis, 29, "LXP_LAUNCHPAD_AIRDROP_BASIS", "", "", nil},
+		{types.ErrInvalidRange, 30, "LXP_LAUNCHPAD_INVALID_RANGE", "", "", nil},
 		{types.ErrAlreadyInitialized, 31, "LXP_LAUNCHPAD_ALREADY_INITIALIZED", "AlreadyInitialized()", "0x0dc149f0", nil},
 		{types.ErrAlreadyMinted, 32, "LXP_LAUNCHPAD_ALREADY_MINTED", "AlreadyMinted()", "0xddefae28", nil},
 		{types.ErrApproveFailed, 33, "LXP_LAUNCHPAD_APPROVE_FAILED", "ApproveFailed()", "0x3e3f8f73", nil},
@@ -96,6 +101,11 @@ func TestLaunchpadErrorStrings(t *testing.T) {
 		{types.ErrReentrantCall, 68, "LXP_LAUNCHPAD_REENTRANT_CALL", "ReentrantCall()", "0x37ed32e8", nil},
 		{types.ErrAccessControlUnauthorizedAccount, 69, "LXP_LAUNCHPAD_ACCESS_CONTROL_UNAUTHORIZED_ACCOUNT", "AccessControlUnauthorizedAccount(address,bytes32)", "0xe2517d3f", []interface{}{caller, [32]byte{}}},
 		{types.ErrRetired, 70, "LXP_LAUNCHPAD_RETIRED", "Retired(address)", "0xda9d2e31", []interface{}{successor}},
+		{types.ErrFutureLookup, 71, "LXP_LAUNCHPAD_FUTURE_LOOKUP", "FutureLookup()", "0x0297ecc2", nil},
+		{types.ErrInsufficientAllowance, 72, "LXP_LAUNCHPAD_INSUFFICIENT_ALLOWANCE", "InsufficientAllowance()", "0x13be252b", nil},
+		{types.ErrInvalidPermit, 73, "LXP_LAUNCHPAD_INVALID_PERMIT", "InvalidPermit()", "0xddafbaef", nil},
+		{types.ErrInvalidPoolBinding, 74, "LXP_LAUNCHPAD_INVALID_POOL_BINDING", "InvalidPoolBinding()", "0xf77cf96c", nil},
+		{types.ErrPermitExpired, 75, "LXP_LAUNCHPAD_PERMIT_EXPIRED", "PermitExpired()", "0x1a15a3cc", nil},
 	}
 	seen := make(map[string]uint32, len(cases))
 	for _, tc := range cases {
@@ -123,6 +133,20 @@ func TestLaunchpadErrorStrings(t *testing.T) {
 			reason, err := abi.UnpackRevert(revert)
 			require.NoError(t, err)
 			require.Equal(t, tc.reason, reason)
+
+			if tc.signature == "" {
+				for _, carrier := range []error{
+					tc.err,
+					wrapped,
+					fmt.Errorf("%w: detail", tc.err),
+					sdkerrors.ABCIError("launchpad", tc.code, "remote call"),
+				} {
+					found, ok := types.ContractErrorOf(carrier)
+					require.False(t, ok)
+					require.Equal(t, types.ContractError{}, found)
+				}
+				return
+			}
 
 			contractError, ok := types.ContractErrorOf(tc.err)
 			require.True(t, ok)
@@ -157,7 +181,76 @@ func TestLaunchpadErrorStrings(t *testing.T) {
 			require.ErrorIs(t, err, types.ErrInvalidParams)
 		})
 	}
-	require.Len(t, seen, 69)
+	require.Len(t, seen, 74)
+
+	t.Run("artifact_errors", func(t *testing.T) {
+		conditionErrors := map[*sdkerrors.Error]string{
+			types.ErrNotGuardian:         "Unauthorized()",
+			types.ErrInvalidAirdropEpoch: "AirdropNotTriggered()",
+			types.ErrLegacyAirdropEpoch:  "AirdropNotTriggered()",
+		}
+		chainDefined := map[string]string{
+			"AccessControlUnauthorizedAccount(address,bytes32)": "0xe2517d3f",
+			"Retired(address)": "0xda9d2e31",
+		}
+
+		artifacts, err := filepath.Glob(filepath.Join("..", "..", "..", "precompiles", "launchpad", "abi", "*.json"))
+		require.NoError(t, err)
+		require.Len(t, artifacts, 11)
+		artifactErrors := map[string]string{}
+		for _, path := range artifacts {
+			raw, err := os.ReadFile(path)
+			require.NoError(t, err)
+			var entries []struct {
+				Type   string `json:"type"`
+				Name   string `json:"name"`
+				Inputs []struct {
+					Type string `json:"type"`
+				} `json:"inputs"`
+			}
+			require.NoError(t, json.Unmarshal(raw, &entries), path)
+			for _, entry := range entries {
+				if entry.Type != "error" {
+					continue
+				}
+				inputs := make([]string, len(entry.Inputs))
+				for i, input := range entry.Inputs {
+					inputs[i] = input.Type
+				}
+				signature := entry.Name + "(" + strings.Join(inputs, ",") + ")"
+				artifactErrors[signature] = hexutil.Encode(crypto.Keccak256([]byte(signature))[:4])
+			}
+		}
+		require.Len(t, artifactErrors, 62)
+
+		own := map[string][]string{}
+		var keeperOnly []*sdkerrors.Error
+		for _, tc := range cases {
+			if tc.signature == "" {
+				keeperOnly = append(keeperOnly, tc.err)
+				continue
+			}
+			selector, declared := artifactErrors[tc.signature]
+			if !declared {
+				selector, declared = chainDefined[tc.signature]
+			}
+			require.True(t, declared, "%s maps to undeclared %s", tc.reason, tc.signature)
+			require.Equal(t, selector, tc.selector, tc.signature)
+			if condition, ok := conditionErrors[tc.err]; ok {
+				require.Equal(t, condition, tc.signature, tc.reason)
+				continue
+			}
+			own[tc.signature] = append(own[tc.signature], tc.reason)
+		}
+		for signature := range artifactErrors {
+			require.Len(t, own[signature], 1, "%s keeper errors %v", signature, own[signature])
+		}
+		for signature := range chainDefined {
+			require.Len(t, own[signature], 1, "%s keeper errors %v", signature, own[signature])
+		}
+		require.Len(t, own, len(artifactErrors)+len(chainDefined))
+		require.Equal(t, keeperOnly, types.KeeperOnlyErrors)
+	})
 
 	t.Run("argument_encoding", func(t *testing.T) {
 		admin, ok := types.ContractErrorOf(types.ErrAccessControlUnauthorizedAccount)

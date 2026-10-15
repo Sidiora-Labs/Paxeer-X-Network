@@ -85,7 +85,25 @@ var (
 	ErrReentrantCall                    = sdkerrors.Register(ModuleName, 68, LaunchpadCode("REENTRANT_CALL"))
 	ErrAccessControlUnauthorizedAccount = sdkerrors.Register(ModuleName, 69, LaunchpadCode("ACCESS_CONTROL_UNAUTHORIZED_ACCOUNT"))
 	ErrRetired                          = sdkerrors.Register(ModuleName, 70, LaunchpadCode("RETIRED"))
+	ErrFutureLookup                     = sdkerrors.Register(ModuleName, 71, LaunchpadCode("FUTURE_LOOKUP"))
+	ErrInsufficientAllowance            = sdkerrors.Register(ModuleName, 72, LaunchpadCode("INSUFFICIENT_ALLOWANCE"))
+	ErrInvalidPermit                    = sdkerrors.Register(ModuleName, 73, LaunchpadCode("INVALID_PERMIT"))
+	ErrInvalidPoolBinding               = sdkerrors.Register(ModuleName, 74, LaunchpadCode("INVALID_POOL_BINDING"))
+	ErrPermitExpired                    = sdkerrors.Register(ModuleName, 75, LaunchpadCode("PERMIT_EXPIRED"))
 )
+
+// KeeperOnlyErrors are the launchpad keeper errors for conditions no Launch-x
+// contract names a custom error for; they revert with their LXP_LAUNCHPAD_
+// reason and have no ContractError.
+var KeeperOnlyErrors = []*sdkerrors.Error{
+	ErrInvalidParams,
+	ErrInvalidMarket,
+	ErrInvalidGenesis,
+	ErrHoldingHistory,
+	ErrUnsupportedHoldingEpoch,
+	ErrAirdropBasis,
+	ErrInvalidRange,
+}
 
 // ContractError is the Launch-x custom error a launchpad keeper error reverts
 // with at a contract surface: its selector and the ABI arguments it carries.
@@ -145,7 +163,6 @@ func newContractError(err *sdkerrors.Error, name string, inputs ...string) Contr
 }
 
 var contractErrors = []ContractError{
-	newContractError(ErrInvalidParams, "FeeOutOfRange"),
 	newContractError(ErrOverflow, "Overflow"),
 	newContractError(ErrDivisionByZero, "DivisionByZero"),
 	newContractError(ErrInsufficientInput, "InsufficientInput"),
@@ -165,15 +182,9 @@ var contractErrors = []ContractError{
 	newContractError(ErrNoFeesAccumulated, "NoFeesAccumulated"),
 	newContractError(ErrAirdropNotTriggered, "AirdropNotTriggered"),
 	newContractError(ErrAlreadyClaimed, "AlreadyClaimed"),
-	newContractError(ErrInvalidMarket, "InvalidConfiguration"),
 	newContractError(ErrUnauthorized, "Unauthorized"),
-	newContractError(ErrInvalidGenesis, "InvalidConfiguration"),
-	newContractError(ErrHoldingHistory, "UnsupportedSnapshotToken"),
-	newContractError(ErrUnsupportedHoldingEpoch, "UnsupportedSnapshotToken"),
 	newContractError(ErrInvalidAirdropEpoch, "AirdropNotTriggered"),
-	newContractError(ErrLegacyAirdropEpoch, "UnsupportedSnapshotToken"),
-	newContractError(ErrAirdropBasis, "UnsupportedSnapshotToken"),
-	newContractError(ErrInvalidRange, "IndexOutOfBounds"),
+	newContractError(ErrLegacyAirdropEpoch, "AirdropNotTriggered"),
 	newContractError(ErrAlreadyInitialized, "AlreadyInitialized"),
 	newContractError(ErrAlreadyMinted, "AlreadyMinted"),
 	newContractError(ErrApproveFailed, "ApproveFailed"),
@@ -214,4 +225,9 @@ var contractErrors = []ContractError{
 	newContractError(ErrReentrantCall, "ReentrantCall"),
 	newContractError(ErrAccessControlUnauthorizedAccount, "AccessControlUnauthorizedAccount", "address", "bytes32"),
 	newContractError(ErrRetired, "Retired", "address"),
+	newContractError(ErrFutureLookup, "FutureLookup"),
+	newContractError(ErrInsufficientAllowance, "InsufficientAllowance"),
+	newContractError(ErrInvalidPermit, "InvalidPermit"),
+	newContractError(ErrInvalidPoolBinding, "InvalidPoolBinding"),
+	newContractError(ErrPermitExpired, "PermitExpired"),
 }
