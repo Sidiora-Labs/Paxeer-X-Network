@@ -301,3 +301,10 @@ command = "go test ./modules/launchpad/keeper/..."
 exit_code = 1
 log_path = "fleet/logs/fix-2.1.2-verify-1.log"
 observed_and_assumption = "Beyond the re-pinned swap vectors, keeper tests fail on treasury pins that assume a 100000000 creation fee while DefaultParams is 1000000 per req ac, and Market.validatePool refuses native markets the keeper itself writes with 'native market sets pool fields' (nil checks on cumulative volume Ints that a store round trip returns as zero), aborting TestSwapRejections in InitGenesis. Assumption: the pins follow the required default and the native check must accept zero-valued fields."
+
+[finding.2.3.2]
+revision = "e797d7278ff031f3fc2a1a7f1797bc8a1a260b7d"
+command = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-intents --test precompile_router"
+exit_code = 101
+log_path = "fleet/logs/2.3.2-verify-3.log"
+observed_and_assumption = "The three task tests pass; two sibling tests in the same target fail: one reads fresh evidence only the exchange tif qualification harness creates, and one parses the system:paxeer-reserve account that layerx-merge req 6100 retired, which the human crates still name in a dozen places. Assumption: the harness-bound test moves to its own target and the retired reserve references are removed per req 6100."
