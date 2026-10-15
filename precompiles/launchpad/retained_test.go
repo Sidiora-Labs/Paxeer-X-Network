@@ -48,22 +48,19 @@ const (
 )
 
 const (
-	retainedGas    uint64 = 30_000_000
-	usdlSupply     int64  = 1_000_000_000_000_000
-	traderUSDL     int64  = 1_000_000_000_000
-	pauseGasBudget uint64 = 150_000
-	statusGas      uint64 = 30_000
+	retainedGas        uint64 = 30_000_000
+	retainedUSDLSupply int64  = 1_000_000_000_000_000
+	traderUSDL         int64  = 1_000_000_000_000
+	pauseGasBudget     uint64 = 150_000
+	statusGas          uint64 = 30_000
 )
 
 var (
 	retainedTime     = time.Unix(1_800_000_000, 0).UTC()
 	retainedDeadline = big.NewInt(retainedTime.Unix() + 3600)
 	launchpadAddress = common.HexToAddress(launchpad.LaunchpadAddress)
-	// surfaceRuntime is the 41-byte surface runtime of contracts/launchpad.md
-	// section 1 that every surface address holds after the upgrade.
-	surfaceRuntime  = common.FromHex("0x363d3d373360601b36523d3d601436013d3d6110175af13d600060003e6024573d6000fd5b3d6000f3")
-	erc1967ImplSlot = common.HexToHash("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc")
-	maxUint256      = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+	erc1967ImplSlot  = common.HexToHash("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc")
+	maxUint256       = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
 
 	factorySurface        = launchpadkeeper.Generation2Surfaces[types.RoleFactory]
 	routerSurface         = launchpadkeeper.Generation2Surfaces[types.RoleRouter]
@@ -88,8 +85,6 @@ const (
 	pauseStatusPaused     uint64 = 0
 	pauseStatusCallFailed uint64 = 4
 )
-
-func selector(signature string) []byte { return crypto.Keccak256([]byte(signature))[:4] }
 
 // packArgs ABI-encodes args under the comma-separated type list kinds.
 func packArgs(t *testing.T, kinds string, args ...interface{}) []byte {
@@ -144,8 +139,6 @@ func revertData(sig string, words ...[]byte) []byte {
 	}
 	return out
 }
-
-func addressWord(address common.Address) []byte { return common.LeftPadBytes(address.Bytes(), 32) }
 
 // retainedLayout is the generation table of
 // modules/launchpad/keeper/testdata/v6120/layout.json.
@@ -205,7 +198,7 @@ func newRetainedHarness(t *testing.T) *retainedHarness {
 	}
 
 	h.usdl = h.deploy(h.admin, retainedUSDLCreation, packArgs(t, "string,string,uint256,address", "USD Ledger", "USDL",
-		big.NewInt(usdlSupply), h.admin))
+		big.NewInt(retainedUSDLSupply), h.admin))
 	params := h.keeper.GetParams(h.ctx())
 	params.QuoteToken = h.usdl.Hex()
 	require.NoError(t, h.keeper.UpdateParams(h.ctx(), h.keeper.Authority(), params))
@@ -549,7 +542,7 @@ func TestSidioraAdapterAfterRepoint(t *testing.T) {
 	_, _, err := h.try(h.trader, adapter, retainedGas, calldata(t, executeSwap, h.usdl, token, amountIn, big.NewInt(0),
 		h.trader, h.trader, big.NewInt(0), route))
 	require.ErrorIs(t, err, vm.ErrExecutionReverted)
-	require.Equal(t, big.NewInt(0), h.balanceOf(token, h.trader))
+	same(t, big.NewInt(0), h.balanceOf(token, h.trader))
 
 	h.reverts(h.trader, adapter, revertData("MissingRole(address,bytes32)", addressWord(h.trader), make([]byte, 32)),
 		"setSidioraRouter(address)", launchpadAddress)
@@ -564,8 +557,8 @@ func TestSidioraAdapterAfterRepoint(t *testing.T) {
 	require.Positive(t, amountOut.Sign())
 	require.Equal(t, amountOut, h.balanceOf(token, h.trader))
 	require.Equal(t, new(big.Int).Sub(usdlBefore, amountIn), h.balanceOf(h.usdl, h.trader))
-	require.Equal(t, big.NewInt(0), h.balanceOf(h.usdl, adapter))
-	require.Equal(t, big.NewInt(0), h.balanceOf(token, adapter))
-	require.Equal(t, big.NewInt(0), retUint(t, h.view(h.usdl, "allowance(address,address)", adapter, launchpadAddress), 0))
+	same(t, big.NewInt(0), h.balanceOf(h.usdl, adapter))
+	same(t, big.NewInt(0), h.balanceOf(token, adapter))
+	same(t, big.NewInt(0), retUint(t, h.view(h.usdl, "allowance(address,address)", adapter, launchpadAddress), 0))
 	require.Equal(t, pool, retAddress(t, h.view(poolRegistrySurface, "getPoolByToken(address)", token), 0))
 }

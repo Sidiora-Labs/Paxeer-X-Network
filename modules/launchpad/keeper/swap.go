@@ -8,6 +8,8 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 const (
@@ -15,7 +17,24 @@ const (
 	snapshotInterval = 60
 	// snapshotMinVolumeBps is SidioraPool.SNAPSHOT_MIN_VOLUME_BPS.
 	snapshotMinVolumeBps = 1
+	// BitFlag.BEFORE_SWAP and BitFlag.AFTER_SWAP.
+	opticalFlagBeforeSwap = 1 << 0
+	opticalFlagAfterSwap  = 1 << 1
 )
+
+var (
+	opticalBeforeSwap = crypto.Keccak256([]byte("beforeSwap(address,address,bool,uint256)"))[:4]
+	opticalAfterSwap  = crypto.Keccak256([]byte("afterSwap(address,address,bool,uint256,uint256)"))[:4]
+	// inputAdjustmentTopic is SidioraPool.InputAdjustment(uint256,uint256).
+	inputAdjustmentTopic = crypto.Keccak256Hash([]byte("InputAdjustment(uint256,uint256)"))
+)
+
+// SwapState is the state of the precompile run a swap holds its pool lock in
+// and emits its pool logs to.
+type SwapState interface {
+	TransientStore
+	AddLog(*ethtypes.Log)
+}
 
 // SwapResult is what a buy or sell moves.
 type SwapResult struct {
@@ -45,10 +64,12 @@ func intOrZero(value sdk.Int) *big.Int {
 // quote runs the arithmetic of SidioraPool._swap on market without moving
 // funds and returns the market as the swap leaves it: the input fee, the buy
 // or sell branch, the zero-output refusal, the volume per side and the price
-// snapshot.
+// snapshot. amountIn is the priced input and paid the input the pool holds,
+// which an optical beforeSwap reduction leaves above amountIn: the reserves
+// and the buy volume book paid.
 func quote(params types.Params, market types.Market, now, height int64, isBuy bool,
-	amountIn *big.Int) (SwapResult, types.Market, error) {
-	if amountIn == nil || amountIn.Sign() <= 0 {
+	paid, amountIn *big.Int) (SwapResult, types.Market, error) {
+	if amountIn == nil || amountIn.Sign() <= 0 || paid == nil || paid.Cmp(amountIn) < 0 {
 		return SwapResult{}, market, types.ErrInsufficientInput
 	}
 	fee, err := feeBps(params, market, now)
@@ -76,7 +97,7 @@ func quote(params types.Params, market types.Market, now, height int64, isBuy bo
 		if out.Cmp(tokenReserve) > 0 {
 			return SwapResult{}, market, types.ErrInsufficientLiquidity
 		}
-		balance, err := addUint256(real, afterFee)
+		balance, err := addUint256(real, new(big.Int).Sub(paid, feeAmount))
 		if err != nil {
 			return SwapResult{}, market, err
 		}
@@ -96,7 +117,7 @@ func quote(params types.Params, market types.Market, now, height int64, isBuy bo
 		result.AmountOut = out
 		result.ProtocolCut = protocolCut
 		result.PoolCut = new(big.Int).Sub(feeAmount, protocolCut)
-		volume = amountIn
+		volume = paid
 	} else {
 		out, err := types.GetAmountOut(tokenReserve, effective, afterFee)
 		if err != nil {
@@ -106,7 +127,7 @@ func quote(params types.Params, market types.Market, now, height int64, isBuy bo
 		if out.Cmp(real) > 0 {
 			return SwapResult{}, market, types.ErrVirtualFloorBreached
 		}
-		reserve, err := addUint256(tokenReserve, amountIn)
+		reserve, err := addUint256(tokenReserve, paid)
 		if err != nil {
 			return SwapResult{}, market, err
 		}
@@ -198,7 +219,8 @@ func (k *Keeper) quoteView(ctx sdk.Context, denom string, isBuy bool, amountIn *
 	if err != nil {
 		return SwapResult{}, err
 	}
-	result, _, err := quote(k.GetParams(ctx), market, ctx.BlockTime().Unix(), ctx.BlockHeight(), isBuy, amountIn)
+	result, _, err := quote(k.GetParams(ctx), market, ctx.BlockTime().Unix(), ctx.BlockHeight(), isBuy, amountIn,
+		amountIn)
 	return result, err
 }
 
@@ -211,9 +233,13 @@ func (k *Keeper) quoteView(ctx sdk.Context, denom string, isBuy bool, amountIn *
 // token.transfer(recipient) and moves the fee from HeldQuote(pool) to FeeHeld
 // of the market's FeeAccumulator, where RecordFee splits it; a sell pays USDL
 // from custody with PayQuote and its fee tokens stay in the pool. The market
-// is written before the first nested call. Swap returns the context the run
-// continues on.
-func (k *Keeper) Swap(ctx sdk.Context, caller NestedCaller, locks TransientStore, denom string, isBuy bool,
+// is written before the first nested call. A market optical is called from
+// the pool address under the pool lock: getFlags after the prepaid check,
+// beforeSwap when it carries BEFORE_SWAP, whose negative delta reduces the
+// priced input below the paid input, and after the payout InputAdjustment is
+// emitted at the pool when they differ and afterSwap is called when it
+// carries AFTER_SWAP. Swap returns the context the run continues on.
+func (k *Keeper) Swap(ctx sdk.Context, caller NestedCaller, locks SwapState, denom string, isBuy bool,
 	amountIn, minAmountOut *big.Int, trader, recipient common.Address, deadline uint64) (sdk.Context, SwapResult, error) {
 	market, err := k.mustMarket(ctx, denom)
 	if err != nil {
@@ -262,7 +288,21 @@ func (k *Keeper) Swap(ctx sdk.Context, caller NestedCaller, locks TransientStore
 		return ctx, SwapResult{}, types.ErrInsufficientInput
 	}
 
-	result, updated, err := quote(k.GetParams(ctx), market, now, ctx.BlockHeight(), isBuy, amountIn)
+	hook := optical(market)
+	var flags uint8
+	if hook != (common.Address{}) {
+		if ctx, flags, err = k.swapOpticalFlags(ctx, caller, pool, hook); err != nil {
+			return ctx, SwapResult{}, err
+		}
+	}
+	priced := amountIn
+	if flags&opticalFlagBeforeSwap != 0 {
+		if ctx, priced, err = k.beforeSwap(ctx, caller, pool, hook, trader, isBuy, amountIn); err != nil {
+			return ctx, SwapResult{}, err
+		}
+	}
+
+	result, updated, err := quote(k.GetParams(ctx), market, now, ctx.BlockHeight(), isBuy, amountIn, priced)
 	if err != nil {
 		return ctx, SwapResult{}, err
 	}
@@ -296,6 +336,16 @@ func (k *Keeper) Swap(ctx sdk.Context, caller NestedCaller, locks TransientStore
 		}
 	}
 
+	if amountIn.Cmp(priced) != 0 {
+		locks.AddLog(&ethtypes.Log{Address: pool, Topics: []common.Hash{inputAdjustmentTopic},
+			Data: append(amountWord(amountIn), amountWord(priced)...)})
+	}
+	if flags&opticalFlagAfterSwap != 0 {
+		if ctx, err = k.afterSwap(ctx, caller, pool, hook, trader, isBuy, priced, result.AmountOut); err != nil {
+			return ctx, SwapResult{}, err
+		}
+	}
+
 	price, err := updated.Price()
 	if err != nil {
 		return ctx, SwapResult{}, err
@@ -311,4 +361,68 @@ func (k *Keeper) Swap(ctx sdk.Context, caller NestedCaller, locks TransientStore
 		sdk.NewAttribute(types.AttributeKeyFeeBps, result.FeeBps.String()),
 		sdk.NewAttribute(types.AttributeKeyPrice, price.String())))
 	return ctx, result, nil
+}
+
+// swapOpticalFlags is IOpticalMinimal(optical).getFlags() called by pool.
+func (k *Keeper) swapOpticalFlags(ctx sdk.Context, caller NestedCaller, pool, optical common.Address) (sdk.Context,
+	uint8, error) {
+	next, ret, err := caller.Call(ctx, pool, optical, erc20Call(opticalGetFlags))
+	if err != nil {
+		return ctx, 0, err
+	}
+	if len(ret) != 32 || new(big.Int).SetBytes(ret).Cmp(big.NewInt(255)) > 0 {
+		return ctx, 0, fmt.Errorf("%w: getFlags %s returned %x", types.ErrInvalidHookResponse, optical.Hex(), ret)
+	}
+	return next, ret[31], nil
+}
+
+// beforeSwap is IOpticalMinimal(optical).beforeSwap(pool, trader, isBuy,
+// amountIn) called by pool with the reduction rules of
+// Launch-x:contracts/contracts/core/SidioraPool.sol:186-195. It returns the
+// priced input.
+func (k *Keeper) beforeSwap(ctx sdk.Context, caller NestedCaller, pool, optical, trader common.Address, isBuy bool,
+	amountIn *big.Int) (sdk.Context, *big.Int, error) {
+	next, ret, err := caller.Call(ctx, pool, optical, erc20Call(opticalBeforeSwap, addressWord(pool),
+		addressWord(trader), boolWord(isBuy), amountWord(amountIn)))
+	if err != nil {
+		return ctx, nil, err
+	}
+	if len(ret) != 64 || new(big.Int).SetBytes(ret[:32]).Cmp(big.NewInt(1)) > 0 {
+		return ctx, nil, fmt.Errorf("%w: beforeSwap %s returned %x", types.ErrInvalidHookResponse, optical.Hex(), ret)
+	}
+	delta := new(big.Int).SetBytes(ret[32:])
+	if ret[32]&0x80 != 0 {
+		delta.Sub(delta, new(big.Int).Lsh(big.NewInt(1), 256))
+	}
+	if ret[31] == 0 || delta.Sign() > 0 {
+		return next, nil, types.ErrInsufficientInput
+	}
+	priced := new(big.Int).Add(amountIn, delta)
+	if priced.Sign() <= 0 {
+		return next, nil, types.ErrInsufficientInput
+	}
+	return next, priced, nil
+}
+
+// afterSwap is IOpticalMinimal(optical).afterSwap(pool, trader, isBuy,
+// amountIn, amountOut) called by pool, which must return its selector.
+func (k *Keeper) afterSwap(ctx sdk.Context, caller NestedCaller, pool, optical, trader common.Address, isBuy bool,
+	amountIn, amountOut *big.Int) (sdk.Context, error) {
+	next, ret, err := caller.Call(ctx, pool, optical, erc20Call(opticalAfterSwap, addressWord(pool),
+		addressWord(trader), boolWord(isBuy), amountWord(amountIn), amountWord(amountOut)))
+	if err != nil {
+		return ctx, err
+	}
+	if len(ret) != 32 || string(ret) != string(common.RightPadBytes(opticalAfterSwap, 32)) {
+		return next, types.ErrInvalidHookResponse
+	}
+	return next, nil
+}
+
+func boolWord(value bool) []byte {
+	word := make([]byte, 32)
+	if value {
+		word[31] = 1
+	}
+	return word
 }

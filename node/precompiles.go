@@ -2,12 +2,15 @@ package app
 
 import (
 	launchpadkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
+	launchpadv610keeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/legacy/v610/keeper"
+	launchpadtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	layerxbridgekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/keeper"
 	layerxcustodykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/keeper"
 	layerxexchangekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/keeper"
 	perpskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
 	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
 	spotkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/keeper"
+	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
 	xwebkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/keeper"
 	putils "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
@@ -40,6 +43,7 @@ type PrecompileKeepers struct {
 	layerxExchange  *layerxexchangekeeper.Keeper
 	layerxBridge    *layerxbridgekeeper.Keeper
 	launchpad       *launchpadkeeper.Keeper
+	launchpadV610   *launchpadv610keeper.Keeper
 	xweb            *xwebkeeper.Keeper
 	PerpsKeeper     *perpskeeper.Keeper
 	SpotKeeper      *spotkeeper.Keeper
@@ -70,10 +74,12 @@ func NewPrecompileKeepers(a *App) *PrecompileKeepers {
 		layerxExchange:     a.LayerXExchangeKeeper,
 		layerxBridge:       &a.LayerXBridgeKeeper,
 		launchpad:          a.LaunchpadKeeper,
-		xweb:               &a.XWebKeeper,
-		PerpsKeeper:        a.PerpsKeeper,
-		SpotKeeper:         a.SpotKeeper,
-		PricefeedKeeper:    &a.PricefeedKeeper,
+		launchpadV610: launchpadv610keeper.NewKeeper(a.GetKey(launchpadtypes.StoreKey), a.BankKeeper,
+			tokenfactorykeeper.NewMsgServerImpl(a.TokenFactoryKeeper), &a.EvmKeeper),
+		xweb:            &a.XWebKeeper,
+		PerpsKeeper:     a.PerpsKeeper,
+		SpotKeeper:      a.SpotKeeper,
+		PricefeedKeeper: &a.PricefeedKeeper,
 	}
 }
 
@@ -106,6 +112,12 @@ func (pk *PrecompileKeepers) LayerXBridgeK() *layerxbridgekeeper.Keeper {
 }
 func (pk *PrecompileKeepers) LaunchpadK() *launchpadkeeper.Keeper {
 	return pk.launchpad
+}
+
+// LaunchpadV610K is the v6.10 launchpad keeper over the launchpad store key,
+// which serves the v6.10 launchpad precompile below the v6.12.0 height.
+func (pk *PrecompileKeepers) LaunchpadV610K() *launchpadv610keeper.Keeper {
+	return pk.launchpadV610
 }
 
 // XWebK hands the xweb precompile the application's xweb keeper.
