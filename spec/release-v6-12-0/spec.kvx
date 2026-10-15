@@ -27194,7 +27194,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.1.10]
 title = "Realised profit and loss, account history and leaderboard"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["7.0.5", "7.1.5"]
