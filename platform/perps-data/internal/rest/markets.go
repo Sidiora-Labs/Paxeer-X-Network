@@ -7,51 +7,19 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/records"
 )
 
 // gatewayService is the service name /api/markets/health reports.
 const gatewayService = "perps-gateway"
 
-// MarketRecord is one record of the markets table (Hyperpax:data_api.md:424-461,
-// contracts/data-services.md section 11): twelve market fields and the eleven
-// perp_ fields. Prices and notionals are USD, rates are per-hour ratios except
-// funding_8h, and times are epoch milliseconds.
-type MarketRecord struct {
-	Symbol         string   `json:"symbol"`
-	SymbolFull     string   `json:"symbol_full"`
-	Price          *float64 `json:"price"`
-	Change24h      *float64 `json:"change_24h"`
-	Volume24h      float64  `json:"volume_24h"`
-	OpenInterest   float64  `json:"open_interest"`
-	Funding8h      *float64 `json:"funding_8h"`
-	EstFundingRate *float64 `json:"est_funding_rate"`
-	Volume7d       float64  `json:"volume_7d"`
-	Volume30d      float64  `json:"volume_30d"`
-	TradesCount    int64    `json:"trades_count"`
-	LastUpdated    *int64   `json:"last_updated"`
-
-	PerpMarkPrice          *float64 `json:"perp_mark_price"`
-	PerpIndexPrice         *float64 `json:"perp_index_price"`
-	PerpBasisBps           *float64 `json:"perp_basis_bps"`
-	PerpFundingRate        *float64 `json:"perp_funding_rate"`
-	PerpNextFundingMs      int64    `json:"perp_next_funding_ms"`
-	PerpLongShortRatio     *float64 `json:"perp_long_short_ratio"`
-	PerpLiqVolume24h       float64  `json:"perp_liq_volume_24h"`
-	PerpOIContracts        *float64 `json:"perp_oi_contracts"`
-	PerpOIUSD              float64  `json:"perp_oi_usd"`
-	PerpVolume24hContracts float64  `json:"perp_volume_24h_contracts"`
-	PerpVolume24hUSD       float64  `json:"perp_volume_24h_usd"`
-}
-
-// Totals is the platform totals object of /api/totals (Hyperpax:data_api.md:473),
-// summed over perps.market_stats_rolling.
-type Totals struct {
-	TotalTrades int64   `json:"total_trades"`
-	Volume24h   float64 `json:"volume_24h"`
-	Volume7d    float64 `json:"volume_7d"`
-	Volume30d   float64 `json:"volume_30d"`
-	TotalOI     float64 `json:"total_oi"`
-}
+// MarketRecord and Totals are the market record and platform totals of
+// contracts/data-services.md section 11, shared with the socket topics.
+type (
+	MarketRecord = records.MarketRecord
+	Totals       = records.Totals
+)
 
 // Markets serves the markets table, the platform totals and the markets
 // health route from schema perps.
@@ -224,7 +192,7 @@ func (m *Markets) records(ctx context.Context, symbol *string) ([]MarketRecord, 
 			{basis, &rec.PerpBasisBps}, {hourly, &rec.EstFundingRate}, {eight, &rec.Funding8h},
 		}
 		for _, v := range nullable {
-			if *v.dst, err = decimal(v.raw); err != nil {
+			if *v.dst, err = records.Decimal(v.raw); err != nil {
 				return nil, err
 			}
 		}
@@ -238,7 +206,7 @@ func (m *Markets) records(ctx context.Context, symbol *string) ([]MarketRecord, 
 			{fillVolume, &rec.PerpVolume24hUSD}, {fillContracts, &rec.PerpVolume24hContracts}, {liqVolume, &rec.PerpLiqVolume24h},
 		}
 		for _, v := range zeroed {
-			if *v.dst, err = decimalOrZero(v.raw); err != nil {
+			if *v.dst, err = records.DecimalOrZero(v.raw); err != nil {
 				return nil, err
 			}
 		}
@@ -280,7 +248,7 @@ func (m *Markets) Totals(ctx context.Context) (Totals, error) {
 	}
 	dst := [4]*float64{&out.Volume24h, &out.Volume7d, &out.Volume30d, &out.TotalOI}
 	for i := range raw {
-		v, err := decimalOrZero(raw[i])
+		v, err := records.DecimalOrZero(raw[i])
 		if err != nil {
 			return out, err
 		}

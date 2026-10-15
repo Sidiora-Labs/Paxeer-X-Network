@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"math/big"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"reflect"
 	"strconv"
@@ -19,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/records"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/ws"
 )
@@ -277,20 +275,27 @@ func wantJSON(t *testing.T, got json.RawMessage, want string) {
 	}
 }
 
-func restBody(t *testing.T, db *sql.DB, path string) json.RawMessage {
+// symbolBody writes the @stats or @perp_stats body of sym from records.Symbol.
+func symbolBody(t *testing.T, db *sql.DB, sym, kind string) json.RawMessage {
 	t.Helper()
-	s, err := rest.NewSymbol(db)
+	s, err := records.NewSymbol(db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mux := http.NewServeMux()
-	s.Register(mux)
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("%s: %d %s", path, rec.Code, rec.Body.String())
+	var body any
+	if kind == kindStats {
+		body, err = s.Stats(context.Background(), sym)
+	} else {
+		body, err = s.PerpStats(context.Background(), sym)
 	}
-	return rec.Body.Bytes()
+	if err != nil {
+		t.Fatalf("%s %s: %v", sym, kind, err)
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }
 
 type bookJSON struct {
@@ -546,7 +551,7 @@ func TestFeeds(t *testing.T) {
 		markPrice(t, db, 0, 4, "100.5", "100")
 		fill(t, db, 0, 5, 0, 1, 2, true, "100", "250")
 		p := providers(t, db)
-		wantJSON(t, subscribe(t, p, "BTC@perp_stats"), string(restBody(t, db, "/api/btc/perp_stats")))
+		wantJSON(t, subscribe(t, p, "BTC@perp_stats"), string(symbolBody(t, db, "BTC", kindPerpStats)))
 		if n := len(only(p.tick(ctx, t0), "BTC@perp_stats")); n != 1 {
 			t.Fatalf("first tick stats %d", n)
 		}
@@ -557,14 +562,14 @@ func TestFeeds(t *testing.T) {
 		if len(frames) != 1 {
 			t.Fatalf("stats after 30 seconds %d", len(frames))
 		}
-		wantJSON(t, frames[0].Data, string(restBody(t, db, "/api/btc/perp_stats")))
+		wantJSON(t, frames[0].Data, string(symbolBody(t, db, "BTC", kindPerpStats)))
 	})
 
 	t.Run("stats", func(t *testing.T) {
 		reset(t, db)
 		fill(t, db, 11, 5, 0, 1, 2, true, "0.5", "10")
 		p := providers(t, db)
-		wantJSON(t, subscribe(t, p, "PAX@stats"), string(restBody(t, db, "/api/pax/stats")))
+		wantJSON(t, subscribe(t, p, "PAX@stats"), string(symbolBody(t, db, "PAX", kindStats)))
 		frames := only(p.tick(ctx, t0), "PAX@stats")
 		if len(frames) != 1 {
 			t.Fatalf("stats frames %d", len(frames))

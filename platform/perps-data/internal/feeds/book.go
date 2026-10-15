@@ -196,6 +196,22 @@ func (b *Book) fill(id, size string) error {
 // descending. Prices are limit_price over 10^18 and sizes are in contracts,
 // the summed remaining_size_usd over the limit price.
 func (b *Book) Levels(depth int) (asks, bids []Level) {
+	return b.sides(depth, func(price, size *big.Int) float64 {
+		f, _ := new(big.Rat).SetFrac(size, price).Float64()
+		return f
+	})
+}
+
+// NotionalLevels returns the levels of Levels with sizes the summed
+// remaining_size_usd over 10^18.
+func (b *Book) NotionalLevels(depth int) (asks, bids []Level) {
+	return b.sides(depth, func(_, size *big.Int) float64 {
+		f, _ := new(big.Rat).SetFrac(size, usdScale).Float64()
+		return f
+	})
+}
+
+func (b *Book) sides(depth int, size func(price, sum *big.Int) float64) (asks, bids []Level) {
 	sums := map[bool]map[string]*big.Int{true: {}, false: {}}
 	prices := map[string]*big.Int{}
 	for _, o := range b.orders {
@@ -210,12 +226,8 @@ func (b *Book) Levels(depth int) (asks, bids []Level) {
 		}
 		side[p].Add(side[p], o.remaining)
 	}
-	contracts := func(price, size *big.Int) float64 {
-		f, _ := new(big.Rat).SetFrac(size, price).Float64()
-		return f
-	}
-	asks = levels(sums[false], prices, usdScale, contracts, false, depth)
-	bids = levels(sums[true], prices, usdScale, contracts, true, depth)
+	asks = levels(sums[false], prices, usdScale, size, false, depth)
+	bids = levels(sums[true], prices, usdScale, size, true, depth)
 	return asks, bids
 }
 

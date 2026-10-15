@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
-	"net/http"
-	"net/http/httptest"
 	"slices"
 	"strconv"
 	"strings"
@@ -18,7 +16,7 @@ import (
 	"time"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/records"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/bech32"
 )
 
@@ -132,7 +130,7 @@ func (c *cursor) advance(items []item, window int) ([]item, error) {
 // State is kept only for topics with a subscriber.
 type Providers struct {
 	db     *sql.DB
-	api    http.Handler
+	symbol *records.Symbol
 	logger *slog.Logger
 	// symbols maps every market symbol to its decimal market id.
 	symbols map[string]string
@@ -153,19 +151,17 @@ type Providers struct {
 const marketsSQL = `SELECT market_id::text, symbol FROM perps.markets ORDER BY market_id`
 
 // NewProviders reads the market set of perps.markets and serves its topics,
-// reading the symbol routes of rest.Symbol for the stats and trade payloads.
+// reading the symbol bodies of records.Symbol for the stats and trade payloads.
 func NewProviders(ctx context.Context, db *sql.DB, logger *slog.Logger) (*Providers, error) {
-	symbol, err := rest.NewSymbol(db)
+	symbol, err := records.NewSymbol(db)
 	if err != nil {
 		return nil, err
 	}
-	mux := http.NewServeMux()
-	symbol.Register(mux)
 	if logger == nil {
 		logger = slog.Default()
 	}
 	p := &Providers{
-		db: db, api: mux, logger: logger,
+		db: db, symbol: symbol, logger: logger,
 		symbols: map[string]string{}, ids: map[string]string{},
 		watched: map[string]int{}, books: map[string]*bookState{}, cursors: map[string]*cursor{}, spotTokens: map[string][]byte{},
 	}
@@ -276,14 +272,14 @@ func (p *Providers) Unsubscribed(topic string) {
 func (p *Providers) Snapshot(ctx context.Context, topic string) (json.RawMessage, error) {
 	switch topic {
 	case TopicMarketsAll, TopicMarketsTotals:
-		records, err := p.records(ctx, p.order)
+		recs, err := p.records(ctx, p.order)
 		if err != nil {
 			return nil, err
 		}
 		if topic == TopicMarketsAll {
-			return json.Marshal(records)
+			return json.Marshal(recs)
 		}
-		return json.Marshal(totalsOf(records))
+		return json.Marshal(totalsOf(recs))
 	case TopicChainBlocks, TopicChainTxs:
 		p.mu.Lock()
 		defer p.mu.Unlock()
@@ -304,13 +300,13 @@ func (p *Providers) Snapshot(ctx context.Context, topic string) (json.RawMessage
 	}
 	switch kind {
 	case kindStats, kindPerpStats:
-		return p.get(ctx, "/api/"+strings.ToLower(sym)+"/"+kind)
+		return p.stats(ctx, sym, kind)
 	case kindMarket:
-		records, err := p.records(ctx, []string{sym})
+		recs, err := p.records(ctx, []string{sym})
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(records[0])
+		return json.Marshal(recs[0])
 	case kindTrade, kindPerpTrade:
 		p.mu.Lock()
 		defer p.mu.Unlock()
@@ -484,29 +480,37 @@ func (p *Providers) advance(ctx context.Context, topic string) ([]Frame, []strin
 	return frames, nil, nil
 }
 
-// trades reads the newest 100 trades of the tape through the symbol routes,
+// trades reads the newest 100 trades of the tape from the symbol bodies,
 // each with symbol added, newest first.
 func (p *Providers) trades(ctx context.Context, sym, kind string) ([]item, error) {
-	route := "trades"
+	var (
+		body any
+		err  error
+	)
 	if kind == kindPerpTrade {
-		route = "perp_trades"
+		body, err = p.symbol.PerpTrades(ctx, sym, TradeSnapshot)
+	} else {
+		body, err = p.symbol.Trades(ctx, sym, TradeSnapshot)
 	}
-	raw, err := p.get(ctx, "/api/"+strings.ToLower(sym)+"/"+route+"/"+sym+"?limit="+strconv.Itoa(TradeSnapshot))
 	if err != nil {
 		return nil, err
 	}
-	var body struct {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	var tape struct {
 		Trades []map[string]json.RawMessage `json:"trades"`
 	}
-	if err := json.Unmarshal(raw, &body); err != nil {
+	if err := json.Unmarshal(raw, &tape); err != nil {
 		return nil, err
 	}
 	symbol, err := json.Marshal(sym)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]item, len(body.Trades))
-	for i, t := range body.Trades {
+	out := make([]item, len(tape.Trades))
+	for i, t := range tape.Trades {
 		var id string
 		if err := json.Unmarshal(t["id"], &id); err != nil {
 			return nil, fmt.Errorf("feeds: trade without id: %w", err)
@@ -521,26 +525,28 @@ func (p *Providers) trades(ctx context.Context, sym, kind string) ([]item, error
 	return out, nil
 }
 
-func (p *Providers) get(ctx context.Context, path string) (json.RawMessage, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+// stats writes the @stats or @perp_stats body of sym.
+func (p *Providers) stats(ctx context.Context, sym, kind string) (json.RawMessage, error) {
+	if kind == kindStats {
+		s, err := p.symbol.Stats(ctx, sym)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(s)
+	}
+	s, err := p.symbol.PerpStats(ctx, sym)
 	if err != nil {
 		return nil, err
 	}
-	rec := httptest.NewRecorder()
-	p.api.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		return nil, fmt.Errorf("feeds: GET %s answered %d: %s", path, rec.Code, strings.TrimSpace(rec.Body.String()))
-	}
-	return rec.Body.Bytes(), nil
+	return json.Marshal(s)
 }
 
 func (p *Providers) marks(ctx context.Context, sym string) (marks, error) {
-	var m marks
-	raw, err := p.get(ctx, "/api/"+strings.ToLower(sym)+"/"+kindPerpStats)
+	s, err := p.symbol.PerpStats(ctx, sym)
 	if err != nil {
-		return m, err
+		return marks{}, err
 	}
-	return m, json.Unmarshal(raw, &m)
+	return marks{Mark: s.MarkPrice, Index: s.IndexPrice, Basis: s.BasisBps}, nil
 }
 
 const spotTokenSQL = `SELECT token FROM perps.spot_token_registry
@@ -676,7 +682,7 @@ func (p *Providers) tick(ctx context.Context, now time.Time) []Frame {
 				kinds = append(kinds, kindStats)
 			}
 			for _, kind := range kinds {
-				data, err := p.get(ctx, "/api/"+strings.ToLower(sym)+"/"+kind)
+				data, err := p.stats(ctx, sym, kind)
 				if err != nil {
 					p.logger.Error("feeds: stats frame", slog.String("symbol", sym), slog.Any("err", err))
 					continue
@@ -721,23 +727,23 @@ func (p *Providers) bookFrames(ctx context.Context, now time.Time) []Frame {
 }
 
 func (p *Providers) marketFrames(ctx context.Context, watched []string) []Frame {
-	records, err := p.records(ctx, p.order)
+	recs, err := p.records(ctx, p.order)
 	if err != nil {
 		p.logger.Error("feeds: market frames", slog.Any("err", err))
 		return nil
 	}
-	all, err := json.Marshal(records)
+	all, err := json.Marshal(recs)
 	if err != nil {
 		p.logger.Error("feeds: market frames", slog.Any("err", err))
 		return nil
 	}
-	totals, err := json.Marshal(totalsOf(records))
+	totals, err := json.Marshal(totalsOf(recs))
 	if err != nil {
 		p.logger.Error("feeds: market frames", slog.Any("err", err))
 		return nil
 	}
 	frames := []Frame{{Topic: TopicMarketsAll, Data: all}, {Topic: TopicMarketsTotals, Data: totals}}
-	for _, r := range records {
+	for _, r := range recs {
 		if !slices.Contains(watched, r.Symbol) {
 			continue
 		}
@@ -751,46 +757,10 @@ func (p *Providers) marketFrames(ctx context.Context, watched []string) []Frame 
 	return frames
 }
 
-// MarketRecord is one market record of the application data protocol, 23
-// fields (contracts/data-services.md section 11).
-type MarketRecord struct {
-	Symbol                 string   `json:"symbol"`
-	SymbolFull             string   `json:"symbol_full"`
-	Price                  *float64 `json:"price"`
-	Change24h              *float64 `json:"change_24h"`
-	Volume24h              float64  `json:"volume_24h"`
-	OpenInterest           float64  `json:"open_interest"`
-	Funding8h              *float64 `json:"funding_8h"`
-	EstFundingRate         *float64 `json:"est_funding_rate"`
-	Volume7d               float64  `json:"volume_7d"`
-	Volume30d              float64  `json:"volume_30d"`
-	TradesCount            int64    `json:"trades_count"`
-	LastUpdated            *int64   `json:"last_updated"`
-	PerpMarkPrice          *float64 `json:"perp_mark_price"`
-	PerpIndexPrice         *float64 `json:"perp_index_price"`
-	PerpBasisBps           *float64 `json:"perp_basis_bps"`
-	PerpFundingRate        *float64 `json:"perp_funding_rate"`
-	PerpNextFundingMs      int64    `json:"perp_next_funding_ms"`
-	PerpLongShortRatio     *float64 `json:"perp_long_short_ratio"`
-	PerpLiqVolume24h       float64  `json:"perp_liq_volume_24h"`
-	PerpOIContracts        *float64 `json:"perp_oi_contracts"`
-	PerpOIUSD              float64  `json:"perp_oi_usd"`
-	PerpVolume24hContracts float64  `json:"perp_volume_24h_contracts"`
-	PerpVolume24hUSD       float64  `json:"perp_volume_24h_usd"`
-}
-
-// Totals is the platform totals object, derived from the market records.
-type Totals struct {
-	TotalTrades int64   `json:"total_trades"`
-	Volume24h   float64 `json:"volume_24h"`
-	Volume7d    float64 `json:"volume_7d"`
-	Volume30d   float64 `json:"volume_30d"`
-	TotalOI     float64 `json:"total_oi"`
-}
-
-func totalsOf(records []MarketRecord) Totals {
-	var t Totals
-	for _, r := range records {
+// totalsOf sums the platform totals over the market records.
+func totalsOf(recs []records.MarketRecord) records.Totals {
+	var t records.Totals
+	for _, r := range recs {
 		t.TotalTrades += r.TradesCount
 		t.Volume24h += r.Volume24h
 		t.Volume7d += r.Volume7d
@@ -812,33 +782,21 @@ const rollingSQL = `SELECT m.symbol, m.name, s.volume_7d / $1::numeric, s.volume
 	LEFT JOIN perps.blocks b ON b.number = s.updated_block
 	ORDER BY m.market_id`
 
-type perpStats struct {
-	Volume24h       float64  `json:"volume_24h"`
-	OpenInterest    float64  `json:"open_interest"`
-	EstFundingRate  *float64 `json:"est_funding_rate"`
-	LastFundingRate *float64 `json:"last_funding_rate"`
-	MarkPrice       *float64 `json:"mark_price"`
-	IndexPrice      *float64 `json:"index_price"`
-	BasisBps        *float64 `json:"basis_bps"`
-	LongShortRatio  *float64 `json:"long_short_ratio"`
-	LiqVolume24h    float64  `json:"liq_volume_24h"`
-}
-
 // records builds the market records of syms in market id order: the
 // /perp_stats fields of the symbol routes, the rolling statistics and the
 // next whole UTC funding hour. funding_8h is 8 times the hourly rate of the
 // latest FundingRateUpdated.
-func (p *Providers) records(ctx context.Context, syms []string) ([]MarketRecord, error) {
+func (p *Providers) records(ctx context.Context, syms []string) ([]records.MarketRecord, error) {
 	now := time.Now()
 	rows, err := p.db.QueryContext(ctx, rollingSQL, usdScale.String(), now.Add(-24*time.Hour))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []MarketRecord
+	var out []records.MarketRecord
 	for rows.Next() {
 		var (
-			r                                MarketRecord
+			r                                records.MarketRecord
 			vol7, vol30, change, volContract sql.NullString
 			trades                           sql.NullInt64
 			updated                          sql.NullTime
@@ -883,12 +841,8 @@ func (p *Providers) records(ctx context.Context, syms []string) ([]MarketRecord,
 	}
 	for i := range out {
 		r := &out[i]
-		raw, err := p.get(ctx, "/api/"+strings.ToLower(r.Symbol)+"/"+kindPerpStats)
+		s, err := p.symbol.PerpStats(ctx, r.Symbol)
 		if err != nil {
-			return nil, err
-		}
-		var s perpStats
-		if err := json.Unmarshal(raw, &s); err != nil {
 			return nil, err
 		}
 		r.Price, r.Volume24h, r.OpenInterest, r.EstFundingRate = s.IndexPrice, s.Volume24h, s.OpenInterest, s.EstFundingRate

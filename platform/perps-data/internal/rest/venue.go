@@ -13,19 +13,14 @@ import (
 )
 
 type Venue struct {
-	db   *sql.DB
-	book *feeds.Book
+	db *sql.DB
 }
 
 func NewVenue(db *sql.DB) (*Venue, error) {
 	if db == nil {
 		return nil, errors.New("rest: nil database")
 	}
-	book, err := feeds.NewBook(db)
-	if err != nil {
-		return nil, err
-	}
-	return &Venue{db: db, book: book}, nil
+	return &Venue{db: db}, nil
 }
 
 func (v *Venue) Register(mux *http.ServeMux) {
@@ -97,12 +92,13 @@ func (v *Venue) orderbook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, venueResponse{Error: "invalid depth"})
 		return
 	}
-	snapshot, err := v.book.Snapshot(r.Context(), market, depth)
+	book, err := feeds.LoadBook(r.Context(), v.db, market)
 	if err != nil {
 		venueUnavailable(w)
 		return
 	}
-	levels := func(side [][2]float64) ([]venueLevel, error) {
+	asks, bids := book.NotionalLevels(depth)
+	levels := func(side []feeds.Level) ([]venueLevel, error) {
 		out := make([]venueLevel, 0, min(len(side), depth))
 		for _, level := range side[:min(len(side), depth)] {
 			if !venueFinite(level[0]) || !venueFinite(level[1]) || level[0] <= 0 || level[1] <= 0 {
@@ -113,11 +109,11 @@ func (v *Venue) orderbook(w http.ResponseWriter, r *http.Request) {
 		return out, nil
 	}
 	var body venueBook
-	if body.Asks, err = levels(snapshot.Asks); err != nil {
+	if body.Asks, err = levels(asks); err != nil {
 		venueUnavailable(w)
 		return
 	}
-	if body.Bids, err = levels(snapshot.Bids); err != nil {
+	if body.Bids, err = levels(bids); err != nil {
 		venueUnavailable(w)
 		return
 	}
