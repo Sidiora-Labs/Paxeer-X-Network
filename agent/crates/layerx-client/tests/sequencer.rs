@@ -510,6 +510,37 @@ fn closed_connection_is_unavailable() {
 }
 
 #[test]
+fn unusable_send_answer_is_unavailable() {
+    let (url, server) = serve(vec![
+        (
+            "eth_sendRawTransaction",
+            Some(r#""result":"0x""#.to_owned()),
+        ),
+        (
+            "eth_sendRawTransaction",
+            Some(format!(r#""result":"{TX_HASH}","extra":true"#)),
+        ),
+        (
+            "eth_sendRawTransaction",
+            Some(r#""error":{"code":-32000,"message":"nonce too low","extra":true}"#.to_owned()),
+        ),
+        ("eth_call", Some(r#""result":"0x0""#.to_owned())),
+    ]);
+    let endpoint = endpoint(&url);
+    for _ in 0..3 {
+        assert_eq!(
+            endpoint.send_raw_transaction(&[0x02, 0xf8]),
+            Err(SequencerError::Unavailable)
+        );
+    }
+    assert_eq!(
+        endpoint.call_pending(&[0x10; 20], &[0x01]),
+        Err(SequencerError::Malformed)
+    );
+    assert_eq!(server.join().must().len(), 4);
+}
+
+#[test]
 fn endpoint_refuses_plain_remote_urls_and_unpinned_https() {
     assert_eq!(
         SequencerEndpoint::new("http://router.example/", &[]).map(|_| ()),

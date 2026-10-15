@@ -315,10 +315,17 @@ impl SequencerEndpoint {
     ///
     /// # Errors
     /// [`SequencerError::Unavailable`] when the outcome of the send is
-    /// unknown; [`SequencerError::Rpc`] when the sequencer refused it.
+    /// unknown, including an answer that is not a usable JSON-RPC response
+    /// after the request was sent; [`SequencerError::Rpc`] when the sequencer
+    /// refused it.
     pub fn send_raw_transaction(&self, raw: &[u8]) -> Result<[u8; 32], SequencerError> {
-        let result = self.call("eth_sendRawTransaction", &json!([hex(raw)]))?;
-        fixed(&result).ok_or(SequencerError::Malformed)
+        let result = self
+            .call("eth_sendRawTransaction", &json!([hex(raw)]))
+            .map_err(|error| match error {
+                SequencerError::Malformed => SequencerError::Unavailable,
+                error => error,
+            })?;
+        fixed(&result).ok_or(SequencerError::Unavailable)
     }
 
     /// Rung and signed receipt of `tx_hash`; `None` when the hash is unknown.

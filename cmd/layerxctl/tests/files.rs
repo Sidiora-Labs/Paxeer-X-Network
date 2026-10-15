@@ -3,6 +3,7 @@ include!("../src/main.rs");
 mod files {
     use std::error::Error;
     use std::fs;
+    use std::io::{BufRead, BufReader, Read, Write};
     use std::net::{Ipv4Addr, TcpListener, TcpStream};
     use std::os::unix::fs::{symlink, DirBuilderExt};
     use std::path::{Path, PathBuf};
@@ -449,6 +450,103 @@ mod files {
         assert!(text.contains("\"receipt_error\":{\"rpc_code\":-32601,"));
         let receipt = evm.rpc("eth_getTransactionReceipt", &[hash])?;
         assert_eq!(json_string(&receipt, "status")?, "0x1");
+        Ok(())
+    }
+
+    fn answer_send(listener: &TcpListener, answer: &str) -> Result<String, Box<dyn Error>> {
+        let (stream, _) = listener.accept()?;
+        let mut reader = BufReader::new(stream);
+        let mut length = 0_usize;
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line)?;
+            if line == "\r\n" {
+                break;
+            }
+            if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                length = value.trim().parse()?;
+            }
+        }
+        let mut body = vec![0_u8; length];
+        reader.read_exact(&mut body)?;
+        let body = String::from_utf8(body)?;
+        assert!(body.contains("\"method\":\"eth_sendRawTransaction\""));
+        let id: u64 = body
+            .split_once("\"id\":")
+            .ok_or("request has no id")?
+            .1
+            .split(|character: char| !character.is_ascii_digit())
+            .next()
+            .ok_or("request id is not a number")?
+            .parse()?;
+        let answer = answer
+            .replace("{id}", &id.to_string())
+            .replace("{other}", &(id + 1).to_string());
+        let mut stream = reader.into_inner();
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}",
+            answer.len()
+        )?;
+        stream.flush()?;
+        Ok(body)
+    }
+
+    fn submit_against(answer: &'static str) -> Result<Output, Box<dyn Error>> {
+        let directory = Directory::new()?;
+        let path = directory.0.join("transaction");
+        fs::write(&path, [0x02, 0xf8, 0x6b])?;
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+        let url = format!("http://{}/", listener.local_addr()?);
+        let server = std::thread::spawn(move || {
+            answer_send(&listener, answer).map_err(|error| error.to_string())
+        });
+        let output = ctl(&[
+            "submit",
+            "--rpc-url",
+            &url,
+            "--transaction",
+            path.to_str().ok_or("path is not UTF-8")?,
+        ])?;
+        let body = server.join().map_err(|_| "server thread panicked")??;
+        assert!(body.contains("\"params\":[\"0x02f86b\"]"));
+        Ok(output)
+    }
+
+    #[test]
+    fn unusable_send_answer_stays_submitted_unknown() -> TestResult {
+        for answer in [
+            "{}",
+            "{\"jsonrpc\":\"2.0\",\"id\":{other},\"result\":\"0x8f1c4b2a9e7d3c5b1a0f2e4d6c8b0a1928374655647382910a1b2c3d4e5f6071\"}",
+            "{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\"0x\"}",
+        ] {
+            let output = submit_against(answer)?;
+            assert_eq!(
+                output.status.code(),
+                Some(3),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(
+                String::from_utf8(output.stdout)?,
+                "{\"state\":\"submitted\",\"outcome\":\"unknown\"}\n"
+            );
+            assert!(output.stderr.is_empty());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn definitive_send_refusal_stays_refused() -> TestResult {
+        let output = submit_against(
+            "{\"jsonrpc\":\"2.0\",\"id\":{id},\"error\":{\"code\":-32000,\"message\":\"nonce too low\"}}",
+        )?;
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+        assert_eq!(
+            String::from_utf8(output.stderr)?,
+            "layerxctl: submission refused: {\"rpc_code\":-32000,\"message\":\"nonce too low\",\"data\":null}\n"
+        );
         Ok(())
     }
 
