@@ -469,3 +469,17 @@ command = "go build ./modules/perps/..."
 exit_code = 1
 log_path = "fleet/logs/3.1.14-build-1.log"
 observed_and_assumption = "liquidation.go needs the perps Keeper, margin, matching, mark, account and order symbols of tasks 3.1.1, 3.1.4, 3.1.6, 3.1.11, 3.1.3 and 3.1.7, and acceptance 3.13.2 expects a second 200,000 USD slice while the contract's prefix 0x0F keeps only the last slice time, which yields 160,000 USD. Assumption: both gates are rerun once after the perps keeper package compiles on main, and the slice value is settled in the spec correction lane."
+
+[finding.3.1.15]
+revision = "a491c7811bfcb0c8be792a3598069e410b1f16d8"
+command = "go build ./modules/perps/..."
+exit_code = 1
+log_path = "fleet/logs/3.1.15-build-1.log"
+observed_and_assumption = "insurance.go builds on the keeper, account, margin, matching, order, mark, open-interest, liquidation and ADL symbols of tasks 3.1.1, 3.1.3, 3.1.4, 3.1.6, 3.1.7, 3.1.11, 3.1.13, 3.1.14 and 3.1.16, which were not on the base, and sibling keeper files declare colliding private helpers. Assumption: both gates are rerun once after the perps keeper package compiles on main and a reconciliation pass renames the colliding helpers."
+
+[finding.3.1.20]
+revision = "d7dfd76e6fec7cad9193d190f6549b682acb5033"
+command = "go build ./modules/perps/types/"
+exit_code = 1
+log_path = "fleet/logs/3.1.20-build-1.log"
+observed_and_assumption = "expected_keepers.go references pricefeed keeper Price, which task 5.1.9 adds in modules/pricefeed/keeper/price.go and which has not landed. Assumption: both gates are rerun once after 5.1.9 lands."
