@@ -112,3 +112,10 @@ command = "go test ./node/ -run 'TestV6120IsAKnownPlanWithAHandler|TestV6120Refu
 exit_code = 1
 log_path = "fleet logs 1.0.3-verify-1"
 observed_and_assumption = "The v6.12.0 upgrade handler and hook table are written, but the node test package does not compile because this task deletes the v6.11 upgrade symbols that the custody, activation, v6.10 and v6.11 test files still reference, and those files belong to the dependent test retarget task. Assumption: the test retarget task is built on this task's branch and both land together, with this verify command rerun on the combined revision."
+
+[finding.3.0.5]
+revision = "f6b51b58c262e8ed786b28c9009afc9b1b16b3a7"
+command = "go test ./modules/perps/types/ -run 'TestTiers'"
+exit_code = 0
+log_path = "fleet logs 3.0.5-verify-1"
+observed_and_assumption = "The margin tier and market validation code passes its gate, but the capability text for the perps math task names UsdToUsdlDown and UsdToUsdlUp helpers that do not exist in the tree, so Market.Validate enforces the decimals bound directly against the collateral decimals constant. Assumption: the perps math task either adds those helpers under that name or its acceptance is read against the direct bound, with no change here."
