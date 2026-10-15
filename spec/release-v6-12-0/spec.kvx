@@ -1234,7 +1234,7 @@ invariants = "The base app version (node/app.go:593) equals the CLI version."
 
 [task.1.0.1]
 title = "Order the native kernel libraries before every paxd build and add the paxd build, version and shim test targets"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
