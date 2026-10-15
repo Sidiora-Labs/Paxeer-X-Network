@@ -24,6 +24,41 @@ type Keeper struct {
 	evmKeeper    types.EVMKeeper
 
 	authority string
+
+	generation2 RoleAddresses
+}
+
+// RoleAddresses are the role contract addresses of one Launch-x generation.
+type RoleAddresses struct {
+	SidioraFactory  common.Address
+	Router          common.Address
+	Quoter          common.Address
+	FeesRouter      common.Address
+	FeeAccumulator  common.Address
+	PoolRegistry    common.Address
+	ProtocolConfig  common.Address
+	SidioraNFT      common.Address
+	Treasury        common.Address
+	OpticalRegistry common.Address
+	EventEmitter    common.Address
+	PoolBeacon      common.Address
+}
+
+// generation2Roles are the generation 2 role addresses served by 0x1017 for
+// every pool; the Treasury is the address SidioraFactory slot 6 held.
+var generation2Roles = RoleAddresses{
+	SidioraFactory:  common.HexToAddress("0x3993D004166738d1069B5C4e0a923f7B9D5D8830"),
+	Router:          common.HexToAddress("0x78FB06f525cD964388f2305A489035263E31C6e4"),
+	Quoter:          common.HexToAddress("0x793006f4F321b8863F26DBD75b11bAa01DA181dc"),
+	FeesRouter:      common.HexToAddress("0x05681dA6f611C2dfFD3E92611F6dE2d247647927"),
+	FeeAccumulator:  common.HexToAddress("0x7b14808b72f61664cDb79D25E6d1587655571a66"),
+	PoolRegistry:    common.HexToAddress("0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7"),
+	ProtocolConfig:  common.HexToAddress("0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6"),
+	SidioraNFT:      common.HexToAddress("0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B"),
+	Treasury:        common.HexToAddress("0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723"),
+	OpticalRegistry: common.HexToAddress("0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0"),
+	EventEmitter:    common.HexToAddress("0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6"),
+	PoolBeacon:      common.HexToAddress("0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE"),
 }
 
 // NewKeeper wires the launchpad keeper. Params change only through
@@ -31,7 +66,7 @@ type Keeper struct {
 func NewKeeper(storeKey sdk.StoreKey, bankKeeper types.BankKeeper, tokenFactory types.TokenFactory,
 	evmKeeper types.EVMKeeper) *Keeper {
 	return &Keeper{storeKey: storeKey, bankKeeper: bankKeeper, tokenFactory: tokenFactory, evmKeeper: evmKeeper,
-		authority: authtypes.NewModuleAddress(govtypes.ModuleName).String()}
+		authority: authtypes.NewModuleAddress(govtypes.ModuleName).String(), generation2: generation2Roles}
 }
 
 func (k *Keeper) store(ctx sdk.Context) sdk.KVStore { return ctx.KVStore(k.storeKey) }
@@ -43,6 +78,13 @@ func (k *Keeper) ModuleAddress() sdk.AccAddress { return authtypes.NewModuleAddr
 func (k *Keeper) TreasuryAddress() sdk.AccAddress {
 	return authtypes.NewModuleAddress(types.TreasuryName)
 }
+
+// Generation2 returns the generation 2 role addresses.
+func (k *Keeper) Generation2() RoleAddresses { return k.generation2 }
+
+// TreasuryContract is the generation 2 Treasury address that serves the
+// Treasury of every generation.
+func (k *Keeper) TreasuryContract() common.Address { return k.generation2.Treasury }
 
 // Authority is the bech32 account allowed to change params.
 func (k *Keeper) Authority() string { return k.authority }
