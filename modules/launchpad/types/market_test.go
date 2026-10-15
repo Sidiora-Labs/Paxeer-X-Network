@@ -107,8 +107,8 @@ func TestMarketValidate(t *testing.T) {
 		"fee right":          func(m *types.Market) { m.FeeRightCollection = poolMarket().FeeRightCollection },
 		"pending guardian":   func(m *types.Market) { m.PendingGuardian = account(3) },
 		"snapshot timestamp": func(m *types.Market) { m.LastSnapshotTimestamp = 1 },
-		"buy volume":         func(m *types.Market) { m.CumulativeBuyQuoteVolume = sdk.ZeroInt() },
-		"sell volume":        func(m *types.Market) { m.CumulativeSellQuoteVolume = sdk.ZeroInt() },
+		"buy volume":         func(m *types.Market) { m.CumulativeBuyQuoteVolume = sdk.NewInt(1) },
+		"sell volume":        func(m *types.Market) { m.CumulativeSellQuoteVolume = sdk.NewInt(-1) },
 		"fee right id":       func(m *types.Market) { m.FeeRightID = 1 },
 	}
 	for name, mutate := range native {
@@ -119,6 +119,27 @@ func TestMarketValidate(t *testing.T) {
 	paused := nativeMarket()
 	paused.Paused = true
 	require.NoError(t, paused.Validate())
+
+	// The keeper stores a market with json.Marshal and reads it with
+	// json.Unmarshal: nil native volumes come back as non-nil zeros.
+	stored, err := json.Marshal(nativeMarket())
+	require.NoError(t, err)
+	require.Contains(t, string(stored), `"cumulative_buy_quote_volume":"0"`)
+	require.Contains(t, string(stored), `"cumulative_sell_quote_volume":"0"`)
+	var loaded types.Market
+	require.NoError(t, json.Unmarshal(stored, &loaded))
+	require.False(t, loaded.CumulativeBuyQuoteVolume.IsNil())
+	require.False(t, loaded.CumulativeSellQuoteVolume.IsNil())
+	require.True(t, loaded.CumulativeBuyQuoteVolume.IsZero())
+	require.True(t, loaded.CumulativeSellQuoteVolume.IsZero())
+	require.NoError(t, loaded.Validate())
+	genesis := types.DefaultGenesis()
+	genesis.Markets = []types.Market{loaded}
+	exported, err := json.Marshal(genesis)
+	require.NoError(t, err)
+	var imported types.GenesisState
+	require.NoError(t, json.Unmarshal(exported, &imported))
+	require.NoError(t, imported.Validate())
 
 	pool := [20]byte(common.HexToAddress("0xCE20Da50F92D21d8BeE497910c782E9Aa25b6263"))
 	token := [20]byte(common.HexToAddress("0x85FcD13735F4309833A503EE804ea32395851479"))
