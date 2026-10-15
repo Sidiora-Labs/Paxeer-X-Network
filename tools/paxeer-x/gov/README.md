@@ -1,6 +1,6 @@
 # Governance window kit
 
-Renders the proposals for the first governance window after the v6.11 upgrade and dry-runs each one through `paxd` with `--generate-only --offline --chain-id hyperpax_125-1`. A file paxd refuses fails the render.
+Renders the proposals for the first governance window after the v6.12.0 upgrade and dry-runs each one through `paxd` with `--generate-only --offline --chain-id hyperpax_125-1`. A file paxd refuses fails the render.
 
 ```
 tools/paxeer-x/gov/render.sh --out DIR --paxd build/paxd \
@@ -16,7 +16,7 @@ tools/paxeer-x/gov/render.sh --out DIR --paxd build/paxd \
 
 | Output | Content | Dry run |
 | --- | --- | --- |
-| `01-software-upgrade.json` | Plan `v6.11` at `--height`, info naming the v6.11.0 release asset with its SHA-256 | `tx gov submit-proposal software-upgrade` |
+| `01-software-upgrade.json` | Plan `v6.12.0` at `--height`, info naming the v6.12.0 release asset with its SHA-256 | `tx gov submit-proposal software-upgrade` |
 | `02-fee-token-params.json` | evm `fee_token_enabled` true, `allowed_fee_denoms` usid at rate 3114000 (usid per whole PAX), `max_fee_token_rate_age` 3400000 blocks | `tx gov submit-proposal param-change` |
 | `03-xweb-fee.json` | LayerXProposal with `xweb.MsgSetParams`, fee = 0.001 USD in uhpx at `--pax-usd` | `tx gov submit-proposal layerx-proposal` |
 | `04-exchange-markets.json` | LayerXProposal with `layerxexchange.MsgSetMarket` for PAX/SID spot (SID margin), BTC-USD and ETH-USD perps (`--perp-margin`, default PAX) | `tx gov submit-proposal layerx-proposal` |

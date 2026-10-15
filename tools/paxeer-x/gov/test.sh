@@ -7,6 +7,37 @@ command -v go >/dev/null || PATH=$PATH:/usr/local/go/bin
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
+fail() { echo "test.sh: $*" >&2; exit 1; }
+
+plan_named_v6120() {
+  jq -e '.name == "v6.12.0"' "$OUT/01-software-upgrade.json" >/dev/null \
+    || fail "plan_named_v6120"
+  echo "plan_named_v6120: ok"
+}
+
+sid_docs_name_v6120() {
+  local file
+  for file in tools/paxeer-x/sid-snapshot/README.md RELEASE.md; do
+    grep -Fq 'v6.12.0 migration' "$ROOT/$file" || fail "sid_docs_name_v6120: $file"
+    if grep -Eq 'v6[.]11\b' "$ROOT/$file"; then
+      fail "sid_docs_name_v6120: retired name in $file"
+    fi
+  done
+  echo "sid_docs_name_v6120: ok"
+}
+
+sid_docs_name_v6120
+for file in tools/paxeer-x/gov/templates/01-software-upgrade.json \
+  tools/paxeer-x/gov/README.md tools/paxeer-x/gov/test.sh \
+  tools/paxeer-x/sid-snapshot/README.md tools/bringup/sync-fleet.test.sh \
+  hpx/publish.sh RELEASE.md contracts/src/SidioraNativeERC20.sol; do
+  grep -Fq 'v6.12.0' "$ROOT/$file" || fail "release name missing in $file"
+  if grep -Eq 'v6[.]11\b' "$ROOT/$file"; then
+    fail "retired release name in $file"
+  fi
+done
+echo "release_files_name_v6120: ok"
+
 PAXD=${PAXD:-}
 if [ -z "$PAXD" ]; then
   (cd "$ROOT" && go build -tags netgo -o "$WORK/paxd" ./daemon/paxd)
@@ -16,7 +47,7 @@ fi
 OUT=$WORK/out
 "$ROOT/tools/paxeer-x/gov/render.sh" --out "$OUT" --paxd "$PAXD" \
   --height 27000000 \
-  --release-url https://example.invalid/paxd-v6.11.0-linux-amd64 \
+  --release-url https://example.invalid/paxd-v6.12.0-linux-amd64 \
   --release-sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --deposit 10000000uhpx --pax-usd 0.02 \
   --pax-asset-id 1111111111111111111111111111111111111111111111111111111111111111 \
@@ -32,7 +63,6 @@ OUT=$WORK/out
   --bridge-config "$ROOT/bridge/deploy/proposals/testdata/solana.json" \
   --bridge-manifest "$ROOT/bridge/deploy/proposals/testdata/attestors.json"
 
-fail() { echo "test.sh: $*" >&2; exit 1; }
 for f in 01-software-upgrade 02-fee-token-params 03-xweb-fee 04-exchange-markets 05-custody \
   bridge/solana/proposals/04-proposal-open-chain bridge/solana/proposals/05-proposal-sidiora-cap; do
   [ -s "$OUT/$f.json" ] || fail "$f.json missing"
@@ -42,7 +72,8 @@ for f in 01-software-upgrade 02-fee-token-params 03-xweb-fee 04-exchange-markets
 done
 [ -s "$OUT/06-anchor-sequencer-authorization.json" ] || fail "anchor calldata missing"
 
-jq -e '.name == "v6.11" and .height == "27000000" and (.info | fromjson | .binaries["linux/amd64"] | endswith("?checksum=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"))' \
+plan_named_v6120
+jq -e '.name == "v6.12.0" and .height == "27000000" and (.info | fromjson | .binaries["linux/amd64"] | endswith("?checksum=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"))' \
   "$OUT/01-software-upgrade.json" >/dev/null || fail "upgrade plan"
 jq -e '.changes == [
   {subspace: "evm", key: "KeyFeeTokenEnabled", value: true},

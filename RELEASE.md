@@ -4,7 +4,7 @@ A Paxeer Network release is one git tag, one `tools/release/version.json`, and a
 
 ## Version and tag scheme
 
-- `tools/release/version.json` holds `version` (`vX.Y.Z`) and `upgrade`, the on-chain upgrade plan name the release carries (for example `v6.11`). The plan name must match the constant registered in the code (`modules/layerxcustody/types/governance_activation.go` for `v6.11`).
+- `tools/release/version.json` holds `version` (`vX.Y.Z`) and `upgrade`, the on-chain upgrade plan name the release carries (for example `v6.12.0`). The plan name must match the constant registered in the code (`V6120Upgrade` in `node/upgrades_v6120.go` for `v6.12.0`). The v6.12.0 migration includes the SID holder migration and SID mint-authority move as hooks of that handler.
 - The release tag is `paxeer-network/vX.Y.Z` and must equal `paxeer-network/` + `version`.
 - Every tag must be newer than the latest existing `paxeer-network/v*` tag. The `Paxeer / Release Check` workflow enforces this on pull requests.
 

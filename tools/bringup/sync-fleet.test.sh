@@ -636,7 +636,7 @@ check sync_fleet_rollout_unreachable_host_stages_nothing bash -c "! grep -q '^lo
 
 # The tagged release: a fixture asset and its SHA256SUMS served from a file
 # URL through the real curl, and a SHA256SUMS that lists another sha256.
-up_version=v6.11.0
+up_version=v6.12.0
 up_asset="paxd-$up_version-linux-amd64"
 mkdir -p "$work/dl" "$work/dl-bad"
 printf 'upgrade binary' >"$work/dl/$up_asset"
@@ -644,7 +644,7 @@ cp "$work/dl/$up_asset" "$work/dl-bad/$up_asset"
 up_sha="$("$SYNC_FLEET_TEST_REAL_SHA256SUM" "$work/dl/$up_asset" | cut -d' ' -f1)"
 printf '%s  %s\n' "$up_sha" "$up_asset" >"$work/dl/SHA256SUMS"
 printf '%s  %s\n' "$release_sha256" "$up_asset" >"$work/dl-bad/SHA256SUMS"
-export PAXD_RELEASE_URL="file://$work/dl" PAXD_RELEASE_DIR="$work/fetched" PAXD_VERSION="$up_version" UPGRADE_NAME=v6.11
+export PAXD_RELEASE_URL="file://$work/dl" PAXD_RELEASE_DIR="$work/fetched" PAXD_VERSION="$up_version" UPGRADE_NAME=v6.12.0
 
 expect sync_fleet_release_verifies_and_rolls "$work/hosts-rollout.env" 0 --dry-run release "$up_version" -- \
 	"verified $up_asset sha256=$up_sha" \
@@ -663,21 +663,21 @@ PAXD_RELEASE_URL="file://$work/absent" expect sync_fleet_release_unfetchable "$w
 up_height=26500000
 cat >"$work/halt.log" <<LOG
 9:59AM INF committed state height=26499999 module=state
-9:59AM ERR UPGRADE "v6.11" NEEDED at height: $up_height: {"binaries":{}}
-9:59AM ERR CONSENSUS FAILURE!!! err="UPGRADE \"v6.11\" NEEDED at height: $up_height: "
+9:59AM ERR UPGRADE "v6.12.0" NEEDED at height: $up_height: {"binaries":{}}
+9:59AM ERR CONSENSUS FAILURE!!! err="UPGRADE \"v6.12.0\" NEEDED at height: $up_height: "
 LOG
 upgrader="$root/tools/bringup/upgrade-fleet.sh"
 halt() {
 	bash -c '. "$1"; halt_logged "$2" "$3" <"$4"' _ "$upgrader" "$@"
 }
-check upgrade_fleet_halt_line_at_the_height halt v6.11 "$up_height" "$work/halt.log"
+check upgrade_fleet_halt_line_at_the_height halt v6.12.0 "$up_height" "$work/halt.log"
 no_halt() {
 	! halt "$@"
 }
-check upgrade_fleet_halt_line_shorter_height no_halt v6.11 2650000 "$work/halt.log"
-check upgrade_fleet_halt_line_longer_height no_halt v6.11 265000001 "$work/halt.log"
+check upgrade_fleet_halt_line_shorter_height no_halt v6.12.0 2650000 "$work/halt.log"
+check upgrade_fleet_halt_line_longer_height no_halt v6.12.0 265000001 "$work/halt.log"
 check upgrade_fleet_halt_line_other_plan no_halt v6.1 "$up_height" "$work/halt.log"
-check upgrade_fleet_halt_line_absent no_halt v6.11 "$up_height" /dev/null
+check upgrade_fleet_halt_line_absent no_halt v6.12.0 "$up_height" /dev/null
 
 # journalctl stand-in: prints the destination's fixture journal of the unit.
 cat >"$work/bin/journalctl" <<'SH'
@@ -712,7 +712,7 @@ for h in up-rpc-1 up-validator-a; do
 	printf 'release binary' >"$hosts/$h/paxd"
 done
 cp "$work/halt.log" "$hosts/up-rpc-1/journal/paxd.service"
-printf 'ERR UPGRADE "v6.11" NEEDED at height: %s1: \n' "$up_height" >"$hosts/up-validator-a/journal/paxd-a1"
+printf 'ERR UPGRADE "v6.12.0" NEEDED at height: %s1: \n' "$up_height" >"$hosts/up-validator-a/journal/paxd-a1"
 printf 'ERR UPGRADE "v6.10" NEEDED at height: %s: \n' "$up_height" >"$hosts/up-validator-a/journal/paxd-a2"
 u="$SYNC_FLEET_TEST_CALLS"
 
@@ -724,7 +724,7 @@ PAXD_RELEASE_URL="file://$work/dl-bad" syncer="$upgrader" expect upgrade_fleet_r
 check upgrade_fleet_refusal_stages_nothing bash -c "! grep -q '^local scp' '$u' && [ -z \"\$(ls '$hosts'/up-rpc-1/paxd.new-* '$hosts'/up-validator-a/paxd.new-* 2>/dev/null)\" ]"
 
 syncer="$upgrader" expect upgrade_fleet_stage_only "$work/hosts-upgrade.env" 0 --stage-only "$up_height" -- \
-	"verified $up_asset sha256=$up_sha upgrade=v6.11 height=$up_height" \
+	"verified $up_asset sha256=$up_sha upgrade=v6.12.0 height=$up_height" \
 	"staged UPGRADE_UNITS[0] paxd.service sha256=$up_sha" \
 	"staged UPGRADE_UNITS[1] paxd-a1 sha256=$up_sha" \
 	"upgrade-fleet: all units passed"

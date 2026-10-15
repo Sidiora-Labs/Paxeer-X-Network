@@ -1,6 +1,6 @@
 # sid-snapshot
 
-Builds the SID holder list for the v6.11 migration: a JSON array of
+Builds the SID holder list for the v6.12.0 migration: a JSON array of
 `{"address": "0x…", "balance": "<base units>"}` entries, sorted by address,
 in the shape of `node/testdata/sid-holders.json`.
 

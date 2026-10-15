@@ -1,9 +1,9 @@
 {
-  "name": "v6.11",
+  "name": "v6.12.0",
   "height": "@HEIGHT@",
   "info": "@UPGRADE_INFO@",
-  "title": "Paxeer X Network v6.11.0",
-  "description": "Upgrade the chain to paxd v6.11.0 at the plan height. The v6.11 plan activates the custody governance route and its messages. The release asset and its SHA-256 are named in the plan info.",
+  "title": "Paxeer X Network v6.12.0",
+  "description": "Upgrade the chain to paxd v6.12.0 at the plan height. The v6.12.0 plan activates the custody governance route and its messages. The release asset and its SHA-256 are named in the plan info.",
   "deposit": "@DEPOSIT@",
   "is_expedited": false
 }

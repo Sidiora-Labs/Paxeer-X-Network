@@ -28,7 +28,7 @@ contract SidioraNativeERC20 is ERC20, UUPSUpgradeable {
     /// @dev keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ERC20")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant LEGACY_ERC20_STORAGE = 0x52c63247e1f47db19d5ce0460030c497f067ca4cebf71ba98eeadabe20bace00;
     /// @dev keccak256(abi.encode(uint256(keccak256("paxeer.storage.SidioraLegacyMigration")) - 1)) & ~bytes32(uint256(0xff));
-    /// offset 0 holds the v6.11 migration height, offset 1 the unminted shortfall. Written by the chain only.
+    /// offset 0 holds the v6.12.0 migration height, offset 1 the unminted shortfall. Written by the chain only.
     bytes32 private constant LEGACY_MIGRATION_STORAGE = keccak256(
         abi.encode(uint256(keccak256("paxeer.storage.SidioraLegacyMigration")) - 1)
     ) & ~bytes32(uint256(0xff));
@@ -67,7 +67,7 @@ contract SidioraNativeERC20 is ERC20, UUPSUpgradeable {
         if (msg.sender != owner()) revert UnauthorizedUpgrade(msg.sender);
     }
 
-    /// @notice Clears a legacy ERC-20 balance slot the v6.11 upgrade left behind. usid is minted only by
+    /// @notice Clears a legacy ERC-20 balance slot the v6.12.0 upgrade left behind. usid is minted only by
     /// chain modules; minted reports whether the holder's bank balance already covers the legacy amount.
     function migrateLegacy(address holder) external {
         bytes32 heightSlot = LEGACY_MIGRATION_STORAGE;
