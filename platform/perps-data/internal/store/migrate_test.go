@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -474,6 +475,72 @@ VALUES (4096, 'UNSEEDED', 'UNSEEDED', 'UNSEEDED', $1, $2, 10, 50, 0, true, 'chai
 		}
 		if slices.Contains(tablesInPerps(t, db, "BASE TABLE"), "oi_snapshots") {
 			t.Fatal("perps.oi_snapshots exists")
+		}
+	})
+
+	t.Run("account_ledger_row_id", func(t *testing.T) {
+		migrate(t, db)
+		if got := columnNames(columns(t, db, "account_ledger")); !slices.Equal(got, []string{
+			"account", "token", "entry_type", "amount", "position_id", "is_debit",
+			"block", "block_hash", "tx_index", "log_index", "sub", "tx_hash", "receipt_kind", "block_time", "row_id",
+		}) {
+			t.Fatalf("account_ledger columns %v", got)
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatalf("begin: %v", err)
+		}
+		defer func() {
+			if err := tx.Rollback(); err != nil {
+				t.Errorf("rollback: %v", err)
+			}
+		}()
+		const keys = `block, block_hash, tx_index, log_index, sub, tx_hash, receipt_kind, block_time, emitter, kind, account, tx_from`
+		const common = `decode(repeat('11', 32), 'hex'), 0, $1, 0, decode(repeat('22', 32), 'hex'), 'tx', now(), decode(repeat('33', 20), 'hex')`
+		const account = `decode(repeat('44', 20), 'hex')`
+		sources := []struct {
+			entryType int
+			insert    string
+		}{
+			{0, `INSERT INTO perps.collateral_events (` + keys + `, account_arg, amount, new_balance)
+VALUES (7, ` + common + `, 'deposited', ` + account + `, ` + account + `, ` + account + `, 10, 10) RETURNING row_id`},
+			{4, `INSERT INTO perps.fees (` + keys + `, position_id, "user", market_id, fee_type, fee_usd, fee_tokens, token)
+VALUES (7, ` + common + `, 'collected', ` + account + `, ` + account + `, 9, ` + account + `, 1, 0, 2, 2, decode(repeat('85', 20), 'hex')) RETURNING row_id`},
+			{5, `INSERT INTO perps.funding_payments (` + keys + `, position_id, "user", market_id, funding_payment_usd, new_collateral_usd, new_collateral_amount)
+VALUES (7, ` + common + `, 'applied', ` + account + `, ` + account + `, 9, ` + account + `, 1, -3, 50, 50) RETURNING row_id`},
+			{6, `INSERT INTO perps.trade_settlements (` + keys + `, position_id, "user", market_id, trade_type, size_usd, execution_price, gross_pnl, total_fees_usd, funding_paid_usd, net_payout_tokens)
+VALUES (7, ` + common + `, 'settled', ` + account + `, ` + account + `, 9, ` + account + `, 1, 0, 100, 100, -5, 1, 0, 3) RETURNING row_id`},
+		}
+		want := map[int]int64{}
+		for i, src := range sources {
+			var rowID int64
+			if err := tx.QueryRow(src.insert, i).Scan(&rowID); err != nil {
+				t.Fatalf("insert source of entry type %d: %v", src.entryType, err)
+			}
+			want[src.entryType] = rowID
+		}
+		rows, err := tx.Query(`SELECT entry_type, row_id, log_index FROM perps.account_ledger WHERE block = 7 ORDER BY log_index`)
+		if err != nil {
+			t.Fatalf("SELECT row_id FROM perps.account_ledger: %v", err)
+		}
+		defer rows.Close()
+		got := map[int]int64{}
+		for rows.Next() {
+			var entryType, logIndex int
+			var rowID int64
+			if err := rows.Scan(&entryType, &rowID, &logIndex); err != nil {
+				t.Fatalf("scan account_ledger: %v", err)
+			}
+			if sources[logIndex].entryType != entryType {
+				t.Fatalf("account_ledger row at log index %d has entry type %d, want %d", logIndex, entryType, sources[logIndex].entryType)
+			}
+			got[entryType] = rowID
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("read account_ledger: %v", err)
+		}
+		if !maps.Equal(got, want) {
+			t.Fatalf("account_ledger row_id by entry type %v, want the source row_id %v", got, want)
 		}
 	})
 

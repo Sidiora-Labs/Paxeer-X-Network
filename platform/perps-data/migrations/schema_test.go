@@ -180,6 +180,7 @@ var (
 	createTable    = regexp.MustCompile(`(?s)^CREATE TABLE perps\.(\w+) \((.*)\)$`)
 	createIndex    = regexp.MustCompile(`^CREATE (UNIQUE )?INDEX (\w+) ON perps\.(\w+) (\(.*?\)(?: WHERE .+)?)$`)
 	createView     = regexp.MustCompile(`(?s)^CREATE VIEW perps\.(\w+) AS\n(.*)$`)
+	replaceView    = regexp.MustCompile(`(?s)^CREATE OR REPLACE VIEW perps\.(\w+) AS\n(.*)$`)
 	createDomain   = regexp.MustCompile(`^CREATE DOMAIN perps\.(\w+) AS (.*)$`)
 	createFunction = regexp.MustCompile(`(?s)^CREATE FUNCTION perps\.\w+\(\) RETURNS trigger LANGUAGE plpgsql AS \$\$\n.*\$\$$`)
 	createTrigger  = regexp.MustCompile(`^CREATE TRIGGER \w+ (BEFORE|AFTER) [A-Z ]+ ON perps\.\w+ FOR EACH ROW EXECUTE FUNCTION perps\.\w+\(\)$`)
@@ -306,6 +307,16 @@ func loadSchema(t *testing.T) *schema {
 				continue
 			}
 			if m := createView.FindStringSubmatch(stmt); m != nil {
+				if _, dup := s.views[m[1]]; dup {
+					t.Fatalf("%s: view perps.%s created twice", file, m[1])
+				}
+				s.views[m[1]] = m[2]
+				continue
+			}
+			if m := replaceView.FindStringSubmatch(stmt); m != nil {
+				if _, ok := s.views[m[1]]; !ok {
+					t.Fatalf("%s: replaces view perps.%s, which no earlier statement creates", file, m[1])
+				}
 				s.views[m[1]] = m[2]
 				continue
 			}
@@ -718,8 +729,8 @@ func TestSchemaFiles(t *testing.T) {
 			if !strings.HasPrefix(b, "SELECT account, "+usdlByteaText) {
 				t.Errorf("account_ledger branch %d does not start with account and the USDL token", i)
 			}
-			if !strings.Contains(b, "block, block_hash, tx_index, log_index, sub, tx_hash, receipt_kind, block_time") {
-				t.Errorf("account_ledger branch %d lacks the common keys", i)
+			if !strings.HasSuffix(b, "block, block_hash, tx_index, log_index, sub, tx_hash, receipt_kind, block_time, row_id\nFROM perps."+sources[i]) {
+				t.Errorf("account_ledger branch %d does not end with the common keys and row_id: %q", i, b)
 			}
 		}
 		if !strings.Contains(branches[0], "amount, 0::perps.uint256 AS position_id, kind IN ('withdrawn', 'transferred_out') AS is_debit") {
