@@ -93,6 +93,18 @@ jobs:
         working-directory: explorer/services/${{ matrix.service }}
         run: cargo check --all-targets
 
+  explorer-lint-backend:
+    name: Explorer lint (backend)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lint the explorer backend
+        run: scripts/explorer/lint-backend.sh
+
   explorer-lint:
     name: Explorer lint (${{ matrix.leg }})
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
@@ -100,7 +112,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        leg: [backend, frontend, services]
+        leg: [frontend, services]
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

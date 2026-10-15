@@ -18,6 +18,7 @@ codeql.yml                      analyze                          codeql         
 docs-site.yml                   deploy                           publishing-credential ubuntu-24.04
 scorecard.yml                   analysis                         scorecard         ubuntu-24.04
 explorer-build.yml              explorer-backend                 container         ubuntu-24.04
+explorer-build.yml              explorer-lint-backend            docker-command    ubuntu-24.04
 explorer-images.yml             publish                          docker-action     ubuntu-24.04
 human.yml                       browser-performance              docker-command    ubuntu-24.04
 mirror-live.yml                 publish-retrieve                 layerx-testnet    [self-hosted, layerx-testnet]
@@ -66,6 +67,16 @@ REASONS = {
     "layerx-testnet", "publish", "release-pipeline", "publishing-credential",
 }
 
+# Commands that need a container runtime, which the routed runner image does not carry.
+CONTAINER_RUNTIME = re.compile(
+    r"(?:^|[;&|(`])\s*(?:sudo\s+)?(?:docker|podman)\s"
+    r"|scripts/explorer/lint-backend\.sh"
+    r"|explorer/deploy/tools/mix-in-builder\.sh",
+    re.MULTILINE,
+)
+MATRIX_REFERENCE = re.compile(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}")
+SHELL_REFERENCE = re.compile(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))")
+
 ROUTED = re.compile(
     r"^\$\{\{ \(github\.event_name == 'pull_request' && "
     r"github\.event\.pull_request\.head\.repo\.full_name != github\.repository\) && "
@@ -74,6 +85,42 @@ ROUTED = re.compile(
 )
 
 failures = []
+
+
+def matrix_combinations(body):
+    matrix = (body.get("strategy") or {}).get("matrix")
+    if not isinstance(matrix, dict):
+        return [{}]
+    combinations = [{}]
+    for key, values in matrix.items():
+        if key in ("include", "exclude") or not isinstance(values, list):
+            continue
+        combinations = [dict(combination, **{key: str(value)}) for combination in combinations for value in values]
+    for extra in matrix.get("include") or []:
+        if isinstance(extra, dict):
+            combinations.append({key: str(value) for key, value in extra.items()})
+    return combinations
+
+
+def render_matrix(text, combination):
+    return MATRIX_REFERENCE.sub(lambda match: combination.get(match.group(1), match.group(0)), str(text))
+
+
+def container_runtime_use(body):
+    job_env = body.get("env") if isinstance(body.get("env"), dict) else {}
+    for combination in matrix_combinations(body):
+        for step in body.get("steps") or []:
+            if not isinstance(step, dict) or "run" not in step:
+                continue
+            step_env = step.get("env") if isinstance(step.get("env"), dict) else {}
+            env = {key: render_matrix(value, combination) for key, value in {**job_env, **step_env}.items()}
+            command = SHELL_REFERENCE.sub(
+                lambda match: env.get(match.group(1) or match.group(2), match.group(0)),
+                render_matrix(step["run"], combination),
+            )
+            if CONTAINER_RUNTIME.search(command):
+                return combination, step.get("name", command.strip())
+    return None
 
 
 def fail(path, job, message):
@@ -143,6 +190,15 @@ for path in sorted(glob.glob(".github/workflows/*.yml") + glob.glob(".github/wor
         if match:
             if match.group(1) != match.group(2):
                 fail(path, job, "routing expression fallbacks differ")
+            use = container_runtime_use(body)
+            if use is not None:
+                combination, step = use
+                fail(
+                    path,
+                    job,
+                    f"routed job needs a container runtime the routed runner image lacks (step {step!r}, matrix {combination}); "
+                    "keep it on a hosted runner and list it as docker-command",
+                )
             continue
         if "CI_LINUX_RUNNER" in value:
             fail(path, job, f"routing expression differs from the required form: {value}")
