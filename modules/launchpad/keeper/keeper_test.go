@@ -196,8 +196,10 @@ func (e *env) at(d time.Duration) { e.ctx = e.ctx.WithBlockTime(genesisTime.Add(
 
 func (e *env) create(creator sdk.AccAddress, strategy types.FeeStrategy) types.Market {
 	e.t.Helper()
-	market, err := e.k.CreateMarket(e.ctx, nil, creator, "Kindle Token", "KNDL", strategy)
+	ctx, market, err := e.k.CreateMarket(e.ctx, e.k.ModuleCaller(), nil, e.evmAddress(creator), "Kindle Token", "KNDL",
+		strategy, common.Address{})
 	require.NoError(e.t, err)
+	e.ctx = ctx
 	return market
 }
 
@@ -342,12 +344,15 @@ func TestCreateMarketChargesFeeAndEscrowsSupply(t *testing.T) {
 	sameJSON(t, []types.Market{market}, e.k.GetMarkets(e.ctx, 0, 1))
 	e.solvent()
 
-	_, err = e.k.CreateMarket(e.ctx, nil, creator, "Kindle Token", "KNDL", types.FeeStrategyClaim)
+	_, _, err = e.k.CreateMarket(e.ctx, e.k.ModuleCaller(), nil, e.evmAddress(creator), "Kindle Token", "KNDL", types.FeeStrategyClaim,
+		common.Address{})
 	require.Error(t, err, "creator can no longer pay the creation fee")
 	rich := e.account(1_000_000_000)
-	_, err = e.k.CreateMarket(e.ctx, nil, rich, "Kindle Token", "KNDL", types.FeeStrategy(4))
+	_, _, err = e.k.CreateMarket(e.ctx, e.k.ModuleCaller(), nil, e.evmAddress(rich), "Kindle Token", "KNDL", types.FeeStrategy(4),
+		common.Address{})
 	require.ErrorIs(t, err, types.ErrInvalidStrategy)
-	_, err = e.k.CreateMarket(e.ctx, nil, rich, " ", "KNDL", types.FeeStrategyClaim)
+	_, _, err = e.k.CreateMarket(e.ctx, e.k.ModuleCaller(), nil, e.evmAddress(rich), " ", "KNDL", types.FeeStrategyClaim,
+		common.Address{})
 	require.ErrorIs(t, err, types.ErrInvalidMarket)
 }
 

@@ -9,7 +9,6 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -43,7 +42,7 @@ func newSwapEnv(t *testing.T, adjust func(*types.Market)) *swapEnv {
 	t.Helper()
 	c := newCustodyEnv(t)
 	pool := address("swap pool P1")
-	token := c.deployToken(swapTokenReserve+swapSellerTokens, c.holder)
+	token := c.deployToken("Kindle Token", "KNDL", swapTokenReserve+swapSellerTokens, c.holder)
 	c.tokenTransfer(token, c.holder, pool, b(swapTokenReserve))
 
 	market := generation2Market(address("fee right collection"), 1, c.account(0))
@@ -68,36 +67,6 @@ func newSwapEnv(t *testing.T, adjust func(*types.Market)) *swapEnv {
 	return &swapEnv{custodyEnv: c, denom: market.Denom, pool: pool, token: token,
 		accumulator: common.HexToAddress(market.FeeAccumulator), recipient: address("swap recipient R"),
 		locks: c.stateDB()}
-}
-
-// deployToken deploys a SidioraERC20 with supply minted to holder.
-func (c *custodyEnv) deployToken(supply int64, holder common.Address) common.Address {
-	c.t.Helper()
-	evm := &testkeeper.EVMTestApp.EvmKeeper
-	deployer := address("pool token deployer")
-	stringType, err := abi.NewType("string", "", nil)
-	require.NoError(c.t, err)
-	uintType, err := abi.NewType("uint256", "", nil)
-	require.NoError(c.t, err)
-	addressType, err := abi.NewType("address", "", nil)
-	require.NoError(c.t, err)
-	args, err := abi.Arguments{{Type: stringType}, {Type: stringType}, {Type: uintType}, {Type: addressType}}.
-		Pack("Kindle Token", "KNDL", big.NewInt(supply), holder)
-	require.NoError(c.t, err)
-	nonce := evm.GetNonce(c.ctx, deployer)
-	_, err = evm.CallEVM(c.ctx, deployer, nil, nil, append(common.FromHex(sidioraERC20Creation), args...))
-	require.NoError(c.t, err)
-	token := crypto.CreateAddress(deployer, nonce)
-	require.NotEmpty(c.t, evm.GetCode(c.ctx, token))
-	return token
-}
-
-func (c *custodyEnv) tokenTransfer(token, from, to common.Address, amount *big.Int) {
-	c.t.Helper()
-	input := append(crypto.Keccak256([]byte("transfer(address,uint256)"))[:4], common.LeftPadBytes(to.Bytes(), 32)...)
-	ret, err := testkeeper.EVMTestApp.EvmKeeper.CallEVM(c.ctx, from, &token, nil, append(input, word(amount)...))
-	require.NoError(c.t, err)
-	require.Equal(c.t, word(big.NewInt(1)), ret)
 }
 
 func (c *custodyEnv) tokenBalance(token, holder common.Address) string {

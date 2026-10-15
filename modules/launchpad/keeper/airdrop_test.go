@@ -54,10 +54,10 @@ func (c *custodyEnv) poolToken(name string, holdings ...holding) common.Address 
 	return token
 }
 
-func (c *custodyEnv) tokenTransfer(token, from, to common.Address, amount int64) {
+func (c *custodyEnv) tokenTransfer(token, from, to common.Address, amount *big.Int) {
 	c.t.Helper()
 	input := append(crypto.Keccak256([]byte("transfer(address,uint256)"))[:4], common.LeftPadBytes(to.Bytes(), 32)...)
-	ret, err := testkeeper.EVMTestApp.EvmKeeper.CallEVM(c.ctx, from, &token, nil, append(input, word(big.NewInt(amount))...))
+	ret, err := testkeeper.EVMTestApp.EvmKeeper.CallEVM(c.ctx, from, &token, nil, append(input, word(amount)...))
 	require.NoError(c.t, err)
 	require.Equal(c.t, word(big.NewInt(1)), ret)
 }
@@ -197,7 +197,7 @@ func TestAirdropEpochs(t *testing.T) {
 
 		// Transfers after the snapshot do not move the entitlement.
 		c.height(h + 11)
-		c.tokenTransfer(token, a, holderC, 100)
+		c.tokenTransfer(token, a, holderC, big.NewInt(100))
 		c.height(h + 12)
 		before := len(c.quoteLogs())
 		amount, err = c.claim(pool, a, 2)
