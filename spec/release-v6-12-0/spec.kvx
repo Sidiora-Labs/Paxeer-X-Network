@@ -20808,7 +20808,7 @@ invariants = "USDL balance arithmetic closes to the base unit net of the fees in
 
 [task.6.0.1]
 title = "Add the precompile address module with validated overrides"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
