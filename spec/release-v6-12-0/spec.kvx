@@ -26682,7 +26682,7 @@ deploy = "One Dockerfile builds every binary and one Railway project holds the s
 
 [task.7.0.1]
 title = "Add the JetStream and GraphQL modules to the root module and copy the NATS driver"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
