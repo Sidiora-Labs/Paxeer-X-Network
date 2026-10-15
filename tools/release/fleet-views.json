@@ -1,0 +1,73 @@
+{
+  "served": [
+    {
+      "address": "0x0000000000000000000000000000000000001015",
+      "signature": "totalMarkets()",
+      "return_bytes": 32
+    },
+    {
+      "address": "0x0000000000000000000000000000000000001017",
+      "signature": "getPoolCount()",
+      "return_bytes": 32
+    },
+    {
+      "address": "0x0000000000000000000000000000000000001020",
+      "signature": "getMarketCount()",
+      "return_bytes": 32
+    },
+    {
+      "address": "0x0000000000000000000000000000000000001021",
+      "signature": "BPS_DENOMINATOR()",
+      "return_bytes": 32
+    },
+    {
+      "address": "0x0000000000000000000000000000000000001022",
+      "signature": "getActiveLimitOrderCount()",
+      "return_bytes": 32
+    },
+    {
+      "address": "0x0000000000000000000000000000000000001023",
+      "signature": "getActiveStopLimitOrderCount()",
+      "return_bytes": 32
+    },
+    {
+      "address": "0x0000000000000000000000000000000000001024",
+      "signature": "pecor()",
+      "return_bytes": 32
+    },
+    {
+      "address": "0x0000000000000000000000000000000000001025",
+      "signature": "getRegisteredTokenCount()",
+      "return_bytes": 32
+    }
+  ],
+  "no_code": [
+    {
+      "address": "0x0000000000000000000000000000000000001026"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000001027"
+    }
+  ],
+  "pointers": [
+    {
+      "token": "PAX",
+      "address": "0x000000000000000000000000000000000000100a",
+      "signature": "getNativePointer(string)",
+      "return_bytes": 96,
+      "denom": "uhpx"
+    },
+    {
+      "token": "SID",
+      "address": "0x000000000000000000000000000000000000100a",
+      "signature": "getNativePointer(string)",
+      "return_bytes": 96,
+      "denom": "factory/pax1dzfx9mk4fl9kl2mysjmtvk2xp75ljumk6nynhf/usid"
+    }
+  ],
+  "usdl": {
+    "address": "0x85FcD13735F4309833A503EE804ea32395851479",
+    "signature": "decimals()",
+    "return_bytes": 32
+  }
+}
