@@ -1,61 +1,356 @@
 package keeper
 
 import (
+	"bytes"
 	"fmt"
+	"math/big"
 	"strconv"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
-func (k *Keeper) requireFeeRightsHolder(ctx sdk.Context, caller sdk.AccAddress, denom string) (types.Market, error) {
-	market, err := k.mustMarket(ctx, denom)
-	if err != nil {
-		return types.Market{}, err
-	}
-	if market.FeeRightsHolder != caller.String() {
-		return types.Market{}, types.ErrNotFeeRightsHolder
-	}
-	return market, nil
+var (
+	// totalLiabilitiesKey holds FeeAccumulator.totalLiabilities: the pool
+	// fees, airdrop balances and optical surpluses FeeHeld owes.
+	totalLiabilitiesKey = []byte{0x49}
+	// opticalSurplusPrefix keys FeeAccumulator._opticalSurplus of one pool.
+	opticalSurplusPrefix = []byte{0x4a}
+
+	opticalGetFlags              = crypto.Keccak256([]byte("getFlags()"))[:4]
+	opticalBeforeFeeDistribution = crypto.Keccak256([]byte("beforeFeeDistribution(address,uint256)"))[:4]
+	opticalAfterFeeDistribution  = crypto.Keccak256([]byte("afterFeeDistribution(address,uint256)"))[:4]
+)
+
+const (
+	// BitFlag.BEFORE_FEE_DISTRIBUTION and BitFlag.AFTER_FEE_DISTRIBUTION.
+	opticalFlagBeforeFeeDistribution = 1 << 2
+	opticalFlagAfterFeeDistribution  = 1 << 3
+
+	// EventTypeDeposited is Treasury.Deposited(token, depositor, amount).
+	EventTypeDeposited = "launchpad_treasury_deposited"
+	// EventTypeOpticalSurplusRecorded is
+	// FeeAccumulator.OpticalSurplusRecorded(pool, amount).
+	EventTypeOpticalSurplusRecorded = "launchpad_optical_surplus_recorded"
+	// EventTypeOpticalSurplusClaimed is
+	// FeeAccumulator.OpticalSurplusClaimed(pool, recipient, amount).
+	EventTypeOpticalSurplusClaimed = "launchpad_optical_surplus_claimed"
+
+	AttributeKeyContract  = "contract"
+	AttributeKeyToken     = "token"
+	AttributeKeyDepositor = "depositor"
+)
+
+func opticalSurplusKey(pool common.Address) []byte {
+	return append(append([]byte(nil), opticalSurplusPrefix...), pool.Bytes()...)
 }
 
-func (k *Keeper) requireStrategy(ctx sdk.Context, caller sdk.AccAddress, denom string, strategy types.FeeStrategy) (types.Market, error) {
-	market, err := k.requireFeeRightsHolder(ctx, caller, denom)
+// feeHeld is the FeeHeld ledger of the generation 2 FeeAccumulator, which
+// serves the fees of every market.
+func (k *Keeper) feeHeld() QuoteLedger { return FeeHeldLedger(k.generation2.FeeAccumulator) }
+
+// TotalLiabilities is FeeAccumulator.totalLiabilities.
+func (k *Keeper) TotalLiabilities(ctx sdk.Context) (sdk.Int, error) {
+	return k.getLedgerAmount(ctx, totalLiabilitiesKey)
+}
+
+// OpticalSurplus is FeeAccumulator.getOpticalSurplus(pool).
+func (k *Keeper) OpticalSurplus(ctx sdk.Context, pool common.Address) (sdk.Int, error) {
+	return k.getLedgerAmount(ctx, opticalSurplusKey(pool))
+}
+
+// requireBacking is FeeAccumulator._requireBacking: FeeHeld must cover
+// totalLiabilities plus amount, or InsufficientSurplus().
+func (k *Keeper) requireBacking(ctx sdk.Context, amount sdk.Int) error {
+	held, err := k.GetQuoteLedger(ctx, k.feeHeld())
 	if err != nil {
-		return types.Market{}, err
+		return err
 	}
-	if market.FeeStrategy != strategy {
-		return types.Market{}, types.ErrWrongStrategy
+	liabilities, err := k.TotalLiabilities(ctx)
+	if err != nil {
+		return err
 	}
-	return market, nil
+	if held.LT(liabilities.Add(amount)) {
+		return fmt.Errorf("%w: fee held %s, liabilities %s, new %s", types.ErrInsufficientSurplus, held, liabilities,
+			amount)
+	}
+	return nil
+}
+
+// requireFeeRightsHolder is the FeesRouter gate: caller holds the market's
+// fee right in the fee-right store and the right carries strategy.
+func (k *Keeper) requireFeeRightsHolder(ctx sdk.Context, caller sdk.AccAddress, denom string,
+	strategy types.FeeStrategy) (types.Market, error) {
+	market, _, err := k.RequireMarketFeeRight(ctx, k.evmKeeper.GetEVMAddressOrDefault(ctx, caller), denom, strategy)
+	return market, err
 }
 
 // takeAccumulatedFees zeroes the market's pool-cut fees and returns them.
 func (k *Keeper) takeAccumulatedFees(market *types.Market) (sdk.Int, error) {
 	amount := market.AccumulatedFees
-	if !amount.IsPositive() {
+	if amount.IsNil() || !amount.IsPositive() {
 		return sdk.Int{}, types.ErrNoFeesAccumulated
 	}
 	market.AccumulatedFees = sdk.ZeroInt()
 	return amount, nil
 }
 
-func (k *Keeper) payQuote(ctx sdk.Context, to sdk.AccAddress, amount sdk.Int) error {
-	denom := k.GetParams(ctx).QuoteDenom
-	return k.bankKeeper.SendCoins(ctx, k.ModuleAddress(), to, sdk.NewCoins(sdk.NewCoin(denom, amount)))
+// optical is the market's optical, the zero address when it has none.
+func optical(market types.Market) common.Address {
+	if !common.IsHexAddress(market.Optical) {
+		return common.Address{}
+	}
+	return common.HexToAddress(market.Optical)
 }
 
-// SetFeeStrategy is FeesRouter.setFeeStrategy.
-func (k *Keeper) SetFeeStrategy(ctx sdk.Context, caller sdk.AccAddress, denom string, strategy types.FeeStrategy) error {
-	market, err := k.requireFeeRightsHolder(ctx, caller, denom)
+// opticalFlags is IOpticalFee(optical).getFlags().
+func (k *Keeper) opticalFlags(ctx sdk.Context, caller NestedCaller, optical common.Address) (uint8, error) {
+	ret, err := caller.StaticCall(ctx, k.generation2.FeeAccumulator, optical, erc20Call(opticalGetFlags))
+	if err != nil {
+		return 0, fmt.Errorf("%w: getFlags %s: %w", types.ErrInvalidHookResponse, optical.Hex(), err)
+	}
+	if len(ret) != 32 || new(big.Int).SetBytes(ret).Cmp(big.NewInt(255)) > 0 {
+		return 0, fmt.Errorf("%w: getFlags %s returned %x", types.ErrInvalidHookResponse, optical.Hex(), ret)
+	}
+	return ret[31], nil
+}
+
+// opticalHook calls one fee hook of optical with (pool, amount) from the
+// generation 2 FeeAccumulator and returns its 32-byte return word.
+func (k *Keeper) opticalHook(ctx sdk.Context, caller NestedCaller, optical common.Address, selector []byte,
+	pool common.Address, amount sdk.Int) (sdk.Context, []byte, error) {
+	next, ret, err := caller.Call(ctx, k.generation2.FeeAccumulator, optical,
+		erc20Call(selector, addressWord(pool), amountWord(amount.BigInt())))
+	if err != nil {
+		return ctx, nil, fmt.Errorf("%w: optical %s hook %x: %w", types.ErrInvalidHookResponse, optical.Hex(), selector,
+			err)
+	}
+	if len(ret) != 32 {
+		return ctx, nil, fmt.Errorf("%w: optical %s hook %x returned %x", types.ErrInvalidHookResponse, optical.Hex(),
+			selector, ret)
+	}
+	return next, ret, nil
+}
+
+// recordSurplus credits amount to the optical surplus of pool.
+func (k *Keeper) recordSurplus(ctx sdk.Context, pool common.Address, amount sdk.Int) error {
+	if err := k.addLedgerAmount(ctx, opticalSurplusKey(pool), amount); err != nil {
+		return err
+	}
+	ctx.EventManager().EmitEvent(sdk.NewEvent(EventTypeOpticalSurplusRecorded,
+		sdk.NewAttribute(AttributeKeyContract, k.generation2.FeeAccumulator.Hex()),
+		sdk.NewAttribute(AttributeKeyPool, pool.Hex()),
+		sdk.NewAttribute(types.AttributeKeyAmount, amount.String())))
+	return nil
+}
+
+// RecordFee is FeeAccumulator.recordFee for denom's pool: fee, already in
+// FeeHeld, becomes a liability and splits into the protocol cut
+// fee*protocolFeeBps/10000 and the pool cut. A beforeFeeDistribution optical
+// may lower the pool cut, the difference becoming its surplus, and refuses
+// InsufficientSurplus() when it raises it. The protocol cut moves from FeeHeld
+// to TreasuryHeld and TreasuryLedger of the quote token and stops being a
+// liability, with Deposited at the Treasury. An afterFeeDistribution optical
+// must return its selector or the fee refuses Unauthorized(). It returns the
+// protocol and pool cuts of FeeRecorded.
+func (k *Keeper) RecordFee(ctx sdk.Context, caller NestedCaller, denom string, fee sdk.Int) (sdk.Context, sdk.Int,
+	sdk.Int, error) {
+	market, err := k.mustMarket(ctx, denom)
+	if err != nil {
+		return ctx, sdk.Int{}, sdk.Int{}, err
+	}
+	if err := positiveAmount(fee); err != nil {
+		return ctx, sdk.Int{}, sdk.Int{}, err
+	}
+	if err := k.requireBacking(ctx, fee); err != nil {
+		return ctx, sdk.Int{}, sdk.Int{}, err
+	}
+	if err := k.addLedgerAmount(ctx, totalLiabilitiesKey, fee); err != nil {
+		return ctx, sdk.Int{}, sdk.Int{}, err
+	}
+	cut, err := types.FeeAmount(fee.BigInt(), new(big.Int).SetUint64(k.GetParams(ctx).ProtocolFeeBps))
+	if err != nil {
+		return ctx, sdk.Int{}, sdk.Int{}, err
+	}
+	protocolCut := sdk.NewIntFromBigInt(cut)
+	poolCut := fee.Sub(protocolCut)
+	pool := common.HexToAddress(market.PoolAddress)
+
+	if hook := optical(market); hook != (common.Address{}) {
+		flags, err := k.opticalFlags(ctx, caller, hook)
+		if err != nil {
+			return ctx, sdk.Int{}, sdk.Int{}, err
+		}
+		if flags&opticalFlagBeforeFeeDistribution != 0 {
+			var ret []byte
+			ctx, ret, err = k.opticalHook(ctx, caller, hook, opticalBeforeFeeDistribution, pool, poolCut)
+			if err != nil {
+				return ctx, sdk.Int{}, sdk.Int{}, err
+			}
+			adjusted := sdk.NewIntFromBigInt(new(big.Int).SetBytes(ret))
+			if adjusted.GT(poolCut) {
+				return ctx, sdk.Int{}, sdk.Int{}, fmt.Errorf("%w: optical %s raised the pool cut %s to %s",
+					types.ErrInsufficientSurplus, hook.Hex(), poolCut, adjusted)
+			}
+			if adjusted.LT(poolCut) {
+				if err := k.recordSurplus(ctx, pool, poolCut.Sub(adjusted)); err != nil {
+					return ctx, sdk.Int{}, sdk.Int{}, err
+				}
+				poolCut = adjusted
+			}
+		}
+	}
+
+	// Reload the market: the hook may have reentered and changed it.
+	market, err = k.mustMarket(ctx, denom)
+	if err != nil {
+		return ctx, sdk.Int{}, sdk.Int{}, err
+	}
+	accumulated := market.AccumulatedFees
+	if accumulated.IsNil() {
+		accumulated = sdk.ZeroInt()
+	}
+	market.AccumulatedFees = accumulated.Add(poolCut)
+	if !uint256Amount(market.AccumulatedFees) {
+		return ctx, sdk.Int{}, sdk.Int{}, types.ErrOverflow
+	}
+	k.setMarket(ctx, market)
+
+	if protocolCut.IsPositive() {
+		if err := k.MoveQuote(ctx, k.feeHeld(), TreasuryHeldLedger(), protocolCut); err != nil {
+			return ctx, sdk.Int{}, sdk.Int{}, err
+		}
+		if err := k.TreasuryCreditFee(ctx, protocolCut); err != nil {
+			return ctx, sdk.Int{}, sdk.Int{}, err
+		}
+		if err := k.subLedgerAmount(ctx, totalLiabilitiesKey, protocolCut); err != nil {
+			return ctx, sdk.Int{}, sdk.Int{}, err
+		}
+		ctx.EventManager().EmitEvent(sdk.NewEvent(EventTypeDeposited,
+			sdk.NewAttribute(AttributeKeyContract, k.TreasuryContract().Hex()),
+			sdk.NewAttribute(AttributeKeyToken, k.quoteToken(ctx).Hex()),
+			sdk.NewAttribute(AttributeKeyDepositor, k.generation2.FeeAccumulator.Hex()),
+			sdk.NewAttribute(types.AttributeKeyAmount, protocolCut.String())))
+	}
+
+	if hook := optical(market); hook != (common.Address{}) {
+		flags, err := k.opticalFlags(ctx, caller, hook)
+		if err != nil {
+			return ctx, sdk.Int{}, sdk.Int{}, err
+		}
+		if flags&opticalFlagAfterFeeDistribution != 0 {
+			var ret []byte
+			ctx, ret, err = k.opticalHook(ctx, caller, hook, opticalAfterFeeDistribution, pool, poolCut)
+			if err != nil {
+				return ctx, sdk.Int{}, sdk.Int{}, err
+			}
+			if !bytes.Equal(ret, common.RightPadBytes(opticalAfterFeeDistribution, 32)) {
+				return ctx, sdk.Int{}, sdk.Int{}, fmt.Errorf("%w: optical %s afterFeeDistribution returned %x",
+					types.ErrUnauthorized, hook.Hex(), ret)
+			}
+		}
+	}
+
+	ctx.EventManager().EmitEvent(sdk.NewEvent(types.EventTypeFeeRecorded,
+		sdk.NewAttribute(AttributeKeyContract, k.generation2.FeeAccumulator.Hex()),
+		sdk.NewAttribute(types.AttributeKeyDenom, denom),
+		sdk.NewAttribute(AttributeKeyPool, pool.Hex()),
+		sdk.NewAttribute(types.AttributeKeyFee, fee.String()),
+		sdk.NewAttribute(types.AttributeKeyProtocolCut, protocolCut.String()),
+		sdk.NewAttribute(types.AttributeKeyPoolCut, poolCut.String())))
+	return ctx, protocolCut, poolCut, nil
+}
+
+// RecordOpticalSurplus is FeeAccumulator.recordOpticalSurplus for denom's
+// pool: amount, already in FeeHeld, becomes a liability and the pool's
+// optical surplus. A zero amount does nothing.
+func (k *Keeper) RecordOpticalSurplus(ctx sdk.Context, denom string, amount sdk.Int) error {
+	market, err := k.mustMarket(ctx, denom)
 	if err != nil {
 		return err
 	}
-	if err := strategy.Validate(); err != nil {
+	if !uint256Amount(amount) {
+		return types.ErrOverflow
+	}
+	if amount.IsZero() {
+		return nil
+	}
+	if err := k.requireBacking(ctx, amount); err != nil {
 		return err
 	}
-	old := market.FeeStrategy
+	if err := k.addLedgerAmount(ctx, totalLiabilitiesKey, amount); err != nil {
+		return err
+	}
+	return k.recordSurplus(ctx, common.HexToAddress(market.PoolAddress), amount)
+}
+
+// ClaimOpticalSurplus is FeeAccumulator.claimOpticalSurplus sent by sender:
+// only the optical of denom's pool, a contract, may pay amount of the pool's
+// surplus out of FeeHeld to recipient.
+func (k *Keeper) ClaimOpticalSurplus(ctx sdk.Context, caller NestedCaller, sender common.Address, denom string,
+	amount sdk.Int, recipient common.Address) (sdk.Context, error) {
+	market, err := k.mustMarket(ctx, denom)
+	if err != nil {
+		return ctx, err
+	}
+	hook := optical(market)
+	if hook == (common.Address{}) || hook != sender || len(k.evmKeeper.GetCode(ctx, sender)) == 0 {
+		return ctx, types.ErrUnauthorized
+	}
+	if recipient == (common.Address{}) {
+		return ctx, types.ErrZeroAddress
+	}
+	if err := positiveAmount(amount); err != nil {
+		return ctx, err
+	}
+	pool := common.HexToAddress(market.PoolAddress)
+	surplus, err := k.OpticalSurplus(ctx, pool)
+	if err != nil {
+		return ctx, err
+	}
+	if surplus.LT(amount) {
+		return ctx, fmt.Errorf("%w: pool %s surplus %s, needs %s", types.ErrInsufficientSurplus, pool.Hex(), surplus,
+			amount)
+	}
+	if err := k.setLedgerAmount(ctx, opticalSurplusKey(pool), surplus.Sub(amount)); err != nil {
+		return ctx, err
+	}
+	if err := k.subLedgerAmount(ctx, totalLiabilitiesKey, amount); err != nil {
+		return ctx, err
+	}
+	ctx, err = k.PayQuote(ctx, caller, k.feeHeld(), recipient, amount)
+	if err != nil {
+		return ctx, err
+	}
+	ctx.EventManager().EmitEvent(sdk.NewEvent(EventTypeOpticalSurplusClaimed,
+		sdk.NewAttribute(AttributeKeyContract, k.generation2.FeeAccumulator.Hex()),
+		sdk.NewAttribute(AttributeKeyPool, pool.Hex()),
+		sdk.NewAttribute(types.AttributeKeyRecipient, recipient.Hex()),
+		sdk.NewAttribute(types.AttributeKeyAmount, amount.String())))
+	return ctx, nil
+}
+
+// SetFeeStrategy is FeesRouter.setFeeStrategy: the holder of the market's fee
+// right sets the strategy of that right. The market keeps a copy for its
+// views.
+func (k *Keeper) SetFeeStrategy(ctx sdk.Context, caller sdk.AccAddress, denom string, strategy types.FeeStrategy) error {
+	market, err := k.mustMarket(ctx, denom)
+	if err != nil {
+		return err
+	}
+	if !common.IsHexAddress(market.FeeRightCollection) || market.FeeRightID == 0 {
+		return types.ErrNotFeeRightsHolder
+	}
+	collection, holder := common.HexToAddress(market.FeeRightCollection), k.evmKeeper.GetEVMAddressOrDefault(ctx, caller)
+	if _, err := k.RequireFeeRightHolder(ctx, collection, holder, market.FeeRightID); err != nil {
+		return err
+	}
+	old, err := k.SetFeeRightStrategy(ctx, collection, holder, market.FeeRightID, strategy)
+	if err != nil {
+		return err
+	}
 	market.FeeStrategy = strategy
 	k.setMarket(ctx, market)
 	ctx.EventManager().EmitEvent(sdk.NewEvent(types.EventTypeFeeStrategyChanged,
@@ -65,29 +360,52 @@ func (k *Keeper) SetFeeStrategy(ctx sdk.Context, caller sdk.AccAddress, denom st
 	return nil
 }
 
-// ClaimFees is FeesRouter.claimFees: the CLAIM strategy pays the market's
-// accumulated fees to recipient.
-func (k *Keeper) ClaimFees(ctx sdk.Context, caller sdk.AccAddress, denom string, recipient sdk.AccAddress) (sdk.Int, error) {
-	market, err := k.requireStrategy(ctx, caller, denom, types.FeeStrategyClaim)
+// distribute takes the market's accumulated fees off the liabilities for one
+// strategy execution.
+func (k *Keeper) distribute(ctx sdk.Context, market *types.Market) (sdk.Int, error) {
+	amount, err := k.takeAccumulatedFees(market)
 	if err != nil {
 		return sdk.Int{}, err
 	}
-	if recipient.Empty() {
-		return sdk.Int{}, types.ErrZeroAddress
+	if err := k.subLedgerAmount(ctx, totalLiabilitiesKey, amount); err != nil {
+		return sdk.Int{}, err
 	}
-	amount, err := k.takeAccumulatedFees(&market)
+	k.setMarket(ctx, *market)
+	return amount, nil
+}
+
+// Claim is FeesRouter.claimFees over FeeAccumulator.claim: the CLAIM strategy
+// pays the market's accumulated fees out of FeeHeld to recipient by
+// USDL.transfer from the launchpad module EVM address.
+func (k *Keeper) Claim(ctx sdk.Context, caller NestedCaller, sender common.Address, denom string,
+	recipient common.Address) (sdk.Context, sdk.Int, error) {
+	market, _, err := k.RequireMarketFeeRight(ctx, sender, denom, types.FeeStrategyClaim)
 	if err != nil {
-		return sdk.Int{}, err
+		return ctx, sdk.Int{}, err
 	}
-	k.setMarket(ctx, market)
-	if err := k.payQuote(ctx, recipient, amount); err != nil {
-		return sdk.Int{}, err
+	if recipient == (common.Address{}) {
+		return ctx, sdk.Int{}, types.ErrZeroAddress
+	}
+	amount, err := k.distribute(ctx, &market)
+	if err != nil {
+		return ctx, sdk.Int{}, err
+	}
+	ctx, err = k.PayQuote(ctx, caller, k.feeHeld(), recipient, amount)
+	if err != nil {
+		return ctx, sdk.Int{}, err
 	}
 	ctx.EventManager().EmitEvent(sdk.NewEvent(types.EventTypeFeesClaimed,
 		sdk.NewAttribute(types.AttributeKeyDenom, denom),
-		sdk.NewAttribute(types.AttributeKeyRecipient, recipient.String()),
+		sdk.NewAttribute(types.AttributeKeyRecipient, recipient.Hex()),
 		sdk.NewAttribute(types.AttributeKeyAmount, amount.String())))
-	return amount, nil
+	return ctx, amount, nil
+}
+
+// ClaimFees is Claim from module context.
+func (k *Keeper) ClaimFees(ctx sdk.Context, caller sdk.AccAddress, denom string, recipient sdk.AccAddress) (sdk.Int, error) {
+	_, amount, err := k.Claim(ctx, k.ModuleCaller(), k.evmKeeper.GetEVMAddressOrDefault(ctx, caller), denom,
+		k.evmKeeper.GetEVMAddressOrDefault(ctx, recipient))
+	return amount, err
 }
 
 // DeadAccount is the bank account of 0x…dEaD, where burned fees go.
@@ -95,25 +413,32 @@ func (k *Keeper) DeadAccount(ctx sdk.Context) sdk.AccAddress {
 	return k.evmKeeper.GetPaxAddressOrDefault(ctx, common.HexToAddress(types.DeadAddress))
 }
 
-// ExecuteBurn is FeesRouter.executeBurn: the BURN strategy sends the
-// accumulated fees to 0x…dEaD.
-func (k *Keeper) ExecuteBurn(ctx sdk.Context, caller sdk.AccAddress, denom string) (sdk.Int, error) {
-	market, err := k.requireStrategy(ctx, caller, denom, types.FeeStrategyBurn)
+// Burn is FeesRouter.executeBurn over FeeAccumulator.burn: the BURN strategy
+// pays the accumulated fees out of FeeHeld to 0x…dEaD.
+func (k *Keeper) Burn(ctx sdk.Context, caller NestedCaller, sender common.Address, denom string) (sdk.Context,
+	sdk.Int, error) {
+	market, _, err := k.RequireMarketFeeRight(ctx, sender, denom, types.FeeStrategyBurn)
 	if err != nil {
-		return sdk.Int{}, err
+		return ctx, sdk.Int{}, err
 	}
-	amount, err := k.takeAccumulatedFees(&market)
+	amount, err := k.distribute(ctx, &market)
 	if err != nil {
-		return sdk.Int{}, err
+		return ctx, sdk.Int{}, err
 	}
-	k.setMarket(ctx, market)
-	if err := k.payQuote(ctx, k.DeadAccount(ctx), amount); err != nil {
-		return sdk.Int{}, err
+	ctx, err = k.PayQuote(ctx, caller, k.feeHeld(), common.HexToAddress(types.DeadAddress), amount)
+	if err != nil {
+		return ctx, sdk.Int{}, err
 	}
 	ctx.EventManager().EmitEvent(sdk.NewEvent(types.EventTypeFeesBurned,
 		sdk.NewAttribute(types.AttributeKeyDenom, denom),
 		sdk.NewAttribute(types.AttributeKeyAmount, amount.String())))
-	return amount, nil
+	return ctx, amount, nil
+}
+
+// ExecuteBurn is Burn from module context.
+func (k *Keeper) ExecuteBurn(ctx sdk.Context, caller sdk.AccAddress, denom string) (sdk.Int, error) {
+	_, amount, err := k.Burn(ctx, k.ModuleCaller(), k.evmKeeper.GetEVMAddressOrDefault(ctx, caller), denom)
+	return amount, err
 }
 
 // ExecuteAirdrop is FeesRouter.executeAirdrop: the AIRDROP strategy opens a
@@ -121,7 +446,7 @@ func (k *Keeper) ExecuteBurn(ctx sdk.Context, caller sdk.AccAddress, denom strin
 // epoch's holder history, supply and payout denomination are fixed in the
 // same write set, so later mints, burns and transfers cannot change it.
 func (k *Keeper) ExecuteAirdrop(ctx sdk.Context, caller sdk.AccAddress, denom string) (sdk.Int, error) {
-	market, err := k.requireStrategy(ctx, caller, denom, types.FeeStrategyAirdrop)
+	market, err := k.requireFeeRightsHolder(ctx, caller, denom, types.FeeStrategyAirdrop)
 	if err != nil {
 		return sdk.Int{}, err
 	}
@@ -142,7 +467,7 @@ func (k *Keeper) ExecuteAirdrop(ctx sdk.Context, caller sdk.AccAddress, denom st
 		return sdk.Int{}, err
 	}
 	k.setAirdropBasis(cacheCtx, types.AirdropEpochBasis{Denom: denom, Epoch: market.AirdropEpoch, Supply: supply,
-		PayoutDenom: k.GetParams(ctx).QuoteDenom, Height: ctx.BlockHeight(), Paid: sdk.ZeroInt()})
+		PayoutDenom: types.DefaultQuoteDenom, Height: ctx.BlockHeight(), Paid: sdk.ZeroInt()})
 	write()
 	ctx.EventManager().EmitEvent(sdk.NewEvent(types.EventTypeAirdropTriggered,
 		sdk.NewAttribute(types.AttributeKeyDenom, denom),
@@ -233,8 +558,11 @@ func (k *Keeper) ClaimAirdropForEpoch(ctx sdk.Context, holder sdk.AccAddress, de
 	k.setAirdropBasis(cacheCtx, basis)
 	market.AirdropBalance = market.AirdropBalance.Sub(amount)
 	k.setMarket(cacheCtx, market)
-	if err := k.bankKeeper.SendCoins(cacheCtx, k.ModuleAddress(), holder,
-		sdk.NewCoins(sdk.NewCoin(basis.PayoutDenom, amount))); err != nil {
+	if err := k.subLedgerAmount(cacheCtx, totalLiabilitiesKey, amount); err != nil {
+		return sdk.Int{}, err
+	}
+	if _, err := k.PayQuote(cacheCtx, k.ModuleCaller(), k.feeHeld(), k.evmKeeper.GetEVMAddressOrDefault(ctx, holder),
+		amount); err != nil {
 		return sdk.Int{}, err
 	}
 	write()
@@ -247,22 +575,27 @@ func (k *Keeper) ClaimAirdropForEpoch(ctx sdk.Context, holder sdk.AccAddress, de
 	return amount, nil
 }
 
-// ExecuteLpRewards is FeesRouter.executeLpRewards: the LP_REWARDS strategy
-// returns the accumulated fees to the curve's real quote balance, which is
-// what the pool's syncReserves picks up.
+// ExecuteLpRewards is FeesRouter.executeLpRewards over
+// FeeAccumulator.sendLpRewards: the LP_REWARDS strategy moves the accumulated
+// fees from FeeHeld to HeldQuote of the pool, and the pool's syncReserves
+// adds them to the curve's real quote balance.
 func (k *Keeper) ExecuteLpRewards(ctx sdk.Context, caller sdk.AccAddress, denom string) (sdk.Int, error) {
-	market, err := k.requireStrategy(ctx, caller, denom, types.FeeStrategyLpRewards)
+	market, err := k.requireFeeRightsHolder(ctx, caller, denom, types.FeeStrategyLpRewards)
 	if err != nil {
 		return sdk.Int{}, err
 	}
-	amount, err := k.takeAccumulatedFees(&market)
+	amount, err := k.distribute(ctx, &market)
 	if err != nil {
+		return sdk.Int{}, err
+	}
+	if err := k.MoveQuote(ctx, k.feeHeld(), HeldQuoteLedger(common.HexToAddress(market.PoolAddress)), amount); err != nil {
 		return sdk.Int{}, err
 	}
 	market.RealQuoteBalance = market.RealQuoteBalance.Add(amount)
 	k.setMarket(ctx, market)
 	ctx.EventManager().EmitEvent(sdk.NewEvent(types.EventTypeLpRewardsSent,
 		sdk.NewAttribute(types.AttributeKeyDenom, denom),
+		sdk.NewAttribute(AttributeKeyPool, market.PoolAddress),
 		sdk.NewAttribute(types.AttributeKeyAmount, amount.String())))
 	return amount, nil
 }
