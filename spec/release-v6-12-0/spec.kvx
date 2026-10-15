@@ -29731,7 +29731,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.19]
 title = "Generate feed keys and the registerFeedKey payload"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["5.3.99"]
