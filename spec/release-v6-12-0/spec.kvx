@@ -27650,7 +27650,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.3.3]
 title = "Railway project layout for the perps data services"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = []
