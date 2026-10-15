@@ -245,3 +245,10 @@ command = "make paxd-build && make paxd-version-check"
 exit_code = 0
 log_path = "fleet/logs/fix-1.0.1-verify-1.log"
 observed_and_assumption = "version.json now reads v6.12.0 and the built binary reports it; the upgrade plan name was set to v6.12.0 to match the registered V6120Upgrade constant, since the release check requires the two to be identical. Assumption: the release tasks that own version.json keep these values."
+
+[fix.5.1.15]
+revision = "2249abecc2efbfa29a5fa26dffdda87a12e34dc0"
+command = "cargo clippy --locked --manifest-path platform/Cargo.toml -p layerx-oracle-feeder --all-targets -- -D warnings && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-oracle-feeder"
+exit_code = 0
+log_path = "fleet/logs/fix-feeder-verify-1.log"
+observed_and_assumption = "The feeder field is renamed with a serde rename that keeps the journal format, clippy passes with warnings denied across all targets and the thirty-two feeder tests pass. Assumption: none."
