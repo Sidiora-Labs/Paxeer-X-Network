@@ -10407,7 +10407,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.0.2]
 title = "Freeze the ABI with a golden selector, topic and error file"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["3.0.1"]
