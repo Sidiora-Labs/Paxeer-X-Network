@@ -366,7 +366,7 @@ pub fn aggregate(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Observation {
     pub market_id: [u8; 32],
-    pub observation_sequence: u64,
+    pub sequence: u64,
     pub price: u128,
     pub observed_at: u64,
     pub source_identifier: u64,
@@ -380,7 +380,7 @@ impl Observation {
     pub fn encode(&self) -> Result<Vec<u8>, String> {
         PerpsPayload::OraclePush {
             market_id: self.market_id,
-            observation_sequence: self.observation_sequence,
+            observation_sequence: self.sequence,
             price: self.price,
             observed_at: self.observed_at,
             source_identifier: self.source_identifier,
@@ -515,7 +515,8 @@ pub fn load_key(path: &Path) -> Result<SigningKey, String> {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MarketRecord {
-    pub observation_sequence: u64,
+    #[serde(rename = "observation_sequence")]
+    pub sequence: u64,
     pub price: String,
     pub observed_at: u64,
     pub activity_id: String,
@@ -568,9 +569,7 @@ impl Journal {
 
     #[must_use]
     pub fn next_observation_sequence(&self, symbol: &str) -> u64 {
-        self.markets
-            .get(symbol)
-            .map_or(1, |m| m.observation_sequence + 1)
+        self.markets.get(symbol).map_or(1, |m| m.sequence + 1)
     }
 }
 
@@ -870,7 +869,7 @@ pub fn round_observation(
     .map_err(|e| format!("rejected: {e:?}"))?;
     Ok(Observation {
         market_id: market_id(&market.market_id)?,
-        observation_sequence: journal.next_observation_sequence(&market.symbol),
+        sequence: journal.next_observation_sequence(&market.symbol),
         price,
         observed_at,
         source_identifier: config.source_identifier,
@@ -937,7 +936,7 @@ pub fn run_round(
         journal.markets.insert(
             market.symbol.clone(),
             MarketRecord {
-                observation_sequence: observation.observation_sequence,
+                sequence: observation.sequence,
                 price: observation.price.to_string(),
                 observed_at: observation.observed_at,
                 activity_id: hash.trim_start_matches("0x").to_owned(),
@@ -948,7 +947,7 @@ pub fn run_round(
             "feeder: {} {} seq {} in {:?}",
             market.symbol,
             observation.price,
-            observation.observation_sequence,
+            observation.sequence,
             started.elapsed()
         );
     }
@@ -988,7 +987,7 @@ mod tests {
             observation,
             Observation {
                 market_id: [0x11; 32],
-                observation_sequence: 1,
+                sequence: 1,
                 price: 6_500_000_000_000,
                 observed_at: now,
                 source_identifier: 1,

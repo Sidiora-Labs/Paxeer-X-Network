@@ -32,7 +32,7 @@ fn quote(source: &str, price: u128, at: u64) -> Quote {
 }
 
 /// Kernel `lx_oracle_observation_encode` layout: market id, sequence,
-/// u128 big-endian price, observed_at, source identifier.
+/// u128 big-endian price, `observed_at`, source identifier.
 const KERNEL_VECTOR: &str = concat!(
     "1111111111111111111111111111111111111111111111111111111111111111",
     "0000000000000001",
@@ -44,7 +44,7 @@ const KERNEL_VECTOR: &str = concat!(
 fn vector_observation() -> Observation {
     Observation {
         market_id: [0x11; 32],
-        observation_sequence: 1,
+        sequence: 1,
         price: 100_000_000,
         observed_at: 1_700_000_000_000,
         source_identifier: 7,
@@ -227,7 +227,7 @@ fn journal_round_trip() -> Result {
     journal.markets.insert(
         "BTC-USD".to_owned(),
         MarketRecord {
-            observation_sequence: 12,
+            sequence: 12,
             price: "6243126000000".to_owned(),
             observed_at: 1_759_735_801_000,
             activity_id: "ab".repeat(32),
