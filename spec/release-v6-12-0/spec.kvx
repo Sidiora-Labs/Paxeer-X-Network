@@ -21567,7 +21567,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.3.4]
 title = "Derive the spot user and chain stream URLs from their sources"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["6.0.6", "6.3.6"]
