@@ -18918,7 +18918,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.2.4]
 title = "Write the Chainflow feed source"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["5.1.14"]
