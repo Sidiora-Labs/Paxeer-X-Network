@@ -18537,7 +18537,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1.5]
 title = "Write the feed key registry"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["5.1.4"]
