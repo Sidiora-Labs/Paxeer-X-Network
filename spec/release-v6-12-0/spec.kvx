@@ -21216,7 +21216,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.9]
 title = "Classify precompile custom errors"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.0.2", "6.0.3"]
