@@ -21593,7 +21593,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.3.5]
 title = "Stream the perpetual venue book and fills from the gateway with snapshot resume"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["6.0.6"]
