@@ -1291,3 +1291,11 @@ exit = 1
 log = "fleet/logs/6.3.8-verify-1.log"
 observed = "The invariant suite runs and finds eleven tree violations in files owned by 6.3.1, 6.3.3, 6.3.10, 6.2.1 and the env tasks: diamond addresses, host literals, facet ABI imports, direct position writes, sockets without a sequence guard and legacy token entries."
 assumption = "Rerun once the Hyperpax wave lands; a fix lane owns what still fails then."
+
+[finding.7.3.2]
+revision = "fc9102768dedfc1e03c1e97a6d523174ebb4d86e"
+command = "go test -count=1 ./platform/perps-data/internal/portal/ -run TestPortalServer"
+exit = 1
+log = "fleet/logs/7.3.2-verify-1.log"
+observed = "The portal server and command are written against assumed portal.Pages and gateway.NewServer shapes; the 7.3.1 pages were not on the task base and the 7.2.13 gateway has not landed, so the package does not compile."
+assumption = "Rerun after 7.2.13 lands, retargeting to the landed portal pages where they differ."
