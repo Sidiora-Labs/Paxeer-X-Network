@@ -21485,7 +21485,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.3.1]
 title = "Retarget the margin hooks to the perpetuals account and remove the vault hook"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["6.2.2", "6.2.5", "6.2.6", "6.2.14", "6.2.18"]
