@@ -21646,7 +21646,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.3.7]
 title = "Pin the GraphQL operation set and the gateway nullability against the gateway contract"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["6.3.3"]
