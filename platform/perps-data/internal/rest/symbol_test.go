@@ -422,9 +422,17 @@ func TestSymbolREST(t *testing.T) {
 		insert(t, db, row{table: "spot_swaps", kind: "simple_swap", block: 26, at: at(26), emitter: spotAddr, account: trader,
 			args:   []string{"user", "token_in", "token_out", "amount_in", "amount_out", "execution_price"},
 			values: []any{trader, sidToken, paxToken, e6(t, "4"), e6(t, "2"), e18(t, "0.5")}})
+		insert(t, db, row{table: "spot_swaps", kind: "native_swap", block: 27, at: at(27), emitter: spotAddr, account: trader,
+			args:   []string{"user", "token_other", "native_amount", "token_amount", "native_is_input"},
+			values: []any{trader, sidToken, e6(t, "6"), e6(t, "24"), true}})
+		insert(t, db, row{table: "spot_swaps", kind: "native_swap", block: 28, at: at(28), emitter: spotAddr, account: trader,
+			args:   []string{"user", "token_other", "native_amount", "token_amount", "native_is_input"},
+			values: []any{trader, sidToken, e6(t, "5"), e6(t, "25"), false}})
 
 		sid := spotTrades(t, s, "/api/sid/trades/SID", "SID")
 		wantSID := []spotTradeJSON{
+			{ID: "28-0", Side: "SELL", Price: 0.2, Size: 25, TradeTime: at(28).UnixMilli()},
+			{ID: "27-0", Side: "BUY", Price: 0.25, Size: 24, TradeTime: at(27).UnixMilli()},
 			{ID: "23-0", Side: "BUY", Price: 0.3, Size: 30, TradeTime: at(23).UnixMilli()},
 			{ID: "22-0", Side: "SELL", Price: 0.3, Size: 20, TradeTime: at(22).UnixMilli()},
 			{ID: "20-0", Side: "BUY", Price: 0.25, Size: 40, TradeTime: at(20).UnixMilli()},
@@ -434,6 +442,8 @@ func TestSymbolREST(t *testing.T) {
 		}
 		pax := spotTrades(t, s, "/api/pax/trades/PAX", "PAX")
 		wantPAX := []spotTradeJSON{
+			{ID: "28-0", Side: "BUY", Price: 5, Size: 5, TradeTime: at(28).UnixMilli()},
+			{ID: "27-0", Side: "SELL", Price: 4, Size: 6, TradeTime: at(27).UnixMilli()},
 			{ID: "26-0", Side: "BUY", Price: 0.5, Size: 2, TradeTime: at(26).UnixMilli()},
 			{ID: "25-0", Side: "SELL", Price: 0.55, Size: 8, TradeTime: at(25).UnixMilli()},
 			{ID: "24-0", Side: "SELL", Price: 0.5, Size: 10, TradeTime: at(24).UnixMilli()},
@@ -446,7 +456,7 @@ func TestSymbolREST(t *testing.T) {
 				t.Fatalf("%s trades %+v, want none", sym, trades)
 			}
 		}
-		if trades := spotTrades(t, s, "/api/sid/trades", "SID"); len(trades) != 3 {
+		if trades := spotTrades(t, s, "/api/sid/trades", "SID"); len(trades) != 5 {
 			t.Fatalf("SID trades without path symbol: %+v", trades)
 		}
 	})

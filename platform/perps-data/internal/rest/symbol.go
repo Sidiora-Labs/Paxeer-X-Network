@@ -404,9 +404,11 @@ const spotTokenSQL = `SELECT token FROM perps.spot_token_registry
 
 // spotTradesSQL lists the spot trades of token $1: market orders of the token,
 // simple swaps into it at the execution price, simple swaps out of it into a
-// stablecoin, native swaps of PAX ($5) against a stablecoin, and executed limit,
-// stop-limit and stop-loss orders of the token at their execution price. Buy
-// orders escrow the stable amount, so their size is that amount over the price.
+// stablecoin, native swaps of PAX ($5) against any token at the other amount per
+// PAX, native swaps of the token against PAX at the PAX amount per token, and
+// executed limit, stop-limit and stop-loss orders of the token at their execution
+// price. Buy orders escrow the stable amount, so their size is that amount over
+// the price.
 const spotTradesSQL = `WITH stable AS (
 	SELECT token FROM perps.spot_token_registry WHERE kind = 'token_registered' AND is_stablecoin
 ), trades AS (
@@ -428,7 +430,12 @@ const spotTradesSQL = `WITH stable AS (
 	SELECT s.block, s.tx_index, s.log_index, s.sub, s.block_time, NOT s.native_is_input,
 		s.token_amount / s.native_amount, s.native_amount / $3::numeric
 	FROM perps.spot_swaps s
-	WHERE $5::boolean AND s.kind = 'native_swap' AND s.native_amount > 0 AND s.token_other IN (SELECT token FROM stable)
+	WHERE $5::boolean AND s.kind = 'native_swap' AND s.native_amount > 0
+	UNION ALL
+	SELECT s.block, s.tx_index, s.log_index, s.sub, s.block_time, s.native_is_input,
+		s.native_amount / s.token_amount, s.token_amount / $3::numeric
+	FROM perps.spot_swaps s
+	WHERE s.kind = 'native_swap' AND s.token_other = $1 AND s.token_amount > 0
 	UNION ALL
 	SELECT e.block, e.tx_index, e.log_index, e.sub, e.block_time, COALESCE(c.order_type IN (0, 3), false),
 		e.execution_price / $4::numeric,
