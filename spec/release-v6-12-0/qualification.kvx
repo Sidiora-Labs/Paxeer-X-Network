@@ -98,3 +98,10 @@ command = "go test ./modules/launchpad/keeper/testdata/v6120/record/... -run 'Te
 exit_code = 0
 log_path = "fleet logs 2.2.15-verify-1"
 observed_and_assumption = "The golden recorder is written and its refusal test passes, but golden.json needs eth_call and debug_traceCall at the recorded height against a synced node with the debug API, which the fleet may not reach, and the recorder also waits on ProtocolConfig.json, Treasury.json and holders.json from sibling tasks; only the Router and SidioraPool swap paths have a golden caller plan, the permit, guardian, NFT and fee-claim traces do not. Assumption: an operator captures golden.json with the recorder once the sibling files exist, and the remaining trace families get a caller plan before the parity gate."
+
+[finding.1.0.2]
+revision = "f892a5d77cf284ec5ca35cee3874c3c2b2d743e5"
+command = "scripts/ci/runner-routing-check.sh"
+exit_code = 1
+log_path = "fleet logs 1.0.2-verify-1"
+observed_and_assumption = "The node build workflow carries the accepted runs-on form, but the runner routing check still exits 1 with 74 failure lines from workflows outside this task, because ci.yml and the other workflows end their runs-on fallback in a runner label the check rejects and two mirror workflows change runs-on values in excluded jobs. Assumption: the repository workflow tasks that own those files bring them to the accepted fallback, after which this verify command is rerun without further change here."
