@@ -308,3 +308,10 @@ command = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-intent
 exit_code = 101
 log_path = "fleet/logs/2.3.2-verify-3.log"
 observed_and_assumption = "The three task tests pass; two sibling tests in the same target fail: one reads fresh evidence only the exchange tif qualification harness creates, and one parses the system:paxeer-reserve account that layerx-merge req 6100 retired, which the human crates still name in a dozen places. Assumption: the harness-bound test moves to its own target and the retired reserve references are removed per req 6100."
+
+[fix.2.0.7]
+revision = "1eecad29e"
+command = "go test ./modules/launchpad/legacy/v610/..."
+exit_code = 0
+log_path = "fleet/logs/fix-2.0.7-legacy-verify-1.log"
+observed_and_assumption = "Legacy errors register under launchpad_legacy_v610 (precompile gate fleet/logs/fix-2.0.7-verify-2.log exit 0) and the legacy keeper tests now send through bank keepers carrying the legacy BeforeBalanceChange hook, so keeper and types packages pass with assertions unchanged. Assumption: copies of a bank keeper share one hook slice, so legacy tests must own their bank keepers."
