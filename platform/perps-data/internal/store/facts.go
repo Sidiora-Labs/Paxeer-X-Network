@@ -330,9 +330,9 @@ func setField(f reflect.Value, raw any) error {
 
 var insertCache sync.Map
 
-// insertRow inserts row into perps.table unless its key is stored and
-// reports whether it inserted.
-func insertRow(ctx context.Context, tx *sql.Tx, table string, row any) (bool, error) {
+// insertFact inserts row into perps.table unless its (tx_hash, log_index,
+// sub) key is stored and reports whether it inserted.
+func insertFact(ctx context.Context, tx *sql.Tx, table string, row any) (bool, error) {
 	v := reflect.ValueOf(row)
 	cols := columnsOf(v.Type())
 	cacheKey := table + "/" + v.Type().String()
@@ -345,7 +345,7 @@ func insertRow(ctx context.Context, tx *sql.Tx, table string, row any) (bool, er
 			marks[i] = "$" + strconv.Itoa(i+1)
 		}
 		q = `INSERT INTO perps.` + pq.QuoteIdentifier(table) + ` (` + strings.Join(names, ", ") + `) VALUES (` + strings.Join(marks, ", ") +
-			`) ON CONFLICT DO NOTHING RETURNING row_id`
+			`) ON CONFLICT (tx_hash, log_index, sub) DO NOTHING RETURNING row_id`
 		insertCache.Store(cacheKey, q)
 	}
 	args := make([]any, len(cols))
@@ -411,7 +411,7 @@ func WriteFacts(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Resul
 			if err := check(row.Common()); err != nil {
 				return nil, err
 			}
-			ok, err := insertRow(ctx, tx, row.Table(), row)
+			ok, err := insertFact(ctx, tx, row.Table(), row)
 			if err != nil {
 				return nil, err
 			}
@@ -424,7 +424,7 @@ func WriteFacts(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Resul
 		if err := check(raw.Fact); err != nil {
 			return nil, err
 		}
-		if _, err := insertRow(ctx, tx, "raw_logs", raw); err != nil {
+		if _, err := insertFact(ctx, tx, "raw_logs", raw); err != nil {
 			return nil, err
 		}
 	}
@@ -448,7 +448,7 @@ func WriteFacts(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Resul
 				break
 			}
 		}
-		if _, err := insertRow(ctx, tx, "protocol_events", e); err != nil {
+		if _, err := insertFact(ctx, tx, "protocol_events", e); err != nil {
 			return nil, err
 		}
 	}
@@ -457,7 +457,7 @@ func WriteFacts(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Resul
 		return nil, err
 	}
 	for _, a := range actions {
-		if _, err := insertRow(ctx, tx, "tx_actions", a); err != nil {
+		if _, err := insertFact(ctx, tx, "tx_actions", a); err != nil {
 			return nil, err
 		}
 	}

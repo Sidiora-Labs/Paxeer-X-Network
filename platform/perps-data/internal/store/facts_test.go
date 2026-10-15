@@ -30,10 +30,23 @@ func header(n uint64, at time.Time) Block {
 	}
 }
 
+// placeOrders stores block n-1 with the OrderPlaced rows of maker order 7 of
+// trader A and taker order 8 of trader B, which the Fill of block n names.
+func (c *chain) placeOrders(n uint64, at time.Time) {
+	c.t.Helper()
+	before := at.Add(-time.Second)
+	c.next(n-1, before)
+	c.blockRow(n-1, before)
+	c.placed("7", traderA, "300")
+	c.placed("8", traderB, "300")
+	c.project()
+}
+
 // block400 is block 400 with three logs: a CollateralTransferred with rows
 // sub 0 and sub 1 and a CollateralDeposited in the transaction receipt, and a
 // Fill in the perps EndBlock receipt.
 func block400(c *chain, at time.Time) (Block, *decode.Result) {
+	c.placeOrders(400, at)
 	c.next(400, at)
 	in := c.fact("transferred_in", traderB, decode.PerpsAddress, 1)
 	out := c.fact("transferred_out", traderA, decode.PerpsAddress, 0)
@@ -118,6 +131,7 @@ FROM perps.protocol_events WHERE block = 400`,
 		if err != nil {
 			t.Fatalf("begin: %v", err)
 		}
+		t.Cleanup(func() { _ = tx.Rollback() })
 		c := &chain{t: t, ctx: context.Background(), tx: tx}
 		b, rows := block400(c, t0)
 		c.blockRow(400, t0)
@@ -229,6 +243,7 @@ ON CONFLICT (name) DO UPDATE SET holder = EXCLUDED.holder, expires_at = EXCLUDED
 
 	t.Run("protocol_events_and_actions", func(t *testing.T) {
 		c := newChain(t, db)
+		c.placeOrders(410, t0)
 		c.next(410, t0)
 		b := header(410, t0)
 		aggregate := func(i int64, market string) decode.Decoded {
