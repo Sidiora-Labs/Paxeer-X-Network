@@ -10486,7 +10486,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.0.5]
 title = "Define markets, margin tier tables and the class E open interest caps by listing age"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["3.0.3", "3.0.4"]
