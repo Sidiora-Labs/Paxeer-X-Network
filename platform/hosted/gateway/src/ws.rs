@@ -209,6 +209,7 @@ fn poll_subscription(
     upstream: &mut (impl Read + Write),
     stream: &mut impl Write,
     pending: &mut Vec<u8>,
+    fragments: &mut Option<Vec<u8>>,
     subscriptions: &mut RelaySubscriptions,
 ) -> Result<bool, String> {
     let mut buffer = [0_u8; 4096];
@@ -235,7 +236,7 @@ fn poll_subscription(
         return Ok(false);
     }
     loop {
-        let frame = match upstream_frame(pending) {
+        let frame = match upstream_frame(pending, fragments) {
             Ok(frame) => frame,
             Err(_) => {
                 ws_wire::write(stream, 8, &1011_u16.to_be_bytes())?;
@@ -284,12 +285,13 @@ fn probe_subscription(
         &serde_json::to_vec(&request).map_err(|e| e.to_string())?,
     )?;
     let mut pending = Vec::new();
+    let mut fragments = None;
     let started = Instant::now();
     loop {
         if started.elapsed() >= Duration::from_secs(8) {
             return Err("sequencer websocket probe unavailable".into());
         }
-        if let Some((opcode, body)) = upstream_frame(&mut pending)? {
+        if let Some((opcode, body)) = upstream_frame(&mut pending, &mut fragments)? {
             if opcode == 9 {
                 masked_frame(upstream, 10, &body)?;
                 continue;
@@ -487,6 +489,7 @@ fn subscription_session<S: Connection>(
     let mut upstream = None;
     let mut client = ws_wire::Reader::default();
     let mut pending = Vec::new();
+    let mut fragments = None;
     let mut subscriptions = RelaySubscriptions::default();
     let started = Instant::now();
     let mut last_input = Instant::now();
@@ -534,7 +537,13 @@ fn subscription_session<S: Connection>(
             if super::authenticate_key(config, request).is_err() {
                 return ws_wire::write(stream, 8, &1008_u16.to_be_bytes());
             }
-            if !poll_subscription(connection, stream, &mut pending, &mut subscriptions)? {
+            if !poll_subscription(
+                connection,
+                stream,
+                &mut pending,
+                &mut fragments,
+                &mut subscriptions,
+            )? {
                 return Ok(());
             }
         }
@@ -654,58 +663,80 @@ fn masked_frame(stream: &mut impl Write, opcode: u8, body: &[u8]) -> Result<(), 
         .map_err(|e| e.to_string())
 }
 
-fn upstream_frame(bytes: &mut Vec<u8>) -> Result<Option<(u8, Vec<u8>)>, String> {
-    if bytes.len() < 2 {
-        return Ok(None);
+fn upstream_frame(
+    bytes: &mut Vec<u8>,
+    fragments: &mut Option<Vec<u8>>,
+) -> Result<Option<(u8, Vec<u8>)>, String> {
+    loop {
+        if bytes.len() < 2 {
+            return Ok(None);
+        }
+        let opcode = bytes[0] & 15;
+        let fin = bytes[0] & 0x80 != 0;
+        if bytes[0] & 0x70 != 0
+            || bytes[1] & 0x80 != 0
+            || !matches!(opcode, 0 | 1 | 8 | 9 | 10)
+            || (opcode >= 8 && !fin)
+        {
+            return Err("upstream websocket frame refused".into());
+        }
+        let short = bytes[1];
+        let header = match short {
+            126 => 4,
+            127 => 10,
+            _ => 2,
+        };
+        if bytes.len() < header {
+            return Ok(None);
+        }
+        let length = match short {
+            126 => usize::from(u16::from_be_bytes([bytes[2], bytes[3]])),
+            127 => usize::try_from(u64::from_be_bytes(
+                bytes[2..10].try_into().map_err(|_| "frame length")?,
+            ))
+            .map_err(|_| "frame length")?,
+            _ => usize::from(short),
+        };
+        if length > 65_536 || (opcode >= 8 && length > 125) {
+            return Err("upstream frame bound".into());
+        }
+        if (short == 126 && length < 126) || (short == 127 && length <= 65_535) {
+            return Err("noncanonical upstream frame length".into());
+        }
+        if bytes.len() < header + length {
+            return Ok(None);
+        }
+        let body = bytes[header..header + length].to_vec();
+        if opcode == 8
+            && (body.len() == 1
+                || (body.len() >= 2
+                    && (!matches!(u16::from_be_bytes([body[0], body[1]]), 1000..=1003 | 1007..=1014 | 3000..=4999)
+                        || std::str::from_utf8(&body[2..]).is_err())))
+        {
+            return Err("invalid upstream websocket close".into());
+        }
+        bytes.drain(..header + length);
+        if opcode >= 8 {
+            return Ok(Some((opcode, body)));
+        }
+        let mut message = match (opcode, fragments.take()) {
+            (1, None) => Vec::new(),
+            (0, Some(message)) => message,
+            _ => return Err("invalid upstream websocket fragmentation".into()),
+        };
+        if message.len().saturating_add(body.len()) > 65_536 {
+            return Err("upstream message bound".into());
+        }
+        message.extend_from_slice(&body);
+        if !fin {
+            *fragments = Some(message);
+            continue;
+        }
+        if std::str::from_utf8(&message).is_err() {
+            return Err("invalid upstream websocket text".into());
+        }
+        return Ok(Some((1, message)));
     }
-    let opcode = bytes[0] & 15;
-    if bytes[0] & 0x70 != 0
-        || bytes[0] & 0x80 == 0
-        || bytes[1] & 0x80 != 0
-        || !matches!(opcode, 1 | 8 | 9 | 10)
-    {
-        return Err("upstream websocket frame refused".into());
-    }
-    let short = bytes[1];
-    let header = match short {
-        126 => 4,
-        127 => 10,
-        _ => 2,
-    };
-    if bytes.len() < header {
-        return Ok(None);
-    }
-    let length = match short {
-        126 => usize::from(u16::from_be_bytes([bytes[2], bytes[3]])),
-        127 => usize::try_from(u64::from_be_bytes(
-            bytes[2..10].try_into().map_err(|_| "frame length")?,
-        ))
-        .map_err(|_| "frame length")?,
-        _ => usize::from(short),
-    };
-    if length > 65_536 || (opcode >= 8 && length > 125) {
-        return Err("upstream frame bound".into());
-    }
-    if (short == 126 && length < 126) || (short == 127 && length <= 65_535) {
-        return Err("noncanonical upstream frame length".into());
-    }
-    if bytes.len() < header + length {
-        return Ok(None);
-    }
-    let body = bytes[header..header + length].to_vec();
-    if opcode == 1 && std::str::from_utf8(&body).is_err() {
-        return Err("invalid upstream websocket text".into());
-    }
-    if opcode == 8
-        && (body.len() == 1
-            || (body.len() >= 2
-                && (!matches!(u16::from_be_bytes([body[0], body[1]]), 1000..=1003 | 1007..=1014 | 3000..=4999)
-                    || std::str::from_utf8(&body[2..]).is_err())))
-    {
-        return Err("invalid upstream websocket close".into());
-    }
-    bytes.drain(..header + length);
-    Ok(Some((opcode, body)))
 }
 
 #[cfg(test)]
@@ -739,6 +770,7 @@ mod tests {
                 &mut Cursor::new(bytes.clone()),
                 &mut outgoing,
                 &mut Vec::new(),
+                &mut None,
                 subscriptions
             ),
             Ok(true)
@@ -835,7 +867,7 @@ mod tests {
         let notification = json!({"jsonrpc":"2.0", "method":"eth_subscription",
             "params":{"subscription":"0x1", "result":log}});
         let mut outgoing = upstream(&notification, &mut subscriptions);
-        let (_, body) = upstream_frame(&mut outgoing)
+        let (_, body) = upstream_frame(&mut outgoing, &mut None)
             .unwrap_or_else(|error| panic!("{error}"))
             .unwrap_or_else(|| panic!("notification"));
         assert_eq!(
@@ -885,13 +917,14 @@ mod tests {
                 &mut Cursor::new(bytes.clone()),
                 &mut outgoing,
                 &mut Vec::new(),
+                &mut None,
                 &mut subscriptions
             ),
             Ok(true)
         );
         assert_eq!(outgoing, bytes);
         for result in &results {
-            let (_, body) = upstream_frame(&mut outgoing)
+            let (_, body) = upstream_frame(&mut outgoing, &mut None)
                 .unwrap_or_else(|error| panic!("{error}"))
                 .unwrap_or_else(|| panic!("notification"));
             let notification: Value =
@@ -1107,12 +1140,13 @@ mod tests {
                 &mut upstream,
                 &mut outgoing,
                 &mut Vec::new(),
+                &mut None,
                 &mut subscriptions
             ),
             Ok(false)
         );
         assert_eq!(
-            upstream_frame(&mut outgoing),
+            upstream_frame(&mut outgoing, &mut None),
             Ok(Some((8, 1013_u16.to_be_bytes().to_vec())))
         );
         assert!(outgoing.is_empty());
@@ -1131,12 +1165,16 @@ mod tests {
                 &mut Cursor::new(bytes.clone()),
                 &mut outgoing,
                 &mut Vec::new(),
+                &mut None,
                 &mut RelaySubscriptions::default()
             ),
             Ok(false)
         );
         assert_eq!(outgoing, bytes);
-        assert_eq!(upstream_frame(&mut outgoing), Ok(Some((8, body))));
+        assert_eq!(
+            upstream_frame(&mut outgoing, &mut None),
+            Ok(Some((8, body)))
+        );
         assert!(outgoing.is_empty());
     }
 
@@ -1172,12 +1210,13 @@ mod tests {
                     &mut Cursor::new(bytes),
                     &mut outgoing,
                     &mut Vec::new(),
+                    &mut None,
                     &mut subscriptions
                 ),
                 Ok(false)
             );
             assert_eq!(
-                upstream_frame(&mut outgoing),
+                upstream_frame(&mut outgoing, &mut None),
                 Ok(Some((8, 1011_u16.to_be_bytes().to_vec())))
             );
             assert!(outgoing.is_empty());
@@ -1188,7 +1227,9 @@ mod tests {
     fn upstream_frames_reject_invalid_masks_lengths_text_and_close() {
         for mut bytes in [
             vec![0x81, 0x80, 0, 0, 0, 0],
-            vec![0x01, 0],
+            vec![0x80, 0],
+            vec![0x09, 0],
+            vec![0x01, 0, 0x81, 0],
             vec![0x81, 126, 0, 1, 0],
             vec![0x81, 127, 0, 0, 0, 0, 0, 0, 0, 1],
             vec![0x81, 1, 255],
@@ -1198,15 +1239,170 @@ mod tests {
             vec![0x89, 126, 0, 126],
             vec![0x81, 127, 0, 0, 0, 0, 0, 1, 0, 1],
         ] {
-            assert!(upstream_frame(&mut bytes).is_err());
+            assert!(upstream_frame(&mut bytes, &mut None).is_err());
         }
         let mut bytes = Vec::new();
         ws_wire::write(&mut bytes, 1, &[b'x'; 65_536]).unwrap_or_else(|error| panic!("{error}"));
         assert_eq!(
-            upstream_frame(&mut bytes),
+            upstream_frame(&mut bytes, &mut None),
             Ok(Some((1, vec![b'x'; 65_536])))
         );
         assert!(bytes.is_empty());
+    }
+
+    fn server_frame(first: u8, body: &[u8]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        ws_wire::write(&mut bytes, 0, body).unwrap_or_else(|error| panic!("{error}"));
+        bytes[0] = first;
+        bytes
+    }
+
+    fn pending_block() -> Value {
+        let hashes: Vec<_> = (0..40_u8).map(|index| format!("0x{index:064x}")).collect();
+        json!({"number":"0x2a", "hash":Value::Null, "transactions":hashes})
+    }
+
+    #[test]
+    fn fragmented_upstream_messages_are_reassembled_within_the_message_bound() {
+        let text = "é".repeat(700).into_bytes();
+        let mut bytes = server_frame(0x01, &text[..701]);
+        bytes.extend(server_frame(0x89, b"px"));
+        bytes.extend(server_frame(0x00, &text[701..1001]));
+        bytes.extend(server_frame(0x80, &text[1001..]));
+        let mut fragments = None;
+        assert_eq!(
+            upstream_frame(&mut bytes, &mut fragments),
+            Ok(Some((9, b"px".to_vec())))
+        );
+        assert_eq!(fragments.as_deref(), Some(&text[..701]));
+        assert_eq!(
+            upstream_frame(&mut bytes, &mut fragments),
+            Ok(Some((1, text.clone())))
+        );
+        assert!(bytes.is_empty());
+        assert!(fragments.is_none());
+        let mut bytes = server_frame(0x01, &[b'x'; 65_535]);
+        bytes.extend(server_frame(0x80, b"x"));
+        assert_eq!(
+            upstream_frame(&mut bytes, &mut None),
+            Ok(Some((1, vec![b'x'; 65_536])))
+        );
+        let mut bytes = server_frame(0x01, &[b'x'; 65_536]);
+        bytes.extend(server_frame(0x80, b"x"));
+        assert_eq!(
+            upstream_frame(&mut bytes, &mut None),
+            Err("upstream message bound".into())
+        );
+        let mut bytes = server_frame(0x01, &text[..1]);
+        bytes.extend(server_frame(0x80, &text[1..2]));
+        bytes.extend(server_frame(0x81, b"{}"));
+        let mut fragments = None;
+        assert_eq!(
+            upstream_frame(&mut bytes, &mut fragments),
+            Ok(Some((1, text[..2].to_vec())))
+        );
+        assert_eq!(
+            upstream_frame(&mut bytes, &mut fragments),
+            Ok(Some((1, b"{}".to_vec())))
+        );
+        let mut bytes = server_frame(0x01, &text[..1]);
+        bytes.extend(server_frame(0x81, b"{}"));
+        assert_eq!(
+            upstream_frame(&mut bytes, &mut None),
+            Err("invalid upstream websocket fragmentation".into())
+        );
+    }
+
+    #[test]
+    fn pending_block_probe_accepts_fragmented_replies() {
+        let block = pending_block();
+        let mut reply = serde_json::to_vec(
+            &json!({"jsonrpc":"2.0", "id":"subscription-sequencer", "result":block}),
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+        reply.push(b'\n');
+        assert!(reply.len() > 2 * 1024);
+        let mut buffered = Vec::new();
+        for (index, chunk) in reply.chunks(1024).enumerate() {
+            let opcode = u8::from(index == 0);
+            let fin = if (index + 1) * 1024 >= reply.len() {
+                0x80
+            } else {
+                0
+            };
+            buffered.extend(server_frame(fin | opcode, chunk));
+            if index == 0 {
+                buffered.extend(server_frame(0x89, b"px"));
+            }
+        }
+        let mut unbuffered = server_frame(0x01, &reply);
+        unbuffered.extend(server_frame(0x80, &[]));
+        for frames in [buffered, unbuffered] {
+            let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+                .unwrap_or_else(|error| panic!("{error}"));
+            let mut upstream = TcpStream::connect(
+                listener
+                    .local_addr()
+                    .unwrap_or_else(|error| panic!("{error}")),
+            )
+            .unwrap_or_else(|error| panic!("{error}"));
+            let (mut peer, _) = listener.accept().unwrap_or_else(|error| panic!("{error}"));
+            upstream
+                .set_read_timeout(Some(Duration::from_millis(50)))
+                .unwrap_or_else(|error| panic!("{error}"));
+            peer.set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap_or_else(|error| panic!("{error}"));
+            peer.write_all(&frames)
+                .unwrap_or_else(|error| panic!("{error}"));
+            assert_eq!(
+                probe_subscription(
+                    &mut upstream,
+                    "subscription-sequencer",
+                    "eth_getBlockByNumber",
+                    &json!(["pending", false]),
+                ),
+                Ok(block.clone())
+            );
+            let mut reader = ws_wire::Reader::default();
+            let (opcode, request) = reader
+                .read(&mut peer)
+                .unwrap_or_else(|error| panic!("{error}"))
+                .unwrap_or_else(|| panic!("probe request"));
+            assert_eq!(opcode, 1);
+            assert_eq!(
+                serde_json::from_slice::<Value>(&request).unwrap_or_else(|error| panic!("{error}")),
+                json!({"jsonrpc":"2.0", "id":"subscription-sequencer",
+                    "method":"eth_getBlockByNumber", "params":["pending", false]})
+            );
+        }
+    }
+
+    #[test]
+    fn fragmented_notifications_are_relayed_as_one_message() {
+        let mut subscriptions = RelaySubscriptions::default();
+        subscribe(&mut subscriptions, 1, "newHeads", "0x1");
+        let notification =
+            serde_json::to_vec(&json!({"jsonrpc":"2.0", "method":"eth_subscription",
+            "params":{"subscription":"0x1", "result":pending_block()}}))
+            .unwrap_or_else(|error| panic!("{error}"));
+        let mut bytes = server_frame(0x01, &notification[..1024]);
+        bytes.extend(server_frame(0x80, &notification[1024..]));
+        let mut outgoing = Vec::new();
+        let mut fragments = None;
+        assert_eq!(
+            poll_subscription(
+                &mut Cursor::new(bytes),
+                &mut outgoing,
+                &mut Vec::new(),
+                &mut fragments,
+                &mut subscriptions
+            ),
+            Ok(true)
+        );
+        assert!(fragments.is_none());
+        let mut expected = Vec::new();
+        ws_wire::write(&mut expected, 1, &notification).unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(outgoing, expected);
     }
 }
 
