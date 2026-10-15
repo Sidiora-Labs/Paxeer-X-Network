@@ -1659,3 +1659,19 @@ exit = 1
 log = fleet/logs/fix-rehearsal-merge-verify-1.log
 observed = The release contract's rehearsal item 7 requires pool reserves equal to getReserves at the halt height while the launchpad contract section 8 caps real reserves at the held balance; the tooling follows the launchpad contract.
 assumption = The release contract text is aligned to the launchpad contract by a contract ruling.
+
+[finding.fix-perps-data-gateway-2]
+revision = ce6ff0044
+command = go vet ./platform/perps-data/... && go test ./platform/perps-data/... -count=1 -p 1
+exit = 1
+log = fleet/logs/fix-perps-data-gateway-2-verify-1.log
+observed = Thirteen packages pass; eleven fail on node-bound tests, graphql resolvers returning empty fields, non-null SDL arguments fed null variables, a shared NATS stream name and a store migration that is not idempotent.
+assumption = The graphql, publish and store failures are repaired in a follow-up lane; the node-bound tests rerun once a v6.12 devnet RPC is available.
+
+[finding.7.1.3]
+revision = a398e81202e946c9839fe67a2491e9aac7e52006
+command = go test -count=1 ./platform/perps-data/internal/decode/ -run 'TestSpotDecoders|TestPricefeedDecoders|TestUSDLDecoder|TestDecoderColumnsMatchABI' -v
+exit = 1
+log = fleet/logs/7.1.3-verify-1.log
+observed = Forty-five subtests pass; sixteen spot decoder subtests need a live RPC and fail before asserting.
+assumption = The implementation is complete on main; the RPC subtests rerun once a v6.12 devnet is available.
