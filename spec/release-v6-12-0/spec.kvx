@@ -27309,7 +27309,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.2.4]
 title = "Markets table and platform totals routes"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["7.1.9"]
