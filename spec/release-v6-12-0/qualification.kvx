@@ -787,3 +787,11 @@ exit = 1
 log = "fleet/logs/7.1.7-verify-1.log"
 observed = "Replay assumes store.WriteBlock, store.Rebuild and the 7.1.1 follower Read shape; the contract names Rebuild but no task owns it, and deterministic outbox envelopes are required for event-id reuse."
 assumption = "The perps-data reconciliation pass assigns Rebuild and the envelope determinism; rerun against the release devnet after it."
+
+[finding.4.1.15]
+revision = "072eeded1b5a87cc870bf65f1c5aab5627f63df2"
+command = "go test ./modules/spot/keeper/ -run '^(TestParamChangeEmitsPauseLogs|TestMsgSyncReserves)$'"
+exit = 1
+log = "fleet/logs/4.1.15-verify-1.log"
+observed = "The spot module, genesis and message server build on the landed 4.1.4 keeper, but quote.go from 4.1.13 calls GetParams single-valued and names QuoteExactOut, Price, Convert, VolumeUSD, Spendable and TWAP that its siblings define differently; MsgSyncReserves refuses custody below escrow where the contract names no refusal."
+assumption = "The spot keeper reconciliation pass settles these shapes and the SyncReserves owner between 4.1.10 and 4.1.15; rerun after it."
