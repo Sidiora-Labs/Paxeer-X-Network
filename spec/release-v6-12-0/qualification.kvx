@@ -555,3 +555,51 @@ exit = 2
 log = "fleet/logs/fix-core-gates-verify-2.log"
 observed = "check-core-gates.sh now passes on its own; the make target still fails earlier in check-paxeer-manifests.sh (fixed by issue 597) and check-platform-dependencies.sh (manifest list differs from tools/workspace/platform-dependency-roots.txt at line 24)."
 assumption = "A separate fix lane corrects the platform dependency inventory, after which the make target is rerun once."
+
+[finding.launchpad-keeper]
+revision = "d79eaed940a2be9f62ed731d0397b88aefabae77"
+command = "go build ./modules/launchpad/... ./precompiles/launchpad/..."
+exit = 1
+log = "fleet/logs/rerun-2.1.7-build-1.log"
+observed = "The launchpad keeper package stopped compiling once 2.1.5, 2.1.6, 2.1.7 and 2.1.17 all landed: a package-level uint256 helper collides with the holiman/uint256 import, and swap.go calls RecordFee with the 2.1.5 shape while fees.go declares the 2.1.7 shape."
+assumption = "2.1.7 owns Keeper.RecordFee, so swap.go adapts; the helper is renamed; a reconciliation lane does both, after which 2.1.7, 2.1.12, issue 603 and issue 610 gates are rerun."
+
+[finding.issue-610]
+revision = "bdb2afe2c33926c3b251b4e0e9c9001f6d382821"
+command = "go test ./rpc/ -run 'TestVenueSynthetic|TestGetEvmTxIndex' -count=1"
+exit = 1
+log = "fleet/logs/issue-610-verify-1.log"
+observed = "The rpc package imports the launchpad keeper, which did not compile on the lane's base revision."
+assumption = "Rerun on main once the launchpad keeper reconciliation lands."
+
+[finding.3.1.3]
+revision = "d4db50125ff2c816d7d93e4bd7de996d3f6b7774"
+command = "go test ./modules/perps/keeper/ -run 'TestAccount'"
+exit = 1
+log = "fleet/logs/3.1.3-verify-1.log"
+observed = "Package build fails on symbols owned by 3.1.4, 3.1.5, 3.1.7, 3.1.12 and 3.1.20; Settle returns ([]EventRecord, error) while the 3.1.14 and 3.1.15 drafts call it error-only."
+assumption = "The perps keeper reconciliation pass settles Settle's return shape and the colliding helpers ceilDiv, signedWord and setOrder; rerun afterwards."
+
+[finding.3.1.6]
+revision = "a6d46340c8172e024348face268386456f518c99"
+command = "go test ./modules/perps/keeper/ -run 'TestMatching'"
+exit = 1
+log = "fleet/logs/3.1.6-verify-1.log"
+observed = "Package build fails on symbols owned by 3.1.5, 3.1.9, 3.1.10, 3.1.13 and 3.1.20; matching_golden.json was derived by hand from the contract, not recorded from the engine."
+assumption = "Match adopts 3.1.9's ApplyFill(ctx, PositionFill) (PositionFillResult, error) and calls ReconcileReduceOnly for both parties in the reconciliation pass; the golden file is re-recorded once the engine runs."
+
+[finding.3.1.9]
+revision = "56d3f2808f236689a3b679dd921a07bad38b584e"
+command = "go test ./modules/perps/keeper/ -run 'TestPositions'"
+exit = 1
+log = "fleet/logs/3.1.9-verify-1.log"
+observed = "Package build fails on symbols owned by 3.1.4, 3.1.5 and 3.1.20; funding.go duplicates the funding settlement that positions.go provides."
+assumption = "funding.go reuses positions.go's settlement in the reconciliation pass; rerun afterwards."
+
+[finding.3.1.19]
+revision = "29024d3f729c9c897128ef8376bbf16fb82adcc0"
+command = "go test ./modules/perps/keeper/ -run 'TestInvariants'"
+exit = 1
+log = "fleet/logs/3.1.19-verify-1.log"
+observed = "Package build fails on symbols owned by 3.1.5, 3.1.20 and 5.1.9; the perps keeper test binary also needs the native sandbox archive, absent in the fleet tree."
+assumption = "Rerun after the reconciliation pass with the archives built once in the worktree."
