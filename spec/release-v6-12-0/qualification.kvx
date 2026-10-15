@@ -259,3 +259,10 @@ command = "go test ./modules/launchpad/types/... -run 'TestLaunchpadErrorStrings
 exit_code = 0
 log_path = "fleet/logs/fix-2.1.3-verify-1.log"
 observed_and_assumption = "Every one of the sixty-two distinct artifact errors across the eleven role ABIs now has exactly one keeper error with the same signature and selector, the pool-token errors included; the keeper-only conditions are listed in a KeeperOnlyErrors table the golden test asserts, and the remaining condition mappings cite the contract line that raises that error. Assumption: none."
+
+[fix.2.2.15]
+revision = "a326230dd9aaf918961dfb21f3145fb4b53d5cab"
+command = "go test ./modules/launchpad/keeper/testdata/v6120/record/... -run 'TestRecordRefusesSupplyMismatch|TestCallerPlan'"
+exit_code = 0
+log_path = "fleet/logs/fix-2.2.15-verify-1.log"
+observed_and_assumption = "The recorder now carries a caller plan for the permit, guardian, NFT and fee-claim trace families beside the swap paths, resolves overloaded methods by signature, and still refuses on supply mismatch; the permit traces use an unsigned permit and the legacy airdrop claim an empty proof because the tree holds no key or proof fixture, so those record the refusal path at the halt height. Assumption: the golden capture itself runs once an endpoint with the debug API at the halt height is approved."
