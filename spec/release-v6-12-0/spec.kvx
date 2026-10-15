@@ -26711,7 +26711,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.2]
 title = "Copy the delivery envelope, outbox store and relay onto database/sql"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["7.0.1", "7.0.5"]
