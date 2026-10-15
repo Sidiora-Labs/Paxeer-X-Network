@@ -172,7 +172,7 @@ func (k Keeper) GetPriceBySymbol(ctx sdk.Context, symbol string) (Price, error)
 
 ## Precompile interface
 
-`precompiles/pricefeed/PriceFeed.sol` declares the interface and `precompiles/pricefeed/abi.json` is its ABI; selectors are the first four bytes of the keccak-256 hash of each signature below.
+`precompiles/pricefeed/PriceFeed.sol` declares the interface and `precompiles/pricefeed/abi/abi.json` is its ABI; selectors are the first four bytes of the keccak-256 hash of each signature below.
 
 ```
 struct Price { uint256 indexPrice; uint256 markPrice; uint64 timestampMs; int64 height; uint32 sources; bool fresh; }
