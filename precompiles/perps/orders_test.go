@@ -321,11 +321,6 @@ func newOrderParams(isLong bool, orderType perpstypes.OrderType, timeInForce per
 
 // limitOrder is a GTC BTC limit order of sizeUsd whole USD at leverage x at
 // price whole USD.
-func limitOrder(isLong bool, sizeUsd, leverage, price int64) orderParams {
-	p := newOrderParams(isLong, perpstypes.OrderTypeLimit, perpstypes.TimeInForceGTC, sizeUsd, leverage)
-	p.LimitPrice = ordersBig(price)
-	return p
-}
 
 // openLong gives A a BTC long of 0.02 BTC at 60,000 USD: B rests a sell of
 // 6,000 USD at 60,000 and A buys 1,200 USD at market.

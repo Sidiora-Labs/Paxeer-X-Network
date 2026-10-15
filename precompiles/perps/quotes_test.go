@@ -105,7 +105,7 @@ func newQuotesEnv(t *testing.T, mark int64) *quotesEnv {
 	})
 	require.NoError(t, err)
 	ctx.KVStore(pfKey).Set(pricefeedtypes.AggregateKey(0), bz)
-	price := usd(mark)
+	price := usdWord(mark)
 	k.SetMarketState(ctx, perpstypes.MarketState{MarketID: 0, IndexPrice: price, PricefeedMark: price,
 		PriceTimestampMs: uint64(quotesNowMs), Fresh: true, MarkPrice: price})
 
@@ -116,22 +116,6 @@ func newQuotesEnv(t *testing.T, mark int64) *quotesEnv {
 	env := &quotesEnv{t: t, k: k, ctx: ctx, perpsKey: perpsKey, executor: executor, abi: precompile.GetABI()}
 	env.fund(quotesMaker, 1_000_000_000_000)
 	return env
-}
-
-// usd is a whole number of USD (or a price) in 18-decimal fixed point.
-func usd(whole int64) uint256.Int {
-	return *new(uint256.Int).Mul(uint256.NewInt(uint64(whole)), uint256.NewInt(1_000_000_000_000_000_000))
-}
-
-func fixed(t *testing.T, decimal string) uint256.Int {
-	t.Helper()
-	value, ok := new(big.Rat).SetString(decimal)
-	require.True(t, ok, decimal)
-	value.Mul(value, new(big.Rat).SetInt(big.NewInt(1_000_000_000_000_000_000)))
-	require.True(t, value.IsInt(), decimal)
-	var word uint256.Int
-	require.False(t, word.SetFromBig(value.Num()))
-	return word
 }
 
 // fund stores the created account record the deposit leg leaves behind.
@@ -153,12 +137,12 @@ func (e *quotesEnv) account(ctx sdk.Context, address common.Address) perpstypes.
 // rest places a GTC limit order of the maker that rests in the book.
 func (e *quotesEnv) rest(isLong bool, price uint256.Int, sizeBase string) {
 	e.t.Helper()
-	base := fixed(e.t, sizeBase)
+	base := fixedWord(e.t, sizeBase)
 	sizeUsd, overflow := new(uint256.Int).MulDivOverflow(&base, &price, uint256.NewInt(1_000_000_000_000_000_000))
 	require.False(e.t, overflow)
 	result, err := e.k.PlaceOrder(e.ctx, quotesMaker, perpskeeper.OrderParams{
 		MarketID: 0, IsLong: isLong, OrderType: uint8(perpstypes.OrderTypeLimit),
-		TimeInForce: uint8(perpstypes.TimeInForceGTC), SizeUsd: *sizeUsd, Leverage: usd(10), LimitPrice: price,
+		TimeInForce: uint8(perpstypes.TimeInForceGTC), SizeUsd: *sizeUsd, Leverage: usdWord(10), LimitPrice: price,
 	})
 	require.NoError(e.t, err)
 	require.Empty(e.t, result.Fills)
@@ -169,12 +153,12 @@ func (e *quotesEnv) rest(isLong bool, price uint256.Int, sizeBase string) {
 // the market's long open interest.
 func (e *quotesEnv) holdLong(id uint64, sizeBase string, entry uint256.Int, collateral uint64) perpstypes.Position {
 	e.t.Helper()
-	base := fixed(e.t, sizeBase)
+	base := fixedWord(e.t, sizeBase)
 	cost, overflow := new(uint256.Int).MulDivOverflow(&base, &entry, uint256.NewInt(1_000_000_000_000_000_000))
 	require.False(e.t, overflow)
 	position := perpstypes.Position{
 		ID: *uint256.NewInt(id), Account: quotesHolder, MarketID: 0, IsLong: true, SizeBase: base,
-		ReferencePrice: entry, CostBasisUsd: *cost, EntryPrice: entry, Leverage: usd(10),
+		ReferencePrice: entry, CostBasisUsd: *cost, EntryPrice: entry, Leverage: usdWord(10),
 		OpenedAt: uint64(quotesNowMs / 1000),
 	}
 	store := e.ctx.KVStore(e.perpsKey)
@@ -254,14 +238,14 @@ func bigOf(t *testing.T, decimal string) *big.Int {
 
 func TestQuotesQuoteOpenPositionWalksBook(t *testing.T) {
 	env := newQuotesEnv(t, 60_000)
-	env.rest(false, usd(60_000), "0.01")
-	env.rest(false, usd(60_100), "0.01")
+	env.rest(false, usdWord(60_000), "0.01")
+	env.rest(false, usdWord(60_100), "0.01")
 	params, err := env.k.GetParams(env.ctx)
 	require.NoError(t, err)
 
 	before := env.storeHash()
 	out := env.call(quotesHolder, "quoteOpenPosition", big.NewInt(0), params.CollateralToken, big.NewInt(100_000_000),
-		usd(10).ToBig(), true)
+		wordBig(usdWord(10)), true)
 	require.Equal(t, before, env.storeHash())
 	require.Len(t, out, 1)
 	quote := *abi.ConvertType(out[0], new(openPositionQuote)).(*openPositionQuote)
@@ -270,12 +254,12 @@ func TestQuotesQuoteOpenPositionWalksBook(t *testing.T) {
 	// 60,300 bound; the walk fills 0.01 at 60,000 and 0.0065 at 60,100.
 	entry := bigOf(t, "60039393939393939393939")
 	require.Equal(t, entry, quote.EntryPrice)
-	require.Equal(t, fixed(t, "990.65").ToBig(), quote.SizeUsd)
-	require.Equal(t, usd(100).ToBig(), quote.CollateralUsd)
-	require.Equal(t, usd(10).ToBig(), quote.Leverage)
+	require.Equal(t, wordBig(fixedWord(t, "990.65")), quote.SizeUsd)
+	require.Equal(t, wordBig(usdWord(100)), quote.CollateralUsd)
+	require.Equal(t, wordBig(usdWord(10)), quote.Leverage)
 	require.Equal(t, big.NewInt(445_793), quote.TradingFee)
-	require.Equal(t, fixed(t, "0.4457925").ToBig(), quote.TradingFeeUsd)
-	mark := usd(60_000).ToBig()
+	require.Equal(t, wordBig(fixedWord(t, "0.4457925")), quote.TradingFeeUsd)
+	mark := wordBig(usdWord(60_000))
 	impact := new(big.Int).Sub(entry, mark)
 	require.Equal(t, impact.Mul(impact, big.NewInt(10_000)).Quo(impact, mark), quote.PriceImpact)
 	require.Equal(t, big.NewInt(5), quote.MaintenanceMarginBps)
@@ -301,7 +285,7 @@ func TestQuotesQuoteOpenPositionWalksBook(t *testing.T) {
 	}.Marshal())
 	result, err := env.k.PlaceOrder(branch, quotesHolder, perpskeeper.OrderParams{
 		MarketID: 0, IsLong: true, OrderType: uint8(perpstypes.OrderTypeMarket),
-		TimeInForce: uint8(perpstypes.TimeInForceIOC), SizeUsd: usd(990), Leverage: usd(10),
+		TimeInForce: uint8(perpstypes.TimeInForceIOC), SizeUsd: usdWord(990), Leverage: usdWord(10),
 	})
 	require.NoError(t, err)
 	require.Len(t, result.Fills, 2)
@@ -318,18 +302,18 @@ func TestQuotesQuoteOpenPositionWalksBook(t *testing.T) {
 	require.NotNil(t, bz)
 	var position perpstypes.Position
 	require.NoError(t, position.Unmarshal(bz))
-	require.Equal(t, fixed(t, "0.0165"), position.SizeBase)
+	require.Equal(t, fixedWord(t, "0.0165"), position.SizeBase)
 	require.Equal(t, quote.EntryPrice, position.EntryPrice.ToBig())
-	require.Equal(t, uint256.NewInt(100_000_000-445_793), &env.account(branch, quotesHolder).Collateral)
+	require.Equal(t, *uint256.NewInt(100_000_000 - 445_793), env.account(branch, quotesHolder).Collateral)
 }
 
 func TestQuotesQuoteClosePosition(t *testing.T) {
 	env := newQuotesEnv(t, 61_000)
-	env.rest(true, usd(61_000), "1")
-	env.holdLong(7, "0.01", usd(60_000), 100_000_000)
+	env.rest(true, usdWord(61_000), "1")
+	env.holdLong(7, "0.01", usdWord(60_000), 100_000_000)
 	// The index rose 100 USD per BTC since the position's funding basis of
 	// 0: the long owes 0.01 x 100 = 1 USD.
-	env.setFundingIndex(usd(100))
+	env.setFundingIndex(usdWord(100))
 
 	before := env.storeHash()
 	out := env.call(quotesMaker, "quoteClosePosition", big.NewInt(7))
@@ -337,12 +321,12 @@ func TestQuotesQuoteClosePosition(t *testing.T) {
 	require.Len(t, out, 1)
 	quote := *abi.ConvertType(out[0], new(closePositionQuote)).(*closePositionQuote)
 
-	require.Equal(t, usd(61_000).ToBig(), quote.ExitPrice)
-	require.Equal(t, usd(10).ToBig(), quote.UnrealizedPnl)
-	require.Equal(t, fixed(t, "0.2745").ToBig(), quote.TradingFeeUsd)
+	require.Equal(t, wordBig(usdWord(61_000)), quote.ExitPrice)
+	require.Equal(t, wordBig(usdWord(10)), quote.UnrealizedPnl)
+	require.Equal(t, wordBig(fixedWord(t, "0.2745")), quote.TradingFeeUsd)
 	require.Equal(t, big.NewInt(274_500), quote.TradingFee)
-	require.Equal(t, usd(1).ToBig(), new(big.Int).Neg(quote.FundingOwed))
-	require.Equal(t, fixed(t, "8.7255").ToBig(), quote.NetPnl)
+	require.Equal(t, wordBig(usdWord(1)), new(big.Int).Neg(quote.FundingOwed))
+	require.Equal(t, wordBig(fixedWord(t, "8.7255")), quote.NetPnl)
 	require.Equal(t, big.NewInt(108_725_500), quote.EstimatedPayout)
 
 	order, err := env.k.ClosePosition(env.ctx, quotesHolder, *uint256.NewInt(7))
@@ -351,17 +335,17 @@ func TestQuotesQuoteClosePosition(t *testing.T) {
 	require.Len(t, result.Fills, 1)
 	require.Equal(t, quote.ExitPrice, result.Fills[0].Price.ToBig())
 	require.Equal(t, quote.TradingFeeUsd, result.Fills[0].TakerFeeUsd.ToBig())
-	require.Equal(t, quote.EstimatedPayout, env.account(branch, quotesHolder).Collateral.ToBig())
+	require.Equal(t, quote.EstimatedPayout, wordBig(env.account(branch, quotesHolder).Collateral))
 	require.Nil(t, branch.KVStore(env.perpsKey).Get(perpstypes.PositionKey(*uint256.NewInt(7))))
 }
 
 func TestQuotesQuotePartialCloseMatchesExecution(t *testing.T) {
 	env := newQuotesEnv(t, 61_000)
-	env.rest(true, usd(61_000), "1")
-	env.holdLong(7, "0.02", usd(60_000), 100_000_000)
+	env.rest(true, usdWord(61_000), "1")
+	env.holdLong(7, "0.02", usdWord(60_000), 100_000_000)
 
 	before := env.storeHash()
-	out := env.call(quotesHolder, "quotePartialClose", big.NewInt(7), usd(500).ToBig())
+	out := env.call(quotesHolder, "quotePartialClose", big.NewInt(7), wordBig(usdWord(500)))
 	require.Equal(t, before, env.storeHash())
 	require.Len(t, out, 4)
 	exitPrice, closedPnl, fee, payout := out[0].(*big.Int), out[1].(*big.Int), out[2].(*big.Int), out[3].(*big.Int)
@@ -369,22 +353,22 @@ func TestQuotesQuotePartialCloseMatchesExecution(t *testing.T) {
 	// 500 USD at mark 61,000 is 0.00819 BTC after the lot rounding; it fills
 	// at 61,000 for 499.59 USD, closing 0.00819 x (61,000 - 60,000) of PnL at
 	// the 450 ppm taker rate.
-	require.Equal(t, usd(61_000).ToBig(), exitPrice)
-	require.Equal(t, fixed(t, "8.19").ToBig(), closedPnl)
-	require.Equal(t, fixed(t, "0.2248155").ToBig(), fee)
+	require.Equal(t, wordBig(usdWord(61_000)), exitPrice)
+	require.Equal(t, wordBig(fixedWord(t, "8.19")), closedPnl)
+	require.Equal(t, wordBig(fixedWord(t, "0.2248155")), fee)
 
-	order, err := env.k.PartialClose(env.ctx, quotesHolder, *uint256.NewInt(7), usd(500))
+	order, err := env.k.PartialClose(env.ctx, quotesHolder, *uint256.NewInt(7), usdWord(500))
 	require.NoError(t, err)
-	require.Equal(t, fixed(t, "0.00819"), order.SizeBase)
+	require.Equal(t, fixedWord(t, "0.00819"), order.SizeBase)
 	branch, result := env.execute(order)
 	require.Len(t, result.Fills, 1)
 	require.Equal(t, exitPrice, result.Fills[0].Price.ToBig())
 	require.Equal(t, fee, result.Fills[0].TakerFeeUsd.ToBig())
-	credited := new(big.Int).Sub(env.account(branch, quotesHolder).Collateral.ToBig(), big.NewInt(100_000_000))
+	credited := new(big.Int).Sub(wordBig(env.account(branch, quotesHolder).Collateral), big.NewInt(100_000_000))
 	require.Equal(t, credited, payout)
 	bz := branch.KVStore(env.perpsKey).Get(perpstypes.PositionKey(*uint256.NewInt(7)))
 	require.NotNil(t, bz)
 	var position perpstypes.Position
 	require.NoError(t, position.Unmarshal(bz))
-	require.Equal(t, fixed(t, "0.01181"), position.SizeBase)
+	require.Equal(t, fixedWord(t, "0.01181"), position.SizeBase)
 }

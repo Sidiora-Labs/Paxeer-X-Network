@@ -8,7 +8,6 @@ import (
 	"math"
 	"math/big"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -91,12 +90,6 @@ func newOrder(isLong bool, orderType perpstypes.OrderType, tif perpstypes.TimeIn
 		StopLossPrice: new(big.Int)}
 }
 
-func limitOrder(isLong bool, tif perpstypes.TimeInForce, price, sizeUsd, leverage *big.Int) eventsOrder {
-	order := newOrder(isLong, perpstypes.OrderTypeLimit, tif, sizeUsd, leverage)
-	order.LimitPrice = price
-	return order
-}
-
 // eventsEnv is the perps keeper over the real pricefeed keeper, each on its
 // own store, with the USDL ERC20 deployed in the real EVM, BTC (0) listed as
 // class A and the precompile served at 0x1015.
@@ -174,26 +167,7 @@ func (e *eventsEnv) deployUsdl() {
 
 func word(value *big.Int) []byte { return common.LeftPadBytes(value.Bytes(), 32) }
 
-func usd(whole int64) *big.Int {
-	return new(big.Int).Mul(big.NewInt(whole), big.NewInt(1_000_000_000_000_000_000))
-}
-
 func units(n int64) *big.Int { return big.NewInt(n) }
-
-// fixed parses a decimal string as an 18-decimal fixed-point value.
-func fixed(decimal string) *big.Int {
-	whole, fraction, _ := strings.Cut(decimal, ".")
-	negative := strings.HasPrefix(whole, "-")
-	digits := strings.TrimPrefix(whole, "-") + fraction + strings.Repeat("0", 18-len(fraction))
-	value, ok := new(big.Int).SetString(digits, 10)
-	if !ok {
-		panic("fixed: " + decimal)
-	}
-	if negative {
-		value.Neg(value)
-	}
-	return value
-}
 
 // erc20 runs a USDL method from caller and requires it to return true.
 func (e *eventsEnv) erc20(caller common.Address, signature string, words ...[]byte) {
@@ -265,7 +239,7 @@ func (e *eventsEnv) place(from common.Address, order eventsOrder) ([]*ethtypes.L
 // synthetic receipt, every one from 0x1015.
 func (e *eventsEnv) endBlock() []*ethtypes.Log {
 	e.t.Helper()
-	require.NoError(e.t, e.k.EndBlock(e.ctx))
+	require.NotEmpty(e.t, e.k.EndBlock(e.ctx))
 	kind := evmkeeper.SyntheticReceiptPerps
 	receipt, err := e.app.EvmKeeper.GetTransientReceipt(e.ctx, evmkeeper.SyntheticReceiptHash(kind, e.ctx.BlockHeight()),
 		uint64(evmkeeper.SyntheticReceiptProvisionalIndex(kind)))
@@ -496,9 +470,9 @@ func fillScenario(e *eventsEnv, rebate bool) (a, b common.Address, makerID, take
 	if rebate {
 		e.seedMakerShare(a)
 	}
-	_, makerID = e.place(a, limitOrder(false, perpstypes.TimeInForceGTC, usd(60_000), usd(600), usd(10)))
+	_, makerID = e.place(a, eventsLimitOrder(false, perpstypes.TimeInForceGTC, usd(60_000), usd(600), usd(10)))
 	b = e.trader("account B", 10_000_000_000)
-	logs, takerID = e.place(b, limitOrder(true, perpstypes.TimeInForceIOC, usd(60_000), usd(600), usd(10)))
+	logs, takerID = e.place(b, eventsLimitOrder(true, perpstypes.TimeInForceIOC, usd(60_000), usd(600), usd(10)))
 	return a, b, makerID, takerID, logs
 }
 
@@ -506,7 +480,7 @@ func fillScenario(e *eventsEnv, rebate bool) (a, b common.Address, makerID, take
 // openPosition(0, usdl, 100000000, 10e18, true): 0.01650 BTC at 60,000.
 func openScenario(e *eventsEnv, askUsd int64) (a common.Address, position *big.Int, logs []*ethtypes.Log) {
 	c := e.trader("account C", 100_000_000_000)
-	e.place(c, limitOrder(false, perpstypes.TimeInForceGTC, usd(60_000), usd(askUsd), usd(10)))
+	e.place(c, eventsLimitOrder(false, perpstypes.TimeInForceGTC, usd(60_000), usd(askUsd), usd(10)))
 	a = e.holder("account A", 100_000_000)
 	logs, out := e.tx(a, "openPosition", new(big.Int), e.usdl, units(100_000_000), usd(10), true)
 	require.Len(e.t, out, 1)
@@ -522,7 +496,7 @@ func addSizeScenario(e *eventsEnv) (common.Address, *big.Int, []*ethtypes.Log) {
 	a, position, _ := openScenario(e, 990)
 	e.setPrice(62_000)
 	c := eventsAddress("account C")
-	e.place(c, limitOrder(false, perpstypes.TimeInForceGTC, usd(62_000), usd(6_200), usd(10)))
+	e.place(c, eventsLimitOrder(false, perpstypes.TimeInForceGTC, usd(62_000), usd(6_200), usd(10)))
 	e.fund(a, 50_000_000)
 	e.approve(a, 50_000_000)
 	logs, _ := e.tx(a, "addSize", position, units(50_000_000), usd(10))
@@ -536,7 +510,7 @@ func closeScenario(e *eventsEnv) (common.Address, *big.Int, []*ethtypes.Log) {
 	e.setFundingIndex(fixed("3.030303030303030303"))
 	e.setPrice(61_000)
 	d := e.trader("account D", 100_000_000_000)
-	e.place(d, limitOrder(true, perpstypes.TimeInForceGTC, usd(61_000), fixed("1006.5"), usd(10)))
+	e.place(d, eventsLimitOrder(true, perpstypes.TimeInForceGTC, usd(61_000), fixed("1006.5"), usd(10)))
 	logs, _ := e.tx(a, "closePosition", position)
 	return a, position, logs
 }
@@ -545,7 +519,7 @@ func closeScenario(e *eventsEnv) (common.Address, *big.Int, []*ethtypes.Log) {
 // 0x0102...10 and the given deadline from 1,000 USDL of collateral.
 func restingLimit(e *eventsEnv, deadline uint64) (common.Address, *big.Int, []*ethtypes.Log) {
 	a := e.trader("account A", 1_000_000_000)
-	order := limitOrder(true, perpstypes.TimeInForceGTC, usd(59_000), usd(6_000), usd(20))
+	order := eventsLimitOrder(true, perpstypes.TimeInForceGTC, usd(59_000), usd(6_000), usd(20))
 	order.Deadline = deadline
 	order.Cloid = eventsCloid
 	logs, id := e.place(a, order)
@@ -671,7 +645,7 @@ func TestEventOrderExpired(t *testing.T) {
 func TestEventOrderTriggered(t *testing.T) {
 	e := newEventsEnv(t)
 	c := e.trader("account C", 100_000_000_000)
-	e.place(c, limitOrder(false, perpstypes.TimeInForceGTC, usd(61_050), usd(1_221), usd(10)))
+	e.place(c, eventsLimitOrder(false, perpstypes.TimeInForceGTC, usd(61_050), usd(1_221), usd(10)))
 	a := e.trader("account A", 1_000_000_000)
 	stop := newOrder(true, perpstypes.OrderTypeStopMarket, perpstypes.TimeInForceIOC, usd(600), usd(10))
 	stop.TriggerPrice = usd(61_000)
@@ -695,10 +669,10 @@ func TestEventOrderTriggered(t *testing.T) {
 func TestEventOrderExecuted(t *testing.T) {
 	e := newEventsEnv(t)
 	c := e.trader("account C", 100_000_000_000)
-	e.place(c, limitOrder(false, perpstypes.TimeInForceGTC, usd(60_000), usd(600), usd(10)))
-	e.place(c, limitOrder(false, perpstypes.TimeInForceGTC, usd(60_100), usd(601), usd(10)))
+	e.place(c, eventsLimitOrder(false, perpstypes.TimeInForceGTC, usd(60_000), usd(600), usd(10)))
+	e.place(c, eventsLimitOrder(false, perpstypes.TimeInForceGTC, usd(60_100), usd(601), usd(10)))
 	b := e.trader("account B", 10_000_000_000)
-	logs, takerID := e.place(b, limitOrder(true, perpstypes.TimeInForceIOC, usd(60_100), usd(1_202), usd(10)))
+	logs, takerID := e.place(b, eventsLimitOrder(true, perpstypes.TimeInForceIOC, usd(60_100), usd(1_202), usd(10)))
 	require.Len(t, e.indices(logs, "Fill"), 2)
 	e.requireLog(logs, "OrderExecuted", takerID, e.positionOf(b), usd(60_050))
 	require.Len(t, e.indices(logs, "OrderExecuted"), 1)
@@ -747,7 +721,7 @@ func TestEventPositionClosed(t *testing.T) {
 func TestEventPositionTpSlSet(t *testing.T) {
 	e := newEventsEnv(t)
 	c := e.trader("account C", 100_000_000_000)
-	e.place(c, limitOrder(false, perpstypes.TimeInForceGTC, usd(60_000), usd(990), usd(10)))
+	e.place(c, eventsLimitOrder(false, perpstypes.TimeInForceGTC, usd(60_000), usd(990), usd(10)))
 	a := e.trader("account A", 100_000_000)
 	order := newOrder(true, perpstypes.OrderTypeMarket, perpstypes.TimeInForceIOC, usd(990), usd(10))
 	order.TakeProfitPrice, order.StopLossPrice = usd(66_000), usd(57_000)
@@ -824,9 +798,9 @@ func TestEventFundingSettled(t *testing.T) {
 func TestEventPositionFundingApplied(t *testing.T) {
 	e := newEventsEnv(t)
 	c := e.trader("account C", 100_000_000_000)
-	e.place(c, limitOrder(false, perpstypes.TimeInForceGTC, usd(60_000), usd(60_000), usd(10)))
+	e.place(c, eventsLimitOrder(false, perpstypes.TimeInForceGTC, usd(60_000), usd(60_000), usd(10)))
 	a := e.trader("account A", 10_000_000_000)
-	e.place(a, limitOrder(true, perpstypes.TimeInForceIOC, usd(60_000), usd(60_000), usd(10)))
+	e.place(a, eventsLimitOrder(true, perpstypes.TimeInForceIOC, usd(60_000), usd(60_000), usd(10)))
 	position := e.positionOf(a)
 	require.Equal(t, uint64(9_973_000_000), e.collateral(a))
 
@@ -848,7 +822,7 @@ func TestEventLiquidation(t *testing.T) {
 	e := newEventsEnv(t)
 	e.setPrice(59_000)
 	b := e.trader("account B", 100_000_000_000)
-	e.place(b, limitOrder(true, perpstypes.TimeInForceGTC, usd(59_000), usd(118_000), usd(10)))
+	e.place(b, eventsLimitOrder(true, perpstypes.TimeInForceGTC, usd(59_000), usd(118_000), usd(10)))
 	// A's 10 BTC long entered at 60,000: equity 10,250 - 10,000 = 250 USD,
 	// below the 295 USD maintenance and above two thirds of it.
 	e.startPositionIDs()
@@ -926,7 +900,7 @@ func TestEventFeeAndInsuranceEnums(t *testing.T) {
 	e := newEventsEnv(t)
 	_, _, _, _, block := fillScenario(e, true)
 	z := e.trader("account Z", 100_000_000_000)
-	placed, _ := e.place(z, limitOrder(true, perpstypes.TimeInForceGTC, usd(60_100), usd(60_100), usd(10)))
+	placed, _ := e.place(z, eventsLimitOrder(true, perpstypes.TimeInForceGTC, usd(60_100), usd(60_100), usd(10)))
 	block = append(block, placed...)
 	e.startPositionIDs()
 	x := eventsAddress("account X")

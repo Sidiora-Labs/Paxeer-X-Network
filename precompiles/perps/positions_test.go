@@ -382,7 +382,7 @@ func TestPositionsAddSizeReweightsEntry(t *testing.T) {
 	require.Len(t, logs, 1)
 	require.Equal(t, positionsTopic(id), logs[0].Topics[1])
 	require.Equal(t, positionsE18(60_000), fields[0]["oldEntryPrice"])
-	require.Equal(t, positionsWord(t, "60651960784313725490196").ToBig(), fields[0]["newEntryPrice"])
+	require.Equal(t, wordBig(positionsWord(t, "60651960784313725490196")), fields[0]["newEntryPrice"])
 
 	e.requireRevert("PerpsNotPositionHolder", positionsBidderC, "addSize", id, big.NewInt(1_000_000), positionsE18(10))
 	e.requireRevert("PerpsUnknownPosition", positionsTraderA, "addSize", big.NewInt(999), big.NewInt(1_000_000),
