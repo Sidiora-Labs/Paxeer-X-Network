@@ -36,8 +36,8 @@ const CHAIN_RPC_PATH: &str = "/rpc";
 const SELECTOR_INTENT_NONCE: [u8; 4] = [0x63, 0x4a, 0x23, 0x20];
 /// `isPaused()` on the bridge precompile, answering `bool`.
 const SELECTOR_IS_PAUSED: [u8; 4] = [0xb1, 0x87, 0xbd, 0x26];
-/// `getMarketCount()` on the launchpad precompile, answering `uint256`.
-const SELECTOR_GET_MARKET_COUNT: [u8; 4] = [0xfd, 0x69, 0xf3, 0xc2];
+/// `getPoolCount()` on the launchpad precompile, answering `uint256`.
+const SELECTOR_GET_POOL_COUNT: [u8; 4] = [0x8e, 0xec, 0x5d, 0x70];
 
 /// One fork surface and the precompile that carries it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -71,7 +71,7 @@ impl Surface {
         match self {
             Self::Exchange => evm::calldata_address(SELECTOR_INTENT_NONCE, &[0; 20]),
             Self::Bridge => evm::calldata_empty(SELECTOR_IS_PAUSED),
-            Self::Launchpad => evm::calldata_empty(SELECTOR_GET_MARKET_COUNT),
+            Self::Launchpad => evm::calldata_empty(SELECTOR_GET_POOL_COUNT),
         }
     }
 
@@ -525,7 +525,7 @@ mod tests {
         );
         assert_eq!(
             Surface::Launchpad.probe_calldata(),
-            vec![0xfd, 0x69, 0xf3, 0xc2]
+            vec![0x8e, 0xec, 0x5d, 0x70]
         );
 
         for surface in Surface::ALL {
@@ -613,6 +613,56 @@ mod tests {
             probe(|_: &Value| Err("paxeer_unreachable"), 0),
             Err("paxeer_unreachable")
         );
+    }
+
+    #[test]
+    fn launchpad_probe_uses_get_pool_count() {
+        assert_eq!(SELECTOR_GET_POOL_COUNT, [0x8e, 0xec, 0x5d, 0x70]);
+        assert_eq!(Surface::Launchpad.address(), evm::LAUNCHPAD_PRECOMPILE);
+        assert_eq!(
+            evm::address_hex(&evm::LAUNCHPAD_PRECOMPILE),
+            "0x0000000000000000000000000000000000001017"
+        );
+
+        let launchpad_calls = Cell::new(0);
+        let pools = format!("0x{}", "00".repeat(31) + "03");
+        let node = |answer: &'static str| {
+            let launchpad_calls = &launchpad_calls;
+            let pools = pools.clone();
+            move |request: &Value| -> Result<Value, &'static str> {
+                let result = match request["method"].as_str() {
+                    Some("eth_blockNumber") => json!("0x16c1321"),
+                    Some("eth_call") => {
+                        assert_eq!(request["params"][1], json!("0x16c1321"));
+                        if request["params"][0]["to"]
+                            == json!("0x0000000000000000000000000000000000001017")
+                        {
+                            launchpad_calls.set(launchpad_calls.get() + 1);
+                            assert_eq!(request["params"][0]["data"], json!("0x8eec5d70"));
+                            match answer {
+                                "pools" => json!(pools),
+                                other => json!(other),
+                            }
+                        } else {
+                            json!(word(0))
+                        }
+                    }
+                    other => panic!("unexpected probe method {other:?}"),
+                };
+                Ok(json!({"jsonrpc": "2.0", "id": request["id"], "result": result}))
+            }
+        };
+
+        let live = probe(node("pools"), 1_790_000_045).unwrap_or_else(|code| panic!("{code}"));
+        assert_eq!(launchpad_calls.get(), 1);
+        assert!(live.launchpad);
+        assert_eq!(live.rpc_height, 0x16c_1321);
+
+        for absent in ["0x", "0x03"] {
+            let probed = probe(node(absent), 1_790_000_060).unwrap_or_else(|code| panic!("{code}"));
+            assert!(!probed.launchpad, "{absent}");
+        }
+        assert_eq!(launchpad_calls.get(), 3);
     }
 
     #[test]
