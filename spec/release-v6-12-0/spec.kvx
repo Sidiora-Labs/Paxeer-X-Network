@@ -18483,7 +18483,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1.3]
 title = "Write message validation and the codec"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["5.0.3", "5.1.2"]
