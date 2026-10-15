@@ -479,14 +479,13 @@ impl DisclosureCheck {
             | IntentKind::BridgeOut(_)
             | IntentKind::LaunchpadCreate(_)
             | IntentKind::LaunchpadSwap(_)
-            | IntentKind::LaunchpadAirdropClaim(_)
             | IntentKind::LaunchpadAirdropExecute(_)
-            | IntentKind::LaunchpadFeeRecord(_)
             | IntentKind::LaunchpadFeeStrategy(_)
             | IntentKind::LaunchpadFeesBurn(_)
             | IntentKind::LaunchpadFeesClaim(_)
-            | IntentKind::LaunchpadLpRewards(_)
-            | IntentKind::LaunchpadPause(_) => return Err(DisclosureCheckError::SettledOnPaxeer),
+            | IntentKind::LaunchpadLpRewards(_) => {
+                return Err(DisclosureCheckError::SettledOnPaxeer)
+            }
         }
 
         let canonical_payload = round_trip.finish()?;
@@ -798,14 +797,11 @@ fn expected_activity_type(intent: &Intent) -> Result<ActivityType, DisclosureChe
         | IntentKind::BridgeOut(_)
         | IntentKind::LaunchpadCreate(_)
         | IntentKind::LaunchpadSwap(_)
-        | IntentKind::LaunchpadAirdropClaim(_)
         | IntentKind::LaunchpadAirdropExecute(_)
-        | IntentKind::LaunchpadFeeRecord(_)
         | IntentKind::LaunchpadFeeStrategy(_)
         | IntentKind::LaunchpadFeesBurn(_)
         | IntentKind::LaunchpadFeesClaim(_)
-        | IntentKind::LaunchpadLpRewards(_)
-        | IntentKind::LaunchpadPause(_) => return Err(DisclosureCheckError::SettledOnPaxeer),
+        | IntentKind::LaunchpadLpRewards(_) => return Err(DisclosureCheckError::SettledOnPaxeer),
     };
     ActivityType::new(module, ordinal).map_err(|error| DisclosureCheckError::Payload {
         field: DisclosureField::ActivityType,

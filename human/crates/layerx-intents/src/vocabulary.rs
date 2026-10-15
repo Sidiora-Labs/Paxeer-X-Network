@@ -133,14 +133,11 @@ pub enum IntentKind {
     BridgeOut(crate::precompile::BridgeOut),
     LaunchpadCreate(crate::precompile::MarketCreated),
     LaunchpadSwap(crate::precompile::Swap),
-    LaunchpadAirdropClaim(crate::precompile::AirdropClaimed),
-    LaunchpadAirdropExecute(crate::precompile::AirdropExecuted),
-    LaunchpadFeeRecord(crate::precompile::FeeRecorded),
+    LaunchpadAirdropExecute(crate::precompile::FeeDistributed),
     LaunchpadFeeStrategy(crate::precompile::FeeStrategyChanged),
-    LaunchpadFeesBurn(crate::precompile::FeesBurned),
-    LaunchpadFeesClaim(crate::precompile::FeesClaimed),
-    LaunchpadLpRewards(crate::precompile::LpRewardsExecuted),
-    LaunchpadPause(crate::precompile::PauseToggled),
+    LaunchpadFeesBurn(crate::precompile::FeeDistributed),
+    LaunchpadFeesClaim(crate::precompile::FeeDistributed),
+    LaunchpadLpRewards(crate::precompile::FeeDistributed),
 }
 
 impl IntentKind {
@@ -175,14 +172,11 @@ impl IntentKind {
             | Self::BridgeOut(_)
             | Self::LaunchpadCreate(_)
             | Self::LaunchpadSwap(_)
-            | Self::LaunchpadAirdropClaim(_)
             | Self::LaunchpadAirdropExecute(_)
-            | Self::LaunchpadFeeRecord(_)
             | Self::LaunchpadFeeStrategy(_)
             | Self::LaunchpadFeesBurn(_)
             | Self::LaunchpadFeesClaim(_)
-            | Self::LaunchpadLpRewards(_)
-            | Self::LaunchpadPause(_) => ModuleId::Bridge,
+            | Self::LaunchpadLpRewards(_) => ModuleId::Bridge,
             Self::Perps(_)
             | Self::ExchangeOrder(_)
             | Self::ExchangeCancel(_)
@@ -212,14 +206,11 @@ impl IntentKind {
                 | Self::BridgeOut(_)
                 | Self::LaunchpadCreate(_)
                 | Self::LaunchpadSwap(_)
-                | Self::LaunchpadAirdropClaim(_)
                 | Self::LaunchpadAirdropExecute(_)
-                | Self::LaunchpadFeeRecord(_)
                 | Self::LaunchpadFeeStrategy(_)
                 | Self::LaunchpadFeesBurn(_)
                 | Self::LaunchpadFeesClaim(_)
                 | Self::LaunchpadLpRewards(_)
-                | Self::LaunchpadPause(_)
         )
     }
 }

@@ -33,20 +33,22 @@ pub enum PrecompileEventKind {
     SettlementRequested,
     BridgeIn,
     BridgeOut,
-    AirdropClaimed,
-    AirdropExecuted,
-    FeeRecorded,
+    ConfigUpdated,
+    FeeDistributed,
+    FeeFlow,
     FeeStrategyChanged,
-    FeesBurned,
-    FeesClaimed,
-    LpRewardsExecuted,
     MarketCreated,
-    PauseToggled,
+    NftMint,
+    NftTransfer,
+    PoolRegistered,
+    PoolStateUpdated,
+    RouterTrade,
     Swap,
+    TokenDeployed,
 }
 
 impl PrecompileEventKind {
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 19] = [
         Self::MarginDeposited,
         Self::MarginWithdrawalRequested,
         Self::OrderCancelRequested,
@@ -54,16 +56,18 @@ impl PrecompileEventKind {
         Self::SettlementRequested,
         Self::BridgeIn,
         Self::BridgeOut,
-        Self::AirdropClaimed,
-        Self::AirdropExecuted,
-        Self::FeeRecorded,
+        Self::ConfigUpdated,
+        Self::FeeDistributed,
+        Self::FeeFlow,
         Self::FeeStrategyChanged,
-        Self::FeesBurned,
-        Self::FeesClaimed,
-        Self::LpRewardsExecuted,
         Self::MarketCreated,
-        Self::PauseToggled,
+        Self::NftMint,
+        Self::NftTransfer,
+        Self::PoolRegistered,
+        Self::PoolStateUpdated,
+        Self::RouterTrade,
         Self::Swap,
+        Self::TokenDeployed,
     ];
 
     /// Returns the precompile that emits this event.
@@ -97,16 +101,36 @@ impl PrecompileEventKind {
             Self::SettlementRequested => "SettlementRequested(bytes32,bytes32,address,uint64)",
             Self::BridgeIn => "BridgeIn(uint64,bytes32,address,uint64,address,uint256,string)",
             Self::BridgeOut => "BridgeOut(uint64,address,uint256,address,uint64)",
-            Self::AirdropClaimed => "AirdropClaimed(address,address,uint256,uint256)",
-            Self::AirdropExecuted => "AirdropExecuted(address,uint256,uint256)",
-            Self::FeeRecorded => "FeeRecorded(address,uint256,uint256,uint256)",
-            Self::FeeStrategyChanged => "FeeStrategyChanged(address,uint8,uint8)",
-            Self::FeesBurned => "FeesBurned(address,uint256)",
-            Self::FeesClaimed => "FeesClaimed(address,address,uint256)",
-            Self::LpRewardsExecuted => "LpRewardsExecuted(address,uint256)",
-            Self::MarketCreated => "MarketCreated(address,address,string,string,string,uint8)",
-            Self::PauseToggled => "PauseToggled(address,bool)",
-            Self::Swap => "Swap(address,address,address,bool,uint256,uint256,uint256,uint256)",
+            Self::ConfigUpdated => "ConfigUpdated(bytes32,uint256,uint256,uint256,uint256)",
+            Self::FeeDistributed => {
+                "FeeDistributed(bytes32,uint256,uint8,uint256,address,uint256,uint256)"
+            }
+            Self::FeeFlow => {
+                "FeeFlow(uint8,address,address,uint256,uint256,uint256,uint256,uint256,uint256)"
+            }
+            Self::FeeStrategyChanged => {
+                "FeeStrategyChanged(bytes32,uint256,uint8,uint8,uint256,uint256)"
+            }
+            Self::MarketCreated => {
+                "MarketCreated(bytes32,address,address,address,address,uint256,uint256)"
+            }
+            Self::NftMint => "NftMint(uint256,address,address,uint8,uint256,uint256)",
+            Self::NftTransfer => "NftTransfer(address,address,address,uint256,uint256,uint256)",
+            Self::PoolRegistered => {
+                "PoolRegistered(address,address,address,address,uint256,uint256,uint256)"
+            }
+            Self::PoolStateUpdated => {
+                "PoolStateUpdated(bytes32,uint256,uint256,uint256,uint256,uint256,uint256)"
+            }
+            Self::RouterTrade => {
+                "RouterTrade(uint8,address,address,address,address,uint256,uint256,uint256,uint256,uint256)"
+            }
+            Self::Swap => {
+                "Swap(bytes32,address,bool,uint256,uint256,uint256,uint256,uint256,uint256)"
+            }
+            Self::TokenDeployed => {
+                "TokenDeployed(address,address,address,bytes32,string,string,uint8,uint256,uint256,uint256)"
+            }
         }
     }
 
@@ -202,81 +226,153 @@ pub struct BridgeOut {
     pub nonce: u64,
 }
 
+/// `ConfigUpdated` of the `EventEmitter` family at the launchpad precompile.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AirdropClaimed {
-    pub token: [u8; 20],
-    pub holder: [u8; 20],
-    pub amount: [u8; 32],
-    pub epoch: [u8; 32],
+pub struct ConfigUpdated {
+    pub key: [u8; 32],
+    pub old_value: [u8; 32],
+    pub new_value: [u8; 32],
+    pub timestamp: [u8; 32],
+    pub block_number: [u8; 32],
 }
 
+/// `FeeDistributed` of the `EventEmitter` family at the launchpad precompile.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AirdropExecuted {
-    pub token: [u8; 20],
+pub struct FeeDistributed {
+    pub pool_id: [u8; 32],
+    pub nft_id: [u8; 32],
+    pub strategy: u8,
     pub amount: [u8; 32],
-    pub epoch: [u8; 32],
+    pub recipient: [u8; 20],
+    pub timestamp: [u8; 32],
+    pub block_number: [u8; 32],
 }
 
+/// `FeeFlow` of the `EventEmitter` family at the launchpad precompile.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FeeRecorded {
-    pub token: [u8; 20],
-    pub fee_amount: [u8; 32],
+pub struct FeeFlow {
+    pub kind: u8,
+    pub pool: [u8; 20],
+    pub party: [u8; 20],
+    pub amount: [u8; 32],
     pub protocol_cut: [u8; 32],
     pub pool_cut: [u8; 32],
+    pub epoch: [u8; 32],
+    pub timestamp: [u8; 32],
+    pub block_number: [u8; 32],
 }
 
+/// `FeeStrategyChanged` of the `EventEmitter` family at the launchpad precompile.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FeeStrategyChanged {
-    pub token: [u8; 20],
+    pub pool_id: [u8; 32],
+    pub nft_id: [u8; 32],
     pub old_strategy: u8,
     pub new_strategy: u8,
+    pub timestamp: [u8; 32],
+    pub block_number: [u8; 32],
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FeesBurned {
-    pub token: [u8; 20],
-    pub amount: [u8; 32],
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FeesClaimed {
-    pub token: [u8; 20],
-    pub recipient: [u8; 20],
-    pub amount: [u8; 32],
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LpRewardsExecuted {
-    pub token: [u8; 20],
-    pub amount: [u8; 32],
-}
-
+/// `MarketCreated` of the `EventEmitter` family at the launchpad precompile.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MarketCreated {
+    pub pool_id: [u8; 32],
     pub token: [u8; 20],
     pub creator: [u8; 20],
-    pub denom: String,
-    pub name: String,
-    pub symbol: String,
-    pub fee_strategy: u8,
+    pub pool: [u8; 20],
+    pub optical: [u8; 20],
+    pub timestamp: [u8; 32],
+    pub block_number: [u8; 32],
 }
 
+/// `NftMint` of the `EventEmitter` family at the launchpad precompile.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PauseToggled {
-    pub token: [u8; 20],
-    pub paused: bool,
+pub struct NftMint {
+    pub token_id: [u8; 32],
+    pub creator: [u8; 20],
+    pub pool: [u8; 20],
+    pub strategy: u8,
+    pub timestamp: [u8; 32],
+    pub block_number: [u8; 32],
 }
 
+/// `NftTransfer` of the `EventEmitter` family at the launchpad precompile.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NftTransfer {
+    pub nft: [u8; 20],
+    pub from: [u8; 20],
+    pub to: [u8; 20],
+    pub token_id: [u8; 32],
+    pub timestamp: [u8; 32],
+    pub block_number: [u8; 32],
+}
+
+/// `PoolRegistered` of the `EventEmitter` family at the launchpad precompile.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PoolRegistered {
+    pub pool: [u8; 20],
+    pub token: [u8; 20],
+    pub creator: [u8; 20],
+    pub optical: [u8; 20],
+    pub nft_id: [u8; 32],
+    pub timestamp: [u8; 32],
+    pub block_number: [u8; 32],
+}
+
+/// `PoolStateUpdated` of the `EventEmitter` family at the launchpad precompile.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PoolStateUpdated {
+    pub pool_id: [u8; 32],
+    pub virtual_reserve: [u8; 32],
+    pub real_reserve: [u8; 32],
+    pub token_reserve: [u8; 32],
+    pub price: [u8; 32],
+    pub timestamp: [u8; 32],
+    pub block_number: [u8; 32],
+}
+
+/// `RouterTrade` of the `EventEmitter` family at the launchpad precompile.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RouterTrade {
+    pub kind: u8,
+    pub pool: [u8; 20],
+    pub sender: [u8; 20],
+    pub token_in: [u8; 20],
+    pub token_out: [u8; 20],
+    pub amount_in: [u8; 32],
+    pub amount_out: [u8; 32],
+    pub intermediate_usdl: [u8; 32],
+    pub timestamp: [u8; 32],
+    pub block_number: [u8; 32],
+}
+
+/// `Swap` of the `EventEmitter` family at the launchpad precompile.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Swap {
-    pub token: [u8; 20],
+    pub pool_id: [u8; 32],
     pub trader: [u8; 20],
-    pub recipient: [u8; 20],
     pub is_buy: bool,
     pub amount_in: [u8; 32],
     pub amount_out: [u8; 32],
-    pub fee_amount: [u8; 32],
+    pub fee: [u8; 32],
     pub price: [u8; 32],
+    pub timestamp: [u8; 32],
+    pub block_number: [u8; 32],
+}
+
+/// `TokenDeployed` of the `EventEmitter` family at the launchpad precompile.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TokenDeployed {
+    pub token: [u8; 20],
+    pub pool: [u8; 20],
+    pub creator: [u8; 20],
+    pub salt: [u8; 32],
+    pub name: String,
+    pub symbol: String,
+    pub decimals: u8,
+    pub total_supply: [u8; 32],
+    pub timestamp: [u8; 32],
+    pub block_number: [u8; 32],
 }
 
 /// A decoded precompile event.
@@ -289,16 +385,18 @@ pub enum PrecompileEvent {
     SettlementRequested(SettlementRequested),
     BridgeIn(BridgeIn),
     BridgeOut(BridgeOut),
-    AirdropClaimed(AirdropClaimed),
-    AirdropExecuted(AirdropExecuted),
-    FeeRecorded(FeeRecorded),
+    ConfigUpdated(ConfigUpdated),
+    FeeDistributed(FeeDistributed),
+    FeeFlow(FeeFlow),
     FeeStrategyChanged(FeeStrategyChanged),
-    FeesBurned(FeesBurned),
-    FeesClaimed(FeesClaimed),
-    LpRewardsExecuted(LpRewardsExecuted),
     MarketCreated(MarketCreated),
-    PauseToggled(PauseToggled),
+    NftMint(NftMint),
+    NftTransfer(NftTransfer),
+    PoolRegistered(PoolRegistered),
+    PoolStateUpdated(PoolStateUpdated),
+    RouterTrade(RouterTrade),
     Swap(Swap),
+    TokenDeployed(TokenDeployed),
 }
 
 /// Refusal to decode a log as a precompile event.
@@ -452,16 +550,18 @@ impl PrecompileEvent {
             Self::SettlementRequested(_) => PrecompileEventKind::SettlementRequested,
             Self::BridgeIn(_) => PrecompileEventKind::BridgeIn,
             Self::BridgeOut(_) => PrecompileEventKind::BridgeOut,
-            Self::AirdropClaimed(_) => PrecompileEventKind::AirdropClaimed,
-            Self::AirdropExecuted(_) => PrecompileEventKind::AirdropExecuted,
-            Self::FeeRecorded(_) => PrecompileEventKind::FeeRecorded,
+            Self::ConfigUpdated(_) => PrecompileEventKind::ConfigUpdated,
+            Self::FeeDistributed(_) => PrecompileEventKind::FeeDistributed,
+            Self::FeeFlow(_) => PrecompileEventKind::FeeFlow,
             Self::FeeStrategyChanged(_) => PrecompileEventKind::FeeStrategyChanged,
-            Self::FeesBurned(_) => PrecompileEventKind::FeesBurned,
-            Self::FeesClaimed(_) => PrecompileEventKind::FeesClaimed,
-            Self::LpRewardsExecuted(_) => PrecompileEventKind::LpRewardsExecuted,
             Self::MarketCreated(_) => PrecompileEventKind::MarketCreated,
-            Self::PauseToggled(_) => PrecompileEventKind::PauseToggled,
+            Self::NftMint(_) => PrecompileEventKind::NftMint,
+            Self::NftTransfer(_) => PrecompileEventKind::NftTransfer,
+            Self::PoolRegistered(_) => PrecompileEventKind::PoolRegistered,
+            Self::PoolStateUpdated(_) => PrecompileEventKind::PoolStateUpdated,
+            Self::RouterTrade(_) => PrecompileEventKind::RouterTrade,
             Self::Swap(_) => PrecompileEventKind::Swap,
+            Self::TokenDeployed(_) => PrecompileEventKind::TokenDeployed,
         }
     }
 }
@@ -559,87 +659,162 @@ fn decode_launchpad(
     abi: &Abi<'_>,
 ) -> Result<PrecompileEvent, EventDecodeError> {
     Ok(match kind {
-        PrecompileEventKind::AirdropClaimed => {
-            abi.shape(2, 2, false)?;
-            PrecompileEvent::AirdropClaimed(AirdropClaimed {
-                token: address(abi.topic(1)?)?,
-                holder: address(abi.topic(2)?)?,
-                amount: abi.word(0)?,
-                epoch: abi.word(1)?,
+        PrecompileEventKind::ConfigUpdated => {
+            abi.shape(1, 4, false)?;
+            PrecompileEvent::ConfigUpdated(ConfigUpdated {
+                key: abi.topic(1)?,
+                old_value: abi.word(0)?,
+                new_value: abi.word(1)?,
+                timestamp: abi.word(2)?,
+                block_number: abi.word(3)?,
             })
         }
-        PrecompileEventKind::AirdropExecuted => {
-            abi.shape(1, 2, false)?;
-            PrecompileEvent::AirdropExecuted(AirdropExecuted {
-                token: address(abi.topic(1)?)?,
-                amount: abi.word(0)?,
-                epoch: abi.word(1)?,
+        PrecompileEventKind::FeeDistributed => {
+            abi.shape(1, 6, false)?;
+            PrecompileEvent::FeeDistributed(FeeDistributed {
+                pool_id: abi.topic(1)?,
+                nft_id: abi.word(0)?,
+                strategy: uint8(abi.word(1)?)?,
+                amount: abi.word(2)?,
+                recipient: address(abi.word(3)?)?,
+                timestamp: abi.word(4)?,
+                block_number: abi.word(5)?,
             })
         }
-        PrecompileEventKind::FeeRecorded => {
-            abi.shape(1, 3, false)?;
-            PrecompileEvent::FeeRecorded(FeeRecorded {
-                token: address(abi.topic(1)?)?,
-                fee_amount: abi.word(0)?,
+        PrecompileEventKind::FeeFlow => {
+            abi.shape(3, 6, false)?;
+            PrecompileEvent::FeeFlow(FeeFlow {
+                kind: uint8(abi.topic(1)?)?,
+                pool: address(abi.topic(2)?)?,
+                party: address(abi.topic(3)?)?,
+                amount: abi.word(0)?,
                 protocol_cut: abi.word(1)?,
                 pool_cut: abi.word(2)?,
+                epoch: abi.word(3)?,
+                timestamp: abi.word(4)?,
+                block_number: abi.word(5)?,
             })
         }
         PrecompileEventKind::FeeStrategyChanged => {
-            abi.shape(1, 2, false)?;
+            abi.shape(1, 5, false)?;
             PrecompileEvent::FeeStrategyChanged(FeeStrategyChanged {
-                token: address(abi.topic(1)?)?,
-                old_strategy: uint8(abi.word(0)?)?,
-                new_strategy: uint8(abi.word(1)?)?,
+                pool_id: abi.topic(1)?,
+                nft_id: abi.word(0)?,
+                old_strategy: uint8(abi.word(1)?)?,
+                new_strategy: uint8(abi.word(2)?)?,
+                timestamp: abi.word(3)?,
+                block_number: abi.word(4)?,
             })
         }
-        PrecompileEventKind::FeesBurned | PrecompileEventKind::LpRewardsExecuted => {
-            abi.shape(1, 1, false)?;
-            let token = address(abi.topic(1)?)?;
-            let amount = abi.word(0)?;
-            if kind == PrecompileEventKind::FeesBurned {
-                PrecompileEvent::FeesBurned(FeesBurned { token, amount })
-            } else {
-                PrecompileEvent::LpRewardsExecuted(LpRewardsExecuted { token, amount })
-            }
-        }
-        PrecompileEventKind::FeesClaimed => {
-            abi.shape(2, 1, false)?;
-            PrecompileEvent::FeesClaimed(FeesClaimed {
-                token: address(abi.topic(1)?)?,
-                recipient: address(abi.topic(2)?)?,
-                amount: abi.word(0)?,
-            })
-        }
-        PrecompileEventKind::MarketCreated => {
-            abi.shape(2, 4, true)?;
-            PrecompileEvent::MarketCreated(MarketCreated {
-                token: address(abi.topic(1)?)?,
+        PrecompileEventKind::NftMint => {
+            abi.shape(3, 3, false)?;
+            PrecompileEvent::NftMint(NftMint {
+                token_id: abi.topic(1)?,
                 creator: address(abi.topic(2)?)?,
-                denom: abi.string(0)?,
-                name: abi.string(1)?,
-                symbol: abi.string(2)?,
-                fee_strategy: uint8(abi.word(3)?)?,
+                pool: address(abi.topic(3)?)?,
+                strategy: uint8(abi.word(0)?)?,
+                timestamp: abi.word(1)?,
+                block_number: abi.word(2)?,
             })
         }
-        PrecompileEventKind::PauseToggled => {
-            abi.shape(1, 1, false)?;
-            PrecompileEvent::PauseToggled(PauseToggled {
-                token: address(abi.topic(1)?)?,
-                paused: boolean(abi.word(0)?)?,
+        PrecompileEventKind::NftTransfer => {
+            abi.shape(3, 3, false)?;
+            PrecompileEvent::NftTransfer(NftTransfer {
+                nft: address(abi.topic(1)?)?,
+                from: address(abi.topic(2)?)?,
+                to: address(abi.topic(3)?)?,
+                token_id: abi.word(0)?,
+                timestamp: abi.word(1)?,
+                block_number: abi.word(2)?,
             })
         }
-        _ => {
-            abi.shape(3, 5, false)?;
+        _ => return decode_launchpad_market(kind, abi),
+    })
+}
+
+fn decode_launchpad_market(
+    kind: PrecompileEventKind,
+    abi: &Abi<'_>,
+) -> Result<PrecompileEvent, EventDecodeError> {
+    Ok(match kind {
+        PrecompileEventKind::MarketCreated => {
+            abi.shape(3, 4, false)?;
+            PrecompileEvent::MarketCreated(MarketCreated {
+                pool_id: abi.topic(1)?,
+                token: address(abi.topic(2)?)?,
+                creator: address(abi.topic(3)?)?,
+                pool: address(abi.word(0)?)?,
+                optical: address(abi.word(1)?)?,
+                timestamp: abi.word(2)?,
+                block_number: abi.word(3)?,
+            })
+        }
+        PrecompileEventKind::PoolRegistered => {
+            abi.shape(3, 4, false)?;
+            PrecompileEvent::PoolRegistered(PoolRegistered {
+                pool: address(abi.topic(1)?)?,
+                token: address(abi.topic(2)?)?,
+                creator: address(abi.topic(3)?)?,
+                optical: address(abi.word(0)?)?,
+                nft_id: abi.word(1)?,
+                timestamp: abi.word(2)?,
+                block_number: abi.word(3)?,
+            })
+        }
+        PrecompileEventKind::PoolStateUpdated => {
+            abi.shape(1, 6, false)?;
+            PrecompileEvent::PoolStateUpdated(PoolStateUpdated {
+                pool_id: abi.topic(1)?,
+                virtual_reserve: abi.word(0)?,
+                real_reserve: abi.word(1)?,
+                token_reserve: abi.word(2)?,
+                price: abi.word(3)?,
+                timestamp: abi.word(4)?,
+                block_number: abi.word(5)?,
+            })
+        }
+        PrecompileEventKind::RouterTrade => {
+            abi.shape(3, 7, false)?;
+            PrecompileEvent::RouterTrade(RouterTrade {
+                kind: uint8(abi.topic(1)?)?,
+                pool: address(abi.topic(2)?)?,
+                sender: address(abi.topic(3)?)?,
+                token_in: address(abi.word(0)?)?,
+                token_out: address(abi.word(1)?)?,
+                amount_in: abi.word(2)?,
+                amount_out: abi.word(3)?,
+                intermediate_usdl: abi.word(4)?,
+                timestamp: abi.word(5)?,
+                block_number: abi.word(6)?,
+            })
+        }
+        PrecompileEventKind::Swap => {
+            abi.shape(2, 7, false)?;
             PrecompileEvent::Swap(Swap {
-                token: address(abi.topic(1)?)?,
+                pool_id: abi.topic(1)?,
                 trader: address(abi.topic(2)?)?,
-                recipient: address(abi.topic(3)?)?,
                 is_buy: boolean(abi.word(0)?)?,
                 amount_in: abi.word(1)?,
                 amount_out: abi.word(2)?,
-                fee_amount: abi.word(3)?,
+                fee: abi.word(3)?,
                 price: abi.word(4)?,
+                timestamp: abi.word(5)?,
+                block_number: abi.word(6)?,
+            })
+        }
+        _ => {
+            abi.shape(3, 7, true)?;
+            PrecompileEvent::TokenDeployed(TokenDeployed {
+                token: address(abi.topic(1)?)?,
+                pool: address(abi.topic(2)?)?,
+                creator: address(abi.topic(3)?)?,
+                salt: abi.word(0)?,
+                name: abi.string(1)?,
+                symbol: abi.string(2)?,
+                decimals: uint8(abi.word(3)?)?,
+                total_supply: abi.word(4)?,
+                timestamp: abi.word(5)?,
+                block_number: abi.word(6)?,
             })
         }
     })
@@ -708,9 +883,24 @@ impl ExchangeOrder {
         Self::new_for_abi(event, owner_account_id, 1)
     }
 
-    pub fn new_for_abi(event: OrderPlaced, owner_account_id: [u8; 32], perps_abi_version: u32) -> Result<Self, IntentError> {
-        if !(1..=3).contains(&perps_abi_version) || (event.time_in_force != 0 && perps_abi_version != 3) {
-            return Err(IntentError { field: IntentField::TimeInForce, reason: IntentErrorReason::InvalidRange });
+    /// Binds the order under the given perps ABI version.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a perps ABI version outside 1 to 3, a non-zero time in force
+    /// before version 3, and every refusal of [`Self::new`].
+    pub fn new_for_abi(
+        event: OrderPlaced,
+        owner_account_id: [u8; 32],
+        perps_abi_version: u32,
+    ) -> Result<Self, IntentError> {
+        if !(1..=3).contains(&perps_abi_version)
+            || (event.time_in_force != 0 && perps_abi_version != 3)
+        {
+            return Err(IntentError {
+                field: IntentField::TimeInForce,
+                reason: IntentErrorReason::InvalidRange,
+            });
         }
         let side = match event.side {
             1 => TradeSide::Buy,
@@ -972,12 +1162,22 @@ pub fn route_event(event: PrecompileEvent, binding: RouteBinding) -> Result<Inte
         }
         (
             PrecompileEvent::OrderPlaced(value),
-            RouteBinding::MarketVersioned { market_id, owner_account_id, perps_abi_version },
+            RouteBinding::MarketVersioned {
+                market_id,
+                owner_account_id,
+                perps_abi_version,
+            },
         ) => {
             if value.market_id != market_id {
-                return Err(RouteError::Intent(IntentError { field: IntentField::Market, reason: IntentErrorReason::EventMismatch }));
+                return Err(RouteError::Intent(IntentError {
+                    field: IntentField::Market,
+                    reason: IntentErrorReason::EventMismatch,
+                }));
             }
-            intent(ExchangeOrder::new_for_abi(value, owner_account_id, perps_abi_version).map(IntentKind::ExchangeOrder))
+            intent(
+                ExchangeOrder::new_for_abi(value, owner_account_id, perps_abi_version)
+                    .map(IntentKind::ExchangeOrder),
+            )
         }
         (PrecompileEvent::OrderCancelRequested(value), RouteBinding::Market { market_id, .. }) => {
             intent(ExchangeCancel::new(value, market_id).map(IntentKind::ExchangeCancel))
@@ -993,25 +1193,34 @@ pub fn route_event(event: PrecompileEvent, binding: RouteBinding) -> Result<Inte
                 .map(|value| Intent::v2(IntentKind::ExchangeMarginWithdraw(value)))
                 .map_err(RouteError::Intent)
         }
-        (event, RouteBinding::Unbound) => settled(event).map(Intent::v1).ok_or_else(wrong),
+        (event, RouteBinding::Unbound) => settled(event).map(Intent::v1),
         _ => Err(wrong()),
     }
 }
 
-fn settled(event: PrecompileEvent) -> Option<IntentKind> {
-    Some(match event {
+fn settled(event: PrecompileEvent) -> Result<IntentKind, RouteError> {
+    Ok(match event {
         PrecompileEvent::BridgeIn(value) => IntentKind::BridgeIn(value),
         PrecompileEvent::BridgeOut(value) => IntentKind::BridgeOut(value),
-        PrecompileEvent::AirdropClaimed(value) => IntentKind::LaunchpadAirdropClaim(value),
-        PrecompileEvent::AirdropExecuted(value) => IntentKind::LaunchpadAirdropExecute(value),
-        PrecompileEvent::FeeRecorded(value) => IntentKind::LaunchpadFeeRecord(value),
+        PrecompileEvent::FeeDistributed(value) => distributed(value).map_err(RouteError::Intent)?,
         PrecompileEvent::FeeStrategyChanged(value) => IntentKind::LaunchpadFeeStrategy(value),
-        PrecompileEvent::FeesBurned(value) => IntentKind::LaunchpadFeesBurn(value),
-        PrecompileEvent::FeesClaimed(value) => IntentKind::LaunchpadFeesClaim(value),
-        PrecompileEvent::LpRewardsExecuted(value) => IntentKind::LaunchpadLpRewards(value),
         PrecompileEvent::MarketCreated(value) => IntentKind::LaunchpadCreate(value),
-        PrecompileEvent::PauseToggled(value) => IntentKind::LaunchpadPause(value),
         PrecompileEvent::Swap(value) => IntentKind::LaunchpadSwap(value),
-        _ => return None,
+        event => return Err(RouteError::Binding(event.kind())),
+    })
+}
+
+fn distributed(event: FeeDistributed) -> Result<IntentKind, IntentError> {
+    Ok(match event.strategy {
+        0 => IntentKind::LaunchpadFeesClaim(event),
+        1 => IntentKind::LaunchpadFeesBurn(event),
+        2 => IntentKind::LaunchpadAirdropExecute(event),
+        3 => IntentKind::LaunchpadLpRewards(event),
+        _ => {
+            return Err(IntentError {
+                field: IntentField::PrecompileEvent,
+                reason: IntentErrorReason::InvalidRange,
+            })
+        }
     })
 }

@@ -608,14 +608,11 @@ pub fn compile(intent: &Intent, registry: &ModuleRegistry) -> Result<CompiledInt
         | IntentKind::BridgeOut(_)
         | IntentKind::LaunchpadCreate(_)
         | IntentKind::LaunchpadSwap(_)
-        | IntentKind::LaunchpadAirdropClaim(_)
         | IntentKind::LaunchpadAirdropExecute(_)
-        | IntentKind::LaunchpadFeeRecord(_)
         | IntentKind::LaunchpadFeeStrategy(_)
         | IntentKind::LaunchpadFeesBurn(_)
         | IntentKind::LaunchpadFeesClaim(_)
-        | IntentKind::LaunchpadLpRewards(_)
-        | IntentKind::LaunchpadPause(_) => Err(CompileError {
+        | IntentKind::LaunchpadLpRewards(_) => Err(CompileError {
             field: CompileField::ActivityType,
             reason: CompileErrorReason::SettledOnPaxeer,
         }),
