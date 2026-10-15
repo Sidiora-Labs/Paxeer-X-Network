@@ -15966,7 +15966,7 @@ validation = "Params.Validate refuses FeeTooHigh and Tier2BelowTier1 by Launch-x
 
 [task.4.0.1]
 title = "Freeze the PECOR ABI served at 0x1021 and its selector and topic golden fixture"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
