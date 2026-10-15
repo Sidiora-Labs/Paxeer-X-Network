@@ -1509,7 +1509,7 @@ observed = The test fixture needs a built paxd, which does not build on the lane
 assumption = The gate reruns once the node builds on main.
 
 [finding.8.4.10]
-revision = REV-8.4.10
+revision = 754a53b99dc8dfb59cd0dfbf03148b436ec8bf3e
 command = python3 tools/release/tests/test_fleet_check.py
 exit = 1
 log = fleet/logs/8.4.10-verify-2.log
@@ -1589,7 +1589,7 @@ observed = Five cases need the rehearsal helpers that had not landed on the lane
 assumption = The rehearsal gate runs on the rehearsal fleet once the release build and the halt export exist.
 
 [finding.8.4.10]
-revision = REV-8.4.10
+revision = 754a53b99dc8dfb59cd0dfbf03148b436ec8bf3e
 command = python3 tools/release/tests/test_fleet_check.py
 exit = 1
 log = fleet/logs/8.4.10-verify-2.log
