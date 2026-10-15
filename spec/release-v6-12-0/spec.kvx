@@ -21459,7 +21459,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.18]
 title = "Read the auto-selected collateral from the perpetuals account"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.2.6"]
