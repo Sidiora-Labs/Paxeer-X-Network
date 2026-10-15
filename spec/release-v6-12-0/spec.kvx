@@ -26851,7 +26851,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.7]
 title = "Service configuration from the environment"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
