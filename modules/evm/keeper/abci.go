@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	receipt "github.com/Sidiora-Labs/Paxeer-X-Network/storage/ledger_db/receipt"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	utilmetrics "github.com/Sidiora-Labs/Paxeer-X-Network/utils/metrics"
 	"github.com/ethereum/go-ethereum/common"
@@ -209,6 +211,15 @@ func (k *Keeper) EndBlock(ctx sdk.Context, height int64, blockGasUsed int64) {
 			Logs: GetLogsForTx(r, 0),
 		})
 		evmOnlyBlooms = append(evmOnlyBlooms, evmOnlyBloom)
+	}
+	for _, kind := range SyntheticReceiptKinds {
+		r, err := k.GetTransientReceipt(ctx, SyntheticReceiptHash(kind, ctx.BlockHeight()), uint64(SyntheticReceiptProvisionalIndex(kind)))
+		if errors.Is(err, receipt.ErrNotFound) {
+			continue
+		}
+		failEndBlockOnError(fmt.Sprintf("read synthetic receipt of kind %d", kind), err)
+		allBlooms = append(allBlooms, ethtypes.BytesToBloom(r.LogsBloom))
+		evmOnlyBlooms = append(evmOnlyBlooms, ethtypes.CreateBloom(&ethtypes.Receipt{Logs: GetLogsForTx(r, 0)}))
 	}
 	k.SetBlockBloom(ctx, allBlooms)
 	k.SetEvmOnlyBlockBloom(ctx, evmOnlyBlooms)

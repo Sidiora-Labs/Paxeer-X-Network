@@ -162,6 +162,9 @@ func (k *Keeper) flushTransientReceipts(ctx sdk.Context) error {
 		}
 
 		txHash := types.TransientReceiptKey(iter.Key()).TransactionHash()
+		if kind, ok := SyntheticReceiptKindOf(txHash, int64(rcpt.BlockNumber)); ok && rcpt.TransactionIndex == SyntheticReceiptProvisionalIndex(kind) { //nolint:gosec
+			rcpt.TransactionIndex = uint32(len(k.txResults)) + uint32(kind) - 1 //nolint:gosec
+		}
 		records = append(records, receipt.ReceiptRecord{TxHash: txHash, Receipt: rcpt})
 	}
 	if k.receiptStore == nil {

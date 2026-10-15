@@ -549,6 +549,15 @@ func getTxHashesFromBlock(
 			txHashes = append(txHashes, typedTxHash{hash: common.Hash(sha256.Sum256(block.Block.Txs[tx.index])), isEvm: false})
 		}
 	}
+	latestCtx := ctxProvider(LatestCtxHeight)
+	for _, kind := range keeper.SyntheticReceiptKinds {
+		hash := keeper.SyntheticReceiptHash(kind, block.Block.Height)
+		receipt, found := getOrSetCachedReceipt(cacheCreationMutex, globalBlockCache, latestCtx, k, block, hash)
+		if !found || receipt == nil || receipt.BlockNumber != uint64(block.Block.Height) { //nolint:gosec
+			continue
+		}
+		txHashes = append(txHashes, typedTxHash{hash: hash, isEvm: true})
+	}
 	return txHashes
 }
 
@@ -579,6 +588,9 @@ func isReceiptFromAnteError(ctx sdk.Context, receipt *types.Receipt) bool {
 // receipts visible to the regular eth_getBlockBy* endpoints (per
 // PR #2343). *ExcludeTraceFail wants the opposite per rpc/README.md.
 func isReceiptUntraceable(receipt *types.Receipt) bool {
+	if _, synthetic := keeper.SyntheticReceiptKindOf(common.HexToHash(receipt.TxHashHex), int64(receipt.BlockNumber)); synthetic { //nolint:gosec
+		return true
+	}
 	return receipt.TxType == types.ShellEVMTxType ||
 		(receipt.EffectiveGasPrice == 0 && receipt.GasUsed == 0)
 }
