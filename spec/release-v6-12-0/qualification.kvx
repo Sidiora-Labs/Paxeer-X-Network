@@ -84,3 +84,10 @@ command = "go test ./modules/launchpad/types/... -run 'TestLaunchpadErrorStrings
 exit_code = 0
 log_path = "fleet logs 2.1.3-verify-1"
 observed_and_assumption = "Keeper errors with no same-named Launch-x contract error were mapped to the nearest contract error (InvalidParams to FeeOutOfRange, InvalidMarket and InvalidGenesis to InvalidConfiguration, snapshot and airdrop basis errors to UnsupportedSnapshotToken, InvalidRange to IndexOutOfBounds, NotFeeRightsHolder to NotNftOwner, UnknownMarket to PoolNotFound), and the pool-token errors raised by the token contract itself get no keeper error. Assumption: the nearest-error mapping is accepted by the revert-data golden test of the launchpad precompile task."
+
+[finding.2.1.2]
+revision = "aca0a1fecf76719a779f089fc4c8695febdd7a32"
+command = "go test ./modules/launchpad/types/... -run 'TestDynamicFeeGolden'"
+exit_code = 0
+log_path = "fleet logs 2.1.2-verify-2"
+observed_and_assumption = "The keeper passes the eight price snapshots in raw storage order while SidioraPool orders them oldest first, so keeper volatility diverges from the contract once all eight slots are filled; keeper tests pinned to the old fee and volatility formulas were not run and may need new expected values. Assumption: the keeper market task that owns the caller orders the snapshots oldest first before calling the ported volatility."
