@@ -16128,7 +16128,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1.1]
 title = "Add the spot module keys and the governed parameter set with its validation"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
