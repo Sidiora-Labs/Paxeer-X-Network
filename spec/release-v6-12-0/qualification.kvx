@@ -1675,3 +1675,11 @@ exit = 1
 log = fleet/logs/7.1.3-verify-1.log
 observed = Forty-five subtests pass; sixteen spot decoder subtests need a live RPC and fail before asserting.
 assumption = The implementation is complete on main; the RPC subtests rerun once a v6.12 devnet is available.
+
+[finding.fix-spot-vault-test]
+revision = 80f9d098bcaff8a25991a62ed629c09163f67b76
+command = go test ./precompiles/spot/ -count=1 -p 2 -run 'Vault'
+exit = 1
+log = fleet/logs/fix-spot-vault-test-verify-2.log
+observed = The spot precompile test package compiles again after the import cycle removal, but the binary panics at init because the node precompile keepers do not provide the launchpad keeper.
+assumption = The vault tests rerun once the launchpad keeper wiring lands.
