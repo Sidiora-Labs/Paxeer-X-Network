@@ -18375,7 +18375,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.3]
 title = "Declare the pricefeed tx proto and generate its Go types"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
