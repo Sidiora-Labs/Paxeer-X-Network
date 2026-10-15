@@ -38,6 +38,11 @@ const (
 CREATE INDEX IF NOT EXISTS auth_challenges_address_issued_at_idx ON perps.auth_challenges (address, issued_at)`
 )
 
+const (
+	mixedCaseKeyHex  = "0000000000000000000000000000000000000000000000000000000000000001"
+	mixedCaseAddress = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
+)
+
 type testClock struct{ t time.Time }
 
 func (c *testClock) now() time.Time             { return c.t }
@@ -262,10 +267,13 @@ func TestAuth(t *testing.T) {
 	})
 
 	t.Run("verify_recovers_signer", func(t *testing.T) {
-		k := newKey(t)
+		k, err := crypto.HexToECDSA(mixedCaseKeyHex)
+		if err != nil {
+			t.Fatalf("HexToECDSA: %v", err)
+		}
 		address := addrOf(k).Hex()
-		if address == strings.ToLower(address) {
-			t.Fatalf("checksum address %s has no upper-case letter", address)
+		if address != mixedCaseAddress {
+			t.Fatalf("fixture address %s, want %s", address, mixedCaseAddress)
 		}
 		_, message := f.challenge(t, address)
 		token := wantToken(t, f.verify(t, address, personalSign(t, k, message), message))
@@ -273,6 +281,9 @@ func TestAuth(t *testing.T) {
 		if alg := strings.Split(token, ".")[0]; alg != "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" {
 			t.Fatalf("token header %s is not HS256", alg)
 		}
+		lowerAddress := strings.ToLower(address)
+		_, message = f.challenge(t, lowerAddress)
+		wantClaims(t, wantToken(t, f.verify(t, lowerAddress, personalSign(t, k, message), message)), lowerAddress, clock.unix(), clock.unix())
 	})
 
 	t.Run("verify_refuses_wrong_signer", func(t *testing.T) {
