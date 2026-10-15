@@ -7692,7 +7692,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.7]
 title = "Decode the launchpad family events at 0x1017"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = []
