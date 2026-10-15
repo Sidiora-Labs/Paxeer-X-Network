@@ -6302,7 +6302,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.0.4]
 title = "Write the ProtocolConfig and Treasury role ABIs and the 0x1017 direct-call ABI"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["2.0.7"]
