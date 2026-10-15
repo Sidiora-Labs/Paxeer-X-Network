@@ -26965,7 +26965,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.1.2]
 title = "Decoder registry and the perpetuals event decoders"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["7.0.9"]
