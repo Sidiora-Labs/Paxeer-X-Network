@@ -83,7 +83,7 @@ func TestV610WritesTheOperatingValuesInTheBlockTheUpgradeInfoNames(t *testing.T)
 
 	anchorBefore := a.LayerXAnchorKeeper.GetParams(at)
 	custodyBefore := a.LayerXCustodyKeeper.GetParams(at)
-	launchpadBefore := a.LaunchpadKeeper.GetParams(at)
+	launchpadBefore := a.LaunchpadV610Keeper().GetParams(at)
 	depositBefore := a.GovKeeper.GetDepositParams(at)
 	tallyBefore := a.GovKeeper.GetTallyParams(at)
 	versionsBefore := a.UpgradeKeeper.GetModuleVersionMap(at)
@@ -117,7 +117,7 @@ func TestV610WritesTheOperatingValuesInTheBlockTheUpgradeInfoNames(t *testing.T)
 	// as it was.
 	launchpadWant := launchpadBefore
 	launchpadWant.QuoteDenom = appparams.BaseCoinUnit
-	require.Equal(t, launchpadWant, a.LaunchpadKeeper.GetParams(at))
+	require.Equal(t, launchpadWant, a.LaunchpadV610Keeper().GetParams(at))
 
 	// The voting periods are the shortened ones and the deposit and tally
 	// parameters are untouched.
@@ -168,7 +168,7 @@ func TestV610WritesNoWebSearchStateFromAnEmptyAttestorList(t *testing.T) {
 	// The plan applied and wrote the chain's values, and the web-search module is
 	// as its own genesis left it: no attestor, no threshold and still paused.
 	require.Equal(t, height, a.UpgradeKeeper.GetDoneHeight(at, V610Upgrade))
-	require.Equal(t, appparams.BaseCoinUnit, a.LaunchpadKeeper.GetParams(at).QuoteDenom)
+	require.Equal(t, appparams.BaseCoinUnit, a.LaunchpadV610Keeper().GetParams(at).QuoteDenom)
 	require.Equal(t, time.Hour, a.GovKeeper.GetVotingParams(at).VotingPeriod)
 	require.Empty(t, a.XWebKeeper.GetAttestorSet(at).Attestors)
 	require.Zero(t, a.XWebKeeper.Threshold(at))
@@ -187,7 +187,7 @@ func TestV610IgnoresAnUpgradeInfoThatNamesAnotherHeight(t *testing.T) {
 
 	anchorBefore := a.LayerXAnchorKeeper.GetParams(at)
 	custodyBefore := a.LayerXCustodyKeeper.GetParams(at)
-	launchpadBefore := a.LaunchpadKeeper.GetParams(at)
+	launchpadBefore := a.LaunchpadV610Keeper().GetParams(at)
 	votingBefore := a.GovKeeper.GetVotingParams(at)
 
 	a.BeginBlock(at, height, nil, nil, false)
@@ -195,7 +195,7 @@ func TestV610IgnoresAnUpgradeInfoThatNamesAnotherHeight(t *testing.T) {
 	require.Zero(t, a.UpgradeKeeper.GetDoneHeight(at, V610Upgrade))
 	require.Equal(t, anchorBefore, a.LayerXAnchorKeeper.GetParams(at))
 	require.Equal(t, custodyBefore, a.LayerXCustodyKeeper.GetParams(at))
-	require.Equal(t, launchpadBefore, a.LaunchpadKeeper.GetParams(at))
+	require.Equal(t, launchpadBefore, a.LaunchpadV610Keeper().GetParams(at))
 	require.Equal(t, votingBefore, a.GovKeeper.GetVotingParams(at))
 	require.Empty(t, a.XWebKeeper.GetAttestorSet(at).Attestors)
 	require.True(t, a.XWebKeeper.IsPaused(at))

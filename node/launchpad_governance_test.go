@@ -3,14 +3,18 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"math/big"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"testing"
 	"time"
 
 	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	typesv610 "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/legacy/v610/types"
 	launchpadtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	bridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
 	layerxgovtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxgov/types"
@@ -20,6 +24,9 @@ import (
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
 )
@@ -50,11 +57,88 @@ func launchpadGovBlock(t *testing.T, a *App, at time.Time, body func(sdk.Context
 	require.NoError(t, err)
 }
 
+// launchpadUSDLSupply is the USDL supply launchpadDeployUSDL mints to
+// launchpadUSDLReserve.
+const launchpadUSDLSupply = 1_000_000_000_000_000
+
+var launchpadUSDLReserve = common.BytesToAddress(crypto.Keccak256([]byte("launchpad usdl reserve")))
+
+// launchpadDeployUSDL deploys a USDL ERC20, the SidioraERC20 creation code
+// the launchpad keeper deploys, with its supply at launchpadUSDLReserve, and
+// names it in Params.QuoteToken through the governance authority.
+func launchpadDeployUSDL(t *testing.T, a *App, ctx sdk.Context) common.Address {
+	t.Helper()
+	source, err := os.ReadFile(filepath.Join("..", "modules", "launchpad", "keeper", "market.go"))
+	require.NoError(t, err)
+	match := regexp.MustCompile(`var sidioraERC20Creation = common\.FromHex\("(0x[0-9a-f]+)"\)`).FindSubmatch(source)
+	require.Len(t, match, 2)
+	stringType, err := abi.NewType("string", "", nil)
+	require.NoError(t, err)
+	uintType, err := abi.NewType("uint256", "", nil)
+	require.NoError(t, err)
+	addressType, err := abi.NewType("address", "", nil)
+	require.NoError(t, err)
+	args, err := abi.Arguments{{Type: stringType}, {Type: stringType}, {Type: uintType}, {Type: addressType}}.
+		Pack("USD Ledger", "USDL", big.NewInt(launchpadUSDLSupply), launchpadUSDLReserve)
+	require.NoError(t, err)
+	deployer := common.BytesToAddress(crypto.Keccak256([]byte("launchpad usdl deployer")))
+	nonce := a.EvmKeeper.GetNonce(ctx, deployer)
+	_, err = a.EvmKeeper.CallEVM(ctx, deployer, nil, nil, append(common.FromHex(string(match[1])), args...))
+	require.NoError(t, err)
+	usdl := crypto.CreateAddress(deployer, nonce)
+	require.NotEmpty(t, a.EvmKeeper.GetCode(ctx, usdl))
+	params := a.LaunchpadKeeper.GetParams(ctx)
+	params.QuoteToken = usdl.Hex()
+	require.NoError(t, a.LaunchpadKeeper.UpdateParams(ctx, a.LaunchpadKeeper.Authority(), params))
+	return usdl
+}
+
+func launchpadUSDLInput(signature string, words ...[]byte) []byte {
+	input := crypto.Keccak256([]byte(signature))[:4]
+	for _, word := range words {
+		input = append(input, word...)
+	}
+	return input
+}
+
+// launchpadUSDLCall calls a state-changing method of the Params.QuoteToken
+// ERC20 from from and requires it to return true.
+func launchpadUSDLCall(t *testing.T, a *App, ctx sdk.Context, from common.Address, signature string, words ...[]byte) {
+	t.Helper()
+	usdl := common.HexToAddress(a.LaunchpadKeeper.GetParams(ctx).QuoteToken)
+	ret, err := a.EvmKeeper.CallEVM(ctx, from, &usdl, nil, launchpadUSDLInput(signature, words...))
+	require.NoError(t, err)
+	require.Equal(t, common.LeftPadBytes(big.NewInt(1).Bytes(), 32), ret)
+}
+
+// launchpadUSDLBalance is the Params.QuoteToken ERC20 balance of acc.
+func launchpadUSDLBalance(t *testing.T, a *App, ctx sdk.Context, acc sdk.AccAddress) sdk.Int {
+	t.Helper()
+	usdl := common.HexToAddress(a.LaunchpadKeeper.GetParams(ctx).QuoteToken)
+	holder := a.EvmKeeper.GetEVMAddressOrDefault(ctx, acc)
+	ret, err := a.EvmKeeper.StaticCallEVM(ctx, a.LaunchpadKeeper.ModuleAddress(), &usdl,
+		launchpadUSDLInput("balanceOf(address)", common.LeftPadBytes(holder.Bytes(), 32)))
+	require.NoError(t, err)
+	require.Len(t, ret, 32)
+	return sdk.NewIntFromBigInt(new(big.Int).SetBytes(ret))
+}
+
+// launchpadUSDLFund sends amount Params.QuoteToken USDL from the reserve to
+// acc and grants the launchpad an unlimited allowance of it.
+func launchpadUSDLFund(t *testing.T, a *App, ctx sdk.Context, acc sdk.AccAddress, amount int64) {
+	t.Helper()
+	holder := a.EvmKeeper.GetEVMAddressOrDefault(ctx, acc)
+	launchpadUSDLCall(t, a, ctx, launchpadUSDLReserve, "transfer(address,uint256)",
+		common.LeftPadBytes(holder.Bytes(), 32), common.LeftPadBytes(big.NewInt(amount).Bytes(), 32))
+	launchpadUSDLCall(t, a, ctx, holder, "approve(address,uint256)",
+		common.LeftPadBytes(common.HexToAddress(launchpadtypes.LaunchpadAddress).Bytes(), 32),
+		common.LeftPadBytes(launchpadtypes.MaxUint256().Bytes(), 32))
+	require.Equal(t, sdk.NewInt(amount), launchpadUSDLBalance(t, a, ctx, acc))
+}
+
 func launchpadGovFund(t *testing.T, a *App, ctx sdk.Context, name string, amount int64) sdk.AccAddress {
 	acc := sdk.AccAddress(authtypes.NewModuleAddress(name))
-	coins := sdk.NewCoins(sdk.NewCoin(launchpadtypes.DefaultQuoteDenom, sdk.NewInt(amount)))
-	require.NoError(t, a.BankKeeper.MintCoins(ctx, "evm", coins))
-	require.NoError(t, a.BankKeeper.SendCoinsFromModuleToAccount(ctx, "evm", acc, coins))
+	launchpadUSDLFund(t, a, ctx, acc, amount)
 	return acc
 }
 
@@ -86,13 +170,17 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 	authority := layerxgovtypes.GovernanceAuthority()
 	require.Equal(t, authority, a.LaunchpadKeeper.Authority())
 	var market launchpadtypes.Market
+	var usdl common.Address
 	launchpadGovBlock(t, a, start, func(ctx sdk.Context) {
+		usdl = launchpadDeployUSDL(t, a, ctx)
 		creator := launchpadGovFund(t, a, ctx, "launchpad-gov-creator", 1_000_000_000)
 		market, err = a.LaunchpadKeeper.CreateMarket(ctx, nil, creator, "Governed Token", "GOVT", launchpadtypes.FeeStrategyBurn)
 		require.NoError(t, err)
 	})
 
-	updated := launchpadtypes.DefaultParams()
+	deployed := launchpadtypes.DefaultParams()
+	deployed.QuoteToken = usdl.Hex()
+	updated := deployed
 	updated.CreationFee = sdk.NewInt(250_000_000)
 	updated.VirtualQuoteDefault = sdk.NewInt(20_000_000_000)
 	updated.ProtocolFeeBps = 2_000
@@ -101,7 +189,7 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 
 	launchpadGovBlock(t, a, start.Add(time.Minute), func(ctx sdk.Context) {
 		before := a.LaunchpadKeeper.GetParams(ctx)
-		require.Equal(t, launchpadtypes.DefaultParams(), before)
+		require.Equal(t, deployed, before)
 		router := a.GovKeeper.Router()
 		require.True(t, router.HasRoute(layerxgovtypes.RouterKey))
 		handler := router.GetRoute(layerxgovtypes.RouterKey)
@@ -135,7 +223,8 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 		_, err := msgRouter.Handler(&launchpadtypes.MsgUpdateParams{})(ctx, &launchpadtypes.MsgUpdateParams{Authority: ordinary, Params: updated})
 		require.ErrorIs(t, err, launchpadtypes.ErrUnauthorized)
 
-		// Invalid fee, cap and denom combinations from the governance authority.
+		// Invalid fee, cap and quote token combinations from the governance
+		// authority.
 		invalid := []func(*launchpadtypes.Params){
 			func(p *launchpadtypes.Params) { p.MinFeeBps, p.MaxFeeBps = 301, 300 },
 			func(p *launchpadtypes.Params) { p.BaseFeeBps = p.MaxFeeBps + 1 },
@@ -143,7 +232,8 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 			func(p *launchpadtypes.Params) { p.ProtocolFeeBps = launchpadtypes.MaxProtocolFeeBps + 1 },
 			func(p *launchpadtypes.Params) { p.CreationFee = sdk.NewInt(-1) },
 			func(p *launchpadtypes.Params) { p.VirtualQuoteDefault = sdk.ZeroInt() },
-			func(p *launchpadtypes.Params) { p.QuoteDenom = "1!bad" },
+			func(p *launchpadtypes.Params) { p.QuoteToken = "0x0000000000000000000000000000000000000000" },
+			func(p *launchpadtypes.Params) { p.QuoteToken = "1!bad" },
 		}
 		for _, mutate := range invalid {
 			params := updated
@@ -158,7 +248,7 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 		}
 
 		// Unregistered message: not a governance message, refused before dispatch.
-		send := &banktypes.MsgSend{FromAddress: authority, ToAddress: ordinary, Amount: sdk.NewCoins(sdk.NewInt64Coin(launchpadtypes.DefaultQuoteDenom, 1))}
+		send := &banktypes.MsgSend{FromAddress: authority, ToAddress: ordinary, Amount: sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseCoinUnit, 1))}
 		_, err = layerxgovtypes.NewLayerXProposal("Unregistered", "Bank send", send)
 		require.Error(t, err)
 		require.Error(t, handler(ctx, rawLayerXProposal(t, &launchpadtypes.MsgUpdateParams{Authority: authority, Params: updated}, send)))
@@ -203,12 +293,17 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 		require.Equal(t, updated, a.LaunchpadKeeper.GetParams(ctx))
 		exported := a.LaunchpadKeeper.ExportGenesis(ctx)
 		require.Equal(t, updated, exported.Params)
-		// The v6.10 upgrade handler sets QuoteDenom through UpdateParams with
-		// Keeper.Authority(); that call stays valid on governed parameters.
+		// The v6.10 upgrade handler sets the typesv610.Params quote denom
+		// through the v6.10 keeper's UpdateParams with its Authority(), the
+		// governance authority; on a branch that write leaves the governed
+		// parameters as they are.
+		legacy := a.LaunchpadV610Keeper()
+		require.Equal(t, a.LaunchpadKeeper.Authority(), legacy.Authority())
 		upgrade, _ := ctx.CacheContext()
-		v610 := a.LaunchpadKeeper.GetParams(upgrade)
+		v610 := typesv610.DefaultParams()
 		v610.QuoteDenom = appparams.BaseCoinUnit
-		require.NoError(t, a.LaunchpadKeeper.UpdateParams(upgrade, a.LaunchpadKeeper.Authority(), v610))
+		require.NoError(t, legacy.UpdateParams(upgrade, legacy.Authority(), v610))
+		require.Equal(t, v610, legacy.GetParams(upgrade))
 		require.Equal(t, updated, a.LaunchpadKeeper.GetParams(ctx))
 	})
 	height := a.LastBlockHeight()
@@ -254,10 +349,11 @@ func TestLaunchpadGovernanceReopenedProcess(t *testing.T) {
 		require.True(t, found)
 		require.Equal(t, market, got)
 		creator := launchpadGovFund(t, a, ctx, "launchpad-gov-reopened-creator", 1_000_000_000)
-		balance := a.BankKeeper.GetBalance(ctx, creator, want.QuoteDenom).Amount
+		require.Equal(t, want.QuoteToken, a.LaunchpadKeeper.GetParams(ctx).QuoteToken)
+		balance := launchpadUSDLBalance(t, a, ctx, creator)
 		created, err := a.LaunchpadKeeper.CreateMarket(ctx, nil, creator, "Reopened Token", "REOP", launchpadtypes.FeeStrategyBurn)
 		require.NoError(t, err)
-		require.Equal(t, want.CreationFee, balance.Sub(a.BankKeeper.GetBalance(ctx, creator, want.QuoteDenom).Amount))
+		require.Equal(t, want.CreationFee, balance.Sub(launchpadUSDLBalance(t, a, ctx, creator)))
 		require.Equal(t, want.VirtualQuoteDefault, created.VirtualQuoteReserve)
 		require.Equal(t, uint64(2), a.LaunchpadKeeper.GetMarketCount(ctx))
 	})
