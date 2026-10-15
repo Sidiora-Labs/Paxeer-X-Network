@@ -1139,3 +1139,19 @@ exit = 1
 log = "fleet/logs/fix-perps-keeper-verify-5.log"
 observed = "The perps keeper builds after the reconciliation, with OracleTWAP defined as the mean of the index prices at the current hour's premium samples (new MarketState.OracleSum field, which changes the state encoding), but the test binary panics at init in precompiles/launchpad setup.go:22 before any test runs."
 assumption = "The OracleTWAP definition stands unless overruled; rerun after the launchpad keeper provider fix."
+
+[finding.7.2.12]
+revision = "5683f3f701bcd4a86c5d20d2ca1c7372d861f21f"
+command = "go build ./platform/perps-data/..."
+exit = 1
+log = "fleet/logs/7.2.12-build-1.log"
+observed = "The explorer service process and server are written against the 7.2.11 explorer draft (New, Blocks, Transactions, MarketHistory, AccountHistory, TxLink, ErrLimit, ErrCursor), which is not on main yet, and internal/replay and internal/indexer do not compile on main against the landed store package."
+assumption = "Rerun after 7.2.11 and the perps-data store reconciliation land; the 429 budget is per process."
+
+[finding.7.2.4]
+revision = "74bbcd8001328f3e1f0aa21662d87dbe30f24959"
+command = "go build ./platform/perps-data/..."
+exit = 1
+log = "fleet/logs/7.2.4-build-2.log"
+observed = "The markets routes build and their verify passes, but the module build fails in internal/replay and internal/indexer against the landed store package (store.Block, WriteBlock, Rebuild, Cursor and the follower Step shape)."
+assumption = "The perps-data store reconciliation lane owns the two packages; the markets build is clean."
