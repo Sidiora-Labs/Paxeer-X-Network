@@ -91,3 +91,10 @@ command = "go test ./modules/launchpad/types/... -run 'TestDynamicFeeGolden'"
 exit_code = 0
 log_path = "fleet logs 2.1.2-verify-2"
 observed_and_assumption = "The keeper passes the eight price snapshots in raw storage order while SidioraPool orders them oldest first, so keeper volatility diverges from the contract once all eight slots are filled; keeper tests pinned to the old fee and volatility formulas were not run and may need new expected values. Assumption: the keeper market task that owns the caller orders the snapshots oldest first before calling the ported volatility."
+
+[finding.2.2.15]
+revision = "29ca8a10ca8b65230076719edbc4184de9fceb11"
+command = "go test ./modules/launchpad/keeper/testdata/v6120/record/... -run 'TestRecordRefusesSupplyMismatch'"
+exit_code = 0
+log_path = "fleet logs 2.2.15-verify-1"
+observed_and_assumption = "The golden recorder is written and its refusal test passes, but golden.json needs eth_call and debug_traceCall at the recorded height against a synced node with the debug API, which the fleet may not reach, and the recorder also waits on ProtocolConfig.json, Treasury.json and holders.json from sibling tasks; only the Router and SidioraPool swap paths have a golden caller plan, the permit, guardian, NFT and fee-claim traces do not. Assumption: an operator captures golden.json with the recorder once the sibling files exist, and the remaining trace families get a caller plan before the parity gate."
