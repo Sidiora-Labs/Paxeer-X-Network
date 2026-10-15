@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -16,13 +17,14 @@ import (
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/pnl"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/records"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
 )
 
-// SpotNode reads account state from the node at a height; *ethclient.Client
-// dialled on a PERPS_RPC_URLS entry satisfies it.
+// SpotNode reads account state from the node at a height; the source.RPC
+// pool over PERPS_RPC_URLS satisfies it.
 type SpotNode interface {
 	BlockNumber(ctx context.Context) (uint64, error)
 	BalanceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error)
@@ -288,7 +290,7 @@ const spotTradesCTE = `WITH stable AS (
 const spotLegsSQL = spotTradesCTE + `SELECT account, CASE WHEN in_stable THEN token_out ELSE token_in END, in_stable,
 	trunc(CASE WHEN in_stable THEN amount_in ELSE amount_out END)::text,
 	trunc(CASE WHEN in_stable THEN amount_out ELSE amount_in END)::text,
-	tx_hash, block_time
+	tx_hash, block_time, block, log_index
 FROM trades
 WHERE in_stable <> out_stable AND CASE WHEN in_stable THEN amount_out ELSE amount_in END >= 1
 ORDER BY block, tx_index, log_index, sub`
@@ -310,6 +312,8 @@ type spotClosed struct {
 	opened                *time.Time
 	closed                time.Time
 	tx                    common.Hash
+	block                 int64
+	logIndex              int
 	full                  bool
 }
 
@@ -341,8 +345,10 @@ func (s *SpotUsers) fold(ctx context.Context, user *common.Address) (map[common.
 			buy                bool
 			usdl, tok          string
 			at                 time.Time
+			block              int64
+			logIndex           int
 		)
-		if err := rows.Scan(&account, &token, &buy, &usdl, &tok, &tx, &at); err != nil {
+		if err := rows.Scan(&account, &token, &buy, &usdl, &tok, &tx, &at, &block, &logIndex); err != nil {
 			return nil, err
 		}
 		a := common.BytesToAddress(account)
@@ -351,14 +357,14 @@ func (s *SpotUsers) fold(ctx context.Context, user *common.Address) (map[common.
 			tr = &spotTrader{volume: new(big.Int)}
 			traders[a] = tr
 		}
-		if err := tr.apply(common.BytesToAddress(token), buy, usdl, tok, common.BytesToHash(tx), at); err != nil {
+		if err := tr.apply(common.BytesToAddress(token), buy, usdl, tok, common.BytesToHash(tx), at, block, logIndex); err != nil {
 			return nil, err
 		}
 	}
 	return traders, rows.Err()
 }
 
-func (tr *spotTrader) apply(token common.Address, buy bool, usdl, tok string, tx common.Hash, at time.Time) error {
+func (tr *spotTrader) apply(token common.Address, buy bool, usdl, tok string, tx common.Hash, at time.Time, block int64, logIndex int) error {
 	var b *spotBook
 	for _, x := range tr.books {
 		if x.token == token {
@@ -404,16 +410,18 @@ func (tr *spotTrader) apply(token common.Address, buy bool, usdl, tok string, tx
 	delta := new(big.Int).Sub(realized, priorRealized)
 	cost := new(big.Int).Sub(usdlInt, delta)
 	leg := spotClosed{
-		id:     len(tr.closed) + 1,
-		token:  token,
-		qty:    tok,
-		entry:  before.AvgCostBasis,
-		exit:   new(big.Int).Quo(new(big.Int).Mul(usdlInt, spotWad), tokInt).String(),
-		pnl:    delta.String(),
-		opened: b.opened,
-		closed: at,
-		tx:     tx,
-		full:   after.CurrentHoldings == "0",
+		id:       len(tr.closed) + 1,
+		token:    token,
+		qty:      tok,
+		entry:    before.AvgCostBasis,
+		exit:     new(big.Int).Quo(new(big.Int).Mul(usdlInt, spotWad), tokInt).String(),
+		pnl:      delta.String(),
+		opened:   b.opened,
+		closed:   at,
+		tx:       tx,
+		block:    block,
+		logIndex: logIndex,
+		full:     after.CurrentHoldings == "0",
 	}
 	if cost.Sign() > 0 {
 		pct := new(big.Rat).SetFrac(new(big.Int).Mul(delta, big.NewInt(100)), cost).FloatString(4)
@@ -634,10 +642,9 @@ func (s *SpotUsers) positions(ctx context.Context, user common.Address, _ map[st
 	return body, nil
 }
 
-// spotOrdersSQL reads the spot orders of $1, all or only the open and
-// activated ones ($2), newest placement first, with the times and hashes of
-// their placing, executing and cancelling or expiring events.
-const spotOrdersSQL = `SELECT trunc(o.order_id)::text, o.kind, o.status, o.token, o.stablecoin, trunc(o.amount)::text,
+// spotOrderColumns reads spot orders with the times and hashes of their
+// placing, executing and cancelling or expiring events.
+const spotOrderColumns = `SELECT trunc(o.order_id)::text, o.kind, o.status, o.token, o.stablecoin, trunc(o.amount)::text,
 	trunc(o.target_price)::text, trunc(o.stop_price)::text, trunc(o.limit_price)::text, trunc(o.trigger_price)::text,
 	trunc(o.execution_price)::text, o.side = 'buy', p.block_time, p.tx_hash, x.block_time, x.tx_hash, c.block_time
 FROM perps.spot_orders o
@@ -650,9 +657,16 @@ LEFT JOIN LATERAL (SELECT e.block_time, e.tx_hash FROM perps.spot_order_events e
 LEFT JOIN LATERAL (SELECT e.block_time FROM perps.spot_order_events e
 	WHERE e.order_id = o.order_id AND e.kind IN (o.kind || '_cancelled', o.kind || '_expired')
 	ORDER BY e.block, e.tx_index, e.log_index, e.sub LIMIT 1) c ON true
-WHERE o.account = $1 AND (NOT $2::boolean OR o.status IN ('open', 'activated'))
+`
+
+// spotOrdersSQL reads the spot orders of $1, all or only the open and
+// activated ones ($2), newest placement first.
+const spotOrdersSQL = spotOrderColumns + `WHERE o.account = $1 AND (NOT $2::boolean OR o.status IN ('open', 'activated'))
 ORDER BY o.placed_block DESC, o.order_id DESC
 LIMIT $3`
+
+// spotOrderSQL reads the spot order $2 of $1.
+const spotOrderSQL = spotOrderColumns + `WHERE o.account = $1 AND o.order_id = $2`
 
 type spotOrderJSON struct {
 	ID             string  `json:"id"`
@@ -709,27 +723,10 @@ func (s *SpotUsers) orders(ctx context.Context, user common.Address, q map[strin
 	defer rows.Close()
 	body := spotOrdersBody{Address: spotHex(user), Items: []spotOrderJSON{}}
 	for rows.Next() {
-		var (
-			o                                        spotOrderJSON
-			token, stablecoin, placedTx, executedTx  []byte
-			amount, target, stop, limitP, trig, exec sql.NullString
-			buy                                      bool
-			placedAt, executedAt, cancelledAt        sql.NullTime
-		)
-		if err := rows.Scan(&o.OrderID, &o.Type, &o.Status, &token, &stablecoin, &amount, &target, &stop, &limitP, &trig,
-			&exec, &buy, &placedAt, &placedTx, &executedAt, &executedTx, &cancelledAt); err != nil {
+		o, err := scanSpotOrder(rows, tokens)
+		if err != nil {
 			return nil, err
 		}
-		tokenAddr, stableAddr := common.BytesToAddress(token), common.BytesToAddress(stablecoin)
-		tokenHex, stableHex := spotHex(tokenAddr), spotHex(stableAddr)
-		meta := tokens[tokenAddr]
-		o.ID, o.Token, o.Stablecoin = o.OrderID, &tokenHex, &stableHex
-		o.Amount, o.TargetPrice, o.StopPrice = spotOptString(amount), spotOptString(target), spotOptString(stop)
-		o.LimitPrice, o.TriggerPrice, o.ExecutionPrice = spotOptString(limitP), spotOptString(trig), spotOptString(exec)
-		o.IsBuy = &buy
-		o.PlacedAt, o.ExecutedAt, o.CancelledAt = spotOptISO(placedAt), spotOptISO(executedAt), spotOptISO(cancelledAt)
-		o.PlacedTxHash, o.ExecutedTxHash = spotOptHash(placedTx), spotOptHash(executedTx)
-		o.Symbol, o.Decimals = meta.symbol, meta.decimals
 		body.Items = append(body.Items, o)
 	}
 	if err := rows.Err(); err != nil {
@@ -737,6 +734,31 @@ func (s *SpotUsers) orders(ctx context.Context, user common.Address, q map[strin
 	}
 	body.Count = len(body.Items)
 	return body, nil
+}
+
+func scanSpotOrder(row interface{ Scan(...any) error }, tokens map[common.Address]spotToken) (spotOrderJSON, error) {
+	var (
+		o                                        spotOrderJSON
+		token, stablecoin, placedTx, executedTx  []byte
+		amount, target, stop, limitP, trig, exec sql.NullString
+		buy                                      bool
+		placedAt, executedAt, cancelledAt        sql.NullTime
+	)
+	if err := row.Scan(&o.OrderID, &o.Type, &o.Status, &token, &stablecoin, &amount, &target, &stop, &limitP, &trig,
+		&exec, &buy, &placedAt, &placedTx, &executedAt, &executedTx, &cancelledAt); err != nil {
+		return o, err
+	}
+	tokenAddr, stableAddr := common.BytesToAddress(token), common.BytesToAddress(stablecoin)
+	tokenHex, stableHex := spotHex(tokenAddr), spotHex(stableAddr)
+	meta := tokens[tokenAddr]
+	o.ID, o.Token, o.Stablecoin = o.OrderID, &tokenHex, &stableHex
+	o.Amount, o.TargetPrice, o.StopPrice = spotOptString(amount), spotOptString(target), spotOptString(stop)
+	o.LimitPrice, o.TriggerPrice, o.ExecutionPrice = spotOptString(limitP), spotOptString(trig), spotOptString(exec)
+	o.IsBuy = &buy
+	o.PlacedAt, o.ExecutedAt, o.CancelledAt = spotOptISO(placedAt), spotOptISO(executedAt), spotOptISO(cancelledAt)
+	o.PlacedTxHash, o.ExecutedTxHash = spotOptHash(placedTx), spotOptHash(executedTx)
+	o.Symbol, o.Decimals = meta.symbol, meta.decimals
+	return o, nil
 }
 
 func spotQuery(q map[string][]string, name string) string {
@@ -835,33 +857,14 @@ func (s *SpotUsers) trades(ctx context.Context, user common.Address, q map[strin
 	defer rows.Close()
 	body := spotTradesBody{Address: spotHex(user), Limit: limit, Items: []spotTradeItemJSON{}}
 	for rows.Next() {
-		var (
-			t                                   spotTradeItemJSON
-			block                               int64
-			txHash, emitter, account, tin, tout []byte
-			at                                  time.Time
-			feeAmount, impactAmount             sql.NullString
-			feeBps, impactBps                   sql.NullInt64
-		)
-		if err := rows.Scan(&t.Source, &block, &t.LogIndex, &txHash, &at, &emitter, &account, &tin, &tout, &t.AmountIn,
-			&t.AmountOut, &t.ExecutionPrice, &t.VolumeUsd, &feeAmount, &feeBps, &impactAmount, &impactBps); err != nil {
+		t, err := scanSpotTrade(rows)
+		if err != nil {
 			return nil, err
 		}
 		if len(body.Items) == limit {
 			last := body.Items[limit-1]
 			body.NextCursor = &spotTradeCursor{AfterBlock: last.BlockNumber, AfterIndex: last.LogIndex}
 			break
-		}
-		t.ID, t.TxHash, t.BlockNumber = tradeID(block, t.LogIndex), common.BytesToHash(txHash).Hex(), strconv.FormatInt(block, 10)
-		t.BlockTimestamp, t.CreatedAt = spotISO(at), spotISO(at)
-		t.User, t.Contract = spotHex(common.BytesToAddress(account)), spotHex(common.BytesToAddress(emitter))
-		t.TokenIn, t.TokenOut = spotHex(common.BytesToAddress(tin)), spotHex(common.BytesToAddress(tout))
-		t.FeeAmount, t.PriceImpactAmount = spotOptString(feeAmount), spotOptString(impactAmount)
-		if feeBps.Valid {
-			t.FeeBps = &feeBps.Int64
-		}
-		if impactBps.Valid {
-			t.PriceImpactBps = &impactBps.Int64
 		}
 		body.Items = append(body.Items, t)
 	}
@@ -870,6 +873,33 @@ func (s *SpotUsers) trades(ctx context.Context, user common.Address, q map[strin
 	}
 	body.Count = len(body.Items)
 	return body, nil
+}
+
+func scanSpotTrade(rows *sql.Rows) (spotTradeItemJSON, error) {
+	var (
+		t                                   spotTradeItemJSON
+		block                               int64
+		txHash, emitter, account, tin, tout []byte
+		at                                  time.Time
+		feeAmount, impactAmount             sql.NullString
+		feeBps, impactBps                   sql.NullInt64
+	)
+	if err := rows.Scan(&t.Source, &block, &t.LogIndex, &txHash, &at, &emitter, &account, &tin, &tout, &t.AmountIn,
+		&t.AmountOut, &t.ExecutionPrice, &t.VolumeUsd, &feeAmount, &feeBps, &impactAmount, &impactBps); err != nil {
+		return t, err
+	}
+	t.ID, t.TxHash, t.BlockNumber = tradeID(block, t.LogIndex), common.BytesToHash(txHash).Hex(), strconv.FormatInt(block, 10)
+	t.BlockTimestamp, t.CreatedAt = spotISO(at), spotISO(at)
+	t.User, t.Contract = spotHex(common.BytesToAddress(account)), spotHex(common.BytesToAddress(emitter))
+	t.TokenIn, t.TokenOut = spotHex(common.BytesToAddress(tin)), spotHex(common.BytesToAddress(tout))
+	t.FeeAmount, t.PriceImpactAmount = spotOptString(feeAmount), spotOptString(impactAmount)
+	if feeBps.Valid {
+		t.FeeBps = &feeBps.Int64
+	}
+	if impactBps.Valid {
+		t.PriceImpactBps = &impactBps.Int64
+	}
+	return t, nil
 }
 
 const spotTradesStatsSQL = spotTradesCTE + `SELECT source, emitter, count(*) FROM trades GROUP BY source, emitter`
@@ -971,21 +1001,25 @@ func (s *SpotUsers) closedLegs(ctx context.Context, user common.Address, q map[s
 			body.NextCursor = &spotLegCursor{AfterID: body.Items[limit-1].ID}
 			break
 		}
-		meta := tokens[leg.token]
-		item := spotClosedLegJSON{
-			ID: leg.id, Token: spotHex(leg.token), Qty: leg.qty, EntryPrice: leg.entry, ExitPrice: leg.exit,
-			Pnl: leg.pnl, PnlUsd: leg.pnl, PnlPct: leg.pct, ClosedAt: spotISO(leg.closed), CloseTxHash: leg.tx.Hex(),
-			FullyClosed: leg.full, Symbol: meta.symbol, Decimals: meta.decimals,
-		}
-		if leg.opened != nil {
-			opened := spotISO(*leg.opened)
-			held := int64(leg.closed.Sub(*leg.opened) / time.Second)
-			item.OpenedAt, item.HoldingSeconds = &opened, &held
-		}
-		body.Items = append(body.Items, item)
+		body.Items = append(body.Items, closedLegItem(leg, tokens))
 	}
 	body.Count = len(body.Items)
 	return body, nil
+}
+
+func closedLegItem(leg spotClosed, tokens map[common.Address]spotToken) spotClosedLegJSON {
+	meta := tokens[leg.token]
+	item := spotClosedLegJSON{
+		ID: leg.id, Token: spotHex(leg.token), Qty: leg.qty, EntryPrice: leg.entry, ExitPrice: leg.exit,
+		Pnl: leg.pnl, PnlUsd: leg.pnl, PnlPct: leg.pct, ClosedAt: spotISO(leg.closed), CloseTxHash: leg.tx.Hex(),
+		FullyClosed: leg.full, Symbol: meta.symbol, Decimals: meta.decimals,
+	}
+	if leg.opened != nil {
+		opened := spotISO(*leg.opened)
+		held := int64(leg.closed.Sub(*leg.opened) / time.Second)
+		item.OpenedAt, item.HoldingSeconds = &opened, &held
+	}
+	return item
 }
 
 const spotIndexPriceSQL = `SELECT trunc(index_price)::text FROM perps.index_prices
@@ -1225,4 +1259,147 @@ func (s *SpotUsers) rank(ctx context.Context, kind string, limit int) (spotLeade
 		body.Items = append(body.Items, spotRankJSON{Rank: i + 1, Address: spotHex(e.account), Value: e.text})
 	}
 	return body, nil
+}
+
+// SpotStreamItem is one data frame of the spot user socket: the stream, the
+// lower-case account and the REST item of that stream.
+type SpotStreamItem struct {
+	Stream  string
+	Address string
+	Data    json.RawMessage
+}
+
+// spotFactPayload is the part of a spot fact payload the socket reads.
+type spotFactPayload struct {
+	Table    string  `json:"table"`
+	Kind     string  `json:"kind"`
+	Block    string  `json:"block"`
+	LogIndex int     `json:"log_index"`
+	User     *string `json:"user"`
+	OrderID  string  `json:"order_id"`
+}
+
+const spotOrderAccountSQL = `SELECT account FROM perps.spot_orders WHERE order_id = $1`
+
+// StreamItems translates one stream message into the items of the spot user
+// socket: a spot_order_events row sends its order as SpotOrder, and a
+// spot_swaps row or an executed order, being a trade, sends the trade as
+// SpotTrade, the positions of its token as SpotPosition, the profit summary
+// as SpotPnlSummary and the leg it closed as SpotClosedLeg. Other rows feed
+// no stream.
+// ponytail: each trade refolds the account's history three times (positions,
+// profit, legs); fold once and share it if busy accounts lag the socket.
+func (s *SpotUsers) StreamItems(ctx context.Context, env delivery.Envelope) ([]SpotStreamItem, error) {
+	var p spotFactPayload
+	if err := json.Unmarshal(env.Payload, &p); err != nil {
+		return nil, fmt.Errorf("rest: spot payload: %w", err)
+	}
+	var (
+		user   common.Address
+		traded bool
+		items  []SpotStreamItem
+	)
+	switch p.Table {
+	case "spot_swaps":
+		if p.User == nil || !common.IsHexAddress(*p.User) {
+			return nil, fmt.Errorf("rest: spot swap %s without a user", env.EventID)
+		}
+		user, traded = common.HexToAddress(*p.User), true
+	case "spot_order_events":
+		var account []byte
+		if err := s.db.QueryRowContext(ctx, spotOrderAccountSQL, p.OrderID).Scan(&account); err != nil {
+			return nil, fmt.Errorf("rest: account of spot order %s: %w", p.OrderID, err)
+		}
+		user, traded = common.BytesToAddress(account), strings.HasSuffix(p.Kind, "_executed")
+		tokens, err := s.tokens(ctx)
+		if err != nil {
+			return nil, err
+		}
+		order, err := scanSpotOrder(s.db.QueryRowContext(ctx, spotOrderSQL, user.Bytes(), p.OrderID), tokens)
+		if err != nil {
+			return nil, fmt.Errorf("rest: spot order %s: %w", p.OrderID, err)
+		}
+		if items, err = appendSpotItem(items, "order", user, order); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, nil
+	}
+	if !traded {
+		return items, nil
+	}
+	block, err := strconv.ParseInt(p.Block, 10, 64)
+	if err != nil || block < 0 {
+		return nil, fmt.Errorf("rest: spot payload block %q", p.Block)
+	}
+	trade, found, err := s.tradeAt(ctx, user, block, p.LogIndex)
+	if err != nil || !found {
+		return items, err
+	}
+	if items, err = appendSpotItem(items, "trade", user, trade); err != nil {
+		return nil, err
+	}
+	positions, err := s.positions(ctx, user, nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, position := range positions.(spotPositionsBody).Positions {
+		if position.Token != trade.TokenIn && position.Token != trade.TokenOut {
+			continue
+		}
+		if items, err = appendSpotItem(items, "position", user, position); err != nil {
+			return nil, err
+		}
+	}
+	summary, err := s.pnlSummary(ctx, user, nil)
+	if err != nil {
+		return nil, err
+	}
+	if items, err = appendSpotItem(items, "pnl", user, summary); err != nil {
+		return nil, err
+	}
+	traders, err := s.fold(ctx, &user)
+	if err != nil {
+		return nil, err
+	}
+	if tr := traders[user]; tr != nil {
+		tokens, err := s.tokens(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, leg := range tr.closed {
+			if leg.block != block || leg.logIndex != p.LogIndex {
+				continue
+			}
+			if items, err = appendSpotItem(items, "closed-leg", user, closedLegItem(leg, tokens)); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return items, nil
+}
+
+// tradeAt reads the trade of user at (block, logIndex).
+func (s *SpotUsers) tradeAt(ctx context.Context, user common.Address, block int64, logIndex int) (spotTradeItemJSON, bool, error) {
+	rows, err := s.db.QueryContext(ctx, spotUserTradesSQL, user.Bytes(), block, logIndex+1, 1)
+	if err != nil {
+		return spotTradeItemJSON{}, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return spotTradeItemJSON{}, false, rows.Err()
+	}
+	t, err := scanSpotTrade(rows)
+	if err != nil {
+		return t, false, err
+	}
+	return t, t.BlockNumber == strconv.FormatInt(block, 10) && t.LogIndex == logIndex, rows.Err()
+}
+
+func appendSpotItem(items []SpotStreamItem, stream string, user common.Address, item any) ([]SpotStreamItem, error) {
+	data, err := json.Marshal(item)
+	if err != nil {
+		return nil, fmt.Errorf("rest: spot %s item: %w", stream, err)
+	}
+	return append(items, SpotStreamItem{Stream: stream, Address: spotHex(user), Data: data}), nil
 }

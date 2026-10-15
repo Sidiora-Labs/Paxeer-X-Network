@@ -358,6 +358,49 @@ func TestSubscriptions(t *testing.T) {
 		c.quiet(t)
 	})
 
+	fill := func(t *testing.T, market, block int64, logIndex int, isLong bool, size, price string) int64 {
+		t.Helper()
+		return fact(t, "fills", "fill", block, 0, logIndex, subEmitter, []string{"market_id", "maker_order_id", "taker_order_id", "maker", "taker", "taker_is_long",
+			"price", "size_usd", "maker_fee_usd", "taker_fee_usd"}, market, 8, 7, subOther.Bytes(), subTrader.Bytes(), isLong, price, size, -2, 3)
+	}
+	executedQuery := `subscription ($m: Int) { tradeExecuted(marketId: $m) { tradeId marketId isLong sizeUsd price blockTimestamp } }`
+	executedJSON := func(id, market, block int64, isLong bool, size, price string) string {
+		return fmt.Sprintf(`{"tradeExecuted":{"tradeId":"%d","marketId":%d,"isLong":%t,"sizeUsd":%q,"price":%q,"blockTimestamp":%d}}`,
+			id, market, isLong, size, price, subAt(block).Unix())
+	}
+
+	t.Run("tradeExecuted", func(t *testing.T) {
+		reset(t)
+		fill(t, 2, 54, 0, true, "1", "1")
+		c := open(t, "/graphql-ws")
+		c.subscribe(t, "s", executedQuery, map[string]any{"m": 2})
+		listeners(t, 1)
+		fill(t, 3, 55, 0, true, "100", "2000")
+		first := fill(t, 2, 55, 1, true, "9007199254740993", "12345678901234567890")
+		second := fill(t, 2, 55, 2, false, "300", "2010")
+		publish(t, "3.fill")
+		c.quiet(t)
+		publish(t, "2.fill")
+		c.wantNext(t, "s", executedJSON(first, 2, 55, true, "9007199254740993", "12345678901234567890"))
+		c.wantNext(t, "s", executedJSON(second, 2, 55, false, "300", "2010"))
+		c.quiet(t)
+	})
+
+	t.Run("trade_executed_all_markets", func(t *testing.T) {
+		reset(t)
+		c := open(t, "/graphql-ws")
+		c.subscribe(t, "s", executedQuery, nil)
+		listeners(t, 1)
+		first := fill(t, 3, 56, 0, true, "100", "2000")
+		second := fill(t, 2, 56, 1, false, "300", "2010")
+		publish(t, "user."+trader+".fill")
+		c.quiet(t)
+		publish(t, "3.fill", "2.fill")
+		c.wantNext(t, "s", executedJSON(first, 3, 56, true, "100", "2000"))
+		c.wantNext(t, "s", executedJSON(second, 2, 56, false, "300", "2010"))
+		c.quiet(t)
+	})
+
 	t.Run("rewind", func(t *testing.T) {
 		reset(t)
 		markPrice(t, 1, 60, 0, "700")

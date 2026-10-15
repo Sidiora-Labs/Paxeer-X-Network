@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 
@@ -397,6 +398,56 @@ func (s *RPC) Call(ctx context.Context, to common.Address, data []byte) ([]byte,
 // holds the state of height answers decode.ErrStatePruned.
 func (s *RPC) CallAt(ctx context.Context, to common.Address, data []byte, height uint64) ([]byte, error) {
 	return s.call(ctx, to, data, fmt.Sprintf("0x%x", height))
+}
+
+// BlockNumber is Head under the name rest.SpotNode reads.
+func (s *RPC) BlockNumber(ctx context.Context) (uint64, error) {
+	return s.Head(ctx)
+}
+
+// BalanceAt runs eth_getBalance of account at blockNumber; nil is the latest
+// block.
+func (s *RPC) BalanceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error) {
+	block, err := blockTag(blockNumber)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := s.callWithFallback(ctx, s.timeout, "eth_getBalance", account.Hex(), block)
+	if err != nil {
+		return nil, err
+	}
+	var hexStr string
+	if err := json.Unmarshal(raw, &hexStr); err != nil {
+		return nil, fmt.Errorf("eth_getBalance decode: %w", err)
+	}
+	v, ok := new(big.Int).SetString(strings.TrimPrefix(strings.TrimPrefix(hexStr, "0x"), "0X"), 16)
+	if !ok || v.Sign() < 0 {
+		return nil, fmt.Errorf("eth_getBalance: invalid quantity %q", hexStr)
+	}
+	return v, nil
+}
+
+// CallContract runs eth_call of call.Data at call.To on blockNumber; nil is
+// the latest block. The other CallMsg fields are not sent.
+func (s *RPC) CallContract(ctx context.Context, call ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
+	if call.To == nil {
+		return nil, errors.New("source: eth_call without a target")
+	}
+	block, err := blockTag(blockNumber)
+	if err != nil {
+		return nil, err
+	}
+	return s.call(ctx, *call.To, call.Data, block)
+}
+
+func blockTag(n *big.Int) (string, error) {
+	if n == nil {
+		return "latest", nil
+	}
+	if n.Sign() < 0 || !n.IsUint64() {
+		return "", fmt.Errorf("source: invalid block number %s", n)
+	}
+	return fmt.Sprintf("0x%x", n.Uint64()), nil
 }
 
 func (s *RPC) call(ctx context.Context, to common.Address, data []byte, block string) ([]byte, error) {

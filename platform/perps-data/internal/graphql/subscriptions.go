@@ -864,6 +864,63 @@ func (r *Resolver) TradeCreated(ctx context.Context, args struct{ MarketID int32
 	})
 }
 
+// TradeExecuted.
+
+type subTradeExecuted struct {
+	TradeID        *string
+	MarketID       *int32
+	IsLong         *bool
+	SizeUsd        *subDecimal
+	Price          *subDecimal
+	BlockTimestamp *int32
+}
+
+const fillColumns = `SELECT x.row_id, x.row_id::text, x.market_id::int4, x.taker_is_long, x.size_usd::text, x.price::text,
+    floor(extract(epoch FROM x.block_time))::int4 FROM perps.fills x`
+
+func scanFill(s scanner) (*subTradeExecuted, int64, error) {
+	var rowID int64
+	var id string
+	var market, at int32
+	var isLong bool
+	var size, price subDecimal
+	if err := s.Scan(&rowID, &id, &market, &isLong, &size, &price, &at); err != nil {
+		return nil, 0, err
+	}
+	return &subTradeExecuted{TradeID: &id, MarketID: &market, IsLong: &isLong, SizeUsd: &size, Price: &price, BlockTimestamp: &at}, rowID, nil
+}
+
+// TradeExecuted sends one TradeExecuted per insert into perps.fills, tradeId
+// the row_id and isLong the taker side, woken by perps.<chain>.<market>.fill;
+// a null marketId streams every market.
+func (r *Resolver) TradeExecuted(ctx context.Context, args struct{ MarketID *int32 }) (<-chan *subTradeExecuted, error) {
+	f, db, err := r.subscriptionFeed(ctx)
+	if err != nil {
+		return nil, err
+	}
+	batch := strconv.Itoa(insertBatch)
+	if args.MarketID == nil {
+		return streamInserts(ctx, f, db, []string{f.prefix + "*.fill"}, inserts[*subTradeExecuted]{
+			table: "fills",
+			news:  fillColumns + ` WHERE x.row_id > $1 ORDER BY x.row_id LIMIT ` + batch,
+			latest: fillColumns + ` WHERE x.row_id IN (SELECT DISTINCT ON (l.market_id) l.row_id FROM perps.fills l
+    ORDER BY l.market_id, l.block DESC, l.tx_index DESC, l.log_index DESC, l.sub DESC) ORDER BY x.market_id`,
+			scan: scanFill,
+		})
+	}
+	market, err := marketArg(*args.MarketID)
+	if err != nil {
+		return nil, err
+	}
+	return streamInserts(ctx, f, db, []string{f.prefix + market + ".fill"}, inserts[*subTradeExecuted]{
+		table:  "fills",
+		news:   fillColumns + ` WHERE x.row_id > $1 AND x.market_id = $2 ORDER BY x.row_id LIMIT ` + batch,
+		latest: fillColumns + ` WHERE x.market_id = $1 ORDER BY x.block DESC, x.tx_index DESC, x.log_index DESC, x.sub DESC LIMIT 1`,
+		args:   []any{market},
+		scan:   scanFill,
+	})
+}
+
 // Liquidation.
 
 type subLiquidation struct {

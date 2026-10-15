@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/decode"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
 )
 
@@ -265,6 +266,41 @@ func TestSpotUsersREST(t *testing.T) {
 		spotEqual(t, "limited orders", body, spotOrdersBody{Address: spotUserHex, Count: 1, Items: []spotOrderJSON{open}})
 		spotRefused(t, dbOnly, userPath+"/orders?status=closed", http.StatusBadRequest, "invalid status")
 		spotRefused(t, dbOnly, userPath+"/orders?limit=x", http.StatusBadRequest, "invalid limit")
+	})
+
+	t.Run("stream_order_item", func(t *testing.T) {
+		spotReset(t, db)
+		spotScenario(t, db, synthetic, base)
+		users := &SpotUsers{db: db}
+		env := func(payload string) delivery.Envelope {
+			return delivery.Envelope{EventID: "e1", Payload: json.RawMessage(payload)}
+		}
+		items, err := users.StreamItems(context.Background(), env(`{"table":"spot_order_events","kind":"limit_created","block":"14","log_index":0,"order_id":"2"}`))
+		if err != nil || len(items) != 1 {
+			t.Fatalf("StreamItems(limit_created) = %v, %v", items, err)
+		}
+		if items[0].Stream != "order" || items[0].Address != spotUserHex {
+			t.Fatalf("item = %s %s", items[0].Stream, items[0].Address)
+		}
+		var got spotOrderJSON
+		if err := json.Unmarshal(items[0].Data, &got); err != nil {
+			t.Fatal(err)
+		}
+		spotEqual(t, "order item", got, spotOrderJSON{ID: "2", OrderID: "2", Type: "limit", Status: "open", Token: &paxHex, Stablecoin: &usdlHex,
+			Amount: spotPtr(e6(t, "10")), TargetPrice: spotPtr(e18(t, "3")), IsBuy: spotPtr(false), PlacedAt: spotPtr(at(14)),
+			PlacedTxHash: spotPtr(spotTx(14)), Symbol: spotPtr("PAX"), Decimals: spotPtr(6)})
+
+		if items, err := users.StreamItems(context.Background(), env(`{"table":"fills","block":"14","log_index":0}`)); err != nil || items != nil {
+			t.Fatalf("StreamItems(fills) = %v, %v", items, err)
+		}
+		if _, err := users.StreamItems(context.Background(), env(`{"table":"spot_swaps","kind":"simple_swap","block":"15","log_index":0}`)); err == nil ||
+			err.Error() != "rest: spot swap e1 without a user" {
+			t.Fatalf("StreamItems(swap without user) = %v", err)
+		}
+		if _, err := users.StreamItems(context.Background(), env(`{"table":"spot_order_events","kind":"limit_cancelled","block":"16","log_index":0,"order_id":"9"}`)); err == nil ||
+			!strings.HasPrefix(err.Error(), "rest: account of spot order 9: ") {
+			t.Fatalf("StreamItems(unknown order) = %v", err)
+		}
 	})
 
 	t.Run("trades", func(t *testing.T) {
