@@ -42,3 +42,17 @@ command = "go build ./platform/perps-data/..."
 exit_code = 1
 log_path = "fleet logs 7.0.1-build-1"
 observed_and_assumption = "The NATS driver of 7.0.1 imports the delivery package that 7.0.2 creates, while 7.0.2 requires 7.0.1, and 7.0.3, 7.0.4, 7.0.6 and 7.0.7 import nats.go with no requires on 7.0.1; platform/perps-data does not exist before 7.0.2 and 7.0.5 land, so the build and verify of 7.0.1 cannot run first. Assumption: the module pins of 7.0.1 land first on their own, 7.0.2 and 7.0.5 build the package, and 7.0.1 completes its driver afterwards with the same gates."
+
+[finding.7.0.4]
+revision = "dbb544ed0945fcd49741e95d43f8c0e01622a348"
+command = "go test -count=1 ./platform/perps-data/migrations/ -run 'TestSchemaFiles'"
+exit_code = 0
+log_path = "fleet logs 7.0.4-verify-2"
+observed_and_assumption = "Acceptance 7.2.3 expects an insert of 1.5 into a numeric(78,0) column guarded by CHECK (x = trunc(x)) to be refused, but Postgres rounds the value to the column scale before CHECK constraints run, so 2 is stored and the check never fires. Assumption: refusing fractional input needs the columns declared as unconstrained numeric (or a domain over it) with the trunc and range checks, which is a schema ruling for the data-services contract."
+
+[finding.7.0.9]
+revision = "d7b899b1c4064f5bfd424a4fa7b001ba893b9c02"
+command = "go test -count=1 ./platform/perps-data/internal/bigint/ -run 'TestBigint'"
+exit_code = 0
+log_path = "fleet logs 7.0.9-verify-1"
+observed_and_assumption = "The origin ratelimit middleware wrote its 503 through a Launch-x shared http helper that has no counterpart under platform/perps-data, so the masked 5xx envelope is written inline; the origin BigintAdd did not refuse uint256 overflow, which acceptance 7.1.7 requires, so inputs are validated and results bounded at Uint256Max. Assumption: inline envelope and the bounded arithmetic are the intended port."
