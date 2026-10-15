@@ -315,3 +315,10 @@ command = "go test ./modules/launchpad/legacy/v610/..."
 exit_code = 0
 log_path = "fleet/logs/fix-2.0.7-legacy-verify-1.log"
 observed_and_assumption = "Legacy errors register under launchpad_legacy_v610 (precompile gate fleet/logs/fix-2.0.7-verify-2.log exit 0) and the legacy keeper tests now send through bank keepers carrying the legacy BeforeBalanceChange hook, so keeper and types packages pass with assertions unchanged. Assumption: copies of a bank keeper share one hook slice, so legacy tests must own their bank keepers."
+
+[finding.7.1.6]
+revision = "bdea93ab935bc263f52cabd71bc1e71502f9afc8"
+command = "none (blocked before implementation)"
+exit_code = 0
+log_path = "fleet/reports/7.1.6.report"
+observed_and_assumption = "The delivery outbox from 7.0.5 has no Perps-Seq identity and Enqueue from 7.0.2 assigns none while Claim orders by created_at then the sha256 event id, so events sharing a timestamp publish in hash order and the contract's bigint from the outbox identity does not exist. Assumption: the outbox identity becomes the Perps-Seq bigint, recorded at enqueue, carried on the lease and used as Claim order."
