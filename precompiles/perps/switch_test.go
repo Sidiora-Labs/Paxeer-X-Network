@@ -1,12 +1,25 @@
 package perps_test
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
+	"sort"
+	"strings"
 	"testing"
+	"time"
 
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxexchange"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/perps"
+	perpsabi "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/perps/abi"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -142,4 +155,146 @@ func TestVersionSwitchVectorsRecorded(t *testing.T) {
 			}
 		}
 	}
+}
+
+// findFunc returns the top-level function name declares in file, or nil.
+func findFunc(file *ast.File, name string) *ast.FuncDecl {
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == name {
+			return fn
+		}
+	}
+	return nil
+}
+
+func TestVersionSwitchNoVersionEntry(t *testing.T) {
+	fset := token.NewFileSet()
+
+	// GetVersioned of the exchange keys its one contract by the upgrade it is
+	// handed and by nothing else.
+	setup, err := parser.ParseFile(fset, "../layerxexchange/setup.go", nil, 0)
+	require.NoError(t, err)
+	getVersioned := findFunc(setup, "GetVersioned")
+	require.NotNil(t, getVersioned)
+	require.Len(t, getVersioned.Body.List, 1)
+	ret, ok := getVersioned.Body.List[0].(*ast.ReturnStmt)
+	require.True(t, ok)
+	require.Len(t, ret.Results, 1)
+	lit, ok := ret.Results[0].(*ast.CompositeLit)
+	require.True(t, ok)
+	require.Len(t, lit.Elts, 1)
+	entry, ok := lit.Elts[0].(*ast.KeyValueExpr)
+	require.True(t, ok)
+	key, ok := entry.Key.(*ast.Ident)
+	require.True(t, ok)
+	require.Equal(t, "latestUpgrade", key.Name)
+
+	testApp := app.Setup(t, false, true, false)
+	versioned := layerxexchange.GetVersioned(app.LatestUpgrade, testApp.GetPrecompileKeepers())
+	require.Len(t, versioned, 1)
+	require.Contains(t, versioned, app.LatestUpgrade)
+	require.NotContains(t, versioned, app.ActivationUpgrade)
+	require.NotContains(t, versioned, app.V6120Upgrade)
+
+	// The exchange version list and the tag list carry neither the v6.9 nor
+	// the v6.12.0 plan.
+	versions, err := os.ReadFile("../layerxexchange/versions")
+	require.NoError(t, err)
+	require.Equal(t, "v6.5\n", string(versions))
+	tags, err := os.Open("../../node/tags")
+	require.NoError(t, err)
+	defer tags.Close()
+	scanner := bufio.NewScanner(tags)
+	lines := 0
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		require.NotEqual(t, app.V6120Upgrade, line)
+		lines++
+	}
+	require.NoError(t, scanner.Err())
+	require.NotZero(t, lines)
+
+	// The perpetuals package has no version setup of its own.
+	_, err = os.Stat("setup.go")
+	require.True(t, os.IsNotExist(err), "precompiles/perps/setup.go exists")
+
+	// The switch of the exchange address is exchangeVersionSwitch of the node.
+	node, err := parser.ParseFile(fset, "../../node/precompiles_v6120.go", nil, 0)
+	require.NoError(t, err)
+	exchangeSwitch := findFunc(node, "exchangeVersionSwitch")
+	require.NotNil(t, exchangeSwitch)
+	params := make([]string, 0, 3)
+	for _, field := range exchangeSwitch.Type.Params.List {
+		for _, name := range field.Names {
+			params = append(params, name.Name)
+		}
+	}
+	require.Equal(t, []string{"perps", "legacy", "live"}, params)
+	require.Len(t, exchangeSwitch.Type.Results.List, 1)
+}
+
+// methodSigs lists the method signatures of a, sorted.
+func methodSigs(a abi.ABI) []string {
+	sigs := make([]string, 0, len(a.Methods))
+	for _, m := range a.Methods {
+		sigs = append(sigs, m.Sig)
+	}
+	sort.Strings(sigs)
+	return sigs
+}
+
+func TestVersionSwitchHeightSelection(t *testing.T) {
+	const (
+		activationHeight = int64(10)
+		doneHeight       = int64(1000)
+	)
+	testApp := app.Setup(t, false, true, false)
+	ctx := testApp.GetContextForDeliverTx([]byte{}).WithBlockTime(time.Unix(1_800_000_000, 0).UTC())
+	testApp.UpgradeKeeper.SetDone(ctx.WithBlockHeight(activationHeight), app.ActivationUpgrade)
+	exchange := common.HexToAddress(layerxexchange.ExchangeAddress)
+
+	keepers := testApp.GetPrecompileKeepers()
+	legacy, err := layerxexchange.NewPrecompile(keepers)
+	require.NoError(t, err)
+	next, err := perps.NewPrecompile(keepers)
+	require.NoError(t, err)
+	wantPerps, err := perpsabi.ABI()
+	require.NoError(t, err)
+	require.Equal(t, methodSigs(wantPerps), methodSigs(next.ABI))
+	require.NotEqual(t, methodSigs(legacy.ABI), methodSigs(next.ABI))
+	require.NotEqual(t, legacy.GetName(), next.GetName())
+
+	served := func(c sdk.Context, want *pcommon.Precompile) {
+		t.Helper()
+		contract, ok := testApp.EvmKeeper.CustomPrecompiles(c)[exchange]
+		require.True(t, ok, "height %d tracing %v", c.BlockHeight(), c.IsTracing())
+		p, ok := contract.(*pcommon.Precompile)
+		require.True(t, ok, "height %d tracing %v", c.BlockHeight(), c.IsTracing())
+		require.Equal(t, want.GetName(), p.GetName(), "height %d tracing %v", c.BlockHeight(), c.IsTracing())
+		require.Equal(t, methodSigs(want.ABI), methodSigs(p.ABI), "height %d tracing %v", c.BlockHeight(), c.IsTracing())
+	}
+
+	// With the live flag false, a call at 999 resolves to the v6.9 exchange.
+	below := ctx.WithBlockHeight(doneHeight - 1)
+	served(below, legacy)
+	require.Equal(t, app.ActivationUpgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(below)[exchange])
+
+	// The v6.12.0 handler sets the flag at 1000.
+	at := ctx.WithBlockHeight(doneHeight)
+	plan := upgradetypes.Plan{Name: app.V6120Upgrade, Height: doneHeight}
+	require.NoError(t, testApp.UpgradeKeeper.ScheduleUpgrade(at, plan))
+	testApp.UpgradeKeeper.ApplyUpgrade(at, plan)
+	require.Equal(t, doneHeight, testApp.UpgradeKeeper.GetDoneHeight(at, app.V6120Upgrade))
+
+	// From 1000 the address serves the perpetuals executor.
+	served(at, next)
+	served(at.WithIsTracing(true), next)
+	require.Equal(t, app.V6120Upgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(at)[exchange])
+	served(ctx.WithBlockHeight(doneHeight+1), next)
+	require.Equal(t, app.V6120Upgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(ctx.WithBlockHeight(doneHeight + 1))[exchange])
+
+	// A trace of 999 still resolves the v6.9 exchange.
+	traced := ctx.WithBlockHeight(doneHeight - 1).WithIsTracing(true)
+	require.Equal(t, app.ActivationUpgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(traced)[exchange])
+	served(traced, legacy)
 }
