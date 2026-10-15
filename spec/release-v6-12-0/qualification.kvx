@@ -1,2 +1,9 @@
 # Qualification findings for release-v6-12-0: one [finding.<task>] per failure outside the task scope.
 # Keys: revision, command, exit_code, log_path, observed_and_assumption.
+
+[finding.5.0.1]
+revision = "3ce049b6ac3cb6b378e479a27d0d64e0f4a4d260"
+command = "go test ./precompiles/pricefeed/ -run 'TestPriceFeedABIGolden'"
+exit_code = 0
+log_path = "fleet logs 5.0.1-verify-1"
+observed_and_assumption = "do_3 asks precompiles/pricefeed/abi to go:embed ../abi.json, which go:embed cannot reference from a parent directory; the leaf package exports the ABI as an import-free constant pinned byte-equal to abi.json by the golden test. Assumption: the leaf constant satisfies the no-node-import rule for the indexer build; the spec step should name abi/abi.json as the embedded file."
