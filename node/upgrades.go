@@ -394,6 +394,14 @@ func activationStoreUpgrades() storetypes.StoreUpgrades {
 	}
 }
 
+// v6120StoreUpgrades mounts the store of every module the v6.12.0 plan adds to
+// a chain that applied the activation plan: the perps, spot and pricefeed stores.
+func v6120StoreUpgrades() storetypes.StoreUpgrades {
+	return storetypes.StoreUpgrades{
+		Added: []string{storekeys.PerpsStoreKey, storekeys.SpotStoreKey, storekeys.PriceFeedStoreKey},
+	}
+}
+
 // mergeStoreUpgrades mounts the store of every module the merge plan adds to
 // a chain that applied the activation plan: the sequencer store.
 func mergeStoreUpgrades() storetypes.StoreUpgrades {
@@ -587,9 +595,13 @@ func (app *App) applyNamedUpgrade(ctx sdk.Context) {
 	if !app.upgradePlanPending(ctx, info.Name) || info.Height != ctx.BlockHeight() {
 		return
 	}
-	if missing := app.unmountedActivationStores(); len(missing) > 0 {
-		panic(fmt.Errorf("upgrade %s is due at height %d but the store loader did not add the activation stores %s: the upgrade info height must equal the last committed height plus one when the process starts",
-			info.Name, info.Height, strings.Join(missing, ", ")))
+	if missing := app.unmountedPlanStores(info.Name); len(missing) > 0 {
+		stores := info.Name
+		if info.Name == ActivationUpgrade {
+			stores = "activation"
+		}
+		panic(fmt.Errorf("upgrade %s is due at height %d but the store loader did not add the %s stores %s: the upgrade info height must equal the last committed height plus one when the process starts",
+			info.Name, info.Height, stores, strings.Join(missing, ", ")))
 	}
 	plan := upgradetypes.Plan{Name: info.Name, Height: ctx.BlockHeight()}
 	logger.Info("applying upgrade", "name", plan.Name, "at", plan.DueAt())
@@ -617,20 +629,36 @@ type pendingStoreReporter interface {
 }
 
 // unmountedActivationStores names the stores the activation plan adds that the
-// commit multistore does not carry, or carries only as a pending placeholder of
-// its state-commitment store. Only a process that read the plan's upgrade info
-// file at one above its last committed height mounts them, through the upgrade
-// store loader the store-loader wiring installs for the plan's name. A commit
-// multistore that cannot report pending stores is judged on the stores it
-// carries alone.
+// commit multistore does not mount.
 func (app *App) unmountedActivationStores() []string {
+	return app.unmountedPlanStores(ActivationUpgrade)
+}
+
+// unmountedPlanStores names the stores the named plan adds that the commit
+// multistore does not carry, or carries only as a pending placeholder of its
+// state-commitment store. Only a process that read the plan's upgrade info file
+// at one above its last committed height mounts them, through the upgrade store
+// loader the store-loader wiring installs for the plan's name. Only the
+// activation and v6.12.0 plans are judged; every other plan names none. A
+// commit multistore that cannot report pending stores is judged on the stores
+// it carries alone.
+func (app *App) unmountedPlanStores(name string) []string {
+	var upgrades storetypes.StoreUpgrades
+	switch name {
+	case ActivationUpgrade:
+		upgrades = activationStoreUpgrades()
+	case V6120Upgrade:
+		upgrades = v6120StoreUpgrades()
+	default:
+		return nil
+	}
 	cms := app.CommitMultiStore()
 	reporter, reports := cms.(pendingStoreReporter)
 	var missing []string
-	for _, name := range activationStoreUpgrades().Added {
-		key := app.GetKey(name)
-		if key == nil || cms.GetCommitKVStore(key) == nil || (reports && reporter.IsPendingStore(name)) {
-			missing = append(missing, name)
+	for _, store := range upgrades.Added {
+		key := app.GetKey(store)
+		if key == nil || cms.GetCommitKVStore(key) == nil || (reports && reporter.IsPendingStore(store)) {
+			missing = append(missing, store)
 		}
 	}
 	return missing
