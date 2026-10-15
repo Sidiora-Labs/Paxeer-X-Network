@@ -1,0 +1,410 @@
+[
+  {
+    "kind": "function",
+    "name": "BPS_DENOMINATOR",
+    "signature": "BPS_DENOMINATOR()",
+    "id": "0xe1a45218"
+  },
+  {
+    "kind": "function",
+    "name": "DEFAULT_MAX_UTILIZATION_BPS",
+    "signature": "DEFAULT_MAX_UTILIZATION_BPS()",
+    "id": "0xfc2a3957"
+  },
+  {
+    "kind": "function",
+    "name": "WETH",
+    "signature": "WETH()",
+    "id": "0xad5c4648"
+  },
+  {
+    "kind": "function",
+    "name": "authorizedOperators",
+    "signature": "authorizedOperators(address)",
+    "id": "0x181d989b"
+  },
+  {
+    "kind": "function",
+    "name": "deposit",
+    "signature": "deposit(address,uint256)",
+    "id": "0x47e7ef24"
+  },
+  {
+    "kind": "function",
+    "name": "depositBatch",
+    "signature": "depositBatch(address[],uint256[])",
+    "id": "0xb9179d21"
+  },
+  {
+    "kind": "function",
+    "name": "depositNative",
+    "signature": "depositNative()",
+    "id": "0xdb6b5246"
+  },
+  {
+    "kind": "function",
+    "name": "emergencyWithdraw",
+    "signature": "emergencyWithdraw(address,uint256,address)",
+    "id": "0x551512de"
+  },
+  {
+    "kind": "function",
+    "name": "getAllReserves",
+    "signature": "getAllReserves()",
+    "id": "0x6aa701bf"
+  },
+  {
+    "kind": "function",
+    "name": "getRegisteredStablecoins",
+    "signature": "getRegisteredStablecoins()",
+    "id": "0x8790e479"
+  },
+  {
+    "kind": "function",
+    "name": "getRegisteredTokenCount",
+    "signature": "getRegisteredTokenCount()",
+    "id": "0x5c549d81"
+  },
+  {
+    "kind": "function",
+    "name": "getRegisteredTokens",
+    "signature": "getRegisteredTokens()",
+    "id": "0x14cbd993"
+  },
+  {
+    "kind": "function",
+    "name": "getReserves",
+    "signature": "getReserves(address)",
+    "id": "0x3e99c1e4"
+  },
+  {
+    "kind": "function",
+    "name": "getTokenDecimals",
+    "signature": "getTokenDecimals(address)",
+    "id": "0x785c7cf6"
+  },
+  {
+    "kind": "function",
+    "name": "getTokenInfo",
+    "signature": "getTokenInfo(address)",
+    "id": "0x1f69565f"
+  },
+  {
+    "kind": "function",
+    "name": "getUntrackedFunds",
+    "signature": "getUntrackedFunds(address)",
+    "id": "0xb73954da"
+  },
+  {
+    "kind": "function",
+    "name": "hasLiquidity",
+    "signature": "hasLiquidity(address,uint256)",
+    "id": "0xf19476e2"
+  },
+  {
+    "kind": "function",
+    "name": "isStablecoin",
+    "signature": "isStablecoin(address)",
+    "id": "0x1a650cc7"
+  },
+  {
+    "kind": "function",
+    "name": "isTokenPaused",
+    "signature": "isTokenPaused(address)",
+    "id": "0x5e76ad54"
+  },
+  {
+    "kind": "function",
+    "name": "maxUtilizationBps",
+    "signature": "maxUtilizationBps(address)",
+    "id": "0x965611eb"
+  },
+  {
+    "kind": "function",
+    "name": "owner",
+    "signature": "owner()",
+    "id": "0x8da5cb5b"
+  },
+  {
+    "kind": "function",
+    "name": "pausedTokens",
+    "signature": "pausedTokens(address)",
+    "id": "0xee7a4596"
+  },
+  {
+    "kind": "function",
+    "name": "pullTokens",
+    "signature": "pullTokens(address,address,uint256)",
+    "id": "0xac85dca7"
+  },
+  {
+    "kind": "function",
+    "name": "pushTokens",
+    "signature": "pushTokens(address,address,uint256)",
+    "id": "0xa6c29ca3"
+  },
+  {
+    "kind": "function",
+    "name": "registerToken",
+    "signature": "registerToken(address,bool)",
+    "id": "0x6710b83f"
+  },
+  {
+    "kind": "function",
+    "name": "registeredStablecoins",
+    "signature": "registeredStablecoins(uint256)",
+    "id": "0xe4c20a3f"
+  },
+  {
+    "kind": "function",
+    "name": "registeredTokens",
+    "signature": "registeredTokens(uint256)",
+    "id": "0x9a0ba2ea"
+  },
+  {
+    "kind": "function",
+    "name": "renounceOwnership",
+    "signature": "renounceOwnership()",
+    "id": "0x715018a6"
+  },
+  {
+    "kind": "function",
+    "name": "setMaxUtilizationBps",
+    "signature": "setMaxUtilizationBps(address,uint256)",
+    "id": "0x07e31551"
+  },
+  {
+    "kind": "function",
+    "name": "setOperator",
+    "signature": "setOperator(address,bool)",
+    "id": "0x558a7297"
+  },
+  {
+    "kind": "function",
+    "name": "setStablecoinStatus",
+    "signature": "setStablecoinStatus(address,bool)",
+    "id": "0x72a4acb8"
+  },
+  {
+    "kind": "function",
+    "name": "setTokenPaused",
+    "signature": "setTokenPaused(address,bool)",
+    "id": "0x62257470"
+  },
+  {
+    "kind": "function",
+    "name": "setTransactionTracker",
+    "signature": "setTransactionTracker(address)",
+    "id": "0xd25a18e5"
+  },
+  {
+    "kind": "function",
+    "name": "shareTokens",
+    "signature": "shareTokens(address)",
+    "id": "0x96153f07"
+  },
+  {
+    "kind": "function",
+    "name": "syncAllReserves",
+    "signature": "syncAllReserves()",
+    "id": "0x78743ca5"
+  },
+  {
+    "kind": "function",
+    "name": "syncReserves",
+    "signature": "syncReserves(address)",
+    "id": "0xfacdfb5e"
+  },
+  {
+    "kind": "function",
+    "name": "tokens",
+    "signature": "tokens(address)",
+    "id": "0xe4860339"
+  },
+  {
+    "kind": "function",
+    "name": "transactionTracker",
+    "signature": "transactionTracker()",
+    "id": "0xa4cf2f1c"
+  },
+  {
+    "kind": "function",
+    "name": "transferOwnership",
+    "signature": "transferOwnership(address)",
+    "id": "0xf2fde38b"
+  },
+  {
+    "kind": "function",
+    "name": "updateReserves",
+    "signature": "updateReserves(address,uint256,address,uint256)",
+    "id": "0x11948d22"
+  },
+  {
+    "kind": "function",
+    "name": "withdraw",
+    "signature": "withdraw(address,uint256)",
+    "id": "0xf3fef3a3"
+  },
+  {
+    "kind": "function",
+    "name": "withdrawNative",
+    "signature": "withdrawNative(uint256,address)",
+    "id": "0xb8ca8dd8"
+  },
+  {
+    "kind": "event",
+    "name": "Deposit",
+    "signature": "Deposit(address,address,uint256,uint256)",
+    "id": "0xdcbc1c05240f31ff3ad067ef1ee35ce4997762752e3a095284754544f4c709d7"
+  },
+  {
+    "kind": "event",
+    "name": "LPWithdrawal",
+    "signature": "LPWithdrawal(address,address,uint256,uint256)",
+    "id": "0xbacc4c5632df305652cdf9d17913383ae2857b949b623a2ce7b3537458bd0075"
+  },
+  {
+    "kind": "event",
+    "name": "NativeDeposit",
+    "signature": "NativeDeposit(address,uint256,uint256)",
+    "id": "0x2d45cf213b0878e6582a0bddc676c202f8f57ed3cd74e8ccf8955ce1359bd427"
+  },
+  {
+    "kind": "event",
+    "name": "NativeWithdrawal",
+    "signature": "NativeWithdrawal(address,uint256,uint256)",
+    "id": "0x4c556479041161db341af3dc4010b53fa70282739dc38d464ff9628ee9c9d29f"
+  },
+  {
+    "kind": "event",
+    "name": "OperatorUpdated",
+    "signature": "OperatorUpdated(address,bool)",
+    "id": "0x966c160e1c4dbc7df8d69af4ace01e9297c3cf016397b7914971f2fbfa32672d"
+  },
+  {
+    "kind": "event",
+    "name": "OwnershipTransferred",
+    "signature": "OwnershipTransferred(address,address)",
+    "id": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
+  },
+  {
+    "kind": "event",
+    "name": "ReservesSync",
+    "signature": "ReservesSync(address,uint256,uint256,uint256)",
+    "id": "0x055fb2ac115b8a1258ed74cd751869f95f1fb10b2c889147acbaca28ba479e5f"
+  },
+  {
+    "kind": "event",
+    "name": "ReservesUpdated",
+    "signature": "ReservesUpdated(address,uint256,uint256)",
+    "id": "0xa2c850dc6f3f3d2193ff68281de055559c5468fc0c89311bca2d25f8e50a38f5"
+  },
+  {
+    "kind": "event",
+    "name": "ShareTokenCreated",
+    "signature": "ShareTokenCreated(address,address)",
+    "id": "0x6f64ce3fea7909e3e9ebc85ea8450670af3fe5d23143325c4f1ebd38c5343256"
+  },
+  {
+    "kind": "event",
+    "name": "TokenPauseUpdated",
+    "signature": "TokenPauseUpdated(address,bool)",
+    "id": "0x253b2f7aa4de4ccf23ab8e9c2078ab1cc589649293d26006ecdf802a5d6b451d"
+  },
+  {
+    "kind": "event",
+    "name": "TokenRegistered",
+    "signature": "TokenRegistered(address,uint8,bool)",
+    "id": "0x3247537f6efe5e5d3f25242f42522e1bfbabeea906fc7005a128b11bcdb3f99b"
+  },
+  {
+    "kind": "event",
+    "name": "TransactionTrackerUpdated",
+    "signature": "TransactionTrackerUpdated(address)",
+    "id": "0x3dd2b7e16ddea78bec31b5b95991ba3d03fda27bc5c8a8441775b76c8f88033e"
+  },
+  {
+    "kind": "event",
+    "name": "UtilizationCapUpdated",
+    "signature": "UtilizationCapUpdated(address,uint256)",
+    "id": "0xbcfb6f6e36e3fb105ffb3042d755b572cec796e9c4c634f0bb7ef3c8967331ac"
+  },
+  {
+    "kind": "event",
+    "name": "Withdrawal",
+    "signature": "Withdrawal(address,address,uint256,uint256)",
+    "id": "0xc2b4a290c20fb28939d29f102514fbffd2b73c059ffba8b78250c94161d5fcc6"
+  },
+  {
+    "kind": "error",
+    "name": "InsufficientLiquidity",
+    "signature": "InsufficientLiquidity()",
+    "id": "0xbb55fd27"
+  },
+  {
+    "kind": "error",
+    "name": "InvalidArrayLength",
+    "signature": "InvalidArrayLength()",
+    "id": "0x9d89020a"
+  },
+  {
+    "kind": "error",
+    "name": "OwnableInvalidOwner",
+    "signature": "OwnableInvalidOwner(address)",
+    "id": "0x1e4fbdf7"
+  },
+  {
+    "kind": "error",
+    "name": "OwnableUnauthorizedAccount",
+    "signature": "OwnableUnauthorizedAccount(address)",
+    "id": "0x118cdaa7"
+  },
+  {
+    "kind": "error",
+    "name": "ReentrancyGuardReentrantCall",
+    "signature": "ReentrancyGuardReentrantCall()",
+    "id": "0x3ee5aeb5"
+  },
+  {
+    "kind": "error",
+    "name": "SafeERC20FailedOperation",
+    "signature": "SafeERC20FailedOperation(address)",
+    "id": "0x5274afe7"
+  },
+  {
+    "kind": "error",
+    "name": "TokenNotRegistered",
+    "signature": "TokenNotRegistered()",
+    "id": "0x259ba1ad"
+  },
+  {
+    "kind": "error",
+    "name": "TokenPaused",
+    "signature": "TokenPaused()",
+    "id": "0xe7792495"
+  },
+  {
+    "kind": "error",
+    "name": "UnsupportedInputTransfer",
+    "signature": "UnsupportedInputTransfer()",
+    "id": "0x1c42e5ce"
+  },
+  {
+    "kind": "error",
+    "name": "UnsupportedTransfer",
+    "signature": "UnsupportedTransfer()",
+    "id": "0xce2d28e1"
+  },
+  {
+    "kind": "error",
+    "name": "WethOnly",
+    "signature": "WethOnly()",
+    "id": "0xcfab6517"
+  },
+  {
+    "kind": "error",
+    "name": "ZeroAmount",
+    "signature": "ZeroAmount()",
+    "id": "0x1f2a2005"
+  }
+]
