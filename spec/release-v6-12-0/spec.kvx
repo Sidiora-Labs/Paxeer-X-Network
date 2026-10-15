@@ -21620,7 +21620,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.3.6]
 title = "Keep the Chainflow market streams on FEED_ORIGIN and pin the reconnect policy"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = []
