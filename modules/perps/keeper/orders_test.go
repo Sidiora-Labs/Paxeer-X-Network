@@ -291,7 +291,8 @@ func TestOrdersTickAndLot(t *testing.T) {
 	waiting := env.order(t, 2)
 	require.Equal(t, types.OrderStatusUntriggered, waiting.Status)
 	require.Equal(t, wordOf(t, "98190000000000000"), waiting.SizeBase)
-	trigger := e18(61_000).Bytes32()
+	price := e18(61_000)
+	trigger := price.Bytes32()
 	require.True(t, env.ctx.KVStore(env.perpsKey).Has(types.TriggerKey(0, types.TriggerRising, trigger[:], 2)))
 	require.Equal(t, uint64(2), env.account(t, traderA).OpenOrderCount)
 }

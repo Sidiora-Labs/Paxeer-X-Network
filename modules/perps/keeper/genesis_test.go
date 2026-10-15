@@ -28,7 +28,8 @@ func genesisE18(value uint64) uint256.Int {
 }
 
 func wordValue(value uint64) []byte {
-	word := genesisWord(value).Bytes32()
+	number := genesisWord(value)
+	word := number.Bytes32()
 	return word[:]
 }
 

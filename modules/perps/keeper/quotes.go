@@ -297,6 +297,20 @@ func (k Keeper) QuoteMarket(ctx sdk.Context, marketID uint64) (MarketQuote, erro
 	return quote, nil
 }
 
+// OracleTWAP is the hourly premium-sample average price: the mean of the
+// index prices observed at the premium samples of the current funding hour,
+// or the current index price before the first sample of the hour.
+func (k Keeper) OracleTWAP(ctx sdk.Context, marketID uint64) (*big.Int, error) {
+	state, err := k.quoteState(ctx, marketID)
+	if err != nil {
+		return nil, err
+	}
+	if state.PremiumCount == 0 {
+		return state.IndexPrice.ToBig(), nil
+	}
+	return new(big.Int).Quo(state.OracleSum.ToBig(), new(big.Int).SetUint64(state.PremiumCount)), nil
+}
+
 func (k Keeper) quotePlace(ctx sdk.Context, order types.Order) ([]types.EventRecord, error) {
 	placed, err := k.PlaceOrder(ctx, order.Account, OrderParams{MarketID: order.MarketID, IsLong: order.IsLong,
 		OrderType: uint8(order.Type), TimeInForce: uint8(order.TimeInForce), SizeUsd: order.SizeUsd,

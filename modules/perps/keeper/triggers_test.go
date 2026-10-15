@@ -19,8 +19,6 @@ import (
 )
 
 var (
-	traderA = common.HexToAddress("0x00000000000000000000000000000000000000a1")
-	traderB = common.HexToAddress("0x00000000000000000000000000000000000000b2")
 	traderC = common.HexToAddress("0x00000000000000000000000000000000000000c3")
 )
 
@@ -238,11 +236,11 @@ func TestTriggersStopAtMark(t *testing.T) {
 	evaluated, events, err = env.k.EvaluateTriggers(env.ctx, market, mark, 256)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), evaluated)
-	require.Equal(t, []string{types.EventOrderTriggered, stop.ID.Dec(), "0", e18(58_990).Dec()}, eventArgs(events[0]))
+	require.Equal(t, []string{types.EventOrderTriggered, stop.ID.Dec(), "0", e18Dec(58_990)}, eventArgs(events[0]))
 	fills := eventsNamed(events, types.EventFill)
 	require.Len(t, fills, 1)
 	require.Equal(t, []string{types.EventFill, "0", maker.ID.Dec(), stop.ID.Dec(), traderB.Hex(), traderA.Hex(), "false",
-		e18(58_980).Dec(), "589800000000000000000"}, eventArgs(fills[0])[:9])
+		e18Dec(58_980), "589800000000000000000"}, eventArgs(fills[0])[:9])
 
 	filled := env.order(t, stop.ID)
 	require.Equal(t, types.OrderStatusFilled, filled.Status)
@@ -329,7 +327,7 @@ func TestTriggersOneCancelsOther(t *testing.T) {
 	require.NoError(t, err)
 	events, err := env.k.SetPositionTpSl(env.ctx, traderA, position.ID, e18(66_000), e18(57_000))
 	require.NoError(t, err)
-	require.Equal(t, []string{types.EventPositionTpSlSet, position.ID.Dec(), e18(66_000).Dec(), e18(57_000).Dec()},
+	require.Equal(t, []string{types.EventPositionTpSlSet, position.ID.Dec(), e18Dec(66_000), e18Dec(57_000)},
 		eventArgs(events[len(events)-1]))
 	require.Len(t, eventsNamed(events, types.EventOrderCancelled), 2)
 	require.Equal(t, types.OrderStatusCancelled, env.order(t, before.TakeProfitOrderID).Status)
@@ -338,7 +336,7 @@ func TestTriggersOneCancelsOther(t *testing.T) {
 	require.NoError(t, err)
 	tp, sl := env.order(t, pair.TakeProfitOrderID), env.order(t, pair.StopLossOrderID)
 	require.Equal(t, []string{types.EventOrderPlaced, tp.ID.Dec(), traderA.Hex(), "0",
-		fmt.Sprint(uint8(types.OrderTypeTakeProfit)), "false", e18(66_000).Dec(), e18(6_000).Dec()},
+		fmt.Sprint(uint8(types.OrderTypeTakeProfit)), "false", e18Dec(66_000), e18Dec(6_000)},
 		eventArgs(eventsNamed(events, types.EventOrderPlaced)[0]))
 	for _, leg := range []types.Order{tp, sl} {
 		require.Equal(t, types.OrderStatusUntriggered, leg.Status)
@@ -359,7 +357,7 @@ func TestTriggersOneCancelsOther(t *testing.T) {
 	evaluated, events, err := env.k.EvaluateTriggers(env.ctx, market, mark, 256)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), evaluated)
-	require.Equal(t, []string{types.EventOrderTriggered, tp.ID.Dec(), "0", e18(66_000).Dec()}, eventArgs(events[0]))
+	require.Equal(t, []string{types.EventOrderTriggered, tp.ID.Dec(), "0", e18Dec(66_000)}, eventArgs(events[0]))
 	require.Len(t, eventsNamed(events, types.EventFill), 1)
 	cancelled := eventsNamed(events, types.EventOrderCancelled)
 	require.Len(t, cancelled, 1)
@@ -398,7 +396,7 @@ func TestTriggersStopLimitRests(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), evaluated)
 	require.Len(t, events, 1)
-	require.Equal(t, []string{types.EventOrderTriggered, stop.ID.Dec(), "0", e18(61_000).Dec()}, eventArgs(events[0]))
+	require.Equal(t, []string{types.EventOrderTriggered, stop.ID.Dec(), "0", e18Dec(61_000)}, eventArgs(events[0]))
 
 	rested := env.order(t, stop.ID)
 	require.Equal(t, types.OrderStatusResting, rested.Status)

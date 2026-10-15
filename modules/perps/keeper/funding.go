@@ -75,6 +75,9 @@ func (k *Keeper) SamplePremium(ctx sdk.Context, market types.Market) (bool, erro
 	if state.PremiumSum, err = signedWord(sum, market.ID); err != nil {
 		return false, err
 	}
+	if _, overflow := state.OracleSum.AddOverflow(&state.OracleSum, &state.IndexPrice); overflow {
+		return false, fmt.Errorf("%w: market %d oracle price sum", types.ErrOverflow, market.ID)
+	}
 	if state.PremiumCount == ^uint64(0) {
 		return false, fmt.Errorf("%w: market %d premium sample count", types.ErrOverflow, market.ID)
 	}
@@ -180,6 +183,7 @@ func (k *Keeper) SettleFunding(ctx sdk.Context, market types.Market) ([]types.Ev
 	state.LastIndexHour = hour
 	if first {
 		state.PremiumSum = uint256.Int{}
+		state.OracleSum = uint256.Int{}
 		state.PremiumCount = 0
 		k.setFundingMarketState(ctx, state)
 		return nil, nil
@@ -200,6 +204,7 @@ func (k *Keeper) SettleFunding(ctx sdk.Context, market types.Market) ([]types.Ev
 		return nil, err
 	}
 	state.PremiumSum = uint256.Int{}
+	state.OracleSum = uint256.Int{}
 	state.PremiumCount = 0
 	k.setFundingMarketState(ctx, state)
 

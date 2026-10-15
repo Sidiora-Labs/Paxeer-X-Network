@@ -290,7 +290,7 @@ func TestAccountWithdrawableBound(t *testing.T) {
 	_, _, err = e.k.EmergencyWithdraw(e.ctx, e.a)
 	requireCode(t, err, types.ErrInsufficientMargin)
 	require.Equal(t, accountUnits(250_000_000), e.account(e.a).Collateral)
-	require.True(t, e.account(e.b).Collateral.IsZero())
+	require.Equal(t, uint256.Int{}, e.account(e.b).Collateral)
 
 	events, err := e.k.Withdraw(e.ctx, e.a, accountUnits(150_000_000))
 	require.NoError(t, err)
@@ -336,7 +336,7 @@ func TestAccountWithdrawableBound(t *testing.T) {
 	}, events)
 	e.payLeg(c, 40_000_000)
 	require.Equal(t, int64(40_000_000), e.balanceOf(c))
-	require.True(t, e.account(c).Collateral.IsZero())
+	require.Equal(t, uint256.Int{}, e.account(c).Collateral)
 	_, _, err = e.k.EmergencyWithdraw(e.ctx, c)
 	requireCode(t, err, types.ErrZeroAmount)
 }
@@ -398,7 +398,7 @@ func TestAccountSettleBooksResidue(t *testing.T) {
 	require.Empty(t, events)
 	require.Equal(t, accountUnits(269_999_999), e.account(e.a).Collateral)
 	require.Equal(t, wordOf(t, "1000000000000"), e.books().ResidueUsd)
-	require.True(t, e.books().DeficitSumUsd.IsZero())
+	require.Equal(t, uint256.Int{}, e.books().DeficitSumUsd)
 	position = e.position(1)
 	require.Equal(t, e18(51_000), position.ReferencePrice)
 	require.Equal(t, e18(1_020), position.CostBasisUsd)

@@ -133,7 +133,8 @@ type Account struct {
 // MarketState is the binary value of prefix 0x03 and replaces
 // lx_perps_funding_state. PremiumEma (EMA of mid minus oracle), FundingIndex
 // (cumulative funding per unit of base), HourlyRate and PremiumSum are signed;
-// LastIndexHour is floor(block time / 3600) of the last index step and the
+// OracleSum is the sum of the index prices at the premium samples of the
+// hour; LastIndexHour is floor(block time / 3600) of the last index step and the
 // open interest is in base units.
 type MarketState struct {
 	MarketID          uint64      `json:"market_id"`
@@ -147,6 +148,7 @@ type MarketState struct {
 	FundingIndex      uint256.Int `json:"funding_index"`
 	HourlyRate        uint256.Int `json:"hourly_rate"`
 	PremiumSum        uint256.Int `json:"premium_sum"`
+	OracleSum         uint256.Int `json:"oracle_sum"`
 	PremiumCount      uint64      `json:"premium_count"`
 	LastSampleTime    uint64      `json:"last_sample_time"`
 	LastIndexHour     uint64      `json:"last_index_hour"`
@@ -358,7 +360,7 @@ func (m MarketState) Marshal() []byte {
 	w.u64(m.PriceTimestampMs)
 	w.flag(m.Fresh)
 	for _, value := range []uint256.Int{
-		m.MarkPrice, m.PremiumEma, m.LastTradePrice, m.FundingIndex, m.HourlyRate, m.PremiumSum,
+		m.MarkPrice, m.PremiumEma, m.LastTradePrice, m.FundingIndex, m.HourlyRate, m.PremiumSum, m.OracleSum,
 	} {
 		w.word(value)
 	}
@@ -380,7 +382,7 @@ func (m *MarketState) Unmarshal(bz []byte) error {
 	out.PriceTimestampMs = r.u64()
 	out.Fresh = r.flag()
 	for _, field := range []*uint256.Int{
-		&out.MarkPrice, &out.PremiumEma, &out.LastTradePrice, &out.FundingIndex, &out.HourlyRate, &out.PremiumSum,
+		&out.MarkPrice, &out.PremiumEma, &out.LastTradePrice, &out.FundingIndex, &out.HourlyRate, &out.PremiumSum, &out.OracleSum,
 	} {
 		*field = r.word()
 	}

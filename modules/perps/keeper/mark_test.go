@@ -82,6 +82,11 @@ func (env markEnv) atBlock(height int64, nowMs int64) markEnv {
 	return env
 }
 
+func e18Dec(n int64) string {
+	value := e18(n)
+	return value.Dec()
+}
+
 func e18(n int64) uint256.Int {
 	var value uint256.Int
 	value.Mul(uint256.NewInt(uint64(n)), uint256.NewInt(1_000_000_000_000_000_000))
