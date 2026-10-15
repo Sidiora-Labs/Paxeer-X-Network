@@ -717,7 +717,7 @@ pub fn run_round(
                     scope.spawn(move || {
                         config
                             .chainflow
-                            .fetch_ticker(agent, &market.symbol, api_key, now_ms())
+                            .fetch_ticker(agent, &market.symbol, api_key, now_ms)
                     }),
                 )
             })

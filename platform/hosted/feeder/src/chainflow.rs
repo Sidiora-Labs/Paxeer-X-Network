@@ -135,7 +135,8 @@ impl ChainflowConfig {
             .build())
     }
 
-    /// Fetches and checks one market's ticker.
+    /// Fetches and checks one market's ticker; `now_ms` is read once the
+    /// response body has arrived, so the quote age is taken at receipt.
     ///
     /// # Errors
     /// Refuses as [`status_error`] and [`ChainflowConfig::parse_ticker`] do,
@@ -145,7 +146,7 @@ impl ChainflowConfig {
         agent: &ureq::Agent,
         symbol: &str,
         api_key: &str,
-        now_ms: u64,
+        now_ms: impl FnOnce() -> u64,
     ) -> Result<Ticker, FetchError> {
         let mut response = self
             .ticker_request(agent, symbol, api_key)?
@@ -156,7 +157,7 @@ impl ChainflowConfig {
             .body_mut()
             .read_to_string()
             .map_err(|e| FetchError::Transport(e.to_string()))?;
-        self.parse_ticker(&body, symbol, now_ms)
+        self.parse_ticker(&body, symbol, now_ms())
     }
 
     /// Checks a 200 ticker body for the request `symbol`: the response symbol
@@ -286,6 +287,11 @@ mod tests {
         parse_json_number_fixed, status_error, ChainflowConfig, FetchError, Ticker, API_KEY_HEADER,
         MAX_PRICE,
     };
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::thread;
 
     const BTC: &str = include_str!("../tests/fixtures/chainflow_ticker_btc.json");
 
@@ -420,6 +426,88 @@ mod tests {
                 .map(|t| t.observed_at_ms),
             Ok(1_700_000_000_000)
         );
+    }
+
+    /// Serves one ticker response whose `updated_at` is `updated_at`; the
+    /// returned flag turns true once the request has arrived, before the
+    /// response is written.
+    fn serve_ticker_once(
+        updated_at: u64,
+    ) -> Result<(String, Arc<AtomicBool>, thread::JoinHandle<()>), String> {
+        let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+        let base_url = format!(
+            "http://{}",
+            listener.local_addr().map_err(|e| e.to_string())?
+        );
+        let received = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&received);
+        let server = thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let mut request = Vec::new();
+            let mut buf = [0_u8; 1024];
+            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                match stream.read(&mut buf) {
+                    Ok(0) | Err(_) => return,
+                    Ok(n) => request.extend_from_slice(&buf[..n]),
+                }
+            }
+            flag.store(true, Ordering::SeqCst);
+            let body = format!(
+                r#"{{"symbol":"PERP_BTC_USDC","index_price":65000.5,"mark_price":65010,"updated_at":{updated_at}}}"#
+            );
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(response.as_bytes());
+        });
+        Ok((base_url, received, server))
+    }
+
+    /// Fetches through the real HTTP path with a clock that reads `START`
+    /// until the server has received the request and `START + 100` after.
+    fn fetch_with_request_in_flight(updated_at: u64) -> Result<Result<Ticker, FetchError>, String> {
+        const START: u64 = 1_700_000_000_000;
+        let (base_url, received, server) = serve_ticker_once(updated_at)?;
+        let mut config = config("UNUSED");
+        config.base_url = base_url;
+        let agent = ureq::Agent::new_with_defaults();
+        let result = config.fetch_ticker(&agent, "BTC", "k1", || {
+            if received.load(Ordering::SeqCst) {
+                START + 100
+            } else {
+                START
+            }
+        });
+        server.join().map_err(|_| "server panicked".to_owned())?;
+        Ok(result)
+    }
+
+    #[test]
+    fn chainflow_fetch_takes_quote_age_at_receipt() -> Result<(), String> {
+        assert_eq!(
+            fetch_with_request_in_flight(1_700_000_000_050)?,
+            Ok(Ticker {
+                index_price: "65000500000000000000000".to_owned(),
+                mark_price: "65010000000000000000000".to_owned(),
+                observed_at_ms: 1_700_000_000_050,
+            })
+        );
+        assert_eq!(
+            fetch_with_request_in_flight(1_700_000_000_101)?,
+            Err(FetchError::Stale)
+        );
+        assert_eq!(
+            fetch_with_request_in_flight(1_699_999_990_050)?,
+            Err(FetchError::Stale)
+        );
+        assert_eq!(
+            fetch_with_request_in_flight(1_699_999_990_100)?.map(|t| t.observed_at_ms),
+            Ok(1_699_999_990_100)
+        );
+        Ok(())
     }
 
     #[test]
