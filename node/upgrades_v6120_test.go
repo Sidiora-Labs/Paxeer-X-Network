@@ -553,7 +553,7 @@ func TestV6120AppliesThePlanOnTheHaltExport(t *testing.T) {
 
 	input := crypto.Keccak256([]byte("getActiveMarketIds()"))[:4]
 	exchange := common.HexToAddress(layerxexchangetypes.ExchangeAddress)
-	want, err := a.EvmKeeper.StaticCallEVM(after, sender, &exchange, input)
+	want, err := a.EvmKeeper.StaticCallEVM(after, senderPax, &exchange, input)
 	require.NoError(t, err)
 	require.NotEmpty(t, want)
 
