@@ -16,7 +16,7 @@ import (
 // carrying a message for any other authority, or a malformed proposal, is
 // refused before any message runs. The messages execute together: if one
 // fails, none of them changes the state. Proposal content executes only from
-// the recorded v6.11 activation height on; before it the handler refuses
+// the recorded v6.12.0 activation height on; before it the handler refuses
 // without touching state.
 func NewProposalHandler(k *keeper.Keeper) govtypes.Handler {
 	msgServer := keeper.NewMsgServerImpl(k)
