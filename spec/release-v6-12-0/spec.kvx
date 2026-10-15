@@ -6382,7 +6382,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.0.7]
 title = "Copy the v6.10 precompile, keeper and types into legacy packages"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
