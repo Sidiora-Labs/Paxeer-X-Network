@@ -7,6 +7,14 @@ import (
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
+// GetObservation returns the latest accepted observation of the validator
+// for the market and whether one is stored.
+func (k Keeper) GetObservation(ctx sdk.Context, marketID uint64, operator sdk.ValAddress) (types.ObservationRecord, bool) {
+	var record types.ObservationRecord
+	found := k.get(ctx, types.ObservationKey(marketID, operator), &record)
+	return record, found
+}
+
 // checkObservation applies the per-observation checks in order and returns
 // the reason of the first one that fails, or "" and the record to store.
 // The checks are unknown_market, market_disabled, sequence (the kernel
@@ -25,8 +33,7 @@ func (k Keeper) checkObservation(ctx sdk.Context, params types.Params, operator 
 		return types.RefusalMarketDisabled, types.ObservationRecord{}, nil
 	}
 
-	var stored types.ObservationRecord
-	if k.get(ctx, types.ObservationKey(market.ID, operator), &stored) && observation.Sequence <= stored.Sequence {
+	if stored, found := k.GetObservation(ctx, market.ID, operator); found && observation.Sequence <= stored.Sequence {
 		return types.RefusalSequence, types.ObservationRecord{}, nil
 	}
 

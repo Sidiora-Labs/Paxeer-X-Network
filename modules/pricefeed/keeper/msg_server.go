@@ -64,7 +64,7 @@ func (k Keeper) SubmitPrices(ctx sdk.Context, msg types.MsgSubmitPrices) (uint32
 	if !ok {
 		return 0, 0, types.ErrUnregisteredFeeder.Wrapf("feeder %s", msg.Feeder)
 	}
-	if err := k.requireBonded(ctx, operator); err != nil {
+	if err := k.RequireBonded(ctx, operator); err != nil {
 		return 0, 0, err
 	}
 	if count := len(msg.Observations); count > int(params.MaxObservationsPerSubmission) {

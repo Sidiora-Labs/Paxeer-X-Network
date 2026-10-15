@@ -33,8 +33,7 @@ func (k Keeper) Aggregate(ctx sdk.Context) {
 		}
 		var candidates []candidate
 		for _, operator := range bonded {
-			var record types.ObservationRecord
-			if k.get(ctx, types.ObservationKey(market.ID, operator), &record) &&
+			if record, found := k.GetObservation(ctx, market.ID, operator); found &&
 				withinStaleness(nowMs, record.SourceTimestampMs, params.StalenessWindowMs) {
 				candidates = append(candidates, candidate{operator: operator, record: record})
 			}

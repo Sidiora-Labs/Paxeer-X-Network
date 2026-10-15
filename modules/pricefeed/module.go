@@ -119,7 +119,11 @@ func (am AppModule) InitGenesis(ctx sdk.Context, _ codec.JSONCodec, gs json.RawM
 }
 
 func (am AppModule) ExportGenesis(ctx sdk.Context, _ codec.JSONCodec) json.RawMessage {
-	encoded, err := json.Marshal(am.keeper.ExportGenesis(ctx))
+	genesis, err := am.keeper.ExportGenesis(ctx)
+	if err != nil {
+		panic(err)
+	}
+	encoded, err := json.Marshal(genesis)
 	if err != nil {
 		panic(err)
 	}

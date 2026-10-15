@@ -9,9 +9,9 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-// requireBonded refuses an operator whose validator is unknown or outside the
+// RequireBonded refuses an operator whose validator is unknown or outside the
 // bonded set, the rule ValidateFeeder applies to oracle feeders.
-func (k Keeper) requireBonded(ctx sdk.Context, operator sdk.ValAddress) error {
+func (k Keeper) RequireBonded(ctx sdk.Context, operator sdk.ValAddress) error {
 	if val := k.stakingKeeper.Validator(ctx, operator); val == nil || !val.IsBonded() {
 		return types.ErrNotValidator.Wrapf("validator %s is not in the bonded set", operator)
 	}
@@ -35,7 +35,7 @@ func feedAccountOf(pubKey []byte) (sdk.AccAddress, error) {
 // validator, and creates the feed account in the auth module when absent. It
 // returns the feed account and the previous feed account, nil on a first key.
 func (k Keeper) RegisterFeedKey(ctx sdk.Context, operator sdk.ValAddress, pubKey []byte) (sdk.AccAddress, sdk.AccAddress, error) {
-	if err := k.requireBonded(ctx, operator); err != nil {
+	if err := k.RequireBonded(ctx, operator); err != nil {
 		return nil, nil, err
 	}
 	feedAccount, err := feedAccountOf(pubKey)
@@ -76,7 +76,7 @@ func (k Keeper) RegisterFeedKey(ctx sdk.Context, operator sdk.ValAddress, pubKey
 // RevokeFeedKey removes the feed key of a bonded validator and its reverse
 // entry and returns the feed account that held it.
 func (k Keeper) RevokeFeedKey(ctx sdk.Context, operator sdk.ValAddress) (sdk.AccAddress, error) {
-	if err := k.requireBonded(ctx, operator); err != nil {
+	if err := k.RequireBonded(ctx, operator); err != nil {
 		return nil, err
 	}
 	current, ok := k.GetFeedKey(ctx, operator)
