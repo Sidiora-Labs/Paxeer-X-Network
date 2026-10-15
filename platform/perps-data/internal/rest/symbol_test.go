@@ -502,6 +502,31 @@ func TestSymbolREST(t *testing.T) {
 		}
 	})
 
+	t.Run("perp_trades_liquidation_log_group", func(t *testing.T) {
+		reset(t, db)
+		takerFill := func(logIndex int, takerOrder int64, price, sizeUSD string) {
+			insert(t, db, row{table: "fills", kind: "fill", block: 200, logIndex: logIndex, at: now.Add(-time.Minute), emitter: perpsAddr, account: trader,
+				args:   []string{"market_id", "maker_order_id", "taker_order_id", "maker", "taker", "taker_is_long", "price", "size_usd", "maker_fee_usd", "taker_fee_usd"},
+				values: []any{0, 1, takerOrder, maker, trader, false, e18(t, price), e18(t, sizeUSD), "0", "0"}})
+		}
+		takerFill(10, 7, "60000", "6000")
+		takerFill(30, 8, "60000", "54000")
+		insert(t, db, row{table: "liquidations", kind: "liquidated", block: 200, logIndex: 40, at: now.Add(-time.Minute), emitter: perpsAddr, account: trader,
+			args:   []string{"position_id", "user", "market_id", "liquidation_price", "penalty", "keeper"},
+			values: []any{7, trader, 0, e18(t, "60000"), "0", addr(0, 0)}})
+
+		type flag struct {
+			ID          string `json:"id"`
+			Liquidation bool   `json:"liquidation"`
+		}
+		got := field[[]flag](t, getOK(t, s, "/api/btc/perp_trades/BTC"), "trades")
+		want := []flag{{ID: "200-30", Liquidation: true}, {ID: "200-10", Liquidation: false}}
+		if !slices.Equal(got, want) {
+			t.Fatalf("trades %+v, want %+v", got, want)
+		}
+		wantNumber(t, getOK(t, s, "/api/btc/perp_stats"), "liq_volume_24h", 54000)
+	})
+
 	t.Run("health", func(t *testing.T) {
 		reset(t, db)
 		fillAt := time.Unix(1760000000, 0).UTC()

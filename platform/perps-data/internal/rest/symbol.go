@@ -206,12 +206,19 @@ type healthBody struct {
 	Symbol   string  `json:"symbol"`
 }
 
-// liquidationFill is true when a Liquidation of the fill's taker in the same
-// market is in the same receipt as the fill: the liquidated account's
-// reduce-only market order is the taker of the slice (contracts/perps.md
-// section 14).
+// liquidationFill is true when the fill shares a log group with a
+// Liquidation of its taker in the same market: the slice's reduce-only market
+// order (contracts/perps.md section 14) is the taker order of the last fill of
+// that account and market before the Liquidation log in the receipt, and only
+// fills of that order belong to the group. Other fills of the same account and
+// market in the receipt, such as EndBlock triggered orders, do not.
 const liquidationFill = `EXISTS (SELECT 1 FROM perps.liquidations l
-	WHERE l.block = f.block AND l.tx_index = f.tx_index AND l.market_id = f.market_id AND l."user" = f.taker)`
+	WHERE l.block = f.block AND l.tx_index = f.tx_index AND l.market_id = f.market_id AND l."user" = f.taker
+		AND l.log_index > f.log_index
+		AND f.taker_order_id = (SELECT g.taker_order_id FROM perps.fills g
+			WHERE g.block = l.block AND g.tx_index = l.tx_index AND g.market_id = l.market_id AND g.taker = l."user"
+				AND g.log_index < l.log_index
+			ORDER BY g.log_index DESC, g.sub DESC LIMIT 1))`
 
 const latestMarkSQL = `SELECT mark_price / $2::numeric, index_price / $2::numeric,
 	round((mark_price - index_price) * 10000 / NULLIF(index_price, 0), 3), block_time
