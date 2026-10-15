@@ -21,3 +21,17 @@ command = "make test-lxphost"
 exit_code = 0
 log_path = "fleet logs 1.0.1-verify-1"
 observed_and_assumption = "The paxd-build and paxd-version-check targets are implemented but the v6.12.0 version output depends on tools/release/version.json, which still reads v6.11.0 and belongs to the release lane. Assumption: the release-lane version bump task updates version.json and the version check passes once it lands."
+
+[finding.2.0.7]
+revision = "b5288adb0"
+command = "go test ./precompiles/launchpad/legacy/v610/... -run 'TestRequiredGasIsPinned'"
+exit_code = 0
+log_path = "fleet logs 2.0.7-verify-2"
+observed_and_assumption = "The frozen v6.10 launchpad types cannot call sdkerrors.Register or RegisterInterfaces beside the live module: Register panics on the duplicate codespace and code, and the frozen types carry no proto registration, so the legacy errors use sdkerrors.New with unchanged codespace, code and text and the legacy keeper tests call the msg server directly. Assumption: the legacy snapshot is read by the migration and legacy-precompile tasks through its keeper, never routed as live messages, so the missing registrations change no observable behaviour."
+
+[finding.5.0.4]
+revision = "7461b9dfdaec24c43293bc64f5180f0e4d4812f8"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-oracle-feeder --test feeder"
+exit_code = 0
+log_path = "fleet logs 5.0.4-verify-1"
+observed_and_assumption = "do_1 registers a price-sidecar [[bin]] whose main.rs is written by the wave-2 sidecar binary task, and cargo rejects a manifest naming a bin path that does not exist, so the [[bin]] block was not added here. Assumption: the sidecar binary task adds the [[bin]] block together with its main.rs; its dispatch note carries this."
