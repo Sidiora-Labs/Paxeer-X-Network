@@ -31,7 +31,7 @@ var (
 )
 
 var seededTables = []string{
-	"fills", "mark_prices", "funding_rates", "funding_settlements", "open_interest", "liquidations",
+	"fills", "mark_prices", "index_prices", "funding_rates", "funding_settlements", "open_interest", "liquidations",
 	"spot_swaps", "spot_order_events", "spot_token_registry", "cursors",
 }
 
@@ -372,6 +372,37 @@ func TestSymbolREST(t *testing.T) {
 		wantNumber(t, body, "basis_bps", 1.218)
 		wantNumber(t, body, "long_short_ratio", 1.5)
 		wantNumber(t, body, "liq_volume_24h", 500)
+	})
+
+	t.Run("index_only_update", func(t *testing.T) {
+		reset(t, db)
+		aggregate := func(block int64, at time.Time, index, mark string) {
+			insert(t, db, row{table: "index_prices", kind: "aggregate", block: block, at: at, emitter: addr(0x20, 0x10), account: addr(0x20, 0x10),
+				args:   []string{"market_id", "index_price", "mark_price", "basis", "timestamp_ms", "sources", "required"},
+				values: []any{0, e18(t, index), e18(t, mark), "0", at.UnixMilli(), 4, 3}})
+		}
+		aggregate(99, now.Add(-4*time.Minute), "59000", "59000")
+		markPrice(t, db, 0, 100, now.Add(-3*time.Minute), "60000", "60000")
+		aggregate(101, now.Add(-2*time.Minute), "60001", "60000")
+		insert(t, db, row{table: "index_prices", kind: "skipped", block: 102, at: now.Add(-time.Minute), emitter: addr(0x20, 0x10), account: addr(0x20, 0x10),
+			args: []string{"market_id", "sources", "required"}, values: []any{0, 2, 3}})
+
+		body := getOK(t, s, "/api/btc/price")
+		wantNumber(t, body, "price", 60001)
+		if got, want := field[string](t, body, "timestamp"), now.Add(-2*time.Minute).Format("2006-01-02T15:04:05.000Z"); got != want {
+			t.Fatalf("timestamp %q, want %q", got, want)
+		}
+		body = getOK(t, s, "/api/btc/perp_stats")
+		wantNumber(t, body, "mark_price", 60000)
+		wantNumber(t, body, "index_price", 60001)
+		wantNumber(t, body, "basis_bps", -0.167)
+
+		reset(t, db)
+		aggregate(99, now.Add(-4*time.Minute), "59000", "59000")
+		markPrice(t, db, 0, 100, now.Add(-3*time.Minute), "60000", "60000")
+		body = getOK(t, s, "/api/btc/perp_stats")
+		wantNumber(t, body, "index_price", 60000)
+		wantNumber(t, body, "basis_bps", 0)
 	})
 
 	t.Run("trades", func(t *testing.T) {

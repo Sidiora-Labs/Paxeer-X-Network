@@ -220,10 +220,26 @@ const liquidationFill = `EXISTS (SELECT 1 FROM perps.liquidations l
 				AND g.log_index < l.log_index
 			ORDER BY g.log_index DESC, g.sub DESC LIMIT 1))`
 
-const latestMarkSQL = `SELECT mark_price / $2::numeric, index_price / $2::numeric,
-	round((mark_price - index_price) * 10000 / NULLIF(index_price, 0), 3), block_time
-	FROM perps.mark_prices WHERE market_id = $1
-	ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1`
+// latestMarkSQL reads the latest mark of perps.mark_prices and the latest index
+// of either a MarkPriceUpdated row or a successful pricefeed aggregate: the
+// pricefeed emits an aggregate for every updated aggregate, while perps logs
+// MarkPriceUpdated only when its mark changes (contracts/pricefeed.md, Events).
+const latestMarkSQL = `WITH m AS (
+	SELECT mark_price FROM perps.mark_prices WHERE market_id = $1
+	ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1
+), i AS (
+	SELECT index_price, block_time FROM (
+		(SELECT block, tx_index, log_index, sub, index_price, block_time FROM perps.mark_prices WHERE market_id = $1
+			ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1)
+		UNION ALL
+		(SELECT block, tx_index, log_index, sub, index_price, block_time FROM perps.index_prices
+			WHERE market_id = $1 AND kind = 'aggregate' AND index_price IS NOT NULL
+			ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1)
+	) u ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1
+)
+SELECT m.mark_price / $2::numeric, i.index_price / $2::numeric,
+	round((m.mark_price - i.index_price) * 10000 / NULLIF(i.index_price, 0), 3), i.block_time
+	FROM i LEFT JOIN m ON true`
 
 const fillWindowSQL = `SELECT (array_agg(f.price ORDER BY f.block, f.tx_index, f.log_index, f.sub))[1] / $3::numeric,
 	max(f.price) / $3::numeric, min(f.price) / $3::numeric,
