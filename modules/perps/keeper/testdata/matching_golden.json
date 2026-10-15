@@ -1,0 +1,1041 @@
+{
+  "market": {
+    "id": 0,
+    "symbol": "BTC",
+    "sz_decimals": 5,
+    "px_decimals": 1
+  },
+  "mark_price": "60000000000000000000000",
+  "taker_fee_ppm": 450,
+  "maker_fee_ppm": 150,
+  "accounts": {
+    "A": "0x00000000000000000000000000000000000a0001",
+    "B": "0x00000000000000000000000000000000000a0002",
+    "C": "0x00000000000000000000000000000000000a0003",
+    "D": "0x00000000000000000000000000000000000a0004"
+  },
+  "operations": [
+    {
+      "op": "place",
+      "account": "B",
+      "is_long": true,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "59900000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "20000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "1",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "C",
+      "is_long": true,
+      "type": 4,
+      "time_in_force": 1,
+      "limit_price": "0",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "LXP_PERPS_NO_LIQUIDITY",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "B",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60000000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "2",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "C",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60010000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "3",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "D",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60020000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "4",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "B",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60030000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "5",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "C",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60040000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "6",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "A",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60050000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "7",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "B",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60060000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "8",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "C",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60070000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "9",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "D",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60080000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "10",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "B",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60090000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "11",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "C",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60100000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "12",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "D",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60110000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "13",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "B",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60120000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "14",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "C",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60130000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "15",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "D",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60140000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "16",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "B",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60150000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "17",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "C",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60160000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "18",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "D",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60170000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "19",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "B",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60180000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "20",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "C",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60190000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "21",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "D",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60200000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "22",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "B",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60210000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "23",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "C",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60220000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "24",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "D",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60230000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "25",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "B",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60240000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "26",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "C",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60250000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "27",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "D",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60260000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "28",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "B",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60270000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "29",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "C",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60280000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "30",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "D",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60290000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "31",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "B",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60300000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "32",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "C",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60310000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "33",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "D",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60320000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "34",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "B",
+      "is_long": false,
+      "type": 0,
+      "time_in_force": 0,
+      "limit_price": "60000000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "20000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "35",
+        "status": 1,
+        "filled_base": "0",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "D",
+      "is_long": false,
+      "type": 4,
+      "time_in_force": 1,
+      "limit_price": "0",
+      "acceptable_price": "0",
+      "size_base": "5000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "36",
+        "status": 2,
+        "filled_base": "5000000000000000",
+        "fills": [
+          {
+            "maker_order_id": "1",
+            "maker": "B",
+            "price": "59900000000000000000000",
+            "size_base": "5000000000000000",
+            "size_usd": "299500000000000000000",
+            "maker_fee_usd": "44925000000000000",
+            "taker_fee_usd": "134775000000000000"
+          }
+        ],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "place",
+      "account": "A",
+      "is_long": true,
+      "type": 0,
+      "time_in_force": 1,
+      "limit_price": "60330000000000000000000",
+      "acceptable_price": "0",
+      "size_base": "335000000000000000",
+      "expect": {
+        "error": "",
+        "order_id": "37",
+        "status": 3,
+        "filled_base": "330000000000000000",
+        "fills": [
+          {
+            "maker_order_id": "2",
+            "maker": "B",
+            "price": "60000000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "600000000000000000000",
+            "maker_fee_usd": "90000000000000000",
+            "taker_fee_usd": "270000000000000000"
+          },
+          {
+            "maker_order_id": "35",
+            "maker": "B",
+            "price": "60000000000000000000000",
+            "size_base": "20000000000000000",
+            "size_usd": "1200000000000000000000",
+            "maker_fee_usd": "180000000000000000",
+            "taker_fee_usd": "540000000000000000"
+          },
+          {
+            "maker_order_id": "3",
+            "maker": "C",
+            "price": "60010000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "600100000000000000000",
+            "maker_fee_usd": "90015000000000000",
+            "taker_fee_usd": "270045000000000000"
+          },
+          {
+            "maker_order_id": "4",
+            "maker": "D",
+            "price": "60020000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "600200000000000000000",
+            "maker_fee_usd": "90030000000000000",
+            "taker_fee_usd": "270090000000000000"
+          },
+          {
+            "maker_order_id": "5",
+            "maker": "B",
+            "price": "60030000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "600300000000000000000",
+            "maker_fee_usd": "90045000000000000",
+            "taker_fee_usd": "270135000000000000"
+          },
+          {
+            "maker_order_id": "6",
+            "maker": "C",
+            "price": "60040000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "600400000000000000000",
+            "maker_fee_usd": "90060000000000000",
+            "taker_fee_usd": "270180000000000000"
+          },
+          {
+            "maker_order_id": "8",
+            "maker": "B",
+            "price": "60060000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "600600000000000000000",
+            "maker_fee_usd": "90090000000000000",
+            "taker_fee_usd": "270270000000000000"
+          },
+          {
+            "maker_order_id": "9",
+            "maker": "C",
+            "price": "60070000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "600700000000000000000",
+            "maker_fee_usd": "90105000000000000",
+            "taker_fee_usd": "270315000000000000"
+          },
+          {
+            "maker_order_id": "10",
+            "maker": "D",
+            "price": "60080000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "600800000000000000000",
+            "maker_fee_usd": "90120000000000000",
+            "taker_fee_usd": "270360000000000000"
+          },
+          {
+            "maker_order_id": "11",
+            "maker": "B",
+            "price": "60090000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "600900000000000000000",
+            "maker_fee_usd": "90135000000000000",
+            "taker_fee_usd": "270405000000000000"
+          },
+          {
+            "maker_order_id": "12",
+            "maker": "C",
+            "price": "60100000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "601000000000000000000",
+            "maker_fee_usd": "90150000000000000",
+            "taker_fee_usd": "270450000000000000"
+          },
+          {
+            "maker_order_id": "13",
+            "maker": "D",
+            "price": "60110000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "601100000000000000000",
+            "maker_fee_usd": "90165000000000000",
+            "taker_fee_usd": "270495000000000000"
+          },
+          {
+            "maker_order_id": "14",
+            "maker": "B",
+            "price": "60120000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "601200000000000000000",
+            "maker_fee_usd": "90180000000000000",
+            "taker_fee_usd": "270540000000000000"
+          },
+          {
+            "maker_order_id": "15",
+            "maker": "C",
+            "price": "60130000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "601300000000000000000",
+            "maker_fee_usd": "90195000000000000",
+            "taker_fee_usd": "270585000000000000"
+          },
+          {
+            "maker_order_id": "16",
+            "maker": "D",
+            "price": "60140000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "601400000000000000000",
+            "maker_fee_usd": "90210000000000000",
+            "taker_fee_usd": "270630000000000000"
+          },
+          {
+            "maker_order_id": "17",
+            "maker": "B",
+            "price": "60150000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "601500000000000000000",
+            "maker_fee_usd": "90225000000000000",
+            "taker_fee_usd": "270675000000000000"
+          },
+          {
+            "maker_order_id": "18",
+            "maker": "C",
+            "price": "60160000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "601600000000000000000",
+            "maker_fee_usd": "90240000000000000",
+            "taker_fee_usd": "270720000000000000"
+          },
+          {
+            "maker_order_id": "19",
+            "maker": "D",
+            "price": "60170000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "601700000000000000000",
+            "maker_fee_usd": "90255000000000000",
+            "taker_fee_usd": "270765000000000000"
+          },
+          {
+            "maker_order_id": "20",
+            "maker": "B",
+            "price": "60180000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "601800000000000000000",
+            "maker_fee_usd": "90270000000000000",
+            "taker_fee_usd": "270810000000000000"
+          },
+          {
+            "maker_order_id": "21",
+            "maker": "C",
+            "price": "60190000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "601900000000000000000",
+            "maker_fee_usd": "90285000000000000",
+            "taker_fee_usd": "270855000000000000"
+          },
+          {
+            "maker_order_id": "22",
+            "maker": "D",
+            "price": "60200000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "602000000000000000000",
+            "maker_fee_usd": "90300000000000000",
+            "taker_fee_usd": "270900000000000000"
+          },
+          {
+            "maker_order_id": "23",
+            "maker": "B",
+            "price": "60210000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "602100000000000000000",
+            "maker_fee_usd": "90315000000000000",
+            "taker_fee_usd": "270945000000000000"
+          },
+          {
+            "maker_order_id": "24",
+            "maker": "C",
+            "price": "60220000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "602200000000000000000",
+            "maker_fee_usd": "90330000000000000",
+            "taker_fee_usd": "270990000000000000"
+          },
+          {
+            "maker_order_id": "25",
+            "maker": "D",
+            "price": "60230000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "602300000000000000000",
+            "maker_fee_usd": "90345000000000000",
+            "taker_fee_usd": "271035000000000000"
+          },
+          {
+            "maker_order_id": "26",
+            "maker": "B",
+            "price": "60240000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "602400000000000000000",
+            "maker_fee_usd": "90360000000000000",
+            "taker_fee_usd": "271080000000000000"
+          },
+          {
+            "maker_order_id": "27",
+            "maker": "C",
+            "price": "60250000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "602500000000000000000",
+            "maker_fee_usd": "90375000000000000",
+            "taker_fee_usd": "271125000000000000"
+          },
+          {
+            "maker_order_id": "28",
+            "maker": "D",
+            "price": "60260000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "602600000000000000000",
+            "maker_fee_usd": "90390000000000000",
+            "taker_fee_usd": "271170000000000000"
+          },
+          {
+            "maker_order_id": "29",
+            "maker": "B",
+            "price": "60270000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "602700000000000000000",
+            "maker_fee_usd": "90405000000000000",
+            "taker_fee_usd": "271215000000000000"
+          },
+          {
+            "maker_order_id": "30",
+            "maker": "C",
+            "price": "60280000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "602800000000000000000",
+            "maker_fee_usd": "90420000000000000",
+            "taker_fee_usd": "271260000000000000"
+          },
+          {
+            "maker_order_id": "31",
+            "maker": "D",
+            "price": "60290000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "602900000000000000000",
+            "maker_fee_usd": "90435000000000000",
+            "taker_fee_usd": "271305000000000000"
+          },
+          {
+            "maker_order_id": "32",
+            "maker": "B",
+            "price": "60300000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "603000000000000000000",
+            "maker_fee_usd": "90450000000000000",
+            "taker_fee_usd": "271350000000000000"
+          },
+          {
+            "maker_order_id": "33",
+            "maker": "C",
+            "price": "60310000000000000000000",
+            "size_base": "10000000000000000",
+            "size_usd": "603100000000000000000",
+            "maker_fee_usd": "90465000000000000",
+            "taker_fee_usd": "271395000000000000"
+          }
+        ],
+        "cancelled": [
+          "7",
+          "37"
+        ]
+      }
+    },
+    {
+      "op": "place",
+      "account": "C",
+      "is_long": true,
+      "type": 4,
+      "time_in_force": 1,
+      "limit_price": "0",
+      "acceptable_price": "0",
+      "size_base": "10000000000000000",
+      "expect": {
+        "error": "LXP_PERPS_SLIPPAGE_EXCEEDED",
+        "fills": [],
+        "cancelled": []
+      }
+    },
+    {
+      "op": "cancel",
+      "order_id": "34",
+      "expect": {
+        "error": "",
+        "fills": [],
+        "cancelled": [
+          "34"
+        ]
+      }
+    }
+  ],
+  "final_book": {
+    "bids": [
+      {
+        "order_id": "1",
+        "account": "B",
+        "price": "59900000000000000000000",
+        "size_base": "20000000000000000",
+        "filled_base": "5000000000000000",
+        "sequence": 1
+      }
+    ],
+    "asks": []
+  }
+}
