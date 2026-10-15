@@ -1,6 +1,7 @@
 package types_test
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -82,5 +83,105 @@ func TestUsdToUsdlMarketStep(t *testing.T) {
 		} else {
 			require.ErrorIs(t, err, types.ErrInvalidParams, "sz %d px %d", tc.sz, tc.px)
 		}
+	}
+}
+
+func pow2(n uint) sdk.Int {
+	return sdk.NewIntFromBigInt(new(big.Int).Lsh(big.NewInt(1), n))
+}
+
+func TestMathOverflow(t *testing.T) {
+	_, err := types.MulDivUp(pow2(255), sdk.NewInt(4), sdk.NewInt(1))
+	require.ErrorIs(t, err, types.ErrOverflow)
+	_, err = types.MulDivDown(pow2(255), sdk.NewInt(4), sdk.NewInt(1))
+	require.ErrorIs(t, err, types.ErrOverflow)
+
+	maxUint := pow2(256).Sub(sdk.OneInt())
+	out, err := types.MulDivDown(maxUint, maxUint, maxUint)
+	require.NoError(t, err)
+	require.Equal(t, maxUint.String(), out.String())
+	out, err = types.MulDivUp(maxUint, sdk.NewInt(2), sdk.NewInt(2))
+	require.NoError(t, err)
+	require.Equal(t, maxUint.String(), out.String())
+
+	maxInt := pow2(255).Sub(sdk.OneInt())
+	minInt := pow2(255).Neg()
+	_, err = types.MulDivDownSigned(minInt, sdk.NewInt(-1), sdk.NewInt(1))
+	require.ErrorIs(t, err, types.ErrOverflow)
+	_, err = types.MulDivUpSigned(maxInt, sdk.NewInt(2), sdk.NewInt(1))
+	require.ErrorIs(t, err, types.ErrOverflow)
+	_, err = types.MulDivDownSigned(pow2(255), sdk.OneInt(), sdk.OneInt())
+	require.ErrorIs(t, err, types.ErrOverflow)
+	out, err = types.MulDivDownSigned(minInt, maxInt, maxInt)
+	require.NoError(t, err)
+	require.Equal(t, minInt.String(), out.String())
+}
+
+func TestMathMulDivRefusals(t *testing.T) {
+	for _, mulDiv := range []func(a, b, d sdk.Int) (sdk.Int, error){types.MulDivDown, types.MulDivUp} {
+		_, err := mulDiv(sdk.OneInt(), sdk.OneInt(), sdk.ZeroInt())
+		require.ErrorIs(t, err, types.ErrInvalidParams)
+		_, err = mulDiv(sdk.NewInt(-1), sdk.OneInt(), sdk.OneInt())
+		require.ErrorIs(t, err, types.ErrInvalidParams)
+		_, err = mulDiv(sdk.OneInt(), sdk.Int{}, sdk.OneInt())
+		require.ErrorIs(t, err, types.ErrInvalidParams)
+	}
+	for _, mulDiv := range []func(a, b, d sdk.Int) (sdk.Int, error){types.MulDivDownSigned, types.MulDivUpSigned} {
+		_, err := mulDiv(sdk.NewInt(-1), sdk.OneInt(), sdk.ZeroInt())
+		require.ErrorIs(t, err, types.ErrInvalidParams)
+		_, err = mulDiv(sdk.Int{}, sdk.OneInt(), sdk.OneInt())
+		require.ErrorIs(t, err, types.ErrInvalidParams)
+	}
+}
+
+func TestMathMulDivRounding(t *testing.T) {
+	cases := []struct {
+		name     string
+		a, b, d  int64
+		down, up string
+	}{
+		{"zero product", 0, 7, 3, "0", "0"},
+		{"exact", 6, 4, 3, "8", "8"},
+		{"ten thirds", 10, 1, 3, "3", "4"},
+		{"10 x 3 / 4", 10, 3, 4, "7", "8"},
+		{"one half", 1, 1, 2, "0", "1"},
+		{"just below one", 999_999, 1, 1_000_000, "0", "1"},
+		{"taker fee 400 ppm of 1114.48125", 1_114_481_250, 400, 1_000_000, "445792", "445793"},
+	}
+	for _, tc := range cases {
+		down, err := types.MulDivDown(sdk.NewInt(tc.a), sdk.NewInt(tc.b), sdk.NewInt(tc.d))
+		require.NoError(t, err, tc.name)
+		require.Equal(t, tc.down, down.String(), tc.name)
+		up, err := types.MulDivUp(sdk.NewInt(tc.a), sdk.NewInt(tc.b), sdk.NewInt(tc.d))
+		require.NoError(t, err, tc.name)
+		require.Equal(t, tc.up, up.String(), tc.name)
+	}
+}
+
+func TestMathMulDivSignedRounding(t *testing.T) {
+	cases := []struct {
+		name     string
+		a, b, d  int64
+		down, up string
+	}{
+		{"positive exact", 6, 4, 3, "8", "8"},
+		{"positive ten thirds", 10, 1, 3, "3", "4"},
+		{"negative numerator ten thirds", -10, 1, 3, "-4", "-3"},
+		{"negative factor ten thirds", 10, -1, 3, "-4", "-3"},
+		{"negative denominator ten thirds", 10, 1, -3, "-4", "-3"},
+		{"two negatives ten thirds", -10, 1, -3, "3", "4"},
+		{"three negatives ten thirds", -10, -1, -3, "-4", "-3"},
+		{"negative exact", -6, 4, 3, "-8", "-8"},
+		{"negative exact over negative", -6, 4, -3, "8", "8"},
+		{"minus one half", -1, 1, 2, "-1", "0"},
+		{"zero product", 0, -7, -3, "0", "0"},
+	}
+	for _, tc := range cases {
+		down, err := types.MulDivDownSigned(sdk.NewInt(tc.a), sdk.NewInt(tc.b), sdk.NewInt(tc.d))
+		require.NoError(t, err, tc.name)
+		require.Equal(t, tc.down, down.String(), tc.name)
+		up, err := types.MulDivUpSigned(sdk.NewInt(tc.a), sdk.NewInt(tc.b), sdk.NewInt(tc.d))
+		require.NoError(t, err, tc.name)
+		require.Equal(t, tc.up, up.String(), tc.name)
 	}
 }
