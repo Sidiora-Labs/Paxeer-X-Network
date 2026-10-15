@@ -1,0 +1,35 @@
+package types
+
+const (
+	EventTypeObservation        = "pricefeed_observation"
+	EventTypeObservationRefused = "pricefeed_observation_refused"
+	EventTypeAggregate          = "pricefeed_aggregate"
+	EventTypeAggregateSkipped   = "pricefeed_aggregate_skipped"
+	EventTypeFeedKey            = "pricefeed_feed_key"
+	EventTypeFeedKeyRevoked     = "pricefeed_feed_key_revoked"
+	EventTypeParams             = "pricefeed_params"
+
+	AttributeValidator           = "validator"
+	AttributeMarketID            = "market_id"
+	AttributeSequence            = "sequence"
+	AttributeIndexPrice          = "index_price"
+	AttributeMarkPrice           = "mark_price"
+	AttributeSourceTimestampMs   = "source_timestamp_ms"
+	AttributeReason              = "reason"
+	AttributeBasis               = "basis"
+	AttributeTimestampMs         = "timestamp_ms"
+	AttributeSources             = "sources"
+	AttributeRequired            = "required"
+	AttributeHeight              = "height"
+	AttributeFeedAccount         = "feed_account"
+	AttributePreviousFeedAccount = "previous_feed_account"
+	AttributeAuthority           = "authority"
+
+	RefusalUnknownMarket  = "unknown_market"
+	RefusalMarketDisabled = "market_disabled"
+	RefusalSequence       = "sequence"
+	RefusalFuture         = "future"
+	RefusalStale          = "stale"
+	RefusalBounds         = "bounds"
+	RefusalDeviation      = "deviation"
+)
