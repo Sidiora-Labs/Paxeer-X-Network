@@ -602,6 +602,25 @@ func GetEvmTxIndex(ctx sdk.Context, block *coretypes.ResultBlock, msgs []indexed
 		evmTxIndex++
 		logIndex += len(receipt.Logs)
 	}
+	return getSyntheticTxIndex(ctx, block, txIndex, k, cacheCreationMutex, globalBlockCache, evmTxIndex, logIndex)
+}
+
+// getSyntheticTxIndex resolves a venue synthetic receipt, which flushTransientReceipts writes at
+// TransactionIndex N + kind - 1 (N the block's transaction count) under SyntheticReceiptHash(kind, height).
+// It follows the relevant transactions in kind order, so its index and log index offset continue
+// after evmTxIndex and logIndex and after every earlier synthetic receipt of the block.
+func getSyntheticTxIndex(ctx sdk.Context, block *coretypes.ResultBlock, txIndex uint32, k *keeper.Keeper, cacheCreationMutex *sync.Mutex, globalBlockCache BlockCache, evmTxIndex int, logIndex int) (int, bool, *ethtypes.Transaction, int) {
+	for _, kind := range keeper.SyntheticReceiptKinds {
+		receipt, ok := getOrSetCachedReceipt(cacheCreationMutex, globalBlockCache, ctx, k, block, keeper.SyntheticReceiptHash(kind, block.Block.Height))
+		if !ok {
+			continue
+		}
+		if uint64(txIndex) == uint64(len(block.Block.Txs))+uint64(kind)-1 && receipt.TransactionIndex == txIndex {
+			return evmTxIndex, true, nil, logIndex
+		}
+		evmTxIndex++
+		logIndex += len(receipt.Logs)
+	}
 	return -1, false, nil, -1
 }
 
