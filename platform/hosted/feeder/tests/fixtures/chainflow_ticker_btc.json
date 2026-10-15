@@ -1,0 +1,16 @@
+{
+  "24h_amount": 1834567890.25,
+  "24h_close": 65010,
+  "24h_high": 65420.75,
+  "24h_low": 64210.5,
+  "24h_open": 64580.25,
+  "24h_volume": 28214.731,
+  "est_funding_rate": 0.0000125,
+  "index_price": 65000.5,
+  "last_funding_rate": 0.00001,
+  "mark_price": 65010,
+  "open_interest": 1523.42,
+  "paxeerSymbol": "BTC",
+  "symbol": "PERP_BTC_USDC",
+  "updated_at": 1700000000000
+}

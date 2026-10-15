@@ -40,6 +40,7 @@ pub fn health_status(request: &[u8], ready: bool) -> &'static str {
     }
 }
 
+pub mod chainflow;
 pub mod cosmos_tx;
 
 /// Perps oracle push ordinal (`0x00060003`).
