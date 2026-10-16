@@ -1851,3 +1851,11 @@ exit = 1
 log = fleet/logs/fix-testapp-v6120-live-verify-2.log
 observed = With the keeper test app post-upgrade the generation-2 create and buy succeed, while three test expectations still assume the default quote token, newest-first receipt logs and a generation-1 token factory denom.
 assumption = The follow-up test fix brings those expectations to the ruled contracts without touching production code.
+
+[finding.fix-perps-integration-upgrade-2]
+revision = 3a20b805f74a1e73158b63d299f9095487e49975
+command = go test ./precompiles/perps/ -count=1 -run 'TestIntegration' -v
+exit = 1
+log = fleet/logs/fix-perps-integration-upgrade-2-verify-1.log
+observed = The perps flow test applies the v6.12.0 plan to the halt export, whose state carries no generation 2 launchpad deployment, so the launchpad hook refuses a zero factory treasury before the perps flow starts.
+assumption = The test seeds the real deployment state once the launchpad golden record exists, so this gate is checked at deploy time against the real export.
