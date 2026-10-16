@@ -7235,7 +7235,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.15]
 title = "Record the golden reads of every migrated pool"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
