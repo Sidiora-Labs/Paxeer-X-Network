@@ -19027,7 +19027,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.3.1]
 title = "Test the price path end to end on four validators"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["5.2.3", "5.1.12"]
