@@ -1811,3 +1811,35 @@ exit = 1
 log = fleet/logs/rerun-2.1.13-verify-1.log
 observed = Market creation reverts in the shared keeper test app because the v6.12.0 precompile set is never live there: the flag is derived only from the upgrade done height, which the test app never records, so the pool surface is served by the previous generation.
 assumption = The shared test app comes up with the v6.12.0 plan applied so activation derives from state; the launchpad keeper gates rerun afterwards.
+
+[finding.fix-spot-module-account]
+revision = 554f00e1a0720c31f46939beaf385df39662ee5e
+command = go test ./node/ -count=1 -v -run 'TestV6120ModulesAreWired|TestV6120ServesTheNewSetFromTheHandler|TestV6120ModuleAccounts|TestV6120EndBlockOrder|TestV6120AppliesThePlanOnTheHaltExport|TestKVStoreKeyNamesMatchMemIAVLStoreKeys'
+exit = 1
+log = fleet/logs/fix-spot-module-account-verify-1.log
+observed = With the spot module account created at genesis and in the upgrade handler, the end-block order test still expects a perps setup error that GetParams hides behind defaults, and the halt-export test aborts in the pointers hook because the usid metadata carries display exponent zero.
+assumption = The params contract settles whether missing params are an error, and the upgrade handler ensures the SID denom units before creating pointers.
+
+[finding.fix-perps-integration-upgrade]
+revision = b9a6e26afd5373108679c231afdc440a95eccd39
+command = go test ./precompiles/perps/ -count=1 -run 'TestIntegration' -v
+exit = 1
+log = fleet/logs/fix-perps-integration-upgrade-verify-2.log
+observed = The plan now applies in block two, and the handler stops in the launchpad hook because the test chain carries no generation 2 factory with the treasury slot set and no launchpad fixture state.
+assumption = The flow test seeds the same deployment state the halt-export test uses so every hook runs as on mainnet.
+
+[finding.fix-spot-stop-ctx]
+revision = c5b19f14292355e0c52b918acb4e783a95ac23ee
+command = go test ./precompiles/spot/ -count=1
+exit = 1
+log = fleet/logs/fix-spot-stop-ctx-package.log
+observed = Beyond the stop path, the package run fails on the spot module account gap, on view tests comparing a nil big integer with an empty one, on quoter fee amounts, and aborts on a panic in the native vault deposit test.
+assumption = The module account landing clears the first group; the spot precompile reruns cover the views, quoter and vault tests.
+
+[finding.fix-genesis-valset]
+revision = e843801deedef3d99c38a3c0f00740585e67fc41
+command = go test ./modules/pricefeed/keeper/ -v -count=1
+exit = 1
+log = fleet/logs/fix-genesis-valset-package-1.log
+observed = With the multi-validator genesis helper corrected, four observation tests compare an event slice against the named events type, and the seed test finds no bonded validators on the default test app.
+assumption = The pricefeed observation and seed reruns settle both.
