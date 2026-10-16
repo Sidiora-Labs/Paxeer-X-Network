@@ -285,96 +285,108 @@ func stopEvent(ctx sdk.Context, name string, id uint64, attributes ...sdk.Attrib
 }
 
 func (k *Keeper) PlaceStopLimit(ctx sdk.Context, user, stablecoin, token common.Address, amount, stopPrice, limitPrice sdk.Int, expiresAt uint64, kind types.OrderType) (uint64, error) {
+	order, err := k.PlaceStopLimitOrder(ctx, user, stablecoin, token, amount, stopPrice, limitPrice, expiresAt, kind)
+	return order.ID, err
+}
+
+func (k *Keeper) PlaceStopLimitOrder(ctx sdk.Context, user, stablecoin, token common.Address, amount, stopPrice, limitPrice sdk.Int, expiresAt uint64, kind types.OrderType) (types.StopLimitOrder, error) {
 	if kind != types.OrderTypeStopLimitBuy && kind != types.OrderTypeStopLimitSell {
-		return 0, types.ErrInvalidPrices
+		return types.StopLimitOrder{}, types.ErrInvalidPrices
 	}
 	if !stopValidAmount(stopPrice) || !stopValidAmount(limitPrice) {
-		return 0, types.ErrInvalidPrices
+		return types.StopLimitOrder{}, types.ErrInvalidPrices
 	}
 	if kind.IsBuy() && limitPrice.LT(stopPrice) {
-		return 0, types.ErrLimitMustBeAboveStopBuy
+		return types.StopLimitOrder{}, types.ErrLimitMustBeAboveStopBuy
 	}
 	if !kind.IsBuy() && limitPrice.GT(stopPrice) {
-		return 0, types.ErrLimitMustBeBelowStopSell
+		return types.StopLimitOrder{}, types.ErrLimitMustBeBelowStopSell
 	}
 	if err := k.stopPlacement(ctx, user, stablecoin, token, amount, expiresAt); err != nil {
-		return 0, err
+		return types.StopLimitOrder{}, err
 	}
 	input := token
 	if kind.IsBuy() {
 		input = stablecoin
 	}
 	if err := k.stopNotional(ctx, input, amount); err != nil {
-		return 0, err
+		return types.StopLimitOrder{}, err
 	}
 	id, err := k.stopNextID(ctx)
 	if err != nil {
-		return 0, err
+		return types.StopLimitOrder{}, err
 	}
 	cache, write := ctx.CacheContext()
 	cache, received, err := k.pullTokens(cache, common.HexToAddress(types.PECORStopOrdersAddress), input, user, amount)
 	if err != nil {
-		return 0, err
+		return types.StopLimitOrder{}, err
 	}
 	if !stopValidAmount(received) {
-		return 0, types.ErrZeroAmount
+		return types.StopLimitOrder{}, types.ErrZeroAmount
 	}
 	if err := k.stopNotional(cache, input, received); err != nil {
-		return 0, err
+		return types.StopLimitOrder{}, err
 	}
 	order := types.StopLimitOrder{ID: id, User: user, Stablecoin: stablecoin, Token: token, Amount: received, StopPrice: stopPrice, LimitPrice: limitPrice, OrderType: kind, Status: types.OrderStatusPending, CreatedAt: uint64(ctx.BlockTime().Unix()), ExpiresAt: expiresAt}
 	if err := order.Validate(); err != nil {
-		return 0, err
+		return types.StopLimitOrder{}, err
 	}
 	if err := stopWrite(cache.KVStore(k.storeKey), stopKey(types.StopLimitOrderPrefix, id), order); err != nil {
-		return 0, err
+		return types.StopLimitOrder{}, err
 	}
 	if err := k.stopPlaced(cache, id, user, input, received, expiresAt, kind, types.ActiveStopLimitPrefix); err != nil {
-		return 0, err
+		return types.StopLimitOrder{}, err
 	}
 	stopEvent(cache, "StopLimitOrderCreated", id, sdk.NewAttribute("user", user.Hex()), sdk.NewAttribute("orderType", strconv.Itoa(int(kind))), sdk.NewAttribute("amount", received.String()), sdk.NewAttribute("stopPrice", stopPrice.String()), sdk.NewAttribute("limitPrice", limitPrice.String()))
 	write()
-	return id, nil
+	ctx.EventManager().EmitEvents(cache.EventManager().Events())
+	return order, nil
 }
 
 func (k *Keeper) PlaceStopLoss(ctx sdk.Context, user, token, stablecoin common.Address, amount, triggerPrice sdk.Int, expiresAt uint64) (uint64, error) {
+	order, err := k.PlaceStopLossOrder(ctx, user, token, stablecoin, amount, triggerPrice, expiresAt)
+	return order.ID, err
+}
+
+func (k *Keeper) PlaceStopLossOrder(ctx sdk.Context, user, token, stablecoin common.Address, amount, triggerPrice sdk.Int, expiresAt uint64) (types.StopLossOrder, error) {
 	if !stopValidAmount(triggerPrice) {
-		return 0, types.ErrInvalidPrice
+		return types.StopLossOrder{}, types.ErrInvalidPrice
 	}
 	if err := k.stopPlacement(ctx, user, stablecoin, token, amount, expiresAt); err != nil {
-		return 0, err
+		return types.StopLossOrder{}, err
 	}
 	if err := k.stopNotional(ctx, token, amount); err != nil {
-		return 0, err
+		return types.StopLossOrder{}, err
 	}
 	id, err := k.stopNextID(ctx)
 	if err != nil {
-		return 0, err
+		return types.StopLossOrder{}, err
 	}
 	cache, write := ctx.CacheContext()
 	cache, received, err := k.pullTokens(cache, common.HexToAddress(types.PECORStopOrdersAddress), token, user, amount)
 	if err != nil {
-		return 0, err
+		return types.StopLossOrder{}, err
 	}
 	if !stopValidAmount(received) {
-		return 0, types.ErrZeroAmount
+		return types.StopLossOrder{}, types.ErrZeroAmount
 	}
 	if err := k.stopNotional(cache, token, received); err != nil {
-		return 0, err
+		return types.StopLossOrder{}, err
 	}
 	order := types.StopLossOrder{ID: id, User: user, Stablecoin: stablecoin, Token: token, Amount: received, TriggerPrice: triggerPrice, Status: types.OrderStatusPending, CreatedAt: uint64(ctx.BlockTime().Unix()), ExpiresAt: expiresAt}
 	if err := order.Validate(); err != nil {
-		return 0, err
+		return types.StopLossOrder{}, err
 	}
 	if err := stopWrite(cache.KVStore(k.storeKey), stopKey(types.StopLossOrderPrefix, id), order); err != nil {
-		return 0, err
+		return types.StopLossOrder{}, err
 	}
 	if err := k.stopPlaced(cache, id, user, token, received, expiresAt, types.OrderTypeStopLoss, types.ActiveStopLossPrefix); err != nil {
-		return 0, err
+		return types.StopLossOrder{}, err
 	}
 	stopEvent(cache, "StopLossOrderCreated", id, sdk.NewAttribute("user", user.Hex()), sdk.NewAttribute("amount", received.String()), sdk.NewAttribute("triggerPrice", triggerPrice.String()))
 	write()
-	return id, nil
+	ctx.EventManager().EmitEvents(cache.EventManager().Events())
+	return order, nil
 }
 
 func (k *Keeper) ActivateStopLimit(ctx sdk.Context, id uint64) (bool, error) {

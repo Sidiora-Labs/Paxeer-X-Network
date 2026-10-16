@@ -408,36 +408,28 @@ func (p *stopOrdersExecutor) change(ctx sdk.Context, method *abi.Method, caller 
 		first, second := args[0].(common.Address), args[1].(common.Address)
 		amount, trigger := sdk.NewIntFromBigInt(args[2].(*big.Int)), sdk.NewIntFromBigInt(args[3].(*big.Int))
 		if method.Name == "placeStopLoss" {
-			id, err := p.keeper.PlaceStopLoss(ctx, caller, first, second, amount, trigger, expiry.Uint64())
+			o, err := p.keeper.PlaceStopLossOrder(ctx, caller, first, second, amount, trigger, expiry.Uint64())
 			if err != nil {
 				return nil, err
 			}
-			o, err := p.keeper.GetStopLossOrder(ctx, id)
-			if err != nil {
+			if err = p.log(evm, "StopLossOrderCreated", []common.Hash{common.BigToHash(stopOrdersUint(o.ID)), common.BytesToHash(caller.Bytes())}, o.Amount.BigInt(), o.TriggerPrice.BigInt()); err != nil {
 				return nil, err
 			}
-			if err = p.log(evm, "StopLossOrderCreated", []common.Hash{common.BigToHash(stopOrdersUint(id)), common.BytesToHash(caller.Bytes())}, o.Amount.BigInt(), o.TriggerPrice.BigInt()); err != nil {
-				return nil, err
-			}
-			return pack(stopOrdersUint(id))
+			return pack(stopOrdersUint(o.ID))
 		}
 		kind := types.OrderTypeStopLimitBuy
 		if method.Name == "placeStopLimitSell" {
 			first, second = second, first
 			kind = types.OrderTypeStopLimitSell
 		}
-		id, err := p.keeper.PlaceStopLimit(ctx, caller, first, second, amount, trigger, sdk.NewIntFromBigInt(args[4].(*big.Int)), expiry.Uint64(), kind)
+		o, err := p.keeper.PlaceStopLimitOrder(ctx, caller, first, second, amount, trigger, sdk.NewIntFromBigInt(args[4].(*big.Int)), expiry.Uint64(), kind)
 		if err != nil {
 			return nil, err
 		}
-		o, err := p.keeper.GetStopLimitOrder(ctx, id)
-		if err != nil {
+		if err = p.log(evm, "StopLimitOrderCreated", []common.Hash{common.BigToHash(stopOrdersUint(o.ID)), common.BytesToHash(caller.Bytes())}, uint8(o.OrderType), o.Amount.BigInt(), o.StopPrice.BigInt(), o.LimitPrice.BigInt()); err != nil {
 			return nil, err
 		}
-		if err = p.log(evm, "StopLimitOrderCreated", []common.Hash{common.BigToHash(stopOrdersUint(id)), common.BytesToHash(caller.Bytes())}, uint8(o.OrderType), o.Amount.BigInt(), o.StopPrice.BigInt(), o.LimitPrice.BigInt()); err != nil {
-			return nil, err
-		}
-		return pack(stopOrdersUint(id))
+		return pack(stopOrdersUint(o.ID))
 	case "collectFees":
 		params, err := p.keeper.GetParams(ctx)
 		if err != nil {
