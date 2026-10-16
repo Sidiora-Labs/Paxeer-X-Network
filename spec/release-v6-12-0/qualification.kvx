@@ -1795,3 +1795,11 @@ exit = 1
 log = fleet/logs/rerun-3.3.1-verify-3.log
 observed = After two fixture repairs the integration flow still reports done height zero for the upgrade: a plan written between blocks through the uncached context is not applied by the next block's BeginBlock.
 assumption = The fixture schedules the plan inside the block flow so BeginBlock applies it; the remaining receipt, bloom and solvency assertions then run.
+
+[finding.rerun-1.3.100]
+revision = fa06e1f6be4e031fd5824dbb99bd01099a7eb761
+command = go test ./node/ -run 'TestV6120ModulesAreWired|TestV6120ServesTheNewSetFromTheHandler|TestV6120ModuleAccounts|TestV6120EndBlockOrder|TestV6120AppliesThePlanOnTheHaltExport|TestKVStoreKeyNamesMatchMemIAVLStoreKeys'
+exit = 1
+log = fleet/logs/rerun-1.3.100-verify-2.log
+observed = TestV6120ModuleAccounts panics because nothing creates the spot module account: spot genesis never registers it, so a plain send creates a base account at the address and the first share mint fails.
+assumption = Spot genesis and the upgrade handler create the module accounts the release introduces; the node gate reruns afterwards.
