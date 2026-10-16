@@ -1843,3 +1843,11 @@ exit = 1
 log = fleet/logs/fix-genesis-valset-package-1.log
 observed = With the multi-validator genesis helper corrected, four observation tests compare an event slice against the named events type, and the seed test finds no bonded validators on the default test app.
 assumption = The pricefeed observation and seed reruns settle both.
+
+[finding.fix-testapp-v6120-live]
+revision = 4584f56288add304645ee9a98827541d9e26a2fc
+command = go test ./modules/launchpad/keeper/... -count=1 -v -run 'TestBuyMovesUsdlIntoCustody|TestCreateMarket'
+exit = 1
+log = fleet/logs/fix-testapp-v6120-live-verify-2.log
+observed = With the keeper test app post-upgrade the generation-2 create and buy succeed, while three test expectations still assume the default quote token, newest-first receipt logs and a generation-1 token factory denom.
+assumption = The follow-up test fix brings those expectations to the ruled contracts without touching production code.
