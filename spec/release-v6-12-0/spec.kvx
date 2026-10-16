@@ -10565,7 +10565,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.1.1]
 title = "Build the perps keeper with params and market setters"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["3.0.3", "3.0.4", "3.0.5", "3.0.6", "3.1.20"]
