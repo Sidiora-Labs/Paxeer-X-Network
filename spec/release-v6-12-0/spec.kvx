@@ -6966,7 +6966,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.5]
 title = "Serve the Quoter, PoolRegistry and ProtocolConfig roles"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["2.2.1", "2.2.22"]
