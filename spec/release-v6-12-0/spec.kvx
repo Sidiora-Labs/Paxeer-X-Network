@@ -16211,7 +16211,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1.4]
 title = "Add the spot keeper and the ERC20 and native custody of the module"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["4.1.1", "4.1.2", "5.1.9"]
