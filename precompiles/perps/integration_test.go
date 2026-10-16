@@ -173,8 +173,8 @@ func integrationFixed(t *testing.T, decimal string) *big.Int {
 func integrationUint(value int64) common.Hash { return common.BigToHash(big.NewInt(value)) }
 
 // newIntegrationChain brings the application up: the first block commits the
-// genesis-time setup and schedules the v6.12.0 plan, the second applies it and
-// runs the first perps EndBlock, after which USDL is named the collateral.
+// genesis-time setup with USDL named the collateral, the v6.12.0 plan is then
+// scheduled, and the second block applies it and runs the first perps EndBlock.
 func newIntegrationChain(t *testing.T) *integrationChain {
 	t.Helper()
 	app := processblock.NewTestApp(t)
@@ -232,22 +232,24 @@ func newIntegrationChain(t *testing.T) *integrationChain {
 		_, err := app.EvmKeeper.CallEVM(ctx, deployer, &c.usdl, nil, input)
 		require.NoError(t, err)
 	}
-	require.NoError(t, app.UpgradeKeeper.ScheduleUpgrade(ctx, upgradetypes.Plan{
+	params, err := c.k.GetParams(ctx)
+	require.NoError(t, err)
+	params.CollateralToken = c.usdl
+	require.NoError(t, c.k.UpdateParams(ctx, c.k.Authority(), params))
+
+	c.runBlock()
+	require.NoError(t, app.UpgradeKeeper.ScheduleUpgrade(c.uncached(), upgradetypes.Plan{
 		Name:   nodeapp.V6120Upgrade,
 		Height: integrationUpgradeHeight,
 	}))
-
-	c.runBlock()
 	c.runBlock()
 	require.Equal(t, integrationUpgradeHeight, app.UpgradeKeeper.GetDoneHeight(app.Ctx(), nodeapp.V6120Upgrade))
 	c.requireSyntheticReceipt(integrationUpgradeHeight, 60_000)
 
-	write := c.uncached()
-	params, err := c.k.GetParams(write)
+	params, err = c.k.GetParams(c.uncached())
 	require.NoError(t, err)
-	params.CollateralToken = c.usdl
-	require.NoError(t, c.k.UpdateParams(write, c.k.Authority(), params))
-	market, err := c.k.GetMarket(write, 0)
+	require.Equal(t, c.usdl, params.CollateralToken, "the v6.12.0 seed keeps USDL as the collateral")
+	market, err := c.k.GetMarket(c.uncached(), 0)
 	require.NoError(t, err)
 	require.Equal(t, "BTC", market.Symbol)
 	require.Equal(t, uint8(5), market.SzDecimals)
