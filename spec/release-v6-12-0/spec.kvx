@@ -11097,7 +11097,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.1]
 title = "Build the perps precompile executor with gas, refusals and custom error reverts"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["3.0.2", "3.1.1", "3.1.18"]
