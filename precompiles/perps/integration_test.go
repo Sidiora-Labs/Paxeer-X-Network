@@ -17,6 +17,7 @@ import (
 	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	layerxbridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
 	perpskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
 	perpstypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
 	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
@@ -172,9 +173,11 @@ func integrationFixed(t *testing.T, decimal string) *big.Int {
 
 func integrationUint(value int64) common.Hash { return common.BigToHash(big.NewInt(value)) }
 
-// newIntegrationChain brings the application up: the first block commits the
-// genesis-time setup with USDL named the collateral, the v6.12.0 plan is then
-// scheduled, and the second block applies it and runs the first perps EndBlock.
+// newIntegrationChain brings the application up: the v6.12.0 plan is written
+// through the uncached context, which the first block's commit carries, the
+// first block commits the genesis-time setup with USDL named the collateral
+// and the SID denom registered by the bridge as the plan requires it,
+// and the second block applies the plan and runs the first perps EndBlock.
 func newIntegrationChain(t *testing.T) *integrationChain {
 	t.Helper()
 	app := processblock.NewTestApp(t)
@@ -236,12 +239,24 @@ func newIntegrationChain(t *testing.T) *integrationChain {
 	require.NoError(t, err)
 	params.CollateralToken = c.usdl
 	require.NoError(t, c.k.UpdateParams(ctx, c.k.Authority(), params))
+	require.NoError(t, app.LayerXBridgeKeeper.RegisterChain(ctx, layerxbridgetypes.MsgRegisterChain{
+		Authority: layerxbridgetypes.DefaultAuthority(),
+		Chain: layerxbridgetypes.Chain{
+			ChainID:       layerxbridgetypes.SidioraHomeChainID,
+			Vault:         layerxbridgetypes.Address20(acctAddress("sidiora vault")),
+			FinalityDepth: 64,
+			Enabled:       true,
+		},
+	}))
+	sid, err := app.LayerXBridgeKeeper.EnsureSidioraDenom(ctx, layerxbridgetypes.SidioraHomeChainID)
+	require.NoError(t, err)
+	require.Equal(t, layerxbridgetypes.SidioraDenom(), sid)
 
-	c.runBlock()
 	require.NoError(t, app.UpgradeKeeper.ScheduleUpgrade(c.uncached(), upgradetypes.Plan{
 		Name:   nodeapp.V6120Upgrade,
 		Height: integrationUpgradeHeight,
 	}))
+	c.runBlock()
 	c.runBlock()
 	require.Equal(t, integrationUpgradeHeight, app.UpgradeKeeper.GetDoneHeight(app.Ctx(), nodeapp.V6120Upgrade))
 	c.requireSyntheticReceipt(integrationUpgradeHeight, 60_000)
@@ -258,9 +273,10 @@ func newIntegrationChain(t *testing.T) *integrationChain {
 	return c
 }
 
-// uncached is a context over the committed multistore at the last committed
-// header; its writes land in the next block, unlike writes to the cached
-// context of a block already committed.
+// uncached is a context over the commit multistore at the last committed
+// header; its writes are carried by the next block's commit and read from the
+// block after it, unlike writes to the cached context of a block already
+// committed.
 func (c *integrationChain) uncached() sdk.Context {
 	ctx := c.app.Ctx()
 	return c.app.NewUncachedContext(false, tmproto.Header{
