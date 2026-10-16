@@ -18836,7 +18836,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.2.1]
 title = "Write the 0x1020 precompile dispatch, views and writes"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["5.0.1", "5.1.13"]
