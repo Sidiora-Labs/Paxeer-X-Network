@@ -61,9 +61,10 @@ type env struct {
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	app := testkeeper.EVMTestApp
-	ctx := app.GetContextForDeliverTx([]byte{}).WithBlockTime(genesisTime)
+	ctx := app.GetContextForDeliverTx([]byte{}).WithBlockTime(genesisTime).WithBlockHeight(1)
 	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
-	k, ctx := launchpadtest.NewKeeper(app, ctx)
+	ctx, _ = ctx.CacheContext()
+	k := app.LaunchpadKeeper
 	k.InitGenesis(ctx, *types.DefaultGenesis())
 
 	stringType, err := abi.NewType("string", "", nil)

@@ -19,10 +19,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var EVMTestApp = app.SetupWithDefaultHome(false, true, false)
+// EVMTestApp is a chain past the v6.12.0 plan: its state records the plan as
+// done at the first block, so it serves the v6.12.0 precompile set from that
+// height on.
+var EVMTestApp = v6120Applied(app.SetupWithDefaultHome(false, true, false))
 var mockKeeper *evmkeeper.Keeper
 var mockCtx sdk.Context
 var mtx = &sync.Mutex{}
+
+// v6120Applied records the v6.12.0 plan as done at height 1 in the deliver
+// state of a and reselects its custom precompile set from that state.
+func v6120Applied(a *app.App) *app.App {
+	ctx := a.GetContextForDeliverTx([]byte{}).WithBlockHeight(1)
+	a.UpgradeKeeper.SetDone(ctx, app.V6120Upgrade)
+	a.RefreshPrecompiles(ctx)
+	return a
+}
 
 func MockEVMKeeperWithPrecompiles() (*evmkeeper.Keeper, sdk.Context) {
 	mtx.Lock()
