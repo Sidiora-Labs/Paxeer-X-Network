@@ -1755,3 +1755,43 @@ exit = 1
 log = fleet/logs/fix-node-v6120-test-verify-1.log
 observed = The node upgrade test compiles after the static call sender type was corrected; the binary panicked at init on the launchpad keeper wiring of its base.
 assumption = The upgrade tests rerun on the head that carries the launchpad keeper wiring.
+
+[finding.rerun-5.3.1]
+revision = 5cb6bdb0a8d8fcab20dc0432f068d9d27d81dd8d
+command = go test ./modules/pricefeed/keeper/ -run 'TestPriceFeed' -v
+exit = 1
+log = fleet/logs/rerun-5.3.1-verify-1.log
+observed = TestPriceFeedEndToEnd panics in staking InitGenesis because the shared genesis helper funds the bonded pool with one bond amount whatever the validator count, so every multi-validator test app aborts before its assertions.
+assumption = The helper is corrected to fund the bonded pool and total supply per validator; the pricefeed gate reruns afterwards.
+
+[finding.rerun-4.2.1]
+revision = 5cb6bdb0a8d8fcab20dc0432f068d9d27d81dd8d
+command = go test ./precompiles/spot/ -v -run '^(TestNewPrecompileSetAddresses|TestMutabilityMatchesABI|TestUnmappedAddressesHaveNoCode|TestServedOnlyFromActivation|TestGasTableRows|TestEveryMethodHasGasRow|TestBankMovesChargeGas)$'
+exit = 1
+log = fleet/logs/rerun-4.2.1-verify-1.log
+observed = Five tests fail in the shared fixture because the spot module account refuses bank sends; the app lists it as allowed to receive but builds the bank keepers from the full module account set, so the allowance never applies.
+assumption = The bank keepers are built from the blacklisted address set that honours the allowance; the spot precompile gate reruns afterwards.
+
+[finding.rerun-4.1.4]
+revision = 5cb6bdb0a8d8fcab20dc0432f068d9d27d81dd8d
+command = go test ./modules/spot/keeper/ -run '^(TestCustodyAddressIsModuleAccount|TestERC20PullNeedsAllowanceToRail|TestPayoutIsExact|TestFailedTransferRevertsAtomically|TestPayoutOutsideTransactionUsesCallEVM|TestNativeValueIsUhpx|TestModuleAccountReceivesNative)$' -v
+exit = 1
+log = fleet/logs/rerun-4.1.4-verify-1.log
+observed = Two custody tests fail on the same blocked spot module account, and the out-of-transaction payout test finds the newest log first because the EVM call merge places the current call's logs ahead of the earlier receipt logs.
+assumption = The module account fix covers the first two; the log order is settled in the EVM keeper rather than by changing the assertion.
+
+[finding.rerun-4.3.1]
+revision = 5cb6bdb0a8d8fcab20dc0432f068d9d27d81dd8d
+command = go test ./precompiles/spot/ -run '^(TestHyperpaxCallSequence|TestHyperpaxMarketPath|TestHyperpaxLimitPath|TestHyperpaxStopPath|TestHyperpaxPaxPath)$' -v
+exit = 1
+log = fleet/logs/rerun-4.3.1-verify-1.log
+observed = The stop path emits an all-zero StopLimitOrderCreated event because the keeper writes the order into the resumed EVM state context returned by the token pull while the precompile reads it back on the caller's original context.
+assumption = The keeper writes through the caller's context or the precompile emits from the placed record; the stop-order read helper also surfaces a miss instead of a zero record.
+
+[finding.rerun-3.3.1]
+revision = adbac1aafef5d15b683ea1a7e225a37d170647be
+command = go test ./precompiles/perps/ -run 'TestIntegration'
+exit = 1
+log = fleet/logs/rerun-3.3.1-verify-3.log
+observed = After two fixture repairs the integration flow still reports done height zero for the upgrade: a plan written between blocks through the uncached context is not applied by the next block's BeginBlock.
+assumption = The fixture schedules the plan inside the block flow so BeginBlock applies it; the remaining receipt, bloom and solvency assertions then run.
