@@ -6993,7 +6993,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.6]
 title = "Serve the FeesRouter and FeeAccumulator roles"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["2.2.1", "2.2.22"]
