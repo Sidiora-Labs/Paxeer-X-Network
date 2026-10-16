@@ -6727,7 +6727,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.1.13]
 title = "Port the keeper tests to the custody model"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["2.1.5", "2.1.6", "2.1.7", "2.1.8", "2.1.9", "2.1.10", "2.1.11", "2.1.12", "2.1.14", "2.1.15", "2.1.16", "2.1.17"]
