@@ -679,10 +679,10 @@ func New(
 		appCodec, keys[authtypes.StoreKey], app.GetSubspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, maccPerms,
 	)
 	app.BankKeeper = bankkeeper.NewBaseKeeperWithDeferredCache(
-		appCodec, keys[banktypes.StoreKey], app.AccountKeeper, app.GetSubspace(banktypes.ModuleName), app.ModuleAccountAddrs(), memKeys[banktypes.DeferredCacheStoreKey],
+		appCodec, keys[banktypes.StoreKey], app.AccountKeeper, app.GetSubspace(banktypes.ModuleName), app.BlacklistedAccAddrs(), memKeys[banktypes.DeferredCacheStoreKey],
 	)
 	gigaBankKeeper := gigabankkeeper.NewBaseKeeperWithDeferredCache(
-		appCodec, keys[banktypes.StoreKey], app.AccountKeeper, app.GetSubspace(banktypes.ModuleName), app.ModuleAccountAddrs(), memKeys[banktypes.DeferredCacheStoreKey],
+		appCodec, keys[banktypes.StoreKey], app.AccountKeeper, app.GetSubspace(banktypes.ModuleName), app.BlacklistedAccAddrs(), memKeys[banktypes.DeferredCacheStoreKey],
 	)
 	app.GigaBankKeeper = &gigaBankKeeper
 	stakingKeeper := stakingkeeper.NewKeeper(

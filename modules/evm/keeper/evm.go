@@ -110,6 +110,16 @@ func (k *Keeper) CallEVM(ctx sdk.Context, from common.Address, to *common.Addres
 		Data:      data,
 		From:      from,
 	}
+	existingReceipt, existingErr := k.GetTransientReceipt(ctx, ctx.TxSum(), uint64(ctx.TxIndex())) //nolint:gosec
+	if existingErr == nil {
+		for _, l := range existingReceipt.Logs {
+			stateDB.AddLog(&ethtypes.Log{
+				Address: common.HexToAddress(l.Address),
+				Topics:  utils.Map(l.Topics, common.HexToHash),
+				Data:    l.Data,
+			})
+		}
+	}
 	// should not increment nonce since this isn't a transaction
 	res, err := k.applyEVMMessage(ctx, evmMsg, stateDB, gp, false)
 	if err != nil {
@@ -127,18 +137,8 @@ func (k *Keeper) CallEVM(ctx sdk.Context, from common.Address, to *common.Addres
 	if res.Err != nil {
 		vmErr = res.Err.Error()
 	}
-	existingReceipt, err := k.GetTransientReceipt(ctx, ctx.TxSum(), uint64(ctx.TxIndex())) //nolint:gosec
-	if err == nil {
-		for _, l := range existingReceipt.Logs {
-			stateDB.AddLog(&ethtypes.Log{
-				Address: common.HexToAddress(l.Address),
-				Topics:  utils.Map(l.Topics, common.HexToHash),
-				Data:    l.Data,
-			})
-		}
-		if existingReceipt.VmError != "" {
-			vmErr = fmt.Sprintf("%s\n%s\n", existingReceipt.VmError, vmErr)
-		}
+	if existingErr == nil && existingReceipt.VmError != "" {
+		vmErr = fmt.Sprintf("%s\n%s\n", existingReceipt.VmError, vmErr)
 	}
 	existingDeferredInfo, found := k.GetEVMTxDeferredInfo(ctx)
 	if found {
