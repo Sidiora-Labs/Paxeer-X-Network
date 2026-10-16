@@ -16547,7 +16547,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.1]
 title = "Add NewPrecompileSet, the shared Run with custom error data and the gas table"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["4.0.6", "4.1.15"]
