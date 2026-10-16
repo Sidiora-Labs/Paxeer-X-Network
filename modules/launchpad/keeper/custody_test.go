@@ -123,11 +123,10 @@ func (c *custodyEnv) transfer(from, to common.Address, amount int64) {
 }
 
 // since is the Transfer logs written after the first before of them. CallEVM
-// writes the logs of each call ahead of the logs already in the receipt, so
-// the new ones lead the list.
+// appends the logs of each call to the receipt, so the new ones follow in
+// the order they were written.
 func (c *custodyEnv) since(before int) []transferLog {
-	logs := c.logs()
-	return logs[:len(logs)-before]
+	return c.logs()[before:]
 }
 
 // logs is the USDL Transfer logs of the current transaction so far.

@@ -310,8 +310,15 @@ func TestCreateMarketChargesFeeAndEscrowsSupply(t *testing.T) {
 	require.Equal(t, i(1_000_000), e.treasury())
 	require.Equal(t, i(1_000_000), e.custodyUsdl())
 	require.Equal(t, i(1_500_000), e.usdlOf(creator))
-	require.Equal(t, "factory/"+e.k.ModuleAddress().String()+"/lp1", market.Denom)
-	pool, token := common.HexToAddress(market.PoolAddress), common.HexToAddress(market.TokenAddress)
+	from := e.evmAddress(creator)
+	token := tokenAddress(t, e.k.Generation2().SidioraFactory, tokenSalt(from, "Kindle Token", "KNDL", 0), "Kindle Token",
+		"KNDL")
+	pool, err := e.k.PredictPoolAddress(e.ctx, token, from, common.Address{})
+	require.NoError(t, err)
+	require.Equal(t, token.Hex(), market.TokenAddress)
+	require.NotEmpty(t, testkeeper.EVMTestApp.EvmKeeper.GetCode(e.ctx, token))
+	require.Equal(t, pool.Hex(), market.PoolAddress)
+	require.Equal(t, types.ModuleName+"/"+pool.Hex(), market.Denom)
 	require.Equal(t, i(1_000_000_000_000_000), e.tokenBalance(token, pool))
 	require.Equal(t, i(1_000_000_000_000_000), e.tokenSupply(token))
 
@@ -351,7 +358,7 @@ func TestCreateMarketChargesFeeAndEscrowsSupply(t *testing.T) {
 	rich := e.account(1_000_000_000)
 	_, _, err = e.k.CreateMarket(e.ctx, e.k.ModuleCaller(), nil, e.evmAddress(rich), "Kindle Token", "KNDL", types.FeeStrategy(4),
 		common.Address{})
-	require.ErrorIs(t, err, types.ErrInvalidStrategy)
+	require.ErrorIs(t, err, types.ErrZeroAddress)
 	_, _, err = e.k.CreateMarket(e.ctx, e.k.ModuleCaller(), nil, e.evmAddress(rich), " ", "KNDL", types.FeeStrategyClaim,
 		common.Address{})
 	require.ErrorIs(t, err, types.ErrInvalidMarket)
@@ -504,7 +511,7 @@ func TestBuyMovesUsdlIntoCustody(t *testing.T) {
 	require.ElementsMatch(t, []tokenTransfer{
 		{token: e.usdl, from: from, to: custody, amount: "100000000"},
 		{token: token, from: pool, to: from, amount: "9606813905120"},
-	}, logs[:len(logs)-logsBefore])
+	}, logs[logsBefore:])
 	sameJSON(t, bankBefore, banked())
 
 	m := e.market(denom)

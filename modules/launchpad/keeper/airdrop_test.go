@@ -79,8 +79,7 @@ func (c *custodyEnv) tokenRead(token common.Address, signature string, words ...
 // quoteSince is the USDL Transfer logs written after the first before of
 // them, leaving out the Transfer logs of the pool tokens.
 func (c *custodyEnv) quoteSince(before int) []transferLog {
-	logs := c.quoteLogs()
-	return logs[:len(logs)-before]
+	return c.quoteLogs()[before:]
 }
 
 func (c *custodyEnv) quoteLogs() []transferLog {

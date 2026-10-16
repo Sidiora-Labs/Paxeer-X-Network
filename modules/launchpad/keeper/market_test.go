@@ -102,12 +102,14 @@ func TestCreateMarket(t *testing.T) {
 	t.Run("derives the recorded generation 2 token salt and pool address", func(t *testing.T) {
 		e := newEnv(t)
 		params := e.k.GetParams(e.ctx)
-		require.Equal(t, types.DefaultQuoteToken, params.QuoteToken)
+		require.Equal(t, e.usdl.Hex(), params.QuoteToken)
 		require.Equal(t, "10000000000", params.VirtualQuoteDefault.String())
 		require.Equal(t, "1000000000000000", params.VirtualTokenDefault.String())
 		require.Equal(t, recordedSalt, tokenSalt(recordedCreator, recordedName, recordedSymbol, 0))
 		require.Equal(t, recordedToken, tokenAddress(t, e.k.Generation2().SidioraFactory, recordedSalt, recordedName,
 			recordedSymbol))
+		params.QuoteToken = types.DefaultQuoteToken
+		require.NoError(t, e.k.UpdateParams(e.ctx, e.k.Authority(), params))
 		pool, err := e.k.PredictPoolAddress(e.ctx, recordedToken, recordedCreator, common.Address{})
 		require.NoError(t, err)
 		require.Equal(t, recordedPool, pool)
