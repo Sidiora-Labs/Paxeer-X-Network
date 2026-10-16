@@ -104,9 +104,9 @@ func (e v6120LaunchpadEVM) InstallRetired(ctx sdk.Context, retired, replacement 
 
 // runV6120Upgrade refuses the plan while any hook is unbound, before writing
 // any state; otherwise it records the modules the plan adds at their consensus
-// versions, runs the module migrations, moves the usid mint
-// authority to the bridge module account, migrates the legacy SID balances,
-// runs every hook in order and serves the v6.12.0 precompile set. A hook
+// versions, creates the spot module account, runs the module migrations,
+// moves the usid mint authority to the bridge module account, migrates the
+// legacy SID balances, runs every hook in order and serves the v6.12.0 precompile set. A hook
 // failure returns no version map, so the upgrade keeper records no done height.
 func (app *App) runV6120Upgrade(ctx sdk.Context, _ upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
 	hooks := app.v6120Hooks()
@@ -118,6 +118,9 @@ func (app *App) runV6120Upgrade(ctx sdk.Context, _ upgradetypes.Plan, fromVM mod
 	versions, err := app.v6120MigrationVersions(fromVM)
 	if err != nil {
 		return nil, err
+	}
+	if err := app.SpotKeeper.EnsureModuleAccount(ctx); err != nil {
+		return nil, fmt.Errorf("upgrade %s: %w", V6120Upgrade, err)
 	}
 	newVM, err := app.mm.RunMigrations(ctx, app.configurator, versions)
 	if err != nil {

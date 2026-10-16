@@ -9,6 +9,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	authkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/keeper"
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
@@ -30,9 +31,11 @@ type BankKeeper interface {
 	SendCoinsFromAccountToModule(ctx sdk.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error
 }
 
-// EVMKeeper resolves addresses and pointers and runs EVM calls outside a
-// transaction.
+// EVMKeeper resolves addresses and pointers, runs EVM calls outside a
+// transaction and exposes the account keeper that holds the spot module
+// account.
 type EVMKeeper interface {
+	AccountKeeper() *authkeeper.AccountKeeper
 	GetEVMAddressOrDefault(ctx sdk.Context, paxAddress sdk.AccAddress) common.Address
 	GetPaxAddressOrDefault(ctx sdk.Context, evmAddress common.Address) sdk.AccAddress
 	GetNativePointee(ctx sdk.Context, erc20Address string) (token string, version uint16, exists bool)

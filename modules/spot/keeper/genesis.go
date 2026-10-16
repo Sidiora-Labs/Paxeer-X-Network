@@ -7,6 +7,7 @@ import (
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -57,8 +58,39 @@ func (k *Keeper) InitGenesis(ctx sdk.Context, gs types.GenesisState) {
 	}
 }
 
+// EnsureModuleAccount creates the spot module account with its registered
+// permissions. A plain account that a bank send created at the module
+// address before the module account existed becomes the module account,
+// keeping its account number, sequence and balances.
+func (k *Keeper) EnsureModuleAccount(ctx sdk.Context) error {
+	ak := k.evmKeeper.AccountKeeper()
+	addr, perms := ak.GetModuleAddressAndPermissions(types.ModuleName)
+	if addr == nil {
+		return fmt.Errorf("spot: module account %s is not registered", types.ModuleName)
+	}
+	switch acc := ak.GetAccount(ctx, addr).(type) {
+	case nil:
+		ak.GetModuleAccount(ctx, types.ModuleName)
+	case authtypes.ModuleAccountI:
+		if acc.GetName() != types.ModuleName {
+			return fmt.Errorf("spot: module address %s holds module account %s", addr, acc.GetName())
+		}
+	case *authtypes.BaseAccount:
+		if acc.GetPubKey() != nil {
+			return fmt.Errorf("spot: module address %s holds an account with a public key", addr)
+		}
+		ak.SetModuleAccount(ctx, authtypes.NewModuleAccount(acc, types.ModuleName, perms...))
+	default:
+		return fmt.Errorf("spot: module address %s holds a %T account", addr, acc)
+	}
+	return nil
+}
+
 func (k *Keeper) initGenesis(ctx sdk.Context, gs types.GenesisState) error {
 	if err := gs.Validate(); err != nil {
+		return err
+	}
+	if err := k.EnsureModuleAccount(ctx); err != nil {
 		return err
 	}
 	store := ctx.KVStore(k.storeKey)
