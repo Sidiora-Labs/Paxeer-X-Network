@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -322,8 +323,8 @@ func TestV6120ModulesAreWired(t *testing.T) {
 	a.v6120Live = true
 	require.True(t, a.EndBlockKeepers.V6120Live())
 	a.v6120Live = false
-	require.Equal(t, a.PricefeedKeeper, a.CheckTxKeepers.PricefeedKeeper)
-	require.Equal(t, a.PricefeedKeeper, a.DeliverTxKeepers.PricefeedKeeper)
+	require.Equal(t, fmt.Sprintf("%#v", a.PricefeedKeeper), fmt.Sprintf("%#v", a.CheckTxKeepers.PricefeedKeeper))
+	require.Equal(t, fmt.Sprintf("%#v", a.PricefeedKeeper), fmt.Sprintf("%#v", a.DeliverTxKeepers.PricefeedKeeper))
 
 	upgrades, ok := layerxStoreUpgrades(V6120Upgrade)
 	require.True(t, ok)
