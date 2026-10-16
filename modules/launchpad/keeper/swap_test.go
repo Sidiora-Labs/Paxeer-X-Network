@@ -155,7 +155,9 @@ func TestSwapGoldenVectors(t *testing.T) {
 	})
 
 	t.Run("buy_1", func(t *testing.T) {
-		result := s.buy(1_000_000)
+		// The 1000000 USDL the refusals left at the pool is the prepaid input.
+		result, err := s.swap(true, b(1_000_000), b(1), s.recipient, farDeadline)
+		require.NoError(t, err)
 		requireResult(t, result, "1000000", "99690060900", "30", "3000", "300", "2700")
 		m := s.market(s.denom)
 		requireBook(t, m, "997000", "999900309939100", "3000", "0", "1000000", "1000000", "0")
