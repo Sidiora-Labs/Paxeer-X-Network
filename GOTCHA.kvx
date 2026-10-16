@@ -7941,3 +7941,103 @@ fix = "change the validator to the address canonicaliser together with the field
 area = "hyperpax"
 symptom = "tsx runs .tsx test renders with the classic JSX runtime, so a component rendered from a node test throws React is not defined although next build is fine"
 fix = "import React in any .tsx module a node test renders"
+
+[gotcha.1674]
+area = "go"
+symptom = "a lane that exports GOFLAGS=-mod=mod rewrites go.mod and go.sum on every build and the diff lands as noise"
+fix = "never set GOFLAGS=-mod=mod; vendor state is authoritative"
+
+[gotcha.1675]
+area = "perps-data"
+symptom = "hub.Listen called while the hub lock is held deadlocks the gateway on the first subscriber"
+fix = "release the hub lock before calling Listen"
+
+[gotcha.1676]
+area = "perps-data"
+symptom = "store tests on the shared lane Postgres interfere when two lanes run them at once"
+fix = "each lane uses its own database name on the lane Postgres"
+
+[gotcha.1677]
+area = "go"
+symptom = "fmt.Errorf with %v around a TransferHelper error drops the wrapped sentinel so errors.Is never matches"
+fix = "wrap with %w"
+
+[gotcha.1678]
+area = "go"
+symptom = "packing a nil *big.Int into an ABI argument panics inside go-ethereum instead of returning an error"
+fix = "guard nil before abi.Pack and use a zero big.Int"
+
+[gotcha.1679]
+area = "go"
+symptom = "go vet stops after ten errors so a package with more looks like it has exactly ten"
+fix = "fix the first ten and rerun until vet prints nothing"
+
+[gotcha.1680]
+area = "sprites"
+symptom = "sprite file push into a subdirectory of the sprite home refuses with directory does not exist although the directory exists"
+fix = "push to the home directory and mv with sprite exec"
+
+[gotcha.1681]
+area = "native"
+symptom = "a cargo build per worktree fills the disk with target directories"
+fix = "build the native libs once and hard-link liblayerx.a and the sandbox lib into each worktree"
+
+[gotcha.1682]
+area = "shell"
+symptom = "pgrep -f in an until-loop matches the loop's own shell command line and never exits"
+fix = "match on a bracketed pattern or use pgrep -x on the process name"
+
+[gotcha.1683]
+area = "node"
+symptom = "SetupWithGenesisValSet funds the bonded pool with one bond amount whatever the validator count, so any multi-validator test app panics in staking InitGenesis"
+fix = "fund the bonded pool and total supply per validator"
+
+[gotcha.1684]
+area = "node"
+symptom = "allowedReceivingModAcc only feeds BlacklistedAccAddrs; the bank keepers built from ModuleAccountAddrs still refuse sends to a module listed there"
+fix = "build the bank keepers from BlacklistedAccAddrs"
+
+[gotcha.1685]
+area = "evm"
+symptom = "CallEVM merging into a transaction receipt puts the current call's logs ahead of the earlier logs, so the newest log sits at index 0"
+fix = "read the log order from the keeper merge before asserting on an index"
+
+[gotcha.1686]
+area = "spot"
+symptom = "inside an EVM run pullTokens returns the resumed stateDB ctx, so a record written to it is invisible to reads on the caller's ctx and stopRead returns a zero record with a nil error"
+fix = "write through the caller's ctx and surface a miss as an error"
+
+[gotcha.1687]
+area = "node"
+symptom = "a non-minor upgrade plan at height N with its handler registered panics in every BeginBlock below N, and a plan written between RunBlock calls through NewUncachedContext is not applied by the next BeginBlock"
+fix = "schedule the plan inside the block flow just before its height"
+
+[gotcha.1688]
+area = "perps"
+symptom = "the perps solvency invariant fails on any block whose collateral token has no deployed code"
+fix = "name a deployed token as collateral before the first block of a test app"
+
+[gotcha.1689]
+area = "launchpad"
+symptom = "launchpadtest keepers run on an overlay store the app's own 0x1017 precompile cannot see, so a keeper write that triggers a nested surface call reverts with LXP_LAUNCHPAD_TRANSFER_FAILED"
+fix = "drive such writes through the harness EVM whose 0x1017 is the test precompile"
+
+[gotcha.1690]
+area = "launchpad"
+symptom = "swap subtests sharing one env carry USDL left by refusal cases forward as prepaid input, so a later buy that transfers again prepays twice"
+fix = "swap the already prepaid input instead of transferring again"
+
+[gotcha.1691]
+area = "node"
+symptom = "require.Equal on keeper structs holding an authkeeper.AccountKeeper never passes because of its func field, and testify's diff panics in spew on unexported map keys"
+fix = "compare the %#v rendering of the two keepers"
+
+[gotcha.1692]
+area = "node"
+symptom = "a module listed in allowedReceivingModAcc whose genesis never creates its module account gets a BaseAccount on the first send and its MintCoins panics"
+fix = "create the module account in genesis and in the upgrade handler"
+
+[gotcha.1693]
+area = "build"
+symptom = "make paxd-build depends on paxd-native-libs which runs cargo even when the libs are already linked"
+fix = "run the recipe body directly when the native libs are present"
