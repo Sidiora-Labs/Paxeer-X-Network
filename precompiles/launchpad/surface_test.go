@@ -166,10 +166,6 @@ func newSurfaceHarness(t *testing.T) *surfaceHarness {
 	usdlSend(s.creator, "approve(address,uint256)", addressWord(precompile), amountWord(fee))
 	usdlSend(s.holder, "transfer(address,uint256)", addressWord(s.bob), amountWord(bobFunds))
 	usdlSend(s.bob, "approve(address,uint256)", addressWord(precompile), amountWord(bobFunds))
-	ctx, s.markets[2], err = k.CreateMarket(ctx, k.ModuleCaller(), nil, s.creator, "Kindle Token", "KNDL",
-		types.FeeStrategyClaim, common.Address{})
-	require.NoError(t, err)
-	s.pools[2], s.tokens[2] = common.HexToAddress(s.markets[2].PoolAddress), common.HexToAddress(s.markets[2].TokenAddress)
 
 	contract, err := launchpad.NewPrecompile(keepers{Keepers: app.GetPrecompileKeepers(), launchpad: k})
 	require.NoError(t, err)
@@ -190,6 +186,18 @@ func newSurfaceHarness(t *testing.T) *surfaceHarness {
 			input: append([]byte(nil), input...), gas: gas, value: value})
 	}}
 	s.evm = vm.NewEVM(*blockCtx, s.stateDB, cfg, vm.Config{Tracer: hooks}, precompiles)
+
+	// The new market is created through the Factory surface, so the pool
+	// token's transfer hook reaches the pool surface on this EVM.
+	ret, err := s.call(s.creator, surfaceAt(types.RoleFactory), s.encode("SidioraFactory", "createMarket",
+		"Kindle Token", "KNDL", uint8(types.FeeStrategyClaim), common.Address{}))
+	require.NoError(t, err)
+	created := s.decode("SidioraFactory", "createMarket", ret)
+	s.tokens[2], s.pools[2] = created[0].(common.Address), created[1].(common.Address)
+	market, found := k.GetMarket(s.ctx(), types.ModuleName+"/"+s.pools[2].Hex())
+	require.True(t, found)
+	s.markets[2] = market
+	s.frames = nil
 	return s
 }
 
