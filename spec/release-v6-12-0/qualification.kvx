@@ -1803,3 +1803,11 @@ exit = 1
 log = fleet/logs/rerun-1.3.100-verify-2.log
 observed = TestV6120ModuleAccounts panics because nothing creates the spot module account: spot genesis never registers it, so a plain send creates a base account at the address and the first share mint fails.
 assumption = Spot genesis and the upgrade handler create the module accounts the release introduces; the node gate reruns afterwards.
+
+[finding.rerun-2.1.13]
+revision = 05e14d88a0101bc948a532518549491fb24defe6
+command = go test -v ./modules/launchpad/keeper/... -run 'TestBuyMovesUsdlIntoCustody'
+exit = 1
+log = fleet/logs/rerun-2.1.13-verify-1.log
+observed = Market creation reverts in the shared keeper test app because the v6.12.0 precompile set is never live there: the flag is derived only from the upgrade done height, which the test app never records, so the pool surface is served by the previous generation.
+assumption = The shared test app comes up with the v6.12.0 plan applied so activation derives from state; the launchpad keeper gates rerun afterwards.
