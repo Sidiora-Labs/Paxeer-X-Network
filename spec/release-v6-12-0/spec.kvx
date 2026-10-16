@@ -6884,7 +6884,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.2]
 title = "Install and test the surface runtime"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["2.2.1"]
