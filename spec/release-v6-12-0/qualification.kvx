@@ -1739,3 +1739,19 @@ exit = 1
 log = fleet/logs/fix-spot-keeper-tests-verify-1.log
 observed = The spot keeper test package compiles after the custody tests moved to the external test package; the binary panicked at init on the launchpad keeper wiring of its base.
 assumption = The package reruns on the head that carries the launchpad keeper wiring.
+
+[finding.fix-pricefeed-tests]
+revision = 492c2b72e891c63b4c2f2ac36434a5f717b67197
+command = go test ./precompiles/pricefeed/... -count=1 -p 2
+exit = 1
+log = fleet/logs/fix-pricefeed-tests-verify-2.log
+observed = The pricefeed precompile test package compiles after the duplicate view helper was renamed; the binary panicked at init on the launchpad keeper wiring of its base, and three gas formulas across the harness, the precompile and the dispatch test disagree.
+assumption = The package reruns on the head that carries the launchpad keeper wiring; the gas formula contradiction needs the pricefeed contract text to decide.
+
+[finding.fix-node-v6120-test]
+revision = 9da7df66f59aa2e210b663c40e43883081009545
+command = go test ./node/ -run 'TestV6120' -count=1 -p 2
+exit = 1
+log = fleet/logs/fix-node-v6120-test-verify-1.log
+observed = The node upgrade test compiles after the static call sender type was corrected; the binary panicked at init on the launchpad keeper wiring of its base.
+assumption = The upgrade tests rerun on the head that carries the launchpad keeper wiring.
