@@ -10,6 +10,23 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+// SidioraMetadata is the bank metadata of the usid denom: base usid at
+// exponent 0 and display SID at exponent 6.
+func SidioraMetadata() banktypes.Metadata {
+	denom := types.SidioraDenom()
+	return banktypes.Metadata{
+		Description: "Sidiora, the second official coin of Paxeer X Network.",
+		DenomUnits: []*banktypes.DenomUnit{
+			{Denom: denom, Exponent: 0},
+			{Denom: types.SidioraSymbol, Exponent: types.SidioraDecimals},
+		},
+		Base:    denom,
+		Display: types.SidioraSymbol,
+		Name:    "Sidiora",
+		Symbol:  types.SidioraSymbol,
+	}
+}
+
 func (k Keeper) EnsureSidioraDenom(ctx sdk.Context, chainID uint64) (string, error) {
 	if _, found := k.GetChain(ctx, chainID); !found {
 		return "", types.ErrUnknownChain.Wrapf("chain %d", chainID)
@@ -49,18 +66,8 @@ func (k Keeper) EnsureSidioraDenom(ctx sdk.Context, chainID uint64) (string, err
 		return "", types.ErrUnauthorized.Wrap("Sidiora admin must be the bridge module account")
 	}
 	_, err = k.tokenFactoryMsg.SetDenomMetadata(sdk.WrapSDKContext(cached), &tokenfactorytypes.MsgSetDenomMetadata{
-		Sender: creator,
-		Metadata: banktypes.Metadata{
-			Description: "Sidiora, the second official coin of Paxeer X Network.",
-			DenomUnits: []*banktypes.DenomUnit{
-				{Denom: denom, Exponent: 0},
-				{Denom: types.SidioraSymbol, Exponent: types.SidioraDecimals},
-			},
-			Base:    denom,
-			Display: types.SidioraSymbol,
-			Name:    "Sidiora",
-			Symbol:  types.SidioraSymbol,
-		},
+		Sender:   creator,
+		Metadata: SidioraMetadata(),
 	})
 	if err != nil {
 		return "", err

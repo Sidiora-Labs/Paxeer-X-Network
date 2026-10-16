@@ -5,17 +5,22 @@ import (
 
 	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	launchpadkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
+	layerxbridgekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/keeper"
+	layerxbridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
 	perpskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
 	perpstypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
 	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
 	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
 	spotkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/keeper"
 	spottypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/types"
+	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
+	tokenfactorytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
 	launchpadprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/launchpad"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
 	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/gogo/protobuf/proto"
 )
 
 // V6120Upgrade is the plan from whose height the chain executes the custody
@@ -106,7 +111,7 @@ func (e v6120LaunchpadEVM) InstallRetired(ctx sdk.Context, retired, replacement 
 // any state; otherwise it records the modules the plan adds at their consensus
 // versions, creates the spot module account, runs the module migrations,
 // moves the usid mint authority to the bridge module account, migrates the
-// legacy SID balances, runs every hook in order and serves the v6.12.0 precompile set. A hook
+// legacy SID balances, writes the usid metadata, runs every hook in order and serves the v6.12.0 precompile set. A hook
 // failure returns no version map, so the upgrade keeper records no done height.
 func (app *App) runV6120Upgrade(ctx sdk.Context, _ upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
 	hooks := app.v6120Hooks()
@@ -132,6 +137,9 @@ func (app *App) runV6120Upgrade(ctx sdk.Context, _ upgradetypes.Plan, fromVM mod
 	if err := app.migrateSIDHolders(ctx, sidHoldersJSON); err != nil {
 		return newVM, fmt.Errorf("upgrade %s: %w", V6120Upgrade, err)
 	}
+	if err := app.ensureV6120SidioraMetadata(ctx); err != nil {
+		return newVM, fmt.Errorf("upgrade %s: %w", V6120Upgrade, err)
+	}
 	for _, hook := range hooks {
 		if err := hook.run(ctx); err != nil {
 			return nil, fmt.Errorf("upgrade %s: %s: %w", V6120Upgrade, hook.name, err)
@@ -139,4 +147,21 @@ func (app *App) runV6120Upgrade(ctx sdk.Context, _ upgradetypes.Plan, fromVM mod
 	}
 	app.setV6120Live(true)
 	return newVM, nil
+}
+
+// ensureV6120SidioraMetadata writes the usid metadata of the bridge contract
+// as the bridge module account, the usid admin, unless the denom already
+// carries it; a chain whose usid was created with base-only metadata gets the
+// display unit the SID pointer needs.
+func (app *App) ensureV6120SidioraMetadata(ctx sdk.Context) error {
+	want := layerxbridgekeeper.SidioraMetadata()
+	if have, found := app.BankKeeper.GetDenomMetaData(ctx, want.Base); found && proto.Equal(&have, &want) {
+		return nil
+	}
+	_, err := tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper).SetDenomMetadata(sdk.WrapSDKContext(ctx),
+		&tokenfactorytypes.MsgSetDenomMetadata{Sender: layerxbridgetypes.ModuleAddress().String(), Metadata: want})
+	if err != nil {
+		return fmt.Errorf("%s metadata: %w", want.Base, err)
+	}
+	return nil
 }
