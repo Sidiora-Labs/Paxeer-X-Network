@@ -1867,3 +1867,11 @@ exit = 1
 log = fleet/logs/fix-node-v6120-gates-verify-1.log
 observed = With the handler writing the SID bank metadata the pointers hook passes; the end-block order test still induces its perps failure by deleting params, which the contract treats as defaults, and the halt export fixture carries native launchpad markets that the migration guard refuses.
 assumption = The follow-up test fix injects a corrupt params record and strips the native markets from the fixture; the launchpad hook then stops on the missing generation 2 deployment, a deploy-time check.
+
+[finding.fix-node-v6120-gates-2]
+revision = 179c98b79b57b84f268f53e7ed756680aa539bf9
+command = go test ./node/ -count=1 -v -run 'TestV6120ModulesAreWired|TestV6120ServesTheNewSetFromTheHandler|TestV6120ModuleAccounts|TestV6120EndBlockOrder|TestV6120AppliesThePlanOnTheHaltExport|TestKVStoreKeyNamesMatchMemIAVLStoreKeys'
+exit = 1
+log = fleet/logs/fix-node-v6120-gates-2-verify-1.log
+observed = Five of the six node wiring tests pass; the halt export test stops at the launchpad hook's generation 2 factory treasury check because the fixture carries no Launch-x deployment.
+assumption = The halt export test is checked at deploy time against the real export, as recorded for the perps flow test.
