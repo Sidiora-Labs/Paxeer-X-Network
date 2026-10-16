@@ -1859,3 +1859,11 @@ exit = 1
 log = fleet/logs/fix-perps-integration-upgrade-2-verify-1.log
 observed = The perps flow test applies the v6.12.0 plan to the halt export, whose state carries no generation 2 launchpad deployment, so the launchpad hook refuses a zero factory treasury before the perps flow starts.
 assumption = The test seeds the real deployment state once the launchpad golden record exists, so this gate is checked at deploy time against the real export.
+
+[finding.fix-node-v6120-gates]
+revision = 95f2ca02a7d7628a5db9da66cf7679e477b2e02b
+command = go test ./node/ -count=1 -v -run 'TestV6120ModulesAreWired|TestV6120ServesTheNewSetFromTheHandler|TestV6120ModuleAccounts|TestV6120EndBlockOrder|TestV6120AppliesThePlanOnTheHaltExport|TestKVStoreKeyNamesMatchMemIAVLStoreKeys'
+exit = 1
+log = fleet/logs/fix-node-v6120-gates-verify-1.log
+observed = With the handler writing the SID bank metadata the pointers hook passes; the end-block order test still induces its perps failure by deleting params, which the contract treats as defaults, and the halt export fixture carries native launchpad markets that the migration guard refuses.
+assumption = The follow-up test fix injects a corrupt params record and strips the native markets from the fixture; the launchpad hook then stops on the missing generation 2 deployment, a deploy-time check.
