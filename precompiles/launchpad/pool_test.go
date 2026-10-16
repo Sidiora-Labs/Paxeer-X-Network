@@ -142,7 +142,14 @@ func newPoolEnv(t *testing.T) *poolEnv {
 	blockCtx, err := app.EvmKeeper.GetVMBlockContext(ctx, core.GasPool(math.MaxUint64))
 	require.NoError(t, err)
 	cfg := evmtypes.DefaultChainConfig().EthereumConfig(app.EvmKeeper.ChainID(ctx))
-	e.evm = vm.NewEVM(*blockCtx, e.stateDB, cfg, vm.Config{}, app.EvmKeeper.CustomPrecompiles(ctx))
+	contract, err := launchpad.NewPrecompile(keepers{Keepers: app.GetPrecompileKeepers(), launchpad: k})
+	require.NoError(t, err)
+	precompiles := map[common.Address]vm.PrecompiledContract{}
+	for address, p := range app.EvmKeeper.CustomPrecompiles(ctx) {
+		precompiles[address] = p
+	}
+	precompiles[precompile] = contract
+	e.evm = vm.NewEVM(*blockCtx, e.stateDB, cfg, vm.Config{}, precompiles)
 	return e
 }
 
