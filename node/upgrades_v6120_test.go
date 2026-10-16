@@ -443,10 +443,10 @@ func TestV6120EndBlockOrder(t *testing.T) {
 	a := w.App
 	height := w.Ctx.BlockHeight()
 
-	// Without perps params a perps end block emits a setup error event, which
-	// shows whether the venue was called.
+	// With a params record that does not decode a perps end block emits a
+	// setup error event, which shows whether the venue was called.
 	ctx, _ := w.Ctx.CacheContext()
-	ctx.KVStore(a.GetKey(perpstypes.StoreKey)).Delete(perpstypes.ParamsKey)
+	ctx.KVStore(a.GetKey(perpstypes.StoreKey)).Set(perpstypes.ParamsKey, []byte("not json"))
 
 	// Before the plan neither venue runs and nothing panics.
 	require.False(t, a.v6120Live)
