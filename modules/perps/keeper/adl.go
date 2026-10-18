@@ -134,7 +134,7 @@ func (k *Keeper) ExecuteADL(ctx sdk.Context, deficitIDs []uint256.Int, previousM
 			if err != nil {
 				return nil, err
 			}
-			if account.DeficitUsd.IsZero() || deficit.SizeBase.IsZero() {
+			if deficit.SizeBase.IsZero() {
 				break
 			}
 			size := deficit.SizeBase
@@ -155,6 +155,9 @@ func (k *Keeper) ExecuteADL(ctx sdk.Context, deficitIDs []uint256.Int, previousM
 				}
 				events = append(events, applied.Events...)
 				events = append(events, applied.TradeSettledEvents(new(big.Int), new(big.Int))...)
+			}
+			if err := adlCoverDeficit(store, deficit.Account, counterparty, size, price); err != nil {
+				return nil, err
 			}
 			oiEvent, err := k.CheckOpenInterest(cached, OpenInterestFill{
 				MarketID: deficit.MarketID, SizeBase: size, PriceUsd: price,
@@ -190,6 +193,57 @@ func (k *Keeper) ExecuteADL(ctx sdk.Context, deficitIDs []uint256.Int, previousM
 	}
 	write()
 	return events, nil
+}
+
+// adlCoverDeficit debits from the counterparty collateral the least of the
+// profit its reduced size realized at the previous mark, its collateral and the
+// holder deficit, rounding the USDL debit up into residueUsd, and subtracts the
+// covered USD from the holder deficit and the venue deficit sum.
+func adlCoverDeficit(store sdk.KVStore, holder common.Address, counterparty types.Position, size, price uint256.Int) error {
+	account, err := adlAccount(store, holder)
+	if err != nil {
+		return err
+	}
+	if account.DeficitUsd.IsZero() {
+		return nil
+	}
+	payer, err := adlAccount(store, counterparty.Account)
+	if err != nil {
+		return err
+	}
+	var books types.VenueBooks
+	if raw := store.Get(types.VenueBooksKey); raw != nil {
+		if err := books.Unmarshal(raw); err != nil {
+			return fmt.Errorf("%w: venue books: %v", types.ErrInvalidParams, err)
+		}
+	}
+	move := new(big.Int).Sub(price.ToBig(), counterparty.EntryPrice.ToBig())
+	covered := new(big.Int).Quo(new(big.Int).Mul(size.ToBig(), move.Abs(move)), big.NewInt(1_000_000_000_000_000_000))
+	if balance := new(big.Int).Mul(payer.Collateral.ToBig(), insuranceUsdPerUsdl); balance.Cmp(covered) < 0 {
+		covered = balance
+	}
+	if deficit := account.DeficitUsd.ToBig(); deficit.Cmp(covered) < 0 {
+		covered = deficit
+	}
+	if covered.Sign() == 0 {
+		return nil
+	}
+	debit := insuranceCeilDiv(covered, insuranceUsdPerUsdl)
+	residue := new(big.Int).Sub(new(big.Int).Mul(debit, insuranceUsdPerUsdl), covered)
+	if books.ResidueUsd, err = insuranceAdd(books.ResidueUsd, residue); err != nil {
+		return err
+	}
+	if books.DeficitSumUsd.ToBig().Cmp(covered) < 0 {
+		return fmt.Errorf("%w: deficit sum %s below the ADL cover %s of account %s",
+			types.ErrInvalidParams, books.DeficitSumUsd.Dec(), covered, holder)
+	}
+	books.DeficitSumUsd.SetFromBig(new(big.Int).Sub(books.DeficitSumUsd.ToBig(), covered))
+	payer.Collateral.SetFromBig(new(big.Int).Sub(payer.Collateral.ToBig(), debit))
+	account.DeficitUsd.SetFromBig(new(big.Int).Sub(account.DeficitUsd.ToBig(), covered))
+	store.Set(types.AccountKey(counterparty.Account), payer.Marshal())
+	store.Set(types.AccountKey(holder), account.Marshal())
+	store.Set(types.VenueBooksKey, books.Marshal())
+	return nil
 }
 
 func adlPosition(store sdk.KVStore, id uint256.Int) (types.Position, error) {
