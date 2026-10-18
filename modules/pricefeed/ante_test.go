@@ -235,6 +235,12 @@ func TestSubmissionMark(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, int64(51), last)
 
+	recheckAhead := checkAt(ctx, 51).WithIsReCheckTx(true).WithTxBytes(bz)
+	require.NoError(t, pricefeed.MarkSubmission(recheckAhead, tx, k))
+	last, ok = k.GetLastSubmissionHeight(recheckAhead, operator)
+	require.True(t, ok)
+	require.Equal(t, int64(51), last)
+
 	other := checkAt(ctx, 51)
 	sendTx, sendBz := buildTx(t, send("a"))
 	require.NoError(t, pricefeed.MarkSubmission(other.WithTxBytes(sendBz), sendTx, k))
@@ -285,8 +291,13 @@ func TestSubmissionCheckBounds(t *testing.T) {
 
 		submitted, _ := mode.CacheContext()
 		k.SetLastSubmissionHeight(submitted, operator, 50)
+		tx, bz = buildTx(t, submission(feeder, 33))
+		requireRefusal(t, pricefeed.CheckSubmission(submitted.WithTxBytes(bz), tx, k), types.ErrTooManyObservations, "LXP_PRICEFEED_TOO_MANY_OBSERVATIONS")
 		tx, bz = buildTx(t, submission(feeder, 1))
 		requireRefusal(t, pricefeed.CheckSubmission(submitted.WithTxBytes(bz), tx, k), types.ErrRateLimited, "LXP_PRICEFEED_RATE_LIMITED")
+		last, ok := k.GetLastSubmissionHeight(submitted, operator)
+		require.True(t, ok)
+		require.Equal(t, int64(50), last)
 
 		tx, bz = sizedTx(t, 8193, send("a"))
 		require.NoError(t, run(tx, bz))
