@@ -261,7 +261,7 @@ func TestFundingBeforeLiquidation(t *testing.T) {
 		ReferencePrice: usd18(60_000), CostBasisUsd: usd18(60_000), EntryPrice: usd18(60_000),
 		Leverage: usd18(1000), OpenedAt: at - secondsPerHour,
 	}
-	account := types.Account{Address: trader, Collateral: *uint256.NewInt(87_000_000), PositionCount: 1, Created: true}
+	account := types.Account{Address: trader, Collateral: *uint256.NewInt(2_428_000_000), PositionCount: 1, Created: true}
 	id := position.ID.Bytes32()
 	k.store(ctx).Set(types.AccountKey(trader), account.Marshal())
 	k.store(ctx).Set(types.PositionKey(position.ID), position.Marshal())
@@ -285,7 +285,7 @@ func TestFundingBeforeLiquidation(t *testing.T) {
 
 	before, err := k.IsLiquidatable(ctx, trader)
 	require.NoError(t, err)
-	require.False(t, before, "87 USD of collateral covers the 30 USD maintenance of 60,000 USD at 1000x")
+	require.False(t, before, "2,428 USD of collateral covers the 30 USD maintenance of 60,000 USD at 1000x")
 
 	events, err := k.SettleFunding(ctx, market)
 	require.NoError(t, err)
