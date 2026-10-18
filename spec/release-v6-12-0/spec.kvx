@@ -10833,7 +10833,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.1.11]
 title = "Compute the mark from the book and the pricefeed"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["3.1.5", "5.1.9"]
