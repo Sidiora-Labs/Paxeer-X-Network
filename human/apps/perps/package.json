@@ -4,13 +4,14 @@
   "version": "0.1.0",
   "packageManager": "pnpm@10.28.0",
   "scripts": {
-    "dev": "pnpm --filter @sidioralabs/chainflow-data-gateway build && pnpm --filter @paxeer-network/web dev",
+    "prepare:gateway": "pnpm --filter @sidioralabs/chainflow-data-gateway build",
+    "dev": "pnpm prepare:gateway && pnpm --filter @paxeer-network/web dev",
     "build": "pnpm --filter @paxeer-network/web build",
     "start": "pnpm --filter @paxeer-network/web start",
-    "typecheck": "tsc --noEmit -p apps/web/tsconfig.json",
+    "typecheck": "pnpm prepare:gateway && tsc --noEmit -p apps/web/tsconfig.json",
     "check:ui": "node scripts/check-ui-source.mjs",
     "check:ui:write": "node scripts/write-ui-baseline.mjs",
-    "test": "node --test --import tsx tests/*.test.ts",
+    "test": "pnpm prepare:gateway && node --test --import tsx tests/*.test.ts",
     "test:browser": "playwright test"
   },
   "devDependencies": {

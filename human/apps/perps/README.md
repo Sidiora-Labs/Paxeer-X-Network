@@ -9,11 +9,12 @@ Run from this directory with pnpm 10 (`packageManager` in `package.json`).
 | Command | Purpose |
 | --- | --- |
 | `pnpm install --frozen-lockfile` | Install the workspace from `pnpm-lock.yaml`. |
+| `pnpm prepare:gateway` | Build `@sidioralabs/chainflow-data-gateway` (`packages/chainflow`) into its gitignored `dist/`, which `pnpm install` does not produce. `pnpm dev`, `pnpm typecheck` and `pnpm test` run it first. |
 | `pnpm dev` | Build the data gateway package and start the web app on port 3000. |
 | `pnpm build` | Production build of the web app. |
 | `pnpm start` | Serve the production build on port 3000. |
-| `pnpm typecheck` | Type-check the web app and the packages it imports. |
-| `pnpm test` | Run the Node test suite in `tests/*.test.ts`. |
+| `pnpm typecheck` | Build the data gateway package, then type-check the web app and the packages it imports. |
+| `pnpm test` | Build the data gateway package, then run the Node test suite in `tests/*.test.ts`. |
 | `pnpm test:browser` | Run the Playwright browser tests. |
 | `pnpm check:ui` | Verify the tracked presentation sources against `docs/ui-source-baseline.json`; exits nonzero and lists every file that drifted. |
 | `pnpm check:ui:write` | Regenerate `docs/ui-source-baseline.json` from the tracked presentation sources at the current HEAD after an intended presentation change. |
