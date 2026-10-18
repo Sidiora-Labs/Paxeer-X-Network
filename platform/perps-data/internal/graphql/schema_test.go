@@ -107,7 +107,7 @@ func TestSchemaSDL(t *testing.T) {
             leaderboard(limit: $limit, offset: $offset) {
                 rank userAddress totalRealizedPnl totalTrades winRate avgHoldTime openPositions totalVolume
             }
-        }`)
+        }`, nil)
 	})
 	t.Run("margin_mode_field", func(t *testing.T) {
 		schema := newTestSchema(t)
@@ -124,32 +124,33 @@ func TestSchemaSDL(t *testing.T) {
             }
             delegates(userAddress: $userAddress) { delegateAddress canTrade canWithdraw canModifyMargin expiry }
             userStats(userAddress: $userAddress) { totalPositions openPositions totalRealizedPnl totalTrades activeOrders }
-        }`)
+        }`, map[string]any{"userAddress": "0x00000000000000000000000000000000000000a1"})
 	})
 	t.Run("subscription_fields", func(t *testing.T) {
 		schema := newTestSchema(t)
 		cases := []struct {
-			name     string
-			result   string
-			args     map[string]string
-			document string
+			name      string
+			result    string
+			args      map[string]string
+			document  string
+			variables map[string]any
 		}{
 			{"indexerStatusUpdated", "IndexerStatus", nil,
-				`subscription { indexerStatusUpdated { lastIndexedBlock chainHead isSynced blocksScanned eventsProcessed } }`},
+				`subscription { indexerStatusUpdated { lastIndexedBlock chainHead isSynced blocksScanned eventsProcessed } }`, nil},
 			{"latestPricesUpdated", "[LatestPrice!]!", nil,
-				`subscription { latestPricesUpdated { marketId price updatedAt blockNumber } }`},
+				`subscription { latestPricesUpdated { marketId price updatedAt blockNumber } }`, nil},
 			{"priceUpdated", "PriceUpdate", map[string]string{"marketId": "Int"},
-				`subscription PriceUpdated($marketId: Int!) { priceUpdated(marketId: $marketId) { marketId price updatedAt blockNumber } }`},
+				`subscription PriceUpdated($marketId: Int!) { priceUpdated(marketId: $marketId) { marketId price updatedAt blockNumber } }`, map[string]any{"marketId": 0}},
 			{"positionChanged", "[Position!]!", map[string]string{"userAddress": "String!"},
-				`subscription PositionChanged($userAddress: String!) { positionChanged(userAddress: $userAddress) { positionId marketId isLong sizeUsd leverage entryPrice status realizedPnl } }`},
+				`subscription PositionChanged($userAddress: String!) { positionChanged(userAddress: $userAddress) { positionId marketId isLong sizeUsd leverage entryPrice status realizedPnl } }`, map[string]any{"userAddress": "0x00000000000000000000000000000000000000a1"}},
 			{"orderChanged", "Order", map[string]string{"userAddress": "String!"},
-				`subscription OrderChanged($userAddress: String!) { orderChanged(userAddress: $userAddress) { orderId status marketId orderType remainingSize blockTimestamp } }`},
+				`subscription OrderChanged($userAddress: String!) { orderChanged(userAddress: $userAddress) { orderId status marketId orderType remainingSize blockTimestamp } }`, map[string]any{"userAddress": "0x00000000000000000000000000000000000000a1"}},
 			{"tradeCreated", "Trade", map[string]string{"marketId": "Int!"},
-				`subscription TradeCreated($marketId: Int!) { tradeCreated(marketId: $marketId) { positionId userAddress sizeUsd executionPrice tradeType blockTimestamp } }`},
+				`subscription TradeCreated($marketId: Int!) { tradeCreated(marketId: $marketId) { positionId userAddress sizeUsd executionPrice tradeType blockTimestamp } }`, map[string]any{"marketId": 0}},
 			{"liquidationCreated", "Liquidation", map[string]string{"marketId": "Int!"},
-				`subscription Liquidations($marketId: Int!) { liquidationCreated(marketId: $marketId) { positionId userAddress sizeUsd executionPrice blockTimestamp } }`},
+				`subscription Liquidations($marketId: Int!) { liquidationCreated(marketId: $marketId) { positionId userAddress sizeUsd executionPrice blockTimestamp } }`, map[string]any{"marketId": 0}},
 			{"tradeExecuted", "TradeExecuted", map[string]string{"marketId": "Int"},
-				`subscription TradeExecuted($marketId: Int) { tradeExecuted(marketId: $marketId) { tradeId marketId isLong sizeUsd price blockTimestamp } }`},
+				`subscription TradeExecuted($marketId: Int) { tradeExecuted(marketId: $marketId) { tradeId marketId isLong sizeUsd price blockTimestamp } }`, map[string]any{"marketId": 0}},
 		}
 		subscription, ok := schema.AST().RootOperationTypes["subscription"].(*ast.ObjectTypeDefinition)
 		if !ok || len(subscription.Fields) != len(cases) {
@@ -157,13 +158,13 @@ func TestSchemaSDL(t *testing.T) {
 		}
 		for _, tc := range cases {
 			assertSchemaField(t, schema, "Subscription", tc.name, tc.result, tc.args)
-			assertValidDocument(t, schema, tc.document)
+			assertValidDocument(t, schema, tc.document, tc.variables)
 		}
 		assertValidDocument(t, schema, `subscription PriceUpdated($marketId: Int) {
             priceUpdated(marketId: $marketId) { marketId price timestamp }
-        }`)
-		assertValidDocument(t, schema, `subscription { priceUpdated { marketId price timestamp } }`)
-		assertValidDocument(t, schema, `subscription { tradeExecuted { tradeId marketId isLong sizeUsd price blockTimestamp } }`)
+        }`, nil)
+		assertValidDocument(t, schema, `subscription { priceUpdated { marketId price timestamp } }`, nil)
+		assertValidDocument(t, schema, `subscription { tradeExecuted { tradeId marketId isLong sizeUsd price blockTimestamp } }`, nil)
 	})
 	t.Run("perfdb_roots", func(t *testing.T) {
 		schema := newTestSchema(t)
@@ -191,11 +192,11 @@ func TestSchemaSDL(t *testing.T) {
 			if _, ok := tc.args["id"]; ok {
 				arguments = `(id: "contest")`
 			}
-			assertValidDocument(t, schema, "{ "+tc.name+arguments+" { "+tc.fields+" } }")
+			assertValidDocument(t, schema, "{ "+tc.name+arguments+" { "+tc.fields+" } }", nil)
 		}
 		assertValidDocument(t, schema, `query UserDailyPnl($address: String!, $limit: Int!) {
             userDailyPnl(address: $address, limit: $limit) { date pnl volume trades }
-        }`)
+        }`, map[string]any{"address": "0x00000000000000000000000000000000000000a1", "limit": 30})
 		assertSchemaField(t, schema, "Query", "userStats", "UserStats", map[string]string{
 			"userAddress": "String", "address": "String",
 		})
@@ -208,7 +209,7 @@ func TestSchemaSDL(t *testing.T) {
 		})
 		assertValidDocument(t, schema, `query UserStats($address: String!) {
             userStats(address: $address) { address totalPnl totalVolume totalFeesPaid totalTrades winCount lossCount liquidationCount openPositions }
-        }`)
+        }`, map[string]any{"address": "0x00000000000000000000000000000000000000a1"})
 		for _, query := range []string{
 			`{ userStats { address } }`,
 			`{ userStats(userAddress: "0x00000000000000000000000000000000000000a1", address: "0x00000000000000000000000000000000000000a1") { address } }`,
@@ -283,9 +284,9 @@ func assertSchemaFields(t *testing.T, schema *graphql.Schema, object string, fie
 	}
 }
 
-func assertValidDocument(t *testing.T, schema *graphql.Schema, document string) {
+func assertValidDocument(t *testing.T, schema *graphql.Schema, document string, variables map[string]any) {
 	t.Helper()
-	if errors := schema.Validate(document); len(errors) != 0 {
+	if errors := schema.ValidateWithVariables(document, variables); len(errors) != 0 {
 		t.Errorf("document rejected: %v", errors)
 	}
 }
