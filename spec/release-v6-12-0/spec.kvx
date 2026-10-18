@@ -16818,7 +16818,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.3.2]
 title = "Register the spot solvency, share and escrow invariants"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["4.2.9"]
