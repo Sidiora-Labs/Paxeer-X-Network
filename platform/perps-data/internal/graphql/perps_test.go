@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"os"
 	"reflect"
 	"strings"
@@ -195,30 +196,7 @@ func seedPerps(t *testing.T, db *sql.DB, now time.Time) (b100, b101, b102 time.T
 
 	parent := common.Hash{}
 	for _, b := range []*block{one, two, three} {
-		tx, err := db.BeginTx(ctx, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		header := store.Block{Number: b.n, Hash: blockHash(b.n), ParentHash: parent, Time: b.at, Proposer: strings.Repeat("AB", 20), TxCount: 3}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO perps.blocks (number, hash, parent_hash, time, proposer, tx_count) VALUES ($1, $2, $3, $4, $5, $6)`,
-			int64(header.Number), header.Hash.Bytes(), header.ParentHash.Bytes(), header.Time, header.Proposer, header.TxCount); err != nil {
-			_ = tx.Rollback()
-			t.Fatalf("block row %d: %v", b.n, err)
-		}
-		if err := store.WriteBlock(ctx, tx, header, &b.res); err != nil {
-			_ = tx.Rollback()
-			t.Fatalf("WriteBlock %d: %v", b.n, err)
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO perps.cursors (name, height, hash, updated_at) VALUES ($1, $2, $3, now())
-ON CONFLICT (name) DO UPDATE SET height = EXCLUDED.height, hash = EXCLUDED.hash, updated_at = now()`,
-			headCursor, int64(header.Number), header.Hash.Bytes()); err != nil {
-			_ = tx.Rollback()
-			t.Fatalf("head cursor %d: %v", b.n, err)
-		}
-		if err := tx.Commit(); err != nil {
-			t.Fatal(err)
-		}
-		parent = header.Hash
+		parent = writeBlock(t, db, b, parent)
 	}
 
 	tx, err := db.BeginTx(ctx, nil)
@@ -243,6 +221,37 @@ VALUES (100, $1, 3, 20, 0, $2, 'perps_endblock', $3, $4, 'aggregate', $4, 1, $5,
 		t.Fatal(err)
 	}
 	return b100, b101, b102
+}
+
+// writeBlock commits b the way the follower does, the perps.blocks row,
+// store.WriteBlock and the head cursor, and answers its hash.
+func writeBlock(t *testing.T, db *sql.DB, b *block, parent common.Hash) common.Hash {
+	t.Helper()
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := store.Block{Number: b.n, Hash: blockHash(b.n), ParentHash: parent, Time: b.at, Proposer: strings.Repeat("AB", 20), TxCount: 3}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO perps.blocks (number, hash, parent_hash, time, proposer, tx_count) VALUES ($1, $2, $3, $4, $5, $6)`,
+		int64(header.Number), header.Hash.Bytes(), header.ParentHash.Bytes(), header.Time, header.Proposer, header.TxCount); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("block row %d: %v", b.n, err)
+	}
+	if err := store.WriteBlock(ctx, tx, header, &b.res); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("WriteBlock %d: %v", b.n, err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO perps.cursors (name, height, hash, updated_at) VALUES ($1, $2, $3, now())
+ON CONFLICT (name) DO UPDATE SET height = EXCLUDED.height, hash = EXCLUDED.hash, updated_at = now()`,
+		headCursor, int64(header.Number), header.Hash.Bytes()); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("head cursor %d: %v", b.n, err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	return header.Hash
 }
 
 // countingConnector counts the queries database/sql sends to the server.
@@ -352,17 +361,8 @@ func TestPerpsResolvers(t *testing.T) {
 	})
 
 	t.Run("position_market_batched", func(t *testing.T) {
-		base, err := pq.NewConnector(url)
-		if err != nil {
-			t.Fatal(err)
-		}
 		var queries atomic.Int64
-		counted := sql.OpenDB(countingConnector{Connector: base, queries: &queries})
-		t.Cleanup(func() { _ = counted.Close() })
-		cs, err := NewSchema(counted)
-		if err != nil {
-			t.Fatal(err)
-		}
+		cs := countingSchema(t, url, &queries)
 		check(t, cs, `{ positions { positionId market { symbol } } }`,
 			`{"positions":[{"positionId":"2","market":{"symbol":"SOL"}},{"positionId":"1","market":{"symbol":"ETH"}}]}`)
 		if n := queries.Load(); n != 2 {
@@ -704,6 +704,97 @@ func TestPerpsResolvers(t *testing.T) {
 			`{"orderlyOpenInterests":[{"symbol":"PERP_ETH_USDC","paxeerSymbol":"ETH","long_oi":0,"short_oi":0},
 {"symbol":"PERP_SOL_USDC","paxeerSymbol":"SOL","long_oi":0,"short_oi":0}]}`)
 	})
+
+	t.Run("max_depth", func(t *testing.T) {
+		var queries atomic.Int64
+		cs := countingSchema(t, url, &queries)
+		query := `{ positions { market { latestPrice { ` + strings.Repeat("price { ", 7) + "price" + strings.Repeat(" }", 10) + " }"
+		data, errs := exec(t, cs, query)
+		if len(errs) == 0 || errs[0] != `Field "price" has depth 11 that exceeds max depth 10` {
+			t.Fatalf("errors %v", errs)
+		}
+		if data != "" && data != "null" {
+			t.Fatalf("over-deep query answered data %s", data)
+		}
+		if n := queries.Load(); n != 0 {
+			t.Fatalf("over-deep query sent %d queries, want 0", n)
+		}
+	})
+
+	// The subtests below seed block 103 with 20 open positions over markets 3
+	// to 7 and 600 trades, so they run after every subtest above.
+	extra := &block{n: 103, at: b102.Add(10 * time.Second)}
+	for i := range 20 {
+		user := common.BigToAddress(big.NewInt(int64(0xe00 + i)))
+		id := fmt.Sprint(101 + i)
+		f := extra.fact(int64(i), false, "opened", user)
+		extra.add("PositionOpened", map[string]any{"positionId": id}, decode.PositionOpenedRow{Fact: f, PositionID: id, User: user,
+			MarketID: fmt.Sprint(3 + i%5), IsLong: i%2 == 0, SizeUSD: usd500, Leverage: "10000000000000000000", EntryPrice: px3000,
+			CollateralToken: store.USDL, CollateralAmount: "50000000"})
+	}
+	trader := common.BigToAddress(big.NewInt(0xf00))
+	for i := range 600 {
+		f := extra.fact(20, false, "settled", trader)
+		extra.add("TradeSettled", map[string]any{"positionId": "101"}, decode.TradeSettledRow{Fact: f, PositionID: "101", User: trader, MarketID: "3",
+			TradeType: 4, SizeUSD: usd1, ExecutionPrice: px3000, GrossPnl: "0", TotalFeesUSD: "0", FundingPaidUSD: "0", NetPayoutTokens: fmt.Sprint(i)})
+	}
+	writeBlock(t, db, extra, blockHash(102))
+
+	t.Run("batched_market", func(t *testing.T) {
+		var queries atomic.Int64
+		cs := countingSchema(t, url, &queries)
+		list := mustList(t, cs, `{ positions(status: "open") { positionId market { symbol } } }`, "positions")
+		if len(list) != 20 {
+			t.Fatalf("positions answered %d rows, want 20", len(list))
+		}
+		symbols := map[string]bool{}
+		for _, p := range list {
+			m, ok := p["market"].(map[string]any)
+			if !ok || m["symbol"] == nil {
+				t.Fatalf("position %v has no market symbol", p)
+			}
+			symbols[m["symbol"].(string)] = true
+		}
+		if len(symbols) != 5 {
+			t.Fatalf("positions span %d markets, want 5", len(symbols))
+		}
+		if n := queries.Load(); n != 2 {
+			t.Fatalf("GetPositions over 20 positions and 5 markets sent %d queries, want 2", n)
+		}
+	})
+
+	t.Run("limit_clamp_trades", func(t *testing.T) {
+		u := lower(trader)
+		if got := len(mustList(t, s, `{ trades(userAddress: "`+u+`", limit: 1000) { blockNumber } }`, "trades")); got != 500 {
+			t.Fatalf("trades(limit: 1000) answered %d rows, want 500", got)
+		}
+		if got := len(mustList(t, s, `{ trades(userAddress: "`+u+`") { blockNumber } }`, "trades")); got != 50 {
+			t.Fatalf("trades without limit answered %d rows, want 50", got)
+		}
+		if got := len(mustList(t, s, `{ trades(userAddress: "`+u+`", limit: 0) { blockNumber } }`, "trades")); got != 1 {
+			t.Fatalf("trades(limit: 0) answered %d rows, want 1", got)
+		}
+		if got := len(mustList(t, s, `{ trades(userAddress: "`+u+`", limit: 500, offset: 550) { blockNumber } }`, "trades")); got != 50 {
+			t.Fatalf("trades(offset: 550) answered %d rows, want 50", got)
+		}
+	})
+}
+
+// countingSchema answers a schema over a new pool to url whose queries are
+// counted in queries.
+func countingSchema(t *testing.T, url string, queries *atomic.Int64) *graphql.Schema {
+	t.Helper()
+	base, err := pq.NewConnector(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counted := sql.OpenDB(countingConnector{Connector: base, queries: queries})
+	t.Cleanup(func() { _ = counted.Close() })
+	cs, err := NewSchema(counted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cs
 }
 
 // mustList runs query and answers the list under root.
