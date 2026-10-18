@@ -454,6 +454,16 @@ func TestServedAbiCarriesAddedErrors(t *testing.T) {
 }
 
 func TestCustomErrorRevertData(t *testing.T) {
+	transfer := types.SafeERC20FailedOperation(errorToken)
+	wantTransfer := append(hexutil.MustDecode("0x5274afe7"), word(errorToken.Bytes())...)
+	for _, err := range []error{
+		transfer,
+		sdkerrors.Wrap(transfer, "marketBuy"),
+		fmt.Errorf("marketBuy: %w", transfer),
+	} {
+		require.Equal(t, wantTransfer, spot.PackError(err), err.Error())
+	}
+
 	slippage := hexutil.MustDecode("0xbb2875c3")
 	for _, err := range []error{
 		types.ErrInsufficientOutput,
