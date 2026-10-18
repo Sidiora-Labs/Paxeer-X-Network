@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
 	"github.com/ethereum/go-ethereum/common"
 	gql "github.com/graph-gophers/graphql-go"
@@ -216,7 +217,7 @@ func TestAccountResolvers(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			response := schema.Exec(context.Background(), `{userStats`+tc.args+`{totalPnl}}`, "", nil)
-			if len(response.Errors) != 1 || response.Errors[0].Message != "exactly one of userAddress and address is required" {
+			if len(response.Errors) != 1 || response.Errors[0].Message != "exactly one of userAddress or address is required" {
 				t.Fatalf("errors = %v", response.Errors)
 			}
 			accountTestJSON(t, response.Data, `{"userStats":null}`)
@@ -292,8 +293,13 @@ func TestAccountResolvers(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		feed, err := NewFeed(7, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		ctx = withFeed(ctx, feed)
 		var streams []<-chan any
 		for _, market := range []any{int32(1), nil} {
 			stream, err := full.Subscribe(ctx, `subscription TradeExecuted($marketId:Int){tradeExecuted(marketId:$marketId){tradeId marketId isLong sizeUsd price blockTimestamp}}`, "", map[string]any{"marketId": market})
@@ -318,6 +324,7 @@ func TestAccountResolvers(t *testing.T) {
 			if err := db.QueryRow(`SELECT row_id::text FROM perps.fills WHERE log_index=$1`, sequence).Scan(&id); err != nil {
 				t.Fatal(err)
 			}
+			feed.Deliver("perps.7."+market+".fill", delivery.Envelope{})
 			return id
 		}
 		receive := func(stream <-chan any, market int, id string) {
