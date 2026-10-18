@@ -154,6 +154,7 @@ func TestDecoderColumnsMatchABI(t *testing.T) {
 	t.Run("table_matches_abi", func(t *testing.T) {
 		covered := map[key]bool{}
 		shareCovered := map[common.Hash]bool{}
+		feeCovered := map[common.Hash]bool{}
 		for _, row := range decodingTable(t) {
 			for _, k := range row.kinds {
 				if !kinds[[2]string{row.table, k}] {
@@ -164,13 +165,13 @@ func TestDecoderColumnsMatchABI(t *testing.T) {
 				continue
 			}
 			var addresses []common.Address
-			share := false
+			share, fee := false, false
 			for _, s := range strings.Split(row.sources, ",") {
 				switch s = strings.TrimSpace(s); {
 				case s == "share pointers":
 					share = true
 				case s == "any of 0x1021 to 0x1025 by topic0" || s == "any of 0x1021 to 0x1025":
-					addresses = append(addresses, SpotPoolAddress, SpotOrdersAddress, SpotStopAddress, SpotQuoterAddress, SpotVaultAddress)
+					fee = true
 				case s == "by topic0":
 				case strings.HasPrefix(s, "USDL "):
 					addresses = append(addresses, common.HexToAddress(strings.TrimPrefix(s, "USDL ")))
@@ -197,6 +198,18 @@ func TestDecoderColumnsMatchABI(t *testing.T) {
 					t.Errorf("%s: no decoder at %s", row.name, a.Hex())
 				}
 			}
+			if fee {
+				found := false
+				for topic, e := range r.fees {
+					if e.event.Name == row.name {
+						check("any of 0x1021 to 0x1025", e)
+						feeCovered[topic], found = true, true
+					}
+				}
+				if !found {
+					t.Errorf("%s: no fee decoder", row.name)
+				}
+			}
 			if share {
 				found := false
 				for topic, e := range r.share {
@@ -218,6 +231,11 @@ func TestDecoderColumnsMatchABI(t *testing.T) {
 		for topic, e := range r.share {
 			if !shareCovered[topic] {
 				t.Errorf("share decoder %s has no table row", e.event.Name)
+			}
+		}
+		for topic, e := range r.fees {
+			if !feeCovered[topic] {
+				t.Errorf("fee decoder %s has no table row", e.event.Name)
 			}
 		}
 	})

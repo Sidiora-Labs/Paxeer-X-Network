@@ -264,6 +264,12 @@ func TestSpotDecoders(t *testing.T) {
 
 	t.Run("address_set", func(t *testing.T) {
 		r := registry(t, nil)
+		for _, k := range r.Keys() {
+			switch k.Address {
+			case decode.SpotQuoterAddress, common.HexToAddress("0x0000000000000000000000000000000000001026"), common.HexToAddress("0x0000000000000000000000000000000000001027"):
+				t.Errorf("registry key (%s, %s)", k.Address.Hex(), k.Topic0.Hex())
+			}
+		}
 		// 0x1024 is view-only: any log there but the fee events is unknown_topic.
 		quoter := pack(t, pecor("SimpleSwap"), decode.SpotQuoterAddress, 0, xAlice, xToken, xStable, n(3), n(4), n(5))
 		res := decodeRows(t, r, quoter)

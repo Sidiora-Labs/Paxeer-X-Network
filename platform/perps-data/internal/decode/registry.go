@@ -201,6 +201,7 @@ type Registry struct {
 	entries     map[key]entry
 	modules     map[common.Address]common.Address
 	share       map[common.Hash]entry
+	fees        map[common.Hash]entry
 	opts        Options
 	unknownLogs prometheus.Counter
 	enumUnknown prometheus.Counter
@@ -220,6 +221,7 @@ func NewRegistry(metrics *telemetry.Metrics, opts Options) (*Registry, error) {
 		entries:  make(map[key]entry),
 		modules:  make(map[common.Address]common.Address),
 		share:    make(map[common.Hash]entry),
+		fees:     make(map[common.Hash]entry),
 		opts:     opts,
 		pointers: make(map[common.Address]common.Address),
 		unknownLogs: prometheus.NewCounter(prometheus.CounterOpts{
@@ -243,6 +245,22 @@ func NewRegistry(metrics *telemetry.Metrics, opts Options) (*Registry, error) {
 		return nil, err
 	}
 	return r, nil
+}
+
+// Key is one (address, topic0) key of the per-address decoders.
+type Key struct {
+	Address common.Address
+	Topic0  common.Hash
+}
+
+// Keys lists the (address, topic0) keys of the per-address decoders, without
+// the share pointer and spot fee decoders matched by topic0 alone.
+func (r *Registry) Keys() []Key {
+	keys := make([]Key, 0, len(r.entries))
+	for k := range r.entries {
+		keys = append(keys, Key{k.address, k.topic0})
+	}
+	return keys
 }
 
 // register binds every named decoder to its event of a at address, whose rows
@@ -304,6 +322,9 @@ func (r *Registry) decodeLogs(b *batch, res *Result, logs []Log) error {
 		if known {
 			if len(l.Topics) > 0 {
 				e, found = r.entries[key{l.Address, l.Topics[0]}]
+				if !found && module == r.opts.SpotModule {
+					e, found = r.fees[l.Topics[0]]
+				}
 			}
 		} else {
 			var shareTopic bool

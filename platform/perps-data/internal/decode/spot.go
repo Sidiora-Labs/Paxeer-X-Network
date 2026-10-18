@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -62,41 +63,43 @@ type spotOrder struct {
 }
 
 func registerSpot(r *Registry) error {
+	pecor, err := spotabi.PECOR()
+	if err != nil {
+		return fmt.Errorf("decode: PECOR ABI: %w", err)
+	}
+	venue := pecor
+	venue.Events = maps.Clone(pecor.Events)
+	for _, d := range feeEvents {
+		ev, ok := pecor.Events[d.name]
+		if !ok {
+			return fmt.Errorf("decode: PECOR declares no event %s", d.name)
+		}
+		delete(venue.Events, d.name)
+		r.fees[ev.ID] = entry{event: ev, build: d.build}
+	}
+	if err := r.register(SpotPoolAddress, r.opts.SpotModule, venue, pecorEvents); err != nil {
+		return err
+	}
 	rails := []struct {
 		name     string
 		address  common.Address
 		load     func() (abi.ABI, error)
 		decoders []eventDecoder
 	}{
-		{"PECOR", SpotPoolAddress, spotabi.PECOR, pecorEvents},
 		{"PECOROrders", SpotOrdersAddress, spotabi.Orders, ordersEvents},
 		{"PECORStopOrders", SpotStopAddress, spotabi.StopOrders, stopOrdersEvents},
 		{"PECORVault", SpotVaultAddress, spotabi.Vault, vaultEvents},
 	}
-	var pecor abi.ABI
 	for _, rail := range rails {
 		a, err := rail.load()
 		if err != nil {
 			return fmt.Errorf("decode: %s ABI: %w", rail.name, err)
-		}
-		if rail.address == SpotPoolAddress {
-			pecor = a
 		}
 		if err := r.register(rail.address, r.opts.SpotModule, a, rail.decoders); err != nil {
 			return err
 		}
 	}
 	r.modules[SpotQuoterAddress] = r.opts.SpotModule
-	for _, d := range feeEvents {
-		ev := pecor.Events[d.name]
-		for _, address := range []common.Address{SpotOrdersAddress, SpotStopAddress, SpotQuoterAddress, SpotVaultAddress} {
-			k := key{address, ev.ID}
-			if _, dup := r.entries[k]; dup {
-				return fmt.Errorf("decode: duplicate decoder %s at %s", d.name, address)
-			}
-			r.entries[k] = entry{event: ev, build: d.build}
-		}
-	}
 	share, err := spotabi.Share()
 	if err != nil {
 		return fmt.Errorf("decode: share ABI: %w", err)
@@ -280,7 +283,8 @@ func unpaused(_ *batch, f Fact, r *reader) []Row {
 	return []Row{SpotPauseRow{f, r.addr("account")}}
 }
 
-// feeEvents are matched by topic0 at any of 0x1021 to 0x1025.
+// feeEvents are matched by topic0 at any of 0x1021 to 0x1025, outside the
+// per-address decoders.
 var feeEvents = []eventDecoder{
 	{"PriceImpactApplied", func(_ *batch, f Fact, r *reader) []Row {
 		f.Kind = "price_impact"
@@ -296,7 +300,7 @@ var feeEvents = []eventDecoder{
 
 // pecorEvents is the decoding table of contracts/data-services.md section 6
 // for PECOR 0x1021.
-var pecorEvents = append([]eventDecoder{
+var pecorEvents = []eventDecoder{
 	{"MarketOrderExecuted", func(_ *batch, f Fact, r *reader) []Row {
 		f.Kind = "market_order"
 		f.Account = r.addr("user")
@@ -319,7 +323,7 @@ var pecorEvents = append([]eventDecoder{
 	{"OwnershipTransferred", ownershipTransferred},
 	{"Paused", paused},
 	{"Unpaused", unpaused},
-}, feeEvents...)
+}
 
 // orderEvent builds the id-only order events of a rail: the user, token and
 // stablecoin come from the rail's order view.
