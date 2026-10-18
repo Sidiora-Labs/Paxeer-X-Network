@@ -812,6 +812,9 @@ func enqueue(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Result, 
 			if err := put(ctx, tx, policy, subject, kind, id, f, body, block.Time); err != nil {
 				return err
 			}
+			if len(tokens) <= 1 {
+				continue
+			}
 			for _, token := range tokens[1:] {
 				if subject, err = stream.SpotSubject(chainID, token, kind); err != nil {
 					return err

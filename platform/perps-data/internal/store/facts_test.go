@@ -242,6 +242,38 @@ ON CONFLICT (name) DO UPDATE SET holder = EXCLUDED.holder, expires_at = EXCLUDED
 		}
 	})
 
+	t.Run("non_spot_and_single_token_spot_rows", func(t *testing.T) {
+		c := newChain(t, db)
+		at := t0.Add(time.Minute)
+		c.next(420, at)
+		b := header(420, at)
+		tokenIn := common.HexToAddress("0x00000000000000000000000000000000000004a4")
+		tokenOut := common.HexToAddress("0x00000000000000000000000000000000000005a5")
+		dep := c.fact("deposited", traderA, decode.PerpsAddress, 0)
+		swap := c.fact("simple_swap", traderA, decode.SpotPoolAddress, 0)
+		rows := &decode.Result{Decoded: []decode.Decoded{
+			{
+				Event: decode.Event{EventName: "CollateralDeposited", Args: map[string]any{"account": lower(traderA), "amount": "100", "newBalance": "100"}},
+				Rows:  []decode.Row{decode.CollateralDepositedRow{Fact: dep, AccountArg: traderA, Amount: "100", NewBalance: "100"}},
+			},
+			{
+				Event: decode.Event{EventName: "SimpleSwap", Args: map[string]any{"user": lower(traderA), "tokenIn": lower(tokenIn), "tokenOut": lower(tokenOut)}},
+				Rows: []decode.Row{decode.SpotSimpleSwapRow{Fact: swap, User: traderA, TokenIn: tokenIn, TokenOut: tokenOut,
+					AmountIn: "2", AmountOut: "3", ExecutionPrice: "1500000000000000000"}},
+			},
+		}}
+		c.blockRow(420, at)
+		c.writeBlock(b, rows)
+		c.want(`SELECT string_agg(subject, ',' ORDER BY perps_seq) FROM perps.delivery_outbox
+WHERE convert_from(envelope, 'UTF8')::jsonb #>> '{source_order,height}' = '420'`,
+			[]string{strings.Join([]string{
+				"perps.125.user." + lower(traderA) + ".margin",
+				"perps.125.spot." + lower(tokenOut) + ".swap",
+				"perps.125.chain.block",
+				"perps.125.chain.tx",
+			}, ",")})
+	})
+
 	t.Run("protocol_events_and_actions", func(t *testing.T) {
 		c := newChain(t, db)
 		c.placeOrders(410, t0)
