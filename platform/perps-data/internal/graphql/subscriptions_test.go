@@ -17,13 +17,22 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gorilla/websocket"
+	"github.com/nats-io/nats-server/v2/server"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery/natsdriver"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/feeds"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/publish"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/stream"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/ws"
 )
 
 const (
-	subChain       = 7
+	subChain       = 125
+	subSnapshotID  = "sub-5d2f9b17"
 	subDatabaseEnv = "PERPS_DATA_TEST_DATABASE_URL"
 	subWait        = 10 * time.Second
 	subQuiet       = 300 * time.Millisecond
@@ -53,6 +62,128 @@ func subAt(block int64) time.Time { return subBase.Add(time.Duration(block) * ti
 func subStamp(block int64) string { return subAt(block).Format(time.RFC3339Nano) }
 
 func subLower(a common.Address) string { return strings.ToLower(a.Hex()) }
+
+// subFeeds serves the hub from the topic providers of internal/feeds, as the
+// gateway does.
+type subFeeds struct{ *feeds.Providers }
+
+func (p subFeeds) Message(ctx context.Context, subject string, env delivery.Envelope) ([]ws.Frame, []string, error) {
+	frames, resnap, err := p.Providers.Message(ctx, subject, env)
+	out := make([]ws.Frame, len(frames))
+	for i, f := range frames {
+		out[i] = ws.Frame(f)
+	}
+	return out, resnap, err
+}
+
+func (p subFeeds) Run(ctx context.Context, emit func(ws.Frame)) error {
+	return p.Providers.Run(ctx, func(f feeds.Frame) { emit(ws.Frame(f)) })
+}
+
+// subBroker starts an in-process JetStream broker holding PERPS_V1 for
+// subChain on one replica.
+func subBroker(t *testing.T) (*nats.Conn, jetstream.JetStream) {
+	t.Helper()
+	ns, err := server.NewServer(&server.Options{Host: "127.0.0.1", Port: server.RANDOM_PORT, JetStream: true, StoreDir: t.TempDir(), NoLog: true, NoSigs: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go ns.Start()
+	t.Cleanup(func() { ns.Shutdown(); ns.WaitForShutdown() })
+	if !ns.ReadyForConnections(subWait) {
+		t.Fatal("in-process broker not ready")
+	}
+	nc, err := nats.Connect(ns.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(nc.Close)
+	js, err := jetstream.New(nc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := stream.Config(subChain)
+	cfg.Replicas = 1
+	if _, err := js.CreateStream(context.Background(), cfg); err != nil {
+		t.Fatal(err)
+	}
+	return nc, js
+}
+
+// subPublisher publishes delivery envelopes with the headers of the perps
+// publisher, numbering Perps-Seq from 1, and waits until the hub has handed
+// each one to the feed.
+type subPublisher struct {
+	js      jetstream.JetStream
+	seq     int64
+	applied chan string
+}
+
+func (p *subPublisher) send(t *testing.T, subject string) string {
+	t.Helper()
+	p.seq++
+	id, err := natsdriver.MsgID(fmt.Sprintf("%d:%d:0x%064x:0:%d:0", subChain, p.seq, p.seq, p.seq))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kind := subject[strings.LastIndexByte(subject, '.')+1:]
+	payload := `{}`
+	env := delivery.Envelope{
+		EventID: id, EventType: kind, SchemaVersion: 1, ChainID: subChain,
+		SourceOrder: delivery.SourceOrder{Height: strconv.FormatInt(p.seq, 10), TransactionIndex: "0", LogIndex: "0"},
+		EmittedAt:   time.Now().UTC().Truncate(time.Microsecond), TraceID: id,
+		PayloadHash: delivery.Hash([]byte(payload)), Payload: json.RawMessage(payload),
+	}
+	wire, err := env.Encode(delivery.Policy{Subjects: map[string]bool{subject: true}, EventTypes: map[string]bool{kind: true}}, subject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := &nats.Msg{Subject: subject, Data: wire, Header: nats.Header{}}
+	msg.Header.Set(publish.HeaderSeq, strconv.FormatInt(p.seq, 10))
+	msg.Header.Set(publish.HeaderBlock, env.SourceOrder.Height)
+	msg.Header.Set(publish.HeaderKind, kind)
+	if _, err := p.js.PublishMsg(context.Background(), msg, jetstream.WithMsgID(id), jetstream.WithExpectStream(stream.Name)); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// wait returns once the hub has applied the message id; it reports whether
+// that happened within within.
+func (p *subPublisher) wait(id string, within time.Duration) bool {
+	deadline := time.After(within)
+	for {
+		select {
+		case got := <-p.applied:
+			if got == id {
+				return true
+			}
+		case <-deadline:
+			return false
+		}
+	}
+}
+
+// attach publishes chain.tx until the hub, which starts after the stream
+// head, applies one, then waits for the last one sent.
+func (p *subPublisher) attach(t *testing.T) {
+	t.Helper()
+	subject := "perps." + strconv.Itoa(subChain) + ".chain.tx"
+	deadline := time.Now().Add(subWait)
+	for {
+		id := p.send(t, subject)
+		if p.wait(id, 100*time.Millisecond) {
+			return
+		}
+		if time.Now().After(deadline) {
+			last := p.send(t, subject)
+			if !p.wait(last, subWait) {
+				t.Fatal("hub never applied a message")
+			}
+			return
+		}
+	}
+}
 
 func TestSubscriptions(t *testing.T) {
 	url := os.Getenv(subDatabaseEnv)
@@ -84,6 +215,30 @@ func TestSubscriptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSchema: %v", err)
 	}
+	providers, err := feeds.NewProviders(ctx, db, nil)
+	if err != nil {
+		t.Fatalf("NewProviders: %v", err)
+	}
+	hub, err := ws.NewHub(subFeeds{providers}, subChain, subSnapshotID, nil)
+	if err != nil {
+		t.Fatalf("NewHub: %v", err)
+	}
+	nc, js := subBroker(t)
+	pub := &subPublisher{js: js, applied: make(chan string, 64)}
+	stopFeed := hub.Listen(func(subject string, env delivery.Envelope) {
+		feed.Deliver(subject, env)
+		pub.applied <- env.EventID
+	})
+	t.Cleanup(stopFeed)
+	hubDone := make(chan error, 1)
+	go func() { hubDone <- hub.Run(ctx, nc) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-hubDone; !errors.Is(err, context.Canceled) {
+			t.Errorf("hub Run: %v", err)
+		}
+	})
+	pub.attach(t)
 	transport := &TransportWS{Schema: schema, Feed: feed}
 	mux := http.NewServeMux()
 	mux.Handle("/graphql-ws", transport)
@@ -150,7 +305,9 @@ func TestSubscriptions(t *testing.T) {
 	publish := func(t *testing.T, subjects ...string) {
 		t.Helper()
 		for _, s := range subjects {
-			feed.Deliver("perps.7."+s, delivery.Envelope{})
+			if id := pub.send(t, "perps."+strconv.Itoa(subChain)+"."+s); !pub.wait(id, subWait) {
+				t.Fatalf("hub did not apply %s", s)
+			}
 		}
 	}
 	listeners := func(t *testing.T, n int) {
