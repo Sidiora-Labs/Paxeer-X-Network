@@ -2,8 +2,10 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -37,9 +39,11 @@ type column struct {
 	typ  string
 }
 
-// testDB opens a fresh database of this package next to the one named by
-// PERPS_DATA_TEST_DATABASE_URL, so the schema other packages leave in that
-// database never reaches these tests; it is dropped when the test ends.
+// testDB creates a fresh database of this package next to the one named by
+// PERPS_DATA_TEST_DATABASE_URL, under a name unique to this run, so the schema
+// other packages leave in that database never reaches these tests and no
+// database this run did not create is ever touched; only the database this
+// run created is dropped when the test ends.
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
 	raw := os.Getenv(testDatabaseEnv)
@@ -54,7 +58,15 @@ func testDB(t *testing.T) *sql.DB {
 	if base == "" {
 		t.Fatalf("%s names no database", testDatabaseEnv)
 	}
-	name := pq.QuoteIdentifier(base + "_store")
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		t.Fatalf("random database suffix: %v", err)
+	}
+	dbName := base + "_store_" + hex.EncodeToString(suffix[:])
+	if len(dbName) > 63 {
+		t.Fatalf("test database name %q exceeds the 63-byte identifier limit", dbName)
+	}
+	name := pq.QuoteIdentifier(dbName)
 	admin, err := Open(raw)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -64,12 +76,15 @@ func testDB(t *testing.T) *sql.DB {
 			t.Errorf("close: %v", err)
 		}
 	})
-	for _, stmt := range []string{`DROP DATABASE IF EXISTS ` + name + ` WITH (FORCE)`, `CREATE DATABASE ` + name} {
-		if _, err := admin.Exec(stmt); err != nil {
-			t.Fatalf("%s: %v", stmt, err)
-		}
+	if _, err := admin.Exec(`CREATE DATABASE ` + name); err != nil {
+		t.Fatalf("CREATE DATABASE %s: %v", name, err)
 	}
-	u.Path = "/" + base + "_store"
+	t.Cleanup(func() {
+		if _, err := admin.Exec(`DROP DATABASE ` + name + ` WITH (FORCE)`); err != nil {
+			t.Errorf("drop %s: %v", name, err)
+		}
+	})
+	u.Path = "/" + dbName
 	db, err := Open(u.String())
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -77,9 +92,6 @@ func testDB(t *testing.T) *sql.DB {
 	t.Cleanup(func() {
 		if err := db.Close(); err != nil {
 			t.Errorf("close: %v", err)
-		}
-		if _, err := admin.Exec(`DROP DATABASE ` + name + ` WITH (FORCE)`); err != nil {
-			t.Errorf("drop %s: %v", name, err)
 		}
 	})
 	return db
