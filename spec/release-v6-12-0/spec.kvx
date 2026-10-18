@@ -11019,7 +11019,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.1.18]
 title = "Refuse writes outside the exit set while paused"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["3.1.1"]
