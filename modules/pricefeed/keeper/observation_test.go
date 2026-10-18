@@ -351,12 +351,29 @@ func TestSubmitPricesDeviationAndRecovery(t *testing.T) {
 	requireCounts(t, response, err, 0, 1)
 	require.Equal(t, []string{types.RefusalDeviation}, reasonsOf(ctx))
 
-	// Aged past max_price_age_ms the aggregate is not fresh and the check is skipped.
-	setAggregate(t, e, 1, "2000000000000000000000", uint64(submitBlockMs)-types.DefaultMaxPriceAgeMs-1)
 	ctx = e.at(103)
-	response, err = e.submit(ctx, feeder, observation(1, 4, price, price, 1699999999500))
+	response, err = e.submit(ctx, feeder,
+		observation(1, 3, "1800000000000000000000", price, 1699999999500))
 	requireCounts(t, response, err, 1, 0)
 	record, ok := e.stored(ctx, 1, operator)
+	require.True(t, ok)
+	require.Equal(t, "1800000000000000000000", record.IndexPrice.String())
+
+	setAggregate(t, e, 1, "2000000000000000000000", uint64(submitBlockMs)-types.DefaultMaxPriceAgeMs)
+	ctx = e.at(104)
+	response, err = e.submit(ctx, feeder, observation(1, 4, price, price, 1699999999500))
+	requireCounts(t, response, err, 0, 1)
+	require.Equal(t, []sdk.Event{refusedEvent(operator, 1, 4, types.RefusalDeviation)}, ctx.EventManager().Events())
+	unchanged, ok := e.stored(ctx, 1, operator)
+	require.True(t, ok)
+	require.Equal(t, record, unchanged)
+
+	// Aged past max_price_age_ms the aggregate is not fresh and the check is skipped.
+	setAggregate(t, e, 1, "2000000000000000000000", uint64(submitBlockMs)-types.DefaultMaxPriceAgeMs-1)
+	ctx = e.at(105)
+	response, err = e.submit(ctx, feeder, observation(1, 4, price, price, 1699999999500))
+	requireCounts(t, response, err, 1, 0)
+	record, ok = e.stored(ctx, 1, operator)
 	require.True(t, ok)
 	require.Equal(t, price, record.IndexPrice.String())
 	require.Equal(t, uint64(4), record.Sequence)
