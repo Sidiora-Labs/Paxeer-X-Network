@@ -106,8 +106,8 @@ func premiumOf(oracle, impactBid, impactAsk *big.Int) *big.Int {
 // rounded against the trader: the bid down and the ask up. A side whose
 // resting size does not cover the notional prices at the oracle.
 func (k *Keeper) impactPrice(ctx sdk.Context, marketID uint64, side byte, notional, oracle *big.Int) (*big.Int, error) {
-	remaining := new(big.Int).Set(notional)
-	base := new(big.Int)
+	remaining := new(big.Rat).SetFrac(notional, fixedOne)
+	base := new(big.Rat)
 	var visitErr error
 	err := k.IterateBook(ctx, marketID, side, func(order types.Order) bool {
 		var open uint256.Int
@@ -119,21 +119,14 @@ func (k *Keeper) impactPrice(ctx sdk.Context, marketID uint64, side byte, notion
 		if open.IsZero() || price.Sign() == 0 {
 			return false
 		}
-		openBase := open.ToBig()
-		levelUsd := new(big.Int).Mul(openBase, price)
-		levelUsd.Quo(levelUsd, fixedOne)
+		openBase := new(big.Rat).SetFrac(open.ToBig(), fixedOne)
+		levelUsd := new(big.Rat).Mul(openBase, new(big.Rat).SetFrac(price, fixedOne))
 		if levelUsd.Cmp(remaining) < 0 {
 			base.Add(base, openBase)
 			remaining.Sub(remaining, levelUsd)
 			return false
 		}
-		taken := new(big.Int).Mul(remaining, fixedOne)
-		if side == types.SideBuy {
-			taken = ceilDiv(taken, price)
-		} else {
-			taken.Quo(taken, price)
-		}
-		base.Add(base, taken)
+		base.Add(base, new(big.Rat).Quo(remaining, new(big.Rat).SetFrac(price, fixedOne)))
 		remaining.SetInt64(0)
 		return true
 	})
@@ -146,11 +139,12 @@ func (k *Keeper) impactPrice(ctx sdk.Context, marketID uint64, side byte, notion
 	if remaining.Sign() > 0 || base.Sign() == 0 {
 		return new(big.Int).Set(oracle), nil
 	}
-	average := new(big.Int).Mul(notional, fixedOne)
+	average := new(big.Rat).Quo(new(big.Rat).SetFrac(notional, fixedOne), base)
+	numerator := new(big.Int).Mul(average.Num(), fixedOne)
 	if side == types.SideBuy {
-		return average.Quo(average, base), nil
+		return numerator.Quo(numerator, average.Denom()), nil
 	}
-	return ceilDiv(average, base), nil
+	return ceilDiv(numerator, average.Denom()), nil
 }
 
 // SettleFunding runs at each new whole hour of block time: it fixes the

@@ -1,16 +1,23 @@
 package keeper
 
 import (
+	"encoding/json"
 	"math/big"
 	"testing"
 	"time"
 
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
+	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
+	dbm "github.com/tendermint/tm-db"
 )
 
 const fundingHour = uint64(500_000)
@@ -21,6 +28,31 @@ func fundingKeeper(t *testing.T, at uint64) (*Keeper, sdk.Context) {
 	tkey := sdk.NewTransientStoreKey("transient_" + types.StoreKey)
 	ctx := testutil.DefaultContext(key, tkey).WithBlockTime(time.Unix(int64(at), 0).UTC())
 	return NewKeeper(key, nil, nil), ctx
+}
+
+// fundingPricedKeeper is the perps keeper over the real pricefeed keeper,
+// each with its own store, with a fresh aggregate of market 0 at oracle.
+func fundingPricedKeeper(t *testing.T, at uint64, oracle uint256.Int) (*Keeper, sdk.Context) {
+	t.Helper()
+	key := sdk.NewKVStoreKey(types.StoreKey)
+	feedKey := sdk.NewKVStoreKey(pricefeedtypes.StoreKey)
+	transientKey := sdk.NewTransientStoreKey("transient_" + types.StoreKey)
+	db := dbm.NewMemDB()
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	ms := store.NewCommitMultiStore(db)
+	ms.MountStoreWithDB(key, storetypes.StoreTypeIAVL, nil)
+	ms.MountStoreWithDB(feedKey, storetypes.StoreTypeIAVL, nil)
+	ms.MountStoreWithDB(transientKey, storetypes.StoreTypeTransient, nil)
+	require.NoError(t, ms.LoadLatestVersion())
+	ctx := sdk.NewContext(ms, tmproto.Header{Height: 20, Time: time.Unix(int64(at), 0).UTC()}, false)
+	feed := pricefeedkeeper.NewKeeper(feedKey, nil, nil, nil)
+	require.NoError(t, feed.SetParams(ctx, pricefeedtypes.DefaultParams(pricefeedtypes.DefaultAuthority())))
+	price := sdk.NewIntFromBigInt(oracle.ToBig())
+	bz, err := json.Marshal(pricefeedtypes.Aggregate{IndexPrice: price, MarkPrice: price, Basis: sdk.ZeroInt(),
+		TimestampMs: uint64(ctx.BlockTime().UnixMilli()), Height: ctx.BlockHeight(), Sources: 1})
+	require.NoError(t, err)
+	ctx.KVStore(feedKey).Set(pricefeedtypes.AggregateKey(0), bz)
+	return NewKeeper(key, nil, feed), ctx
 }
 
 func fundingMarket() types.Market {
@@ -219,7 +251,7 @@ func TestFundingRoundingTowardVenue(t *testing.T) {
 
 func TestFundingBeforeLiquidation(t *testing.T) {
 	at := (fundingHour + 1) * secondsPerHour
-	k, ctx := fundingKeeper(t, at)
+	k, ctx := fundingPricedKeeper(t, at, usd18(60_000))
 	market := fundingMarket()
 	require.NoError(t, k.SetMarket(ctx, k.Authority(), market))
 
@@ -235,6 +267,16 @@ func TestFundingBeforeLiquidation(t *testing.T) {
 	k.store(ctx).Set(types.PositionKey(position.ID), position.Marshal())
 	k.store(ctx).Set(types.AccountMarketPositionKey(trader, 0), id[:])
 	k.store(ctx).Set(types.MarginRatioIndexKey(145, trader), []byte{})
+	sequence := uint256.NewInt(10_000).Bytes32()
+	k.store(ctx).Set(types.SequenceKey(types.SequenceOrderID), sequence[:])
+	k.store(ctx).Set(types.SequenceKey(types.SequencePositionID), sequence[:])
+	maker := common.HexToAddress("0xb2")
+	bid := restingOrder(1, true, usd18(60_000), usd18(2))
+	bid.Account, bid.TimeInForce, bid.Leverage = maker, types.TimeInForceGTC, usd18(10)
+	require.NoError(t, k.BookInsert(ctx, bid))
+	k.store(ctx).Set(types.AccountOrderKey(maker, bid.ID), []byte{})
+	makerAccount := types.Account{Address: maker, Collateral: *uint256.NewInt(100_000_000_000_000), OpenOrderCount: 1, Created: true}
+	k.store(ctx).Set(types.AccountKey(maker), makerAccount.Marshal())
 	k.setFundingMarketState(ctx, types.MarketState{
 		MarketID: 0, IndexPrice: usd18(60_000), PricefeedMark: usd18(60_000), MarkPrice: usd18(60_000), Fresh: true,
 		LastIndexHour: fundingHour, PremiumCount: 1, PremiumSum: word("1000000000000000000"),
