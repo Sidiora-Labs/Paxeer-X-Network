@@ -154,7 +154,6 @@ func (k *Keeper) PlaceOrder(ctx sdk.Context, account common.Address, p OrderPara
 		return result, nil
 	}
 	order.Status = types.OrderStatusResting
-	k.setOrder(ctx, order)
 	takes, err := k.takesLiquidity(ctx, order)
 	if err != nil {
 		return PlaceResult{}, err
@@ -165,6 +164,7 @@ func (k *Keeper) PlaceOrder(ctx sdk.Context, account common.Address, p OrderPara
 		}
 		return result, nil
 	}
+	k.setOrder(ctx, order)
 	matched, err := k.Match(ctx, market, order)
 	if err != nil {
 		return PlaceResult{}, err
@@ -278,10 +278,11 @@ func checkTick(price, tick uint256.Int, name string) error {
 // the lot and stores the base size and the order notional, base x price /
 // 1e18 rounded down.
 func sizeOrder(market types.Market, sizeUsd, price uint256.Int, order *types.Order) error {
-	base, overflow := new(uint256.Int).MulDivOverflow(&sizeUsd, fixedPointOne, &price)
+	base, overflow := new(uint256.Int).MulOverflow(&sizeUsd, fixedPointOne)
 	if overflow {
 		return fmt.Errorf("%w: size %s USD at %s", types.ErrOverflow, sizeUsd.Dec(), price.Dec())
 	}
+	base.Div(base, &price)
 	lot := decimalStep(market.SzDecimals)
 	var residue uint256.Int
 	base.Sub(base, residue.Mod(base, &lot))
@@ -542,7 +543,9 @@ func (k *Keeper) openOrder(ctx sdk.Context, orderID uint256.Int) (types.Order, e
 // closes it with status.
 func (k *Keeper) withdrawOrder(ctx sdk.Context, order types.Order, status types.OrderStatus) error {
 	if order.Status == types.OrderStatusResting {
-		if err := k.BookRemove(ctx, order); err != nil {
+		closed := order
+		closed.Status = status
+		if err := k.BookRemove(ctx, closed); err != nil {
 			return err
 		}
 	} else {
