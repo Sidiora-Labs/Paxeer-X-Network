@@ -27337,7 +27337,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.2.5]
 title = "Topic providers for books, trades, stats, markets and chain"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["7.2.2"]
