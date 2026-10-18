@@ -18,7 +18,7 @@ from ..._exceptions import ChainflowDataGatewayError, WebSocketConnectionClosedE
 from ..._send_queue import SendQueue
 from ..._base_client import _merge_mappings
 from ..._event_handler import EventHandlerRegistry
-from ..._utils import path_template, maybe_transform, async_maybe_transform
+from ..._utils import path_template
 from ...types.websocket_connection_options import WebSocketConnectionOptions
 from ...types.websocket_reconnection import ReconnectingEvent, ReconnectingOverrides, is_recoverable_close
 
@@ -35,6 +35,22 @@ __all__ = [
 ]
 
 log: logging.Logger = logging.getLogger(__name__)
+
+
+def _event_type(event: Any) -> str | None:
+    """Return the `type` discriminator of a parsed server event, or None when the frame has none."""
+    if isinstance(event, dict):
+        event_type = cast("dict[str, Any]", event).get("type")
+    else:
+        event_type = getattr(event, "type", None)
+    return event_type if isinstance(event_type, str) else None
+
+
+def _serialize_event(event: Any) -> str:
+    """Serialize a client event model or plain JSON-compatible value for the wire."""
+    if isinstance(event, BaseModel):
+        return event.to_json(use_api_names=True, exclude_defaults=True, exclude_unset=True)
+    return json.dumps(event)
 
 
 def _cookie_header(cookies: dict[str, str]) -> Headers:
@@ -71,7 +87,7 @@ class WebSocketsResourceConnection:
         self._extra_headers = extra_headers
         self._intentionally_closed = False
         self._is_reconnecting = False
-        self._send_queue = send_queue or SendQueue()
+        self._send_queue = send_queue if send_queue is not None else SendQueue()
         self._event_handler_registry = EventHandlerRegistry(use_lock=True)
 
     def __iter__(self) -> Iterator[Any]:
@@ -104,11 +120,7 @@ class WebSocketsResourceConnection:
         return message
 
     def send(self, event: Any) -> None:
-        data = (
-            event.to_json(use_api_names=True, exclude_defaults=True, exclude_unset=True)
-            if isinstance(event, BaseModel)
-            else json.dumps(maybe_transform(event, ConnectPriceFeedClientEventParam))
-        )
+        data = _serialize_event(event)
         if self._is_reconnecting:
             self._send_queue.enqueue(data)
             return
@@ -235,8 +247,8 @@ class WebSocketsResourceConnection:
     def dispatch_events(self) -> None:
         """Dispatch incoming events to registered handlers until the connection closes."""
         for event in self:
-            event_type = event.type
-            specific = self._event_handler_registry.get_handlers(event_type)
+            event_type = _event_type(event)
+            specific = self._event_handler_registry.get_handlers(event_type) if event_type is not None else []
             generic = self._event_handler_registry.get_handlers("event")
 
             for handler in specific:
@@ -272,7 +284,7 @@ class AsyncWebSocketsResourceConnection:
         self._extra_headers = extra_headers
         self._intentionally_closed = False
         self._is_reconnecting = False
-        self._send_queue = send_queue or SendQueue()
+        self._send_queue = send_queue if send_queue is not None else SendQueue()
         self._event_handler_registry = EventHandlerRegistry(use_lock=False)
 
     async def __aiter__(self) -> AsyncIterator[Any]:
@@ -305,11 +317,7 @@ class AsyncWebSocketsResourceConnection:
         return message
 
     async def send(self, event: Any) -> None:
-        data = (
-            event.to_json(use_api_names=True, exclude_defaults=True, exclude_unset=True)
-            if isinstance(event, BaseModel)
-            else json.dumps(await async_maybe_transform(event, ConnectPriceFeedClientEventParam))
-        )
+        data = _serialize_event(event)
         if self._is_reconnecting:
             self._send_queue.enqueue(data)
             return
@@ -444,8 +452,8 @@ class AsyncWebSocketsResourceConnection:
         import asyncio
 
         async for event in self:
-            event_type = event.type
-            specific = self._event_handler_registry.get_handlers(event_type)
+            event_type = _event_type(event)
+            specific = self._event_handler_registry.get_handlers(event_type) if event_type is not None else []
             generic = self._event_handler_registry.get_handlers("event")
 
             for handler in specific:
@@ -466,7 +474,8 @@ class WebSocketsResourceConnectionManager:
         self,
         *,
         client: ChainflowDataGateway,
-        market: str,
+        path: str = "/ws/{market}",
+        market: str | None = None,
         extra_query: Query,
         extra_headers: Headers,
         websocket_connection_options: WebSocketConnectionOptions,
@@ -477,6 +486,7 @@ class WebSocketsResourceConnectionManager:
         max_queue_size: int = 1_048_576,
     ) -> None:
         self.__client = client
+        self.__path = path
         self.__market = market
         self.__connection: WebSocketsResourceConnection | None = None
         self.__extra_query = extra_query
@@ -491,11 +501,7 @@ class WebSocketsResourceConnectionManager:
 
     def send(self, event: Any) -> None:
         """Queue a message to send as soon as the websocket opens."""
-        data = (
-            event.to_json(use_api_names=True, exclude_defaults=True, exclude_unset=True)
-            if isinstance(event, BaseModel)
-            else json.dumps(maybe_transform(event, ConnectPriceFeedClientEventParam))
-        )
+        data = _serialize_event(event)
         self.__send_queue.enqueue(data)
 
     def on(
@@ -561,8 +567,6 @@ class WebSocketsResourceConnectionManager:
                 "You need to install `chainflowDataGateway[websockets]` to use this method"
             ) from exc
 
-        if not self.__market:
-            raise ValueError(f"Expected a non-empty value for `market` but received {self.__market!r}")
         url = self._prepare_url()
         params = _merge_mappings(
             {
@@ -601,9 +605,13 @@ class WebSocketsResourceConnectionManager:
             ws_scheme = "ws" if scheme == "http" else "wss"
             base_url = self.__client._base_url.copy_with(scheme=ws_scheme)
 
-        merge_raw_path = base_url.raw_path.rstrip(b"/") + path_template("/ws/{market}", market=self.__market).encode(
-            "utf-8"
-        )
+        if "{market}" in self.__path:
+            if not self.__market:
+                raise ValueError(f"Expected a non-empty value for `market` but received {self.__market!r}")
+            path = path_template(self.__path, market=self.__market)
+        else:
+            path = path_template(self.__path)
+        merge_raw_path = base_url.raw_path.rstrip(b"/") + path.encode("utf-8")
         return base_url.copy_with(raw_path=merge_raw_path)
 
     def __exit__(
@@ -620,7 +628,8 @@ class AsyncWebSocketsResourceConnectionManager:
         self,
         *,
         client: AsyncChainflowDataGateway,
-        market: str,
+        path: str = "/ws/{market}",
+        market: str | None = None,
         extra_query: Query,
         extra_headers: Headers,
         websocket_connection_options: WebSocketConnectionOptions,
@@ -631,6 +640,7 @@ class AsyncWebSocketsResourceConnectionManager:
         max_queue_size: int = 1_048_576,
     ) -> None:
         self.__client = client
+        self.__path = path
         self.__market = market
         self.__connection: AsyncWebSocketsResourceConnection | None = None
         self.__extra_query = extra_query
@@ -645,11 +655,7 @@ class AsyncWebSocketsResourceConnectionManager:
 
     def send(self, event: Any) -> None:
         """Queue a message to send as soon as the websocket opens."""
-        data = (
-            event.to_json(use_api_names=True, exclude_defaults=True, exclude_unset=True)
-            if isinstance(event, BaseModel)
-            else json.dumps(maybe_transform(event, ConnectPriceFeedClientEventParam))
-        )
+        data = _serialize_event(event)
         self.__send_queue.enqueue(data)
 
     def on(
@@ -715,8 +721,6 @@ class AsyncWebSocketsResourceConnectionManager:
                 "You need to install `chainflowDataGateway[websockets]` to use this method"
             ) from exc
 
-        if not self.__market:
-            raise ValueError(f"Expected a non-empty value for `market` but received {self.__market!r}")
         url = self._prepare_url()
         params = _merge_mappings(
             {
@@ -755,9 +759,13 @@ class AsyncWebSocketsResourceConnectionManager:
             ws_scheme = "ws" if scheme == "http" else "wss"
             base_url = self.__client._base_url.copy_with(scheme=ws_scheme)
 
-        merge_raw_path = base_url.raw_path.rstrip(b"/") + path_template("/ws/{market}", market=self.__market).encode(
-            "utf-8"
-        )
+        if "{market}" in self.__path:
+            if not self.__market:
+                raise ValueError(f"Expected a non-empty value for `market` but received {self.__market!r}")
+            path = path_template(self.__path, market=self.__market)
+        else:
+            path = path_template(self.__path)
+        merge_raw_path = base_url.raw_path.rstrip(b"/") + path.encode("utf-8")
         return base_url.copy_with(raw_path=merge_raw_path)
 
     async def __aexit__(

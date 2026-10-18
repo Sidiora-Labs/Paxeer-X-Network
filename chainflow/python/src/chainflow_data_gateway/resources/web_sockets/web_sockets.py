@@ -51,6 +51,7 @@ class WebSocketsResource(SyncAPIResource):
     ) -> WebSocketsResourceConnectionManager:
         return WebSocketsResourceConnectionManager(
             client=self._client,
+            path="/ws/{market}",
             market=market,
             extra_query=extra_query,
             extra_headers=extra_headers,
@@ -75,6 +76,7 @@ class WebSocketsResource(SyncAPIResource):
     ) -> WebSocketsResourceConnectionManager:
         return WebSocketsResourceConnectionManager(
             client=self._client,
+            path="/ws/markets",
             extra_query=extra_query,
             extra_headers=extra_headers,
             websocket_connection_options=websocket_connection_options,
@@ -98,6 +100,7 @@ class WebSocketsResource(SyncAPIResource):
     ) -> WebSocketsResourceConnectionManager:
         return WebSocketsResourceConnectionManager(
             client=self._client,
+            path="/ws/explorer",
             extra_query=extra_query,
             extra_headers=extra_headers,
             websocket_connection_options=websocket_connection_options,
@@ -121,6 +124,7 @@ class WebSocketsResource(SyncAPIResource):
     ) -> WebSocketsResourceConnectionManager:
         return WebSocketsResourceConnectionManager(
             client=self._client,
+            path="/explorer",
             extra_query=extra_query,
             extra_headers=extra_headers,
             websocket_connection_options=websocket_connection_options,
@@ -155,6 +159,7 @@ class AsyncWebSocketsResource(AsyncAPIResource):
     ) -> AsyncWebSocketsResourceConnectionManager:
         return AsyncWebSocketsResourceConnectionManager(
             client=self._client,
+            path="/ws/{market}",
             market=market,
             extra_query=extra_query,
             extra_headers=extra_headers,
@@ -179,6 +184,7 @@ class AsyncWebSocketsResource(AsyncAPIResource):
     ) -> AsyncWebSocketsResourceConnectionManager:
         return AsyncWebSocketsResourceConnectionManager(
             client=self._client,
+            path="/ws/markets",
             extra_query=extra_query,
             extra_headers=extra_headers,
             websocket_connection_options=websocket_connection_options,
@@ -202,6 +208,7 @@ class AsyncWebSocketsResource(AsyncAPIResource):
     ) -> AsyncWebSocketsResourceConnectionManager:
         return AsyncWebSocketsResourceConnectionManager(
             client=self._client,
+            path="/ws/explorer",
             extra_query=extra_query,
             extra_headers=extra_headers,
             websocket_connection_options=websocket_connection_options,
@@ -225,6 +232,7 @@ class AsyncWebSocketsResource(AsyncAPIResource):
     ) -> AsyncWebSocketsResourceConnectionManager:
         return AsyncWebSocketsResourceConnectionManager(
             client=self._client,
+            path="/explorer",
             extra_query=extra_query,
             extra_headers=extra_headers,
             websocket_connection_options=websocket_connection_options,
