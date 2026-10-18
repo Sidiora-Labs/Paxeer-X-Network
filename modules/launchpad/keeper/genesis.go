@@ -59,9 +59,6 @@ func (k *Keeper) InitGenesis(ctx sdk.Context, gs types.GenesisState) {
 // initContracts imports the surfaces, role tables, fee rights, custody and
 // Treasury ledgers, book-held deltas and retired list of gs.
 func (k *Keeper) initContracts(ctx sdk.Context, gs types.GenesisState) error {
-	if !isDefaultFeeAccounting(gs.FeeAccounting) {
-		return fmt.Errorf("%w: FeeAccumulator accounting has no keeper store to import into", types.ErrInvalidGenesis)
-	}
 	pools := map[string]types.Market{}
 	for _, market := range gs.Markets {
 		pools[market.PoolAddress] = market
@@ -83,6 +80,9 @@ func (k *Keeper) initContracts(ctx sdk.Context, gs types.GenesisState) error {
 	for _, member := range gs.RoleMembers {
 		store.Set(types.RoleKey(common.HexToAddress(member.Contract), common.HexToHash(member.Role),
 			common.HexToAddress(member.Account)), []byte{1})
+	}
+	if err := k.initFeeAccounting(ctx, gs.FeeAccounting, pools); err != nil {
+		return err
 	}
 	if err := k.initFeeRights(ctx, gs.FeeRights); err != nil {
 		return err
@@ -117,9 +117,35 @@ func (k *Keeper) initContracts(ctx sdk.Context, gs types.GenesisState) error {
 	return nil
 }
 
-func isDefaultFeeAccounting(a types.FeeAccounting) bool {
-	return a.PendingProtocolFees.IsZero() && a.TotalLiabilities.IsZero() && !a.AccountingInitialized &&
-		a.AccountingMigrationCursor == 0 && len(a.Pools) == 0 && len(a.Epochs) == 0 && len(a.Claims) == 0
+func (k *Keeper) initFeeAccounting(ctx sdk.Context, a types.FeeAccounting, pools map[string]types.Market) error {
+	if !a.PendingProtocolFees.IsZero() || a.AccountingInitialized || a.AccountingMigrationCursor != 0 {
+		return fmt.Errorf("%w: unsupported FeeAccumulator migration accounting", types.ErrInvalidGenesis)
+	}
+	if err := k.setLedgerAmount(ctx, totalLiabilitiesKey, a.TotalLiabilities); err != nil {
+		return err
+	}
+	for _, account := range a.Pools {
+		market, found := pools[account.Pool]
+		if !found || !account.AccumulatedFees.Equal(market.AccumulatedFees) ||
+			!account.AirdropBalance.Equal(market.AirdropBalance) || account.AirdropEpoch != market.AirdropEpoch {
+			return fmt.Errorf("%w: fee account disagrees with market %s", types.ErrInvalidGenesis, account.Pool)
+		}
+		if !account.LpRewardsBalance.IsZero() || !account.LegacyAirdropUnallocated.IsZero() || account.AccountingMigrated {
+			return fmt.Errorf("%w: unsupported pool migration accounting %s", types.ErrInvalidGenesis, account.Pool)
+		}
+		if err := k.setLedgerAmount(ctx, opticalSurplusKey(common.HexToAddress(account.Pool)), account.OpticalSurplus); err != nil {
+			return err
+		}
+	}
+	for _, epoch := range a.Epochs {
+		if err := k.SetPoolAirdropEpoch(ctx, epoch); err != nil {
+			return err
+		}
+	}
+	for _, claim := range a.Claims {
+		k.store(ctx).Set(poolAirdropClaimKey(common.HexToAddress(claim.Pool), common.HexToAddress(claim.Holder), claim.Epoch), []byte{1})
+	}
+	return nil
 }
 
 // initFeeRights writes the generation 2 fee-right collection: the tokens in
@@ -269,6 +295,9 @@ func (k *Keeper) exportContracts(ctx sdk.Context, gs *types.GenesisState) error 
 		return err
 	}
 	gs.FeeRights = feeRights
+	if err := k.exportFeeAccounting(ctx, gs); err != nil {
+		return err
+	}
 	held := sdk.KVStorePrefixIterator(store, types.HeldQuotePrefix)
 	defer held.Close()
 	for ; held.Valid(); held.Next() {
@@ -299,6 +328,61 @@ func (k *Keeper) exportContracts(ctx sdk.Context, gs *types.GenesisState) error 
 	}
 	if gs.Retired, err = k.RetiredAddresses(ctx); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (k *Keeper) exportFeeAccounting(ctx sdk.Context, gs *types.GenesisState) error {
+	var err error
+	if gs.FeeAccounting.TotalLiabilities, err = k.TotalLiabilities(ctx); err != nil {
+		return err
+	}
+	for _, surface := range gs.Surfaces {
+		if surface.Role != types.RolePool {
+			continue
+		}
+		pool := common.HexToAddress(surface.Address)
+		market, found, err := k.poolMarket(ctx, pool)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fmt.Errorf("%w: missing market for fee account %s", types.ErrInvalidGenesis, surface.Address)
+		}
+		surplus, err := k.OpticalSurplus(ctx, pool)
+		if err != nil {
+			return err
+		}
+		gs.FeeAccounting.Pools = append(gs.FeeAccounting.Pools, types.PoolFeeAccount{
+			Pool: surface.Address, AccumulatedFees: market.AccumulatedFees, AirdropBalance: market.AirdropBalance,
+			AirdropEpoch: market.AirdropEpoch, LpRewardsBalance: sdk.ZeroInt(), OpticalSurplus: surplus,
+			LegacyAirdropUnallocated: sdk.ZeroInt()})
+	}
+	epochs := sdk.KVStorePrefixIterator(k.store(ctx), poolAirdropEpochPrefix)
+	defer epochs.Close()
+	for ; epochs.Valid(); epochs.Next() {
+		key := epochs.Key()[len(poolAirdropEpochPrefix):]
+		if len(key) != common.AddressLength+8 {
+			return fmt.Errorf("%w: corrupt pool airdrop epoch key %x", types.ErrInvalidGenesis, epochs.Key())
+		}
+		epoch, _, err := k.GetPoolAirdropEpoch(ctx, common.BytesToAddress(key[:common.AddressLength]),
+			binary.BigEndian.Uint64(key[common.AddressLength:]))
+		if err != nil {
+			return err
+		}
+		gs.FeeAccounting.Epochs = append(gs.FeeAccounting.Epochs, epoch)
+	}
+	claims := sdk.KVStorePrefixIterator(k.store(ctx), poolAirdropClaimPrefix)
+	defer claims.Close()
+	for ; claims.Valid(); claims.Next() {
+		key := claims.Key()[len(poolAirdropClaimPrefix):]
+		if len(key) != 2*common.AddressLength+8 {
+			return fmt.Errorf("%w: corrupt pool airdrop claim key %x", types.ErrInvalidGenesis, claims.Key())
+		}
+		gs.FeeAccounting.Claims = append(gs.FeeAccounting.Claims, types.PoolAirdropClaim{
+			Pool:   common.BytesToAddress(key[:common.AddressLength]).Hex(),
+			Holder: common.BytesToAddress(key[common.AddressLength : 2*common.AddressLength]).Hex(),
+			Epoch:  binary.BigEndian.Uint64(key[2*common.AddressLength:])})
 	}
 	return nil
 }

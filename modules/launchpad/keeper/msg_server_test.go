@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"encoding/json"
 	"math/big"
 	"testing"
 
@@ -214,4 +215,57 @@ func TestTreasuryWithdrawByGovernance(t *testing.T) {
 	require.ErrorIs(t, withdraw(authority, 1, false), types.ErrInsufficientBalance)
 	require.Equal(t, int64(1200), c.balanceOf(account))
 	require.Empty(t, evmLogsSince(c.ctx, before))
+}
+
+func TestRoleAdministrationByGovernanceFeeAccountingGenesis(t *testing.T) {
+	e := newEnv(t)
+	market := generation2Market(e.k.Generation2().SidioraNFT, 1, e.k.ModuleAddress())
+	market.AccumulatedFees = i(80)
+	market.AirdropBalance = i(20)
+	market.AirdropEpoch = 1
+	pool := common.HexToAddress(market.PoolAddress)
+	account := address("airdrop claimant")
+	gs := types.DefaultGenesis()
+	gs.Params = e.k.GetParams(e.ctx)
+	gs.Markets = []types.Market{market}
+	gs.Surfaces = []types.Surface{{Address: pool.Hex(), Role: types.RolePool}}
+	gs.FeeHeld = i(125)
+	gs.FeeAccounting.TotalLiabilities = i(125)
+	gs.FeeAccounting.Pools = []types.PoolFeeAccount{{Pool: pool.Hex(), AccumulatedFees: i(80),
+		AirdropBalance: i(20), AirdropEpoch: 1, LpRewardsBalance: i(0), OpticalSurplus: i(25),
+		LegacyAirdropUnallocated: i(0)}}
+	gs.FeeAccounting.Epochs = []types.PoolAirdropEpoch{{Pool: pool.Hex(), Epoch: 1, Amount: i(30),
+		SnapshotBlock: 10, EligibleSupply: i(100), Remaining: i(20), ClaimedSupply: i(30), LegacyRemaining: i(0)}}
+	gs.FeeAccounting.Claims = []types.PoolAirdropClaim{{Pool: pool.Hex(), Holder: account.Hex(), Epoch: 1}}
+	require.NoError(t, gs.Validate())
+	fresh, ctx := launchpadtest.NewKeeper(testkeeper.EVMTestApp, e.ctx)
+	fresh.InitGenesis(ctx, *gs)
+	liabilities, err := fresh.TotalLiabilities(ctx)
+	require.NoError(t, err)
+	require.Equal(t, i(125), liabilities)
+	surplus, err := fresh.OpticalSurplus(ctx, pool)
+	require.NoError(t, err)
+	require.Equal(t, i(25), surplus)
+	require.True(t, fresh.HasClaimedPoolAirdrop(ctx, pool, account, 1))
+	epoch, found, err := fresh.GetPoolAirdropEpoch(ctx, pool, 1)
+	require.NoError(t, err)
+	require.True(t, found)
+	sameJSON(t, gs.FeeAccounting.Epochs[0], epoch)
+	exported := fresh.ExportGenesis(ctx)
+	require.NoError(t, exported.Validate())
+	sameJSON(t, gs.FeeAccounting, exported.FeeAccounting)
+	raw, err := json.Marshal(exported)
+	require.NoError(t, err)
+	var decoded types.GenesisState
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+	reloaded, reloadedCtx := launchpadtest.NewKeeper(testkeeper.EVMTestApp, ctx)
+	reloaded.InitGenesis(reloadedCtx, decoded)
+	sameJSON(t, exported, reloaded.ExportGenesis(reloadedCtx))
+
+	gs.FeeAccounting.Pools[0].AccumulatedFees = i(81)
+	require.NoError(t, gs.Validate())
+	require.Panics(t, func() {
+		invalid, invalidCtx := launchpadtest.NewKeeper(testkeeper.EVMTestApp, ctx)
+		invalid.InitGenesis(invalidCtx, *gs)
+	})
 }
