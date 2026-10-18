@@ -1907,3 +1907,11 @@ exit = 1
 log = fleet/logs/fix-gh-613-testenv-node.log
 observed = The node panics at the upgrade height with "upgrade v6.12.0: launchpad: LXP_LAUNCHPAD_INVALID_PARAMS: quote token is the zero address" because the fixture carries generation 2 code for SidioraFactory, PoolRegistry, Treasury and PoolBeacon only and no ProtocolConfig 0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6 code or storage, which MigrateV6120 reads first since the 2.2.17 fix.
 assumption = The fixture, not the migration, is wrong against task 1.2.3 do_1 ("the launchpad state the migration hook reads"); the regenerated export from tools/v6120-halt-export must add the generation 2 role contracts, and until it lands the DB-only test environment serves the store and feeds gates while 7.1.3, 7.1.7 and 7.1.9 stay on their passing revision.
+
+[finding.holders-json-incomplete]
+revision = 5fea1d820
+command = go run ./tools/v6120-halt-export (regenerate node/testdata/v6120-halt-export.json from the halt height H 34742400 and apply MigrateV6120 on it)
+exit = 1
+log = fleet/logs/fixture-v6120-halt-export-gen.log
+observed = MigrateV6120 refuses with "holder balances differ from total supply: token 0xA19EC83e0e74c3eD7A30d5f83F08A541375c9a5c holders sum 535260795230612, totalSupply 1000000000000000"; 43 of the 49 pool tokens of modules/launchpad/keeper/testdata/v6120/holders.json sum below totalSupply at H (shortfall 5843910586816432 base units in total) after every read-only source was tried (explorer holder and address lists, transfer logs of every contract from the earliest retained block to H, the export's own addresses), and only the six tokens created inside the retained history are complete.
+assumption = The missing holders were last active below the retained-history boundary, so no node, log or explorer read can enumerate them; holders.json is a release-time operator input (task 2.2.15) that needs a history source below that boundary or the holder list of the harness that created the wallets, and until it exists the generator, 7.1.3, 7.1.7, 7.1.9, 8.4.7, 8.4.9 and the golden-dependent launchpad tests stay on their recorded state.
