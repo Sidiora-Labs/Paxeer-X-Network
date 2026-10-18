@@ -16574,7 +16574,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.2]
 title = "Serve every PECOR method at 0x1021"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["4.2.1", "4.1.7", "4.1.13"]
