@@ -153,6 +153,8 @@ for entry in export["evm"]["states"]:
 evm["codes"].extend(export["evm"]["codes"])
 evm["states"].extend(export["evm"]["states"])
 genesis["app_state"]["launchpad"] = export["launchpad"]
+genesis["app_state"]["launchpad"]["params"]["quote_denom"] = "uusdl"
+del genesis["app_state"]["launchpad"]["params"]["quote_token"]
 with open(sys.argv[2], "w") as handle:
     json.dump(genesis, handle, indent=2)
     handle.write("\n")
