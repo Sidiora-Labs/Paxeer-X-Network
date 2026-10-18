@@ -19109,7 +19109,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.3.99]
 title = "Domain completion of pricefeed"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["5.3.1", "5.3.2", "5.2.5", "5.2.7"]
