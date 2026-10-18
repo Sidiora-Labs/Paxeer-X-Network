@@ -28087,7 +28087,7 @@ ac_1 = "stage.sh installs the release binary as paxd.v6.12.0 beside the installe
 ac_2 = "swap.sh replaces paxd atomically with cp -p to paxd.new in the same directory and mv -f, and refuses to start a unit when sha256 of the installed paxd differs from RELEASE_SHA256."
 ac_3 = "swap.sh on a host whose binary is shared refuses to replace paxd while any validator home of that host still runs, checked with pgrep -a -x paxd filtered by --home, the exact-name check that never matches a wrapper's command line."
 ac_4 = "swap.sh writes the node upgrade file through upgrade_info.py node --halt-height H with the name of the release upgrade-info.json and mode 0600 (sdk/x/upgrade/keeper/keeper.go:430), refuses when the checksum of that release document differs from RELEASE_SHA256, and resets halt-height to 0 in app.toml (sdk/server/config/toml.go:42) for validator homes."
-ac_5 = "swap.sh runs against a real local single-node chain started from paxd init with --halt-height, and with --service-manager foreground it stops and starts the process itself, so the test exercises the same code path as systemd hosts."
+ac_5 = "swap.sh runs against a real local single-node chain started from paxd init whose genesis is then seeded with the evm codes and states and the launchpad state of the mainnet halt export node/testdata/v6120-halt-export.json, the only state MigrateV6120 accepts, and halted with --halt-height, and with --service-manager foreground it stops and starts the process itself, so the test exercises the same code path as systemd hosts."
 ac_6 = "stage.sh and swap.sh run ldd on paxd.v6.12.0 and refuse with stage: unresolved shared library <name> when any line reads not found, because paxd links libssl and libcrypto dynamically (modules/lxphost/host.go:7)."
 ac_7 = "stage.sh --receipt and swap.sh --receipt write their receipt with keys of the receipt key set only: hosts_staged and result for stage.sh, nodes_checked, nodes_passed and result for swap.sh."
 
@@ -28318,7 +28318,7 @@ do_1 = "Add tools/release/stage.sh with --local, --verify, --check, --automation
 do_2 = "Add tools/release/swap.sh with --role full|validator, --halt-height, --service-manager systemd|foreground, --verify and --receipt; the swap is cp -p to paxd.new then mv -f, ldd and the sha check run before the unit starts."
 do_3 = "In swap.sh refuse while pgrep -a -x paxd filtered by --home shows a validator home of the host, the halted state of sdk/baseapp/abci.go:322."
 do_4 = "In swap.sh write the upgrade file through tools/release/upgrade_info.py node --halt-height H --release-doc upgrade-info.json --sha256 RELEASE_SHA256 and set halt-height = 0 (sdk/server/config/toml.go:42) for validator homes."
-do_5 = "Add tools/release/tests/swap.test.sh local_chain_swap_applies_plan on a paxd init single-node chain (daemon/paxd/cmd/root.go:125) halted at 20, and restart_binds_once relying on App.Close stopping the EVM servers (node/app.go:1273-1276)."
+do_5 = "Add tools/release/tests/swap.test.sh local_chain_swap_applies_plan on a paxd init single-node chain (daemon/paxd/cmd/root.go:125) seeded with the evm codes and states and the launchpad state of node/testdata/v6120-halt-export.json and halted at 20, and restart_binds_once relying on App.Close stopping the EVM servers (node/app.go:1273-1276)."
 
 [capability.8.4.2]
 title = "snapshot.sh and rollback.sh"
@@ -28330,7 +28330,7 @@ do_1 = "Add tools/release/snapshot.sh writing <home>-pre-v6.12.0.tar.zst of the 
 do_2 = "Add tools/release/rollback.sh --execute: stop every unit, move data to data.v6.12.0-<RELEASE_ID>, extract the snapshot, restore paxd.pre-<RELEASE_ID> with the atomic swap, remove data/upgrade-info.json read by ReadUpgradeInfoFromDisk (sdk/x/upgrade/keeper/keeper.go:453-475), set halt-height = 0 (sdk/server/config/toml.go:42) and restart, the procedure of ruling 13 in contracts/release.md#rollback."
 do_3 = "Add --readiness checking the previous binary on every host and one archive per validator and full-node home, and --receipt writing readiness, rollback_executed and result."
 do_4 = "rollback.sh never deletes a set-aside directory and never starts a node from it; removal is an explicit operator command outside the script."
-do_5 = "Add tools/release/tests/snapshot.test.sh and tools/release/tests/rollback.test.sh on a local single-node chain started from paxd init (daemon/paxd/cmd/root.go:125)."
+do_5 = "Add tools/release/tests/snapshot.test.sh and tools/release/tests/rollback.test.sh on a local single-node chain started from paxd init (daemon/paxd/cmd/root.go:125); the rollback chain's genesis is seeded with the evm codes and states and the launchpad state of node/testdata/v6120-halt-export.json so the candidate applies v6.12.0."
 
 [capability.8.4.3]
 title = "fleet_check.py and fleet-views.json"
@@ -28785,7 +28785,7 @@ qualification = "UNRUN"
 [acceptance.8.8.5]
 feature = "8"
 req = "8008.5"
-scenario = "Given a local chain halted at height 20 with --halt-height 20, when swap.sh --service-manager foreground --role validator runs with a release candidate build, then the node restarts, applies v6.12.0 at 21 and reaches height 23."
+scenario = "Given a local chain from paxd init seeded with the evm codes and states and the launchpad state of node/testdata/v6120-halt-export.json and halted at height 20 with --halt-height 20, when swap.sh --service-manager foreground --role validator runs with a release candidate build, then the node restarts, applies v6.12.0 at 21 and reaches height 23."
 contract = "contracts/release.md#rollout"
 test = "tools/release/tests/swap.test.sh::local_chain_swap_applies_plan (planned)"
 qualification = "UNRUN"
@@ -28817,7 +28817,7 @@ qualification = "UNRUN"
 [acceptance.8.9.2]
 feature = "8"
 req = "8009.2"
-scenario = "Given a local chain halted at 20, snapshotted, then swapped to the release candidate and run to 25, when rollback.sh --execute runs, then paxd has the sha of paxd.pre-r1, no upgrade file remains, halt-height is 0, data matches the snapshot and the chain resumes on the previous binary past 22."
+scenario = "Given a local chain seeded with the evm codes and states and the launchpad state of node/testdata/v6120-halt-export.json, halted at 20, snapshotted, then swapped to the release candidate and run to 25, when rollback.sh --execute runs, then paxd has the sha of paxd.pre-r1, no upgrade file remains, halt-height is 0, data matches the snapshot and the chain resumes on the previous binary past 22."
 contract = "contracts/release.md#rollback"
 test = "tools/release/tests/rollback.test.sh::execute_restores_snapshot_and_binary (planned)"
 qualification = "UNRUN"
@@ -29414,7 +29414,7 @@ capabilities = ["8.4.1"]
 do_1 = "Write tools/release/swap.sh with --role, --halt-height, --service-manager, --verify and --receipt; the swap is cp -p to paxd.new then mv -f, with ldd and the sha check before start."
 do_2 = "Refuse while pgrep -a -x paxd filtered by --home shows a running validator home of the host; a halted home is the state of sdk/baseapp/abci.go:322, whose priv_validator_state.json records the halt height H, or H+1 with round 0, step 1 and one signed proposal (sign bytes of type PROPOSAL 0x20) on the previous binary, and never a prevote or precommit at H+1 nor any height above H+1."
 do_3 = "Write the upgrade file with tools/release/upgrade_info.py node --halt-height H --release-doc upgrade-info.json --sha256 RELEASE_SHA256 and set halt-height = 0 (sdk/server/config/toml.go:42)."
-do_4 = "Write tools/release/tests/swap.test.sh with swap_is_atomic_and_checked, shared_binary_waits_for_halt, upgrade_file_and_halt_reset, receipts_use_key_set, local_chain_swap_applies_plan on a paxd init chain (daemon/paxd/cmd/root.go:125) halted with --halt-height (sdk/server/start.go:46), and restart_binds_once (node/app.go:1273-1276)."
+do_4 = "Write tools/release/tests/swap.test.sh with swap_is_atomic_and_checked, shared_binary_waits_for_halt, upgrade_file_and_halt_reset, receipts_use_key_set, local_chain_swap_applies_plan on a paxd init chain (daemon/paxd/cmd/root.go:125) whose genesis is seeded with the evm codes and states and the launchpad state of node/testdata/v6120-halt-export.json, halted with --halt-height (sdk/server/start.go:46), and restart_binds_once (node/app.go:1273-1276)."
 do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["swap.sh --role", "swap.sh --service-manager", "swap.sh --verify", "swap.sh --receipt", "local_chain_swap_applies_plan", "restart_binds_once", "receipts_use_key_set"]
 touches = ["tools/release/swap.sh", "tools/release/tests/swap.test.sh"]
@@ -29468,7 +29468,7 @@ capabilities = ["8.4.2"]
 do_1 = "Write tools/release/rollback.sh --execute: stop every unit of the env file, move data to data.v6.12.0-<RELEASE_ID>, extract the home's snapshot, restore paxd.pre-<RELEASE_ID> with the atomic swap of swap.sh, remove data/upgrade-info.json (sdk/x/upgrade/keeper/keeper.go:453-475), set halt-height = 0 (sdk/server/config/toml.go:42) and restart every unit."
 do_2 = "Add --verify checking every node on the previous binary's sha256 with no upgrade file and the height rising past H, --readiness checking the previous binary on every host and one archive per validator and full-node home, and --receipt writing readiness, rollback_executed and result."
 do_3 = "The script never deletes set-aside data and never starts a node from it."
-do_4 = "Write tools/release/tests/rollback.test.sh with execute_restores_snapshot_and_binary, restored_state_is_pre_h1 and readiness_requires_material on a local paxd init chain (daemon/paxd/cmd/root.go:125)."
+do_4 = "Write tools/release/tests/rollback.test.sh with execute_restores_snapshot_and_binary, restored_state_is_pre_h1 and readiness_requires_material on a local paxd init chain (daemon/paxd/cmd/root.go:125) whose genesis is seeded with the evm codes and states and the launchpad state of node/testdata/v6120-halt-export.json."
 do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["rollback.sh --execute", "rollback.sh --readiness", "rollback.sh --verify", "rollback.sh --receipt", "execute_restores_snapshot_and_binary", "restored_state_is_pre_h1", "readiness_requires_material"]
 touches = ["tools/release/rollback.sh", "tools/release/tests/rollback.test.sh"]
