@@ -225,6 +225,26 @@ func TestConventionGuards(t *testing.T) {
 		require.Empty(t, h.stateDB.GetAllLogs())
 	})
 	for _, name := range []string{"registerFeedKey", "revokeFeedKey"} {
+		t.Run("delegatecall_"+name, func(t *testing.T) {
+			h := newHarness(t)
+			operator, caller := h.validator("delegate", stakingtypes.Bonded, true)
+			key := feedPubKey("delegate")
+			_, _, err := h.keeper.RegisterFeedKey(h.ctx(), operator, key)
+			require.NoError(t, err)
+			forwarder := common.HexToAddress("0x9002")
+			h.stateDB.SetCode(forwarder, forwardingCode(true))
+			var args []interface{}
+			if name == "registerFeedKey" {
+				args = []interface{}{feedPubKey("delegate_replacement")}
+			}
+			ret, _, err := h.evm.Call(caller, forwarder, h.input(name, args...), suppliedGas, uint256.NewInt(0))
+			requireRevert(t, ret, err, "LXP_PRICEFEED_DELEGATECALL")
+			h.requireFeedKey(operator, key)
+			h.requireNoHolder(feedAccount(feedPubKey("delegate_replacement")))
+			require.Empty(t, h.stateDB.GetAllLogs())
+		})
+	}
+	for _, name := range []string{"registerFeedKey", "revokeFeedKey"} {
 		t.Run("staticcall_"+name, func(t *testing.T) {
 			h := newHarness(t)
 			operator, caller := h.validator("static", stakingtypes.Bonded, true)
@@ -265,6 +285,30 @@ func TestConventionGuards(t *testing.T) {
 }
 
 func TestConventionNonPayableAndArgCount(t *testing.T) {
+	for _, name := range []string{"registerFeedKey", "revokeFeedKey"} {
+		t.Run("value_"+name, func(t *testing.T) {
+			h := newHarness(t)
+			operator, caller := h.validator("value", stakingtypes.Bonded, true)
+			key := feedPubKey("value")
+			_, _, err := h.keeper.RegisterFeedKey(h.ctx(), operator, key)
+			require.NoError(t, err)
+			coins := sdk.NewCoins(sdk.NewCoin(sdk.MustGetBaseDenom(), sdk.NewInt(1)))
+			require.NoError(t, testkeeper.EVMTestApp.BankKeeper.MintCoins(h.ctx(), "evm", coins))
+			require.NoError(t, testkeeper.EVMTestApp.BankKeeper.SendCoinsFromModuleToAccount(h.ctx(), "evm", sdk.AccAddress(operator), coins))
+			before := new(uint256.Int).Set(h.stateDB.GetBalance(caller))
+			var args []interface{}
+			if name == "registerFeedKey" {
+				args = []interface{}{feedPubKey("value_replacement")}
+			}
+			ret, _, err := h.evm.Call(caller, pricefeedAddress, h.input(name, args...), suppliedGas, uint256.NewInt(1))
+			requireRevert(t, ret, err, "LXP_PRECOMPILE_NON_PAYABLE")
+			require.Equal(t, before, h.stateDB.GetBalance(caller))
+			require.True(t, h.stateDB.GetBalance(pricefeedAddress).IsZero())
+			h.requireFeedKey(operator, key)
+			h.requireNoHolder(feedAccount(feedPubKey("value_replacement")))
+			require.Empty(t, h.stateDB.GetAllLogs())
+		})
+	}
 	t.Run("value", func(t *testing.T) {
 		h := newHarness(t)
 		before := new(uint256.Int).Set(h.stateDB.GetBalance(h.caller))
