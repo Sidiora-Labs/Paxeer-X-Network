@@ -16519,7 +16519,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1.15]
 title = "Add the spot module, genesis and message server"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["4.1.3", "4.1.4"]
