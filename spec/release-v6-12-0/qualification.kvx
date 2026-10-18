@@ -1875,3 +1875,11 @@ exit = 1
 log = fleet/logs/fix-node-v6120-gates-2-verify-1.log
 observed = Five of the six node wiring tests pass; the halt export test stops at the launchpad hook's generation 2 factory treasury check because the fixture carries no Launch-x deployment.
 assumption = The halt export test is checked at deploy time against the real export, as recorded for the perps flow test.
+
+[finding.task-3-2-6-spec-contradictions]
+revision = b51ef69c4e69
+command = go test ./precompiles/perps/ -run 'TestViews'
+exit = 0
+log = fleet/logs/3.2.6-verify-1.log
+observed = The view gate passes while three clauses contradict each other: acceptance.3.5.12 expects getOrder collateralAmount to equal the placeLimitOrder deposit although Order stores no deposited collateral; acceptance.3.2.7 gives lotSize as 1 beside an 18-decimal tick while the base-size unit puts the lot at 1e18; req.3014 ac_5 reverts getInsuranceBalance on a foreign token while acceptance.3.14.5 returns 0.
+assumption = The views follow the acceptance text (initial margin, 1e18 lot, 0 balance) and the tests assert the same; a spec ruling on each clause decides whether an Order collateral field, a lot unit or a revert is added.
