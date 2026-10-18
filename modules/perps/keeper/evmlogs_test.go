@@ -65,8 +65,8 @@ func evmlogsFlushed(t *testing.T, evm *evmkeeper.Keeper, ctx sdk.Context, hash c
 }
 
 func TestEvmlogsSyntheticReceipt(t *testing.T) {
-	for _, txCount := range []int{3, 0} {
-		height := int64(12)
+	for _, txCount := range []int{5, 0} {
+		height := int64(500)
 		k, evm, ctx := newEvmlogsEnv(t, height, txCount)
 		hash := evmkeeper.SyntheticReceiptHash(evmkeeper.SyntheticReceiptPerps, height)
 
@@ -76,6 +76,7 @@ func TestEvmlogsSyntheticReceipt(t *testing.T) {
 		require.ErrorIs(t, err, receiptstore.ErrNotFound)
 
 		records := evmlogsRecords()
+		records = append(records, records[0])
 		require.NoError(t, k.WriteEndBlockReceipt(ctx, records[:1]))
 		require.NoError(t, k.WriteEndBlockReceipt(ctx, records[1:]))
 
@@ -84,11 +85,11 @@ func TestEvmlogsSyntheticReceipt(t *testing.T) {
 		require.Equal(t, hash.Hex(), r.TxHashHex)
 		require.Equal(t, uint32(math.MaxUint32-2), r.TransactionIndex)
 		require.Equal(t, uint64(height), r.BlockNumber)
-		require.Equal(t, uint32(ethtypes.LegacyTxType), r.TxType)
+		require.Equal(t, uint32(evmtypes.ShellEVMTxType), r.TxType)
 		require.Equal(t, uint32(ethtypes.ReceiptStatusSuccessful), r.Status)
 		require.Equal(t, evmlogsVenueAddress.Hex(), r.From)
 		require.Equal(t, uint64(0), r.GasUsed)
-		require.Len(t, r.Logs, 2)
+		require.Len(t, r.Logs, 3)
 		for i, record := range records {
 			topics, data, err := perpsabi.PackEvent(record.Name, record.Args...)
 			require.NoError(t, err)
@@ -114,7 +115,7 @@ func TestEvmlogsSyntheticReceipt(t *testing.T) {
 		flushed := evmlogsFlushed(t, evm, ctx, hash)
 		require.Equal(t, uint32(txCount), flushed.TransactionIndex) //nolint:gosec
 		logs := evmkeeper.GetLogsForTx(flushed, 0)
-		require.Len(t, logs, 2)
+		require.Len(t, logs, 3)
 		for i, l := range logs {
 			require.Equal(t, uint(txCount), l.TxIndex)
 			require.Equal(t, uint(i), l.Index)

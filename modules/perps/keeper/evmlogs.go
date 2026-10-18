@@ -47,7 +47,7 @@ func (k *Keeper) WriteEndBlockReceipt(ctx sdk.Context, records []types.EventReco
 		receipt.Logs = append(receipt.Logs, utils.Map(logs, evmkeeper.ConvertSyntheticEthLog)...)
 	case errors.Is(err, receiptstore.ErrNotFound):
 		receipt = &evmtypes.Receipt{
-			TxType:           ethtypes.LegacyTxType,
+			TxType:           evmtypes.ShellEVMTxType,
 			TxHashHex:        txHash.Hex(),
 			BlockNumber:      uint64(ctx.BlockHeight()), //nolint:gosec
 			TransactionIndex: txIndex,
