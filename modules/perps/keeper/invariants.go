@@ -259,17 +259,17 @@ func PositionsInvariant(k *Keeper) sdk.Invariant {
 			}
 			held[key] = position.ID
 		}
-		indexed := map[holding]bool{}
+		indexed := map[uint256.Int]bool{}
 		for _, entry := range v.accountPositions {
 			key := holding{entry.Account, entry.MarketID}
-			indexed[key] = true
+			indexed[entry.PositionID] = true
 			if id, ok := held[key]; !ok || !id.Eq(&entry.PositionID) {
 				message += fmt.Sprintf("account market entry %s market %d points to position %s, not held there\n",
 					entry.Account.Hex(), entry.MarketID, entry.PositionID.Dec())
 			}
 		}
 		for _, position := range v.positions {
-			if !indexed[holding{position.Account, position.MarketID}] {
+			if !indexed[position.ID] {
 				message += fmt.Sprintf("position %s has no account market entry\n", position.ID.Dec())
 			}
 		}
