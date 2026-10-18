@@ -14,9 +14,9 @@ import (
 var (
 	// ErrUSDLBalanceDiffersFromGolden refuses step 1 when a launchpad
 	// contract holds a USDL balance other than the one usdl.json records.
-	ErrUSDLBalanceDiffersFromGolden = errors.New("usdl balance differs from golden")
+	ErrUSDLBalanceDiffersFromGolden = errors.New("upgrade v6.12.0: launchpad: usdl balance differs from golden")
 	// ErrAlreadyMigrated refuses a second run of MigrateV6120.
-	ErrAlreadyMigrated = errors.New("already migrated")
+	ErrAlreadyMigrated = errors.New("upgrade v6.12.0: launchpad: already migrated")
 )
 
 var (
@@ -102,11 +102,6 @@ func (k *Keeper) migrateUSDL(ctx sdk.Context, caller NestedCaller, golden USDLGo
 			}
 			byRole[h.Role] = h.Address
 		}
-		if !h.Balance.IsZero() && h.Role != types.RolePool && h.Role != types.RoleFeeAccumulator &&
-			h.Role != types.RoleTreasury {
-			return fmt.Errorf("%w: %s %s holds usdl outside every custody ledger", types.ErrInvalidConfiguration,
-				h.Role, h.Address.Hex())
-		}
 		balance, err := k.quoteBalance(ctx, caller, token, h.Address)
 		if err != nil {
 			return err
@@ -114,6 +109,11 @@ func (k *Keeper) migrateUSDL(ctx sdk.Context, caller NestedCaller, golden USDLGo
 		if !balance.Equal(h.Balance) {
 			return fmt.Errorf("%w: %s %s holds %s, golden %s", ErrUSDLBalanceDiffersFromGolden, h.Role,
 				h.Address.Hex(), balance, h.Balance)
+		}
+		if !h.Balance.IsZero() && h.Role != types.RolePool && h.Role != types.RoleFeeAccumulator &&
+			h.Role != types.RoleTreasury && h.Role != types.RoleFeesRouter {
+			return fmt.Errorf("%w: %s %s holds usdl outside every custody ledger", types.ErrInvalidConfiguration,
+				h.Role, h.Address.Hex())
 		}
 	}
 	for _, generation := range []uint8{1, 2} {
@@ -167,17 +167,28 @@ func (k *Keeper) moveIntoCustody(ctx sdk.Context, caller NestedCaller, golden US
 		return ctx, err
 	}
 	moved := sdk.ZeroInt()
+	accumulators := map[uint8]common.Address{}
 	for _, h := range golden.Balances {
-		if h.Balance.IsZero() || (h.Role != types.RolePool && h.Role != types.RoleFeeAccumulator) {
+		if h.Role == types.RoleFeeAccumulator {
+			accumulators[h.Generation] = h.Address
+		}
+	}
+	for _, h := range golden.Balances {
+		if h.Balance.IsZero() || (h.Role != types.RolePool && h.Role != types.RoleFeeAccumulator &&
+			h.Role != types.RoleFeesRouter) {
 			continue
 		}
 		var received sdk.Int
 		if h.Role == types.RolePool {
 			ctx, received, err = k.SweepPool(ctx, caller, h.Address)
 		} else {
+			accumulator := h.Address
+			if h.Role == types.RoleFeesRouter {
+				accumulator = accumulators[h.Generation]
+			}
 			ctx, received, err = k.receive(ctx, caller, h.Address,
 				erc20Call(erc20Transfer, addressWord(custody), amountWord(h.Balance.BigInt())),
-				FeeHeldLedger(h.Address), types.ErrTransferFailed)
+				FeeHeldLedger(accumulator), types.ErrTransferFailed)
 		}
 		if err != nil {
 			return ctx, err

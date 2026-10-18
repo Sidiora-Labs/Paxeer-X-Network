@@ -9,6 +9,7 @@ import (
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -147,6 +148,15 @@ func (s *usdlStepEnv) treasuryLedger() int64 {
 
 func TestUsdlBalancesMustMatchGolden(t *testing.T) {
 	s := newUSDLStepEnv(t)
+	for i, h := range s.golden.Balances {
+		s.golden.Balances[i].Balance = h.Balance.AddRaw(1)
+		err := s.run()
+		require.ErrorIs(t, err, keeper.ErrUSDLBalanceDiffersFromGolden)
+		require.ErrorContains(t, err, "upgrade v6.12.0: launchpad: usdl balance differs from golden")
+		require.ErrorContains(t, err, h.Address.Hex())
+		require.Equal(t, int64(0), s.balanceOf(s.custody))
+		s.golden.Balances[i].Balance = h.Balance
+	}
 	p1, outside := common.HexToAddress("0xEeA16aC55AaE47c484EBef02eb1186aD606e1BF9"), address("outside holder")
 	require.Equal(t, p1, s.golden.Balances[0].Address)
 	recorded := s.golden.Balances[0].Balance.Int64()
@@ -179,6 +189,39 @@ func TestUsdlBalancesMustMatchGolden(t *testing.T) {
 }
 
 func TestUsdlGoldenVector(t *testing.T) {
+	t.Run("funded FeesRouters", func(t *testing.T) {
+		s := newUSDLStepEnv(t)
+		accumulators := map[uint8]common.Address{}
+		balances := map[uint8]int64{}
+		for _, h := range s.golden.Balances {
+			if h.Role == types.RoleFeeAccumulator {
+				accumulators[h.Generation] = h.Address
+				balances[h.Generation] = h.Balance.Int64()
+			}
+		}
+		before := len(s.logs())
+		var routers []common.Address
+		for i, h := range s.golden.Balances {
+			if h.Role == types.RoleFeesRouter {
+				s.transfer(s.holder, h.Address, 17)
+				s.golden.Balances[i].Balance = sdk.NewInt(17)
+				routers = append(routers, h.Address)
+			}
+		}
+		require.Len(t, routers, 2)
+		require.NoError(t, s.run())
+		for _, router := range routers {
+			require.Zero(t, s.balanceOf(router))
+			require.Contains(t, s.since(before), transferLog{from: router, to: s.custody, amount: 17})
+		}
+		for generation, accumulator := range accumulators {
+			require.Equal(t, balances[generation]+17, s.ledger(keeper.FeeHeldLedger(accumulator)))
+		}
+		require.Equal(t, goldenCustodySum+goldenTreasurySum+34, s.balanceOf(s.custody))
+		require.Equal(t, usdlSupply, s.totalSupply())
+		_, broken := keeper.CustodyInvariant(s.k)(s.ctx)
+		require.False(t, broken)
+	})
 	s := newUSDLStepEnv(t)
 	launchpad := common.HexToAddress(types.LaunchpadAddress)
 	banks := s.bankBalances(s.custody, launchpad)
@@ -308,7 +351,7 @@ func TestUsdlStepRunsOnce(t *testing.T) {
 
 	err := s.run()
 	require.ErrorIs(t, err, keeper.ErrAlreadyMigrated)
-	require.EqualError(t, err, "already migrated")
+	require.EqualError(t, err, "upgrade v6.12.0: launchpad: already migrated")
 	require.Equal(t, custody, s.balanceOf(s.custody))
 	require.Len(t, s.logs(), logs)
 	require.Equal(t, held, s.ledger(keeper.HeldQuoteLedger(p1)))
