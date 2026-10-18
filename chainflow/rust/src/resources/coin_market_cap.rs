@@ -109,13 +109,15 @@ impl ListQuotesRequestBuilder {
             query.push(("convert".to_string(), crate::http::scalar_value(value)));
         }
         if let Some(values) = &self.symbol {
-            for item in values {
-                query.push(("symbol".to_string(), crate::http::scalar_value(item)));
+            if !values.is_empty() {
+                let joined: Vec<String> = values.iter().map(crate::http::scalar_value).collect();
+                query.push(("symbol".to_string(), joined.join(",")));
             }
         }
         if let Some(values) = &self.slug {
-            for item in values {
-                query.push(("slug".to_string(), crate::http::scalar_value(item)));
+            if !values.is_empty() {
+                let joined: Vec<String> = values.iter().map(crate::http::scalar_value).collect();
+                query.push(("slug".to_string(), joined.join(",")));
             }
         }
         let headers: Vec<(String, String)> = Vec::new();
@@ -335,13 +337,15 @@ impl ListQuotesApiAliasRequestBuilder {
             query.push(("convert".to_string(), crate::http::scalar_value(value)));
         }
         if let Some(values) = &self.symbol {
-            for item in values {
-                query.push(("symbol".to_string(), crate::http::scalar_value(item)));
+            if !values.is_empty() {
+                let joined: Vec<String> = values.iter().map(crate::http::scalar_value).collect();
+                query.push(("symbol".to_string(), joined.join(",")));
             }
         }
         if let Some(values) = &self.slug {
-            for item in values {
-                query.push(("slug".to_string(), crate::http::scalar_value(item)));
+            if !values.is_empty() {
+                let joined: Vec<String> = values.iter().map(crate::http::scalar_value).collect();
+                query.push(("slug".to_string(), joined.join(",")));
             }
         }
         let headers: Vec<(String, String)> = Vec::new();

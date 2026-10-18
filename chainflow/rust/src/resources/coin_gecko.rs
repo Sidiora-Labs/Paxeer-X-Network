@@ -243,13 +243,15 @@ impl ListMarketsRequestBuilder {
             query.push(("vs_currency".to_string(), crate::http::scalar_value(value)));
         }
         if let Some(values) = &self.ids {
-            for item in values {
-                query.push(("ids".to_string(), crate::http::scalar_value(item)));
+            if !values.is_empty() {
+                let joined: Vec<String> = values.iter().map(crate::http::scalar_value).collect();
+                query.push(("ids".to_string(), joined.join(",")));
             }
         }
         if let Some(values) = &self.symbols {
-            for item in values {
-                query.push(("symbols".to_string(), crate::http::scalar_value(item)));
+            if !values.is_empty() {
+                let joined: Vec<String> = values.iter().map(crate::http::scalar_value).collect();
+                query.push(("symbols".to_string(), joined.join(",")));
             }
         }
         if let Some(value) = &self.page {
@@ -265,8 +267,9 @@ impl ListMarketsRequestBuilder {
             query.push(("sparkline".to_string(), crate::http::scalar_value(value)));
         }
         if let Some(values) = &self.price_change_percentage {
-            for item in values {
-                query.push(("price_change_percentage".to_string(), crate::http::scalar_value(item)));
+            if !values.is_empty() {
+                let joined: Vec<String> = values.iter().map(crate::http::scalar_value).collect();
+                query.push(("price_change_percentage".to_string(), joined.join(",")));
             }
         }
         if let Some(value) = &self.precision {
@@ -531,13 +534,15 @@ impl ListSimplePricesRequestBuilder {
         let path = "/api/v3/simple/price".to_string();
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(values) = &self.ids {
-            for item in values {
-                query.push(("ids".to_string(), crate::http::scalar_value(item)));
+            if !values.is_empty() {
+                let joined: Vec<String> = values.iter().map(crate::http::scalar_value).collect();
+                query.push(("ids".to_string(), joined.join(",")));
             }
         }
         if let Some(values) = &self.symbols {
-            for item in values {
-                query.push(("symbols".to_string(), crate::http::scalar_value(item)));
+            if !values.is_empty() {
+                let joined: Vec<String> = values.iter().map(crate::http::scalar_value).collect();
+                query.push(("symbols".to_string(), joined.join(",")));
             }
         }
         if let Some(value) = &self.vs_currencies {

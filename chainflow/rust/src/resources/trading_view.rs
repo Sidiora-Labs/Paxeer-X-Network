@@ -522,8 +522,9 @@ impl ListQuotesRequestBuilder {
         );
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(values) = &self.symbols {
-            for item in values {
-                query.push(("symbols".to_string(), crate::http::scalar_value(item)));
+            if !values.is_empty() {
+                let joined: Vec<String> = values.iter().map(crate::http::scalar_value).collect();
+                query.push(("symbols".to_string(), joined.join(",")));
             }
         }
         let headers: Vec<(String, String)> = Vec::new();

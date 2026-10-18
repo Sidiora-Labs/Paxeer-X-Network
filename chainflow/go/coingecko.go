@@ -433,7 +433,7 @@ type CoinGeckoListMarketsParams struct {
 // URLQuery serializes [CoinGeckoListMarketsParams]'s query parameters as `url.Values`.
 func (r CoinGeckoListMarketsParams) URLQuery() (v url.Values) {
 	return apiquery.MarshalWithSettings(r, apiquery.QuerySettings{
-		ArrayFormat:  apiquery.ArrayQueryFormatRepeat,
+		ArrayFormat:  apiquery.ArrayQueryFormatComma,
 		NestedFormat: apiquery.NestedQueryFormatBrackets,
 	})
 }
@@ -547,7 +547,7 @@ type CoinGeckoListSimplePricesParams struct {
 // URLQuery serializes [CoinGeckoListSimplePricesParams]'s query parameters as `url.Values`.
 func (r CoinGeckoListSimplePricesParams) URLQuery() (v url.Values) {
 	return apiquery.MarshalWithSettings(r, apiquery.QuerySettings{
-		ArrayFormat:  apiquery.ArrayQueryFormatRepeat,
+		ArrayFormat:  apiquery.ArrayQueryFormatComma,
 		NestedFormat: apiquery.NestedQueryFormatBrackets,
 	})
 }
