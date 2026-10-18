@@ -19,6 +19,10 @@ func TestQuoteUtilizationFields(t *testing.T) {
 		capped     bool
 		sufficient bool
 	}{
+		{"market buy of 300,000e6 under the PAX cap", big.NewInt(600_000_000_000), big.NewInt(1_000_000_000_000),
+			types.OpeningTokenMaxUtilizationBps, big.NewInt(6_000), false, true},
+		{"market buy of 500,000e6 over the PAX cap", big.NewInt(1_000_000_000_000), big.NewInt(1_000_000_000_000),
+			types.OpeningTokenMaxUtilizationBps, big.NewInt(10_000), true, false},
 		{"at the opening cap", big.NewInt(900_000_000), big.NewInt(1_000_000_000), types.OpeningTokenMaxUtilizationBps,
 			big.NewInt(9_000), false, true},
 		{"one unit above the opening cap rounds up", big.NewInt(900_000_001), big.NewInt(1_000_000_000),
