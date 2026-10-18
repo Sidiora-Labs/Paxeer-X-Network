@@ -152,4 +152,4 @@ coverage.out
 /storage/ledger_db/block/blocksim/bin/
 /storage/db_engine/litt/bin/
 .context/
-CONSTITUTION.md
+CONSTITUTION.md.pytest_cache/
