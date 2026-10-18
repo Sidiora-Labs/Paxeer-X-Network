@@ -1,42 +1,49 @@
 package keeper_test
 
 import (
+	"encoding/json"
+	"errors"
 	"math/big"
+	"os"
 	"testing"
+	"time"
 
 	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
+	pricefeedtestutil "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/testutil"
+	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	perpsabi "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/perps/abi"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	receiptstore "github.com/Sidiora-Labs/Paxeer-X-Network/storage/ledger_db/receipt"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestEventsReconstruct(t *testing.T) {
-	e := newAccountEnv(t)
-	e.app.EvmKeeper.BeginBlock(e.ctx)
-	e.setMark(e18(60_000))
-	e.call(e.a, "transfer(address,uint256)", common.LeftPadBytes(e.b.Bytes(), 32), accountWord(big.NewInt(100_000_000)))
-	records := e.deposit(e.a, 10_000_000)
-	records = append(records, e.deposit(e.b, 100_000_000)...)
+	liquidationBytes, err := os.ReadFile("testdata/liquidation_golden.json")
+	require.NoError(t, err)
+	goldens := make(map[string][]scenarioBlock)
+	require.NoError(t, json.Unmarshal(liquidationBytes, &goldens))
+	golden, found := goldens["liquidation"]
+	require.True(t, found)
 
-	place := func(account common.Address, p keeper.OrderParams) keeper.PlaceResult {
-		result, err := e.k.PlaceOrder(e.ctx, account, p)
-		require.NoError(t, err)
-		records = append(records, result.Events...)
-		return result
-	}
+	e, records := newEventsReconstructEnv(t, 1_029_000_000, 512)
+	var logs []*ethtypes.Log
 	compare := func(phase string) {
-		require.NoError(t, e.k.WriteEndBlockReceipt(e.ctx, records))
 		receipt, err := evmlogsProvisional(t, &e.app.EvmKeeper, e.ctx)
-		require.NoError(t, err)
-		logs := evmkeeper.GetLogsForTx(receipt, 0)
+		if !errors.Is(err, receiptstore.ErrNotFound) {
+			require.NoError(t, err)
+			logs = append(logs, evmkeeper.GetLogsForTx(receipt, 0)...)
+		}
 		require.NotEmpty(t, logs)
 		accounts, positions := reconstructLiquidationLogs(t, logs)
 		wantAccounts := make(map[common.Address]types.Account)
@@ -44,6 +51,12 @@ func TestEventsReconstruct(t *testing.T) {
 		for ; it.Valid(); it.Next() {
 			var account types.Account
 			require.NoError(t, account.Unmarshal(it.Value()))
+			require.True(t, account.DeficitUsd.IsZero(), "%s deficit of %s", phase, account.Address)
+			if _, seen := accounts[account.Address]; !seen {
+				require.True(t, account.Collateral.IsZero(), "%s collateral of %s without events", phase, account.Address)
+				require.Zero(t, account.PositionCount, "%s positions of %s without events", phase, account.Address)
+				continue
+			}
 			wantAccounts[account.Address] = types.Account{Address: account.Address, Collateral: account.Collateral,
 				Created: account.Created, PositionCount: account.PositionCount}
 		}
@@ -60,39 +73,110 @@ func TestEventsReconstruct(t *testing.T) {
 		require.NoError(t, it.Close())
 		assert.Equal(t, wantAccounts, accounts, "%s account collateral and position counts", phase)
 		assert.Equal(t, wantPositions, positions, "%s positions", phase)
-		records = nil
 	}
-	compare("deposits")
-	place(e.b, keeper.OrderParams{MarketID: 0, IsLong: false, OrderType: uint8(types.OrderTypeLimit),
-		TimeInForce: uint8(types.TimeInForceGTC), SizeUsd: e18(600), Leverage: e18(100), LimitPrice: e18(60_000)})
-	opened := place(e.a, keeper.OrderParams{MarketID: 0, IsLong: true, OrderType: uint8(types.OrderTypeMarket),
-		TimeInForce: uint8(types.TimeInForceIOC), SizeUsd: e18(600), Leverage: e18(100)})
-	require.Len(t, opened.Fills, 1)
-	positionID := opened.Fills[0].TakerPositionID
-	require.False(t, positionID.IsZero())
-	require.Equal(t, accountUnits(9_730_000), e.account(e.a).Collateral)
-	compare("opening fill")
 
-	e.setMark(e18(59_055))
-	place(e.b, keeper.OrderParams{MarketID: 0, IsLong: true, OrderType: uint8(types.OrderTypeLimit),
-		TimeInForce: uint8(types.TimeInForceGTC), SizeUsd: wordOf(t, "590550000000000000000"),
-		Leverage: e18(100), LimitPrice: e18(59_055), ReduceOnly: true})
-	liquidated, err := e.k.Liquidate(e.ctx, common.Address{}, positionID)
-	require.NoError(t, err)
-	records = append(records, liquidated...)
-	require.Equal(t, accountUnits(14_252), e.account(e.a).Collateral)
-	require.Equal(t, accountUnits(109_271_417), e.account(e.b).Collateral)
-	require.Zero(t, e.account(e.a).PositionCount)
-	require.Zero(t, e.account(e.b).PositionCount)
+	records = append(records, e.pair(invNum(1, 18))...)
+	records = append(records, e.bid(59_000)...)
+	e.finish("setup", records, false)
+	compare("setup")
+
+	e.begin(3601, 59_000)
+	records = e.k.EndBlock(e.ctx)
+	account := e.account(scenarioAccounts[0])
+	require.Zero(t, account.PositionCount)
+	require.Equal(t, *uint256.NewInt(2_450_000), account.Collateral)
+	require.Nil(t, e.ctx.KVStore(e.key).Get(types.PositionKey(*uint256.NewInt(1))))
+	e.finish("liquidation", records, true)
 	compare("liquidation")
+
+	e.begin(3602, 59_000)
+	e.finish("after_liquidation", e.k.EndBlock(e.ctx), true)
+	compare("after_liquidation")
+
+	require.Len(t, e.snapshots, len(golden)+1)
+	blocks := make([]scenarioBlock, len(golden))
+	for i, snapshot := range e.snapshots[1:] {
+		blocks[i] = snapshot.Block
+	}
+	require.Equal(t, golden, blocks, "the folded logs are those of the liquidation golden scenario")
 }
 
+// newEventsReconstructEnv is newScenarioEnv with the deposits of the setup
+// returned as records, so the setup block's logs open the replay.
+func newEventsReconstructEnv(t *testing.T, collateral, sweep uint64) (*scenarioEnv, []types.EventRecord) {
+	t.Helper()
+	application := app.Setup(t, false, false, false)
+	ctx := application.GetContextForDeliverTx(nil).WithBlockHeight(10).
+		WithBlockTime(time.Unix(3600, 0).UTC()).WithEventManager(sdk.NewEventManager())
+	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
+	application.EvmKeeper.BeginBlock(ctx)
+	key, priceKey := sdk.NewKVStoreKey(types.StoreKey), sdk.NewKVStoreKey(pricefeedtypes.StoreKey)
+	ctx = pricefeedtestutil.WithPriceFeedStore(ctx, key)
+	ctx = pricefeedtestutil.WithPriceFeedStore(ctx, priceKey)
+	prices := pricefeedkeeper.NewKeeper(priceKey, application.StakingKeeper, application.AccountKeeper, &application.EvmKeeper)
+	e := &scenarioEnv{t: t, app: application, ctx: ctx, key: key, priceKey: priceKey,
+		k: keeper.NewKeeper(key, &application.EvmKeeper, prices)}
+	stringType, err := abi.NewType("string", "", nil)
+	require.NoError(t, err)
+	uintType, err := abi.NewType("uint256", "", nil)
+	require.NoError(t, err)
+	addressType, err := abi.NewType("address", "", nil)
+	require.NoError(t, err)
+	args, err := abi.Arguments{{Type: stringType}, {Type: stringType}, {Type: uintType}, {Type: addressType}}.
+		Pack("USD Ledger", "USDL", big.NewInt(invUSDLSupply), invHolder)
+	require.NoError(t, err)
+	deployer := common.HexToAddress("0x0000000000000000000000000000000000000044")
+	nonce := application.EvmKeeper.GetNonce(ctx, deployer)
+	_, err = application.EvmKeeper.CallEVM(ctx, deployer, nil, nil, append(common.FromHex(invUSDLCreation), args...))
+	require.NoError(t, err)
+	e.token = crypto.CreateAddress(deployer, nonce)
+	require.NotEmpty(t, application.EvmKeeper.GetCode(ctx, e.token))
+	params := types.DefaultParams()
+	params.CollateralToken, params.SweepPositionsPerBlock = e.token, sweep
+	require.NoError(t, e.k.UpdateParams(ctx, e.k.Authority(), params))
+	require.NoError(t, e.k.SetMarket(ctx, e.k.Authority(), listedMarket(0, "BTC", 5, 1, types.TierClassA, 20_000, 500_000_000)))
+	mark := invNum(60_000, 18)
+	e.k.SetMarketState(ctx, types.MarketState{MarketID: 0, IndexPrice: mark, PricefeedMark: mark,
+		MarkPrice: mark, LastTradePrice: mark, Fresh: true, PriceTimestampMs: 3_600_000,
+		LastIndexHour: 1, LastSampleTime: 3600})
+	var records []types.EventRecord
+	for i, address := range scenarioAccounts {
+		amount := uint64(100_000_000_000)
+		if i < 2 {
+			amount = 1_000_000_000
+		}
+		if i == 0 {
+			amount = collateral
+		}
+		input := append(crypto.Keccak256([]byte("transfer(address,uint256)"))[:4], common.LeftPadBytes(e.k.ModuleEVMAddress().Bytes(), 32)...)
+		input = append(input, new(big.Int).SetUint64(amount).FillBytes(make([]byte, 32))...)
+		ret, err := application.EvmKeeper.CallEVM(ctx, invHolder, &e.token, nil, input)
+		require.NoError(t, err)
+		require.Equal(t, common.LeftPadBytes([]byte{1}, 32), ret)
+		deposited, err := e.k.Deposit(ctx, address, *uint256.NewInt(amount))
+		require.NoError(t, err)
+		records = append(records, deposited...)
+	}
+	for _, address := range []common.Address{e.k.FeesAccountAddress(), e.k.InsuranceAccountAddress()} {
+		_, _, err := e.k.EnsureAccount(ctx, address)
+		require.NoError(t, err)
+	}
+	e.setPrice(60_000)
+	e.checkInvariants()
+	return e, records
+}
+
+// reconstructLiquidationLogs folds the logs into accounts and positions using
+// only the event fields of contracts/perps.md section 18: collateral is booked
+// from deposits, fees and the realized PnL of closes against entry, and open
+// positions are settled at the last MarkPriceUpdated mark of their market.
 func reconstructLiquidationLogs(t *testing.T, logs []*ethtypes.Log) (map[common.Address]types.Account, map[uint256.Int]types.Position) {
 	t.Helper()
 	definition, err := perpsabi.ABI()
 	require.NoError(t, err)
 	accounts := make(map[common.Address]types.Account)
 	positions := make(map[uint256.Int]types.Position)
+	marks := make(map[uint64]*big.Int)
 	fees := common.BytesToAddress(authtypes.NewModuleAddress(types.FeesAccountName))
 	unit := big.NewInt(1_000_000_000_000)
 	wad := big.NewInt(1_000_000_000_000_000_000)
@@ -102,6 +186,16 @@ func reconstructLiquidationLogs(t *testing.T, logs []*ethtypes.Log) (map[common.
 		result, overflow := uint256.FromBig(value)
 		require.False(t, overflow)
 		return *result
+	}
+	units := func(usd *big.Int) *big.Int {
+		if usd.Sign() >= 0 {
+			return new(big.Int).Quo(usd, unit)
+		}
+		loss, remainder := new(big.Int).QuoRem(new(big.Int).Neg(usd), unit, new(big.Int))
+		if remainder.Sign() > 0 {
+			loss.Add(loss, big.NewInt(1))
+		}
+		return loss.Neg(loss)
 	}
 	change := func(address common.Address, delta *big.Int) {
 		account, exists := accounts[address]
@@ -145,6 +239,11 @@ func reconstructLiquidationLogs(t *testing.T, logs []*ethtypes.Log) (map[common.
 			require.True(t, ok, "%s.%s is not a bool", event.Name, name)
 			return value
 		}
+		market := func() uint64 {
+			id := integer("marketId")
+			require.True(t, id.IsUint64())
+			return id.Uint64()
+		}
 		switch event.Name {
 		case types.EventVaultCreated:
 			user := address("user")
@@ -159,15 +258,15 @@ func reconstructLiquidationLogs(t *testing.T, logs []*ethtypes.Log) (map[common.
 			require.Equal(t, expected, integer("newBalance"))
 			account.Address, account.Created, account.Collateral = user, true, word(expected)
 			accounts[user] = account
+		case types.EventMarkPriceUpdated:
+			marks[market()] = integer("markPrice")
 		case types.EventPositionOpened:
 			id, user := word(integer("positionId")), address("user")
 			_, exists := positions[id]
 			require.False(t, exists)
 			account, exists := accounts[user]
 			require.True(t, exists)
-			market := integer("marketId")
-			require.True(t, market.IsUint64())
-			positions[id] = types.Position{ID: id, Account: user, MarketID: market.Uint64(), IsLong: boolean("isLong"),
+			positions[id] = types.Position{ID: id, Account: user, MarketID: market(), IsLong: boolean("isLong"),
 				SizeBase: base(integer("sizeUsd"), integer("entryPrice")), EntryPrice: word(integer("entryPrice")), Leverage: word(integer("leverage"))}
 			account.PositionCount++
 			accounts[user] = account
@@ -176,8 +275,9 @@ func reconstructLiquidationLogs(t *testing.T, logs []*ethtypes.Log) (map[common.
 			position, exists := positions[id]
 			require.True(t, exists)
 			require.Equal(t, position.Account, user)
-			require.Equal(t, new(big.Int).SetUint64(position.MarketID), integer("marketId"))
+			require.Equal(t, position.MarketID, market())
 			closed := base(integer("closedSizeUsd"), integer("exitPrice"))
+			change(user, units(integer("realizedPnl")))
 			if boolean("isFullClose") {
 				require.Equal(t, position.SizeBase, closed)
 				delete(positions, id)
@@ -191,8 +291,9 @@ func reconstructLiquidationLogs(t *testing.T, logs []*ethtypes.Log) (map[common.
 				positions[id] = position
 			}
 		case types.EventTradeSettled:
+			_, exists := accounts[address("user")]
+			require.True(t, exists)
 			require.Zero(t, integer("fundingPaidUsd").Sign(), "liquidation replay has no funding interval")
-			change(address("user"), new(big.Int).Div(integer("grossPnl"), unit))
 		case types.EventFeeCollected:
 			kind, ok := fields["feeType"].(uint8)
 			require.True(t, ok)
@@ -212,6 +313,23 @@ func reconstructLiquidationLogs(t *testing.T, logs []*ethtypes.Log) (map[common.
 		default:
 			t.Fatalf("liquidation event %d %s has no reconstruction rule", i, event.Name)
 		}
+	}
+	for _, position := range positions {
+		mark, known := marks[position.MarketID]
+		if !known {
+			continue
+		}
+		value := new(big.Int).Mul(position.SizeBase.ToBig(), mark)
+		if position.IsLong {
+			value.Quo(value, wad)
+		} else {
+			value.Neg(new(big.Int).Div(new(big.Int).Neg(value), wad))
+		}
+		pnl := value.Sub(value, new(big.Int).Quo(new(big.Int).Mul(position.SizeBase.ToBig(), position.EntryPrice.ToBig()), wad))
+		if !position.IsLong {
+			pnl.Neg(pnl)
+		}
+		change(position.Account, units(pnl))
 	}
 	return accounts, positions
 }
