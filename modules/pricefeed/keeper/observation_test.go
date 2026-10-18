@@ -250,7 +250,7 @@ func TestSubmitPricesRefusesSequence(t *testing.T) {
 		ctx := e.at(101 + int64(i))
 		response, err := e.submit(ctx, feeder, valid(1, sequence))
 		requireCounts(t, response, err, 0, 1)
-		require.Equal(t, []sdk.Event{refusedEvent(operator, 1, sequence, types.RefusalSequence)},
+		require.Equal(t, sdk.Events{refusedEvent(operator, 1, sequence, types.RefusalSequence)},
 			ctx.EventManager().Events())
 		record, ok := e.stored(ctx, 1, operator)
 		require.True(t, ok)
@@ -281,7 +281,7 @@ func TestSubmitPricesRefusesTimestamps(t *testing.T) {
 	response, err := e.submit(ctx, feeder,
 		observation(2, 1, price, price, 1700000002001), observation(3, 1, price, price, 1699999989999))
 	requireCounts(t, response, err, 0, 2)
-	require.Equal(t, []sdk.Event{
+	require.Equal(t, sdk.Events{
 		refusedEvent(operator, 2, 1, types.RefusalFuture),
 		refusedEvent(operator, 3, 1, types.RefusalStale),
 	}, ctx.EventManager().Events())
@@ -316,7 +316,7 @@ func TestSubmitPricesRefusesBounds(t *testing.T) {
 		ctx := e.at(100 + int64(i))
 		response, err := e.submit(ctx, feeder, refused)
 		requireCounts(t, response, err, 0, 1)
-		require.Equal(t, []sdk.Event{refusedEvent(operator, 8, refused.Sequence, types.RefusalBounds)},
+		require.Equal(t, sdk.Events{refusedEvent(operator, 8, refused.Sequence, types.RefusalBounds)},
 			ctx.EventManager().Events())
 		_, ok := e.stored(ctx, 8, operator)
 		require.False(t, ok)
@@ -336,7 +336,7 @@ func TestSubmitPricesDeviationAndRecovery(t *testing.T) {
 	ctx := e.at(100)
 	response, err := e.submit(ctx, feeder, observation(1, 1, price, price, 1699999999500))
 	requireCounts(t, response, err, 0, 1)
-	require.Equal(t, []sdk.Event{refusedEvent(operator, 1, 1, types.RefusalDeviation)}, ctx.EventManager().Events())
+	require.Equal(t, sdk.Events{refusedEvent(operator, 1, 1, types.RefusalDeviation)}, ctx.EventManager().Events())
 	_, ok := e.stored(ctx, 1, operator)
 	require.False(t, ok)
 
@@ -363,7 +363,7 @@ func TestSubmitPricesDeviationAndRecovery(t *testing.T) {
 	ctx = e.at(104)
 	response, err = e.submit(ctx, feeder, observation(1, 4, price, price, 1699999999500))
 	requireCounts(t, response, err, 0, 1)
-	require.Equal(t, []sdk.Event{refusedEvent(operator, 1, 4, types.RefusalDeviation)}, ctx.EventManager().Events())
+	require.Equal(t, sdk.Events{refusedEvent(operator, 1, 4, types.RefusalDeviation)}, ctx.EventManager().Events())
 	unchanged, ok := e.stored(ctx, 1, operator)
 	require.True(t, ok)
 	require.Equal(t, record, unchanged)
