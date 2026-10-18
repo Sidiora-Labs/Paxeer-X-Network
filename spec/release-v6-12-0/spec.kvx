@@ -16241,7 +16241,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1.5]
 title = "Price every trade from the pricefeed index price"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["4.1.4", "5.1.9"]
