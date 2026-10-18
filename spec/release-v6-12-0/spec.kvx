@@ -18864,7 +18864,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.2.2]
 title = "Test the precompile conventions and feed key writes"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["5.2.1"]
