@@ -44,6 +44,7 @@
 *.roots
 /core
 /core.*
+!/core/
 /crash-*
 !programs/vendor/**
 node_modules/
@@ -152,4 +153,5 @@ coverage.out
 /storage/ledger_db/block/blocksim/bin/
 /storage/db_engine/litt/bin/
 .context/
-CONSTITUTION.md.pytest_cache/
+/CONSTITUTION.md
+/.pytest_cache/
