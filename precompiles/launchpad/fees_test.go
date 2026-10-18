@@ -581,9 +581,11 @@ func (e *feeTestEnv) setStrategy(old, next types.FeeStrategy) {
 	start := e.logCount()
 	require.Empty(e.t, e.write(types.RoleFeesRouter, e.owner, "setFeeStrategy", big.NewInt(1), uint8(next)))
 	logs := e.logsSince(start)
-	require.Len(e.t, logs, 2)
+	require.Len(e.t, logs, 3)
 	e.requireLog(logs[0], e.roles.SidioraNFT, types.RoleFeeRights, "FeeStrategyChanged", big.NewInt(1), uint8(old), uint8(next))
-	e.requireLog(logs[1], e.roles.FeesRouter, types.RoleFeesRouter, "FeeStrategyChanged", big.NewInt(1), uint8(old),
+	requireFamilyLog(e.t, e.evm, logs[1], "FeeStrategyChanged", common.BytesToHash(e.pool.Bytes()), big.NewInt(1),
+		uint8(old), uint8(next))
+	e.requireLog(logs[2], e.roles.FeesRouter, types.RoleFeesRouter, "FeeStrategyChanged", big.NewInt(1), uint8(old),
 		uint8(next))
 	right, found, err := e.k.GetFeeRight(e.stateDB.Ctx(), e.roles.SidioraNFT, 1)
 	require.NoError(e.t, err)

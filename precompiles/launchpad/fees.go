@@ -316,6 +316,11 @@ func feeSetStrategy(p PrecompileExecutor, c *call, contract common.Address) ([]b
 		uint8(strategy)); err != nil {
 		return nil, err
 	}
+	if p.familyEnabled() {
+		if err := p.emitFamily(c.evm, "FeeStrategyChanged", poolID(pool), nftID, uint8(old), uint8(strategy)); err != nil {
+			return nil, err
+		}
+	}
 	return nil, feeLog(c, contract, c.role, "FeeStrategyChanged", nftID, uint8(old), uint8(strategy))
 }
 

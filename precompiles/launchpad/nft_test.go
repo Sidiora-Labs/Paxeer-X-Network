@@ -285,6 +285,32 @@ func (e *nftEnv) requireLog(log *ethtypes.Log, name string, data []byte, topics 
 	require.Equal(e.t, hexutil.Encode(data), hexutil.Encode(log.Data), name)
 }
 
+// requireFamilyLog requires log to be the 0x1017 family event name with
+// exactly the indexed and data arguments args followed by the block timestamp
+// and number of evm.
+func requireFamilyLog(t *testing.T, evm *vm.EVM, log *ethtypes.Log, name string, args ...interface{}) {
+	t.Helper()
+	event, ok := parseABIFile(t, "abi.json").Events[name]
+	require.True(t, ok, name)
+	require.Equal(t, common.HexToAddress(launchpad.LaunchpadAddress), log.Address, name)
+	args = append(args, new(big.Int).SetUint64(evm.Context.Time), new(big.Int).Set(evm.Context.BlockNumber))
+	require.Len(t, args, len(event.Inputs), name)
+	topics, data := []common.Hash{event.ID}, []interface{}{}
+	for i, input := range event.Inputs {
+		if !input.Indexed {
+			data = append(data, args[i])
+			continue
+		}
+		topic, err := abi.MakeTopics([]interface{}{args[i]})
+		require.NoError(t, err, name)
+		topics = append(topics, topic[0][0])
+	}
+	require.Equal(t, topics, log.Topics, name)
+	packed, err := event.Inputs.NonIndexed().Pack(data...)
+	require.NoError(t, err, name)
+	require.Equal(t, hexutil.Encode(packed), hexutil.Encode(log.Data), name)
+}
+
 func (e *nftEnv) receiverCall(name string, args ...interface{}) {
 	e.t.Helper()
 	packed, err := e.receiver.Pack(name, args...)
@@ -452,11 +478,13 @@ func TestCollectionServesEverySelector(t *testing.T) {
 			e.refused(errNFTNotApproved, nftStranger, "setFeeStrategy(uint256,uint8)", big.NewInt(1), uint8(1))
 			e.refused(errNFTUnsupported, nftOwner, "setFeeStrategy(uint256,uint8)", big.NewInt(1), uint8(2))
 			_, logs := e.emits(nftSetter, "setFeeStrategy(uint256,uint8)", big.NewInt(1), uint8(1))
-			require.Len(t, logs, 1)
+			require.Len(t, logs, 2)
 			e.requireLog(logs[0], "FeeStrategyChanged", nftStrategies(0, 1), nftID(1))
+			requireFamilyLog(t, e.evm, logs[1], "FeeStrategyChanged", nftWord(nftPool), big.NewInt(1), uint8(0), uint8(1))
 			_, logs = e.emits(nftSecond, "setFeeStrategy(uint256,uint8)", big.NewInt(1), uint8(3))
-			require.Len(t, logs, 1)
+			require.Len(t, logs, 2)
 			e.requireLog(logs[0], "FeeStrategyChanged", nftStrategies(1, 3), nftID(1))
+			requireFamilyLog(t, e.evm, logs[1], "FeeStrategyChanged", nftWord(nftPool), big.NewInt(1), uint8(1), uint8(3))
 			require.Equal(t, uint8(3), e.view("getFeeStrategy(uint256)", big.NewInt(1)))
 		}},
 		{[]string{"renounceRole(bytes32,address)"}, func() {
@@ -502,8 +530,9 @@ func TestCollectionServesEverySelector(t *testing.T) {
 			e.refused(nftCustomError("Panic(uint256)", nftID(0x11)), nftOwner, transfer, nftStranger, nftBuyer, big.NewInt(1))
 			e.refused(errNFTZeroAddress, nftOwner, transfer, nftOwner, common.Address{}, big.NewInt(1))
 			_, logs := e.emits(nftSecond, transfer, nftOwner, nftBuyer, big.NewInt(1))
-			require.Len(t, logs, 1)
+			require.Len(t, logs, 2)
 			e.requireLog(logs[0], "Transfer", nil, nftWord(nftOwner), nftWord(nftBuyer), nftID(1))
+			requireFamilyLog(t, e.evm, logs[1], "NftTransfer", nftCollection, nftOwner, nftBuyer, big.NewInt(1))
 			require.Equal(t, nftBuyer, e.view("ownerOf(uint256)", big.NewInt(1)))
 			require.Equal(t, common.Address{}, e.view("getApproved(uint256)", big.NewInt(1)))
 			require.Equal(t, big.NewInt(3), e.view("tokenOfOwnerByIndex(address,uint256)", nftOwner, big.NewInt(0)))
@@ -515,15 +544,17 @@ func TestCollectionServesEverySelector(t *testing.T) {
 		}},
 		{[]string{"safeTransferFrom(address,address,uint256)"}, func() {
 			_, logs := e.emits(nftOwner, "safeTransferFrom(address,address,uint256)", nftOwner, nftBuyer, big.NewInt(3))
-			require.Len(t, logs, 1)
+			require.Len(t, logs, 2)
 			e.requireLog(logs[0], "Transfer", nil, nftWord(nftOwner), nftWord(nftBuyer), nftID(3))
+			requireFamilyLog(t, e.evm, logs[1], "NftTransfer", nftCollection, nftOwner, nftBuyer, big.NewInt(3))
 			require.Equal(t, nftBuyer, e.view("ownerOf(uint256)", big.NewInt(3)))
 		}},
 		{[]string{"safeTransferFrom(address,address,uint256,bytes)"}, func() {
 			_, logs := e.emits(nftBuyer, "safeTransferFrom(address,address,uint256,bytes)", nftBuyer, nftReceiver,
 				big.NewInt(1), []byte("fee right"))
-			require.Len(t, logs, 1)
+			require.Len(t, logs, 2)
 			e.requireLog(logs[0], "Transfer", nil, nftWord(nftBuyer), nftWord(nftReceiver), nftID(1))
+			requireFamilyLog(t, e.evm, logs[1], "NftTransfer", nftCollection, nftBuyer, nftReceiver, big.NewInt(1))
 			require.Equal(t, nftReceiver, e.view("ownerOf(uint256)", big.NewInt(1)))
 			require.Equal(t, big.NewInt(1), e.receiverView("calls"))
 			require.Equal(t, nftBuyer, e.receiverView("lastOperator"))
@@ -605,8 +636,9 @@ func TestFeeRightReceiverHook(t *testing.T) {
 	e.receiverCall("setMode", nftAccept)
 	e.ok(nftOwner, "approve(address,uint256)", nftSecond, big.NewInt(3))
 	_, logs = e.emits(nftSecond, safe, nftOwner, nftReceiver, big.NewInt(3), []byte("hook data"))
-	require.Len(t, logs, 1)
+	require.Len(t, logs, 2)
 	e.requireLog(logs[0], "Transfer", nil, nftWord(nftOwner), nftWord(nftReceiver), nftID(3))
+	requireFamilyLog(t, e.evm, logs[1], "NftTransfer", nftCollection, nftOwner, nftReceiver, big.NewInt(3))
 	require.Equal(t, nftReceiver, e.view("ownerOf(uint256)", big.NewInt(3)))
 	require.Equal(t, big.NewInt(2), e.receiverView("calls"))
 	require.Equal(t, nftSecond, e.receiverView("lastOperator"))

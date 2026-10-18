@@ -313,7 +313,15 @@ func (p PrecompileExecutor) nftTransfer(c *call, collection common.Address) (uin
 	if err := p.keeper.TransferFeeRight(c.ctx, collection, c.caller, from, to, right.ID); err != nil {
 		return 0, err
 	}
-	return right.ID, nftLog(c, collection, "Transfer", []common.Hash{nftTopic(from), nftTopic(to), nftIDTopic(right.ID)})
+	if err := nftLog(c, collection, "Transfer", []common.Hash{nftTopic(from), nftTopic(to), nftIDTopic(right.ID)}); err != nil {
+		return 0, err
+	}
+	if p.familyEnabled() {
+		if err := p.emitFamily(c.evm, "NftTransfer", collection, from, to, new(big.Int).SetUint64(right.ID)); err != nil {
+			return 0, err
+		}
+	}
+	return right.ID, nil
 }
 
 // enumerationPanic is the panic _removeTokenFromOwnerEnumeration raises for a
@@ -387,7 +395,15 @@ func (p PrecompileExecutor) nftSetFeeStrategy(c *call, collection common.Address
 	if err != nil {
 		return err
 	}
-	return nftLog(c, collection, "FeeStrategyChanged", []common.Hash{nftIDTopic(right.ID)}, uint8(old), uint8(strategy))
+	if err := nftLog(c, collection, "FeeStrategyChanged", []common.Hash{nftIDTopic(right.ID)}, uint8(old),
+		uint8(strategy)); err != nil {
+		return err
+	}
+	if !p.familyEnabled() {
+		return nil
+	}
+	return p.emitFamily(c.evm, "FeeStrategyChanged", poolID(common.HexToAddress(right.Pool)),
+		new(big.Int).SetUint64(right.ID), uint8(old), uint8(strategy))
 }
 
 // receiverHook is the onERC721Received rule of the nested caller of a run.
