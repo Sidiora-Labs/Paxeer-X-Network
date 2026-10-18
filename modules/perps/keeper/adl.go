@@ -156,12 +156,21 @@ func (k *Keeper) ExecuteADL(ctx sdk.Context, deficitIDs []uint256.Int, previousM
 				events = append(events, applied.Events...)
 				events = append(events, applied.TradeSettledEvents(new(big.Int), new(big.Int))...)
 			}
+			oiEvent, err := k.CheckOpenInterest(cached, OpenInterestFill{
+				MarketID: deficit.MarketID, SizeBase: size, PriceUsd: price,
+			})
+			if err != nil {
+				return nil, err
+			}
+			if oiEvent != nil {
+				events = append(events, *oiEvent)
+			}
 			if _, overflow := total.AddOverflow(&total, &notional); overflow {
 				return nil, types.ErrOverflow
 			}
 			events = append(events, types.EventRecord{
 				Name: types.EventADLMatched,
-				Args: []any{uint256.NewInt(deficit.MarketID).ToBig(), counterparty.ID.ToBig(), counterparty.Account,
+				Args: []any{new(big.Int).SetUint64(deficit.MarketID), counterparty.ID.ToBig(), counterparty.Account,
 					notional.ToBig(), price.ToBig(), counterparty.RankScore.ToBig()},
 			})
 			remaining--
