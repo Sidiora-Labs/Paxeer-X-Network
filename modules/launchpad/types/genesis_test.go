@@ -30,6 +30,7 @@ var (
 	poolToken          = hexAddress("0x00000000000000000000000000000000000b2002")
 	holder             = hexAddress("0x00000000000000000000000000000000000c3003")
 	operator           = hexAddress("0x00000000000000000000000000000000000d4004")
+	secondToken        = hexAddress("0x00000000000000000000000000000000000e5005")
 	poolRole           = crypto.Keccak256Hash([]byte("POOL_ROLE")).Hex()
 	depositorRole      = crypto.Keccak256Hash([]byte("DEPOSITOR_ROLE")).Hex()
 	legacyRoot         = crypto.Keccak256Hash([]byte("legacy airdrop")).Hex()
@@ -85,6 +86,12 @@ func contractGenesis() types.GenesisState {
 		{Address: gen1Treasury, Role: types.RoleTreasury, Replacement: gen2Treasury},
 		{Address: gen1Optical, Role: types.RoleOpticalRegistry, Replacement: gen2Optical},
 	}
+	gs.PoolMetadata = []types.PoolMetadata{
+		{Pool: poolOne, Creator: holder, Token: poolToken, Optical: gen2Optical, NFTID: 5, CreatedAt: 1_800_000_000,
+			CreatedBlock: 40},
+		{Pool: poolTwo, Creator: holder, Token: secondToken, Optical: common.Address{}.Hex(), NFTID: 2,
+			CreatedAt: 1_800_000_060, CreatedBlock: 41},
+	}
 	return gs
 }
 
@@ -103,6 +110,7 @@ func TestGenesisValidate(t *testing.T) {
 	require.JSONEq(t, string(raw), string(again))
 	require.Equal(t, uint64(5), decoded.FeeRights.IDMap[0].Generation2ID)
 	require.Equal(t, "-100", decoded.BookHeldDeltas[0].Delta.String())
+	require.Equal(t, valid.PoolMetadata, decoded.PoolMetadata)
 
 	// SidioraNFT.initialize sets poolIndexReady with the cursor at 0 and mint
 	// advances nextTokenId without the cursor, so a ready collection keeps any
@@ -310,6 +318,40 @@ func TestGenesisValidate(t *testing.T) {
 		}},
 		{"retired optical registry replaced by a surface", "retired", func(gs *types.GenesisState) {
 			gs.Retired[2].Replacement = gen2Router
+		}},
+		{"pool without metadata", "pool metadata missing for pool " + poolTwo, func(gs *types.GenesisState) {
+			gs.PoolMetadata = gs.PoolMetadata[:1]
+		}},
+		{"pool metadata field absent", "pool metadata missing for pool " + poolOne, func(gs *types.GenesisState) {
+			gs.PoolMetadata = nil
+		}},
+		{"orphan pool metadata", "pool metadata " + holder, func(gs *types.GenesisState) {
+			gs.PoolMetadata = append(gs.PoolMetadata, types.PoolMetadata{Pool: holder, Creator: holder, Token: usdl,
+				Optical: common.Address{}.Hex()})
+		}},
+		{"pool metadata of a role surface", "pool metadata " + gen2Router, func(gs *types.GenesisState) {
+			gs.PoolMetadata[1].Pool = gen2Router
+		}},
+		{"duplicate pool metadata", "pool metadata " + poolOne, func(gs *types.GenesisState) {
+			gs.PoolMetadata = append(gs.PoolMetadata, gs.PoolMetadata[0])
+		}},
+		{"two pools of one token", "pool metadata " + poolTwo, func(gs *types.GenesisState) {
+			gs.PoolMetadata[1].Token = poolToken
+		}},
+		{"pool metadata zero creator", "pool metadata " + poolOne, func(gs *types.GenesisState) {
+			gs.PoolMetadata[0].Creator = common.Address{}.Hex()
+		}},
+		{"pool metadata zero token", "pool metadata " + poolOne, func(gs *types.GenesisState) {
+			gs.PoolMetadata[0].Token = common.Address{}.Hex()
+		}},
+		{"pool metadata optical not checksummed", "pool metadata " + poolOne, func(gs *types.GenesisState) {
+			gs.PoolMetadata[0].Optical = strings.ToLower(gen2Optical)
+		}},
+		{"pool metadata negative creation time", "pool metadata " + poolOne, func(gs *types.GenesisState) {
+			gs.PoolMetadata[0].CreatedAt = -1
+		}},
+		{"pool metadata negative creation block", "pool metadata " + poolOne, func(gs *types.GenesisState) {
+			gs.PoolMetadata[0].CreatedBlock = -1
 		}},
 	}
 	for _, tc := range cases {

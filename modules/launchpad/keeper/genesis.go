@@ -114,6 +114,14 @@ func (k *Keeper) initContracts(ctx sdk.Context, gs types.GenesisState) error {
 			return err
 		}
 	}
+	for _, entry := range gs.PoolMetadata {
+		if err := k.setPoolMetadata(ctx, common.HexToAddress(entry.Pool), PoolMetadata{
+			Creator: common.HexToAddress(entry.Creator), Token: common.HexToAddress(entry.Token),
+			Optical: common.HexToAddress(entry.Optical), NFTID: entry.NFTID, CreatedAt: entry.CreatedAt,
+			CreatedBlock: entry.CreatedBlock}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -328,6 +336,22 @@ func (k *Keeper) exportContracts(ctx sdk.Context, gs *types.GenesisState) error 
 	}
 	if gs.Retired, err = k.RetiredAddresses(ctx); err != nil {
 		return err
+	}
+	metadata := sdk.KVStorePrefixIterator(store, poolMetadataPrefix)
+	defer metadata.Close()
+	for ; metadata.Valid(); metadata.Next() {
+		pool := common.BytesToAddress(metadata.Key()[len(poolMetadataPrefix):])
+		record, _, err := k.GetPoolMetadata(ctx, pool)
+		if err != nil {
+			return err
+		}
+		if registered, found := k.PoolByToken(ctx, record.Token); !found || registered != pool {
+			return fmt.Errorf("%w: pool metadata %s token %s is not indexed to the pool", types.ErrInvalidGenesis,
+				pool.Hex(), record.Token.Hex())
+		}
+		gs.PoolMetadata = append(gs.PoolMetadata, types.PoolMetadata{Pool: pool.Hex(), Creator: record.Creator.Hex(),
+			Token: record.Token.Hex(), Optical: record.Optical.Hex(), NFTID: record.NFTID, CreatedAt: record.CreatedAt,
+			CreatedBlock: record.CreatedBlock})
 	}
 	return nil
 }

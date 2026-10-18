@@ -346,15 +346,24 @@ func (k *Keeper) mintFeeRight(ctx sdk.Context, creator, token, pool, optical com
 	} else if found {
 		return 0, types.ErrDuplicatePool
 	}
-	bz, err := json.Marshal(PoolMetadata{Creator: creator, Token: token, Optical: optical, NFTID: id,
-		CreatedAt: ctx.BlockTime().Unix(), CreatedBlock: ctx.BlockHeight()})
+	if err := k.setPoolMetadata(ctx, pool, PoolMetadata{Creator: creator, Token: token, Optical: optical, NFTID: id,
+		CreatedAt: ctx.BlockTime().Unix(), CreatedBlock: ctx.BlockHeight()}); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+// setPoolMetadata is the write of PoolRegistry.register: the registration
+// record of pool and the index of its token to it.
+func (k *Keeper) setPoolMetadata(ctx sdk.Context, pool common.Address, metadata PoolMetadata) error {
+	bz, err := json.Marshal(metadata)
 	if err != nil {
-		return 0, fmt.Errorf("%w: pool metadata %s: %v", types.ErrInvalidMarket, pool.Hex(), err)
+		return fmt.Errorf("%w: pool metadata %s: %v", types.ErrInvalidMarket, pool.Hex(), err)
 	}
 	store := k.store(ctx)
-	store.Set(addressKey(tokenPoolPrefix, token), pool.Bytes())
+	store.Set(addressKey(tokenPoolPrefix, metadata.Token), pool.Bytes())
 	store.Set(addressKey(poolMetadataPrefix, pool), bz)
-	return id, nil
+	return nil
 }
 
 // FeeBps is SidioraPool._calculateFee at the current block time.

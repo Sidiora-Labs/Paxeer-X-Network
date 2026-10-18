@@ -208,6 +208,18 @@ type RetiredAddress struct {
 	Replacement string `json:"replacement"`
 }
 
+// PoolMetadata is the PoolRegistry registration record of a pool surface:
+// IPoolRegistry.PoolMetadata keyed by the pool address.
+type PoolMetadata struct {
+	Pool         string `json:"pool"`
+	Creator      string `json:"creator"`
+	Token        string `json:"token"`
+	Optical      string `json:"optical"`
+	NFTID        uint64 `json:"nft_id"`
+	CreatedAt    int64  `json:"created_at"`
+	CreatedBlock int64  `json:"created_block"`
+}
+
 type GenesisState struct {
 	Params             Params               `json:"params"`
 	Markets            []Market             `json:"markets"`
@@ -226,6 +238,7 @@ type GenesisState struct {
 	Treasury           []TreasuryBalance    `json:"treasury,omitempty"`
 	BookHeldDeltas     []BookHeldDelta      `json:"book_held_deltas,omitempty"`
 	Retired            []RetiredAddress     `json:"retired,omitempty"`
+	PoolMetadata       []PoolMetadata       `json:"pool_metadata,omitempty"`
 }
 
 func DefaultGenesis() *GenesisState {
@@ -411,6 +424,29 @@ func (gs GenesisState) validateContracts() error {
 		}
 		retired[entry.Address] = true
 		retiredRole[entry.Role] = true
+	}
+	return gs.validatePoolMetadata(isPool)
+}
+
+// validatePoolMetadata checks that every pool surface has exactly one
+// PoolRegistry record, that no record names any other address and that no
+// two records share a token.
+func (gs GenesisState) validatePoolMetadata(isPool func(string) bool) error {
+	pools := map[string]bool{}
+	tokens := map[string]bool{}
+	for _, entry := range gs.PoolMetadata {
+		if !isPool(entry.Pool) || pools[entry.Pool] || !canonicalAddress(entry.Creator) || !canonicalAddress(entry.Token) ||
+			tokens[entry.Token] || !common.IsHexAddress(entry.Optical) || common.HexToAddress(entry.Optical).Hex() != entry.Optical ||
+			entry.CreatedAt < 0 || entry.CreatedBlock < 0 {
+			return invalid("pool metadata %s", entry.Pool)
+		}
+		pools[entry.Pool] = true
+		tokens[entry.Token] = true
+	}
+	for _, surface := range gs.Surfaces {
+		if surface.Role == RolePool && !pools[surface.Address] {
+			return invalid("pool metadata missing for pool %s", surface.Address)
+		}
 	}
 	return nil
 }
