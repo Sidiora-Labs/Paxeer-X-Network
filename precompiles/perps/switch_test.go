@@ -3,6 +3,7 @@ package perps_test
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"go/ast"
@@ -10,12 +11,16 @@ import (
 	"go/token"
 	"math/big"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/testvectors"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
 	custodytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
@@ -252,14 +257,48 @@ func methodSigs(a abi.ABI) []string {
 	return sigs
 }
 
+// seedFromHaltExport initialises a test application from the v6.12.0 halt
+// export as a node starting from that document would, writes the activation
+// and v6.10 done heights recorded beside it into the live upgrade store and
+// returns a context at the halt height.
+func seedFromHaltExport(t *testing.T) (*app.App, sdk.Context) {
+	t.Helper()
+	path := filepath.Join("..", "..", "node", "testdata", "v6120-halt-export.json")
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	doc, err := tmtypes.GenesisDocFromJSON(raw)
+	require.NoError(t, err)
+	require.NotNil(t, doc.ConsensusParams)
+	require.Greater(t, doc.InitialHeight, int64(1))
+	bz, err := os.ReadFile(filepath.Join(filepath.Dir(path), "v6120-halt-heights.json"))
+	require.NoError(t, err)
+	var heights map[string]int64
+	require.NoError(t, json.Unmarshal(bz, &heights))
+	halt := doc.InitialHeight - 1
+
+	testApp := app.Setup(t, true, true, false)
+	params := doc.ConsensusParams.ToProto()
+	_, err = testApp.InitChain(context.Background(), &abci.RequestInitChain{
+		Time:            doc.GenesisTime,
+		ChainId:         doc.ChainID,
+		ConsensusParams: &params,
+		AppStateBytes:   doc.AppState,
+		InitialHeight:   doc.InitialHeight,
+	})
+	require.NoError(t, err)
+	ctx := testApp.NewContext(false, tmproto.Header{Height: halt, ChainID: doc.ChainID, Time: doc.GenesisTime})
+	for _, name := range []string{app.ActivationUpgrade, app.V610Upgrade} {
+		require.Positive(t, heights[name], name)
+		require.LessOrEqual(t, heights[name], halt, name)
+		testApp.UpgradeKeeper.SetDone(ctx.WithBlockHeight(heights[name]), name)
+	}
+	return testApp, ctx
+}
+
 func TestVersionSwitchHeightSelection(t *testing.T) {
-	const (
-		activationHeight = int64(10)
-		doneHeight       = int64(1000)
-	)
-	testApp := app.Setup(t, false, true, false)
-	ctx := testApp.GetContextForDeliverTx([]byte{}).WithBlockTime(time.Unix(1_800_000_000, 0).UTC())
-	testApp.UpgradeKeeper.SetDone(ctx.WithBlockHeight(activationHeight), app.ActivationUpgrade)
+	const doneHeight = int64(1000)
+	testApp, seeded := seedFromHaltExport(t)
+	ctx := seeded.WithBlockTime(time.Unix(1_800_000_000, 0).UTC())
 	exchange := common.HexToAddress(layerxexchange.ExchangeAddress)
 
 	keepers := testApp.GetPrecompileKeepers()
