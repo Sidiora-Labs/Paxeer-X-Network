@@ -16296,7 +16296,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1.7]
 title = "Settle market orders, swaps and native swaps in the keeper"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["4.1.6"]
