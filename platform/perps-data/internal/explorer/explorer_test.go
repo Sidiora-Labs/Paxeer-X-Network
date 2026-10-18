@@ -421,6 +421,32 @@ func TestExplorer(t *testing.T) {
 		if _, err := e.AccountHistory(ctx, trader, "", "x"); !errors.Is(err, ErrLimit) {
 			t.Fatalf("AccountHistory limit x err = %v, want ErrLimit", err)
 		}
+
+		reset(t, db)
+		account := common.HexToAddress("0x00000000000000000000000000000000000000a1")
+		insertBlock(t, db, 120, 1)
+		for i := 0; i < 120; i++ {
+			insertDeposit(t, db, int64(1+i/4), i%4/2, i%2, 0, account, fmt.Sprint(i+1))
+		}
+		cursor := ""
+		previous := top
+		for pageIndex, want := range []int{100, 20} {
+			page, err := e.AccountHistory(ctx, account, cursor, "100")
+			if err != nil || len(page.Items) != want {
+				t.Fatalf("account page %d = %d rows, %v; want %d", pageIndex, len(page.Items), err, want)
+			}
+			for _, item := range page.Items {
+				key := Cursor{Block: item.Block, TxIndex: item.TxIndex, LogIndex: item.LogIndex}
+				if !previous.after(key) {
+					t.Fatalf("account key %s does not follow %s", key, previous)
+				}
+				previous = key
+			}
+			if (page.NextCursor != "") != (pageIndex == 0) {
+				t.Fatalf("account page %d cursor = %q", pageIndex, page.NextCursor)
+			}
+			cursor = page.NextCursor
+		}
 	})
 
 	t.Run("market_history_paging", func(t *testing.T) {
@@ -483,6 +509,33 @@ func TestExplorer(t *testing.T) {
 		}
 		if _, err := e.MarketHistory(ctx, "BTC", "2:0", ""); !errors.Is(err, ErrCursor) {
 			t.Fatalf("MarketHistory bad cursor err = %v, want ErrCursor", err)
+		}
+
+		reset(t, db)
+		for i := 0; i < 60; i++ {
+			fill(int64(1+i/4), i%4, 0, 0, "BTC", "1000000000000000000")
+		}
+		cursor := ""
+		seen := map[string]bool{}
+		for pageIndex, want := range []int{25, 25, 10} {
+			page, err := e.MarketHistory(ctx, "BTC", cursor, "25")
+			if err != nil || len(page.Items) != want {
+				t.Fatalf("market page %d = %d rows, %v; want %d", pageIndex, len(page.Items), err, want)
+			}
+			for _, item := range page.Items {
+				key := fmt.Sprintf("%d:%s:%s", item.Block, item.Hash, item.Time)
+				if seen[key] {
+					t.Fatalf("market row repeated across pages: %s", key)
+				}
+				seen[key] = true
+			}
+			if (page.NextCursor != "") != (pageIndex < 2) {
+				t.Fatalf("market page %d cursor = %q", pageIndex, page.NextCursor)
+			}
+			cursor = page.NextCursor
+		}
+		if len(seen) != 60 {
+			t.Fatalf("market history = %d distinct rows, want 60", len(seen))
 		}
 	})
 
