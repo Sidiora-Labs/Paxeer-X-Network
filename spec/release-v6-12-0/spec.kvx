@@ -11514,7 +11514,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.3.3]
 title = "Reconstruct accounts from events"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["3.2.8", "3.3.2"]
