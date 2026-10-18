@@ -173,7 +173,7 @@ func TestQuotesOpenEqualsExecution(t *testing.T) {
 	require.Equal(t, "16500000000000000", position.SizeBase.Dec())
 	liquidationPrice, err := f.keeper.LiquidationPrice(f.ctx, position.ID)
 	require.NoError(t, err)
-	require.Equal(t, quote.LiquidationPrice, liquidationPrice)
+	require.Equal(t, quote.LiquidationPrice, liquidationPrice.ToBig())
 }
 
 func TestQuotesCloseEqualsExecution(t *testing.T) {
