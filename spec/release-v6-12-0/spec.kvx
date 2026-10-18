@@ -16491,7 +16491,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1.14]
 title = "Add the InitV6120 hook that registers the opening pairs"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["4.1.10", "4.1.11", "1.0.6"]
