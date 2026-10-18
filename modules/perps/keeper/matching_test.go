@@ -131,7 +131,9 @@ func (e *matchEnv) register(t *testing.T, ctx sdk.Context, o matchOrder) types.O
 		ID: id, Account: o.account, MarketID: e.market.ID, IsLong: o.isLong, Type: o.orderType,
 		TimeInForce: o.timeInForce, LimitPrice: o.limitPrice, AcceptablePrice: o.acceptablePrice,
 		SizeUsd: *sizeUsd, SizeBase: o.sizeBase, Leverage: matchFixed(t, "10"), Sequence: sequence,
+		Status: types.OrderStatusResting,
 	}
+	e.k.setOrder(ctx, order)
 	store := ctx.KVStore(e.k.storeKey)
 	account := e.account(t, ctx, o.account)
 	account.OpenOrderCount++

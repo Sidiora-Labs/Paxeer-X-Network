@@ -181,6 +181,7 @@ func (k *Keeper) match(ctx sdk.Context, market types.Market, taker types.Order) 
 		taker.Status = types.OrderStatusFilled
 	case resting && !capped:
 		taker.Status = types.OrderStatusResting
+		k.store(ctx).Delete(types.OrderKey(taker.ID))
 		if err := k.BookInsert(ctx, taker); err != nil {
 			return MatchResult{}, err
 		}
@@ -434,6 +435,7 @@ func (k *Keeper) fillMaker(ctx sdk.Context, marketID uint64, maker, taker types.
 
 	maker.FilledBase.Add(&maker.FilledBase, &size)
 	if maker.FilledBase.Eq(&maker.SizeBase) {
+		maker.Status = types.OrderStatusFilled
 		if err := k.BookRemove(ctx, maker); err != nil {
 			return FillResult{}, nil, err
 		}
@@ -520,6 +522,7 @@ func (k *Keeper) openingBase(ctx sdk.Context, account common.Address, marketID u
 // cancelResting takes a resting order out of the book as cancelled, the step
 // of self-trade prevention.
 func (k *Keeper) cancelResting(ctx sdk.Context, order types.Order) (types.EventRecord, error) {
+	order.Status = types.OrderStatusCancelled
 	if err := k.BookRemove(ctx, order); err != nil {
 		return types.EventRecord{}, err
 	}
