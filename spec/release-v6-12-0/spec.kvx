@@ -11045,7 +11045,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.1.19]
 title = "Register the venue invariants"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["3.1.3", "3.1.5", "3.1.9", "3.1.13", "3.1.15"]
