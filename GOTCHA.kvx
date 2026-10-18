@@ -8181,3 +8181,8 @@ do = "build the keeper over testkeeper.EVMTestApp with pricefeedtestutil.NewKeep
 area = "repo hygiene"
 symptom = "a stray codec.go at the repository root (package types, duplicating modules/layerxauth/types/codec.go) turns the module root into a Go package that cannot compile, and scripts/specgen.sh was rewritten with a hard-coded checkout path and a wrong relative tool path"
 fix = "keep generated or copied files out of the module root; specgen.sh derives the root from BASH_SOURCE and runs ./tools/specgen; delete the stray file instead of committing it"
+
+[gotcha.1722]
+area = "git history rewrite"
+symptom = "a filter-branch --index-filter with a brace pattern such as tasks/{a,b}/file.tar.gz inside quotes removed only the literal paths outside the braces: the filter runs under sh, which never expands braces, so four of five blobs stayed reachable"
+fix = "spell every path out in the index filter, then prove the result with git rev-list --objects <range> | grep -c <name> before trusting the rewrite"
