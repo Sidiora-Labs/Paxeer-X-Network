@@ -94,7 +94,7 @@ export abstract class WebSocketsConnectPriceFeedEmitter extends EventEmitter<Web
 export function buildURL(client: ChainflowDataGateway, parameters: Record<string, unknown>): URL {
   const { market, ...query } = parameters;
   const endpoint = __scalarPath`/ws/${market}`;
-  const url = new URL(client.buildURL(endpoint, query, undefined));
+  const url = new URL(client.buildURL(endpoint, { ...client.webSocketAuthQuery(), ...query }, undefined));
   url.protocol = url.protocol === 'http:' || url.protocol === 'ws:' ? 'ws:' : 'wss:';
   return url;
 }

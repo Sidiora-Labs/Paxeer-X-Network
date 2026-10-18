@@ -893,6 +893,12 @@ export class ChainflowDataGateway {
     return {};
   }
 
+  webSocketAuthQuery(): Record<string, string> {
+    const wsToken = this.resolveAuthOptionSync('wsToken', this.wsToken);
+    if (wsToken) return { token: wsToken };
+    return {};
+  }
+
   protected async authHeaders(opts: FinalRequestOptions): Promise<NullableHeaders | undefined> {
     return buildHeaders([await this.restAPIKeyAuth(opts), await this.wsMintKeyAuth(opts)]);
   }
