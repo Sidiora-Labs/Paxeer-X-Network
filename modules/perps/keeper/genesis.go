@@ -90,7 +90,7 @@ func (k *Keeper) initGenesis(ctx sdk.Context, gs types.GenesisState) error {
 	}
 	store.Set(types.SequenceKey(types.SequenceOrderID), wordBytes(gs.Counters.NextOrderID))
 	store.Set(types.SequenceKey(types.SequencePositionID), wordBytes(gs.Counters.NextPositionID))
-	store.Set(types.SequenceKey(types.SequencePlacement), binary.BigEndian.AppendUint64(nil, gs.Counters.NextSequence))
+	store.Set(types.SequenceKey(types.SequencePlacement), wordBytes(*uint256.NewInt(gs.Counters.NextSequence)))
 	store.Set(types.SweepCursorKey, wordBytes(gs.SweepCursor))
 	store.Set(types.VenueBooksKey, gs.VenueBooks.Marshal())
 	for _, entry := range derivedEntries(full) {
@@ -394,11 +394,16 @@ func (k *Keeper) exportSingletons(ctx sdk.Context, gs *types.GenesisState) error
 		word.target.SetBytes32(bz)
 	}
 	if bz := store.Get(types.SequenceKey(types.SequencePlacement)); bz != nil {
-		if len(bz) != uint64Length {
+		if len(bz) != wordLength {
 			return corruptRecord("placement sequence", types.SequenceKey(types.SequencePlacement),
 				fmt.Errorf("value of %d bytes", len(bz)))
 		}
-		gs.Counters.NextSequence = binary.BigEndian.Uint64(bz)
+		sequence := wordOf(bz)
+		if !sequence.IsUint64() {
+			return corruptRecord("placement sequence", types.SequenceKey(types.SequencePlacement),
+				fmt.Errorf("value %s above 2^64-1", sequence.Dec()))
+		}
+		gs.Counters.NextSequence = sequence.Uint64()
 	}
 	if bz := store.Get(types.VenueBooksKey); bz != nil {
 		if err := gs.VenueBooks.Unmarshal(bz); err != nil {

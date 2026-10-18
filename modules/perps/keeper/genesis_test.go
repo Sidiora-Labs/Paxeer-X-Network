@@ -249,3 +249,79 @@ func TestGenesisRejectsDuplicateMarket(t *testing.T) {
 	require.EqualError(t, err, "LXP_PERPS_INVALID_GENESIS: duplicate market 3")
 	require.Empty(t, storeContents(t, ctx.KVStore(key)))
 }
+
+func TestGenesisPlacementSequenceRoundTrip(t *testing.T) {
+	source := newOrdersEnv(t)
+	gs := source.k.ExportGenesis(source.ctx)
+	require.Equal(t, uint64(1), gs.Counters.NextSequence)
+	require.NoError(t, types.ValidateGenesis(*gs))
+
+	env := newOrdersEnv(t)
+	env.k.InitGenesis(env.ctx, *gs)
+	env.fund(t, traderA, 1_000)
+	placed, err := env.k.PlaceOrder(env.ctx, traderA, limitBuy(6_000, 59_000))
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), env.order(t, placed.OrderID.Uint64()).Sequence)
+	stop := keeper.OrderParams{MarketID: 0, IsLong: true, OrderType: uint8(types.OrderTypeStopLimit),
+		TimeInForce: uint8(types.TimeInForceGTC), SizeUsd: e18(6_000), Leverage: e18(20),
+		TriggerPrice: e18(61_000), LimitPrice: e18(61_100)}
+	placed, err = env.k.PlaceOrder(env.ctx, traderA, stop)
+	require.NoError(t, err)
+	waiting := env.order(t, placed.OrderID.Uint64())
+	require.Equal(t, types.OrderStatusUntriggered, waiting.Status)
+	require.Equal(t, uint64(2), waiting.Sequence)
+
+	exported := env.k.ExportGenesis(env.ctx)
+	require.Equal(t, uint64(3), exported.Counters.NextSequence)
+	bz, err := json.Marshal(exported)
+	require.NoError(t, err)
+	var imported types.GenesisState
+	require.NoError(t, json.Unmarshal(bz, &imported))
+	kB, ctxB, storeB := importGenesis(t, imported)
+	require.Equal(t, wordValue(3), storeB.Get(types.SequenceKey(types.SequencePlacement)))
+	require.Equal(t, env.ctx.KVStore(env.perpsKey).Get(types.SequenceKey(types.SequencePlacement)),
+		storeB.Get(types.SequenceKey(types.SequencePlacement)))
+	require.Equal(t, exported.Counters, kB.ExportGenesis(ctxB).Counters)
+}
+
+func TestGenesisExportAfterFullCloseDropsCooldown(t *testing.T) {
+	source := newTriggerEnv(t)
+	source.price(t, 60_000)
+	held := source.seedPosition(t, traderA, true, lots(1_000), e18(60_000))
+	source.seedPosition(t, traderC, false, lots(1_000), e18(60_000))
+	gs := source.k.ExportGenesis(source.ctx)
+	gs.LiquidationCooldowns = []types.LiquidationCooldown{{PositionID: held.ID,
+		LastSliceTime: uint64(source.ctx.BlockTime().Unix()), SliceBasis: lots(1_000)}}
+
+	env := newTriggerEnv(t)
+	env.k.InitGenesis(env.ctx, *gs)
+	require.True(t, env.store().Has(types.LiquidationCooldownKey(held.ID)))
+	market, err := env.k.GetMarket(env.ctx, 0)
+	require.NoError(t, err)
+	maker := env.seedBid(t, traderB, e18(58_980), lots(1_000))
+	stop := env.seedOrder(t, types.Order{Account: traderA, MarketID: 0, IsLong: false, Type: types.OrderTypeStopMarket,
+		TimeInForce: types.TimeInForceGTC, Status: types.OrderStatusUntriggered, ReduceOnly: true,
+		TriggerPrice: e18(59_000), SizeBase: lots(1_000)})
+
+	env = env.at(11)
+	mark := env.price(t, 58_990)
+	evaluated, events, err := env.k.EvaluateTriggers(env.ctx, market, mark, 256)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), evaluated)
+	fills := eventsNamed(events, types.EventFill)
+	require.Len(t, fills, 1)
+	require.Equal(t, []string{types.EventFill, "0", maker.ID.Dec(), stop.ID.Dec()}, eventArgs(fills[0])[:4])
+	require.Equal(t, types.OrderStatusFilled, env.order(t, stop.ID).Status)
+	require.False(t, env.store().Has(types.PositionKey(held.ID)))
+	require.False(t, env.store().Has(types.LiquidationCooldownKey(held.ID)))
+
+	exported := env.k.ExportGenesis(env.ctx)
+	require.Empty(t, exported.LiquidationCooldowns)
+	require.NoError(t, types.ValidateGenesis(*exported))
+	bz, err := json.Marshal(exported)
+	require.NoError(t, err)
+	var imported types.GenesisState
+	require.NoError(t, json.Unmarshal(bz, &imported))
+	kB, ctxB, _ := importGenesis(t, imported)
+	require.Equal(t, exported, kB.ExportGenesis(ctxB))
+}

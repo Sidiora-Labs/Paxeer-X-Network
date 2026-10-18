@@ -508,8 +508,8 @@ func positionReduce(position *types.Position, size, notional, fundingShare *big.
 
 // positionRemove closes a settled position in full: what its cost basis and
 // funding basis keep beyond the fill's shares, the rounding of its last
-// settlement, goes to residueUsd, and the position, its market index and its
-// rank entry are deleted.
+// settlement, goes to residueUsd, and the position, its market index, its
+// rank entry and its liquidation cooldown are deleted.
 func (k *Keeper) positionRemove(ctx sdk.Context, account *types.Account, position types.Position, notional,
 	fundingShare *big.Int, books *types.VenueBooks) error {
 	leftover := new(big.Int).Sub(signedBig(position.FundingBasis), fundingShare)
@@ -535,6 +535,7 @@ func (k *Keeper) positionRemove(ctx sdk.Context, account *types.Account, positio
 	store.Delete(types.PositionKey(position.ID))
 	store.Delete(types.AccountMarketPositionKey(position.Account, position.MarketID))
 	store.Delete(types.AdlRankIndexKey(position.MarketID, types.SideOf(position.IsLong), position.RankScore, position.ID))
+	store.Delete(types.LiquidationCooldownKey(position.ID))
 	return nil
 }
 
