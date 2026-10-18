@@ -42,9 +42,34 @@ fail() {
 }
 sha() { sha256sum -- "$1" | cut -d' ' -f1; }
 assert_height() { jq -e --arg height "$2" '.height == $height' "$1" >/dev/null; }
+assert_halt_state() {
+  python3 - "$1" "$2" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1]) as handle:
+    state = json.load(handle)
+halt = int(sys.argv[2])
+if state.get("height") == str(halt):
+    sys.exit(0)
+assert state.get("height") == str(halt + 1), state
+assert state.get("round") == 0 and state.get("step") == 1, state
+assert isinstance(state.get("signature"), str) and state["signature"], state
+signbytes = bytes.fromhex(state["signbytes"])
+length = shift = offset = 0
+while True:
+    byte = signbytes[offset]
+    offset += 1
+    length |= (byte & 0x7F) << shift
+    shift += 7
+    if not byte & 0x80:
+        break
+assert length == len(signbytes) - offset and signbytes[offset:offset + 2] == b"\x08\x20", state
+PY
+}
 invoke() { bash "$rollback" --env-file "$work/rollout.env" --local --service-manager foreground "$@"; }
 wait_halted() {
-  local pid=$1 log=$2 height=$3 attempt
+  local pid=$1 log=$2 height=$3 rule=${4:-exact} attempt
   for ((attempt = 0; attempt < 180; attempt++)); do
     if ! kill -0 "$pid" 2>/dev/null; then break; fi
     if [ -r "/proc/$pid/stat" ] && [ "$(awk '{print $3}' "/proc/$pid/stat")" = Z ]; then break; fi
@@ -53,7 +78,11 @@ wait_halted() {
   [ "$attempt" -lt 180 ] || fail "node did not halt; see $log"
   wait "$pid" || true
   grep -F 'halting node per configuration' "$log" | grep -Eq "height[=:]$height([^0-9]|$)" || fail "missing exact halt height"
-  assert_height "$work/validator/data/priv_validator_state.json" "$height"
+  if [ "$rule" = previous ]; then
+    assert_halt_state "$work/validator/data/priv_validator_state.json" "$height"
+  else
+    assert_height "$work/validator/data/priv_validator_state.json" "$height"
+  fi
 }
 
 start_to() {
@@ -106,8 +135,31 @@ PY
     LAYERX_PAXEER_GRPC_PORT="$p_grpc" LAYERX_PAXEER_GRPC_WEB_PORT="$p_web" \
     LAYERX_PAXEER_COMMIT_TIMEOUT_NANOSECONDS=1000000000 \
     bash "$root/platform/hosted/paxeer/init-chain.sh" >"$work/init.log" 2>&1
+  python3 - "$root/node/testdata/v6120-halt-export.json" "$work/validator/config/genesis.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1]) as handle:
+    export = json.load(handle)["app_state"]
+with open(sys.argv[2]) as handle:
+    genesis = json.load(handle)
+evm = genesis["app_state"]["evm"]
+codes = {entry["address"].lower() for entry in evm["codes"]}
+states = {(entry["address"].lower(), entry["key"]) for entry in evm["states"]}
+for entry in export["evm"]["codes"]:
+    assert entry["address"].lower() not in codes, entry["address"]
+for entry in export["evm"]["states"]:
+    assert (entry["address"].lower(), entry["key"]) not in states, (entry["address"], entry["key"])
+evm["codes"].extend(export["evm"]["codes"])
+evm["states"].extend(export["evm"]["states"])
+genesis["app_state"]["launchpad"] = export["launchpad"]
+with open(sys.argv[2], "w") as handle:
+    json.dump(genesis, handle, indent=2)
+    handle.write("\n")
+PY
+  "$work/bin/paxd" validate-genesis --home "$work/validator" >"$work/validate-genesis.log" 2>&1
   start_to 20 "$work/old.log"
-  wait_halted "$node_pid" "$work/old.log" 20
+  wait_halted "$node_pid" "$work/old.log" 20 previous
   tar --zstd -cf "$work/snapshots/validator-pre-v6.12.0.tar.zst" -C "$work/validator" data
   cp -p "$work/validator/data/priv_validator_state.json" "$work/signing-at-h.json"
   "$old_bin" init full --home "$work/full" --chain-id hyperpax_125-1 >"$work/full-init.log" 2>&1
@@ -149,7 +201,7 @@ restored_state_is_pre_h1() {
   invoke --execute --phase prepare
   invoke --execute --phase stop
   invoke --execute --phase restore
-  assert_height "$work/validator/data/priv_validator_state.json" 20
+  assert_halt_state "$work/validator/data/priv_validator_state.json" 20
   assert_height "$work/validator/data.v6.12.0-r1/priv_validator_state.json" 25
   cmp "$work/signing-at-h.json" "$work/validator/data/priv_validator_state.json"
   cmp "$work/signing-after-h.json" "$work/validator/data.v6.12.0-r1/priv_validator_state.json"

@@ -192,6 +192,30 @@ import subprocess
 import sys
 import tarfile
 
+
+def halt_proposal(state, halt):
+    if (str(state.get("height")) != str(halt + 1) or state.get("round") != 0 or state.get("step") != 1
+            or not isinstance(state.get("signature"), str) or not state["signature"]
+            or not isinstance(state.get("signbytes"), str)):
+        return False
+    try:
+        signbytes = bytes.fromhex(state["signbytes"])
+    except ValueError:
+        return False
+    length = shift = offset = 0
+    while offset < len(signbytes) and offset < 10:
+        byte = signbytes[offset]
+        offset += 1
+        length |= (byte & 0x7F) << shift
+        shift += 7
+        if not byte & 0x80:
+            break
+    else:
+        return False
+    body = signbytes[offset:]
+    return length == len(body) and body[:2] == b"\x08\x20"
+
+
 with subprocess.Popen(["zstd", "-dc", "--", sys.argv[1]], stdout=subprocess.PIPE) as process:
     try:
         seen = set()
@@ -215,9 +239,10 @@ with subprocess.Popen(["zstd", "-dc", "--", sys.argv[1]], stdout=subprocess.PIPE
         if not store or state is None:
             raise ValueError("snapshot lacks application store or signing state")
         height = state.get("height")
-        if sys.argv[3] == "validator" and str(height) != sys.argv[2]:
-            raise ValueError("snapshot signing height differs from HALT_HEIGHT")
-        if not str(height).isdigit() or not 0 <= int(height) <= int(sys.argv[2]):
+        if sys.argv[3] == "validator":
+            if str(height) != sys.argv[2] and not halt_proposal(state, int(sys.argv[2])):
+                raise ValueError("snapshot signing height differs from HALT_HEIGHT")
+        elif not str(height).isdigit() or not 0 <= int(height) <= int(sys.argv[2]):
             raise ValueError("snapshot signing state is after HALT_HEIGHT")
         process.stdout.close()
         if process.wait() != 0:
