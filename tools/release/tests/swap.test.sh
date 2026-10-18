@@ -169,26 +169,8 @@ genesis["app_state"]["staking"]["params"]["max_voting_power_ratio"] = "1.0000000
 genesis_path.write_text(json.dumps(genesis))
 PY
   "$BIN_DIR/paxd" collect-gentxs --home "$node_home" > "$case_dir/$name-collect.log" 2>&1
-  python3 - "$root/node/testdata/v6120-halt-export.json" "$node_home/config/genesis.json" <<'PY'
-import json
-from pathlib import Path
-import sys
-
-export = json.loads(Path(sys.argv[1]).read_text())["app_state"]
-genesis_path = Path(sys.argv[2])
-genesis = json.loads(genesis_path.read_text())
-evm = genesis["app_state"]["evm"]
-codes = {entry["address"] for entry in evm["codes"]}
-states = {(entry["address"], entry["key"]) for entry in evm["states"]}
-for entry in export["evm"]["codes"]:
-    assert entry["address"] not in codes, entry["address"]
-for entry in export["evm"]["states"]:
-    assert (entry["address"], entry["key"]) not in states, (entry["address"], entry["key"])
-evm["codes"].extend(export["evm"]["codes"])
-evm["states"].extend(export["evm"]["states"])
-genesis["app_state"]["launchpad"] = export["launchpad"]
-genesis_path.write_text(json.dumps(genesis))
-PY
+  python3 -I "$root/tools/release/tests/seed_halt_export.py" "$root/node/testdata/v6120-halt-export.json" \
+    "$node_home/config/genesis.json"
   "$BIN_DIR/paxd" validate-genesis --home "$node_home" > "$case_dir/$name-validate.log" 2>&1
   python3 - "$node_home" "$halt" "$denom" <<'PY'
 import json
