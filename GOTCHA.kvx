@@ -8186,3 +8186,8 @@ fix = "keep generated or copied files out of the module root; specgen.sh derives
 area = "git history rewrite"
 symptom = "a filter-branch --index-filter with a brace pattern such as tasks/{a,b}/file.tar.gz inside quotes removed only the literal paths outside the braces: the filter runs under sh, which never expands braces, so four of five blobs stayed reachable"
 fix = "spell every path out in the index filter, then prove the result with git rev-list --objects <range> | grep -c <name> before trusting the rewrite"
+
+[gotcha.1723]
+area = "edge proxy"
+symptom = "tools/bringup/edge.sh set stops with 'manifest line of <name> has no upstream mode this script renders' on an edge host whose manifest was written by the September script: those lines carry four fields (name mode fly-app port) while the current script reads six (name mode upstream port kind sni), and the script copy at EDGE_NGINX_DIR/edge/edge.sh only exists after a successful set"
+fix = "convert each old http line to '<name> http <app>.fly.dev:<port> <port> railway -' (awk over a saved copy), confirm with awk 'NF!=6' that nothing is left, then rerun set; a balanced RPC name needs only an env file with EDGE_APP pointing at a comment-only map plus EDGE_RPC_NAME and EDGE_RPC_POOL"
