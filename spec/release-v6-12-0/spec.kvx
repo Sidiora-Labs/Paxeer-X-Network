@@ -16380,7 +16380,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1.10]
 title = "Pool liquidity per token with NAV, MINIMUM_SHARES, reservations, caps and governed reconciliation"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["4.1.4"]
