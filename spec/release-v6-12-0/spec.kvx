@@ -11177,7 +11177,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.4]
 title = "Serve the order and trigger methods"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["3.1.7", "3.1.8", "3.2.1", "3.2.8"]
