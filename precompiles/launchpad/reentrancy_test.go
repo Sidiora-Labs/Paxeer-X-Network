@@ -177,15 +177,44 @@ func TestNestedRevertPropagation(t *testing.T) {
 		r := newNestedRun(t)
 		ctx := r.ctx()
 		var zero [32]byte
+		outer := common.BigToHash(big.NewInt(42))
+		testkeeper.EVMTestApp.EvmKeeper.SetState(ctx, writingReverter, slot0, outer)
 		ctx, err := r.caller.Permit(ctx, nestedCaller, writingReverter, nestedCaller, accepter, big.NewInt(5),
 			big.NewInt(6), 27, zero, zero)
 		require.NoError(t, err)
-		require.Equal(t, common.Hash{}, testkeeper.EVMTestApp.EvmKeeper.GetState(ctx, writingReverter, slot0))
+		require.Equal(t, outer, testkeeper.EVMTestApp.EvmKeeper.GetState(ctx, writingReverter, slot0))
+		require.Equal(t, outer, r.stateDB.GetState(writingReverter, slot0))
+
+		testkeeper.EVMTestApp.EvmKeeper.SetState(ctx, copier, slot0, outer)
+		ctx, ret, err := r.caller.Call(ctx, nestedCaller, copier, nil)
+		require.NoError(t, err)
+		require.Equal(t, outer.Bytes(), ret)
+		require.Equal(t, outer, r.stateDB.GetState(copier, slot1))
 
 		ctx, err = r.caller.Permit(ctx, nestedCaller, writer, nestedCaller, accepter, big.NewInt(5), big.NewInt(6), 27,
 			zero, zero)
 		require.NoError(t, err)
 		require.Equal(t, common.BigToHash(big.NewInt(1)), testkeeper.EVMTestApp.EvmKeeper.GetState(ctx, writer, slot0))
+	})
+
+	t.Run("an outer revert rolls back committed and nested writes", func(t *testing.T) {
+		r := newNestedRun(t)
+		revision := r.stateDB.Snapshot()
+		ctx := r.ctx()
+		outer := common.BigToHash(big.NewInt(42))
+		testkeeper.EVMTestApp.EvmKeeper.SetState(ctx, copier, slot0, outer)
+		ctx, ret, err := r.caller.Call(ctx, nestedCaller, copier, nil)
+		require.NoError(t, err)
+		require.Equal(t, outer.Bytes(), ret)
+		require.Equal(t, outer, r.stateDB.GetState(copier, slot1))
+
+		_, _, err = r.caller.Call(ctx, nestedCaller, dataReverter, nil)
+		var revert *launchpad.NestedRevertError
+		require.ErrorAs(t, err, &revert)
+		require.Equal(t, common.FromHex("0x12345678"), revert.Data)
+		r.stateDB.RevertToSnapshot(revision)
+		require.Equal(t, common.Hash{}, r.stateDB.GetState(copier, slot0))
+		require.Equal(t, common.Hash{}, r.stateDB.GetState(copier, slot1))
 	})
 
 	t.Run("the fee-right receiver hook follows the contract rule", func(t *testing.T) {
