@@ -189,7 +189,14 @@ func newRetainedHarness(t *testing.T) *retainedHarness {
 	blockCtx, err := app.EvmKeeper.GetVMBlockContext(ctx, core.GasPool(math.MaxUint64))
 	require.NoError(t, err)
 	cfg := evmtypes.DefaultChainConfig().EthereumConfig(app.EvmKeeper.ChainID(ctx))
-	h.evm = vm.NewEVM(*blockCtx, h.stateDB, cfg, vm.Config{}, app.EvmKeeper.CustomPrecompiles(ctx))
+	contract, err := launchpad.NewPrecompile(keepers{Keepers: app.GetPrecompileKeepers(), launchpad: h.keeper})
+	require.NoError(t, err)
+	precompiles := map[common.Address]vm.PrecompiledContract{}
+	for address, p := range app.EvmKeeper.CustomPrecompiles(ctx) {
+		precompiles[address] = p
+	}
+	precompiles[precompile] = contract
+	h.evm = vm.NewEVM(*blockCtx, h.stateDB, cfg, vm.Config{}, precompiles)
 
 	for role, address := range launchpadkeeper.Generation2Surfaces {
 		h.stateDB.SetCode(address, surfaceRuntime)
