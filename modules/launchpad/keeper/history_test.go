@@ -26,7 +26,7 @@ type historyEnv struct {
 func newHistoryEnv(t *testing.T) *historyEnv {
 	e := newEnv(t)
 	gov := authtypes.NewModuleAddress(govtypes.ModuleName).String()
-	params := types.DefaultParams()
+	params := e.k.GetParams(e.ctx)
 	params.VirtualQuoteDefault = i(1_000_000_000)
 	params.VirtualTokenDefault = i(1_000_000_000)
 	require.NoError(t, e.k.UpdateParams(e.ctx, gov, params))
