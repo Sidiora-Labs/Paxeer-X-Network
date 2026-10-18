@@ -1,0 +1,2 @@
+# Filled by `pnpm sync:bundle` before publish; keeps large generated JSON out of git.
+bundled/

@@ -1,0 +1,38 @@
+{
+  "name": "paxeer-networ-perps",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "dev": "pnpm --filter @sidioralabs/chainflow-data-gateway build && pnpm --filter @paxeer-network/web dev",
+    "build": "pnpm --filter @paxeer-network/web build",
+    "start": "pnpm --filter @paxeer-network/web start",
+    "typecheck": "tsc --noEmit -p apps/web/tsconfig.json",
+    "check:ui": "node scripts/check-ui-source.mjs",
+    "test": "node --test --import tsx tests/*.test.ts",
+    "test:browser": "playwright test"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3",
+    "tsx": "^4.19.2",
+    "@types/node": "^22.15.21",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.1",
+    "@types/ramda": "^0.29.3",
+    "@types/lodash": "^4.17.7",
+    "@types/react-grid-layout": "^1.3.5",
+    "@playwright/test": "^1.56.0",
+    "tailwindcss": "3.4.19",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.5.26",
+    "tailwindcss-animate": "^1.0.6",
+    "jiti": "1.21.7",
+    "prettier": "3.8.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "react": "18.3.1",
+      "react-dom": "18.3.1"
+    }
+  }
+}

@@ -1,0 +1,44 @@
+@startuml
+'https://plantuml.com/component-diagram
+
+
+package "@paxeer-network/core" {
+[setAddress Method]
+[walletAdapterManager Field]
+[signer Field]
+}
+
+package "@paxeer-network/onboard"{
+[connect Method]
+}
+
+package "@paxeer-network/hooks"{
+[signatureMiddleware Middleware]
+[useGetClaimed hook] #Coral
+}
+
+package "@paxeer-network/react-app"{
+[useWalletStateHandle hook]
+[wrongNetwork check]
+}
+
+package "@paxeer-network/default-evm-adapter"{
+}
+
+package "@paxeer-network/default-solana-adapter"{
+}
+
+package "@paxeer-network/default-wallet-modal" #Yellow {
+
+
+}
+
+
+
+[useWalletStateHandle hook] --> [setAddress Method]
+[useWalletStateHandle hook] <-- [connect Method]
+[signatureMiddleware Middleware] --> [signer Field]
+"@paxeer-network/default-evm-adapter" --> [walletAdapterManager Field]
+"@paxeer-network/default-solana-adapter" --> [walletAdapterManager Field]
+
+@enduml

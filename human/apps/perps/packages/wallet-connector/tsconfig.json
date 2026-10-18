@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "paths": {
+      "@paxeer-network/core": [
+        "../core/src"
+      ],
+      "@paxeer-network/hooks": [
+        "../hooks/src"
+      ],
+      "@paxeer-network/types": [
+        "../types/src"
+      ],
+      "@paxeer-network/utils": [
+        "../utils/src"
+      ],
+      "@paxeer-network/ui": [
+        "../ui/src"
+      ]
+    }
+  }
+}

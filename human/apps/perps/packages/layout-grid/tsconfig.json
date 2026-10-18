@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "paths": {
+      "@paxeer-network/layout-core": [
+        "../layout-core/src"
+      ],
+      "@paxeer-network/trading-next": [
+        "../trading-next/src"
+      ],
+      "@paxeer-network/ui": [
+        "../ui/src"
+      ]
+    }
+  }
+}

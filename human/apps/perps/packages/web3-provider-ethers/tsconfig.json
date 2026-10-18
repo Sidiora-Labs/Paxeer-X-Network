@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "paths": {
+      "@paxeer-network/types": [
+        "../types/src"
+      ],
+      "@paxeer-network/default-evm-adapter": [
+        "../default-evm-adapter/src"
+      ]
+    },
+  }
+}

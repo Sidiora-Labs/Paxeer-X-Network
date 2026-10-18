@@ -1,0 +1,74 @@
+{
+  "name": "storybook-theme-tool",
+  "version": "3.2.2",
+  "description": "Theme builder for Storybook",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./utils": "./src/utils.ts",
+    "./preview": "./src/preview.ts",
+    "./index": "./src/index.ts",
+    "./manager": "./src/manager.ts",
+    "./panel": "./src/panel.tsx",
+    "./constants": "./src/constants.ts",
+    "./components/radius": "./src/components/radius.tsx",
+    "./components/toolbar": "./src/components/toolbar.tsx",
+    "./components/editor": "./src/components/editor.tsx",
+    "./components/colorInput": "./src/components/colorInput.tsx",
+    "./components/editorContext": "./src/components/editorContext.tsx",
+    "./components/colorList": "./src/components/colorList.tsx",
+    "./components/style.css": "./src/components/style.css",
+    "./components/menu": "./src/components/menu.tsx",
+    "./components/context": "./src/components/context.ts",
+    "./components/codeEditor": "./src/components/codeEditor.tsx",
+    "./components/typography": "./src/components/typography.tsx",
+    "./src/utils": "./src/utils.ts",
+    "./src/preview": "./src/preview.ts",
+    "./src/index": "./src/index.ts",
+    "./src/manager": "./src/manager.ts",
+    "./src/panel": "./src/panel.tsx",
+    "./src/constants": "./src/constants.ts",
+    "./src/components/radius": "./src/components/radius.tsx",
+    "./src/components/toolbar": "./src/components/toolbar.tsx",
+    "./src/components/editor": "./src/components/editor.tsx",
+    "./src/components/colorInput": "./src/components/colorInput.tsx",
+    "./src/components/editorContext": "./src/components/editorContext.tsx",
+    "./src/components/colorList": "./src/components/colorList.tsx",
+    "./src/components/style.css": "./src/components/style.css",
+    "./src/components/menu": "./src/components/menu.tsx",
+    "./src/components/context": "./src/components/context.ts",
+    "./src/components/codeEditor": "./src/components/codeEditor.tsx",
+    "./src/components/typography": "./src/components/typography.tsx"
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "keywords": [],
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@codemirror/lang-css": "^6.3.1",
+    "@uiw/codemirror-theme-github": "^4.23.8",
+    "@uiw/react-codemirror": "^4.23.8",
+    "@paxeer-network/ui": "workspace:*",
+    "storybook": "^10.4.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.2",
+    "@types/react-dom": "^18.3.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsconfig": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts"
+}

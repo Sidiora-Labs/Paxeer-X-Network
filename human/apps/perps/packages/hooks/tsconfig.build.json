@@ -1,0 +1,34 @@
+{
+  "extends": "tsconfig/base.json",
+  "compilerOptions": {
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "plugins": [{
+      "name": "next"
+    }],
+    "jsx": "react-jsx",
+    "typeRoots": [
+      "node_modules/@types",
+      "./typings"
+    ],
+    "sourceMap": true
+  },
+  "include": [
+    "./src/**/*.ts",
+    "./src/**/*.tsx",
+    "./src/trading-rewards/abis/**/*.json",
+    "./typings/*.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "__test__",
+    "__mocks__"
+  ],
+  "typedocOptions": {
+    "entryPoints": [
+      "src/index.ts"
+    ],
+    "out": "docs",
+    "skipErrorChecking": true
+  }
+}

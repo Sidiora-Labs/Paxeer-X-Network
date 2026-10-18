@@ -1,0 +1,10 @@
+node_modules/
+.next*/
+**/.next*/
+*.tsbuildinfo
+.env*
+!.env.example
+artifacts/
+.codegraph
+# TradingView Advanced Charts is a licensed private distribution; fetch it from the licensed source at deploy time
+apps/web/public/static/charting_library/

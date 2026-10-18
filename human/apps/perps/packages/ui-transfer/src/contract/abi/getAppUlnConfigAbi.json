@@ -1,0 +1,58 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_oapp",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "_remoteEid",
+        "type": "uint32"
+      }
+    ],
+    "name": "getAppUlnConfig",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint64",
+            "name": "confirmations",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint8",
+            "name": "requiredDVNCount",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "optionalDVNCount",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "optionalDVNThreshold",
+            "type": "uint8"
+          },
+          {
+            "internalType": "address[]",
+            "name": "requiredDVNs",
+            "type": "address[]"
+          },
+          {
+            "internalType": "address[]",
+            "name": "optionalDVNs",
+            "type": "address[]"
+          }
+        ],
+        "internalType": "struct UlnConfig",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

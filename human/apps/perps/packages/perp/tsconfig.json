@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "types": ["jest"],
+    "paths": {
+      "@paxeer-network/types": [
+        "../types/src"
+      ],
+      "@paxeer-network/utils": [
+        "../utils/src"
+      ]
+    }
+  }
+}

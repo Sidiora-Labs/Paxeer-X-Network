@@ -1,0 +1,24 @@
+.color-input-box {
+  position: relative;
+}
+.color-input-box input[type="color"] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+
+  appearance: none;
+  -moz-appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  /* height: 3.5em;
+     */
+  /* padding: 5px; */
+  width: 2rem;
+  height: 2rem;
+  /* border-radius: 1em; */
+  /* width: 3em; */
+}

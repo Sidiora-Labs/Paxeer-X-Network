@@ -1,0 +1,52 @@
+export const definedTypes = {
+  EIP712Domain: [
+    { name: "name", type: "string" },
+    { name: "version", type: "string" },
+    { name: "chainId", type: "uint256" },
+    { name: "verifyingContract", type: "address" },
+  ],
+  Registration: [
+    { name: "brokerId", type: "string" },
+    { name: "chainId", type: "uint256" },
+    { name: "timestamp", type: "uint64" },
+    { name: "registrationNonce", type: "uint256" },
+  ],
+  Withdraw: [
+    { name: "brokerId", type: "string" },
+    { name: "chainId", type: "uint256" },
+    { name: "receiver", type: "address" },
+    { name: "token", type: "string" },
+    { name: "amount", type: "uint256" },
+    { name: "withdrawNonce", type: "uint64" },
+    { name: "timestamp", type: "uint64" },
+  ],
+  AddPaxeerNetworkKey: [
+    { name: "brokerId", type: "string" },
+    { name: "chainId", type: "uint256" },
+    { name: "paxeerNetworkKey", type: "string" },
+    { name: "scope", type: "string" },
+    { name: "timestamp", type: "uint64" },
+    { name: "expiration", type: "uint64" },
+  ],
+  SettlePnl: [
+    { name: "brokerId", type: "string" },
+    { name: "chainId", type: "uint256" },
+    { name: "settleNonce", type: "uint64" },
+    { name: "timestamp", type: "uint64" },
+  ],
+  DexRequest: [
+    { name: "payloadType", type: "uint8" },
+    { name: "nonce", type: "uint256" },
+    { name: "receiver", type: "address" },
+    { name: "amount", type: "uint256" },
+    { name: "vaultId", type: "bytes32" },
+    { name: "token", type: "string" },
+    { name: "dexBrokerId", type: "string" },
+  ],
+  InternalTransfer: [
+    { name: "receiver", type: "bytes32" },
+    { name: "token", type: "string" },
+    { name: "amount", type: "uint256" },
+    { name: "transferNonce", type: "uint64" },
+  ],
+} as const;

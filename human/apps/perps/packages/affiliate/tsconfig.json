@@ -1,0 +1,34 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "paths": {
+      "@paxeer-network/ui": [
+        "../ui/src"
+      ],
+      "@paxeer-network/ui-connector": [
+        "../ui-connector/src"
+      ],
+      "@paxeer-network/ui-scaffold": [
+        "../ui-scaffold/src"
+      ],
+      "@paxeer-network/hooks": [
+        "../hooks/src"
+      ],
+      "@paxeer-network/chart": [
+        "../chart/src"
+      ],
+      "@paxeer-network/utils": [
+        "../utils/src"
+      ],
+      "@paxeer-network/react-app": [
+        "../app/src"
+      ],
+      "@paxeer-network/types": [
+        "../types/src"
+      ],
+      "@paxeer-network/i18n": [
+        "../i18n/src"
+      ]
+    }
+  }
+}

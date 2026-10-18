@@ -1,0 +1,40 @@
+{
+  "name": "@paxeer-network/devkit",
+  "version": "1.2.2",
+  "description": "CLI toolkit for scaffolding and building DEXs, plugins, and modules with paxeer-network",
+  "main": "",
+  "bin": {
+    "paxeer-network-devkit": "./bin/cli.js"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "scripts": {
+    "cli": "node ./bin/cli.js",
+    "clean": "rimraf dist",
+    "link-global": "pnpm link --global",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "degit": "^2.8.6",
+    "enquirer": "^2.4.1",
+    "fast-glob": "^3.3.3",
+    "fs-extra": "^11.3.0",
+    "handlebars": "^4.7.9",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "tsconfig": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "private": true,
+  "exports": {}
+}

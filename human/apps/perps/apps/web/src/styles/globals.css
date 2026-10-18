@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  @property --gradientAngle {
+    syntax: "<angle>";
+    inherits: false;
+    initial-value: 0deg;
+  }
+  @keyframes angleRotateChange {
+    0% {
+      --gradientAngle: 0deg;
+    }
+    100% {
+      --gradientAngle: 360deg;
+    }
+  }
+  .oui-gradient-button::before {
+    transition: var(--gradientAngle) 0.3s linear;
+    animation-name: angleRotateChange;
+    animation-timing-function: cubic-bezier(0, 0, 1, 1);
+    animation-iteration-count: infinite;
+    animation-duration: 5s;
+    background-image: linear-gradient(
+      var(--gradientAngle),
+      #ffffff 10%,
+      #d6dae0 20%,
+      #8c939e 30%,
+      rgb(var(--oui-color-base-9)) 50%,
+      rgb(var(--oui-color-base-9)) 100%
+    );
+  }
+}
+
+@font-face {
+  font-family: DIN2014;
+  src: url("/fonts/DIN2014/din-2014_regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+html,
+body,
+#__next {
+  margin: 0;
+  min-height: 100%;
+  background: rgb(var(--oui-color-base-10, 7 8 10));
+  color: rgb(var(--oui-color-base-foreground, 255 255 255));
+}
+body {
+  font-family: var(--oui-font-family, sans-serif);
+}
+.site-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 32px;
+}
+.site-wordmark img {
+  display: block;
+  flex: none;
+  object-fit: contain;
+}
+
+@font-face {
+  font-family: DIN2014;
+  src: url("/fonts/DIN2014/din-2014_demi.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: DIN2014;
+  src: url("/fonts/DIN2014/din-2014_bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}

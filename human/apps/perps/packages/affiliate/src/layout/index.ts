@@ -1,0 +1,1 @@
+export { AffiliateLayoutWidget } from "./layout.widget";

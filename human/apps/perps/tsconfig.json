@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ES2022"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "allowJs": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "incremental": false
+  },
+  "include": [
+    "apps/web/next-env.d.ts",
+    "apps/web/src/**/*",
+    "packages/*/src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/node_modules",
+    "**/dist",
+    "**/*.test.*",
+    "**/*.stories.*",
+    "packages/cli",
+    "packages/sdk-docs",
+    "packages/storybook-theme-tool",
+    "**/__test__/**",
+    "**/__tests__/**",
+    "**/setupTests.ts",
+    "**/*.example.tsx"
+  ]
+}

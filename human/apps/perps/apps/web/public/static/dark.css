@@ -1,0 +1,13 @@
+:root {
+    --tv-color-platform-background: #000000;
+    --tv-color-pane-background: #000000;
+    --tv-color-pane-background-secondary: #000000;
+    /* Left drawing toolbar — match page background */
+    --tv-color-toolbar-background: #000000;
+    --tv-color-toolbar-button-background-hover: rgba(255, 255, 255, 0.06);
+    --tv-color-toolbar-button-background-active: rgba(255, 255, 255, 0.08);
+    --tv-color-toolbar-button-background-selected: rgba(255, 255, 255, 0.08);
+    --tv-color-toolbar-divider-background: #000000;
+    --tv-color-popup-background: #000000;
+    --tv-color-popup-element-background-hover: rgba(255, 255, 255, 0.06);
+}

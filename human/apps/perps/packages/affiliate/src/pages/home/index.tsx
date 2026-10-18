@@ -1,0 +1,2 @@
+
+export { HomePage } from "./page";

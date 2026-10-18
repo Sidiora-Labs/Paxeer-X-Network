@@ -1,0 +1,10 @@
+import {chromium} from '@playwright/test';
+import {mkdirSync,writeFileSync} from 'node:fs';
+process.chdir(new URL('..',import.meta.url).pathname);
+mkdirSync('artifacts',{recursive:true});
+const browser=await chromium.launch({headless:true});
+const page=await browser.newPage({viewport:{width:1920,height:1080}});const errors=[];const requests=[];
+page.on('pageerror',error=>errors.push(error.stack));page.on('request',r=>{if(!r.url().includes('localhost'))requests.push(r.url().replace(/\?.*/,''));});
+await page.goto(`${process.env.PAXEER_NETWORK_BASE_URL || 'http://localhost:3000'}/trade`,{waitUntil:'domcontentloaded',timeout:180000});await page.waitForTimeout(8000);
+writeFileSync('artifacts/browser-state.json',JSON.stringify({title:await page.title(),body:(await page.locator('body').innerText()).slice(0,10000),errors,requests:[...new Set(requests)]},null,2));
+await page.screenshot({path:'artifacts/native-desktop.png',fullPage:true});console.log(JSON.stringify({body:(await page.locator('body').innerText()).slice(0,1500),errors}));await browser.close();

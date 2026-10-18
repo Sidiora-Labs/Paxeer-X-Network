@@ -1,0 +1,77 @@
+{
+  "name": "@paxeer-network/ui-notification",
+  "version": "3.2.2",
+  "description": "",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "scripts": {
+    "build": "tsup && pnpm run build:css",
+    "build:css": "tailwindcss build -i src/tailwind.css -o dist/styles.css --minify",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "paxeer-network",
+    "Notification"
+  ],
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@paxeer-network/i18n": "workspace:*",
+    "@paxeer-network/hooks": "workspace:*",
+    "@paxeer-network/types": "workspace:*",
+    "@paxeer-network/ui": "workspace:*",
+    "@paxeer-network/react-app": "workspace:*",
+    "@paxeer-network/utils": "workspace:*",
+    "@date-fns/utc": "1.2.0",
+    "date-fns": "^3.6.0",
+    "immer": "^10.1.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.2",
+    "@types/react-dom": "^18.3.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsconfig": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tailwind.css": "./src/tailwind.css",
+    "./utils": "./src/utils.ts",
+    "./index": "./src/index.ts",
+    "./version": "./src/version.ts",
+    "./hooks/useAnnouncement": "./src/hooks/useAnnouncement.ts",
+    "./pages/announcementCenter.page": "./src/pages/announcementCenter.page.tsx",
+    "./pages/announcementCenter.widget": "./src/pages/announcementCenter.widget.tsx",
+    "./pages/announcementCenter.ui": "./src/pages/announcementCenter.ui.tsx",
+    "./pages/announcementCenter.script": "./src/pages/announcementCenter.script.tsx",
+    "./components/notification/contentCard": "./src/components/notification/contentCard.tsx",
+    "./components/notification/notification.ui": "./src/components/notification/notification.ui.tsx",
+    "./components/announcementCenter/announcementItem": "./src/components/announcementCenter/announcementItem.tsx",
+    "./components/announcementCenter/announcementCenter.ui": "./src/components/announcementCenter/announcementCenter.ui.tsx",
+    "./components/announcementCenter/icons": "./src/components/announcementCenter/icons.tsx",
+    "./src/tailwind.css": "./src/tailwind.css",
+    "./src/utils": "./src/utils.ts",
+    "./src/index": "./src/index.ts",
+    "./src/version": "./src/version.ts",
+    "./src/hooks/useAnnouncement": "./src/hooks/useAnnouncement.ts",
+    "./src/pages/announcementCenter.page": "./src/pages/announcementCenter.page.tsx",
+    "./src/pages/announcementCenter.widget": "./src/pages/announcementCenter.widget.tsx",
+    "./src/pages/announcementCenter.ui": "./src/pages/announcementCenter.ui.tsx",
+    "./src/pages/announcementCenter.script": "./src/pages/announcementCenter.script.tsx",
+    "./src/components/notification/contentCard": "./src/components/notification/contentCard.tsx",
+    "./src/components/notification/notification.ui": "./src/components/notification/notification.ui.tsx",
+    "./src/components/announcementCenter/announcementItem": "./src/components/announcementCenter/announcementItem.tsx",
+    "./src/components/announcementCenter/announcementCenter.ui": "./src/components/announcementCenter/announcementCenter.ui.tsx",
+    "./src/components/announcementCenter/icons": "./src/components/announcementCenter/icons.tsx"
+  },
+  "private": true
+}

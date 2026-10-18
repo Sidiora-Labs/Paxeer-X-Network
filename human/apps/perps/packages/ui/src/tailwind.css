@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  @property --gradientAngle {
+    syntax: "<angle>";
+    inherits: false;
+    initial-value: 0deg;
+  }
+  @keyframes angleRotateChange {
+    0% {
+      --gradientAngle: 0deg;
+    }
+    100% {
+      --gradientAngle: 360deg;
+    }
+  }
+  .oui-gradient-button::before {
+    transition: var(--gradientAngle) 0.3s linear;
+    animation-name: angleRotateChange;
+    animation-timing-function: cubic-bezier(0, 0, 1, 1);
+    animation-iteration-count: infinite;
+    animation-duration: 5s;
+    background-image: linear-gradient(
+      var(--gradientAngle),
+      #f36fff 10%,
+      #268aff 20%,
+      #52eaea 30%,
+      rgb(var(--oui-color-base-9)) 50%,
+      rgb(var(--oui-color-base-9)) 100%
+    );
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "test": [".*\\.ts$", ".*\\.tsx$", ".*\\.js$"],
+  "exclude": [
+    ".*\\.d.ts$",
+    ".*\\.test.tsx$",
+    ".*\\.test.ts$",
+    ".*\\.test.js$",
+    ".*\\.spec.tsx$",
+    ".*\\.spec.ts$",
+    ".*\\.spec.js$",
+    ".*\\.stories.tsx$"
+  ],
+  "jsc": {
+    "parser": {
+      "syntax": "typescript",
+      "tsx": true,
+      "dynamicImport": true,
+      "privateMethod": false,
+      "functionBind": false,
+      "exportDefaultFrom": false,
+      "exportNamespaceFrom": false,
+      "decorators": true,
+      "decoratorsBeforeExport": false,
+      "topLevelAwait": false,
+      "importMeta": false,
+      "preserveAllComments": false
+    },
+    "transform": {
+      "react": {
+        "runtime": "automatic"
+      }
+    },
+    "target": "esnext",
+    "loose": false,
+    "externalHelpers": false,
+    "keepClassNames": false,
+    "experimental": {
+      "plugins": [
+        ["@swc/plugin-remove-console",
+          {
+            "exclude": ["error"]
+          }
+        ]
+      ]
+    }
+  },
+  "isModule": true,
+  "sourceMaps": true,
+  "module": {
+    "type": "es6",
+    "strict": true,
+    "strictMode": true,
+    "lazy": false,
+    "noInterop": false
+  }
+}

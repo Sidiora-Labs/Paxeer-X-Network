@@ -1,0 +1,80 @@
+{
+  "name": "@paxeer-network/wallet-connector",
+  "version": "3.2.2",
+  "description": "",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "scripts": {
+    "dev": "tsup --watch --tsconfig tsconfig.build.json",
+    "build": "tsup --tsconfig tsconfig.build.json",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "files": [
+    "dist"
+  ],
+  "license": "ISC",
+  "dependencies": {
+    "@binance/w3w-blocknative-connector": "^1.1.12",
+    "@paxeer-network/hooks": "workspace:*",
+    "@paxeer-network/types": "workspace:*",
+    "@paxeer-network/core": "workspace:*",
+    "@paxeer-network/utils": "workspace:*",
+    "@paxeer-network/ui": "workspace:*",
+    "@types/lodash": "^4.17.7",
+    "@web3-onboard/core": "2.24.0",
+    "@web3-onboard/injected-wallets": "^2.11.3",
+    "@web3-onboard/react": "^2.11.0",
+    "lodash": "^4.18.1",
+    "@solana/spl-token": "0.4.8",
+    "@solana/wallet-adapter-base": "^0.9.23",
+    "@solana/wallet-adapter-phantom": "^0.9.29",
+    "@solana/wallet-adapter-react": "^0.15.35",
+    "@solana/wallet-adapter-react-ui": "^0.9.35",
+    "@solana-mobile/wallet-adapter-mobile": "^2.1.4",
+    "@solana/web3.js": "^1.95.3",
+    "rxjs": "^7.5.5",
+    "@paxeer-network/paxeer-backend": "workspace:*",
+    "wagmi": "2.19.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.38",
+    "react": "^18.2.0",
+    "tsconfig": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./initEvm": "./src/initEvm.tsx",
+    "./main": "./src/main.tsx",
+    "./config": "./src/config.ts",
+    "./useSOL": "./src/useSOL.tsx",
+    "./types": "./src/types.ts",
+    "./chains": "./src/chains.ts",
+    "./index": "./src/index.ts",
+    "./version": "./src/version.ts",
+    "./SolanaProvider": "./src/SolanaProvider.tsx",
+    "./useEvm": "./src/useEvm.tsx",
+    "./provider": "./src/provider.tsx",
+    "./nativeWalletDialog": "./src/nativeWalletDialog.tsx",
+    "./src/initEvm": "./src/initEvm.tsx",
+    "./src/main": "./src/main.tsx",
+    "./src/config": "./src/config.ts",
+    "./src/useSOL": "./src/useSOL.tsx",
+    "./src/types": "./src/types.ts",
+    "./src/chains": "./src/chains.ts",
+    "./src/index": "./src/index.ts",
+    "./src/version": "./src/version.ts",
+    "./src/SolanaProvider": "./src/SolanaProvider.tsx",
+    "./src/useEvm": "./src/useEvm.tsx",
+    "./src/provider": "./src/provider.tsx",
+    "./src/nativeWalletDialog": "./src/nativeWalletDialog.tsx"
+  },
+  "private": true
+}

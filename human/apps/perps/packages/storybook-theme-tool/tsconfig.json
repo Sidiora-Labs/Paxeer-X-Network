@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "paths": {
+      "@paxeer-network/ui": [
+        "../ui/src"
+      ]
+    }
+  }
+}

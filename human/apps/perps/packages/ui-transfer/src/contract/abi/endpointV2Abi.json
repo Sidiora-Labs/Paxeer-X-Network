@@ -1,0 +1,31 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "receiver",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "srcEid",
+        "type": "uint32"
+      }
+    ],
+    "name": "getReceiveLibrary",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "lib",
+        "type": "address"
+      },
+      {
+        "internalType": "bool",
+        "name": "isDefault",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

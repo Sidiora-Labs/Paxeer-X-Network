@@ -1,0 +1,51 @@
+{
+  "name": "@paxeer-network/default-evm-adapter",
+  "version": "3.2.2",
+  "description": "",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^2.0.0",
+    "@paxeer-network/core": "workspace:*",
+    "@paxeer-network/types": "workspace:*",
+    "bs58": "^5.0.0"
+  },
+  "devDependencies": {
+    "tsconfig": "workspace:*"
+  },
+  "keywords": [
+    "paxeer-network",
+    "EVM",
+    "DEFI"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./walletAdapter": "./src/walletAdapter.ts",
+    "./types": "./src/types.ts",
+    "./index": "./src/index.ts",
+    "./version": "./src/version.ts",
+    "./helper": "./src/helper.ts",
+    "./constants": "./src/constants.ts",
+    "./provider/web3Provider.interface": "./src/provider/web3Provider.interface.ts",
+    "./src/walletAdapter": "./src/walletAdapter.ts",
+    "./src/types": "./src/types.ts",
+    "./src/index": "./src/index.ts",
+    "./src/version": "./src/version.ts",
+    "./src/helper": "./src/helper.ts",
+    "./src/constants": "./src/constants.ts",
+    "./src/provider/web3Provider.interface": "./src/provider/web3Provider.interface.ts"
+  },
+  "private": true
+}

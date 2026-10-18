@@ -1,0 +1,1 @@
+export { TraderPage } from "./page";

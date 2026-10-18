@@ -1,0 +1,63 @@
+{
+  "name": "@paxeer-network/default-solana-adapter",
+  "version": "3.2.2",
+  "description": "",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@paxeer-network/core": "workspace:*",
+    "@paxeer-network/types": "workspace:*",
+    "@solana/web3.js": "^1.95.3",
+    "@coral-xyz/anchor": "0.29.0",
+    "@layerzerolabs/lz-solana-sdk-v2": "2.3.45-oft-rc.0",
+    "@layerzerolabs/lz-v2-utilities": "2.3.45-oft-rc.0",
+    "@solana/wallet-adapter-base": "0.9.23",
+    "@solana/spl-token": "0.4.8",
+    "ethereum-cryptography": "2.2.1",
+    "bs58": "^5.0.0",
+    "@noble/ed25519": "^2.0.0",
+    "ethers": "^6.17.0"
+  },
+  "devDependencies": {
+    "tsconfig": "workspace:*"
+  },
+  "keywords": [
+    "paxeer-network",
+    "EVM",
+    "DEFI"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./walletAdapter": "./src/walletAdapter.ts",
+    "./constant": "./src/constant.ts",
+    "./types": "./src/types.ts",
+    "./index": "./src/index.ts",
+    "./version": "./src/version.ts",
+    "./helper": "./src/helper.ts",
+    "./solana.util": "./src/solana.util.ts",
+    "./idl/solana_vault": "./src/idl/solana_vault.ts",
+    "./idl/solana_vault.json": "./src/idl/solana_vault.json",
+    "./src/walletAdapter": "./src/walletAdapter.ts",
+    "./src/constant": "./src/constant.ts",
+    "./src/types": "./src/types.ts",
+    "./src/index": "./src/index.ts",
+    "./src/version": "./src/version.ts",
+    "./src/helper": "./src/helper.ts",
+    "./src/solana.util": "./src/solana.util.ts",
+    "./src/idl/solana_vault": "./src/idl/solana_vault.ts",
+    "./src/idl/solana_vault.json": "./src/idl/solana_vault.json"
+  },
+  "private": true
+}
