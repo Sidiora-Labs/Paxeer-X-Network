@@ -309,7 +309,7 @@ func (k *Keeper) liquidationClose(ctx sdk.Context, position types.Position, clos
 		return nil, err
 	}
 	k.setOrder(ctx, order)
-	matched, err := k.Match(ctx, market, order)
+	matched, err := k.matchKind(ctx, market, order, FillKindLiquidation)
 	if err != nil {
 		return nil, err
 	}

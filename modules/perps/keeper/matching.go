@@ -58,8 +58,14 @@ type MatchResult struct {
 // ErrNoLiquidity and non-resting orders filling nothing with
 // ErrSlippageExceeded. A failed match writes nothing.
 func (k *Keeper) Match(ctx sdk.Context, market types.Market, taker types.Order) (MatchResult, error) {
+	return k.matchKind(ctx, market, taker, FillKindTrade)
+}
+
+// matchKind is Match with the taker's fills applied as kind; makers always
+// fill as FillKindTrade.
+func (k *Keeper) matchKind(ctx sdk.Context, market types.Market, taker types.Order, kind FillKind) (MatchResult, error) {
 	cacheCtx, write := ctx.CacheContext()
-	result, err := k.match(cacheCtx, market, taker)
+	result, err := k.match(cacheCtx, market, taker, kind)
 	if err != nil {
 		return MatchResult{}, err
 	}
@@ -67,7 +73,7 @@ func (k *Keeper) Match(ctx sdk.Context, market types.Market, taker types.Order) 
 	return result, nil
 }
 
-func (k *Keeper) match(ctx sdk.Context, market types.Market, taker types.Order) (MatchResult, error) {
+func (k *Keeper) match(ctx sdk.Context, market types.Market, taker types.Order, kind FillKind) (MatchResult, error) {
 	remaining, err := validateTaker(market, taker)
 	if err != nil {
 		return MatchResult{}, err
@@ -135,7 +141,7 @@ func (k *Keeper) match(ctx sdk.Context, market types.Market, taker types.Order) 
 			result.Events = append(result.Events, event)
 			continue
 		}
-		fill, events, err := k.fillMaker(ctx, market.ID, maker, taker, remaining)
+		fill, events, err := k.fillMaker(ctx, market.ID, maker, taker, remaining, kind)
 		if err != nil {
 			return MatchResult{}, err
 		}
@@ -367,7 +373,7 @@ func (k *Keeper) crossingMakers(ctx sdk.Context, marketID uint64, taker types.Or
 // the open-interest change is checked first against the positions before the
 // fill, then both positions are settled at the fill price and the maker and
 // taker fees are booked on the one fill notional.
-func (k *Keeper) fillMaker(ctx sdk.Context, marketID uint64, maker, taker types.Order, takerLeft uint256.Int) (FillResult, []types.EventRecord, error) {
+func (k *Keeper) fillMaker(ctx sdk.Context, marketID uint64, maker, taker types.Order, takerLeft uint256.Int, kind FillKind) (FillResult, []types.EventRecord, error) {
 	var makerLeft, size uint256.Int
 	makerLeft.Sub(&maker.SizeBase, &maker.FilledBase)
 	size = takerLeft
@@ -412,7 +418,7 @@ func (k *Keeper) fillMaker(ctx sdk.Context, marketID uint64, maker, taker types.
 	}
 	takerApplied, err := k.ApplyFill(ctx, PositionFill{
 		Account: taker.Account, MarketID: marketID, IsLong: taker.IsLong, SizeBase: size, Price: price,
-		Leverage: taker.Leverage, Kind: FillKindTrade,
+		Leverage: taker.Leverage, Kind: kind,
 	})
 	if err != nil {
 		return FillResult{}, nil, err
