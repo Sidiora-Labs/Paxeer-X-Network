@@ -97,8 +97,20 @@ func (env triggerEnv) seedOrder(t *testing.T, order types.Order) types.Order {
 	t.Helper()
 	id, err := env.k.NextOrderID(env.ctx)
 	require.NoError(t, err)
+	sequenceKey := types.SequenceKey(types.SequencePlacement)
+	sequence := *uint256.NewInt(1)
+	if bz := env.store().Get(sequenceKey); bz != nil {
+		require.Len(t, bz, 32)
+		sequence.SetBytes32(bz)
+	}
+	require.True(t, sequence.IsUint64())
+	var next uint256.Int
+	_, overflow := next.AddOverflow(&sequence, uint256.NewInt(1))
+	require.False(t, overflow)
+	word := next.Bytes32()
+	env.store().Set(sequenceKey, word[:])
 	order.ID = id
-	order.Sequence = id.Uint64()
+	order.Sequence = sequence.Uint64()
 	if order.Leverage.IsZero() {
 		order.Leverage = e18(10)
 	}
