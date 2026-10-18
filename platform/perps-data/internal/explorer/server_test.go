@@ -218,7 +218,7 @@ func TestExplorerServer(t *testing.T) {
 	srvSeed(t, db, base)
 	s := srvNew(t, db, 1000)
 
-	t.Run("blocks", func(t *testing.T) {
+	t.Run("route_blocks", func(t *testing.T) {
 		blocks := srvList(t, srvOK(t, s, "/api/chain/blocks"), "blocks")
 		if len(blocks) != 3 {
 			t.Fatalf("got %d blocks: %v", len(blocks), blocks)
@@ -237,7 +237,7 @@ func TestExplorerServer(t *testing.T) {
 		srvError(t, s, "/api/chain/blocks?limit=x", http.StatusBadRequest, "invalid limit")
 	})
 
-	t.Run("transactions", func(t *testing.T) {
+	t.Run("route_transactions", func(t *testing.T) {
 		txs := srvList(t, srvOK(t, s, "/api/chain/transactions"), "transactions")
 		srvRows(t, txs, srvTxCancel, srvReceipt, srvReceipt, srvTxFill, srvTxPlace)
 		if txs[0]["action"] != "Cancel Order" || txs[0]["user"] != srvUser(t, srvAlice) || txs[0]["symbol"] != "ETH" || txs[0]["block"] != float64(102) ||
@@ -247,7 +247,7 @@ func TestExplorerServer(t *testing.T) {
 		srvRows(t, srvList(t, srvOK(t, s, "/api/chain/transactions?limit=2"), "transactions"), srvTxCancel, srvReceipt)
 	})
 
-	t.Run("chain_health", func(t *testing.T) {
+	t.Run("route_health", func(t *testing.T) {
 		before := time.Now().UnixMilli()
 		body := srvOK(t, s, "/api/chain/health")
 		ts, _ := body["ts"].(float64)
@@ -262,6 +262,18 @@ func TestExplorerServer(t *testing.T) {
 		if len(body) != 2 || body["latest_block"] != float64(102) || body["chain_connected"] != true {
 			t.Fatalf("explorer health %v", body)
 		}
+		if _, err := db.Exec(`INSERT INTO perps.blocks (number, hash, parent_hash, time, proposer, tx_count)
+SELECT 900, $1, hash, time + interval '1 second', proposer, 0 FROM perps.blocks WHERE number = 102`, srvBlockHash(900)); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if _, err := db.Exec(`DELETE FROM perps.blocks WHERE number = 900`); err != nil {
+				t.Fatal(err)
+			}
+		})
+		if body := srvOK(t, s, "/api/explorer/health"); len(body) != 2 || body["latest_block"] != float64(900) || body["chain_connected"] != true {
+			t.Fatalf("advanced explorer health %v", body)
+		}
 		if _, err := db.Exec(`UPDATE perps.cursors SET updated_at = now() - interval '1 minute' WHERE name = 'head'`); err != nil {
 			t.Fatal(err)
 		}
@@ -270,7 +282,7 @@ func TestExplorerServer(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
-		if body := srvOK(t, s, "/api/explorer/health"); body["latest_block"] != float64(102) || body["chain_connected"] != false {
+		if body := srvOK(t, s, "/api/explorer/health"); body["latest_block"] != float64(900) || body["chain_connected"] != false {
 			t.Fatalf("stale explorer health %v", body)
 		}
 		if body := srvOK(t, s, "/api/chain/health"); body["status"] != "degraded" || body["chain_connected"] != false {
@@ -278,7 +290,7 @@ func TestExplorerServer(t *testing.T) {
 		}
 	})
 
-	t.Run("account_history", func(t *testing.T) {
+	t.Run("route_account_history", func(t *testing.T) {
 		for _, account := range []string{srvHex(srvAlice), srvUser(t, srvAlice)} {
 			first := srvOK(t, s, "/api/chain/accounts/"+account+"/history?limit=2")
 			srvRows(t, srvList(t, first, "items"), srvTxCancel, srvTxFill)
@@ -296,7 +308,7 @@ func TestExplorerServer(t *testing.T) {
 		srvError(t, s, "/api/chain/accounts/"+srvHex(srvAlice)+"/history?cursor=bogus", http.StatusBadRequest, "invalid cursor")
 	})
 
-	t.Run("market_history", func(t *testing.T) {
+	t.Run("route_market_history", func(t *testing.T) {
 		first := srvOK(t, s, "/api/chain/markets/btc/history?limit=2")
 		srvRows(t, srvList(t, first, "items"), srvReceipt, srvTxFill)
 		cursor := srvCursor(t, first)
@@ -311,7 +323,7 @@ func TestExplorerServer(t *testing.T) {
 		srvError(t, s, "/api/chain/markets/b-tc/history", http.StatusBadRequest, "invalid symbol")
 	})
 
-	t.Run("tx", func(t *testing.T) {
+	t.Run("route_tx", func(t *testing.T) {
 		srvEqual(t, srvOK(t, s, "/api/chain/tx/"+srvHex(srvTxPlace)), map[string]any{
 			"hash": srvHex(srvTxPlace),
 			"link": srvLinkBase + "/tx/" + srvHex(srvTxPlace),
