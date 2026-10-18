@@ -11386,7 +11386,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.12]
 title = "Shape the perps module"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["3.1.2", "3.1.19", "3.2.9"]
