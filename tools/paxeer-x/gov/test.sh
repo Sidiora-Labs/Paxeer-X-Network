@@ -19,10 +19,16 @@ sid_docs_name_v6120() {
   local file
   for file in tools/paxeer-x/sid-snapshot/README.md RELEASE.md; do
     grep -Fq 'v6.12.0 migration' "$ROOT/$file" || fail "sid_docs_name_v6120: $file"
+    grep -Fq 'SID holder migration and SID mint-authority move' "$ROOT/$file" \
+      || fail "sid_docs_name_v6120: SID hooks missing in $file"
+    grep -Fq 'node/upgrades_v6120.go' "$ROOT/$file" \
+      || fail "sid_docs_name_v6120: handler missing in $file"
     if grep -Eq 'v6[.]11\b' "$ROOT/$file"; then
       fail "sid_docs_name_v6120: retired name in $file"
     fi
   done
+  grep -Fq 'modules/layerxcustody/types/governance_activation.go' "$ROOT/RELEASE.md" \
+    || fail "sid_docs_name_v6120: custody activation source missing"
   echo "sid_docs_name_v6120: ok"
 }
 

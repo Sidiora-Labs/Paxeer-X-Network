@@ -4,6 +4,9 @@ Builds the SID holder list for the v6.12.0 migration: a JSON array of
 `{"address": "0x…", "balance": "<base units>"}` entries, sorted by address,
 in the shape of `node/testdata/sid-holders.json`.
 
+The SID holder migration and SID mint-authority move run as hooks of the
+v6.12.0 handler in `node/upgrades_v6120.go` and ship together in that release.
+
 ```
 python3 snapshot.py \
   --source "$EXPLORER_DSN" \
