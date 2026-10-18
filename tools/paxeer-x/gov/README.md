@@ -7,7 +7,7 @@ tools/paxeer-x/gov/render.sh --out DIR --paxd build/paxd \
   --height H --release-url URL --release-sha256 HEX --deposit COINS --pax-usd PRICE \
   --pax-asset-id HEX64 --sid-asset-id HEX64 \
   --market-pax-sid HEX64 --market-btc-usd HEX64 --market-eth-usd HEX64 \
-  --custody-network-id N --deposit-authority HEX64 \
+  --custody-network-id N --kernel-network-id N --deposit-authority HEX64 \
   --sequencer-id HEX64 --sequencer-pubkey HEX64 \
   [--perp-margin pax|sid] [--rate-update-height H] [--sid-pointer 0xADDR] \
   [--first-batch N] [--last-batch N] [--bridge-config FILE]... [--bridge-manifest FILE] \
@@ -18,7 +18,7 @@ tools/paxeer-x/gov/render.sh --out DIR --paxd build/paxd \
 | --- | --- | --- |
 | `01-software-upgrade.json` | Plan `v6.12.0` at `--height`, info naming the v6.12.0 release asset with its SHA-256 | `tx gov submit-proposal software-upgrade` |
 | `02-fee-token-params.json` | evm `fee_token_enabled` true, `allowed_fee_denoms` usid at rate 3114000 (usid per whole PAX), `max_fee_token_rate_age` 3400000 blocks | `tx gov submit-proposal param-change` |
-| `03-xweb-fee.json` | LayerXProposal with `xweb.MsgSetParams`, fee = 0.001 USD in uhpx at `--pax-usd` | `tx gov submit-proposal layerx-proposal` |
+| `03-xweb-fee.json` | LayerXProposal with `xweb.MsgSetParams`, fee = 0.001 USD in uhpx at `--pax-usd`, `kernel_network_id` = `--kernel-network-id`, `program_fee_denoms` uhpx, usid, uusdc, uusdl | `tx gov submit-proposal layerx-proposal` |
 | `04-exchange-markets.json` | LayerXProposal with `layerxexchange.MsgSetMarket` for PAX/SID spot (SID margin), BTC-USD and ETH-USD perps (`--perp-margin`, default PAX) | `tx gov submit-proposal layerx-proposal` |
 | `05-custody.json` | CustodyProposal: `MsgSetAsset` for uhpx and usid, `MsgUpdateParams` with the deposit root authority | `tx layerxcustody submit-proposal custody` |
 | `06-anchor-sequencer-authorization.json` | Calldata for `setSequencerAuthorization` on the anchor precompile `0x…1014`, sent by the anchor authority | shape check |

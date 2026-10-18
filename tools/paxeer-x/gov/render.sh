@@ -10,7 +10,7 @@ usage: render.sh --out DIR --height H --release-url URL --release-sha256 HEX
                  --deposit COINS --pax-usd PRICE
                  --pax-asset-id HEX64 --sid-asset-id HEX64
                  --market-pax-sid HEX64 --market-btc-usd HEX64 --market-eth-usd HEX64
-                 --custody-network-id N --deposit-authority HEX64
+                 --custody-network-id N --kernel-network-id N --deposit-authority HEX64
                  --sequencer-id HEX64 --sequencer-pubkey HEX64
                  [--perp-margin pax|sid] [--rate-update-height H]
                  [--sid-pointer 0xADDR] [--first-batch N] [--last-batch N]
@@ -34,7 +34,7 @@ BRIDGE_MANIFEST="$ROOT/bridge/deploy/attestors.json"
 BRIDGE_CONFIGS=()
 OUT="" HEIGHT="" RELEASE_URL="" RELEASE_SHA256="" DEPOSIT="" PAX_USD="" RATE_UPDATE_HEIGHT=""
 PAX_ASSET_ID="" SID_ASSET_ID="" MARKET_PAX_SID="" MARKET_BTC_USD="" MARKET_ETH_USD=""
-CUSTODY_NETWORK_ID="" DEPOSIT_AUTHORITY="" SEQUENCER_ID="" SEQUENCER_PUBKEY=""
+CUSTODY_NETWORK_ID="" KERNEL_NETWORK_ID="" DEPOSIT_AUTHORITY="" SEQUENCER_ID="" SEQUENCER_PUBKEY=""
 
 while [ $# -gt 0 ]; do
   [ $# -ge 2 ] || usage
@@ -54,6 +54,7 @@ while [ $# -gt 0 ]; do
     --market-eth-usd) MARKET_ETH_USD=$2 ;;
     --perp-margin) PERP_MARGIN=$2 ;;
     --custody-network-id) CUSTODY_NETWORK_ID=$2 ;;
+    --kernel-network-id) KERNEL_NETWORK_ID=$2 ;;
     --deposit-authority) DEPOSIT_AUTHORITY=$2 ;;
     --sequencer-id) SEQUENCER_ID=$2 ;;
     --sequencer-pubkey) SEQUENCER_PUBKEY=$2 ;;
@@ -71,13 +72,15 @@ done
 
 die() { echo "render.sh: $*" >&2; exit 1; }
 for name in OUT HEIGHT RELEASE_URL RELEASE_SHA256 DEPOSIT PAX_USD PAX_ASSET_ID SID_ASSET_ID \
-  MARKET_PAX_SID MARKET_BTC_USD MARKET_ETH_USD CUSTODY_NETWORK_ID DEPOSIT_AUTHORITY SEQUENCER_ID SEQUENCER_PUBKEY; do
+  MARKET_PAX_SID MARKET_BTC_USD MARKET_ETH_USD CUSTODY_NETWORK_ID KERNEL_NETWORK_ID DEPOSIT_AUTHORITY SEQUENCER_ID SEQUENCER_PUBKEY; do
   [ -n "${!name}" ] || die "--$(echo "$name" | tr 'A-Z_' 'a-z-') is required"
 done
 RATE_UPDATE_HEIGHT=${RATE_UPDATE_HEIGHT:-$HEIGHT}
 [[ $HEIGHT =~ ^[1-9][0-9]*$ ]] || die "--height $HEIGHT is not a positive integer"
 [[ $RATE_UPDATE_HEIGHT =~ ^[1-9][0-9]*$ ]] || die "--rate-update-height $RATE_UPDATE_HEIGHT is not a positive integer"
 [[ $CUSTODY_NETWORK_ID =~ ^[1-9][0-9]*$ ]] || die "--custody-network-id $CUSTODY_NETWORK_ID is not a positive integer"
+[[ $KERNEL_NETWORK_ID =~ ^[1-9][0-9]*$ && ${#KERNEL_NETWORK_ID} -le 10 && $KERNEL_NETWORK_ID -le 4294967295 ]] \
+  || die "--kernel-network-id $KERNEL_NETWORK_ID is not a positive uint32"
 [[ $FIRST_BATCH =~ ^[0-9]+$ && $LAST_BATCH =~ ^[0-9]+$ ]] || die "batch numbers must be unsigned integers"
 [[ $RELEASE_SHA256 =~ ^[0-9a-f]{64}$ ]] || die "--release-sha256 is not 64 lowercase hex characters"
 for name in SEQUENCER_ID SEQUENCER_PUBKEY; do
@@ -134,6 +137,8 @@ VARS=$(jq -n \
   --arg MAX_FEE_TOKEN_RATE_AGE "3400000" --arg GOV_AUTHORITY "$GOV_AUTHORITY" \
   --arg XWEB_FEE "$XWEB_FEE" --argjson XWEB_MAX_PAYLOAD_BYTES 8192 \
   --arg XWEB_MAX_CALLBACK_GAS "500000" --arg XWEB_TIMEOUT_BLOCKS "3600" \
+  --argjson XWEB_KERNEL_NETWORK_ID "$KERNEL_NETWORK_ID" \
+  --argjson XWEB_PROGRAM_FEE_DENOMS '["uhpx","usid","uusdc","uusdl"]' \
   --arg MARKET_PAX_SID "$MARKET_PAX_SID" --arg MARKET_BTC_USD "$MARKET_BTC_USD" \
   --arg MARKET_ETH_USD "$MARKET_ETH_USD" --arg PERP_MARGIN_ASSET_ID "$PERP_MARGIN_ASSET_ID" \
   --arg PAX_ASSET_ID "$PAX_ASSET_ID" --arg SID_ASSET_ID "$SID_ASSET_ID" --arg SID_POINTER "$SID_POINTER" \

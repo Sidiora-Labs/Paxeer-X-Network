@@ -62,6 +62,7 @@ OUT=$WORK/out
   --market-btc-usd 4444444444444444444444444444444444444444444444444444444444444444 \
   --market-eth-usd 5555555555555555555555555555555555555555555555555555555555555555 \
   --custody-network-id 125 \
+  --kernel-network-id 125 \
   --deposit-authority d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a \
   --sequencer-id 6666666666666666666666666666666666666666666666666666666666666666 \
   --sequencer-pubkey 3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c \
@@ -86,6 +87,8 @@ jq -e '.changes == [
   {subspace: "evm", key: "KeyAllowedFeeDenoms", value: [{denom: "usid", rate: "3114000", rate_update_height: "27000000"}]},
   {subspace: "evm", key: "KeyMaxFeeTokenRateAge", value: "3400000"}]' "$OUT/02-fee-token-params.json" >/dev/null || fail "fee-token params"
 jq -e '.messages[0].fee == "50000"' "$OUT/03-xweb-fee.json" >/dev/null || fail "xweb fee is not 0.001 USD at 0.02 USD/PAX"
+jq -e '.messages[0].kernel_network_id == 125 and .messages[0].program_fee_denoms == ["uhpx","usid","uusdc","uusdl"]' \
+  "$OUT/03-xweb-fee.json" >/dev/null || fail "xweb program settings"
 jq -e '[.messages[] | select(.["@type"] == "/paxprotocol.paxchain.layerxexchange.MsgSetMarket")] | length == 3' \
   "$OUT/04-exchange-markets.json" >/dev/null || fail "exchange markets"
 jq -e '.messages[2].params.deposit_root_authority == "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
