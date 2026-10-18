@@ -27251,7 +27251,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.2.2]
 title = "Topic hub with snapshot, dense sequence and resume from JetStream"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["7.0.1", "7.2.1"]
