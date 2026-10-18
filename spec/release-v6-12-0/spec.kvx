@@ -16353,7 +16353,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1.9]
 title = "Store stop-limit and stop-loss orders with activation and fills"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["4.1.8"]
