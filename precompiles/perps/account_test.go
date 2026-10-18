@@ -164,7 +164,8 @@ func newAcctEnv(t *testing.T) *acctEnv {
 	blockCtx, err := testApp.EvmKeeper.GetVMBlockContext(ctx, core.GasPool(math.MaxUint64))
 	require.NoError(t, err)
 	cfg := evmtypes.DefaultChainConfig().EthereumConfig(testApp.EvmKeeper.ChainID(ctx))
-	contracts := maps.Clone(testApp.EvmKeeper.CustomPrecompiles(ctx))
+	contracts := map[common.Address]vm.PrecompiledContract{}
+	maps.Copy(contracts, testApp.EvmKeeper.CustomPrecompiles(ctx))
 	contracts[acctPrecompile] = precompile
 	e.evm = vm.NewEVM(*blockCtx, e.stateDB, cfg, vm.Config{}, contracts)
 	require.Equal(t, acctUsdlSupply, e.balanceOf(e.a))
