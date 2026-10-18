@@ -27790,7 +27790,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.2.16]
 title = "Spot user socket on /v1/ws"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["7.2.2"]
