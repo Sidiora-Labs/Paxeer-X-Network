@@ -16736,7 +16736,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.8]
 title = "Pack every spot error as ABI custom error data"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["4.2.1"]
