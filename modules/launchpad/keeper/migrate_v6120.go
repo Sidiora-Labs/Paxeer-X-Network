@@ -80,6 +80,12 @@ func runV6120(ctx sdk.Context, k *Keeper, evm EVMReader) error {
 	if err != nil {
 		return err
 	}
+	if err := clearLegacyProtocolFees(ctx, k); err != nil {
+		return err
+	}
+	if err := readParams(ctx, k, evm); err != nil {
+		return err
+	}
 	s := contractStorage{ctx: ctx, evm: evm}
 	factoryTreasury, err := s.field(fx.layout, types.RoleFactory, "treasury", k.generation2.SidioraFactory)
 	if err != nil {
@@ -143,9 +149,6 @@ func runV6120(ctx sdk.Context, k *Keeper, evm EVMReader) error {
 		return err
 	}
 	if err := readRoles(ctx, k, evm, fx, candidates); err != nil {
-		return err
-	}
-	if err := readParams(ctx, k, evm); err != nil {
 		return err
 	}
 	if err := retireAddresses(ctx, k, evm); err != nil {
@@ -355,6 +358,25 @@ func readParams(ctx sdk.Context, k *Keeper, evm EVMReader) error {
 			sdk.NewAttribute(AttributeKeyGeneration1, diff.Generation1),
 			sdk.NewAttribute(AttributeKeyGeneration2, diff.Generation2)))
 	}
+	return nil
+}
+
+// clearLegacyProtocolFees deletes the previous binary's native protocol fee
+// total, held at the bare ProtocolFeesPrefix key, and refuses a nonzero one:
+// the keeper has no store to carry it.
+func clearLegacyProtocolFees(ctx sdk.Context, k *Keeper) error {
+	bz := k.store(ctx).Get(types.ProtocolFeesPrefix)
+	if bz == nil {
+		return nil
+	}
+	var pending sdk.Int
+	if err := pending.Unmarshal(bz); err != nil {
+		return fmt.Errorf("%w: legacy protocol fees pending: %v", ErrMigrationStorage, err)
+	}
+	if !pending.IsZero() {
+		return fmt.Errorf("%w: legacy protocol fees pending %s", ErrNoKeeperStore, pending)
+	}
+	k.store(ctx).Delete(types.ProtocolFeesPrefix)
 	return nil
 }
 

@@ -15,6 +15,8 @@ import (
 	evmgenesis "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/launchpadtest"
+	keeperv610 "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/legacy/v610/keeper"
+	typesv610 "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/legacy/v610/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
@@ -288,6 +290,14 @@ func seedV6120(t *testing.T) *v6120Run {
 	r.k = keeper.NewKeeper(r.key, app.BankKeeper, tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper),
 		&app.EvmKeeper)
 	r.k.InitGenesis(r.ctx, *types.DefaultGenesis())
+	legacy := keeperv610.NewKeeper(r.key, app.BankKeeper, tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper),
+		&app.EvmKeeper)
+	params := typesv610.DefaultParams()
+	params.QuoteDenom = "uhpx"
+	require.NoError(t, legacy.UpdateParams(r.ctx, legacy.Authority(), params))
+	pending, err := sdk.ZeroInt().Marshal()
+	require.NoError(t, err)
+	r.ctx.KVStore(r.key).Set(types.ProtocolFeesPrefix, pending)
 	return r
 }
 
@@ -884,6 +894,22 @@ func TestMigrationIsAtomic(t *testing.T) {
 		require.Equal(t, r.golden.contract(t, pool).CodeHash, evm.GetCodeHash(r.ctx, pool), pool.Hex())
 	}
 	require.Empty(t, eventsOf(r.ctx, keeper.EventTypeMigrationProtocolConfigDiff))
+}
+
+func TestMigrationIsAtomicOnLegacyProtocolFees(t *testing.T) {
+	r := migratedV6120(t)
+	require.False(t, r.ctx.KVStore(r.key).Has(types.ProtocolFeesPrefix))
+	require.NotPanics(t, func() { r.k.ExportGenesis(r.ctx) })
+
+	r = seedV6120(t)
+	pending, err := sdk.NewInt(1).Marshal()
+	require.NoError(t, err)
+	r.ctx.KVStore(r.key).Set(types.ProtocolFeesPrefix, pending)
+	before := storeEntries(r.ctx, r.key)
+	err = r.migrate()
+	require.ErrorIs(t, err, keeper.ErrNoKeeperStore)
+	require.Equal(t, before, storeEntries(r.ctx, r.key))
+	require.Zero(t, r.k.GetMarketCount(r.ctx))
 }
 
 func TestQuoteTokenIsUsdl(t *testing.T) {
