@@ -1,0 +1,35 @@
+# Treat all files as text with LF line endings by default
+* text=auto eol=lf
+
+# Go files
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+
+# Solidity and JS/TS files in the contracts workspace
+*.sol text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Markdown and documentation
+*.md text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+
+# Makefile
+Makefile text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.wasm binary
+*.tar.gz binary
+*.zip binary

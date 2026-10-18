@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "chain_id": 125,
+  "binding": {
+    "baseline": "2cc5ee47b17330b724530b8a9a360952a2c1670e9c197709b7bb10c77d17d279",
+    "candidate": "2cc5ee47b17330b724530b8a9a360952a2c1670e9c197709b7bb10c77d17d279",
+    "interface": "2c395c9d054965c4fb57d1fdc7432122fbd820d3f0973e9f8120589b441a6925",
+    "layout": "779fafc13c7ec6cd7e809b11693087c934ff0f349def5f50745f0abfbf9072d1"
+  },
+  "allowed_levels": [
+    "synthetic_mathematical",
+    "actual_local_adapter",
+    "actual_integrated_service",
+    "actual_chain_receipt",
+    "actual_capacity",
+    "actual_disaster_recovery"
+  ],
+  "phase1_maximum": [
+    "synthetic_mathematical",
+    "actual_local_adapter"
+  ],
+  "forbidden_substitutions": {
+    "actual_chain_receipt": [
+      "synthetic_mathematical",
+      "timer",
+      "indexer_notification"
+    ],
+    "actual_integrated_service": [
+      "synthetic_mathematical",
+      "actual_local_adapter"
+    ],
+    "actual_capacity": [
+      "synthetic_mathematical",
+      "actual_local_adapter"
+    ],
+    "actual_disaster_recovery": [
+      "synthetic_mathematical",
+      "actual_local_adapter"
+    ]
+  },
+  "production_qualified": false
+}

@@ -1,0 +1,21 @@
+{
+  "owner": "native-client-lane",
+  "phase1": "navigation and typed adapter contracts; bootstrap unavailable screen",
+  "phase2ScreenBindings": {
+    "discovery": "ranking and generated SDK snapshot",
+    "token": "metadata/candles/trades DTOs and current deployment",
+    "portfolio": "wallet-address-authorized portfolio and authentic receipts",
+    "watchlists": "account-owned users API",
+    "profile": "authorized identity/profile update API",
+    "notifications": "notification-owned inbox and push association API",
+    "chat": "D12 authorized conversation DTOs",
+    "live": "D13 livestream browse and direct managed CDN playback"
+  },
+  "releaseBlockers": [
+    "D09 external native wallet adapter",
+    "real platform secure storage and purge",
+    "APNs/FCM platform adapters",
+    "signed candidates and physical journeys",
+    "manual AT/browser responsive corpus execution"
+  ]
+}

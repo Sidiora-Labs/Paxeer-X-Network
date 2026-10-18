@@ -1,0 +1,471 @@
+package decode
+
+import (
+	"encoding/json"
+	"fmt"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"math/big"
+	"os"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+func frozen(t *testing.T) ([]byte, Catalog) {
+	t.Helper()
+	b, err := os.ReadFile("../../../../spec/production-system/integration/contracts/v1/chain/abi-catalog.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c Catalog
+	if err = json.Unmarshal(b, &c); err != nil {
+		t.Fatal(err)
+	}
+	return b, c
+}
+func deployment(t *testing.T, role string, address common.Address) (Deployment, abi.ABI) {
+	t.Helper()
+	_, c := frozen(t)
+	for _, contract := range c.Contracts {
+		if contract.Name == role {
+			a, err := abi.JSON(strings.NewReader(string(contract.ABI)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return Deployment{Address: address, Role: role, ABIRevision: contract.ABIRevision}, a
+		}
+	}
+	t.Fatal(role)
+	return Deployment{}, abi.ABI{}
+}
+func registry(t *testing.T, ds ...Deployment) *Registry {
+	t.Helper()
+	b, _ := frozen(t)
+	r, err := NewRegistry(b, ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+func sample(typ abi.Type) any {
+	switch typ.T {
+	case abi.AddressTy:
+		return common.HexToAddress("0x1234567890123456789012345678901234567890")
+	case abi.UintTy, abi.IntTy:
+		switch typ.Size {
+		case 8:
+			if typ.T == abi.IntTy {
+				return int8(7)
+			}
+			return uint8(7)
+		case 16:
+			if typ.T == abi.IntTy {
+				return int16(7)
+			}
+			return uint16(7)
+		case 32:
+			if typ.T == abi.IntTy {
+				return int32(7)
+			}
+			return uint32(7)
+		case 64:
+			if typ.T == abi.IntTy {
+				return int64(7)
+			}
+			return uint64(7)
+		default:
+			return big.NewInt(7)
+		}
+	case abi.BoolTy:
+		return true
+	case abi.StringTy:
+		return "synthetic-ABI-layout"
+	case abi.BytesTy:
+		return []byte{1, 2, 3}
+	case abi.FixedBytesTy:
+		v := reflect.New(typ.GetType()).Elem()
+		v.Index(0).SetUint(17)
+		return v.Interface()
+	case abi.TupleTy:
+		v := reflect.New(typ.GetType()).Elem()
+		for i, field := range typ.TupleElems {
+			v.Field(i).Set(reflect.ValueOf(sample(*field)))
+		}
+		return v.Interface()
+	case abi.ArrayTy:
+		v := reflect.New(typ.GetType()).Elem()
+		for i := 0; i < v.Len(); i++ {
+			v.Index(i).Set(reflect.ValueOf(sample(*typ.Elem)))
+		}
+		return v.Interface()
+	case abi.SliceTy:
+		return reflect.MakeSlice(typ.GetType(), 0, 0).Interface()
+	default:
+		panic(fmt.Sprint(typ))
+	}
+}
+
+// Synthetic ABI-layout scenarios exercise every actual frozen IEventEmitter
+// family. These are arithmetic/layout tests, not receipt evidence.
+func syntheticLog(t *testing.T, ev abi.Event, address common.Address) (ethtypes.Log, map[string]any) {
+	t.Helper()
+	l := ethtypes.Log{Address: address, Topics: []common.Hash{ev.ID}, BlockNumber: 70, TxIndex: 2, Index: 3, BlockHash: common.HexToHash("0x777"), TxHash: common.HexToHash("0x888")}
+	var values []any
+	want := map[string]any{}
+	for _, in := range ev.Inputs {
+		v := sample(in.Type)
+		want[in.Name] = humanizeExact(v, in.Type)
+		if in.Indexed {
+			b, err := (abi.Arguments{{Type: in.Type}}).Pack(v)
+			if err != nil {
+				t.Fatal(err)
+			}
+			l.Topics = append(l.Topics, common.BytesToHash(b))
+		} else {
+			values = append(values, v)
+		}
+	}
+	var err error
+	l.Data, err = ev.Inputs.NonIndexed().Pack(values...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return l, want
+}
+func TestFrozenEmitterFamilyLayouts(t *testing.T) {
+	d, a := deployment(t, "EventEmitter", common.HexToAddress("0x1"))
+	for _, ev := range a.Events {
+		if optionalEvent(ev.Name) {
+			d.EnabledOptionalEvents = append(d.EnabledOptionalEvents, ev.Name)
+		}
+	}
+	r := registry(t, d)
+	for _, ev := range a.Events {
+		t.Run(ev.Name, func(t *testing.T) {
+			l, want := syntheticLog(t, ev, d.Address)
+			e, err := r.Decode(l)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if e.Event == nil || !reflect.DeepEqual(e.Event.Args, want) {
+				t.Fatalf("args: %#v want %#v", e, want)
+			}
+			if e.Opaque != strings.HasPrefix(ev.Name, "EventLog") {
+				t.Fatal("generic opaque classification")
+			}
+			if e.Family.EconomicFill != (ev.Name == "Swap") {
+				t.Fatal("economic authority")
+			}
+			if !reflect.DeepEqual(e.Raw, rawLog(l)) {
+				t.Fatal("raw identity lost")
+			}
+		})
+	}
+}
+func TestProvenanceEpochAndRawPreservation(t *testing.T) {
+	d, a := deployment(t, "EventEmitter", common.HexToAddress("0x1"))
+	l, _ := syntheticLog(t, a.Events["Swap"], d.Address)
+	r := registry(t, d)
+	bad := l
+	bad.Address = common.HexToAddress("0x2")
+	e, err := r.Decode(bad)
+	if err == nil || e.Event != nil || e.FailureReason != "untrusted_emitter" || !reflect.DeepEqual(e.Raw, rawLog(bad)) {
+		t.Fatal("unauthorized swap", e, err)
+	}
+	l.Topics = []common.Hash{common.HexToHash("0xdead")}
+	e, err = r.Decode(l)
+	if err != nil || e.Event != nil || e.FailureReason != "unknown_signature" || !e.Opaque {
+		t.Fatal(e, err)
+	}
+	boundary := Order{70, 2, 3}
+	old := d
+	old.Until = &boundary
+	next, _ := deployment(t, "SidioraNFT", d.Address)
+	next.From = boundary
+	r = registry(t, old, next)
+	swap, _ := syntheticLog(t, a.Events["Swap"], d.Address)
+	swap.Index = 2
+	e, err = r.Decode(swap)
+	if err != nil || e.EmitterRole != "EventEmitter" {
+		t.Fatal(e, err)
+	}
+	swap.Index = 3
+	e, err = r.Decode(swap)
+	if err == nil || e.EmitterRole != "SidioraNFT" || e.Event != nil {
+		t.Fatal("same block activation", e, err)
+	}
+	if _, err = NewRegistry(mustFrozen(t), []Deployment{d, d}); err == nil {
+		t.Fatal("overlap accepted")
+	}
+}
+func mustFrozen(t *testing.T) []byte { b, _ := frozen(t); return b }
+func TestExactScalarsAndBoundedBool(t *testing.T) {
+	a, err := abi.JSON(strings.NewReader(`[{"type":"event","name":"Scalars","inputs":[{"name":"u","type":"uint256"},{"name":"i","type":"int256"},{"name":"b","type":"bool"}]}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := a.Events["Scalars"]
+	u := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+	i := new(big.Int).Neg(new(big.Int).Lsh(big.NewInt(1), 255))
+	loose := append(abi.Arguments(nil), ev.Inputs...)
+	loose[2].Type = abiUint256
+	for _, word := range []int64{0, 1, 2} {
+		data, err := loose.Pack(u, i, big.NewInt(word))
+		if err != nil {
+			t.Fatal(err)
+		}
+		args, _, err := exactArgs(ev, []common.Hash{ev.ID}, data, []string{"b"})
+		if err != nil || args["u"] != u.String() || args["i"] != i.String() || args["b"] != (word != 0) {
+			t.Fatal(args, err)
+		}
+		_, _, err = exactArgs(ev, []common.Hash{ev.ID}, data, nil)
+		if (word == 2) != (err != nil) {
+			t.Fatal("strict bool", word, err)
+		}
+	}
+}
+func TestMalformedBoundsAndOptional(t *testing.T) {
+	d, a := deployment(t, "EventEmitter", common.HexToAddress("0x1"))
+	r := registry(t, d)
+	l, _ := syntheticLog(t, a.Events["Swap"], d.Address)
+	l.Topics = l.Topics[:1]
+	e, err := r.Decode(l)
+	if err == nil || e.FailureReason != "arity" {
+		t.Fatal(e, err)
+	}
+	ev := a.Events["OpticalExecuted"]
+	l, _ = syntheticLog(t, ev, d.Address)
+	l.Data = l.Data[:len(l.Data)-1]
+	e, err = r.Decode(l)
+	if err == nil || e.Event != nil {
+		t.Fatal("truncated", e, err)
+	}
+	l, _ = syntheticLog(t, ev, d.Address)
+	l.Data[0] = 255
+	e, err = r.Decode(l)
+	if err == nil {
+		t.Fatal("offset", e)
+	}
+	values := []any{strings.Repeat("x", MaxFieldBytes+1), []byte{1}, big.NewInt(1), big.NewInt(1)}
+	l, _ = syntheticLog(t, ev, d.Address)
+	l.Data, err = ev.Inputs.NonIndexed().Pack(values...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err = r.Decode(l)
+	if err == nil || e.FailureReason != "bounds" {
+		t.Fatal(e, err)
+	}
+	l.Data = make([]byte, MaxEnvelopeBytes+1)
+	e, err = r.Decode(l)
+	if err == nil || e.FailureReason != "bounds" {
+		t.Fatal(e, err)
+	}
+	l, _ = syntheticLog(t, a.Events["PecorSwap"], d.Address)
+	e, err = r.Decode(l)
+	if err != nil || e.Event != nil || e.FailureReason != "unsupported_capability" {
+		t.Fatal(e, err)
+	}
+}
+func TestSharedTransferTopicUsesEmitterLayout(t *testing.T) {
+	erc20, a := deployment(t, "SidioraERC20", common.HexToAddress("0x20"))
+	erc721, b := deployment(t, "SidioraNFT", common.HexToAddress("0x721"))
+	r := registry(t, erc20, erc721)
+	if a.Events["Transfer"].ID != b.Events["Transfer"].ID {
+		t.Fatal("fixture")
+	}
+	for _, v := range []struct {
+		d Deployment
+		a abi.ABI
+	}{{erc20, a}, {erc721, b}} {
+		l, want := syntheticLog(t, v.a.Events["Transfer"], v.d.Address)
+		e, err := r.Decode(l)
+		if err != nil || !reflect.DeepEqual(e.Event.Args, want) {
+			t.Fatal(e, err)
+		}
+	}
+}
+func TestRawDedupRejectsConflict(t *testing.T) {
+	d, a := deployment(t, "EventEmitter", common.HexToAddress("0x1"))
+	l, _ := syntheticLog(t, a.Events["Swap"], d.Address)
+	out, err := DeduplicateRaw([]ethtypes.Log{l, l})
+	if err != nil || len(out) != 1 {
+		t.Fatal(out, err)
+	}
+	bad := l
+	bad.Data = append([]byte(nil), l.Data...)
+	bad.Data[0] = 255
+	if _, err = DeduplicateRaw([]ethtypes.Log{l, bad}); err == nil {
+		t.Fatal("conflict")
+	}
+}
+
+func TestCatalogIntegrityAndPolicyIsolation(t *testing.T) {
+	d, a := deployment(t, "EventEmitter", common.HexToAddress("0x1"))
+	ev := a.Events["Swap"]
+	d.PaxeerNonzeroBools = map[string][]string{ev.Sig: {"isBuy"}}
+	r := registry(t, d)
+	d.PaxeerNonzeroBools[ev.Sig][0] = "amountIn"
+	l, _ := syntheticLog(t, ev, d.Address)
+	l.Data[31] = 2
+	e, err := r.Decode(l)
+	if err != nil || e.Event.Args["isBuy"] != true {
+		t.Fatal("policy mutated", e, err)
+	}
+	bad := d
+	bad.PaxeerNonzeroBools = map[string][]string{ev.Sig: {"amountIn"}}
+	if _, err = NewRegistry(mustFrozen(t), []Deployment{bad}); err == nil {
+		t.Fatal("invalid bool policy")
+	}
+	b, c := frozen(t)
+	_ = b
+	c.Contracts[0].ABIRevision = strings.Repeat("0", 64)
+	b, err = json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = NewRegistry(b, nil); err == nil {
+		t.Fatal("ABI digest tampering")
+	}
+}
+func TestEnumCompatibilityAlertRetainsRawCode(t *testing.T) {
+	d, a := deployment(t, "EventEmitter", common.HexToAddress("0x1"))
+	ev := a.Events["OpticalLifecycle"]
+	d.EnumMax = map[string]map[string]uint64{ev.Sig: {"action": 3}}
+	r := registry(t, d)
+	l, _ := syntheticLog(t, ev, d.Address)
+	e, err := r.Decode(l)
+	if err != nil || e.Event.Args["action"] != "7" || !reflect.DeepEqual(e.Alerts, []string{"unknown_action:action"}) {
+		t.Fatal(e, err)
+	}
+	if e.Operational == nil || e.Operational.Action != "7" {
+		t.Fatal("operational action lost")
+	}
+}
+
+func TestOptionalRoleRequiresExplicitPolicy(t *testing.T) {
+	d, _ := deployment(t, "PECOR", common.HexToAddress("0x555"))
+	if _, err := NewRegistry(mustFrozen(t), []Deployment{d}); err == nil {
+		t.Fatal("optional role implicitly enabled")
+	}
+	d.Optional = true
+	r := registry(t, d)
+	for _, row := range r.Coverage() {
+		if row.Role == "PECOR" && row.State != "unsupported" {
+			t.Fatal(row)
+		}
+	}
+}
+
+func TestCommittedIdentityAdmission(t *testing.T) {
+	d, a := deployment(t, "EventEmitter", common.HexToAddress("0x1"))
+	r := registry(t, d)
+	good, _ := syntheticLog(t, a.Events["Swap"], d.Address)
+	for _, kind := range []string{"block_hash", "transaction_hash", "emitter"} {
+		t.Run(kind, func(t *testing.T) {
+			l := good
+			switch kind {
+			case "block_hash":
+				l.BlockHash = common.Hash{}
+			case "transaction_hash":
+				l.TxHash = common.Hash{}
+			case "emitter":
+				l.Address = common.Address{}
+			}
+			e, err := r.Decode(l)
+			if err == nil || e.FailureReason != "invalid_identity" || e.Event != nil || e.Family != nil || !reflect.DeepEqual(e.Raw, rawLog(l)) {
+				t.Fatal(e, err)
+			}
+			if _, err = DeduplicateRaw([]ethtypes.Log{l}); err == nil {
+				t.Fatal("dedup accepted invalid identity")
+			}
+		})
+	}
+	// Zero height is allowed independently of required nonzero committed hashes.
+	good.BlockNumber = 0
+	e, err := r.Decode(good)
+	if err != nil || e.Event == nil || !e.Family.EconomicFill {
+		t.Fatal("zero height rejected", e, err)
+	}
+}
+func TestOversizeAdmissionHasBoundedEvidence(t *testing.T) {
+	d, a := deployment(t, "EventEmitter", common.HexToAddress("0x1"))
+	r := registry(t, d)
+	l, _ := syntheticLog(t, a.Events["Swap"], d.Address)
+	l.Data = make([]byte, MaxEnvelopeBytes+1)
+	e, err := r.Decode(l)
+	if err == nil || e.FailureReason != "bounds" || e.Raw.Data != "" || len(e.Raw.Topics) != 0 || e.RawSummary == nil || e.RawSummary.DataBytes != len(l.Data) || len(e.RawSummary.DataSHA256) != 64 || e.Event != nil {
+		t.Fatal(e, err)
+	}
+	encoded, err := json.Marshal(e)
+	if err != nil || len(encoded) > 2048 {
+		t.Fatal("rejection expands oversized payload", len(encoded), err)
+	}
+	l.Data = nil
+	l.Topics = make([]common.Hash, 5)
+	e, err = r.Decode(l)
+	if err == nil || e.RawSummary.TopicCount != 5 || len(e.Raw.Topics) != 0 {
+		t.Fatal(e, err)
+	}
+}
+func TestRawBatchAdmissionCaps(t *testing.T) {
+	d, a := deployment(t, "EventEmitter", common.HexToAddress("0x1"))
+	l, _ := syntheticLog(t, a.Events["Swap"], d.Address)
+	if _, err := DeduplicateRaw(make([]ethtypes.Log, MaxRawBatchLogs+1)); err == nil {
+		t.Fatal("count cap")
+	}
+	huge := l
+	huge.Data = make([]byte, MaxEnvelopeBytes+1)
+	if _, err := DeduplicateRaw([]ethtypes.Log{huge}); err == nil {
+		t.Fatal("per-log cap")
+	}
+	sized := l
+	sized.Topics = nil
+	sized.Data = make([]byte, MaxEnvelopeBytes)
+	batch := make([]ethtypes.Log, MaxRawBatchBytes/MaxEnvelopeBytes+1)
+	for i := range batch {
+		batch[i] = sized
+	}
+	if _, err := DeduplicateRaw(batch); err == nil {
+		t.Fatal("duplicate aggregate cap")
+	}
+}
+func TestInvalidUTF8PreservesRawWithoutTypedPayload(t *testing.T) {
+	d, a := deployment(t, "EventEmitter", common.HexToAddress("0x1"))
+	r := registry(t, d)
+	ev := a.Events["OpticalExecuted"]
+	l, _ := syntheticLog(t, ev, d.Address)
+	var err error
+	l.Data, err = ev.Inputs.NonIndexed().Pack(string([]byte{0xff, 0xfe}), []byte{1}, big.NewInt(1), big.NewInt(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := r.Decode(l)
+	if err == nil || e.Event != nil || e.Family != nil || !reflect.DeepEqual(e.Raw, rawLog(l)) {
+		t.Fatal(e, err)
+	}
+	for _, v := range []any{[]string{"ok", string([]byte{0xff})}, struct{ Nested []string }{[]string{string([]byte{0xff})}}} {
+		if err := boundedValue(reflect.ValueOf(v)); err == nil {
+			t.Fatal("nested invalid UTF-8 accepted")
+		}
+	}
+}
+
+func TestUnknownActionRetainsRawAndCannotCreateEconomicFill(t *testing.T) {
+	d, a := deployment(t, "EventEmitter", common.HexToAddress("0x1"))
+	ev := a.Events["OpticalLifecycle"]
+	d.EnumMax = map[string]map[string]uint64{ev.Sig: {"action": 3}}
+	r := registry(t, d)
+	l, _ := syntheticLog(t, ev, d.Address)
+	e, err := r.Decode(l)
+	if err != nil || e.Event == nil || e.Operational == nil || e.Operational.Action != "7" || e.Family.EconomicFill || !reflect.DeepEqual(e.Raw, rawLog(l)) || !reflect.DeepEqual(e.Alerts, []string{"unknown_action:action"}) {
+		t.Fatal("unknown action dropped or promoted", e, err)
+	}
+	l.Topics[0] = common.HexToHash("0xabcdef")
+	unknown, err := r.Decode(l)
+	if err != nil || unknown.Event != nil || !unknown.Opaque || !reflect.DeepEqual(unknown.Raw, rawLog(l)) {
+		t.Fatal("unknown ABI action raw history lost", unknown, err)
+	}
+}

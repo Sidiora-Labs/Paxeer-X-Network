@@ -1,0 +1,180 @@
+{
+  "contract": "contracts/opticals/OpticalRegistry.sol:OpticalRegistry",
+  "compiler": "0.8.27+commit.40a35a09",
+  "provenance": {
+    "kind": "original audit compiler snapshot, not asserted live deployment",
+    "buildInfoSha256": "c7226196d703743a9f291414539d6dc5579640844b294d141253bce91b8ed2d7",
+    "sourceManifest": "audit/2026-10-09/source-manifest.json"
+  },
+  "storage": [
+    {
+      "astId": 277,
+      "contract": "contracts/opticals/OpticalRegistry.sol:OpticalRegistry",
+      "label": "_roles",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_mapping(t_bytes32,t_struct(RoleData)272_storage)"
+    },
+    {
+      "astId": 34245,
+      "contract": "contracts/opticals/OpticalRegistry.sol:OpticalRegistry",
+      "label": "_approved",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_mapping(t_address,t_bool)"
+    },
+    {
+      "astId": 34250,
+      "contract": "contracts/opticals/OpticalRegistry.sol:OpticalRegistry",
+      "label": "_metadata",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_mapping(t_address,t_struct(OpticalMetadata)34219_storage)"
+    },
+    {
+      "astId": 34253,
+      "contract": "contracts/opticals/OpticalRegistry.sol:OpticalRegistry",
+      "label": "_allOpticals",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_array(t_address)dyn_storage"
+    },
+    {
+      "astId": 34255,
+      "contract": "contracts/opticals/OpticalRegistry.sol:OpticalRegistry",
+      "label": "eventEmitter",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_address"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_address)dyn_storage": {
+      "base": "t_address",
+      "encoding": "dynamic_array",
+      "label": "address[]",
+      "numberOfBytes": "32"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_bytes32": {
+      "encoding": "inplace",
+      "label": "bytes32",
+      "numberOfBytes": "32"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_address,t_struct(OpticalMetadata)34219_storage)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => struct OpticalRegistry.OpticalMetadata)",
+      "numberOfBytes": "32",
+      "value": "t_struct(OpticalMetadata)34219_storage"
+    },
+    "t_mapping(t_bytes32,t_struct(RoleData)272_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct AccessControl.RoleData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(RoleData)272_storage"
+    },
+    "t_string_storage": {
+      "encoding": "bytes",
+      "label": "string",
+      "numberOfBytes": "32"
+    },
+    "t_struct(OpticalMetadata)34219_storage": {
+      "encoding": "inplace",
+      "label": "struct OpticalRegistry.OpticalMetadata",
+      "members": [
+        {
+          "astId": 34210,
+          "contract": "contracts/opticals/OpticalRegistry.sol:OpticalRegistry",
+          "label": "name",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_string_storage"
+        },
+        {
+          "astId": 34212,
+          "contract": "contracts/opticals/OpticalRegistry.sol:OpticalRegistry",
+          "label": "description",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_string_storage"
+        },
+        {
+          "astId": 34214,
+          "contract": "contracts/opticals/OpticalRegistry.sol:OpticalRegistry",
+          "label": "riskLevel",
+          "offset": 0,
+          "slot": "2",
+          "type": "t_uint8"
+        },
+        {
+          "astId": 34216,
+          "contract": "contracts/opticals/OpticalRegistry.sol:OpticalRegistry",
+          "label": "auditor",
+          "offset": 0,
+          "slot": "3",
+          "type": "t_string_storage"
+        },
+        {
+          "astId": 34218,
+          "contract": "contracts/opticals/OpticalRegistry.sol:OpticalRegistry",
+          "label": "registeredAt",
+          "offset": 0,
+          "slot": "4",
+          "type": "t_uint256"
+        }
+      ],
+      "numberOfBytes": "160"
+    },
+    "t_struct(RoleData)272_storage": {
+      "encoding": "inplace",
+      "label": "struct AccessControl.RoleData",
+      "members": [
+        {
+          "astId": 269,
+          "contract": "contracts/opticals/OpticalRegistry.sol:OpticalRegistry",
+          "label": "hasRole",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_address,t_bool)"
+        },
+        {
+          "astId": 271,
+          "contract": "contracts/opticals/OpticalRegistry.sol:OpticalRegistry",
+          "label": "adminRole",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_bytes32"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    },
+    "t_uint8": {
+      "encoding": "inplace",
+      "label": "uint8",
+      "numberOfBytes": "1"
+    }
+  }
+}

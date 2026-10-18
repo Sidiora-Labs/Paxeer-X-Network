@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "activation": "disabled-until-coordinator-review",
+  "resources": {
+    "postgres": {
+      "archive_mode": "on",
+      "archive_timeout": "60s",
+      "wal_level": "replica",
+      "base_backup_schedule": "0 2 * * *",
+      "physical_backup_required": true,
+      "archive_command_contract": "Provider adapter must atomically upload immutable WAL with digest, encryption and retry; never return success before independent durable object acknowledgement.",
+      "restore_command_contract": "Provider adapter downloads exact pinned version, validates digest and system/timeline/LSN before delivering WAL. No shell string interpolation."
+    },
+    "object_storage": {
+      "versioning": true,
+      "object_lock": "compliance",
+      "encryption": "independent-region KMS keys",
+      "replication": "cross-region with distinct credentials",
+      "retention": {
+        "daily_points": 35,
+        "monthly_points": 12,
+        "raw_archive_days": 365
+      },
+      "legal_deletion": "separate reviewed policy; no automatic override"
+    },
+    "broker": {
+      "hot_backup_hours": 72,
+      "rebuild_precedence": [
+        "verified stream backup for exact epoch",
+        "raw-chain immutable source for chain events",
+        "PostgreSQL business/outbox/inbox for application events"
+      ],
+      "ack_contract": "Epoch-scoped credentials/subjects plus DB guard; old epoch acknowledgement must be rejected at broker authority, not merely local process."
+    },
+    "drills": {
+      "isolated_restore_schedule": "monthly",
+      "full_region_schedule": "quarterly",
+      "minimum_event_hours": 72,
+      "data_classification": "synthetic or reviewed anonymized only",
+      "queries": [
+        "counts-by-table-at-fixed-checkpoint",
+        "integer-monetary-sums",
+        "stable-event-identity-digest",
+        "pending-outbox/inbox-reconciliation",
+        "missing-object-replicas"
+      ],
+      "capacity_qualified": false
+    },
+    "cutover": {
+      "automatic_failback": false,
+      "requires": [
+        "independent old-region write/publish fence proof",
+        "trusted manifest digest",
+        "physical/WAL restore validation",
+        "fixed checkpoint monetary/event reconciliation",
+        "all required object replicas",
+        "new durable epoch audit",
+        "verified recovery reads"
+      ],
+      "application_writes_before_activation": false
+    }
+  },
+  "iam": {
+    "application-runtime": {
+      "allow": [],
+      "deny": [
+        "backup:Read",
+        "backup:Write",
+        "backup:Delete",
+        "kms:Decrypt"
+      ]
+    },
+    "backup-writer": {
+      "allow": [
+        "backup:PutImmutable",
+        "kms:Encrypt"
+      ],
+      "deny": [
+        "backup:Delete",
+        "kms:Decrypt"
+      ]
+    },
+    "recovery-reader": {
+      "allow": [
+        "backup:ReadPinnedVersion",
+        "kms:DecryptOwnEnvironment"
+      ],
+      "deny": [
+        "backup:Write",
+        "backup:Delete",
+        "kms:DecryptOtherEnvironment"
+      ]
+    },
+    "retention-operator": {
+      "allow": [
+        "backup:DeleteExpiredAfterLegalReview"
+      ],
+      "deny": [
+        "backup:Overwrite",
+        "kms:Decrypt"
+      ]
+    }
+  },
+  "command_contracts": {
+    "base_backup": [
+      "pg_basebackup",
+      "--format=tar",
+      "--wal-method=stream",
+      "--checkpoint=spread",
+      "--manifest-checksums=SHA256",
+      "--no-password"
+    ],
+    "verify_base": [
+      "pg_verifybackup",
+      "--exit-on-error",
+      "<isolated-owned-backup-directory>"
+    ],
+    "restore": [
+      "pg_ctl",
+      "--pgdata=<isolated-owned-data-directory>",
+      "--wait",
+      "start"
+    ],
+    "secrets": "External secret references and service-specific identities only; no passwords in argv/manifests."
+  }
+}

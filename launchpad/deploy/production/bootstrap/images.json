@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "images": [
+    {
+      "service": "postgres",
+      "image": "postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea",
+      "version": "PostgreSQL 16 official alpine image",
+      "availability": "local_cache_verified",
+      "purpose": "Isolated bootstrap only; no production or chain-performance certification",
+      "local_inspect_exit_code": 0,
+      "local_repo_digests": [
+        "postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea"
+      ]
+    },
+    {
+      "service": "redis",
+      "image": "redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
+      "version": "Redis 7 official alpine image",
+      "availability": "local_cache_verified",
+      "purpose": "Isolated bootstrap only; no production or chain-performance certification",
+      "local_inspect_exit_code": 0,
+      "local_repo_digests": [
+        "redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499"
+      ]
+    },
+    {
+      "service": "nats",
+      "image": "nats:2.11.9-alpine@sha256:777787bbb4c7c4083ec2213b0b8b14151617610a3e0d85776bd995cd46599c73",
+      "version": "NATS 2.11.9 alpine",
+      "availability": "upstream_manifest_verified_not_pulled_by_lane",
+      "purpose": "Isolated bootstrap only; no production or chain-performance certification"
+    },
+    {
+      "service": "minio",
+      "image": "minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+      "version": "MinIO RELEASE.2025-09-07T16-13-09Z",
+      "availability": "local_cache_verified_remote_tag_unavailable",
+      "purpose": "Isolated bootstrap only; no production or chain-performance certification",
+      "local_inspect_exit_code": 0,
+      "local_repo_digests": [
+        "minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+      ]
+    },
+    {
+      "service": "minio-init",
+      "image": "minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727",
+      "version": "Official MinIO client digest",
+      "availability": "local_cache_verified",
+      "purpose": "Isolated bootstrap only; no production or chain-performance certification",
+      "local_inspect_exit_code": 0,
+      "local_repo_digests": [
+        "minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727"
+      ]
+    },
+    {
+      "service": "chain",
+      "image": "trufflesuite/ganache:v7.9.2@sha256:7b58eeff2a5cfeb62ee19fe16ce7c5b88b9e9bae0f627719121609e9e188b730",
+      "version": "Ganache 7.9.2",
+      "availability": "upstream_manifest_verified_not_pulled_by_lane",
+      "purpose": "Isolated bootstrap only; no production or chain-performance certification"
+    }
+  ],
+  "limitations": [
+    "Fresh-host MinIO registry digest pull is not verified.",
+    "Ganache reproduces an Ethereum JSON-RPC development EVM with chain125, not Paxeer consensus or chain extensions.",
+    "Production multi-zone and 500000-DAU load qualification are outside this fixture."
+  ]
+}

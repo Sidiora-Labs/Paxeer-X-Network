@@ -1,0 +1,20 @@
+import type {ConnectedL17SharePreviewV3,ConnectedL17OwnerShareV3,ConnectedL17PublicShareV3} from '@kindle/sdk-v2';
+import {pnlApiUrl} from '@/core/sdk-config';
+import {accountRequest} from '../profile/account-transport';
+export const publicationFields=['knownRealizedSubtotalUsdlRaw','realizedPnlRaw','completeValueUsdlRaw','historicalReturn'] as const;
+export type PublicationField=typeof publicationFields[number];
+export type PublicShare = ConnectedL17PublicShareV3;
+export type SharePreview = ConnectedL17SharePreviewV3;
+export type OwnerShare = ConnectedL17OwnerShareV3;
+export function previewShare(body:{snapshotId:string;fields:PublicationField[];includeWallet:boolean;expiresAt:string}){return accountRequest<SharePreview>(pnlApiUrl('/v3/me/portfolio/shares/preview'),{method:'POST',body:JSON.stringify(body)});}
+export function publishShare(preview:SharePreview,mutationId:string){return accountRequest<OwnerShare>(pnlApiUrl('/v3/me/portfolio/shares'),{method:'POST',headers:{'Idempotency-Key':mutationId},body:JSON.stringify({id:preview.id,intent:preview.intent})});}
+export function ownerShare(id:string){return accountRequest<OwnerShare>(pnlApiUrl(`/v3/me/portfolio/shares/${encodeURIComponent(id)}`));}
+export function revokeShare(id:string){return accountRequest<OwnerShare>(pnlApiUrl(`/v3/me/portfolio/shares/${encodeURIComponent(id)}`),{method:'DELETE'});}
+export class PublicShareError extends Error{constructor(readonly status:number){super(status===410?'Card withdrawn or expired':status===404?'Card not found or not published':'Card unavailable');}}
+export function sanitizedShare(source:PublicShare):PublicShare{
+ if(source.version!==3||!validShareId(source.id)||!Array.isArray(source.fields)||source.fields.length===0||source.fields.some(f=>!publicationFields.includes(f))||(source.wallet!==undefined&&source.wallet!==null&&!/^0x[0-9a-fA-F]{40}$/.test(source.wallet)))throw new Error('Invalid public card projection');
+ const values:PublicShare['values']={};for(const field of source.fields){if(!Object.prototype.hasOwnProperty.call(source.values,field))throw new Error('Selected card value missing');const value=source.values[field];if(field==='historicalReturn'){if(value!==null&&typeof value!=='object')throw new Error('Invalid return projection');const historical=source.values.historicalReturn;values.historicalReturn=historical?{method:historical.method,periods:historical.periods,...(historical.reason?{reason:historical.reason}:{}),...(historical.return?{return:{numerator:historical.return.numerator,denominator:historical.return.denominator}}:{})}:null;}else{if(value!==null&&(typeof value!=='string'||! /^-?(0|[1-9][0-9]*)$/.test(value)))throw new Error('Invalid card amount');(values as Record<string,unknown>)[field]=value;}}
+ return {version:3,id:source.id,expiresAt:source.expiresAt,fields:[...source.fields],values,basisQuality:source.basisQuality,pricingQuality:source.pricingQuality,...(source.wallet?{wallet:source.wallet}:{}),quoteIdentity:{kind:source.quoteIdentity.kind,chainId:source.quoteIdentity.chainId,address:source.quoteIdentity.address,currencyCode:source.quoteIdentity.currencyCode,decimals:source.quoteIdentity.decimals},decimals:source.decimals,methodology:source.methodology,watermark:{chainId:source.watermark.chainId,height:source.watermark.height,blockHash:source.watermark.blockHash,projectionRevision:source.watermark.projectionRevision,observedAt:source.watermark.observedAt,integrity:source.watermark.integrity},rangeStart:source.rangeStart,rangeEnd:source.rangeEnd,labels:[...(source.labels??[])]};
+}
+export function validShareId(id:string){return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);}
+export async function readPublicShare(id:string,signal?:AbortSignal){if(!validShareId(id))throw new PublicShareError(404);const response=await fetch(pnlApiUrl(`/v3/portfolio/shares/${id}`),{signal,cache:'no-store',credentials:'omit'});if(!response.ok)throw new PublicShareError(response.status);return sanitizedShare(await response.json() as PublicShare);}

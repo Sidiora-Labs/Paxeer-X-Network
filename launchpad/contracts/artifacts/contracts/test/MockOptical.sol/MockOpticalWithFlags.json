@@ -1,0 +1,409 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "MockOpticalWithFlags",
+  "sourceName": "contracts/test/MockOptical.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_poolRegistry",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "_owner",
+          "type": "address"
+        },
+        {
+          "internalType": "uint8",
+          "name": "flags_",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "NotOwner",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotPool",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "afterFeeDistCalled",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "feeAmount",
+          "type": "uint256"
+        }
+      ],
+      "name": "afterFeeDistribution",
+      "outputs": [
+        {
+          "internalType": "bytes4",
+          "name": "",
+          "type": "bytes4"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        },
+        {
+          "internalType": "bool",
+          "name": "isBuy",
+          "type": "bool"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        }
+      ],
+      "name": "afterSwap",
+      "outputs": [
+        {
+          "internalType": "bytes4",
+          "name": "",
+          "type": "bytes4"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "afterSwapCalled",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "beforeFeeDistCalled",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "feeAmount",
+          "type": "uint256"
+        }
+      ],
+      "name": "beforeFeeDistribution",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "adjustedFee",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        },
+        {
+          "internalType": "bool",
+          "name": "isBuy",
+          "type": "bool"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        }
+      ],
+      "name": "beforeSwap",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "proceed",
+          "type": "bool"
+        },
+        {
+          "internalType": "int256",
+          "name": "amountDelta",
+          "type": "int256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "beforeSwapCalled",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "beforeSwapDeltaNext",
+      "outputs": [
+        {
+          "internalType": "int256",
+          "name": "",
+          "type": "int256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "beforeSwapRejectNext",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getFlags",
+      "outputs": [
+        {
+          "internalType": "uint8",
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "lastAmountIn",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "lastAmountOut",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "lastFeeAmount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "lastIsBuy",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "lastPool",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "lastSender",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "owner",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "poolRegistry",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "resetCallTrackers",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "int256",
+          "name": "delta",
+          "type": "int256"
+        }
+      ],
+      "name": "setBeforeSwapDelta",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bool",
+          "name": "reject",
+          "type": "bool"
+        }
+      ],
+      "name": "setBeforeSwapReject",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint8",
+          "name": "flags_",
+          "type": "uint8"
+        }
+      ],
+      "name": "setFlags",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x60c03461009757601f61075f38819003918201601f19168301916001600160401b0383118484101761009c5780849260609460405283398101031261009757610047816100b2565b906040610056602083016100b2565b9101519160ff83168093036100975760805260a05260ff19600054161760005560405161069890816100c782396080518161034a015260a0518161044d0152f35b600080fd5b634e487b7160e01b600052604160045260246000fd5b51906001600160a01b03821682036100975756fe608080604052600436101561001357600080fd5b60003560e01c9081630b998aa71461057c578163156a33bf1461056157508063256fec88146105385780632fd49abe1461050f57806342daea1e146104e95780634936f08d146104c35780636cc7149d146104a25780638a985ccb1461047c5780638da5cb5b1461043757806397eea5ba14610419578063ae3bd4bd146103bf578063ae7e71d914610379578063afcff50f14610334578063b3bebed11461031b578063b4443cff146102f5578063b4480406146102d7578063ba104fc6146102b1578063c0b2049f14610291578063c27e746f1461026e578063d22aadf714610250578063e944270214610218578063f74c1c1a146101785763f80d2cc71461011c57600080fd5b346101735760403660031901126101735760206101376105ab565b6002805463ff010000600160c01b03191691831b640100000000600160c01b031691909117620100001790556024356006819055604051908152f35b600080fd5b346101735760a0366003190112610173576101916105ab565b6101996105c1565b906101006101a56105d7565b6002805463ffff0100600160c01b031916602094851b640100000000600160c01b03161792909217909155600380546001600160a81b0319166001600160a01b039094169390931790151560a01b60ff60a01b1617909155606435600455608435600555604051637ba60e0d60e11b8152f35b34610173576020366003190112610173576004358015158091036101735761ff006000549160081b169061ff00191617600055600080f35b34610173576000366003190112610173576020600454604051908152f35b3461017357600036600319011261017357602060ff600254166040519015158152f35b34610173576000366003190112610173576002805463ffffffff19169055005b3461017357600036600319011261017357602060ff60035460a01c166040519015158152f35b34610173576000366003190112610173576020600154604051908152f35b3461017357600036600319011261017357602060ff60025460081c166040519015158152f35b3461017357602036600319011261017357600435600155005b34610173576000366003190112610173576040517f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03168152602090f35b346101735760803660031901126101735760406103b16103976105ab565b61039f6105c1565b6103a76105d7565b90606435926105e6565b825191151582526020820152f35b346101735760403660031901126101735763010000006103dd6105ab565b60028054600160c01b8490031916602092831b640100000000600160c01b03161790921790915560243560065560405163ae3bd4bd60e01b8152f35b34610173576000366003190112610173576020600554604051908152f35b34610173576000366003190112610173576040517f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03168152602090f35b3461017357600036600319011261017357602060ff60025460181c166040519015158152f35b3461017357600036600319011261017357602060ff60005416604051908152f35b3461017357600036600319011261017357602060ff60005460081c166040519015158152f35b3461017357600036600319011261017357602060ff60025460101c166040519015158152f35b3461017357600036600319011261017357600254604051602091821c6001600160a01b03168152f35b34610173576000366003190112610173576003546040516001600160a01b039091168152602090f35b34610173576000366003190112610173576020906006548152f35b346101735760203660031901126101735760043560ff81168091036101735760ff196000541617600055600080f35b600435906001600160a01b038216820361017357565b602435906001600160a01b038216820361017357565b60443590811515820361017357565b6002805463ffffff01600160c01b03191660209290921b640100000000600160c01b0316919091176001179055600380546001600160a81b0319166001600160a01b039092169190911791151560a01b60ff60a01b1691909117905560045560005460081c60ff1661065a57600180549091565b60009060009056fea26469706673582212205abb1c3919e4c57cdd8ab34cc3862a6c48d164678ee074151f04debe5fda9f1764736f6c634300081b0033",
+  "deployedBytecode": "0x608080604052600436101561001357600080fd5b60003560e01c9081630b998aa71461057c578163156a33bf1461056157508063256fec88146105385780632fd49abe1461050f57806342daea1e146104e95780634936f08d146104c35780636cc7149d146104a25780638a985ccb1461047c5780638da5cb5b1461043757806397eea5ba14610419578063ae3bd4bd146103bf578063ae7e71d914610379578063afcff50f14610334578063b3bebed11461031b578063b4443cff146102f5578063b4480406146102d7578063ba104fc6146102b1578063c0b2049f14610291578063c27e746f1461026e578063d22aadf714610250578063e944270214610218578063f74c1c1a146101785763f80d2cc71461011c57600080fd5b346101735760403660031901126101735760206101376105ab565b6002805463ff010000600160c01b03191691831b640100000000600160c01b031691909117620100001790556024356006819055604051908152f35b600080fd5b346101735760a0366003190112610173576101916105ab565b6101996105c1565b906101006101a56105d7565b6002805463ffff0100600160c01b031916602094851b640100000000600160c01b03161792909217909155600380546001600160a81b0319166001600160a01b039094169390931790151560a01b60ff60a01b1617909155606435600455608435600555604051637ba60e0d60e11b8152f35b34610173576020366003190112610173576004358015158091036101735761ff006000549160081b169061ff00191617600055600080f35b34610173576000366003190112610173576020600454604051908152f35b3461017357600036600319011261017357602060ff600254166040519015158152f35b34610173576000366003190112610173576002805463ffffffff19169055005b3461017357600036600319011261017357602060ff60035460a01c166040519015158152f35b34610173576000366003190112610173576020600154604051908152f35b3461017357600036600319011261017357602060ff60025460081c166040519015158152f35b3461017357602036600319011261017357600435600155005b34610173576000366003190112610173576040517f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03168152602090f35b346101735760803660031901126101735760406103b16103976105ab565b61039f6105c1565b6103a76105d7565b90606435926105e6565b825191151582526020820152f35b346101735760403660031901126101735763010000006103dd6105ab565b60028054600160c01b8490031916602092831b640100000000600160c01b03161790921790915560243560065560405163ae3bd4bd60e01b8152f35b34610173576000366003190112610173576020600554604051908152f35b34610173576000366003190112610173576040517f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03168152602090f35b3461017357600036600319011261017357602060ff60025460181c166040519015158152f35b3461017357600036600319011261017357602060ff60005416604051908152f35b3461017357600036600319011261017357602060ff60005460081c166040519015158152f35b3461017357600036600319011261017357602060ff60025460101c166040519015158152f35b3461017357600036600319011261017357600254604051602091821c6001600160a01b03168152f35b34610173576000366003190112610173576003546040516001600160a01b039091168152602090f35b34610173576000366003190112610173576020906006548152f35b346101735760203660031901126101735760043560ff81168091036101735760ff196000541617600055600080f35b600435906001600160a01b038216820361017357565b602435906001600160a01b038216820361017357565b60443590811515820361017357565b6002805463ffffff01600160c01b03191660209290921b640100000000600160c01b0316919091176001179055600380546001600160a81b0319166001600160a01b039092169190911791151560a01b60ff60a01b1691909117905560045560005460081c60ff1661065a57600180549091565b60009060009056fea26469706673582212205abb1c3919e4c57cdd8ab34cc3862a6c48d164678ee074151f04debe5fda9f1764736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

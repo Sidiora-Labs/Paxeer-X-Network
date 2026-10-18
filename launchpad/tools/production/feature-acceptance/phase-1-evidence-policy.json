@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "scope": "phase1 policy primitives only",
+  "signature": "Ed25519 over canonical UTF8 JSON; coordinator supplies independent pinned trust roots",
+  "bindings": [
+    "source",
+    "image",
+    "migration",
+    "api_schema",
+    "event_schema",
+    "registry",
+    "topology",
+    "policy",
+    "capability",
+    "inventory"
+  ],
+  "max_age_seconds": 604800,
+  "final_smoke_max_age_seconds": 86400,
+  "artifact_retention_seconds": 15552000,
+  "mandatory_scenarios": [
+    "success",
+    "authorization_denial",
+    "dependency_outage",
+    "reconnect_retry"
+  ],
+  "producer_requirements": "Admitted harness identity with feature-specific producer role; artifacts never supply trust keys",
+  "reviewer_requirements": "Different signer and principal from producer and all implementation principals; reviewer signs exact envelope/artifact hashes and resolved findings",
+  "no_release_promotion": true,
+  "pending": [
+    "Serial runner registration",
+    "Actual feature harness adapters",
+    "Immutable object store retention enforcement",
+    "Trusted clock and key rotation/revocation service",
+    "Full user-path/device/vendor/capacity proof",
+    "Coverage of all implementation tasks and other release gates"
+  ],
+  "trusted_invocation": [
+    "run_id",
+    "harness"
+  ]
+}

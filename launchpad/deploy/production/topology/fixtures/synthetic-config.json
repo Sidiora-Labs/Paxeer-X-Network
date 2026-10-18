@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "revision": 1,
+  "environment": "qualification",
+  "namespace": "kindle-fixture",
+  "region": "fixture-region",
+  "zones": [
+    "fixture-zone-a",
+    "fixture-zone-b",
+    "fixture-zone-c"
+  ],
+  "storageClasses": {
+    "postgres": "fixture-encrypted-pg",
+    "nats": "fixture-encrypted-nvme"
+  },
+  "images": {
+    "api": "example.invalid/kindle/api@sha256:78cb9f99fc450ff354136f82de848cd96976202c1d0456085568fbda5000e68c",
+    "sockets": "example.invalid/kindle/sockets@sha256:1fb3f166708edecf5e6e5b355f93db8ae064703f0eda0249f44a8dd4fb84278d",
+    "indexer": "example.invalid/kindle/indexer@sha256:f722f934eee48b648308edd0397df745992ecb94fe162d88801209d02db940b9",
+    "charts": "example.invalid/kindle/charts@sha256:a43e9c9d75475c9455052a9b2b0c7760541f4218f7862cf447047f927ad9ce3f",
+    "stats": "example.invalid/kindle/stats@sha256:0066317f6a2c15a9bb16fc0d45a68b5330944667616cc84d648165821b374e91",
+    "pnl": "example.invalid/kindle/pnl@sha256:9a3be33a490bf107d0a3c1a973fdc594a50f895594f2b0d14536ec8ceb26d1b2",
+    "ranking": "example.invalid/kindle/ranking@sha256:0b71f84d8097f59cd74e051b8d8d8f324e3fbec8bf4f7d3716fc6c9e7f2d8ede",
+    "postgres": "example.invalid/kindle/postgres@sha256:4590c4b576c35969427883ca3d5adebaf217ff14d9e77c56f1006ae3bdd4bbd4",
+    "nats": "example.invalid/kindle/nats@sha256:4cf25aacaf28bcd6df4ce4596bd39af4edd4965a5337af022c305a13a486b4fa",
+    "redis": "example.invalid/kindle/redis@sha256:1d9d54f1b28506c14ea1db5d17effdf610a554f9d63dfdd7cd203e02439f3d3c"
+  },
+  "secretRefs": {
+    "runtime": {
+      "api": "fixture-api-runtime",
+      "sockets": "fixture-sockets-runtime",
+      "indexer": "fixture-indexer-runtime",
+      "charts": "fixture-charts-runtime",
+      "stats": "fixture-stats-runtime",
+      "pnl": "fixture-pnl-runtime",
+      "ranking": "fixture-ranking-runtime"
+    },
+    "natsTls": "fixture-nats-tls",
+    "natsAuth": "fixture-nats-auth",
+    "redis": "fixture-redis",
+    "edgeTls": "fixture-edge-tls",
+    "postgresBootstrap": "fixture-postgres-bootstrap"
+  },
+  "publicHost": "kindle.example.invalid",
+  "edgeNamespace": "fixture-edge",
+  "rpcEndpoints": [
+    "https://rpc-a.example.invalid",
+    "https://rpc-b.example.invalid"
+  ],
+  "mediaCdn": "https://cdn.example.invalid",
+  "operator": {
+    "cnpgVersion": "1.29.0",
+    "crdDigest": "1ee1f3db37e4e316689770e5c264d05c6740a214e00a0d44e3e895b306365ee9",
+    "fencingEvidenceDigest": "940555f58d26e9641e580783f79b2e395382d58eccd1c38909b88d807cccc166"
+  },
+  "storage": {
+    "postgresBytesPerMember": 4398046511104,
+    "natsBytesPerMember": 2199023255552,
+    "derivedPgBytesPerMember": 214748364800,
+    "walBytesPerMember": 137438953472,
+    "vacuumBytesPerMember": 137438953472,
+    "freeHeadroomPermille": 200,
+    "brokerOverheadPermille": 100
+  },
+  "streams": [
+    {
+      "name": "derived-market",
+      "normalEventsPerDay": 10000000,
+      "qualificationEventsPerSecond": 2000,
+      "envelopeBytes": 400
+    }
+  ],
+  "connections": {
+    "poolerReplicas": 3,
+    "serverConnectionsPerPooler": 120,
+    "otherDirectConnections": 120,
+    "acquireTimeoutMs": 500
+  },
+  "admission": {
+    "apiInflightPerReplica": 256,
+    "apiQueuePerReplica": 128,
+    "quoteRps": 2000,
+    "writeRps": 2000,
+    "totalRps": 10000,
+    "burstRps": 20000,
+    "socketConnectionsPerReplica": 5000,
+    "socketSendQueueBytes": 65536,
+    "coldReadInflightPerReplica": 8
+  },
+  "release": {
+    "sourceDigest": "270c0d536da1e328c882cda409fc95a131d86851b817f538836313cad3b9ed03",
+    "interfaceDigest": "2c395c9d054965c4fb57d1fdc7432122fbd820d3f0973e9f8120589b441a6925",
+    "qualificationMaxAgeSeconds": 86400,
+    "canaryPercent": 5,
+    "canarySeconds": 600
+  }
+}

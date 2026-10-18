@@ -1,0 +1,89 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "MockImplementationV2",
+  "sourceName": "contracts/test/MockProxy.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "extra",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getValue",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_extra",
+          "type": "uint256"
+        }
+      ],
+      "name": "setExtra",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_value",
+          "type": "uint256"
+        }
+      ],
+      "name": "setValue",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "value",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "version",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x60808060405234601557610112908161001b8239f35b600080fdfe6080806040526004361015601257600080fd5b60003560e01c908163190024e01460c357508063209652551460a75780633fa4f2451460a757806354fd4d5014608d578063552410771460765763a234fb5b14605a57600080fd5b346071576020366003190112607157600435600155005b600080fd5b346071576020366003190112607157600435600055005b346071576000366003190112607157602060405160028152f35b3460715760003660031901126071576020600054604051908152f35b3460715760003660031901126071576020906001548152f3fea264697066735822122094de3860406e4d23644228c618888d6786b3ddb60a3f313cfeac8a4f8d9f30d064736f6c634300081b0033",
+  "deployedBytecode": "0x6080806040526004361015601257600080fd5b60003560e01c908163190024e01460c357508063209652551460a75780633fa4f2451460a757806354fd4d5014608d578063552410771460765763a234fb5b14605a57600080fd5b346071576020366003190112607157600435600155005b600080fd5b346071576020366003190112607157600435600055005b346071576000366003190112607157602060405160028152f35b3460715760003660031901126071576020600054604051908152f35b3460715760003660031901126071576020906001548152f3fea264697066735822122094de3860406e4d23644228c618888d6786b3ddb60a3f313cfeac8a4f8d9f30d064736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

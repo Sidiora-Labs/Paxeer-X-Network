@@ -1,0 +1,15 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "CoreAuditMalformedBalance",
+  "sourceName": "contracts/test/CoreAuditOptical.sol",
+  "abi": [
+    {
+      "stateMutability": "nonpayable",
+      "type": "fallback"
+    }
+  ],
+  "bytecode": "0x608080604052346013576044908160198239f35b600080fdfe3460095760016000f35b600080fdfea26469706673582212207aec0a699804c261389ea054d434c7c4c8db37732436b683f7e92630d8b8f1a564736f6c634300081b0033",
+  "deployedBytecode": "0x3460095760016000f35b600080fdfea26469706673582212207aec0a699804c261389ea054d434c7c4c8db37732436b683f7e92630d8b8f1a564736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

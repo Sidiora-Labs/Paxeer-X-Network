@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 1,
+  "chainId": 125,
+  "families": [
+    {
+      "family": "market_creation",
+      "primary": "SidioraFactory.MarketCreated(token,pool,creator,nftId,optical)",
+      "corroboration": [
+        "PoolRegistry.PoolRegistered",
+        "Router.MarketCreated",
+        "EventEmitter.MarketCreated",
+        "EventEmitter.TokenDeployed",
+        "EventEmitter.NftMint"
+      ],
+      "rule": "One market attachment per factory creation; native factory event plus registry pinned getter establishes identity. Resolve exact receipt, never recent creator logs.",
+      "source": [
+        "contracts/core/SidioraFactory.sol",
+        "contracts/data/PoolRegistry.sol",
+        "contracts/periphery/Router.sol"
+      ]
+    },
+    {
+      "family": "core_pool_swap",
+      "primary": "Authorized EventEmitter.Swap for current SidioraPool implementation; no native pool Swap event exists.",
+      "corroboration": [
+        "Router.Buy",
+        "Router.Sell",
+        "Router.MultihopSwap",
+        "EventEmitter.RouterTrade",
+        "native asset Transfer"
+      ],
+      "rule": "Router logs prove routed executions only; direct public pool.swap bypasses Router. swapFor requires factory ROUTER_ROLE. EmitSwap supplies paidInput,input-denominated fee and price but not actual recipient.",
+      "coverage_limit": "If pool EventEmitter is disabled, direct swaps have no equivalent full native swap record; raw ERC20 movement alone cannot reconstruct all execution semantics without further approved evidence.",
+      "source": [
+        "contracts/core/SidioraPool.sol",
+        "contracts/periphery/Router.sol",
+        "contracts/interfaces/IEventEmitter.sol"
+      ]
+    },
+    {
+      "family": "pool_reserve_sync",
+      "primary": "EventEmitter.PoolStateUpdated emitted by SidioraPool.syncReserves",
+      "corroboration": [
+        "pinned pool.getReserves",
+        "native ERC20 Transfer"
+      ],
+      "rule": "Pool has no equivalent native reserve-sync event; absence of mirror requires state reconciliation, not invented reserve update history.",
+      "source": [
+        "contracts/core/SidioraPool.sol"
+      ]
+    },
+    {
+      "family": "configuration",
+      "primary": "EventEmitter.ConfigUpdated called from ProtocolConfig setters; getters establish present pinned state",
+      "corroboration": [
+        "ProtocolConfig creationFee,protocolFeeBps,fee parameters,virtual reserve getters"
+      ],
+      "rule": "IProtocolConfig declares native ConfigUpdated, but concrete _emitConfigUpdated only calls emitter. Do not assume declaration means emission. Disabled mirror leaves configuration-history coverage gap.",
+      "source": [
+        "contracts/protocol/ProtocolConfig.sol",
+        "contracts/interfaces/IProtocolConfig.sol"
+      ]
+    },
+    {
+      "family": "fees",
+      "primary": "Native FeeAccumulator FeeRecorded,FeesClaimed,FeesBurned,AirdropTriggered,AirdropClaimed,LpRewardsSent,OpticalSurplusRecorded,OpticalSurplusClaimed and actual emitted migration lifecycle events",
+      "corroboration": [
+        "EventEmitter.FeeFlow",
+        "EventEmitter.FeeRecorded",
+        "EventEmitter.FeeDistributed"
+      ],
+      "rule": "Native event effects once; mirrors only correlated. Declared ProtocolFeeSwept must not be assumed emitted: actual buy protocol cut is transferred to Treasury inline during recordFee.",
+      "source": [
+        "contracts/data/FeeAccumulator.sol",
+        "contracts/interfaces/IFeeAccumulator.sol"
+      ]
+    },
+    {
+      "family": "token_balance_ownership",
+      "primary": "Native ERC20 Transfer/Approval and ERC721 Transfer/Approval/ApprovalForAll from registered token family",
+      "corroboration": [
+        "EventEmitter.TokenTransfer",
+        "EventEmitter.NftTransfer",
+        "EventEmitter.AssetApproval",
+        "SidioraNFT.PoolNFTMinted",
+        "SidioraNFT.FeeStrategyChanged"
+      ],
+      "rule": "Decode same Transfer topic by emitting standard and indexed layout; balances from actual recipients, not tx origin or trader. Zero address denotes mint/burn.",
+      "source": [
+        "contracts/base/ERC20Base.sol",
+        "contracts/base/ERC721Base.sol",
+        "contracts/core/SidioraNFT.sol"
+      ]
+    },
+    {
+      "family": "control_plane",
+      "primary": "Native RoleGranted,RoleRevoked,Upgraded,PauseToggled,OwnershipTransferStarted,OwnershipTransferred,GuardianTransferStarted,GuardianTransferred where concretely emitted",
+      "corroboration": [
+        "EventEmitter.RoleChange",
+        "EventEmitter.ContractUpgraded",
+        "EventEmitter.PauseToggle"
+      ],
+      "rule": "Beacon emits Upgraded from beacon address; Pausable emits PauseToggled(bool), not Paused/Unpaused. Registry and implementation identity scoped by activation block.",
+      "source": [
+        "contracts/base/AccessControl.sol",
+        "contracts/base/UUPSUpgradeable.sol",
+        "contracts/base/Pausable.sol",
+        "contracts/base/UpgradeableBeacon.sol",
+        "contracts/core/SidioraPool.sol"
+      ]
+    },
+    {
+      "family": "pecor_execution",
+      "primary": "PECOR SimpleSwap,MarketOrderExecuted,NativeSwap,FeesCollected; MetaAGRouter BestRouteSwap,MultiHopSwap",
+      "corroboration": [
+        "TransactionTracker.TradeExecuted",
+        "TransactionTracker.MarketTrade",
+        "EventEmitter.PecorSwap",
+        "EventEmitter.BestRouteSwap"
+      ],
+      "rule": "TrackerCallFailed means enrichment missing, not failed native receipt; route and underlying pool legs correlate without duplicate wallet execution.",
+      "source": [
+        "contracts/meta-ag/engine/PECOR.sol",
+        "contracts/meta-ag/router/MetaAGRouter.sol",
+        "contracts/meta-ag/analytics/TransactionTracker.sol"
+      ]
+    },
+    {
+      "family": "pecor_orders",
+      "primary": "Native LimitOrderCreated,LimitOrderExecuted,LimitOrderCancelled,StopLimitOrderCreated,StopLimitActivated,StopLimitExecuted,StopLimitCancelled,OrderExecutionFailed,OrderExpiredAndRefunded,OrderMinimumOutputUpdated",
+      "corroboration": [
+        "TransactionTracker order events",
+        "EventEmitter.PecorOrderCreated",
+        "EventEmitter.PecorOrderLifecycle"
+      ],
+      "rule": "OrderExecutionFailed is not filled or terminal by itself; activate is not execute; expiry refund is distinct from user cancel.",
+      "source": [
+        "contracts/meta-ag/engine/PECOROrders.sol"
+      ]
+    },
+    {
+      "family": "vault",
+      "primary": "Native Deposit,Withdrawal,NativeDeposit,NativeWithdrawal,ReservesUpdated,ReservesSync,EmergencyWithdraw and token configuration events",
+      "corroboration": [
+        "EventEmitter.VaultFlow",
+        "TransactionTracker.VaultLiquidityUpdate"
+      ],
+      "rule": "Reserve state change is not an additional deposit; native PAX and wrapped PAX are separate asset identities.",
+      "source": [
+        "contracts/meta-ag/vault/PECORVault.sol",
+        "contracts/meta-ag/interfaces/IPECORVault.sol"
+      ]
+    },
+    {
+      "family": "optional_oracle",
+      "primary": "Native PriceOracle and OracleHub events plus pinned configuration/getter evidence",
+      "corroboration": [
+        "EventEmitter.PriceUpdated",
+        "EventEmitter.CircuitBreakerTriggered",
+        "EventEmitter.OracleAdapterLifecycle"
+      ],
+      "rule": "Only enabled engine/display families depend on these; core launchpad creation and plain pool trading do not.",
+      "source": [
+        "contracts/meta-ag/oracle/PriceOracle.sol",
+        "contracts/meta-ag/oracle/OracleHub.sol"
+      ]
+    }
+  ],
+  "feeUnits": {
+    "native_gas": "PAX18",
+    "settlement": "USDL6",
+    "creation": "1000000rawUSDL exactly;gas separate",
+    "pool_buy_fee": "fee=floor(pricedInput*dynamicFeeBps/10000) inUSDL6; amountInmirrorkeepspaidInput",
+    "pool_sell_fee": "sameformula inpooltokenunits; retainedinpool and trackedaccumulatedTokenFees; noUSDLaccumulatortransfer",
+    "protocol_cut": "floor(buyUSDLfee*protocolFeeBps/10000), currentlyprotocolFeeBps1000;treasurypaidinline",
+    "price": "effectiveUSDLraw*1e18/tokenReserveraw; same6decassets ratio; price18scale; virtualreserveisnotredeemableliquidity",
+    "history": "canonicalheight,txIndex,logIndex rather thansecondtimestamp"
+  },
+  "optionalCapabilityPrerequisites": {
+    "manifest_present": false,
+    "required": [
+      "Separate revieweddeploymentmanifest with PECOR,PECOROrders,PECORVault,MetaAGRouter,MetaAGQuoter,OracleHub,PriceOracle,TransactionTracker,adapters,EmergencyPauseController.",
+      "Inheritedcoreidentityandtimelockverified; finaladminTimelock plus explicitincidentguardian.",
+      "ExplicitverifiedWPAXaddress for actualproductionnetwork; never deploy MockWETH9 as mainnetfallback.",
+      "Operator/keeper/relayer/feecollector rolesandincidentcontrollerregistered andvalidated.",
+      "Vaultassetsregisteredwithcorrectdecimalsandrealreserves; nofakeavailablebalance.",
+      "Oracleassetregistrationandfreshprices whereenginepathrequires; adaptersactive anddeviationboundtested.",
+      "OptionalSidioraspotreference remainsdisabledunlessindependentfreshUSDL/USDreference configured; liquiditythresholddefault1000USDLonlyforthatoptionalreference.",
+      "NoPECORoracleorvaultprerequisiteaddedtocoreSidioralaunch/trade."
+    ],
+    "source_deployment_defect": "deploy-pecor-meta-ag.js requires externalWPAX onlyfor network name paxeer-network; actualpaxeer-x-network can enter MockWETH9 branch if WPAXmissing. Mustfixandregressiontestbeforeanyoptionaldeployment."
+  },
+  "releaseBlockers": [
+    "Beacon ownership acceptance remains pending until renewed read-only attestation proves intended Timelock owner.",
+    "Optional PECOR/MetaAG/orders/vault fixture coverage is not qualified and remains disabled in capability release register.",
+    "Current core optical Quoter is explicitly unsupported; no heuristic execution quote fallback."
+  ]
+}

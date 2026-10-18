@@ -1,0 +1,59 @@
+{
+  "version": 3,
+  "task": "3.50",
+  "phase": 3,
+  "baseline_gate": "2.99",
+  "prior_interface": "coordinator-admitted interface emitted by successful2.99; incompatible audit inputs require explicit lane handoff",
+  "policy": "tools/production/feature-acceptance/policy.py",
+  "collector": "tools/production/feature-acceptance/collect_journeys.py",
+  "qualification_entrypoint": "journey_policy.qualify_audited_feature",
+  "required_native_cases": [
+    {
+      "id": "one_byte_tamper",
+      "execution": "Copy verified real signed candidate artifact objects into a private temporary root; flip precisely one byte of an expected HAR/trace; invoke actual signature/hash policy",
+      "expected": "Rejected with exact artifact mismatch reason"
+    },
+    {
+      "id": "missing_service_trace",
+      "execution": "Remove an exact coordinator-required service trace from copied signed artifacts; invoke actual policy",
+      "expected": "Rejected with artifact missing reason; omission from a resigned manifest also fails independent required trace join"
+    },
+    {
+      "id": "reviewer_conflict",
+      "execution": "Evaluate exact current signed evidence under trust where reviewer principal equals producer principal",
+      "expected": "Self review rejected; implementation principal aliases also reject"
+    },
+    {
+      "id": "stale_thirty_day_evidence",
+      "execution": "Invoke exact current signed evidence at trusted clock advanced30days",
+      "expected": "Expired evidence rejected"
+    },
+    {
+      "id": "critical_high_findings",
+      "execution": "Join independently supplied finding inventory and actual hashed resolution artifacts",
+      "expected": "Open critical/high and missing resolution proof reject"
+    },
+    {
+      "id": "mandatory_feature_blockers",
+      "execution": "Join complete independently supplied mandatory feature blocker inventory",
+      "expected": "Any blocker rejects; no hidden feature disable can manufacture a pass"
+    },
+    {
+      "id": "secret_redaction_identity",
+      "execution": "Hash actual restricted original JSON/HAR bytes, deterministically redact credentials, compare exact published bytes and retained identity digest",
+      "expected": "Credential leaks, tampered original/published bytes or changed authoritative identity reject"
+    }
+  ],
+  "policy_check_command": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tools/production/feature-acceptance/tests",
+    "-v"
+  ],
+  "verify_cmd": "python3 tools/production/qualify.py --task 3.50 --spec spec/production-system/spec.kvx --require-current-source",
+  "qualification_boundary": "Policy adversarial execution never establishes actual full feature behavior, capacity or release certification",
+  "release_qualified": false
+}

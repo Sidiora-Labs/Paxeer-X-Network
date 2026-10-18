@@ -1,0 +1,432 @@
+# meta-ag.freeze.lock — sidiora-contracts/meta-ag
+# Generated: 2026-04-26T04:56Z
+# Auditor: Cascade (automated source audit, indexer-oriented)
+# Network: Paxeer (chainId 125)
+# Addresses source: backend/deployments/paxeer-network-addresses.json
+# ABIs source: backend/deployments/abis/
+
+## Group Identity
+- **Group:** meta-ag (PECOR engine + Meta-AG aggregator + oracle stack)
+- **Path:** smart-contracts/contracts/meta-ag/
+- **Subgroups:** oracle/, oracle/adapters/, vault/, engine/, adapters/,
+  router/, quoter/, analytics/, proxy/, mocks/, interfaces/
+- **Language:** Solidity ^0.8.27 viaIR (LicenseRef-Paxlabs-HyperPax-OS-Protocol)
+- **Wiring:** `_meta_pecor.wiringPending = ["TRANSFER_ADMIN_TO_TIMELOCK"]`
+  (deployer retains DEFAULT_ADMIN_ROLE until that step closes).
+- **Roles registry (from spec):** Pure in-house bases under `contracts/base/*`,
+  zero `@openzeppelin`, custom errors only.
+
+---
+
+## PriceOracle  (oracle/)
+
+- **ABI:** `backend/deployments/abis/PriceOracle.json` + `IPriceOracle.json`
+- **Address proxy:** `paxeer-network-addresses.json#PriceOracle_proxy` —
+  `0xC25f5aCe41D448699374D19D410cdd73e629418f`
+- **Address impl:** `paxeer-network-addresses.json#PriceOracle_impl`
+- **Pattern:** UUPS + AccessControl + Pausable. Spec §7.1. PRICE_DECIMALS=18.
+- **Roles:** `DEFAULT_ADMIN_ROLE` = Timelock; `RELAYER_ROLE` =
+  `_meta_pecor.relayer = 0x07600E0B3C2D6d92aaf599237b93f2bbb939C05c`.
+- **Registered tokens:** USDL, WPAX (per `_meta_pecor.wiringDone`).
+
+### Functions
+- **Relayer writes:** `updatePrice(token, price)`, `batchUpdatePrices(tokens[], prices[])`
+- **Admin writes:** `registerToken`, `updateTokenConfig`, `setRelayer`, `pause/unpause`, `initialize`, UUPS `_authorizeUpgrade`
+- **Views:** `getPrice`, `getPriceWithTimestamp`, `getTWAP`, `getPrices`, `getPriceHistory`, `getLatestRound`, `getRoundData`, `getTokenConfig`, `getRegisteredTokens`, `isPriceStale`, `isAuthorizedRelayer`, `PRICE_DECIMALS`
+
+### Events to index
+- `PriceUpdated(token, price, roundId, oldPrice, timestamp)` — every relayer push
+- `BatchPriceUpdate(relayer, tokenCount, timestamp)` — batch summary
+- `TokenRegistered(token, heartbeatInterval, deviationThresholdBps, minPrice, maxPrice, maxStaleness)`
+- `TokenConfigUpdated(...)`, `RelayerUpdated(relayer, authorized)`, `StalePriceDetected(...)`
+
+### Reads / Writes
+- Reads: nothing external. Writes: per-token price ring buffer (TWAP), tokenConfig, registered-token array.
+
+### Indexer notes
+- `PriceUpdated` is the firehose for token prices — back the chart axes from this. `getPrice` REVERTS on stale data; pre-warn via `(lastUpdate, heartbeatInterval)` math. TWAP unavailable if `period` exceeds buffered depth.
+
+---
+
+## OracleHub  (oracle/)
+
+- **ABI:** `backend/deployments/abis/OracleHub.json` + `IOracleHub.json`
+- **Address proxy:** `paxeer-network-addresses.json#OracleHub_proxy` —
+  `0x0687f659dc232c51E6c028913b594d18a56b8852`
+- **Address impl:** `paxeer-network-addresses.json#OracleHub_impl`
+- **Pattern:** UUPS. Spec §7.2. Aggregates IDataFeedAdapter sources with
+  priority + deviation circuit-breaker. Falls back to PriceOracle TWAP.
+- **Wiring:** `PriceOracleAdapter` (priority 10), `SidioraFeedAdapter` (priority 20).
+
+### Functions
+- **Admin writes:** `registerAdapter(adapter, priority)`, `deactivateAdapter`, `activateAdapter`, `setAdapterPriority`, `setDeviationThreshold`, `setMinConfidence`, `setPrimaryOracle`, `pause/unpause`, `initialize`, UUPS upgrade
+- **Views:** `getPrice`, `getAggregatedPrice`, `getPriceFromSource`, `getPricesBatch`, `getTWAP`, `isPriceAvailable`, `getAdapters`, `getAdapter`, `adapterCount`, `deviationThresholdBps`, `minConfidence`
+
+### Events to index
+- `AdapterRegistered(sourceId, adapter, priority)`, `AdapterDeactivated/Activated(sourceId)`
+- `AdapterPriorityUpdated`, `DeviationThresholdUpdated`, `MinConfidenceUpdated`, `PrimaryOracleUpdated`
+- `CircuitBreakerTriggered(token, sourceId, reportedPrice, referencePrice, deviationBps)` — **CRITICAL ALERT**
+- `PriceServed(token, price, confidence, ...)` — every aggregation
+
+### Reads / Writes
+- Reads: every registered adapter's `getFeedPrice / supportsToken`. Writes: adapter map, priorities, thresholds.
+
+### Indexer notes
+- `CircuitBreakerTriggered` is the canary for oracle attacks — alert IMMEDIATELY. Use `PriceServed` (post-aggregation) over per-adapter feeds in user dashboards.
+
+---
+
+## PriceOracleAdapter  (oracle/adapters/)
+
+- **ABI:** `backend/deployments/abis/PriceOracleAdapter.json`
+- **Address (immutable):** `paxeer-network-addresses.json#PriceOracleAdapter` —
+  `0x6bF4488eaeedD6e7e405Fc74A716e7E50A6Da3f9`
+- **Pattern:** Immutable, no admin. Spec §7.3. `sourceId =
+  keccak256("PaxeerPriceOracle.v1")`. `maxStaleness = 3600`s.
+
+### Functions
+- Views only: `getFeedPrice`, `getFeedPrices`, `supportsToken`, `getSupportedTokens`, `sourceId`, `adapterName`, `maxStaleness`
+
+### Events: NONE locally.
+### Reads: `IPriceOracle.getPriceWithTimestamp`. Writes: NONE.
+
+### Indexer notes
+- Never reverts (I7) — returns zero-price+zero-confidence on failure.
+  Confidence bands: FRESH=9000, AGING=6000, NEAR_STALE=3000, STALE/missing=0.
+
+---
+
+## SidioraFeedAdapter  (oracle/adapters/)
+
+- **ABI:** `backend/deployments/abis/SidioraFeedAdapter.json`
+- **Address (immutable):** `paxeer-network-addresses.json#SidioraFeedAdapter` —
+  `0x0c9C0c909C586a5ecDA325d66a9bEaBE34Cb215E`
+- **Pattern:** Immutable + AccessControl. `sourceId = keccak256("SidioraAMM.v1")`.
+  `maxStaleness = 120`s. Per I9, `feed.timestamp = block.timestamp` because
+  Sidiora pools update implicitly per trade.
+
+### Functions
+- Views: `getFeedPrice`, `getFeedPrices`, `supportsToken`, `getSupportedTokens`, `sourceId`, `adapterName`, `maxStaleness`
+- Admin: register token → pool mapping (verify exact setter in source)
+
+### Confidence bands: HIGH=7000, MEDIUM=4000, LOW=1500, STALE=0.
+
+### Reads / Writes
+- Reads: `IPoolRegistry.getPoolByToken`, `ISidioraPool.getPrice`. Writes: per-token registered pool map (admin only).
+
+### Indexer notes
+- Prices Launchpad-bonded tokens off the AMM. Same signal as `EventEmitter.PoolStateUpdated.price` but via on-demand staticcall, not push.
+
+---
+
+## PECORVault  (vault/)
+
+- **ABI:** `backend/deployments/abis/PECORVault.json` + `IPECORVault.json`
+- **Address proxy:** `paxeer-network-addresses.json#PECORVault_proxy` —
+  `0x97Bd1b6A1E0916e116d5f876F929f2f9dB53312B`
+- **Address impl:** `paxeer-network-addresses.json#PECORVault_impl`
+- **Pattern:** UUPS. Spec §7.5. Multi-token inventory pool (Balancer-V2 style),
+  NO shares, NO ERC4626. Storage: 9 slots + `__gap[50]`.
+- **Roles:** `DEFAULT_ADMIN_ROLE` = Timelock; `OPERATOR_ROLE` = PECOR,
+  PECOROrders, VaultAdapter (per `_meta_pecor.wiringDone`).
+- **WETH:** `WPAX = 0xe5ccf339d1c89c7e6c6768b28507f78b861fc1de`.
+- **Tracker:** `TransactionTracker_proxy`.
+- **Registered tokens:** USDL, WPAX.
+
+### Functions
+- **OPERATOR writes:** `pullTokens(token, from, amount) → actualAmount` (FoT-safe), `pushTokens(token, recipient, amount)`, `updateReserves(tokenIn, amountIn, tokenOut, amountOut)`, `withdrawNative(recipient, amount)`
+- **Admin writes:** `initialize`, `registerToken`, `setStablecoinStatus`, `setOperator`, `setTransactionTracker`, `emergencyWithdraw` (S5), `syncReserves`, `syncAllReserves`, `pause/unpause`, UUPS upgrade
+- **Open writes:** `deposit(token, amount)`, `depositBatch(tokens[], amounts[])`, `depositNative()` payable
+- **Views:** `getReserves(token)`, `getAllReserves()`, `getTokenInfo(token)`, `getRegisteredTokens()`, `getRegisteredStablecoins()`, `isStablecoin(token)`, `isAuthorizedOperator(operator)`, `getUntrackedFunds(token)`
+
+### Events to index
+- `TokenRegistered(token, decimals, isStablecoin)`, `StablecoinStatusUpdated(token, isStablecoin)`
+- `Deposit(token, depositor, amount, newReserve)`, `Withdrawal(token, recipient, amount, newReserve)`
+- `NativeDeposit(depositor, amount, newReserve)`, `NativeWithdrawal(recipient, amount, newReserve)`
+- `OperatorUpdated(operator, authorized)`, `TransactionTrackerUpdated(tracker)`
+- `ReservesUpdated(token, oldReserve, newReserve)` (every operator op)
+- `ReservesSync(token, oldReserves, newReserves, recovered)` (admin reconciliation)
+- `EmergencyWithdraw(token, recipient, amount, ...)` — **CRITICAL OPERATIONAL ALERT**
+
+### Reads / Writes
+- Reads: ERC20 `balanceOf` (FoT detect), `IWETH.deposit/withdraw`. Writes: per-token `reserves`, `totalDeposited`, `totalWithdrawn`, registered arrays. Calls `ITransactionTracker.recordLiquidity*` on every deposit/withdrawal.
+
+### Indexer notes
+- Deposit/Withdrawal events mirror every capital flow. Aggregate by token for TVL graph; `newReserve` is post-state — use directly without RPC.
+- `ReservesSync.recovered > 0` = found-funds (someone direct-transferred to vault). `EmergencyWithdraw` = alert.
+- TransactionTracker mirrors these as `LiquidityAdded/Removed` — index BOTH.
+
+---
+
+## PECOR  (engine/)
+
+- **ABI:** `backend/deployments/abis/PECOR.json` + `IPECOR.json`
+- **Address proxy:** `paxeer-network-addresses.json#PECOR_proxy` —
+  `0x21dE1282549E3D1884f079fAd16f5945beEcb8f6`
+- **Address impl:** `paxeer-network-addresses.json#PECOR_impl`
+- **Pattern:** UUPS + AccessControl + Pausable + ReentrancyGuard + Multicall.
+  Spec §7.6. Storage: 12 slots + `__gap[50]`.
+- **Roles:** `DEFAULT_ADMIN_ROLE` = Timelock; `FEE_COLLECTOR_ROLE` = Treasury_proxy.
+- **Initial fee:** `_meta_pecor.vaultAdapterFeeBps = 30` (0.30%).
+
+### Functions
+- **Open swap writes:** `swapExactIn`, `swapExactOut`, `swapExactInNative` (payable), `swapExactInToNative`, `marketBuy`, `marketSell`, `multicall(bytes[])`
+- **Admin writes:** `initialize(priceOracle, vault, weth, tracker, admin)`, `setPriceOracle`, `setTransactionTracker`, `setSwapFee`, `setTieredFees`, `setPriceImpact`, `setFeeCollector`, `pause/unpause`, UUPS upgrade
+- **Fee-collector writes:** `collectFees(token)` — drains accruedFees[token] to feeCollector
+- **Views:** `getQuoteExactIn`, `getQuoteExactOut`, `getDetailedQuote`, public state for `priceOracle`, `vault`, `weth`, `tracker`, `swapFeeBps`, `feeCollector`, `accruedFees(token)`, `tier1FeeBps`, `tier2FeeBps`, `priceImpactEnabled`, `priceImpactScalarBps`
+
+### Events to index
+- `SimpleSwap(user, tokenIn, tokenOut, amountIn, amountOut, executionPrice)` — canonical PECOR swap
+- `MarketOrderExecuted(user, stablecoin, token, stablecoinAmount, tokenAmount, isBuy)`
+- `NativeSwap(user, tokenOther, nativeAmount, tokenAmount, nativeIsInput)`
+- `PriceImpactApplied(user, tokenOut, impactBps, deductedAmount)`
+- `TieredFeeApplied(user, tokenOut, volumeUSD, feeBps, feeAmount)`
+- `SwapFeeUpdated`, `TieredFeesUpdated`, `PriceImpactConfigUpdated`, `FeeCollectorUpdated`, `PriceOracleUpdated`, `TransactionTrackerUpdated`
+- `FeesCollected(token, collector, amount)` — Treasury inflow signal
+
+### Reads (per swap)
+- `IOracleHub.getPrice` (priceOracle wired to OracleHub_proxy)
+- `IPECORVault.{pullTokens, pushTokens, updateReserves, getReserves, isStablecoin}`
+- `ITransactionTracker.{recordTrade, recordMarketTrade}` (EMITTER_ROLE)
+
+### Writes (per swap)
+- `accruedFees[tokenOut]` += fee; vault state via OPERATOR calls; native pax via WETH wrap/unwrap.
+
+### Indexer notes
+- `SimpleSwap` is the canonical PECOR-engine event. Pair with `TransactionTracker.TradeExecuted` (same tx) for analytics with `volumeUSD`.
+- `MarketOrderExecuted` fires in addition to `SimpleSwap` for `marketBuy/marketSell`.
+- `FeesCollected` = Treasury inflow rate.
+
+---
+
+## PECOROrders  (engine/)
+
+- **ABI:** `backend/deployments/abis/PECOROrders.json` + `IPECOROrders.json`
+- **Address proxy:** `paxeer-network-addresses.json#PECOROrders_proxy` —
+  `0x16bC4aB280c67977639591615d2a52273cDf5f6E`
+- **Address impl:** `paxeer-network-addresses.json#PECOROrders_impl`
+- **Pattern:** UUPS. Spec §7.7. Storage: 14 slots + `__gap[50]`.
+- **Roles:** `DEFAULT_ADMIN_ROLE` = Timelock; `KEEPER_ROLE` =
+  `_meta_pecor.keeper = 0xaA395A58Fe8e266022dB64ad7e3A4E3EAC0936aB`.
+
+### Functions
+- **User writes:** `placeLimitBuy`, `placeLimitSell`, `placeStopLoss`, `placeStopLimitBuy`, `placeStopLimitSell`, `cancelLimitOrder(orderId)`, `cancelStopLimitOrder(orderId)`
+- **Keeper writes:** `executeLimitOrder(orderId)`, `executeStopLimitOrder(orderId)`, `checkStopLimitActivation(orderId)`, `batchExecuteLimitOrders(orderIds[])`, `batchCheckAndExecuteStopLimits(orderIds[])`
+- **Admin writes:** `initialize`, `setKeeper(keeper, authorized)`, `pause/unpause`, UUPS upgrade
+- **Views:** `getLimitOrder(orderId)`, `getStopLimitOrder(orderId)`, `getUserLimitOrders(user)`, `getUserStopLimitOrders(user)`, `canExecuteLimitOrder(orderId)`, `getExecutableLimitOrders(maxCount)`, `getActivatableStopLimits(maxCount)`, `getExecutableStopLimits(maxCount)`
+
+### Events to index
+- `LimitOrderCreated(orderId, user, orderType, amount, targetPrice)`
+- `LimitOrderExecuted(orderId, executionPrice)`, `LimitOrderCancelled(orderId)`
+- `StopLimitOrderCreated(orderId, user, orderType, ..., stopPrice, limitPrice)`
+- `StopLimitActivated(orderId, activationPrice)`, `StopLimitExecuted(orderId, executionPrice)`, `StopLimitCancelled(orderId)`
+- `KeeperUpdated(keeper, authorized)`
+- ALSO mirror events fire on `TransactionTracker` for each lifecycle step.
+
+### Reads
+- `IOracleHub.getPrice` (trigger checks); `IPECORVault.{pullTokens, pushTokens, updateReserves}`; `ITransactionTracker.record*`.
+
+### Writes
+- `limitOrders[id]`, `stopLimitOrders[id]`, `userLimitOrderIds[user]`, `userStopLimitOrderIds[user]`, active-order indices.
+
+### Indexer notes
+- Order lifecycle: created → (stop-limit only: activated) → executed | cancelled.
+- Mirror `getUserLimitOrders` for fast user open-orders rendering.
+- Order prices are 18-dec USD (matches PriceOracle / OracleHub).
+- Keeper bot health: monitor `getExecutableLimitOrders` / `getExecutableStopLimits` backlog (should approach zero if keeper is alive).
+
+---
+
+## VaultAdapter  (adapters/)
+
+- **ABI:** `backend/deployments/abis/VaultAdapter.json` + `IProtocolAdapter.json`
+- **Address (immutable):** `paxeer-network-addresses.json#VaultAdapter` —
+  `0xf8D2e3C11ffF0F24612B07b4BB89489bbd5F6D14`
+- **Pattern:** Immutable + AccessControl. Spec §7.10. `adapterId =
+  keccak256("PECORVault.v1")`. Holds OPERATOR_ROLE on PECORVault.
+
+### Functions
+- **External writes:** `executeSwap(tokenIn, tokenOut, amountIn, amountOutMin, recipient, adapterData)` → `SwapResult`
+- **Views:** `getQuote`, `supportsSwap`, `getSupportedPairs`, `getMaxInput(tokenIn, tokenOut)`, `adapterId`, `adapterName`, `adapterVersion`
+
+### Events: `SwapExecuted(adapterId, tokenIn, tokenOut, amountIn, amountOut, ...)` (shared interface event).
+
+### Reads / Writes
+- Reads: `IPECORVault.{getReserves, isStablecoin}`, `IOracleHub.getPrice`. Writes: `IPECORVault.{pullTokens, pushTokens, updateReserves}`, ERC20 transfer to recipient + optional fee collector.
+
+### Indexer notes
+- Registered with MetaAGRouter. Vault-routed swaps emit `SwapExecuted` here AND `BestRouteSwap` on the router with `adapterId = keccak256("PECORVault.v1")`.
+
+---
+
+## SidioraAdapter  (adapters/)
+
+- **ABI:** `backend/deployments/abis/SidioraAdapter.json` + `IProtocolAdapter.json`
+- **Address (immutable):** `paxeer-network-addresses.json#SidioraAdapter` —
+  `0xc8eECE06B5BA2e63C40DA2D22d575193c17849B8`
+- **Pattern:** Immutable + AccessControl. Spec §7.11. `adapterId =
+  keccak256("SidioraAMM.v1")`. Holds NO special role on the live Sidiora
+  Router — operates as a normal user via approval dance.
+
+### Functions
+- **External writes:** `executeSwap(tokenIn, tokenOut, amountIn, amountOutMin, recipient, adapterData)` → `SwapResult`. Flow: pull from MetaAGRouter, `safeApprove(0)` → `safeApprove(amount)` → call live `Router.{buy/sell/swapTokenForToken}` → `safeApprove(0)` → forward to `recipient`.
+- **Views:** `getQuote`, `supportsSwap`, `getSupportedPairs`, `getMaxInput`, `adapterId`, `adapterName`, `adapterVersion`
+
+### Events: `SwapExecuted(adapterId, ...)`. ALSO causes `EventEmitter.Swap` emission on the underlying pool with `recipient = SidioraAdapter`.
+
+### Reads / Writes
+- Reads: `IPoolRegistry.getPoolByToken`, `ISidioraPool.{getReserves, getPriceSnapshots, creationTimestamp}`, `IProtocolConfig`, Sidiora `IQuoter`. Writes: ERC20 `safeApprove` (S9 dance), `Router.{buy, sell, swapTokenForToken}`, ERC20 transfer to recipient.
+
+### Indexer notes
+- The bridge between Meta-AG and live Launchpad. AMM `Swap.recipient = SidioraAdapter` — for "user trade history" use `MetaAGRouter.BestRouteSwap.user` as truth, NOT `Swap.sender/recipient`.
+
+---
+
+## MetaAGRouter  (router/)
+
+- **ABI:** `backend/deployments/abis/MetaAGRouter.json` + `IMetaAGRouter.json`
+- **Address proxy:** `paxeer-network-addresses.json#MetaAGRouter_proxy` —
+  `0x732ADb61D2a7a05cC52E8a54cdddB818703F6449`
+- **Address impl:** `paxeer-network-addresses.json#MetaAGRouter_impl`
+- **Pattern:** UUPS + Pausable + ReentrancyGuard. Spec §7.8. Storage: adapter
+  map + sanity config + `__gap[50]`.
+- **Registered adapters:** VaultAdapter, SidioraAdapter (per `_meta_pecor.wiringDone`).
+- **Sanity:** `_meta_pecor.oracleDeviationBps = 500` (5% default).
+- **Invariants:** S9 (zero-then-amount-then-zero approve dance), S10 (oracle sanity per swap output).
+
+### Functions
+- **Open writes:** `swapBestRoute(tokenIn, tokenOut, amountIn, amountOutMin, recipient, deadline)`, `swapViaAdapter(adapterId, ...)`, `swapMultiHop(HopParams[], amountIn, amountOutMin, deadline)`
+- **Admin writes:** `initialize`, `registerAdapter(adapter)` (reads `adapter.adapterId()`), `deactivateAdapter(adapterId)`, `activateAdapter(adapterId)`, `setOracleHub(hub)`, `setOracleSanityDeviation(bps)`, `setOracleSanityEnabled(enabled)`, `pause/unpause`, UUPS upgrade
+- **Views:** `getBestQuote(tokenIn, tokenOut, amountIn)` → `(QuoteResult, adapterId)`, `getAllQuotes(...)`, `getAdapters()`, `getAdapter(id)`, `adapterCount()`, `isAdapterActive(id)`, `oracleHub()`, `maxOracleSanityDeviation()`, `oracleSanityEnabled()`
+
+### Events to index
+- `AdapterRegistered(adapterId, adapter, name)`, `AdapterDeactivated/Activated(adapterId)`
+- `OracleHubUpdated(hub)`, `OracleSanityDeviationUpdated(bps)`, `OracleSanityEnabledUpdated(enabled)`
+- `BestRouteSwap(user, tokenIn, tokenOut, amountIn, amountOut, adapterId)` — **PRIMARY user meta-ag swap event**
+- `MultiHopSwap(user, tokenIn, tokenOut, amountIn, amountOut, hops)`
+- `OracleSanityCheckFailed(tokenOut, expectedPrice, actualAmountOut, ...)` — **CRITICAL ALERT**
+
+### Reads
+- `IProtocolAdapter.{getQuote, executeSwap, supportsSwap}` per adapter; `IOracleHub.getPrice` for sanity; ERC20 `transferFrom` from user.
+
+### Writes
+- `_adapters[id]`, `_adapterIds[]`; sanity config; calls into adapters.
+
+### Indexer notes
+- For "all user swaps in protocol", UNION:
+  - `EventEmitter.Swap` (sender=user, NOT sender=SidioraAdapter)
+  - `MetaAGRouter.BestRouteSwap`
+  - `MetaAGRouter.MultiHopSwap`
+- Multi-hop emits ONE `MultiHopSwap` plus N `BestRouteSwap`. Dedupe — user-facing entity is the MultiHop; per-hop BestRoutes are intermediates.
+- `OracleSanityCheckFailed` = swap REVERTED for sanity. Repeated failures may indicate adapter manipulation or oracle desync.
+
+---
+
+## MetaAGQuoter  (quoter/)
+
+- **ABI:** `backend/deployments/abis/MetaAGQuoter.json` + `IMetaAGQuoter.json`
+- **Address proxy:** `paxeer-network-addresses.json#MetaAGQuoter_proxy` —
+  `0x52667faAbd90a6E35dcB5C526d278d72d058CC90`
+- **Address impl:** `paxeer-network-addresses.json#MetaAGQuoter_impl`
+- **Pattern:** UUPS. Spec §7.13. Read-only aggregator. Storage: 5 slots + `__gap[50]`. References: `priceOracle`, `vault`, `weth`, `pecor`.
+
+### Functions (all view; NO writes; NO events)
+- `quoteExactIn`, `quoteExactOut`, `quoteExactInNative`, `quoteExactInToNative`, `quoteMarketBuy`, `quoteMarketSell`
+- `batchQuote(QuoteRequest[])` → `QuoteResult[]`
+- `getLiquidityInfo(token)` → `(available, tokenPrice, isStale)`
+- `getAllLiquidityInfo()` → `(tokens[], available[], prices[], stale[])`
+- `getTokenPrice(token)` → `(price, timestamp, isStale)`
+- `getTokenPrices(tokens[])`, `getTWAP(token, period)`
+- Admin: `initialize(priceOracle, vault, weth, pecor, admin)`, UUPS upgrade
+
+### Events: NONE.
+### Reads: `IOracleHub.getPrice / getPriceWithTimestamp / getTWAP`, `IPECORVault.{getReserves, isStablecoin}`, `IPECOR.swapFeeBps` (staticcall). Writes: NONE.
+
+### Indexer notes
+- Don't call on hot path — reconstruct from PECORVault reserves + OracleHub prices locally.
+- Use `getAllLiquidityInfo()` for cold-start "available pairs" UI.
+
+---
+
+## TransactionTracker  (analytics/)
+
+- **ABI:** `backend/deployments/abis/TransactionTracker.json` + `ITransactionTracker.json`
+- **Address proxy:** `paxeer-network-addresses.json#TransactionTracker_proxy` —
+  `0x8C62e5c9794420BfE697cbf662fc520e0E4969De`
+- **Address impl:** `paxeer-network-addresses.json#TransactionTracker_impl`
+- **Pattern:** UUPS. Spec §7.12. Storage: 11 slots + `__gap[50]`.
+- **Roles:** `DEFAULT_ADMIN_ROLE` = Timelock; `EMITTER_ROLE` = PECOR, PECOROrders, MetaAGRouter (per `_meta_pecor.wiringDone`).
+
+### Functions
+- **EMITTER writes:** `recordTrade(user, tokenIn, tokenOut, amountIn, amountOut, volumeUSD)`, `recordMarketTrade(user, stablecoin, token, stablecoinAmount, tokenAmount, isBuy, executionPrice)`, `recordLimitOrderPlaced/Executed/Cancelled`, `recordStopLossPlaced/Triggered`, `recordStopLimitPlaced/Activated/Executed`, `recordLiquidityAdded(token, provider, amount, newReserve)`, `recordLiquidityRemoved(token, remover, amount, newReserve)`
+- **Admin writes:** `initialize(admin)`, `setAuthorizedEmitter(emitter, authorized)`, `forceDaySnapshot()`, UUPS upgrade
+- **Views:** `getDailyStats(dayTimestamp)`, `getTokenStats(token)`, `getUserStats(user)`, `getCurrentDayStats()`
+
+### Events to index (DENSE — primary meta-ag analytics source)
+- `TradeExecuted(user, tokenIn, tokenOut, amountIn, amountOut, volumeUSD, timestamp)`
+- `MarketTrade(user, stablecoin, token, stablecoinAmount, tokenAmount, isBuy, executionPrice, timestamp)`
+- `LimitOrderPlaced(orderId, user, token, stablecoin, tokenAmount, targetPrice, isBuy, timestamp)`
+- `LimitOrderExecuted(orderId, user, executionPrice, timestamp)`, `LimitOrderCancelled(orderId, user, timestamp)`
+- `StopLossPlaced(orderId, user, token, tokenAmount, triggerPrice, timestamp)`
+- `StopLossTriggered(orderId, user, triggerPrice, executionPrice, amountOut, timestamp)`
+- `StopLimitPlaced/Activated/Executed(...)`
+- `LiquidityAdded(token, provider, amount, newReserve, timestamp)`, `LiquidityRemoved(...)`
+- `DailyStatsSnapshot(dayTimestamp, totalVolume, totalTrades, uniqueTraders)`
+- `TokenVolumeUpdate(token, dailyVolume, totalVolume, timestamp)`
+- `VaultLiquidityUpdate(token, reserve, timestamp)`
+- `UserTradeMetrics(user, totalVolume, tradeCount, timestamp)`
+- `AuthorizedEmitterUpdated(emitter, authorized)`
+
+### Reads / Writes
+- Reads: nothing external. Writes: `dailyStats[day]`, `tokenStats[token]`, `userStats[user]`, `dailyTraders[day][user]` (uniqueness set), authorized emitter map.
+
+### Indexer notes
+- **Single richest source of meta-ag trading analytics.** Subscribe to ALL TransactionTracker events as the primary index for daily volume, user PnL, token rankings, vault TVL deltas, order history.
+- `volumeUSD` computed at trade-time via OracleHub. If oracle was stale/zero at that moment, `volumeUSD = 0` — DO NOT silently drop; record and surface as "missing volume attribution".
+- `DailyStatsSnapshot` fires on first interaction past day-rollover OR via `forceDaySnapshot()`. Use as authoritative daily aggregate (avoids drift from local computation).
+
+---
+
+## ERC1967Proxy  (proxy/)
+
+- **NOT directly deployed.** Helper for deploy scripts; every UUPS proxy in
+  this group IS an ERC1967Proxy instance. Each `*_proxy` address in
+  `paxeer-network-addresses.json` is one of these.
+
+### Functions: `constructor(implementation, initData)`, `fallback`, `receive`.
+### Notes: v2 helper bubbles up initializer custom errors verbatim. Pin assertions to inner errors (`ZeroAddress`, `InvalidConfig`), NOT a generic `InitializationFailed`.
+
+---
+
+## Mocks  (mocks/)
+
+- **NOT DEPLOYED to mainnet.** Test-only contracts; ship in source because Hardhat's `paths.sources` accepts only one root, but skipped by deploy scripts. Indexer / off-chain code MUST NOT reference any mock address.
+
+---
+
+## Cross-cutting reads / writes summary
+
+| External Contract       | Read by                                      | Written by                                  |
+| ----------------------- | -------------------------------------------- | ------------------------------------------- |
+| `PriceOracle`           | OracleHub (TWAP fallback), PriceOracleAdapter| RELAYER (relayer push)                      |
+| `OracleHub`             | PECOR, PECOROrders, MetaAGRouter, MetaAGQuoter | Timelock (admin)                          |
+| `PriceOracleAdapter`    | OracleHub                                    | —                                           |
+| `SidioraFeedAdapter`    | OracleHub                                    | admin (token/pool registration)             |
+| `PECORVault`            | PECOR, PECOROrders, VaultAdapter, MetaAGQuoter | PECOR/PECOROrders/VaultAdapter (OPERATOR) |
+| `PECOR`                 | MetaAGQuoter (`swapFeeBps` staticcall)       | external user                               |
+| `PECOROrders`           | external                                     | user (place/cancel), keeper (execute)       |
+| `VaultAdapter`          | MetaAGRouter                                 | MetaAGRouter (executeSwap)                  |
+| `SidioraAdapter`        | MetaAGRouter                                 | MetaAGRouter (executeSwap)                  |
+| `MetaAGRouter`          | external                                     | external user                               |
+| `MetaAGQuoter`          | external (off-chain)                         | —                                           |
+| `TransactionTracker`    | external (off-chain analytics)               | PECOR/PECOROrders/MetaAGRouter (EMITTER)    |
+| Live SidioraAMM (data/, periphery/, core/) | SidioraAdapter, SidioraFeedAdapter | SidioraAdapter (via Router)               |
+
+## Wiring + security notes
+- `_meta_pecor.wiringPending = ["TRANSFER_ADMIN_TO_TIMELOCK"]` — until that closes, deployer (`0xfc263db0dd9087874B0B5c388d50704B83138F9B`) retains DEFAULT_ADMIN_ROLE on every meta-ag UUPS proxy. Surface this in ops dashboards as "admin transition pending".
+- `_meta_pecor.deployedAt = 2026-04-25T05:13:00Z`. Storage layout baselines committed under `storage-layout/meta-ag/` in `/root/sidiora-contracts` (verify mirroring into this monorepo before any upgrade).
+- All PECOR + Meta-AG swap paths gated by OracleHub + PriceOracle liveness — `wiringDone` registers ONLY USDL and WPAX. Adding new tokens is a 4-step Timelock procedure: PriceOracle.registerToken → Vault.registerToken → adapter attestation → optional MetaAGRouter adapter registration.
+
+## Coverage caveats
+- This freeze locks the on-chain SURFACE only. Behavioral edge cases (oracle circuit-breaker race conditions, adapter approval failures, FoT token interactions) are spec-bound — see `docs/architecture/pecor-sidiora-aggregator-spec.md` and `commit-alpha.pax` for canonical mainnet wiring sequence.
+- Per-contract function lists derive from interface files; verify against impl ABI in `backend/deployments/abis/*.json` before encoding calls (some impls expose additional public state that's not in the interface).

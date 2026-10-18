@@ -1,0 +1,203 @@
+{
+  "schema_version": 3,
+  "task": "3.49",
+  "chain_id": 125,
+  "binding_source": "admitted current candidate and qualified2.99 output interface; explicit private recovery topology and exact resource lease",
+  "scenarios": [
+    {
+      "id": "scanner-webhook-auth",
+      "requirements": [
+        "D16_019.1",
+        "D16_019.2",
+        "D16_019.3",
+        "D16_019.4",
+        "D16_019.5"
+      ],
+      "assertions": [
+        "real valid image succeeds before scanner outage",
+        "paused actual scanner rejects same genuine upload",
+        "actual gateway denies missing provider signature, expired signed replay, absent user authorization, oversized multipart, polyglot and unsafe SVG",
+        "PostgreSQL lifecycle/inbox/outbox and image/profile state unchanged"
+      ],
+      "runner": "journeys.py --phase 3; actual browser, PostgreSQL and source-bound native controls",
+      "status": "not_executed"
+    },
+    {
+      "id": "all-consumer-commit-ack",
+      "requirements": [
+        "D16_015.1",
+        "D16_015.2",
+        "D16_015.3",
+        "D16_015.4",
+        "D16_015.5"
+      ],
+      "assertions": [
+        "each durable indexer/stats/candles/pnl/users/chat/metadata/livestream/ranking consumer crashes after actual transaction commit and before broker ACK",
+        "ten actual delivery attempts and crash redelivery",
+        "independent persisted business and inbox/outbox equality"
+      ],
+      "runner": "journeys.py --phase 3; actual browser, PostgreSQL and source-bound native controls",
+      "status": "not_executed"
+    },
+    {
+      "id": "az-loss-ledger",
+      "requirements": [
+        "D16_011.1",
+        "D16_011.2",
+        "D16_011.3",
+        "D16_011.4",
+        "D16_011.5"
+      ],
+      "assertions": [
+        "exact isolated application, synchronous PostgreSQL and NATS R3 failure-domain resources stopped after actual browser durable writes",
+        "surviving PostgreSQL and broker quorum stay available",
+        "acknowledged chat/watchlist/creation/fills/inbox/outbox/projections preserved",
+        "browser replay displays actual persistence within120seconds"
+      ],
+      "runner": "journeys.py --phase 3; actual browser, PostgreSQL and source-bound native controls",
+      "status": "not_executed"
+    },
+    {
+      "id": "rpc-integrity-quarantine",
+      "requirements": [
+        "D16_018.1",
+        "D16_018.2",
+        "D16_018.3",
+        "D16_018.4",
+        "D16_018.5"
+      ],
+      "assertions": [
+        "raw actual RPC hash disagreement",
+        "persisted affected stream quarantined and stops advancement",
+        "committed history is retained without ordinary rollback",
+        "actual browser displays explicit integrity unavailable"
+      ],
+      "runner": "journeys.py --phase 3; actual browser, PostgreSQL and source-bound native controls",
+      "status": "not_executed"
+    },
+    {
+      "id": "incompatible-rollback-denial",
+      "requirements": [
+        "D16_029.1",
+        "D16_029.2",
+        "D16_029.3",
+        "D16_029.4",
+        "D16_029.5"
+      ],
+      "assertions": [
+        "actual incompatible candidate schema/registry rehearsal denied before activation",
+        "production and validator remain unchanged"
+      ],
+      "runner": "journeys.py --phase 3; actual browser, PostgreSQL and source-bound native controls",
+      "status": "not_executed"
+    },
+    {
+      "id": "redis-outage",
+      "requirements": [
+        "D16_029.1",
+        "D16_029.2",
+        "D16_029.3",
+        "D16_029.4",
+        "D16_029.5"
+      ],
+      "affected_features": [
+        "sensitive rate limit admission"
+      ],
+      "detection_threshold_seconds": 5,
+      "recovery_bound_seconds": 120,
+      "recovery_condition": "actual persisted acknowledged business state and independent accounting reconciliation",
+      "ui_state": "explicit unavailable during fault; persisted state after recovery",
+      "status": "not_executed",
+      "runner": "journeys.py --phase 3"
+    },
+    {
+      "id": "nats-quorum-loss",
+      "requirements": [
+        "D16_029.1",
+        "D16_029.2",
+        "D16_029.3",
+        "D16_029.4",
+        "D16_029.5"
+      ],
+      "affected_features": [
+        "durable broker mutation"
+      ],
+      "detection_threshold_seconds": 5,
+      "recovery_bound_seconds": 120,
+      "recovery_condition": "actual persisted acknowledged business state and independent accounting reconciliation",
+      "ui_state": "explicit unavailable during fault; persisted state after recovery",
+      "status": "not_executed",
+      "runner": "journeys.py --phase 3"
+    },
+    {
+      "id": "object-storage-failure",
+      "requirements": [
+        "D16_029.1",
+        "D16_029.2",
+        "D16_029.3",
+        "D16_029.4",
+        "D16_029.5"
+      ],
+      "affected_features": [
+        "media persistence"
+      ],
+      "detection_threshold_seconds": 5,
+      "recovery_bound_seconds": 120,
+      "recovery_condition": "actual persisted acknowledged business state and independent accounting reconciliation",
+      "ui_state": "explicit unavailable during fault; persisted state after recovery",
+      "status": "not_executed",
+      "runner": "journeys.py --phase 3"
+    },
+    {
+      "id": "application-restart",
+      "requirements": [
+        "D16_029.1",
+        "D16_029.2",
+        "D16_029.3",
+        "D16_029.4",
+        "D16_029.5"
+      ],
+      "affected_features": [
+        "durable client recovery"
+      ],
+      "detection_threshold_seconds": 5,
+      "recovery_bound_seconds": 120,
+      "recovery_condition": "actual persisted acknowledged business state and independent accounting reconciliation",
+      "ui_state": "explicit unavailable during fault; persisted state after recovery",
+      "status": "not_executed",
+      "runner": "journeys.py --phase 3"
+    },
+    {
+      "id": "database-pool-exhaustion",
+      "requirements": [
+        "D16_029.1",
+        "D16_029.2",
+        "D16_029.3",
+        "D16_029.4",
+        "D16_029.5"
+      ],
+      "affected_features": [
+        "database admission"
+      ],
+      "detection_threshold_seconds": 5,
+      "recovery_bound_seconds": 120,
+      "recovery_condition": "actual persisted acknowledged business state and independent accounting reconciliation",
+      "ui_state": "explicit unavailable during fault; persisted state after recovery",
+      "status": "not_executed",
+      "runner": "journeys.py --phase 3"
+    }
+  ],
+  "qualification_status": "not_executed",
+  "production_qualified": false,
+  "capacity_qualified": false,
+  "disaster_recovery_qualified": false,
+  "evidence_policy": "phase-3-evidence-policy.json",
+  "not_qualified_in_this_phase": [
+    "D16_012 cross-region RPO/RTO",
+    "D16_013 actual72hour replay",
+    "D16_015.4 10kevents/s burst with10percent duplicate transport",
+    "D16_018.1 full20block shuffled ordering release campaign",
+    "D16_022 coverage and disposable mutation release campaign",
+    "final capacity and complete feature acceptance"
+  ]
+}

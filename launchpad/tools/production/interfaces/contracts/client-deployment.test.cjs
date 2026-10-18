@@ -1,0 +1,13 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {deriveDeployment,renderHelper,checkClient}=require('./client-deployment.cjs');
+const clientRoot=path.resolve(__dirname,'../../../../client/apps/web/src');
+const helper=require(path.join(clientRoot,'core/network/deployment.ts'));
+const data=deriveDeployment(process.env.CONTRACT_SOURCE_ROOT);
+test('helper bytes and all identity fields derive from reviewed manifest',()=>{assert.equal(fs.readFileSync(path.join(clientRoot,'core/network/deployment.ts'),'utf8'),renderHelper(data));assert.deepEqual(helper.CORE_DEPLOYMENT,data);assert.equal(data.chainId,125);});
+test('accepted router alone can receive approval, with case-insensitive identity',()=>{assert.equal(helper.isActiveApprovalSpender(data.router),true);assert.equal(helper.isActiveApprovalSpender('0x'+data.router.slice(2).toUpperCase()),true);helper.assertActiveApprovalSpender(data.router);});
+test('stale router, optional spender, other role and malformed spender reject',()=>{for(const value of ['0xCC7298801112682e10ee14b8a520309caD80336d','0x16bC4aB280c67977639591615d2a52273cDf5f6E',data.feesRouter,'0x'+'0'.repeat(40),'not an address','',undefined]){assert.equal(helper.isActiveApprovalSpender(value),false);assert.throws(()=>helper.assertActiveApprovalSpender(value),/no verified active deployment/);}});
+test('optional capabilities fail closed without fabricated addresses',()=>{assert.deepEqual(helper.OPTIONAL_CONTRACT_CAPABILITIES,{metaAg:false,pecorOrders:false});for(const capability of ['metaAg','pecorOrders'])assert.throws(()=>helper.assertOptionalContractCapability(capability),/no verified active deployment/);});
+test('environment override cannot change frozen address or optional policy',()=>{const old=process.env.ROUTER_ADDRESS;try{process.env.ROUTER_ADDRESS='0xCC7298801112682e10ee14b8a520309caD80336d';assert.equal(helper.CORE_DEPLOYMENT.router,data.router);assert.equal(helper.isActiveApprovalSpender(process.env.ROUTER_ADDRESS),false);}finally{if(old===undefined)delete process.env.ROUTER_ADDRESS;else process.env.ROUTER_ADDRESS=old;}});
+test('deployment and capability objects cannot be mutated',()=>{assert.throws(()=>{helper.CORE_DEPLOYMENT.router=data.feesRouter},TypeError);assert.throws(()=>{helper.OPTIONAL_CONTRACT_CAPABILITIES.metaAg=true},TypeError);});
+test('checker rejects drift from its manifest-derived helper',()=>{const drift={...data,router:'0xCC7298801112682e10ee14b8a520309caD80336d'};assert.throws(()=>checkClient(clientRoot,drift,renderHelper(drift)),/helper drift/);});

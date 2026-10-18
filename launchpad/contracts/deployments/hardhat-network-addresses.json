@@ -1,0 +1,152 @@
+{
+  "_meta": {
+    "network": "31337",
+    "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "status": "bootstrap",
+    "usdl": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+    "sid": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0"
+  },
+  "_deployment": {
+    "version": 1,
+    "configHash": "0x5271542e97fd787421278bd32e695343b659c1dea7c6350efdfad592ee0faf6f",
+    "config": {
+      "usdl": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+      "sid": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+      "guardian": "0x1dae78b53c9f39930a2ff2b6b7aac12ec75fb154",
+      "delay": 172800,
+      "network": "hardhat-network",
+      "usdlCodeHash": "0x48f81d189a945082cdbbdbecb5b9a407a121ee1cf001288392abe26754bdc714",
+      "sidCodeHash": "0x48f81d189a945082cdbbdbecb5b9a407a121ee1cf001288392abe26754bdc714"
+    },
+    "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "inherited": {},
+    "records": {
+      "EventEmitter_impl": {
+        "name": "EventEmitter",
+        "args": [],
+        "creationHash": "0x49007705c7a17f521925338f0fbccd32477c9814ef05ebcb0b7f348d174800c0",
+        "address": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+        "nonce": 8,
+        "value": "0",
+        "preparedBlock": 8,
+        "status": "confirmed",
+        "txHash": "0xf1860adc285ad2430f2c3f5368cd05b4d9188ce4213e936e2ef9ff9bef4e2045",
+        "runtimeHash": "0x34e17831894afdb6bbf1475eb58036f8dc0e85a898cdff51af29f149c497d908",
+        "blockNumber": 9
+      },
+      "EventEmitter_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+          "0xc4d66de8000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+        ],
+        "creationHash": "0x04090583b81e81d14b20f1afb2e6e86441742369c786e242b939f0ddd20a006f",
+        "address": "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+        "nonce": 9,
+        "value": "0",
+        "preparedBlock": 9,
+        "status": "confirmed",
+        "txHash": "0x9524f95a0855222247931347c30b18f28e5e94cd27d8971aae910f0e1f2d356b",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 10
+      },
+      "ProtocolConfig_impl": {
+        "name": "ProtocolConfig",
+        "args": [],
+        "creationHash": "0xf714f4fd26a31456a3c88966289306a2657bce7f31cbd8687acc9e07f2419247",
+        "address": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+        "nonce": 10,
+        "value": "0",
+        "preparedBlock": 10,
+        "status": "confirmed",
+        "txHash": "0xb1ac044795129eeeabd02fa5c2e6bb65e52f720b44058ff9055b6f031e40637e",
+        "runtimeHash": "0xfe1805eb063a3b70227418c5f4029b449f923432cc93d426b87d0d3657318518",
+        "blockNumber": 11
+      },
+      "ProtocolConfig_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+          "0xc0c53b8b0000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa30000000000000000000000008a791620dd6260079bf849dc5567adc3f2fdc318000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+        ],
+        "creationHash": "0xda93bd9160e8ef4da8466a68a0f1c504347ca813a9cf77bff50b76ddea222b60",
+        "address": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+        "nonce": 11,
+        "value": "0",
+        "preparedBlock": 11,
+        "status": "confirmed",
+        "txHash": "0x3a28e28b8ef5ee86f34a5cd04cebff1ba492025489316bc7207c20afac5d57ad",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 12
+      },
+      "Treasury_impl": {
+        "name": "Treasury",
+        "args": [],
+        "creationHash": "0x332d8a3392311445aaf2f6b3f202c28fdfedbc5476b590dbabe3659b3e3efed8",
+        "address": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+        "nonce": 12,
+        "value": "0",
+        "preparedBlock": 12,
+        "status": "confirmed",
+        "txHash": "0x42dadba78273b2e540e5f47a5e84e084cabd67f426d58e08ba450d058992b07c",
+        "runtimeHash": "0x757927c4aca2cc8b65210d4c09e18f63586ef4780ff87190f6ccffca31e06be2",
+        "blockNumber": 13
+      },
+      "Treasury_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+          "0x485cc9550000000000000000000000008a791620dd6260079bf849dc5567adc3f2fdc318000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+        ],
+        "creationHash": "0xe6017050d11e69b39641432c3288d87e5e56c291e7db8703a09c7bc8cf5e32d5",
+        "address": "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82",
+        "nonce": 13,
+        "value": "0",
+        "preparedBlock": 13,
+        "status": "confirmed",
+        "txHash": "0x2a1a41c3426c8e90e6cd81122781665937076a4f71654a341ac1157e263323b0",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 14
+      },
+      "Timelock": {
+        "name": "Timelock",
+        "args": [
+          172800,
+          "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "0x1DAe78b53C9F39930a2Ff2B6B7AaC12EC75FB154"
+        ],
+        "creationHash": "0xfd9051646b9d5cefd55799e77bfb78fff2ad62d9c5fcd6e86bb219abe8a6ef38",
+        "address": "0x9A676e781A523b5d0C0e43731313A708CB607508",
+        "nonce": 14,
+        "value": "0",
+        "preparedBlock": 14,
+        "status": "confirmed",
+        "txHash": "0x59120ef7ef96af46cfadaff1ecd22fb95b9474cc2ddccd1cbbc5a5af61e48dbf",
+        "runtimeHash": "0x533e56db88702e85e2ad116a20de035e626385baa84b523b466e2e9c04567a7d",
+        "blockNumber": 15
+      },
+      "GovernanceModule_impl": {
+        "name": "GovernanceModule",
+        "args": [],
+        "creationHash": "0x95903ee9cd7266ca013aac0d97b4fba4f4e775dad86690333a586d1e6d41b9fe",
+        "address": "0x0B306BF915C4d645ff596e518fAf3F9669b97016",
+        "nonce": 15,
+        "value": "0",
+        "preparedBlock": 15,
+        "status": "confirmed",
+        "txHash": "0xb834c954eef28b626e7f7ebca2c858644165e3ee949e72e2d47c8435eb82b468",
+        "runtimeHash": "0x8a5a5bb64407e9e3b7934fa7a5c53a842faf67cdb2283fa01679464de8af7444",
+        "blockNumber": 16
+      }
+    },
+    "steps": {}
+  },
+  "EventEmitter_impl": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+  "EventEmitter_proxy": "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+  "ProtocolConfig_impl": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+  "ProtocolConfig_proxy": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+  "Treasury_impl": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+  "Treasury_proxy": "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82",
+  "Timelock": "0x9A676e781A523b5d0C0e43731313A708CB607508",
+  "GovernanceModule_impl": "0x0B306BF915C4d645ff596e518fAf3F9669b97016"
+}

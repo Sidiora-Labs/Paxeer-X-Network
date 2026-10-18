@@ -1,0 +1,31 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    # Schema = the goose migrations (single source of truth) PLUS the read-only
+    # foreign tables modeled for cross-schema type-checking. sqlc understands the
+    # goose up/down annotations and applies only the "up" statements.
+    schema:
+      - "migrations"
+      - "internal/db/external.sql"
+    queries: "internal/db/query.sql"
+    gen:
+      go:
+        package: "sqlcdb"
+        out: "internal/db/sqlcdb"
+        sql_package: "pgx/v5"
+        emit_interface: true
+        emit_empty_slices: true
+        emit_exact_table_names: false
+        overrides:
+          # Nullable text/varchar -> *string so the handler mapping layer stays
+          # trivial (pointer is nil on NULL). NOT NULL columns stay string.
+          - db_type: "pg_catalog.text"
+            nullable: true
+            go_type:
+              type: "string"
+              pointer: true
+          - db_type: "pg_catalog.varchar"
+            nullable: true
+            go_type:
+              type: "string"
+              pointer: true

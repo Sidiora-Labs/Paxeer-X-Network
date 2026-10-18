@@ -1,0 +1,147 @@
+{
+  "actor": "0x2c7536e3605d9c16a7a3d7b1898e529396a65c23",
+  "generator": "shared/auth OperationEnvelope.Statement + go-ethereum crypto.Sign(accounts.TextHash)",
+  "privateKey": "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318",
+  "vectors": [
+    {
+      "name": "v3-profile-patch",
+      "body": "{\"expectedRevision\":\"0\",\"displayName\":\"Ada <Lovelace> & co\",\"bio\":\"line\u2028sep\",\"website\":null,\"socials\":{\"twitter\":\"ada\"}}",
+      "envelope": {
+        "version": 2,
+        "chainId": "125",
+        "environment": "production",
+        "actor": "0x2c7536e3605d9c16a7a3d7b1898e529396a65c23",
+        "action": "profile.update",
+        "method": "PATCH",
+        "path": "/v3/profiles/0x2c7536e3605d9c16a7a3d7b1898e529396a65c23",
+        "bodyHash": "1eff739ba7b66645be902bda6ea8273153929f975a06f794541cb71965d90dd3",
+        "nonce": "9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70",
+        "issuedAt": 1791878400,
+        "expiresAt": 1791878700
+      },
+      "statement": "KindleLaunch signed operation v2\n{\"version\":2,\"chainId\":\"125\",\"environment\":\"production\",\"actor\":\"0x2c7536e3605d9c16a7a3d7b1898e529396a65c23\",\"action\":\"profile.update\",\"method\":\"PATCH\",\"path\":\"/v3/profiles/0x2c7536e3605d9c16a7a3d7b1898e529396a65c23\",\"bodyHash\":\"1eff739ba7b66645be902bda6ea8273153929f975a06f794541cb71965d90dd3\",\"nonce\":\"9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70\",\"issuedAt\":1791878400,\"expiresAt\":1791878700}",
+      "encoded": "eyJ2ZXJzaW9uIjoyLCJjaGFpbklkIjoiMTI1IiwiZW52aXJvbm1lbnQiOiJwcm9kdWN0aW9uIiwiYWN0b3IiOiIweDJjNzUzNmUzNjA1ZDljMTZhN2EzZDdiMTg5OGU1MjkzOTZhNjVjMjMiLCJhY3Rpb24iOiJwcm9maWxlLnVwZGF0ZSIsIm1ldGhvZCI6IlBBVENIIiwicGF0aCI6Ii92My9wcm9maWxlcy8weDJjNzUzNmUzNjA1ZDljMTZhN2EzZDdiMTg5OGU1MjkzOTZhNjVjMjMiLCJib2R5SGFzaCI6IjFlZmY3MzliYTdiNjY2NDViZTkwMmJkYTZlYTgyNzMxNTM5MjlmOTc1YTA2Zjc5NDU0MWNiNzE5NjVkOTBkZDMiLCJub25jZSI6IjlmMmM0ZTFhN2IzZDVmNjA4MTlhMmIzYzRkNWU2ZjcwODE5MmEzYjRjNWQ2ZTdmODA5MWEyYjNjNGQ1ZTZmNzAiLCJpc3N1ZWRBdCI6MTc5MTg3ODQwMCwiZXhwaXJlc0F0IjoxNzkxODc4NzAwfQ",
+      "signature": "0x5052f28c167cefaafb4477f39b51fa2319d477e3c66120d3539c6f7fb665f2a811aa1975056a46ab5e0aeec99a4f678e0d60108f37ab170fa8cb8f80fe04b79c1b"
+    },
+    {
+      "name": "v3-preferences-patch",
+      "body": "{\"expectedRevision\":\"3\",\"theme\":\"dark\"}",
+      "envelope": {
+        "version": 2,
+        "chainId": "125",
+        "environment": "production",
+        "actor": "0x2c7536e3605d9c16a7a3d7b1898e529396a65c23",
+        "action": "preferences.update",
+        "method": "PATCH",
+        "path": "/v3/me/preferences",
+        "bodyHash": "38520038ff3883236c602788094717e141646aa50fdeffe83a8fe5c1f48152ee",
+        "nonce": "9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70",
+        "issuedAt": 1791878400,
+        "expiresAt": 1791878700
+      },
+      "statement": "KindleLaunch signed operation v2\n{\"version\":2,\"chainId\":\"125\",\"environment\":\"production\",\"actor\":\"0x2c7536e3605d9c16a7a3d7b1898e529396a65c23\",\"action\":\"preferences.update\",\"method\":\"PATCH\",\"path\":\"/v3/me/preferences\",\"bodyHash\":\"38520038ff3883236c602788094717e141646aa50fdeffe83a8fe5c1f48152ee\",\"nonce\":\"9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70\",\"issuedAt\":1791878400,\"expiresAt\":1791878700}",
+      "encoded": "eyJ2ZXJzaW9uIjoyLCJjaGFpbklkIjoiMTI1IiwiZW52aXJvbm1lbnQiOiJwcm9kdWN0aW9uIiwiYWN0b3IiOiIweDJjNzUzNmUzNjA1ZDljMTZhN2EzZDdiMTg5OGU1MjkzOTZhNjVjMjMiLCJhY3Rpb24iOiJwcmVmZXJlbmNlcy51cGRhdGUiLCJtZXRob2QiOiJQQVRDSCIsInBhdGgiOiIvdjMvbWUvcHJlZmVyZW5jZXMiLCJib2R5SGFzaCI6IjM4NTIwMDM4ZmYzODgzMjM2YzYwMjc4ODA5NDcxN2UxNDE2NDZhYTUwZmRlZmZlODNhOGZlNWMxZjQ4MTUyZWUiLCJub25jZSI6IjlmMmM0ZTFhN2IzZDVmNjA4MTlhMmIzYzRkNWU2ZjcwODE5MmEzYjRjNWQ2ZTdmODA5MWEyYjNjNGQ1ZTZmNzAiLCJpc3N1ZWRBdCI6MTc5MTg3ODQwMCwiZXhwaXJlc0F0IjoxNzkxODc4NzAwfQ",
+      "signature": "0x21caf9ec0d6b01fa81ced8b674d9615d883c8e46ad817ed240335775efea12601f63022d4eb282d4fed83e2454943ae9943519ad21615fff53904e55bd5082381c"
+    },
+    {
+      "name": "v1-profile-patch",
+      "body": "{\"expectedRevision\":\"7\",\"displayName\":\"Ada\"}",
+      "envelope": {
+        "version": 2,
+        "chainId": "125",
+        "environment": "production",
+        "actor": "0x2c7536e3605d9c16a7a3d7b1898e529396a65c23",
+        "action": "profile.update",
+        "method": "PATCH",
+        "path": "/v1/profiles/0x2c7536e3605d9c16a7a3d7b1898e529396a65c23",
+        "bodyHash": "c863ba9bca7625285ced006f82536fd08fc99257cab821ce4f9d79d5b510973f",
+        "nonce": "9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70",
+        "issuedAt": 1791878400,
+        "expiresAt": 1791878700
+      },
+      "statement": "KindleLaunch signed operation v2\n{\"version\":2,\"chainId\":\"125\",\"environment\":\"production\",\"actor\":\"0x2c7536e3605d9c16a7a3d7b1898e529396a65c23\",\"action\":\"profile.update\",\"method\":\"PATCH\",\"path\":\"/v1/profiles/0x2c7536e3605d9c16a7a3d7b1898e529396a65c23\",\"bodyHash\":\"c863ba9bca7625285ced006f82536fd08fc99257cab821ce4f9d79d5b510973f\",\"nonce\":\"9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70\",\"issuedAt\":1791878400,\"expiresAt\":1791878700}",
+      "encoded": "eyJ2ZXJzaW9uIjoyLCJjaGFpbklkIjoiMTI1IiwiZW52aXJvbm1lbnQiOiJwcm9kdWN0aW9uIiwiYWN0b3IiOiIweDJjNzUzNmUzNjA1ZDljMTZhN2EzZDdiMTg5OGU1MjkzOTZhNjVjMjMiLCJhY3Rpb24iOiJwcm9maWxlLnVwZGF0ZSIsIm1ldGhvZCI6IlBBVENIIiwicGF0aCI6Ii92MS9wcm9maWxlcy8weDJjNzUzNmUzNjA1ZDljMTZhN2EzZDdiMTg5OGU1MjkzOTZhNjVjMjMiLCJib2R5SGFzaCI6ImM4NjNiYTliY2E3NjI1Mjg1Y2VkMDA2ZjgyNTM2ZmQwOGZjOTkyNTdjYWI4MjFjZTRmOWQ3OWQ1YjUxMDk3M2YiLCJub25jZSI6IjlmMmM0ZTFhN2IzZDVmNjA4MTlhMmIzYzRkNWU2ZjcwODE5MmEzYjRjNWQ2ZTdmODA5MWEyYjNjNGQ1ZTZmNzAiLCJpc3N1ZWRBdCI6MTc5MTg3ODQwMCwiZXhwaXJlc0F0IjoxNzkxODc4NzAwfQ",
+      "signature": "0x3198d3d9e738a80a5bb81b1393db0af8091466465b41e38dc0164c653c572c791d34642d62f4e5695439913920a5d1e56faad2841ecb29905fb55af47fcf9c841b"
+    },
+    {
+      "name": "v1-watchlist-put",
+      "body": "{\"alertEnabled\":false}",
+      "envelope": {
+        "version": 2,
+        "chainId": "125",
+        "environment": "production",
+        "actor": "0x2c7536e3605d9c16a7a3d7b1898e529396a65c23",
+        "action": "watchlist.update",
+        "method": "PUT",
+        "path": "/v1/me/watchlist/0xce20da50f92d21d8bee497910c782e9aa25b6263",
+        "bodyHash": "2f84e208269084139368869de039a0788b8d49ae06f4a3c7ae09dedf27132728",
+        "nonce": "9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70",
+        "issuedAt": 1791878400,
+        "expiresAt": 1791878700
+      },
+      "statement": "KindleLaunch signed operation v2\n{\"version\":2,\"chainId\":\"125\",\"environment\":\"production\",\"actor\":\"0x2c7536e3605d9c16a7a3d7b1898e529396a65c23\",\"action\":\"watchlist.update\",\"method\":\"PUT\",\"path\":\"/v1/me/watchlist/0xce20da50f92d21d8bee497910c782e9aa25b6263\",\"bodyHash\":\"2f84e208269084139368869de039a0788b8d49ae06f4a3c7ae09dedf27132728\",\"nonce\":\"9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70\",\"issuedAt\":1791878400,\"expiresAt\":1791878700}",
+      "encoded": "eyJ2ZXJzaW9uIjoyLCJjaGFpbklkIjoiMTI1IiwiZW52aXJvbm1lbnQiOiJwcm9kdWN0aW9uIiwiYWN0b3IiOiIweDJjNzUzNmUzNjA1ZDljMTZhN2EzZDdiMTg5OGU1MjkzOTZhNjVjMjMiLCJhY3Rpb24iOiJ3YXRjaGxpc3QudXBkYXRlIiwibWV0aG9kIjoiUFVUIiwicGF0aCI6Ii92MS9tZS93YXRjaGxpc3QvMHhjZTIwZGE1MGY5MmQyMWQ4YmVlNDk3OTEwYzc4MmU5YWEyNWI2MjYzIiwiYm9keUhhc2giOiIyZjg0ZTIwODI2OTA4NDEzOTM2ODg2OWRlMDM5YTA3ODhiOGQ0OWFlMDZmNGEzYzdhZTA5ZGVkZjI3MTMyNzI4Iiwibm9uY2UiOiI5ZjJjNGUxYTdiM2Q1ZjYwODE5YTJiM2M0ZDVlNmY3MDgxOTJhM2I0YzVkNmU3ZjgwOTFhMmIzYzRkNWU2ZjcwIiwiaXNzdWVkQXQiOjE3OTE4Nzg0MDAsImV4cGlyZXNBdCI6MTc5MTg3ODcwMH0",
+      "signature": "0x543ad19b6ffde8b1241e7293972935584c7c7e35086b743dae86a38663a53e8c248311937c266d97980f4321709fcf60db75ffbab5e61d0ef3555d42ef5a6d541b"
+    },
+    {
+      "name": "v1-watchlist-delete",
+      "body": "",
+      "envelope": {
+        "version": 2,
+        "chainId": "125",
+        "environment": "production",
+        "actor": "0x2c7536e3605d9c16a7a3d7b1898e529396a65c23",
+        "action": "watchlist.remove",
+        "method": "DELETE",
+        "path": "/v1/me/watchlist/0xce20da50f92d21d8bee497910c782e9aa25b6263",
+        "bodyHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "nonce": "9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70",
+        "issuedAt": 1791878400,
+        "expiresAt": 1791878700
+      },
+      "statement": "KindleLaunch signed operation v2\n{\"version\":2,\"chainId\":\"125\",\"environment\":\"production\",\"actor\":\"0x2c7536e3605d9c16a7a3d7b1898e529396a65c23\",\"action\":\"watchlist.remove\",\"method\":\"DELETE\",\"path\":\"/v1/me/watchlist/0xce20da50f92d21d8bee497910c782e9aa25b6263\",\"bodyHash\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"nonce\":\"9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70\",\"issuedAt\":1791878400,\"expiresAt\":1791878700}",
+      "encoded": "eyJ2ZXJzaW9uIjoyLCJjaGFpbklkIjoiMTI1IiwiZW52aXJvbm1lbnQiOiJwcm9kdWN0aW9uIiwiYWN0b3IiOiIweDJjNzUzNmUzNjA1ZDljMTZhN2EzZDdiMTg5OGU1MjkzOTZhNjVjMjMiLCJhY3Rpb24iOiJ3YXRjaGxpc3QucmVtb3ZlIiwibWV0aG9kIjoiREVMRVRFIiwicGF0aCI6Ii92MS9tZS93YXRjaGxpc3QvMHhjZTIwZGE1MGY5MmQyMWQ4YmVlNDk3OTEwYzc4MmU5YWEyNWI2MjYzIiwiYm9keUhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1Iiwibm9uY2UiOiI5ZjJjNGUxYTdiM2Q1ZjYwODE5YTJiM2M0ZDVlNmY3MDgxOTJhM2I0YzVkNmU3ZjgwOTFhMmIzYzRkNWU2ZjcwIiwiaXNzdWVkQXQiOjE3OTE4Nzg0MDAsImV4cGlyZXNBdCI6MTc5MTg3ODcwMH0",
+      "signature": "0x5a0960d51370e907041ee9d7b03418624278fd4253593dfb9645057932a66085004ce140eb5ea79648771646fa59a21af33139a8cab5694c81c7d03d1f3b219e1c"
+    },
+    {
+      "name": "html-escaped-path",
+      "body": "{\"a\":1}",
+      "envelope": {
+        "version": 2,
+        "chainId": "125",
+        "environment": "production",
+        "actor": "0x2c7536e3605d9c16a7a3d7b1898e529396a65c23",
+        "action": "profile.update",
+        "method": "PATCH",
+        "path": "/v1/a&b=c@d",
+        "bodyHash": "015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862",
+        "nonce": "9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70",
+        "issuedAt": 1791878400,
+        "expiresAt": 1791878700
+      },
+      "statement": "KindleLaunch signed operation v2\n{\"version\":2,\"chainId\":\"125\",\"environment\":\"production\",\"actor\":\"0x2c7536e3605d9c16a7a3d7b1898e529396a65c23\",\"action\":\"profile.update\",\"method\":\"PATCH\",\"path\":\"/v1/a\\u0026b=c@d\",\"bodyHash\":\"015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862\",\"nonce\":\"9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70\",\"issuedAt\":1791878400,\"expiresAt\":1791878700}",
+      "encoded": "eyJ2ZXJzaW9uIjoyLCJjaGFpbklkIjoiMTI1IiwiZW52aXJvbm1lbnQiOiJwcm9kdWN0aW9uIiwiYWN0b3IiOiIweDJjNzUzNmUzNjA1ZDljMTZhN2EzZDdiMTg5OGU1MjkzOTZhNjVjMjMiLCJhY3Rpb24iOiJwcm9maWxlLnVwZGF0ZSIsIm1ldGhvZCI6IlBBVENIIiwicGF0aCI6Ii92MS9hXHUwMDI2Yj1jQGQiLCJib2R5SGFzaCI6IjAxNWFiZDdmNWNjNTdhMmRkOTRiNzU5MGYwNGFkODA4NDI3MzkwNWVlMzNlYzVjZWJlYWU2MjI3NmE5N2Y4NjIiLCJub25jZSI6IjlmMmM0ZTFhN2IzZDVmNjA4MTlhMmIzYzRkNWU2ZjcwODE5MmEzYjRjNWQ2ZTdmODA5MWEyYjNjNGQ1ZTZmNzAiLCJpc3N1ZWRBdCI6MTc5MTg3ODQwMCwiZXhwaXJlc0F0IjoxNzkxODc4NzAwfQ",
+      "signature": "0x62cdd3c1802b46661fa01d31f316aeb8322055e21c585704ccbec9a9732a079e4f40d7bbf6223db681799a82b1c30b3e2ed3201c1590bbc294a7ce80efeed0d51b"
+    },
+    {
+      "name": "livestream-v1-create",
+      "body": "{\"poolAddress\":\"0xce20da50f92d21d8bee497910c782e9aa25b6263\",\"title\":\"Launch\"}",
+      "envelope": {
+        "version": 1,
+        "chainId": "125",
+        "environment": "production",
+        "actor": "0x2c7536e3605d9c16a7a3d7b1898e529396a65c23",
+        "action": "stream.create",
+        "method": "POST",
+        "path": "/v2/streams",
+        "bodyHash": "bf36a71085899a6d27fb7c1bde208b6d68c2332ee96409e74b819e2e813399cf",
+        "nonce": "9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70",
+        "issuedAt": 1791878400,
+        "expiresAt": 1791878700
+      },
+      "statement": "KindleLaunch signed operation v1\n{\"version\":1,\"chainId\":\"125\",\"environment\":\"production\",\"actor\":\"0x2c7536e3605d9c16a7a3d7b1898e529396a65c23\",\"action\":\"stream.create\",\"method\":\"POST\",\"path\":\"/v2/streams\",\"bodyHash\":\"bf36a71085899a6d27fb7c1bde208b6d68c2332ee96409e74b819e2e813399cf\",\"nonce\":\"9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70\",\"issuedAt\":1791878400,\"expiresAt\":1791878700}",
+      "encoded": "eyJ2ZXJzaW9uIjoxLCJjaGFpbklkIjoiMTI1IiwiZW52aXJvbm1lbnQiOiJwcm9kdWN0aW9uIiwiYWN0b3IiOiIweDJjNzUzNmUzNjA1ZDljMTZhN2EzZDdiMTg5OGU1MjkzOTZhNjVjMjMiLCJhY3Rpb24iOiJzdHJlYW0uY3JlYXRlIiwibWV0aG9kIjoiUE9TVCIsInBhdGgiOiIvdjIvc3RyZWFtcyIsImJvZHlIYXNoIjoiYmYzNmE3MTA4NTg5OWE2ZDI3ZmI3YzFiZGUyMDhiNmQ2OGMyMzMyZWU5NjQwOWU3NGI4MTllMmU4MTMzOTljZiIsIm5vbmNlIjoiOWYyYzRlMWE3YjNkNWY2MDgxOWEyYjNjNGQ1ZTZmNzA4MTkyYTNiNGM1ZDZlN2Y4MDkxYTJiM2M0ZDVlNmY3MCIsImlzc3VlZEF0IjoxNzkxODc4NDAwLCJleHBpcmVzQXQiOjE3OTE4Nzg3MDB9",
+      "signature": "0xe3525b30ca8e7e7ac5f5007ab22ceb8fec810f602122263d49fad95ce22ae3f22bd87c6dc0e75be97f324c0f67f52c256c4e079ec031cc736beec47689aa5bfb1b"
+    }
+  ]
+}

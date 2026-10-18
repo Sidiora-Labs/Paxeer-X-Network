@@ -1,0 +1,44 @@
+# Go build / test artifacts
+/.cover/
+*.out
+*.test
+*.prof
+bin/
+dist/
+client/apps/web/.env
+client/apps/web/node_modules
+client/development/openapi
+client/docs
+client/node_modules
+knowledge/fix-log
+knowledge/*.md
+knowledge/*.png
+knowledge/*.log
+# Local env (never commit secrets — SECTION 17 security)
+*.env
+!docker-envs/*.env.example
+.env
+.env.*
+client/Dockerfile
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+
+# Tooling caches
+.golangci-cache/
+contracts/node_modules
+contracts/.env
+client/.vercel
+client/apps/web/vercel.json
+client/apps/web/.vercel
+# Generated client and qualification outputs
+node_modules/
+.next/
+*.tsbuildinfo
+evidence/
+__pycache__/
+.codegraph
+# Replica reference screenshots are never shipped
+replica/screens/

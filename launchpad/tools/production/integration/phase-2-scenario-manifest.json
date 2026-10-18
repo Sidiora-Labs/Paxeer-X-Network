@@ -1,0 +1,109 @@
+{
+  "schema_version": 2,
+  "task": "2.49",
+  "chain_id": 125,
+  "binding_source": "coordinator admitted PHASE2_CONFIG_FILE bound to prior qualified1.99 output interface and current candidate",
+  "scenarios": [
+    {
+      "id": "deployment-registry",
+      "requirements": [
+        "D16_020.1",
+        "D16_020.2",
+        "D16_020.3",
+        "D16_020.4",
+        "D16_020.5"
+      ],
+      "assertions": [
+        "frontend/backend enabled runtime address and implementation hashes equal actual eth_getCode",
+        "chain125 PAX18 USDL6",
+        "missing admitted manifest fails"
+      ],
+      "runner": "browser-journeys.mjs registry"
+    },
+    {
+      "id": "persisted-browser-journeys",
+      "requirements": [
+        "D16_021.1",
+        "D16_021.2",
+        "D16_021.3",
+        "D16_021.4",
+        "D16_021.5",
+        "D16_016.1",
+        "D16_016.2",
+        "D16_016.3",
+        "D16_016.4",
+        "D16_016.5"
+      ],
+      "assertions": [
+        "actual mounted create/trade/watchlist/chat interactions",
+        "mined receipt and indexed creation/fill correlation",
+        "PostgreSQL watchlist/chat/account outbox persistence after reload",
+        "independent canonical integer volume, recipient remaining cost, realized subtotal and all seven UTC exact candles"
+      ],
+      "runner": "journeys.py + browser-journeys.mjs journeys + persisted-state.py"
+    },
+    {
+      "id": "ten-duplicate-redelivery",
+      "requirements": [
+        "D16_015.1",
+        "D16_015.2",
+        "D16_015.3",
+        "D16_015.5"
+      ],
+      "assertions": [
+        "ten actual consumer deliveries",
+        "actual postcommit-beforeACK crash and redelivery",
+        "same canonical fills/stats/buckets/positions/inbox/outbox before and after"
+      ],
+      "runner": "journeys.py actual source-bound duplicate_delivery/commit_before_ack controls + PostgreSQL snapshots"
+    },
+    {
+      "id": "receipt-withheld-reverted",
+      "requirements": [
+        "D16_014.1",
+        "D16_014.2",
+        "D16_014.3",
+        "D16_014.5"
+      ],
+      "assertions": [
+        "actual Anvil automining disabled for browser trade",
+        "actual receipt remains null and UI pending beyond2000ms",
+        "advance actual local chain timestamp beyond deadline and mine genuine reverted receipt",
+        "UI displays reverted"
+      ],
+      "runner": "browser-journeys.mjs receipt-withheld-reverted"
+    },
+    {
+      "id": "concurrent-candle-precommit-crash",
+      "requirements": [
+        "D16_017.1",
+        "D16_017.2",
+        "D16_017.3",
+        "D16_017.4",
+        "D16_017.5"
+      ],
+      "assertions": [
+        "two real browser fills mined in same block",
+        "no precommit PostgreSQL candle or outbox publication",
+        "actual source-bound precommit crash then recovery",
+        "all seven intervals reconcile independently with canonical fills/inbox/outbox"
+      ],
+      "runner": "journeys.py actual source-bound arm/crash/recover controls + browser-journeys.mjs concurrent-candle-fills"
+    }
+  ],
+  "qualification_status": "not_executed",
+  "production_qualified": false,
+  "capacity_qualified": false,
+  "disaster_recovery_qualified": false,
+  "not_qualified_in_this_phase": [
+    "D16_011 AZ loss/R3 durability",
+    "D16_012 cross-region RPO/RTO",
+    "D16_013 actual72hour replay",
+    "D16_015.4 10kevents/s burst",
+    "D16_018 whole ordering/quarantine release matrix",
+    "D16_019 scanner/object sandbox matrix",
+    "D16_022 mutation and coverage release campaigns",
+    "D16_029 full outages/rollback matrix"
+  ],
+  "evidence_policy": "phase-2-evidence-policy.json"
+}

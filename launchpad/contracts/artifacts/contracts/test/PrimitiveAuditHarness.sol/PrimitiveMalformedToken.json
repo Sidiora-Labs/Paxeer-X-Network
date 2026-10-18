@@ -1,0 +1,15 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "PrimitiveMalformedToken",
+  "sourceName": "contracts/test/PrimitiveAuditHarness.sol",
+  "abi": [
+    {
+      "stateMutability": "nonpayable",
+      "type": "fallback"
+    }
+  ],
+  "bytecode": "0x608080604052346013576049908160198239f35b600080fdfe34600e57600260005260206000f35b600080fdfea2646970667358221220a9abca834a435153755a1fed9a85787c0997446639c39df6c9ca443c41868d2464736f6c634300081b0033",
+  "deployedBytecode": "0x34600e57600260005260206000f35b600080fdfea2646970667358221220a9abca834a435153755a1fed9a85787c0997446639c39df6c9ca443c41868d2464736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

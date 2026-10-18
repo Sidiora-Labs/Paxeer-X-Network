@@ -1,0 +1,300 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "MockSidioraQuoter",
+  "sourceName": "contracts/meta-ag/mocks/MockSidioraQuoter.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bool",
+          "name": "isBuy",
+          "type": "bool"
+        }
+      ],
+      "name": "quoteExactInput",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "amountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceImpactBps",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct MockSidioraQuoter.QuoteResult",
+          "name": "result",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "quoteMultihop",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "amountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "intermediateUsdl",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "sellFeeAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "buyFeeAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "sellPriceImpactBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "buyPriceImpactBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "combinedPriceImpactBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "address",
+              "name": "poolA",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "poolB",
+              "type": "address"
+            }
+          ],
+          "internalType": "struct MockSidioraQuoter.MultihopQuoteResult",
+          "name": "result",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "revertOnBuyQuote",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "revertOnMultihopQuote",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "revertOnSellQuote",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amountOut_",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "feeAmount_",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "priceImpactBps_",
+          "type": "uint256"
+        }
+      ],
+      "name": "setBuyQuote",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amountOut_",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "intermediateUsdl_",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "sellFee_",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "buyFee_",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "combinedImpactBps_",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "poolA_",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "poolB_",
+          "type": "address"
+        }
+      ],
+      "name": "setMultihopQuote",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bool",
+          "name": "v",
+          "type": "bool"
+        }
+      ],
+      "name": "setRevertOnBuyQuote",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bool",
+          "name": "v",
+          "type": "bool"
+        }
+      ],
+      "name": "setRevertOnMultihopQuote",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bool",
+          "name": "v",
+          "type": "bool"
+        }
+      ],
+      "name": "setRevertOnSellQuote",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amountOut_",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "feeAmount_",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "priceImpactBps_",
+          "type": "uint256"
+        }
+      ],
+      "name": "setSellQuote",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x608080604052346015576106be908161001b8239f35b600080fdfe6080604052600436101561001257600080fd5b60003560e01c8063087d7380146103dc5780634d9f71e41461038f5780634e4ea6d51461035a5780637ba97f66146103235780637f1737ce1461019957806394a0fd8e1461016b578063c84d6c6814610145578063d4f8c22614610122578063d64466f6146100f1578063e2e5e2f5146100c05763f8a6d7f71461009557600080fd5b346100bb5760003660031901126100bb57602060ff600f5460081c166040519015158152f35b600080fd5b346100bb576100ce366104ed565b918260406100da61053e565b838152602081018590520152600055600155600255005b346100bb576100ff366104ed565b9182604061010b61053e565b838152602081018590520152600355600455600555005b346100bb5760003660031901126100bb57602060ff600f54166040519015158152f35b346100bb5760003660031901126100bb57602060ff600f5460101c166040519015158152f35b346100bb5760203660031901126100bb576101846104de565b151560ff8019600f5416911617600f55600080f35b346100bb5760603660031901126100bb576101b26104b2565b506101bb6104c8565b5060006101006101c9610507565b8281528260208201528260408201528260608201528260808201528260a08201528260c08201528260e0820152015260ff600f5460101c166102c657610120610210610507565b60065490818152600754602082019081526008546040830190815260095460608401908152600a5460808501908152600b549160a08601928352600c549360c0870194855260018060a01b03600d54169560e0880196875261010060018060a01b03600e541698019788526040519889525160208901525160408801525160608701525160808601525160a08501525160c084015260018060a01b0390511660e083015260018060a01b03905116610100820152f35b60405162461bcd60e51b815260206004820152602f60248201527f4d6f636b536964696f726151756f7465723a206d756c7469686f702071756f7460448201526e1948199bdc98d959081c995d995c9d608a1b6064820152608490fd5b346100bb5760203660031901126100bb5761033c6104de565b151562ff0000600f549160101b169062ff0000191617600f55600080f35b346100bb5760203660031901126100bb576103736104de565b151561ff00600f549160081b169061ff00191617600f55600080f35b346100bb5760603660031901126100bb576103a86104b2565b5060443580151581036100bb576103c060609161055e565b6040805191805183526020810151602084015201516040820152f35b346100bb5760e03660031901126100bb576004356024356044356064356084359160a4359360018060a01b0385168095036100bb5760c4356001600160a01b03811696908790036100bb5786610100610433610507565b83815284602082015285604082015286606082015260006080820152600060a08201528760c08201528860e082015201526006556007556008556009556000600a556000600b55600c556bffffffffffffffffffffffff60a01b600d541617600d556bffffffffffffffffffffffff60a01b600e541617600e55600080f35b600435906001600160a01b03821682036100bb57565b602435906001600160a01b03821682036100bb57565b6004359081151582036100bb57565b60609060031901126100bb57600435906024359060443590565b60405190610120820182811067ffffffffffffffff82111761052857604052565b634e487b7160e01b600052604160045260246000fd5b604051906060820182811067ffffffffffffffff82111761052857604052565b61056661053e565b600081526000602082015260006040820152506000146106025760ff600f54166105aa5761059261053e565b60005481526001546020820152600254604082015290565b60405162461bcd60e51b815260206004820152602a60248201527f4d6f636b536964696f726151756f7465723a206275792071756f746520666f7260448201526918d959081c995d995c9d60b21b6064820152608490fd5b60ff600f5460081c1661062f5761061761053e565b60035481526004546020820152600554604082015290565b60405162461bcd60e51b815260206004820152602b60248201527f4d6f636b536964696f726151756f7465723a2073656c6c2071756f746520666f60448201526a1c98d959081c995d995c9d60aa1b6064820152608490fdfea2646970667358221220fbd00e1b5c5dce999200d5f328e279fcd3a44bb801f2972ad69db82307e99c9c64736f6c634300081b0033",
+  "deployedBytecode": "0x6080604052600436101561001257600080fd5b60003560e01c8063087d7380146103dc5780634d9f71e41461038f5780634e4ea6d51461035a5780637ba97f66146103235780637f1737ce1461019957806394a0fd8e1461016b578063c84d6c6814610145578063d4f8c22614610122578063d64466f6146100f1578063e2e5e2f5146100c05763f8a6d7f71461009557600080fd5b346100bb5760003660031901126100bb57602060ff600f5460081c166040519015158152f35b600080fd5b346100bb576100ce366104ed565b918260406100da61053e565b838152602081018590520152600055600155600255005b346100bb576100ff366104ed565b9182604061010b61053e565b838152602081018590520152600355600455600555005b346100bb5760003660031901126100bb57602060ff600f54166040519015158152f35b346100bb5760003660031901126100bb57602060ff600f5460101c166040519015158152f35b346100bb5760203660031901126100bb576101846104de565b151560ff8019600f5416911617600f55600080f35b346100bb5760603660031901126100bb576101b26104b2565b506101bb6104c8565b5060006101006101c9610507565b8281528260208201528260408201528260608201528260808201528260a08201528260c08201528260e0820152015260ff600f5460101c166102c657610120610210610507565b60065490818152600754602082019081526008546040830190815260095460608401908152600a5460808501908152600b549160a08601928352600c549360c0870194855260018060a01b03600d54169560e0880196875261010060018060a01b03600e541698019788526040519889525160208901525160408801525160608701525160808601525160a08501525160c084015260018060a01b0390511660e083015260018060a01b03905116610100820152f35b60405162461bcd60e51b815260206004820152602f60248201527f4d6f636b536964696f726151756f7465723a206d756c7469686f702071756f7460448201526e1948199bdc98d959081c995d995c9d608a1b6064820152608490fd5b346100bb5760203660031901126100bb5761033c6104de565b151562ff0000600f549160101b169062ff0000191617600f55600080f35b346100bb5760203660031901126100bb576103736104de565b151561ff00600f549160081b169061ff00191617600f55600080f35b346100bb5760603660031901126100bb576103a86104b2565b5060443580151581036100bb576103c060609161055e565b6040805191805183526020810151602084015201516040820152f35b346100bb5760e03660031901126100bb576004356024356044356064356084359160a4359360018060a01b0385168095036100bb5760c4356001600160a01b03811696908790036100bb5786610100610433610507565b83815284602082015285604082015286606082015260006080820152600060a08201528760c08201528860e082015201526006556007556008556009556000600a556000600b55600c556bffffffffffffffffffffffff60a01b600d541617600d556bffffffffffffffffffffffff60a01b600e541617600e55600080f35b600435906001600160a01b03821682036100bb57565b602435906001600160a01b03821682036100bb57565b6004359081151582036100bb57565b60609060031901126100bb57600435906024359060443590565b60405190610120820182811067ffffffffffffffff82111761052857604052565b634e487b7160e01b600052604160045260246000fd5b604051906060820182811067ffffffffffffffff82111761052857604052565b61056661053e565b600081526000602082015260006040820152506000146106025760ff600f54166105aa5761059261053e565b60005481526001546020820152600254604082015290565b60405162461bcd60e51b815260206004820152602a60248201527f4d6f636b536964696f726151756f7465723a206275792071756f746520666f7260448201526918d959081c995d995c9d60b21b6064820152608490fd5b60ff600f5460081c1661062f5761061761053e565b60035481526004546020820152600554604082015290565b60405162461bcd60e51b815260206004820152602b60248201527f4d6f636b536964696f726151756f7465723a2073656c6c2071756f746520666f60448201526a1c98d959081c995d995c9d60aa1b6064820152608490fdfea2646970667358221220fbd00e1b5c5dce999200d5f328e279fcd3a44bb801f2972ad69db82307e99c9c64736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

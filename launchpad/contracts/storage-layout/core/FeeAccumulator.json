@@ -1,0 +1,224 @@
+{
+  "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+  "compiler": "0.8.27+commit.40a35a09",
+  "provenance": {
+    "kind": "original audit compiler snapshot, not asserted live deployment",
+    "buildInfoSha256": "c7226196d703743a9f291414539d6dc5579640844b294d141253bce91b8ed2d7",
+    "sourceManifest": "audit/2026-10-09/source-manifest.json"
+  },
+  "storage": [
+    {
+      "astId": 277,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_roles",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_mapping(t_bytes32,t_struct(RoleData)272_storage)"
+    },
+    {
+      "astId": 6443,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "protocolConfig",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_address"
+    },
+    {
+      "astId": 6445,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "treasury",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_address"
+    },
+    {
+      "astId": 6447,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "poolRegistry",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_address"
+    },
+    {
+      "astId": 6449,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "eventEmitter",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_address"
+    },
+    {
+      "astId": 6451,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "usdlAddress",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_address"
+    },
+    {
+      "astId": 6455,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_accumulatedFees",
+      "offset": 0,
+      "slot": "6",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 6457,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_protocolFeesPending",
+      "offset": 0,
+      "slot": "7",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 6461,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_airdropBalance",
+      "offset": 0,
+      "slot": "8",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 6465,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_airdropEpoch",
+      "offset": 0,
+      "slot": "9",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 6471,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_airdropEpochAmount",
+      "offset": 0,
+      "slot": "10",
+      "type": "t_mapping(t_address,t_mapping(t_uint256,t_uint256))"
+    },
+    {
+      "astId": 6479,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_airdropClaimed",
+      "offset": 0,
+      "slot": "11",
+      "type": "t_mapping(t_address,t_mapping(t_address,t_mapping(t_uint256,t_bool)))"
+    },
+    {
+      "astId": 6483,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_lpRewardsBalance",
+      "offset": 0,
+      "slot": "12",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 6487,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_opticalSurplus",
+      "offset": 0,
+      "slot": "13",
+      "type": "t_mapping(t_address,t_uint256)"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_bytes32": {
+      "encoding": "inplace",
+      "label": "bytes32",
+      "numberOfBytes": "32"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_address,t_mapping(t_address,t_mapping(t_uint256,t_bool)))": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => mapping(address => mapping(uint256 => bool)))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_address,t_mapping(t_uint256,t_bool))"
+    },
+    "t_mapping(t_address,t_mapping(t_uint256,t_bool))": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => mapping(uint256 => bool))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint256,t_bool)"
+    },
+    "t_mapping(t_address,t_mapping(t_uint256,t_uint256))": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => mapping(uint256 => uint256))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint256,t_uint256)"
+    },
+    "t_mapping(t_address,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_mapping(t_bytes32,t_struct(RoleData)272_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct AccessControl.RoleData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(RoleData)272_storage"
+    },
+    "t_mapping(t_uint256,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_uint256,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_struct(RoleData)272_storage": {
+      "encoding": "inplace",
+      "label": "struct AccessControl.RoleData",
+      "members": [
+        {
+          "astId": 269,
+          "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+          "label": "hasRole",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_address,t_bool)"
+        },
+        {
+          "astId": 271,
+          "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+          "label": "adminRole",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_bytes32"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}

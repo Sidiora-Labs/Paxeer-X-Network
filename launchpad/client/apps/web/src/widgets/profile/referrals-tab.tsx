@@ -1,0 +1,17 @@
+'use client';
+import { humanError } from '@/ui/primitives';
+import {useRef,useState} from 'react';
+import {pnlApiUrl} from '@/core/sdk-config';
+import {accountRequest} from './account-transport';
+import {usePrivateAccountQuery} from './use-private-account-query';
+import {exactAmount} from './account-disclosure';
+import {isSignedOutError} from '@/core/market/unsupported';
+import {SignedOutState} from '@/ui/shared/signed-out-state';
+interface Dashboard{campaign:string;policyVersion:string;code:{code:string;campaign:string;policyVersion:string;attributionWindowSeconds:number}|null;consent:{consent:boolean;recordedAt:number};attributionWindowSeconds:number;clicks:number;boundAccounts:number;qualifiedActions:number;eligibleRaw:string;fundedRaw:string;pendingReviewRaw:string;paidRaw:string;asset:string;settlement:{available:boolean;reason?:string;strategy:string;deploymentVersion:string}}
+export default function ReferralsTab({walletAddress}:{walletAddress:string}){
+ const [error,setError]=useState<string|null>(null);const [sharing,setSharing]=useState(false);const request=useRef<string | undefined>(undefined);const dashboard=usePrivateAccountQuery('referrals',()=>accountRequest<Dashboard>(pnlApiUrl('/v2/me/referrals')),[],walletAddress);const data=dashboard.data;
+ async function issue(){if(sharing)return;setSharing(true);request.current??=crypto.randomUUID();try{await accountRequest(pnlApiUrl('/v2/me/referrals:issue-code'),{method:'POST',headers:{'Idempotency-Key':request.current},body:'{}'});await dashboard.refetch();setError(null);request.current=undefined;}catch(e){setError(humanError(e,"Couldn't create your referral link, try again"));}finally{setSharing(false);}}
+ const origin=process.env.NEXT_PUBLIC_CANONICAL_ORIGIN;let url:string|null=null;if(origin&&data?.code&&/^[A-Za-z0-9_-]{1,128}$/.test(data.code.code)){try{const approved=new URL(origin);if(approved.protocol==='https:'&&approved.origin===origin.replace(/\/$/,''))url=`${approved.origin}/?ref=${encodeURIComponent(data.code.code)}`;}catch{}}
+ if(!dashboard.owner||(dashboard.error&&isSignedOutError(dashboard.error)))return <SignedOutState title="Sign in to see your referrals" body="Only you can see your referrals."/>;
+ return <section className="rounded-xl bg-surface-1 p-4 space-y-3"><h2>Referrals</h2>{dashboard.error&&<p role="alert">{humanError(dashboard.error)}</p>}{data&&<><p>Campaign {data.campaign} · referrals count for {data.attributionWindowSeconds>=86400?`${Math.round(data.attributionWindowSeconds/86400)} days`:`${Math.max(1,Math.round(data.attributionWindowSeconds/3600))} hours`}</p><p>You earn when people you refer trade. Clicks alone don't count.</p><dl><dt>Clicks</dt><dd>{data.clicks}</dd><dt>Sign-ups</dt><dd>{data.boundAccounts}</dd><dt>Qualifying trades</dt><dd>{data.qualifiedActions}</dd><dt>Earned</dt><dd>{exactAmount(data.eligibleRaw)}</dd><dt>Ready to pay</dt><dd>{exactAmount(data.fundedRaw)}</dd><dt>In review</dt><dd>{exactAmount(data.pendingReviewRaw)}</dd><dt>Paid out</dt><dd>{exactAmount(data.paidRaw)}</dd></dl><p>Payouts: {data.settlement.available?'on':'not available yet'}</p>{url?<a href={url}>{url}</a>:data.code?<p>Your referral link is not available yet.</p>:<button disabled={sharing} onClick={()=>void issue()}>{sharing?'Creating...':'Get referral link'}</button>}<p>Referral tracking: {data.consent.consent?'on':'off'}</p></>}{error&&<p role="alert">{error}</p>}</section>;
+}

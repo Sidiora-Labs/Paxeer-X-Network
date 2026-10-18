@@ -1,0 +1,16 @@
+{
+  "task": "0.1",
+  "scope": "frontend",
+  "qualification": "Every command must run and exit zero; inventory alone never qualifies the frontend.",
+  "commands": [
+    {"cwd":"client","argv":["python3","qualification/bootstrap/frontend.py"],"phase":"preinstall"},
+    {"cwd":"client","argv":["pnpm","install","--frozen-lockfile"],"phase":"after-root-package-integration-and-lock-regeneration"},
+    {"cwd":"client","argv":["pnpm","build:packages"],"phase":"build"},
+    {"cwd":"client","argv":["pnpm","--filter","@sidiora/web","exec","tsc","--noEmit","--incremental","false"],"phase":"typecheck"},
+    {"cwd":"client","argv":["pnpm","--filter","@sidiora/web","test"],"phase":"test"},
+    {"cwd":"client","argv":["pnpm","build"],"phase":"build"},
+    {"cwd":"client","argv":["pnpm","lint"],"phase":"lint"}
+  ],
+  "environment_constraints": ["Use declared pnpm@9.15.0.","Clear SENTRY_AUTH_TOKEN before a local build to prevent remote source-map publication.","Use isolated local fixture endpoints; no production mutations.","Root alone updates shared manifests and canonical lockfile."],
+  "script_risks": ["next lint compatibility must be established by actual command execution; ESLint is major 9.","eslint-config-next 15.3.2 differs from Next 15.3.8.","No root test script; invoke filtered web test.","No native app package is present; native implementation is outside bootstrap."]
+}

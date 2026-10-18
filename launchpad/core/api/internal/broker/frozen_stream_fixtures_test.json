@@ -1,0 +1,697 @@
+{
+  "BountiesEvent": {
+    "eventId": "value",
+    "topic": "bounties.11111111-1111-7111-8111-111111111111.updates",
+    "sequence": "9007199254740993",
+    "revision": "1",
+    "occurredAt": "2026-10-10T00:00:00.000Z",
+    "watermark": {
+      "chainId": "125",
+      "height": "1",
+      "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "projectionRevision": "1",
+      "observedAt": "2026-10-10T00:00:00.000Z",
+      "integrity": "healthy"
+    },
+    "payload": {
+      "bountyId": "11111111-1111-7111-8111-111111111111",
+      "creatorWallet": "0x1111111111111111111111111111111111111111",
+      "poolAddress": "0x1111111111111111111111111111111111111111",
+      "title": "value",
+      "description": "value",
+      "assetAddress": "0x1111111111111111111111111111111111111111",
+      "budgetRaw": "1",
+      "state": "draft"
+    },
+    "coalesced": false,
+    "sourceSequenceFirst": null,
+    "sourceSequenceLast": null
+  },
+  "CandleEvent": {
+    "eventId": "value",
+    "topic": "market.candles.0x1111111111111111111111111111111111111111.1m",
+    "sequence": "9007199254740993",
+    "revision": "1",
+    "occurredAt": "2026-10-10T00:00:00.000Z",
+    "watermark": {
+      "chainId": "125",
+      "height": "1",
+      "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "projectionRevision": "1",
+      "observedAt": "2026-10-10T00:00:00.000Z",
+      "integrity": "healthy"
+    },
+    "payload": {
+      "poolAddress": "0x1111111111111111111111111111111111111111",
+      "interval": "1m",
+      "start": "2026-10-10T00:00:00.000Z",
+      "open": {
+        "numerator": "1",
+        "denominator": "1",
+        "baseAsset": {
+          "kind": "native",
+          "chainId": "value",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": "value",
+          "decimals": 0
+        },
+        "quoteAsset": {
+          "kind": "native",
+          "chainId": "value",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": "value",
+          "decimals": 0
+        },
+        "source": {
+          "kind": "gross_execution",
+          "amountBasis": "paid_input",
+          "sourceEventId": "value",
+          "position": {
+            "height": "1",
+            "transactionIndex": "1",
+            "logIndex": "1",
+            "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "chainId": "125"
+          },
+          "providerId": "value",
+          "observedAt": "2026-10-10T00:00:00.000Z",
+          "sourceReference": "value"
+        }
+      },
+      "high": {
+        "numerator": "1",
+        "denominator": "1",
+        "baseAsset": {
+          "kind": "native",
+          "chainId": "value",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": "value",
+          "decimals": 0
+        },
+        "quoteAsset": {
+          "kind": "native",
+          "chainId": "value",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": "value",
+          "decimals": 0
+        },
+        "source": {
+          "kind": "gross_execution",
+          "amountBasis": "paid_input",
+          "sourceEventId": "value",
+          "position": {
+            "height": "1",
+            "transactionIndex": "1",
+            "logIndex": "1",
+            "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "chainId": "125"
+          },
+          "providerId": "value",
+          "observedAt": "2026-10-10T00:00:00.000Z",
+          "sourceReference": "value"
+        }
+      },
+      "low": {
+        "numerator": "1",
+        "denominator": "1",
+        "baseAsset": {
+          "kind": "native",
+          "chainId": "value",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": "value",
+          "decimals": 0
+        },
+        "quoteAsset": {
+          "kind": "native",
+          "chainId": "value",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": "value",
+          "decimals": 0
+        },
+        "source": {
+          "kind": "gross_execution",
+          "amountBasis": "paid_input",
+          "sourceEventId": "value",
+          "position": {
+            "height": "1",
+            "transactionIndex": "1",
+            "logIndex": "1",
+            "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "chainId": "125"
+          },
+          "providerId": "value",
+          "observedAt": "2026-10-10T00:00:00.000Z",
+          "sourceReference": "value"
+        }
+      },
+      "close": {
+        "numerator": "1",
+        "denominator": "1",
+        "baseAsset": {
+          "kind": "native",
+          "chainId": "value",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": "value",
+          "decimals": 0
+        },
+        "quoteAsset": {
+          "kind": "native",
+          "chainId": "value",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": "value",
+          "decimals": 0
+        },
+        "source": {
+          "kind": "gross_execution",
+          "amountBasis": "paid_input",
+          "sourceEventId": "value",
+          "position": {
+            "height": "1",
+            "transactionIndex": "1",
+            "logIndex": "1",
+            "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "chainId": "125"
+          },
+          "providerId": "value",
+          "observedAt": "2026-10-10T00:00:00.000Z",
+          "sourceReference": "value"
+        }
+      },
+      "volumeUsdlRaw": "1",
+      "volumeTokenRaw": "1",
+      "buyVolumeUsdlRaw": "1",
+      "sellVolumeUsdlRaw": "1",
+      "trades": "1",
+      "revision": "1",
+      "synthetic": false,
+      "coverage": "complete",
+      "firstPosition": {
+        "height": "1",
+        "transactionIndex": "1",
+        "logIndex": "1",
+        "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "chainId": "125"
+      },
+      "lastPosition": {
+        "height": "1",
+        "transactionIndex": "1",
+        "logIndex": "1",
+        "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "chainId": "125"
+      },
+      "seriesModelVersion": "value",
+      "snapshotId": "11111111-1111-7111-8111-111111111111",
+      "uniqueTraderCount": "1",
+      "largeTradeCount": "1",
+      "largeTradePolicyId": "value",
+      "largeTradeThresholdUsdlRaw": "1"
+    },
+    "coalesced": false,
+    "sourceSequenceFirst": null,
+    "sourceSequenceLast": null
+  },
+  "MarketPriceEvent": {
+    "eventId": "value",
+    "topic": "market.price.0x1111111111111111111111111111111111111111",
+    "sequence": "9007199254740993",
+    "revision": "1",
+    "occurredAt": "2026-10-10T00:00:00.000Z",
+    "watermark": {
+      "chainId": "125",
+      "height": "1",
+      "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "projectionRevision": "1",
+      "observedAt": "2026-10-10T00:00:00.000Z",
+      "integrity": "healthy"
+    },
+    "payload": {
+      "numerator": "1",
+      "denominator": "1",
+      "baseAsset": {
+        "kind": "native",
+        "chainId": "value",
+        "address": "0x1111111111111111111111111111111111111111",
+        "currencyCode": "value",
+        "decimals": 0
+      },
+      "quoteAsset": {
+        "kind": "native",
+        "chainId": "value",
+        "address": "0x1111111111111111111111111111111111111111",
+        "currencyCode": "value",
+        "decimals": 0
+      },
+      "source": {
+        "kind": "gross_execution",
+        "amountBasis": "paid_input",
+        "sourceEventId": "value",
+        "position": {
+          "height": "1",
+          "transactionIndex": "1",
+          "logIndex": "1",
+          "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+          "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+          "chainId": "125"
+        },
+        "providerId": "value",
+        "observedAt": "2026-10-10T00:00:00.000Z",
+        "sourceReference": "value"
+      }
+    },
+    "coalesced": false,
+    "sourceSequenceFirst": null,
+    "sourceSequenceLast": null
+  },
+  "MarketTradesEvent": {
+    "eventId": "value",
+    "topic": "market.trades.0x1111111111111111111111111111111111111111",
+    "sequence": "9007199254740993",
+    "revision": "1",
+    "occurredAt": "2026-10-10T00:00:00.000Z",
+    "watermark": {
+      "chainId": "125",
+      "height": "1",
+      "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "projectionRevision": "1",
+      "observedAt": "2026-10-10T00:00:00.000Z",
+      "integrity": "healthy"
+    },
+    "payload": {
+      "eventId": "value",
+      "poolAddress": "0x1111111111111111111111111111111111111111",
+      "sender": "0x1111111111111111111111111111111111111111",
+      "recipient": "0x1111111111111111111111111111111111111111",
+      "side": "buy",
+      "tokenAmountRaw": "1",
+      "usdlAmountRaw": "1",
+      "position": {
+        "height": "1",
+        "transactionIndex": "1",
+        "logIndex": "1",
+        "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "chainId": "125"
+      },
+      "feeRaw": "1",
+      "feeAssetAddress": "0x1111111111111111111111111111111111111111",
+      "feeAssetDecimals": 0,
+      "feeDisposition": "distributed_usdl",
+      "paidInputRaw": "1",
+      "pricedInputRaw": "1",
+      "ammInputAfterFeeRaw": "1",
+      "inputDerivationQuality": "exact",
+      "recipientAttribution": "exact_receipt",
+      "recipientEvidenceRefs": [],
+      "emittingContract": "0x1111111111111111111111111111111111111111",
+      "codeEpoch": "value"
+    },
+    "coalesced": false,
+    "sourceSequenceFirst": null,
+    "sourceSequenceLast": null
+  },
+  "MessagesEvent": {
+    "eventId": "value",
+    "topic": "rooms.11111111-1111-7111-8111-111111111111.messages",
+    "sequence": "9007199254740993",
+    "revision": "1",
+    "occurredAt": "2026-10-10T00:00:00.000Z",
+    "watermark": {
+      "chainId": "125",
+      "height": "1",
+      "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "projectionRevision": "1",
+      "observedAt": "2026-10-10T00:00:00.000Z",
+      "integrity": "healthy"
+    },
+    "payload": {
+      "messageId": "11111111-1111-7111-8111-111111111111",
+      "roomId": "11111111-1111-7111-8111-111111111111",
+      "authorWallet": "0x1111111111111111111111111111111111111111",
+      "body": "value",
+      "createdAt": "2026-10-10T00:00:00.000Z",
+      "editedAt": "2026-10-10T00:00:00.000Z",
+      "deletedAt": "2026-10-10T00:00:00.000Z",
+      "revision": "1"
+    },
+    "coalesced": false,
+    "sourceSequenceFirst": null,
+    "sourceSequenceLast": null
+  },
+  "NotificationsEvent": {
+    "eventId": "value",
+    "topic": "private.notifications.0x1111111111111111111111111111111111111111",
+    "sequence": "9007199254740993",
+    "revision": "1",
+    "occurredAt": "2026-10-10T00:00:00.000Z",
+    "watermark": {
+      "chainId": "125",
+      "height": "1",
+      "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "projectionRevision": "1",
+      "observedAt": "2026-10-10T00:00:00.000Z",
+      "integrity": "healthy"
+    },
+    "payload": {
+      "notificationId": "11111111-1111-7111-8111-111111111111",
+      "wallet": "0x1111111111111111111111111111111111111111",
+      "kind": "trade_fill",
+      "entityId": "value",
+      "createdAt": "2026-10-10T00:00:00.000Z",
+      "readAt": "2026-10-10T00:00:00.000Z",
+      "deliveryState": "pending"
+    },
+    "coalesced": false,
+    "sourceSequenceFirst": null,
+    "sourceSequenceLast": null
+  },
+  "OrdersEvent": {
+    "eventId": "value",
+    "topic": "private.orders.0x1111111111111111111111111111111111111111",
+    "sequence": "9007199254740993",
+    "revision": "1",
+    "occurredAt": "2026-10-10T00:00:00.000Z",
+    "watermark": {
+      "chainId": "125",
+      "height": "1",
+      "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "projectionRevision": "1",
+      "observedAt": "2026-10-10T00:00:00.000Z",
+      "integrity": "healthy"
+    },
+    "payload": {
+      "orderId": "11111111-1111-7111-8111-111111111111",
+      "wallet": "0x1111111111111111111111111111111111111111",
+      "chainOrderId": "1",
+      "kind": "limit",
+      "poolAddress": "0x1111111111111111111111111111111111111111",
+      "inputRaw": "1",
+      "triggerPrice": {
+        "numerator": "1",
+        "denominator": "1",
+        "baseAsset": {
+          "kind": "native",
+          "chainId": "value",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": "value",
+          "decimals": 0
+        },
+        "quoteAsset": {
+          "kind": "native",
+          "chainId": "value",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": "value",
+          "decimals": 0
+        },
+        "source": {
+          "kind": "gross_execution",
+          "amountBasis": "paid_input",
+          "sourceEventId": "value",
+          "position": {
+            "height": "1",
+            "transactionIndex": "1",
+            "logIndex": "1",
+            "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "chainId": "125"
+          },
+          "providerId": "value",
+          "observedAt": "2026-10-10T00:00:00.000Z",
+          "sourceReference": "value"
+        }
+      },
+      "status": "draft"
+    },
+    "coalesced": false,
+    "sourceSequenceFirst": null,
+    "sourceSequenceLast": null
+  },
+  "PortfolioEvent": {
+    "eventId": "value",
+    "topic": "private.portfolio.0x1111111111111111111111111111111111111111",
+    "sequence": "9007199254740993",
+    "revision": "1",
+    "occurredAt": "2026-10-10T00:00:00.000Z",
+    "watermark": {
+      "chainId": "125",
+      "height": "1",
+      "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "projectionRevision": "1",
+      "observedAt": "2026-10-10T00:00:00.000Z",
+      "integrity": "healthy"
+    },
+    "payload": {
+      "snapshotId": "11111111-1111-7111-8111-111111111111",
+      "summaryRevision": "1",
+      "changes": [
+        {
+          "operation": "upsert",
+          "positionId": "value",
+          "revision": "1",
+          "position": {
+            "positionId": "value",
+            "chainId": "125",
+            "wallet": "0x1111111111111111111111111111111111111111",
+            "tokenAddress": "0x1111111111111111111111111111111111111111",
+            "balanceRaw": "1",
+            "knownQuantityRaw": "1",
+            "unknownQuantityRaw": "1",
+            "knownRemainingCostUsdlRaw": "1",
+            "basisCoverage": {
+              "numerator": "1",
+              "denominator": "1"
+            },
+            "remainingCostUsdlRaw": "1",
+            "realizedPnlRaw": "1",
+            "knownRealizedSubtotalUsdlRaw": "1",
+            "unrealizedPnlRaw": "1",
+            "basisQuality": "complete",
+            "realizedBasisQuality": "complete",
+            "pricingQuality": "priced",
+            "markPrice": {
+              "numerator": "1",
+              "denominator": "1",
+              "baseAsset": {
+                "kind": "native",
+                "chainId": "value",
+                "address": "0x1111111111111111111111111111111111111111",
+                "currencyCode": "value",
+                "decimals": 0
+              },
+              "quoteAsset": {
+                "kind": "native",
+                "chainId": "value",
+                "address": "0x1111111111111111111111111111111111111111",
+                "currencyCode": "value",
+                "decimals": 0
+              },
+              "source": {
+                "kind": "gross_execution",
+                "amountBasis": "paid_input",
+                "sourceEventId": "value",
+                "position": {
+                  "height": "1",
+                  "transactionIndex": "1",
+                  "logIndex": "1",
+                  "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                  "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                  "chainId": "125"
+                },
+                "providerId": "value",
+                "observedAt": "2026-10-10T00:00:00.000Z",
+                "sourceReference": "value"
+              }
+            },
+            "sourceWatermark": {
+              "chainId": "125",
+              "height": "1",
+              "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+              "projectionRevision": "1",
+              "observedAt": "2026-10-10T00:00:00.000Z",
+              "integrity": "healthy"
+            }
+          }
+        }
+      ],
+      "summary": {
+        "wallet": "0x1111111111111111111111111111111111111111",
+        "pricedSubtotalUsdlRaw": "1",
+        "completeValueUsdlRaw": "1",
+        "realizedPnlRaw": "1",
+        "knownRealizedSubtotalUsdlRaw": "1",
+        "basisQuality": "complete",
+        "pricingQuality": "complete",
+        "unpricedAssetCount": 0,
+        "positionCount": 0,
+        "snapshotId": "11111111-1111-7111-8111-111111111111",
+        "watermark": {
+          "chainId": "125",
+          "height": "1",
+          "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-10T00:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "completeBatch": true
+    },
+    "coalesced": false,
+    "sourceSequenceFirst": null,
+    "sourceSequenceLast": null
+  },
+  "RankingEvent": {
+    "eventId": "value",
+    "topic": "market.rankings.trending",
+    "sequence": "9007199254740993",
+    "revision": "1",
+    "occurredAt": "2026-10-10T00:00:00.000Z",
+    "watermark": {
+      "chainId": "125",
+      "height": "1",
+      "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "projectionRevision": "1",
+      "observedAt": "2026-10-10T00:00:00.000Z",
+      "integrity": "healthy"
+    },
+    "payload": {
+      "snapshotId": "11111111-1111-7111-8111-111111111111",
+      "category": "trending",
+      "modelVersion": "value",
+      "computedAt": "2026-10-10T00:00:00.000Z",
+      "watermark": {
+        "chainId": "125",
+        "height": "1",
+        "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "projectionRevision": "1",
+        "observedAt": "2026-10-10T00:00:00.000Z",
+        "integrity": "healthy"
+      },
+      "items": [],
+      "totalEligible": "1",
+      "truncated": false,
+      "replace": true
+    },
+    "coalesced": false,
+    "sourceSequenceFirst": null,
+    "sourceSequenceLast": null
+  },
+  "RewardsEvent": {
+    "eventId": "value",
+    "topic": "private.rewards.0x1111111111111111111111111111111111111111",
+    "sequence": "9007199254740993",
+    "revision": "1",
+    "occurredAt": "2026-10-10T00:00:00.000Z",
+    "watermark": {
+      "chainId": "125",
+      "height": "1",
+      "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "projectionRevision": "1",
+      "observedAt": "2026-10-10T00:00:00.000Z",
+      "integrity": "healthy"
+    },
+    "payload": {
+      "rewardId": "value",
+      "wallet": "0x1111111111111111111111111111111111111111",
+      "programId": "value",
+      "assetAddress": "0x1111111111111111111111111111111111111111",
+      "earnedRaw": "1",
+      "claimableRaw": "1",
+      "claimedRaw": "1",
+      "sourcePosition": {
+        "height": "1",
+        "transactionIndex": "1",
+        "logIndex": "1",
+        "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "chainId": "125"
+      }
+    },
+    "coalesced": false,
+    "sourceSequenceFirst": null,
+    "sourceSequenceLast": null
+  },
+  "StatsEvent": {
+    "eventId": "value",
+    "topic": "market.stats.0x1111111111111111111111111111111111111111",
+    "sequence": "9007199254740993",
+    "revision": "1",
+    "occurredAt": "2026-10-10T00:00:00.000Z",
+    "watermark": {
+      "chainId": "125",
+      "height": "1",
+      "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "projectionRevision": "1",
+      "observedAt": "2026-10-10T00:00:00.000Z",
+      "integrity": "healthy"
+    },
+    "payload": {
+      "poolAddress": "0x1111111111111111111111111111111111111111",
+      "volume24hRaw": "1",
+      "buys24h": "1",
+      "sells24h": "1",
+      "holderCount": "1",
+      "realUsdlBalanceRaw": "1",
+      "indicativeTvlUsdlRaw": "1",
+      "valuationMethod": "value",
+      "windowStart": "2026-10-10T00:00:00.000Z",
+      "windowEnd": "2026-10-10T00:00:00.000Z",
+      "sourceUpperPosition": {
+        "height": "1",
+        "transactionIndex": "1",
+        "logIndex": "1",
+        "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "chainId": "125"
+      },
+      "watermark": {
+        "chainId": "125",
+        "height": "1",
+        "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "projectionRevision": "1",
+        "observedAt": "2026-10-10T00:00:00.000Z",
+        "integrity": "healthy"
+      },
+      "totalSupplyValuationUsdlRaw": "1",
+      "circulatingMarketCapUsdlRaw": "1",
+      "supplyValuationQuality": "verified",
+      "priceChangeBps24h": "1",
+      "valuationChangeUsdlRaw": "1",
+      "changeBaselineQuality": "complete"
+    },
+    "coalesced": false,
+    "sourceSequenceFirst": null,
+    "sourceSequenceLast": null
+  },
+  "StreamsEvent": {
+    "eventId": "value",
+    "topic": "streams.11111111-1111-7111-8111-111111111111.status",
+    "sequence": "9007199254740993",
+    "revision": "1",
+    "occurredAt": "2026-10-10T00:00:00.000Z",
+    "watermark": {
+      "chainId": "125",
+      "height": "1",
+      "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "projectionRevision": "1",
+      "observedAt": "2026-10-10T00:00:00.000Z",
+      "integrity": "healthy"
+    },
+    "payload": {
+      "streamId": "11111111-1111-7111-8111-111111111111",
+      "poolAddress": "0x1111111111111111111111111111111111111111",
+      "creatorWallet": "0x1111111111111111111111111111111111111111",
+      "title": "value",
+      "status": "created",
+      "playbackUrl": "https://example.invalid/test",
+      "viewerCount": 0
+    },
+    "coalesced": false,
+    "sourceSequenceFirst": null,
+    "sourceSequenceLast": null
+  }
+}

@@ -1,0 +1,211 @@
+{
+  "version": "1.0",
+  "revision": 1,
+  "environment": "qualification",
+  "zones": [
+    "zone-a",
+    "zone-b",
+    "zone-c"
+  ],
+  "services": [
+    "gateway",
+    "indexer",
+    "stats-workers",
+    "price-broker",
+    "pnl-tracker",
+    "chart-api",
+    "notifications",
+    "media"
+  ],
+  "series_per_instance": 20000,
+  "success_sample_percent": 1,
+  "failure_queue_mib": 512,
+  "retention_days": 14,
+  "exporter": {
+    "endpoint_env": "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "ca_env": "OTEL_CA_FILE",
+    "cert_env": "OTEL_CERT_FILE",
+    "key_env": "OTEL_KEY_FILE"
+  },
+  "probes": [
+    {
+      "journey": "browse",
+      "interval_seconds": 30,
+      "timeout_seconds": 5,
+      "economic_write": false,
+      "identity": "nonprivileged-synthetic"
+    },
+    {
+      "journey": "quote",
+      "interval_seconds": 30,
+      "timeout_seconds": 5,
+      "economic_write": false,
+      "identity": "nonprivileged-synthetic"
+    },
+    {
+      "journey": "wallet_challenge",
+      "interval_seconds": 30,
+      "timeout_seconds": 5,
+      "economic_write": false,
+      "identity": "nonprivileged-synthetic"
+    },
+    {
+      "journey": "metadata",
+      "interval_seconds": 30,
+      "timeout_seconds": 5,
+      "economic_write": false,
+      "identity": "nonprivileged-synthetic"
+    },
+    {
+      "journey": "websocket_replay",
+      "interval_seconds": 30,
+      "timeout_seconds": 5,
+      "economic_write": false,
+      "identity": "nonprivileged-synthetic"
+    }
+  ],
+  "alerts": [
+    {
+      "name": "read_burn_critical",
+      "severity": "critical",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "availability",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    },
+    {
+      "name": "read_burn_warning",
+      "severity": "warning",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "availability",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    },
+    {
+      "name": "read_traffic_insufficient",
+      "severity": "warning",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "availability",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    },
+    {
+      "name": "mutation_burn_critical",
+      "severity": "critical",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "availability",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    },
+    {
+      "name": "mutation_burn_warning",
+      "severity": "warning",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "availability",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    },
+    {
+      "name": "mutation_traffic_insufficient",
+      "severity": "warning",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "availability",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    },
+    {
+      "name": "storage_warning",
+      "severity": "warning",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "storage",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    },
+    {
+      "name": "storage_critical",
+      "severity": "critical",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "storage",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    },
+    {
+      "name": "backlog_warning",
+      "severity": "warning",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "storage",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    },
+    {
+      "name": "rpc_integrity",
+      "severity": "critical",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "integrity",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    },
+    {
+      "name": "synthetic_failed",
+      "severity": "critical",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "synthetic",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    },
+    {
+      "name": "quote_latency",
+      "severity": "warning",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "availability",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    },
+    {
+      "name": "ingest_latency",
+      "severity": "warning",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "availability",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    },
+    {
+      "name": "delivery_latency",
+      "severity": "warning",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "availability",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    },
+    {
+      "name": "telemetry_cardinality",
+      "severity": "warning",
+      "owner": "platform-oncall",
+      "commander": "incident-commander",
+      "runbook": "telemetry",
+      "ack_seconds": 300,
+      "update_seconds": 900
+    }
+  ],
+  "capacity": {
+    "status": "unqualified",
+    "target_dau": 500000,
+    "peak_sockets": 100000,
+    "surge_sockets": 200000,
+    "evidence": null
+  }
+}

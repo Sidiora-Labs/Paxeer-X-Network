@@ -1,0 +1,21 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "ReserveLib",
+  "sourceName": "contracts/libraries/ReserveLib.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "InsufficientInput",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InsufficientLiquidity",
+      "type": "error"
+    }
+  ],
+  "bytecode": "0x60808060405234601757603a9081601d823930815050f35b600080fdfe600080fdfea26469706673582212201d8d1ebdc52c7fd92994359c51448041fec9e82dabe9d4c3b09c771e4fdfa5f564736f6c634300081b0033",
+  "deployedBytecode": "0x600080fdfea26469706673582212201d8d1ebdc52c7fd92994359c51448041fec9e82dabe9d4c3b09c771e4fdfa5f564736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

@@ -1,0 +1,119 @@
+{
+  "schema_version": 4,
+  "task": "4.48",
+  "phase_version": "l48-integrated-harness-v1",
+  "record_kind": "source readiness contract",
+  "harness_ready": false,
+  "isolated_component_qualified": false,
+  "required_actual_inputs": [
+    "samecandidate/interface/topology source-bound runtimeauthority",
+    "4actual externalgeneratorhosts/independent clocks/currentcalibrations",
+    "actual anonymous/authenticated API and scoped v2 socket endpoints",
+    "real bounded socketcohort and frozenmixed HTTP routes",
+    "authentic primary PostgreSQLcanonicalfill/publication/envelope authority",
+    "bound compiled Go eventdriver and actualfile-backed JetStreamcredentials/admission",
+    "native per-replica edge_socket_write global/chart,payload,WebSocket,TLS,network/occupancy/queue/GC/OOMcounter mappings",
+    "actual provisionedstorage/72hretention/network/cost budgets"
+  ],
+  "isolated_readiness_entrypoint": "phase4_runner.readiness(config,reports)",
+  "final_readout_entrypoint": "capture.final_acceptance(config)",
+  "shared_capture_schema": "tools/production/load/final-shared-capture.schema.json",
+  "root_capacity_ledger_source": "tools/production/load/workload.py:ledger",
+  "root_mix_source": "tools/production/load/workload.py:MIX",
+  "source_sha256": "106c4600a64f7c380259bd2b02d37c3ee8d3dab3d1e0269e834160237a1be79a",
+  "final_gate": {
+    "task": "9.1",
+    "status": "pending",
+    "qualified": false
+  },
+  "final_scenarios": {
+    "peak-soak": {
+      "task": "9.1",
+      "duration_seconds": 86400,
+      "sockets": 100000,
+      "http_rps": 10000,
+      "writes_rps": 2000,
+      "quotes_rps": 2000,
+      "events_rps": 2000,
+      "frames_rps": 250000,
+      "payload_bytes_mean": 400,
+      "wire_bytes_budget_mean": 600,
+      "post_gc_heap_compare_seconds": [
+        14400,
+        86400
+      ],
+      "retained_heap_growth_max": 0.05
+    },
+    "connection-surge": {
+      "task": "9.1",
+      "baseline_sockets": 100000,
+      "additional_sockets": 100000,
+      "ramp_seconds": 60,
+      "sockets": 200000,
+      "hold_seconds": 600,
+      "recovery_seconds_max": 120,
+      "authenticated_fraction": "1/2",
+      "subscriptions_mean": 5,
+      "subscriptions_max": 20
+    },
+    "fanout-burst": {
+      "task": "9.1",
+      "frames_rps": 1000000,
+      "duration_seconds": 600,
+      "payload_bytes_mean": 400,
+      "wire_bytes_measured": true,
+      "slow_readers_fraction": "1/100",
+      "slow_reader_queue_bytes_max": 262144,
+      "price_updates_per_topic_second_max": 2
+    },
+    "event-surge": {
+      "task": "9.1",
+      "events_rps": 10000,
+      "duration_seconds": 300,
+      "expected_unique_identities": 3000000,
+      "baseline_events_rps": 2000,
+      "drain_seconds_max": 600,
+      "durable_ingest_p99_ns_max": 500000000,
+      "current_chain_throughput_claim": false
+    },
+    "managed-video": {
+      "task": "9.1",
+      "viewers": 20000,
+      "mean_bits_per_second": 2000000,
+      "application_video_proxy_allowed": false,
+      "actual_provider_playback_required": true
+    },
+    "hot-pool-skew": {
+      "task": "9.1",
+      "baseline_hot_subscribers": 80000,
+      "surge_hot_subscribers": 160000,
+      "subscriptions_hot_fraction": "4/5",
+      "subscriptions_cold_fraction": "1/5",
+      "reads_hot_fraction": "3/5",
+      "cold_read_p99_ns_max": 400000000,
+      "total_read_pool_scope_authority_required": true
+    }
+  },
+  "final_runtime_lane_count": 49,
+  "final_lane_set": "L01..L50 excludingL48; L48 remains required in task/feature gate joins",
+  "required_final_actual_artifacts": [
+    "signed current native scenario proofs",
+    "24h per-second gatewayegress raw and before/after samplehashes",
+    "full root HTTPmix and scheduledfailuredenominators",
+    "200koccupancy ramp60s/hold600s/recovery<=120s",
+    "600s1mframeburst and actualwirebytes",
+    "3munique canonicalraw eventidentities and commit/drain latency",
+    "managed20krealCDNplayback and byte/cost evidence",
+    "real hot/coldpool scopedread authority",
+    "all49actual otherlane runtime/toolversion bindings"
+  ],
+  "known_readiness_blockers": [
+    "total-read hotpool authority unresolved for frozenunscoped readoperations",
+    "requirednative gateway/per-pool metrics must be supplied by owning exporters",
+    "allfinal provider/runtime proofs absent until actual9.1execution"
+  ],
+  "capacity_qualified": false,
+  "release_qualified": false,
+  "monthly_availability_qualified": false,
+  "source_path": "tools/production/load/phase4_runner.py"
+}

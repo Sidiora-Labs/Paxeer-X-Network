@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "task": "4.30",
+  "workload_version": "kindle-500k-dau-v1",
+  "final_capacity_task": "9.1",
+  "capacity_qualified": false,
+  "budgets": {
+    "rows_per_list": 200,
+    "topics_per_socket": 20,
+    "steady_topics": 5,
+    "steady_mounted_data_rows": 100,
+    "price_repaints_per_second_per_topic": 2,
+    "fill_cache_rows": 1000,
+    "inactive_pools": 20,
+    "terminal_input_p95_ms": 200,
+    "steady_long_task_max_ms": 200,
+    "cls_p75": 0.1,
+    "steady_minimum_ms": 600000,
+    "route_cycles": 20,
+    "platform_burst_events_per_second": 10000,
+    "observer_queue_records": 8192,
+    "artifact_max_bytes": 1073741824,
+    "network_body_max_bytes": 1048576,
+    "source_frame_max_bytes": 262144,
+    "history_page_maximum": 10000,
+    "run_deadline_ms": 1800000
+  },
+  "responsive_widths": [320, 375, 390, 768, 1024, 1440],
+  "routes": ["discovery", "token", "terminal"],
+  "required_inputs": ["candidate_manifest", "interface_manifest", "topology_manifest", "trace_corpus", "playwright_module", "sdk_module", "axe_script", "backend_runner", "backend_config", "backend_output", "backend_environment_keys", "backend_raw_events", "node_executable", "python_executable", "browser_executable", "browser_device", "browser_session", "heap_limits", "hot_topics"],
+  "qualification_boundary": "Actual lane browser measurement only; shared load/restore and final production acceptance belong to serial9.1."
+}

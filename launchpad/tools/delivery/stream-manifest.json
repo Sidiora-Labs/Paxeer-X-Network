@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "qualification": "configuration_only_not_operated_or_capacity_qualified",
+  "stream": {
+    "name": "KINDLE_CHAIN_V1",
+    "subjects": ["kindle.chain125.>"],
+    "storage": "file",
+    "retention": "limits",
+    "num_replicas": 3,
+    "max_age": 259200000000000,
+    "max_bytes": 900000000000,
+    "max_msg_size": 1048576,
+    "discard": "new",
+    "duplicate_window": 120000000000,
+    "placement": {"cluster": "kindle-prod", "tags": ["workload:durable-events"]}
+  },
+  "server_requirements": {
+    "jetstream_unique_tag": "az:",
+    "sync_interval": "always",
+    "tls_required": true,
+    "subject_scoped_credentials": true,
+    "separate_admin_identity": true,
+    "replicas": [
+      {"server_name": "kindle-js-a", "tags": ["az:a", "workload:durable-events"]},
+      {"server_name": "kindle-js-b", "tags": ["az:b", "workload:durable-events"]},
+      {"server_name": "kindle-js-c", "tags": ["az:c", "workload:durable-events"]}
+    ]
+  },
+  "capacity": {
+    "qualification": "synthetic_floor_actual_deployment_requires_measured_p99_envelopes_and_indexes",
+    "normal_events_per_day": 10000000,
+    "peak_events_per_second": 2000,
+    "envelope_budget_floor_bytes": 1200,
+    "retention_seconds": 259200,
+    "headroom_percent": 25,
+    "normal_logical_bytes_floor": 36000000000,
+    "normal_replicated_bytes_floor": 108000000000,
+    "peak_logical_bytes_floor": 622080000000,
+    "peak_replicated_bytes_floor": 1866240000000,
+    "indexes_and_derived_events": "separate_required_measurement_before_activation"
+  },
+  "consumer_defaults": {
+    "ack_policy": "explicit",
+    "ack_wait": 30000000000,
+    "max_ack_pending": 1000,
+    "max_deliver": 20,
+    "replay_policy": "instant"
+  },
+  "activation_gates": [
+    "Register exact producer subject and service-owned schema migrations",
+    "Verify broker peer inventory maps az:a,az:b,az:c to distinct physical availability zones",
+    "Measure actual serialized p99 envelope bytes and indexes; resize max_bytes and node disk budgets",
+    "Validate authenticated TLS publish acknowledgement and inbox post-commit acknowledgement",
+    "Lose one broker node and verify every acknowledged identity remains replayable",
+    "Withhold persistence quorum and verify outbox retains unpublished rows",
+    "Register durable consumer identities, generation fences, quarantine policy and readiness budgets"
+  ]
+}

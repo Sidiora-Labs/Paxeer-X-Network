@@ -1,0 +1,106 @@
+{
+ "provenance": {
+  "pool": "0xce20da50f92d21d8bee497910c782e9aa25b6263",
+  "servers": "core/trading-charts httpapi.RegisterProductionUDF on a chi router: udfConfig (GET /v2/udf/config), udfTime (GET /v2/udf/time), SymbolsHandler (GET /v2/udf/symbols, DisplayPrecision 8), ProductionHistoryHandler (GET /v2/udf/history, price and total_supply_valuation) with HistoryCache (no Redis) over PostgresHistoryRevision and RPCSupplySource on the live Paxeer chain-125 RPC",
+  "upstream": "CanonicalCandleClient read core/api /v2/pools/{p}/candles from a replay server answering the recorded core-api-wire.json candles bytes for the recorded 1m window and 404 for every other window (statsDaily/statsHourly/statsFiveMinute therefore record the production 503 DEPENDENCY_UNAVAILABLE answer)",
+  "revisionStore": "throwaway schema charts_wire_<random>.chart_exact_v1 in the kindle-bootstrap-local Postgres holding the recorded candle's (start, revision); dropped after recording",
+  "symbolsToken": "Token document built as CanonicalPoolMetadataSource builds it: name/symbol/decimals/totalSupply read from token 0x0f92fdd087c96dd3413ef98646b94d0d986192fa on the chain-125 RPC (latest; the creation block state is pruned), creation position = the MarketCreated log in core/stats-workers/internal/projectionstats/testdata/real_pool_125.json, same metadataRevision digest",
+  "recordedWith": "go test -overlay (scratch zz_charts_wire_record_test.go in core/trading-charts/internal/httpapi, no Go source changes); bodyBytes are the handler's exact response bytes",
+  "recordedAt": "2026-10-13"
+ },
+ "now": 1791875700,
+ "upstreamRequests": [
+  "/v2/pools/0xce20da50f92d21d8bee497910c782e9aa25b6263/candles?from=2026-10-13T07%3A10%3A00.000Z&interval=1m&limit=2000&to=2026-10-13T07%3A15%3A00.000Z",
+  "/v2/pools/0xce20da50f92d21d8bee497910c782e9aa25b6263/candles?from=2025-10-13T07%3A15%3A00.000Z&interval=1d&limit=2000&to=2026-10-13T07%3A15%3A00.000Z",
+  "/v2/pools/0xce20da50f92d21d8bee497910c782e9aa25b6263/candles?from=2026-10-13T07%3A05%3A00.000Z&interval=5m&limit=2000&to=2026-10-13T07%3A15%3A00.000Z",
+  "/v2/pools/0xce20da50f92d21d8bee497910c782e9aa25b6263/candles?from=2026-10-13T07%3A10%3A00.000Z&interval=1m&limit=2000&to=2026-10-13T07%3A15%3A00.000Z",
+  "/v2/pools/0xce20da50f92d21d8bee497910c782e9aa25b6263/candles?from=2026-10-13T05%3A15%3A00.000Z&interval=1h&limit=2000&to=2026-10-13T07%3A15%3A00.000Z"
+ ],
+ "config": {
+  "path": "/v2/udf/config",
+  "status": 200,
+  "headers": {
+   "Content-Type": "application/json"
+  },
+  "bodyBytes": "{\"currency_codes\":[{\"code\":\"USDL\",\"description\":\"USDL Stablecoin\",\"id\":\"USDL\"}],\"exchanges\":[{\"desc\":\"Sidiora Launchpad\",\"name\":\"Sidiora\",\"value\":\"sidiora\"}],\"supported_resolutions\":[\"1\",\"5\",\"15\",\"60\",\"240\",\"1D\",\"D\",\"1W\",\"W\"],\"supports_group_request\":false,\"supports_marks\":false,\"supports_search\":true,\"supports_time\":true,\"supports_timescale_marks\":false,\"symbols_types\":[{\"name\":\"token\",\"value\":\"token\"}]}\n"
+ },
+ "time": {
+  "path": "/v2/udf/time",
+  "status": 200,
+  "headers": {
+   "Content-Type": "application/json"
+  },
+  "bodyBytes": "1791881843\n"
+ },
+ "symbols": {
+  "path": "/v2/udf/symbols?symbol=0xce20da50f92d21d8bee497910c782e9aa25b6263",
+  "status": 200,
+  "headers": {
+   "Cache-Control": "public, no-cache",
+   "Content-Type": "application/json",
+   "Etag": "\"117d585e63cc356453a84400d147300f007b2c54de8ccd45f9e58cfe0de0a2b2\""
+  },
+  "bodyBytes": "{\"baseDecimals\":6,\"chainId\":\"125\",\"currency_code\":\"USDL\",\"description\":\"LiveTest549002\",\"displayPrecision\":8,\"exchange\":\"sidiora\",\"full_name\":\"LT549002/USDL\",\"has_empty_bars\":false,\"has_intraday\":true,\"has_weekly_and_monthly\":true,\"listed_exchange\":\"sidiora\",\"metadataRevision\":\"111788575508090852698657114609181176453628457207889992693013350002923251926843\",\"minmov\":1,\"name\":\"0xce20da50f92d21d8bee497910c782e9aa25b6263\",\"poolAddress\":\"0xce20da50f92d21d8bee497910c782e9aa25b6263\",\"priceScale\":100000000,\"pricescale\":100000000,\"quoteDecimals\":6,\"session\":\"24x7\",\"supported_resolutions\":[\"1\",\"5\",\"15\",\"60\",\"240\",\"1D\",\"D\",\"1W\",\"W\"],\"ticker\":\"0xce20da50f92d21d8bee497910c782e9aa25b6263\",\"timezone\":\"Etc/UTC\",\"tokenAddress\":\"0x0f92fdd087c96dd3413ef98646b94d0d986192fa\",\"type\":\"token\"}\n"
+ },
+ "unknownSymbol": {
+  "path": "/v2/udf/symbols?symbol=0x0000000000000000000000000000000000000000",
+  "status": 404,
+  "headers": {
+   "Content-Type": "application/json"
+  },
+  "bodyBytes": "{\"code\":\"NOT_FOUND\",\"details\":null,\"fieldErrors\":[],\"message\":\"unknown pool\",\"requestId\":\"5e15ba81-630e-44c4-9af9-b9e7350fb3ba\",\"retryAfterMs\":null,\"retryable\":false}\n"
+ },
+ "history": {
+  "path": "/v2/udf/history?symbol=0xce20da50f92d21d8bee497910c782e9aa25b6263&resolution=1&from=1791875400&to=1791875700",
+  "status": 200,
+  "headers": {
+   "Cache-Control": "private, no-cache",
+   "Content-Type": "application/json",
+   "Etag": "\"82a5f6826a5d7a48e173afb37ef38b5beffc30501258e98571c975c4a05b1dd1\"",
+   "Server-Timing": "chart-origin;dur=43.383105",
+   "X-Chart-Cache": "miss",
+   "X-Schema-Version": "2"
+  },
+  "bodyBytes": "{\"algorithmVersion\":\"stats-market-v1\",\"c\":[0.000009842787102350856],\"h\":[0.000010409278350515825],\"l\":[0.000009842787102350856],\"mode\":\"price\",\"o\":[0.000010409278350515825],\"s\":\"ok\",\"snapshotId\":\"7ffbf6ae-c0b5-5e94-8ee7-b8cb2cee5e3e\",\"t\":[1791875520],\"v\":[147.278912],\"valuationAvailable\":true,\"valuationBasis\":\"total_supply_valuation\",\"valuations\":[{\"available\":true,\"c\":9842.787102350856,\"h\":10409.278350515824,\"l\":9842.787102350856,\"o\":10409.278350515824,\"supply\":[{\"token\":\"0x0f92fdd087c96dd3413ef98646b94d0d986192fa\",\"decimals\":6,\"totalSupplyRaw\":\"1000000000000000\",\"supplySourceBlock\":\"33963733\",\"supplySourceHash\":\"0x50f4e42d7247aa1665d1aaebc33039c8fc8e493727a864085ba77910dda56f6b\",\"valuationRevision\":\"ca4e51048687213f756e17a2eae4cf3924538709baab9400615b3bfb61929492\",\"alignment\":\"canonical_block_end\"},{\"token\":\"0x0f92fdd087c96dd3413ef98646b94d0d986192fa\",\"decimals\":6,\"totalSupplyRaw\":\"1000000000000000\",\"supplySourceBlock\":\"33963733\",\"supplySourceHash\":\"0x50f4e42d7247aa1665d1aaebc33039c8fc8e493727a864085ba77910dda56f6b\",\"valuationRevision\":\"ca4e51048687213f756e17a2eae4cf3924538709baab9400615b3bfb61929492\",\"alignment\":\"canonical_block_end\"},{\"token\":\"0x0f92fdd087c96dd3413ef98646b94d0d986192fa\",\"decimals\":6,\"totalSupplyRaw\":\"1000000000000000\",\"supplySourceBlock\":\"33963749\",\"supplySourceHash\":\"0x1cd6b450aa87745be16a8760a928a2e7ddd1097e872bdcd99b31ff66f77c2945\",\"valuationRevision\":\"53306e30f6c47cb428b7312a5ba07024659f8f23a420d477827c0106737b44a0\",\"alignment\":\"canonical_block_end\"},{\"token\":\"0x0f92fdd087c96dd3413ef98646b94d0d986192fa\",\"decimals\":6,\"totalSupplyRaw\":\"1000000000000000\",\"supplySourceBlock\":\"33963749\",\"supplySourceHash\":\"0x1cd6b450aa87745be16a8760a928a2e7ddd1097e872bdcd99b31ff66f77c2945\",\"valuationRevision\":\"53306e30f6c47cb428b7312a5ba07024659f8f23a420d477827c0106737b44a0\",\"alignment\":\"canonical_block_end\"}],\"valuationBasis\":\"total_supply_valuation\"}],\"watermark\":{\"blockHash\":\"0x1cd6b450aa87745be16a8760a928a2e7ddd1097e872bdcd99b31ff66f77c2945\",\"chainId\":\"125\",\"height\":\"33963749\",\"integrity\":\"healthy\",\"observedAt\":\"2026-10-13T08:19:17.213Z\",\"projectionRevision\":\"2\"}}"
+ },
+ "valuationHistory": {
+  "path": "/v2/udf/history?symbol=0xce20da50f92d21d8bee497910c782e9aa25b6263&resolution=1&from=1791875400&to=1791875700&mode=total_supply_valuation",
+  "status": 200,
+  "headers": {
+   "Cache-Control": "private, no-cache",
+   "Content-Type": "application/json",
+   "Etag": "\"d4df8f24e1096433bf3c14c53f44d276412ce5615a53b640991fb63cc9f864c8\"",
+   "Server-Timing": "chart-origin;dur=39.799792",
+   "X-Chart-Cache": "miss",
+   "X-Schema-Version": "2"
+  },
+  "bodyBytes": "{\"algorithmVersion\":\"stats-market-v1\",\"c\":[9842.787102350856],\"h\":[10409.278350515824],\"l\":[9842.787102350856],\"mode\":\"total_supply_valuation\",\"o\":[10409.278350515824],\"s\":\"ok\",\"snapshotId\":\"7ffbf6ae-c0b5-5e94-8ee7-b8cb2cee5e3e\",\"t\":[1791875520],\"v\":[147.278912],\"valuationAvailable\":true,\"valuationBasis\":\"total_supply_valuation\",\"valuations\":[{\"available\":true,\"c\":9842.787102350856,\"h\":10409.278350515824,\"l\":9842.787102350856,\"o\":10409.278350515824,\"supply\":[{\"token\":\"0x0f92fdd087c96dd3413ef98646b94d0d986192fa\",\"decimals\":6,\"totalSupplyRaw\":\"1000000000000000\",\"supplySourceBlock\":\"33963733\",\"supplySourceHash\":\"0x50f4e42d7247aa1665d1aaebc33039c8fc8e493727a864085ba77910dda56f6b\",\"valuationRevision\":\"ca4e51048687213f756e17a2eae4cf3924538709baab9400615b3bfb61929492\",\"alignment\":\"canonical_block_end\"},{\"token\":\"0x0f92fdd087c96dd3413ef98646b94d0d986192fa\",\"decimals\":6,\"totalSupplyRaw\":\"1000000000000000\",\"supplySourceBlock\":\"33963733\",\"supplySourceHash\":\"0x50f4e42d7247aa1665d1aaebc33039c8fc8e493727a864085ba77910dda56f6b\",\"valuationRevision\":\"ca4e51048687213f756e17a2eae4cf3924538709baab9400615b3bfb61929492\",\"alignment\":\"canonical_block_end\"},{\"token\":\"0x0f92fdd087c96dd3413ef98646b94d0d986192fa\",\"decimals\":6,\"totalSupplyRaw\":\"1000000000000000\",\"supplySourceBlock\":\"33963749\",\"supplySourceHash\":\"0x1cd6b450aa87745be16a8760a928a2e7ddd1097e872bdcd99b31ff66f77c2945\",\"valuationRevision\":\"53306e30f6c47cb428b7312a5ba07024659f8f23a420d477827c0106737b44a0\",\"alignment\":\"canonical_block_end\"},{\"token\":\"0x0f92fdd087c96dd3413ef98646b94d0d986192fa\",\"decimals\":6,\"totalSupplyRaw\":\"1000000000000000\",\"supplySourceBlock\":\"33963749\",\"supplySourceHash\":\"0x1cd6b450aa87745be16a8760a928a2e7ddd1097e872bdcd99b31ff66f77c2945\",\"valuationRevision\":\"53306e30f6c47cb428b7312a5ba07024659f8f23a420d477827c0106737b44a0\",\"alignment\":\"canonical_block_end\"}],\"valuationBasis\":\"total_supply_valuation\"}],\"watermark\":{\"blockHash\":\"0x1cd6b450aa87745be16a8760a928a2e7ddd1097e872bdcd99b31ff66f77c2945\",\"chainId\":\"125\",\"height\":\"33963749\",\"integrity\":\"healthy\",\"observedAt\":\"2026-10-13T08:19:17.213Z\",\"projectionRevision\":\"2\"}}"
+ },
+ "statsDaily": {
+  "path": "/v2/udf/history?symbol=0xce20da50f92d21d8bee497910c782e9aa25b6263&resolution=1D&from=1760339700&to=1791875700",
+  "status": 503,
+  "headers": {
+   "Content-Type": "application/json",
+   "Retry-After": "1"
+  },
+  "bodyBytes": "{\"code\":\"DEPENDENCY_UNAVAILABLE\",\"details\":null,\"fieldErrors\":[],\"message\":\"canonical history unavailable\",\"requestId\":\"597a37ab-8134-4225-8149-1ef04f113a08\",\"retryAfterMs\":1000,\"retryable\":true}\n"
+ },
+ "statsHourly": {
+  "path": "/v2/udf/history?symbol=0xce20da50f92d21d8bee497910c782e9aa25b6263&resolution=60&from=1791868500&to=1791875700",
+  "status": 503,
+  "headers": {
+   "Content-Type": "application/json",
+   "Retry-After": "1"
+  },
+  "bodyBytes": "{\"code\":\"DEPENDENCY_UNAVAILABLE\",\"details\":null,\"fieldErrors\":[],\"message\":\"canonical history unavailable\",\"requestId\":\"c052070b-90fe-4405-be2b-45507892c6e5\",\"retryAfterMs\":1000,\"retryable\":true}\n"
+ },
+ "statsFiveMinute": {
+  "path": "/v2/udf/history?symbol=0xce20da50f92d21d8bee497910c782e9aa25b6263&resolution=5&from=1791875100&to=1791875700",
+  "status": 503,
+  "headers": {
+   "Content-Type": "application/json",
+   "Retry-After": "1"
+  },
+  "bodyBytes": "{\"code\":\"DEPENDENCY_UNAVAILABLE\",\"details\":null,\"fieldErrors\":[],\"message\":\"canonical history unavailable\",\"requestId\":\"60f59eae-f30a-4a91-bd14-e5576547075e\",\"retryAfterMs\":1000,\"retryable\":true}\n"
+ }
+}

@@ -1,0 +1,183 @@
+{
+  "recordedAt": "2026-10-13",
+  "how": "Scratch go test -overlay files (no Go source changes) captured httptest.ResponseRecorder output of the real writers: media/livestream/internal/streams (*Handlers).provisioned/writeNotProvisioned, (*Handlers).contractError and (*Handlers).lifecycleError (one writer on every runtime: the provisioned connected path emits the same v2 Error envelope), writeContractError, writeRateLimited and boundedBody's request-body errors; then fed the recorded livestream 5xx bytes (and a 502 text/html dead upstream) through media/gateway/internal/proxy upstreamUnavailable. Bodies are byte-exact.",
+  "livestream": [
+    {
+      "name": "broadcast_not_provisioned",
+      "source": "streams.writeNotProvisioned via (*Handlers).provisioned (unprovisioned runtime)",
+      "status": 409,
+      "headers": {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"BROADCAST_NOT_PROVISIONED\",\"details\":{\"capability\":\"livestream.broadcast\",\"dependency\":\"livepeer\"},\"fieldErrors\":[],\"message\":\"Livestream broadcasting is not provisioned in this environment\",\"requestId\":\"2417aad8-9169-404b-8951-54941ce0f273\",\"retryAfterMs\":null,\"retryable\":false}\n"
+    },
+    {
+      "name": "live_document_not_provisioned",
+      "source": "(*Handlers).contractError(ErrNotProvisioned)",
+      "status": 409,
+      "headers": {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"BROADCAST_NOT_PROVISIONED\",\"details\":{\"capability\":\"livestream.broadcast\",\"dependency\":\"livepeer\"},\"fieldErrors\":[],\"message\":\"Livestream broadcasting is not provisioned in this environment\",\"requestId\":\"2c4f9b8c-ffc8-47c7-9ad4-65c6a31a4ccc\",\"retryAfterMs\":null,\"retryable\":false}\n"
+    },
+    {
+      "name": "heartbeat_state_conflict",
+      "source": "(*Handlers).contractError(ErrState)",
+      "status": 409,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"STATE_CONFLICT\",\"details\":null,\"fieldErrors\":[],\"message\":\"Livestream state does not admit this request\",\"requestId\":\"3ee4c99d-ad7d-4680-a24a-491cedff4e83\",\"retryAfterMs\":null,\"retryable\":false}\n"
+    },
+    {
+      "name": "heartbeat_auth_expired",
+      "source": "(*Handlers).contractError(ErrViewerToken)",
+      "status": 401,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"AUTH_EXPIRED\",\"details\":null,\"fieldErrors\":[],\"message\":\"Viewer session expired or invalid\",\"requestId\":\"3590babc-79f7-42ec-b825-044281e8dcab\",\"retryAfterMs\":null,\"retryable\":false}\n"
+    },
+    {
+      "name": "field_invalid",
+      "source": "(*Handlers).contractError(ErrInvalid)",
+      "status": 422,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"FIELD_INVALID\",\"details\":null,\"fieldErrors\":[],\"message\":\"Invalid livestream request\",\"requestId\":\"5dfd1c5e-db54-4614-bead-a996b9f87307\",\"retryAfterMs\":null,\"retryable\":false}\n"
+    },
+    {
+      "name": "revision_conflict",
+      "source": "(*Handlers).contractError(ErrConflict)",
+      "status": 409,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"REVISION_CONFLICT\",\"details\":null,\"fieldErrors\":[],\"message\":\"Livestream revision conflict\",\"requestId\":\"7278d9f1-8bd9-4102-afa1-fc3a414551b3\",\"retryAfterMs\":null,\"retryable\":false}\n"
+    },
+    {
+      "name": "rate_limited",
+      "source": "(*Handlers).contractError(ErrQuota)",
+      "status": 429,
+      "headers": {
+        "Content-Type": "application/json",
+        "Retry-After": "30"
+      },
+      "body": "{\"code\":\"RATE_LIMITED\",\"details\":null,\"fieldErrors\":[],\"message\":\"Livestream admission limit\",\"requestId\":\"bac35e09-97b4-44a6-b802-7b6c2fbbdbcf\",\"retryAfterMs\":30000,\"retryable\":true}\n"
+    },
+    {
+      "name": "connected_heartbeat_viewer_token",
+      "source": "(*Handlers).lifecycleError(ErrViewerToken) on a provisioned (connected) runtime",
+      "status": 401,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"AUTH_EXPIRED\",\"details\":null,\"fieldErrors\":[],\"message\":\"Viewer session expired or invalid\",\"requestId\":\"639d90c5-8ccc-42e9-a0df-dac5a3f67e2c\",\"retryAfterMs\":null,\"retryable\":false}\n"
+    },
+    {
+      "name": "connected_heartbeat_state",
+      "source": "(*Handlers).lifecycleError(ErrState) on a provisioned (connected) runtime",
+      "status": 409,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"STATE_CONFLICT\",\"details\":null,\"fieldErrors\":[],\"message\":\"Livestream state does not admit this request\",\"requestId\":\"4c13efa5-a7d8-4c46-b589-71364d47a603\",\"retryAfterMs\":null,\"retryable\":false}\n"
+    },
+    {
+      "name": "connected_heartbeat_rate_limited",
+      "source": "streams.writeRateLimited(15) from connectedHeartbeat on a provisioned (connected) runtime",
+      "status": 429,
+      "headers": {
+        "Content-Type": "application/json",
+        "Retry-After": "15"
+      },
+      "body": "{\"code\":\"RATE_LIMITED\",\"details\":null,\"fieldErrors\":[],\"message\":\"Viewer heartbeat rate limited\",\"requestId\":\"9c977027-14be-4a73-8f6f-9693229c319c\",\"retryAfterMs\":15000,\"retryable\":true}\n"
+    },
+    {
+      "name": "connected_request_media_type",
+      "source": "streams.boundedBody(text/plain) on a provisioned (connected) runtime",
+      "status": 415,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"FIELD_INVALID\",\"details\":null,\"fieldErrors\":[{\"pointer\":\"\",\"rule\":\"media_type\"}],\"message\":\"JSON request required\",\"requestId\":\"a21c736f-9738-4c60-82ac-5aabb0f8ee52\",\"retryAfterMs\":null,\"retryable\":false}\n"
+    },
+    {
+      "name": "connected_request_too_large",
+      "source": "streams.boundedBody(oversize) on a provisioned (connected) runtime",
+      "status": 413,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"FIELD_INVALID\",\"details\":null,\"fieldErrors\":[{\"pointer\":\"\",\"rule\":\"max_bytes\"}],\"message\":\"Request too large\",\"requestId\":\"aea0ce0c-49ab-41f9-a9ec-d88dd5e15b24\",\"retryAfterMs\":null,\"retryable\":false}\n"
+    },
+    {
+      "name": "connected_request_invalid_json",
+      "source": "streams.boundedBody(invalid JSON) on a provisioned (connected) runtime",
+      "status": 400,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"FIELD_INVALID\",\"details\":null,\"fieldErrors\":[{\"pointer\":\"\",\"rule\":\"json\"}],\"message\":\"Invalid JSON body\",\"requestId\":\"17b0937d-8512-4f2f-a2a0-6861f63cd358\",\"retryAfterMs\":null,\"retryable\":false}\n"
+    },
+    {
+      "name": "dependency_unavailable",
+      "source": "(*Handlers).contractError(default)",
+      "status": 503,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"DEPENDENCY_UNAVAILABLE\",\"details\":{\"dependency\":\"livestream_store\"},\"fieldErrors\":[],\"message\":\"Authoritative livestream dependency unavailable\",\"requestId\":\"cdb2220a-0ace-4d57-a85a-96e4701b14f7\",\"retryAfterMs\":null,\"retryable\":true}\n"
+    },
+    {
+      "name": "dependency_unavailable_retry_after",
+      "source": "streams.writeContractError(503, DEPENDENCY_UNAVAILABLE, retryable, retryAfterMs 1000)",
+      "status": 503,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"DEPENDENCY_UNAVAILABLE\",\"details\":{\"dependency\":\"livestream_store\"},\"fieldErrors\":[],\"message\":\"Authoritative livestream dependency unavailable\",\"requestId\":\"3afb8544-7abb-46a7-a17c-bb8370866502\",\"retryAfterMs\":1000,\"retryable\":true}\n"
+    }
+  ],
+  "gateway": [
+    {
+      "name": "gateway_dependency_unavailable",
+      "source": "proxy.upstreamUnavailable(livestream dependency_unavailable bytes)",
+      "status": 503,
+      "headers": {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json",
+        "X-Content-Type-Options": "nosniff"
+      },
+      "body": "{\"code\":\"DEPENDENCY_UNAVAILABLE\",\"details\":null,\"fieldErrors\":[],\"message\":\"Upstream service unavailable\",\"requestId\":\"cdb2220a-0ace-4d57-a85a-96e4701b14f7\",\"retryAfterMs\":null,\"retryable\":true}"
+    },
+    {
+      "name": "gateway_dependency_unavailable_retry_after",
+      "source": "proxy.upstreamUnavailable(livestream dependency_unavailable_retry_after bytes)",
+      "status": 503,
+      "headers": {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json",
+        "X-Content-Type-Options": "nosniff"
+      },
+      "body": "{\"code\":\"DEPENDENCY_UNAVAILABLE\",\"details\":null,\"fieldErrors\":[],\"message\":\"Upstream service unavailable\",\"requestId\":\"3afb8544-7abb-46a7-a17c-bb8370866502\",\"retryAfterMs\":1000,\"retryable\":true}"
+    },
+    {
+      "name": "gateway_dead_upstream",
+      "source": "proxy.upstreamUnavailable(502 text/html from a dead upstream)",
+      "status": 503,
+      "headers": {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"upstream_unavailable\"}\n"
+    }
+  ],
+  "regenerate": [
+    "cd media/livestream && REC_OUT=<dir> go test -overlay <overlay.json mapping internal/streams/zz_record_test.go -> recorder/livestream_record_test.go.txt> -run TestRecordLivestreamEnvelopes -count=1 ./internal/streams/",
+    "cd media/gateway && REC_OUT=<dir> go test -overlay <overlay.json mapping internal/proxy/zz_record_test.go -> recorder/gateway_record_test.go.txt> -run TestRecordGatewayUpstreamUnavailable -count=1 ./internal/proxy/"
+  ]
+}

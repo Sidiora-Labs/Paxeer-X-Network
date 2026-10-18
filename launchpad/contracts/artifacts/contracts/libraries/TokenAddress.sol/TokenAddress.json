@@ -1,0 +1,10 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "TokenAddress",
+  "sourceName": "contracts/libraries/TokenAddress.sol",
+  "abi": [],
+  "bytecode": "0x60808060405234601757603a9081601d823930815050f35b600080fdfe600080fdfea2646970667358221220523666921eaf06d2f915fcef9332660057b8ca435757a810c3e9883e8eac2fd364736f6c634300081b0033",
+  "deployedBytecode": "0x600080fdfea2646970667358221220523666921eaf06d2f915fcef9332660057b8ca435757a810c3e9883e8eac2fd364736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

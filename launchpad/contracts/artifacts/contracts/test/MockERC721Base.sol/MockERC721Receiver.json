@@ -1,0 +1,45 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "MockERC721Receiver",
+  "sourceName": "contracts/test/MockERC721Base.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "",
+          "type": "bytes"
+        }
+      ],
+      "name": "onERC721Received",
+      "outputs": [
+        {
+          "internalType": "bytes4",
+          "name": "",
+          "type": "bytes4"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x6080806040523460145760ef908161001a8239f35b600080fdfe6080806040526004361015601257600080fd5b60003560e01c63150b7a0214602657600080fd5b34608a576080366003190112608a57603b608f565b50604260a4565b5060643567ffffffffffffffff8111608a5736602382011215608a57806004013567ffffffffffffffff8111608a5736910160240111608a57630a85bd0160e11b8152602090f35b600080fd5b600435906001600160a01b0382168203608a57565b602435906001600160a01b0382168203608a5756fea26469706673582212204569d290b40ebed914012d6662bb74f36f677cfac5e2056265d832d516b487e264736f6c634300081b0033",
+  "deployedBytecode": "0x6080806040526004361015601257600080fd5b60003560e01c63150b7a0214602657600080fd5b34608a576080366003190112608a57603b608f565b50604260a4565b5060643567ffffffffffffffff8111608a5736602382011215608a57806004013567ffffffffffffffff8111608a5736910160240111608a57630a85bd0160e11b8152602090f35b600080fd5b600435906001600160a01b0382168203608a57565b602435906001600160a01b0382168203608a5756fea26469706673582212204569d290b40ebed914012d6662bb74f36f677cfac5e2056265d832d516b487e264736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

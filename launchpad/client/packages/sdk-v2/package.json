@@ -1,0 +1,29 @@
+{
+  "name": "@kindle/sdk-v2",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/types.gen.js",
+  "types": "./dist/types.gen.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types.gen.d.ts",
+      "import": "./dist/types.gen.js"
+    },
+    "./types": {
+      "types": "./dist/types.gen.d.ts",
+      "import": "./dist/types.gen.js"
+    },
+    "./schemas": "./src/schemas.gen.json"
+  },
+  "files": [
+    "dist",
+    "src/schemas.gen.json"
+  ],
+  "scripts": {
+    "build": "tsc --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --declaration --outDir dist src/types.gen.ts"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

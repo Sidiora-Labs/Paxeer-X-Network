@@ -1,0 +1,27 @@
+// go.work — KindleLaunch monorepo workspace.
+// Ties the independent leaf modules together for local development so that
+// cross-module replace targets resolve without published versions. Each leaf
+// also builds standalone via its own go.mod replace directives (house rule:
+// independence). See knowledge/kindlelaunch.frozen.kvx SECTION 2 + L8/L14.
+go 1.25.0
+
+use (
+	./core/api
+	./core/discovery
+	./core/notifications
+	./core/indexer
+	./core/pnl-tracker
+	./core/ranking-algo
+	./core/stats-workers
+	./core/trading-charts
+	./deploy/production/recovery/phase2/broker
+	./media/gateway
+	./media/livestream
+	./media/metadata
+	./media/social
+	./media/user
+	./protocol
+	./shared
+	./security
+	./security/control
+)

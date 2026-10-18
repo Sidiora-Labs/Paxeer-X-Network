@@ -1,0 +1,64 @@
+package proxy
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+type recorded struct {
+	Name    string            `json:"name"`
+	Source  string            `json:"source"`
+	Status  int               `json:"status"`
+	Headers map[string]string `json:"headers"`
+	Body    string            `json:"body"`
+}
+
+func TestRecordGatewayUpstreamUnavailable(t *testing.T) {
+	out := os.Getenv("REC_OUT")
+	if out == "" {
+		t.Skip("REC_OUT unset")
+	}
+	raw, err := os.ReadFile(filepath.Join(out, "livestream.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var upstream []recorded
+	if err := json.Unmarshal(raw, &upstream); err != nil {
+		t.Fatal(err)
+	}
+	relay := func(name, source string, status int, headers map[string]string, body string) recorded {
+		resp := &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}
+		for k, v := range headers {
+			resp.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		upstreamUnavailable(rec, resp)
+		h := map[string]string{}
+		for _, k := range []string{"Content-Type", "Cache-Control", "Retry-After", "X-Content-Type-Options"} {
+			if v := rec.Header().Get(k); v != "" {
+				h[k] = v
+			}
+		}
+		return recorded{Name: name, Source: source, Status: rec.Code, Headers: h, Body: rec.Body.String()}
+	}
+	var rows []recorded
+	for _, u := range upstream {
+		if u.Status >= 500 {
+			rows = append(rows, relay("gateway_"+u.Name, "proxy.upstreamUnavailable(livestream "+u.Name+" bytes)", u.Status, u.Headers, u.Body))
+		}
+	}
+	rows = append(rows, relay("gateway_dead_upstream", "proxy.upstreamUnavailable(502 text/html from a dead upstream)", 502, map[string]string{"Content-Type": "text/html"}, "<html><body>502 Bad Gateway</body></html>"))
+	b, err := json.MarshalIndent(rows, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "gateway.json"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

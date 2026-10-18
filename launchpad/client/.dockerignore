@@ -1,0 +1,31 @@
+node_modules
+**/node_modules
+.next
+**/.next
+# Stale built artifacts — built fresh inside the image. Excluding them keeps
+# the build context tiny and prevents host-rebuild churn from busting layers.
+**/dist
+**/.tsbuildinfo
+**/tsconfig.tsbuildinfo
+**/tsc.log
+**/.turbo
+**/.cache
+.git
+.github
+.vscode
+.windsurf
+.cursor
+.md
+.sidgit
+.sidignore
+*.md
+!README.md
+docs
+development
+Trading-platform-frontend
+builders-workshop-ui
+!node_modules/**/tsup
+test.sh
+*.log
+Dockerfile.bak
+**/.next-build

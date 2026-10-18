@@ -1,0 +1,53 @@
+{
+  "name": "kindle-contracts",
+  "version": "2.0.0",
+  "private": false,
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "test:coverage": "hardhat coverage",
+    "test:gas": "REPORT_GAS=true hardhat test",
+    "deploy:paxeer": "hardhat run scripts/deploy.js --network paxeer-x-network",
+    "verify:paxeer": "hardhat run --no-compile scripts/verify.js --network paxeer-x-network",
+    "lint:sol": "solhint 'contracts/**/*.sol' --config .solhint.json",
+    "lint:js": "eslint 'scripts/**/*.js' 'test/**/*.js' --ext .js",
+    "format": "prettier --write 'contracts/**/*.sol' 'scripts/**/*.js' 'test/**/*.js'",
+    "format:check": "prettier --check 'contracts/**/*.sol' 'scripts/**/*.js' 'test/**/*.js'",
+    "gas": "REPORT_GAS=true hardhat test",
+    "coverage": "hardhat coverage",
+    "slither": "slither . --config-file slither.config.json",
+    "clean": "hardhat clean && rm -rf coverage",
+    "clean:all": "pnpm clean && rm -rf node_modules artifacts cache",
+    "meta-ag:test": "hardhat test --grep meta-ag",
+    "meta-ag:coverage": "hardhat coverage --testfiles \"test/meta-ag/**/*.test.js\"",
+    "meta-ag:gas": "REPORT_GAS=true hardhat test --grep meta-ag",
+    "meta-ag:lint": "solhint \"contracts/meta-ag/**/*.sol\" --config .solhint.json",
+    "meta-ag:layout": "node scripts/meta-ag/snapshot-storage-layout.js",
+    "meta-ag:layout:check": "node scripts/meta-ag/check-storage-layout.js",
+    "health": "node scripts/production-health.js",
+    "release:check": "node scripts/release-check.js",
+    "release:qualify": "node scripts/release-qualify.js"
+  },
+  "devDependencies": {
+    "@bonadocs/docgen": "1.0.1-alpha.6",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "chai": "^4.5.0",
+    "dotenv": "^16.4.5",
+    "eslint": "8.57.1",
+    "ethers": "^6.16.0",
+    "hardhat": "^2.22.6"
+  },
+  "author": "Sidiora",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "prettier-plugin-solidity": "^2.3.1",
+    "solhint": "^6.2.1",
+    "solhint-plugin-prettier": "^0.1.0",
+    "solidity-docgen": "0.6.0-beta.36",
+    "viem": "^2.47.10"
+  },
+  "packageManager": "pnpm@11.5.2",
+  "engines": {
+    "node": ">=22 <25"
+  }
+}

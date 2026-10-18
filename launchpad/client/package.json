@@ -1,0 +1,58 @@
+{
+  "name": "sidiora",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @sidiora/web dev",
+    "dev:bot": "pnpm --filter @sidiora/telegram-bot dev",
+    "build": "pnpm --filter @sidiora/web build",
+    "build:bot": "pnpm --filter @sidiora/telegram-bot build",
+    "build:packages": "pnpm -r --filter './packages/*' build",
+    "lint": "pnpm --filter @sidiora/web lint"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "devDependencies": {
+    "tsup": "^8.3.5"
+  },
+  "pnpm": {
+    "overrides": {
+      "react": "^19.0.0",
+      "react-dom": "^19.0.0",
+      "wagmi": "^2.19.0",
+      "@tanstack/react-query": "^5.62.0",
+      "shell-quote@>=1.8.4 <1.11.0": "1.11.0",
+      "h3@>=1.0.0 <1.15.9": "1.15.9",
+      "brace-expansion@>=5.0.0 <5.0.12": "5.0.12",
+      "picomatch@>=2.0.0 <2.3.2": "2.3.2",
+      "picomatch@>=4.0.0 <4.0.4": "4.0.4",
+      "lodash@>=4.0.0 <4.18.0": "4.18.0",
+      "defu@>=6.0.0 <6.1.5": "6.1.5",
+      "hono@>=4.0.0 <4.13.7": "4.13.7",
+      "follow-redirects@>=1.0.0 <1.16.0": "1.16.0",
+      "axios@>=1.0.0 <1.20.0": "1.20.0",
+      "postcss@>=8.0.0 <8.5.23": "8.5.23",
+      "ws@>=8.0.0 <8.21.0": "8.21.0",
+      "ws@>=7.0.0 <7.5.11": "7.5.11",
+      "form-data@>=4.0.0 <4.0.6": "4.0.6",
+      "@babel/core@>=7.0.0 <7.29.6": "7.29.6",
+      "fast-uri@>=3.0.0 <3.1.8": "3.1.8",
+      "socket.io-parser@>=4.0.0 <4.2.7": "4.2.7",
+      "nanoid@>=3.0.0 <3.3.18": "3.3.18",
+      "browserslist@>=4.0.0 <4.28.7": "4.28.7",
+      "@opentelemetry/core@>=2.0.0 <2.8.0": "2.8.0",
+      "baseline-browser-mapping@>=2.0.0 <2.11.0": "2.11.0",
+      "source-map-js@>=1.0.0 <1.2.2": "1.2.2",
+      "fast-copy@>=4.0.0 <4.1.0": "4.1.0",
+      "uuid@>=11.0.0 <11.1.1": "11.1.1",
+      "next@15.5.27>sharp": "0.35.5",
+      "metro@0.84.4>image-size": "2.0.3",
+      "@noble/curves@1.9.1": "1.9.7"
+    },
+    "patchedDependencies": {
+      "metro@0.84.4": "patches/metro@0.84.4.patch"
+    }
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.13.24",
+    "motion": "^12.38.0"
+  }
+}

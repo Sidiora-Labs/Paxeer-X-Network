@@ -1,0 +1,59 @@
+{
+  "schema_version": 3,
+  "task": "3.48",
+  "capacity_qualified": false,
+  "required_bindings": [
+    "candidate",
+    "interface",
+    "topology",
+    "generator"
+  ],
+  "required_actual_execution": {
+    "independent_external_hosts": 4,
+    "shared_wallclock_overlap_seconds": 600,
+    "generator_cpu_nic_fraction_max": 0.7,
+    "scheduler_p99_ns_max": 10000000,
+    "calibration_seconds": 60,
+    "hot_pool_subscribers": 80000,
+    "cold_pool_p99_ns_max": 400000000,
+    "all_fault_timeouts_in_denominator": true,
+    "per_pool_metrics_required": true,
+    "actual_heap_and_gc_counter_required": true,
+    "no_oom_or_unbounded_queue": true
+  },
+  "required_artifacts": [
+    "candidate-bindings.json",
+    "workload-ledger.json",
+    "generator-calibration.json",
+    "dependencies.json",
+    "accounts-public.json",
+    "authorization-denials.json",
+    "subscription-inventory.json",
+    "http-samples.ndjson",
+    "fault-control.ndjson",
+    "resource-pool-telemetry.ndjson",
+    "receiver-events.ndjson",
+    "chain-receipts.ndjson",
+    "chart-reconciliation.ndjson",
+    "recovery-reconciliation.json",
+    "artifact-sha256.json",
+    "result.json"
+  ],
+  "credential_values_persisted": false,
+  "fault_control": "Only host0 controls the existing labeled isolated-bootstrap fixture; exact Docker executable and immutable container IDs are bound, every container is inspected before mutation, and restoration is attempted under cancellation.",
+  "latency": "Every scheduled arrival enters denominator. Measurements start at scheduled arrival. Missing/censored tail samples yield an unavailable percentile, never a low percentile from only successful arrivals.",
+  "telemetry": "Every per-pool and instance metric must map to an actual source-bound native exporter name. Missing, stale, ambiguous, saturated or reset telemetry fails closed. No global average substitutes for pool measurements.",
+  "slo": "Read and mutation errors include dependency-fault arrivals and are reported separately; benchmark observations do not establish monthly99.95/99.9 availability.",
+  "forbidden_substitutions": [
+    "calibration echo used as application gateway",
+    "caller-declared fault state",
+    "unowned service pause",
+    "invented telemetry",
+    "missing failures dropped from denominator",
+    "coalesced durable fills",
+    "source inspection used as capacity evidence",
+    "scaled baseline claimed as80k subscribers",
+    "phase3 proof used as final capacity"
+  ],
+  "final_capacity_task": "9.1"
+}

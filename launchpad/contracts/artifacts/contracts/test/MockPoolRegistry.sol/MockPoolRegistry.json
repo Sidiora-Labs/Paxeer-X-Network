@@ -1,0 +1,48 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "MockPoolRegistry",
+  "sourceName": "contracts/test/MockPoolRegistry.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        }
+      ],
+      "name": "isRegisteredPool",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "internalType": "bool",
+          "name": "registered",
+          "type": "bool"
+        }
+      ],
+      "name": "setRegistered",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x60808060405234601557610102908161001b8239f35b600080fdfe6080806040526004361015601257600080fd5b60003560e01c908163c699e633146080575063fc353ae514603257600080fd5b34607b576040366003190112607b57604760b7565b60243590811515809203607b5760018060a01b0316600052600060205260406000209060ff80198354169116179055600080f35b600080fd5b34607b576020366003190112607b576020906001600160a01b0360a060b7565b166000526000825260ff6040600020541615158152f35b600435906001600160a01b0382168203607b5756fea264697066735822122005231a56371ac6f5915b62f2bf96c4761c3421cdd0375b7831ffabb305badecb64736f6c634300081b0033",
+  "deployedBytecode": "0x6080806040526004361015601257600080fd5b60003560e01c908163c699e633146080575063fc353ae514603257600080fd5b34607b576040366003190112607b57604760b7565b60243590811515809203607b5760018060a01b0316600052600060205260406000209060ff80198354169116179055600080f35b600080fd5b34607b576020366003190112607b576020906001600160a01b0360a060b7565b166000526000825260ff6040600020541615158152f35b600435906001600160a01b0382168203607b5756fea264697066735822122005231a56371ac6f5915b62f2bf96c4761c3421cdd0375b7831ffabb305badecb64736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

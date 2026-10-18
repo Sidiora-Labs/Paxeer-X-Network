@@ -1,0 +1,207 @@
+{
+  "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+  "compiler": "0.8.27+commit.40a35a09",
+  "input": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "viaIR": true
+  },
+  "storage": [
+    {
+      "astId": 17,
+      "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+      "label": "_roles",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_mapping(t_bytes32,t_struct(RoleData)12_storage)"
+    },
+    {
+      "astId": 21282,
+      "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+      "label": "_adapterIds",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_array(t_bytes32)dyn_storage"
+    },
+    {
+      "astId": 21287,
+      "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+      "label": "_adapters",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_mapping(t_bytes32,t_struct(AdapterInfo)17404_storage)"
+    },
+    {
+      "astId": 21291,
+      "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+      "label": "_adapterAddresses",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_mapping(t_address,t_bool)"
+    },
+    {
+      "astId": 21294,
+      "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+      "label": "deviationThresholdBps",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 21297,
+      "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+      "label": "minConfidence",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 21299,
+      "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+      "label": "primaryOracle",
+      "offset": 0,
+      "slot": "6",
+      "type": "t_address"
+    },
+    {
+      "astId": 21304,
+      "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+      "label": "__gap",
+      "offset": 0,
+      "slot": "7",
+      "type": "t_array(t_uint256)50_storage"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_bytes32)dyn_storage": {
+      "base": "t_bytes32",
+      "encoding": "dynamic_array",
+      "label": "bytes32[]",
+      "numberOfBytes": "32"
+    },
+    "t_array(t_uint256)50_storage": {
+      "base": "t_uint256",
+      "encoding": "inplace",
+      "label": "uint256[50]",
+      "numberOfBytes": "1600"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_bytes32": {
+      "encoding": "inplace",
+      "label": "bytes32",
+      "numberOfBytes": "32"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_bytes32,t_struct(AdapterInfo)17404_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct IOracleHub.AdapterInfo)",
+      "numberOfBytes": "32",
+      "value": "t_struct(AdapterInfo)17404_storage"
+    },
+    "t_mapping(t_bytes32,t_struct(RoleData)12_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct AccessControl.RoleData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(RoleData)12_storage"
+    },
+    "t_string_storage": {
+      "encoding": "bytes",
+      "label": "string",
+      "numberOfBytes": "32"
+    },
+    "t_struct(AdapterInfo)17404_storage": {
+      "encoding": "inplace",
+      "label": "struct IOracleHub.AdapterInfo",
+      "members": [
+        {
+          "astId": 17395,
+          "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+          "label": "adapter",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_address"
+        },
+        {
+          "astId": 17397,
+          "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+          "label": "priority",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 17399,
+          "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+          "label": "active",
+          "offset": 0,
+          "slot": "2",
+          "type": "t_bool"
+        },
+        {
+          "astId": 17401,
+          "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+          "label": "sourceId",
+          "offset": 0,
+          "slot": "3",
+          "type": "t_bytes32"
+        },
+        {
+          "astId": 17403,
+          "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+          "label": "name",
+          "offset": 0,
+          "slot": "4",
+          "type": "t_string_storage"
+        }
+      ],
+      "numberOfBytes": "160"
+    },
+    "t_struct(RoleData)12_storage": {
+      "encoding": "inplace",
+      "label": "struct AccessControl.RoleData",
+      "members": [
+        {
+          "astId": 9,
+          "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+          "label": "hasRole",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_address,t_bool)"
+        },
+        {
+          "astId": 11,
+          "contract": "contracts/meta-ag/oracle/OracleHub.sol:OracleHub",
+          "label": "adminRole",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_bytes32"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}

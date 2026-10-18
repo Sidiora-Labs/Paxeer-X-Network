@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "baseline": "2026-10-09 completed audit remediation, before production enhancements",
+  "baseline_archive_sha256": "03a3131b9490fbd5ebbbfc22d09619fe792d05ee1791e88e64724be0cc0ca9c6",
+  "qualification": "Regression baseline only; original deployed-release upgrades still require explicit migration qualification. Historical core/meta-ag baselines remain preserved.",
+  "files": {
+    "core/SidioraFactory.json": "521f9eb7fa9550f7c2c0b6e854fb2c75c13b78896ed8de71da86810ae13253b8",
+    "core/SidioraNFT.json": "109f9bb05685194147c154e181dfa350f55778c1870cab2fc77940bda0dde294",
+    "core/SidioraPool.json": "f661af7da4da6134a523b97487f236b5340496e601fc252babd1700bffed557d",
+    "core/EventEmitter.json": "f1e6268448a3896a83516cc0519be8d5f5579c27bf0ed2d01110fd2948e8a708",
+    "core/FeeAccumulator.json": "00c74431107f2ef9eb7ebebd4e16244c3540b7e2bb407d0bf3c505ec9bb33663",
+    "core/PoolRegistry.json": "a05e9be1a08a8f82669d7b65ca1461e1bfc3b001f7a0d481697581696a1b8642",
+    "core/LaunchpadOpticalFactory.json": "ee48bdd339c0b963b98de02eb5f7fc23a7d0cb2797b5ac9fc9d10e5ec8675d0c",
+    "core/OpticalRegistry.json": "49b44cfc3b825045682d25f49ef39ec1aa45b3bc29be885cd2293ba234b6fc50",
+    "core/FeesRouter.json": "f1a94c209b5fcd60d5c4cad877e18293e3b9aedcb2b9b7d164528eab0110b545",
+    "core/Quoter.json": "aa08874aa31042c52f9f4186d93997164a9849a816da818c67e435ae77713d73",
+    "core/Router.json": "f35ac8293116c22ca922dd0867faf559ffdfb45ab6867478035fcfae817ec52f",
+    "core/GovernanceModule.json": "9ae4dc5dd4801a30f5d09a1e819d29a6cea9d98664af07dbd2b191ca34863198",
+    "core/ProtocolConfig.json": "d457e1cc96722ed6349626e1845ead32729081882e5cdc4f8b533de58e162310",
+    "core/Treasury.json": "c00d80b9b178a336bf788fd095d5e31e76ea0583f1608e896e70e8c55d200b5b",
+    "meta-ag/PriceOracle.json": "66541b71f74cd35458053f24ba91245c9d82b4e3da31a9cc401eb155657f7450",
+    "meta-ag/OracleHub.json": "b3b17a65eba6e2e88230c62b979bb482f3fabd412262d3b1a4b826344c514b5d",
+    "meta-ag/PECORVault.json": "160b23ffedfbf31c9647e90ed68e6e40d84aa18ec9e26eba2adda53f15fd56a7",
+    "meta-ag/PECOR.json": "210beed2b986b62bccfcc7dd01c932849bbcf66db252df025d5d5e86b5dbcfb6",
+    "meta-ag/PECOROrders.json": "8aa1cc2fe31fa998a99b236d4127c60ce0f7cc9734b16894892caa6563d27edf",
+    "meta-ag/TransactionTracker.json": "5d34ee737783a40ef82ba7eead50b6396d1649e3b44578df9b333d9720b506c3",
+    "meta-ag/MetaAGRouter.json": "186d12b205b853ec607dc5147b4f1e33b057b2d32bbc94991560f6a18c83e576",
+    "meta-ag/MetaAGQuoter.json": "75237e6180aec18d42e9af5addf365635b1439b06bdfb51e2f6eb00b76423a21"
+  }
+}

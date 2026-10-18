@@ -1,0 +1,266 @@
+# periphery.freeze.lock — sidiora-contracts/periphery
+# Generated: 2026-04-26T04:56Z
+# Auditor: Cascade (automated source audit, indexer-oriented)
+# Network: Paxeer (chainId 125)
+# Addresses source: backend/deployments/paxeer-network-addresses.json
+# ABIs source: backend/deployments/abis/
+
+## Group Identity
+- **Group:** periphery
+- **Path:** smart-contracts/contracts/periphery/
+- **Contracts:** Router, Quoter, FeesRouter
+- **Language:** Solidity ^0.8.24 (LicenseRef-Paxlabs-HyperPax-OS-Protocol)
+- **Role:** User-facing entry points to the Launchpad. Router does ALL
+  state-changing operations (createMarket, buy, sell, multihop, with optional
+  EIP-2612 permit). Quoter is read-only pricing + pool stats. FeesRouter is
+  the NFT-gated interface for fee management strategies (claim/burn/airdrop/lp).
+
+---
+
+## Router
+
+- **ABI:** `backend/deployments/abis/Router.json` (impl)
+       and `backend/deployments/abis/IRouter.json` (interface)
+- **Address proxy:** `paxeer-network-addresses.json#Router_proxy` —
+  `0xB2D63300FE8b3508A83728e8f36B98e845eBD980`
+- **Address impl:** `paxeer-network-addresses.json#Router_impl` —
+  `0xb35eaa8E113910c8A7179C7c8e062c7Be28847A1`
+- **Prev impl:** `paxeer-network-addresses.json#Router_impl_prev`
+- **Pattern:** UUPS proxy + ReentrancyGuard + Multicall. Holds
+  `ROUTER_ROLE` on `SidioraFactory_proxy` for `createMarketFor`.
+
+### Functions
+
+External (writes — user entrypoints):
+
+Core:
+- `createMarket(name, symbol, feeStrategy, optical)` → `(token, pool, nftId)` —
+  pulls `creationFee` USDL from caller to Treasury, then calls
+  `Factory.createMarketFor(msg.sender, ...)`.
+- `buy(pool, usdlAmountIn, minTokensOut, deadline)` → `amountOut` — pulls
+  USDL from caller to pool, calls `pool.swap(... isBuy=true ..., recipient=caller)`.
+- `sell(pool, tokenAmountIn, minUsdlOut, deadline)` → `amountOut` — pulls
+  pool's bonded token from caller to pool, calls `pool.swap(... isBuy=false ..., recipient=caller)`.
+- `swapTokenForToken(tokenIn, tokenOut, amountIn, minAmountOut, deadline)` →
+  `(amountOut, intermediateUsdl)` — atomic Token A→USDL→Token B multihop.
+  Router itself is the intermediate USDL recipient between legs.
+
+Permit variants (EIP-2612 — Router calls `permit()` first, then proceeds;
+permit failure is silently swallowed and downstream allowance check governs):
+- `buyWithPermit(pool, usdlAmountIn, minTokensOut, deadline, PermitParams)`
+- `sellWithPermit(pool, tokenAmountIn, minUsdlOut, deadline, PermitParams)`
+- `swapTokenForTokenWithPermit(tokenIn, tokenOut, amountIn, minAmountOut, deadline, PermitParams)`
+- `createMarketWithPermit(name, symbol, feeStrategy, optical, PermitParams)`
+
+Multicall (inherited from `base/Multicall.sol`):
+- `multicall(bytes[] data) returns (bytes[])` — atomic batching of any of
+  the above calls. Used e.g. for "create market + buy initial bag" in one tx.
+
+Admin:
+- `initialize(factory, poolRegistry, protocolConfig, usdl, admin)`
+- UUPS `_authorizeUpgrade`
+
+Views (storage exposures):
+- `factory()`, `poolRegistry()`, `protocolConfig()`, `usdlAddress()`
+
+### Events to index (LOCAL — these duplicate the EventEmitter Swap pair-wise)
+- `MarketCreated(tokenAddr, poolAddr, creator, nftId)` — local
+- `Buy(pool, sender, amountIn, amountOut)` — local; pair with EventEmitter `Swap(isBuy=true)`
+- `Sell(pool, sender, amountIn, amountOut)` — local; pair with EventEmitter `Swap(isBuy=false)`
+- `MultihopSwap(sender, tokenIn, tokenOut, amountIn, intermediateUsdl, amountOut)` —
+  THE canonical multihop signal. NO single `EventEmitter` event captures
+  the multihop atomicity — it shows up as TWO sequential `Swap` events on
+  poolA (sell) then poolB (buy) with `Router_proxy` as the recipient on
+  the first leg and the user as recipient on the second.
+
+### Reads (per call)
+- `IProtocolConfig.creationFee` (createMarket path)
+- `IPoolRegistry.{getPoolByToken, isRegisteredPool}`
+- `ISidioraPool.{tokenAddress, swap}`
+- `ISidioraFactory.{treasury, createMarketFor}`
+- ERC20 `permit` (best-effort), `transferFrom`, `transfer`
+
+### Writes (per call)
+- ERC20 `safeTransferFrom` (caller → pool/treasury)
+- ERC20 `safeTransfer` (Router → poolB on multihop leg-2)
+- Calls into `pool.swap()` which mutates pool reserves
+- Calls into `Factory.createMarketFor` which deploys new contracts
+
+### Indexer notes
+- For the `indexer.swaps` table, use the `EventEmitter.Swap` event as
+  truth, not the local `Buy/Sell/MultihopSwap` events — the EventEmitter
+  copy carries `block.timestamp`/`number` salting and is uniformly emitted
+  whether the swap originated from Router OR from MetaAGRouter via
+  SidioraAdapter.
+- `MultihopSwap` is the ONLY way to identify multihop intent at the data
+  layer. Without it, the indexer must heuristically pair sequential Swap
+  events with `recipient=Router_proxy` on the sell leg — which is fragile.
+  PRIORITY: subscribe to `MultihopSwap` and join with `Swap` by `txHash`.
+- The permit pattern's silent failure (`(success); // Silence unused warning`)
+  is intentional anti-griefing. The downstream `safeTransferFrom` is the
+  authoritative allowance check. Off-chain UX should NOT report "permit
+  succeeded" based on Router-side logs — there are none.
+
+---
+
+## Quoter
+
+- **ABI:** `backend/deployments/abis/Quoter.json` (impl)
+       and `backend/deployments/abis/IQuoter.json` (interface)
+- **Address proxy:** `paxeer-network-addresses.json#Quoter_proxy` —
+  `0xeDb3B45E320A8ab2306Fa1C303742f2478fd3E0a`
+- **Address impl:** `paxeer-network-addresses.json#Quoter_impl` —
+  `0x0cb1B2fb940a7875de03D812eD0B3b9538E25e24`
+- **Prev impl:** `paxeer-network-addresses.json#Quoter_impl_prev`
+- **Last upgrade:** `paxeer-network-addresses.json#_meta.lastUpgrade` records
+  the most recent Quoter upgrade (`2026-04-02T13:41:36.611Z`)
+- **Pattern:** UUPS proxy. Read-only — no state changes; no events emitted.
+
+### Functions
+
+All view / pure / staticcall-safe:
+- `quoteExactInput(pool, amountIn, isBuy)` → `QuoteResult{amountOut, feeAmount, priceImpactBps}`
+- `quoteMultihop(tokenIn, tokenOut, amountIn)` →
+  `MultihopQuoteResult{poolA, poolB, intermediateUsdl, amountOut, sellFeeAmount,
+   buyFeeAmount, sellPriceImpactBps, buyPriceImpactBps, combinedPriceImpactBps}`
+- `getPoolPrice(pool)` → `uint256`
+- `getPoolStats(pool)` → `PoolStats{virtualUsdl, realUsdl, tokenReserve, cumulativeVolume,
+   currentFeeBps, poolAge, price, marketCap}`
+- `getMarketCap(pool)` → `uint256`
+- `getAllPools(offset, limit)` → `address[]` (delegates to PoolRegistry)
+- `getPoolsByCreator(creator)` → `address[]` (delegates to PoolRegistry)
+
+Admin:
+- `initialize(poolRegistry, protocolConfig, admin)`
+- UUPS `_authorizeUpgrade`
+
+Views (storage):
+- `poolRegistry()`, `protocolConfig()`
+
+### Events to index
+- NONE. Quoter is pure-view. All access is via off-chain `eth_call` or
+  staticcall from on-chain consumers.
+
+### Reads
+- `IProtocolConfig` parameters for `_calculateFee`
+- `ISidioraPool.{getReserves, getPriceSnapshots, cumulativeVolume,
+   creationTimestamp, getPrice, tokenAddress}`
+- `IPoolRegistry.{getPoolByToken, getAllPools, getPoolsByCreator}`
+- ERC20 `totalSupply` (for market cap)
+
+### Writes
+- NONE.
+
+### Indexer notes
+- Quoter is a CONVENIENCE LAYER for the frontend / off-chain services. The
+  same numbers are derivable from raw `IEventEmitter` events + chain state
+  reads. The indexer SHOULD NOT call Quoter on the hot path — prefer
+  reconstructing fee/marketcap locally from `Swap` events + cached pool
+  state (faster, no RPC dependency).
+- `quoteMultihop` price-impact computation is ADDITIVE-approximate
+  (`sellPriceImpactBps + buyPriceImpactBps`). For UI accuracy on large
+  trades, compute it natively from the predicted leg-2 reserves. Surface
+  `combinedPriceImpactBps` as "estimated" not "exact".
+
+---
+
+## FeesRouter
+
+- **ABI:** `backend/deployments/abis/FeesRouter.json` (impl)
+       and `backend/deployments/abis/IFeesRouter.json` (interface)
+- **Address proxy:** `paxeer-network-addresses.json#FeesRouter_proxy` —
+  `0xebf10213e58cc694aFDd06848faa363b41395898`
+- **Address impl:** `paxeer-network-addresses.json#FeesRouter_impl` —
+  `0x165F4992E12FC91EADBF9Dd6927ab330B5E2924d`
+- **Pattern:** UUPS proxy + ReentrancyGuard. Holds `FEES_ROUTER_ROLE` on
+  FeeAccumulator and `STRATEGY_SETTER_ROLE` on SidioraNFT.
+
+### Functions
+
+External (writes — NFT-owner gated unless noted):
+- `setFeeStrategy(nftId, newStrategy)` — caller must own NFT.
+  Calls `SidioraNFT.setFeeStrategy(nftId, newStrategy)`. Strategy must be 0–3.
+- `claimFees(nftId)` → `amount` — strategy must be 0 (CLAIM). Routes USDL
+  fees from FeeAccumulator to caller.
+- `executeBurn(nftId)` → `amount` — strategy 1 (BURN). Sends USDL fees to
+  `DEAD_ADDRESS`.
+- `executeAirdrop(nftId)` → `amount` — strategy 2. Snapshots fees as a new
+  airdrop epoch. Token holders then call `claimAirdrop` individually.
+- `claimAirdrop(nftId)` → `amount` — OPEN (no NFT ownership check). Caller's
+  pro-rata share of the current epoch is sent to caller. One claim per
+  (nftId, holder, epoch).
+- `executeLpRewards(nftId)` → `amount` — strategy 3. Sends USDL fees back
+  to pool reserves and triggers `pool.syncReserves()` to reflect the
+  inflow in pool state.
+
+Admin:
+- `initialize(nftContract, feeAccumulator, poolRegistry, admin)`
+- UUPS `_authorizeUpgrade`
+
+Views:
+- `nftContract()`, `feeAccumulator()`, `poolRegistry()`
+
+### Events to index (LOCAL — pair with `IEventEmitter.FeeDistributed`)
+- `FeeStrategyChanged(nftId, oldStrategy, newStrategy)` — local;
+  ALSO emitted via `IEventEmitter.FeeStrategyChanged` from SidioraNFT path.
+  Indexer should prefer the EventEmitter copy (carries `poolId`).
+- `FeesClaimed(nftId, recipient, amount)`
+- `FeesBurned(nftId, amount)`
+- `AirdropExecuted(nftId, amount)` — pair with `FeeAccumulator.AirdropTriggered`
+- `AirdropClaimed(nftId, recipient, amount)` — pair with `FeeAccumulator.AirdropClaimed`
+- `LpRewardsExecuted(nftId, amount)` — pair with `FeeAccumulator.LpRewardsSent`
+  AND a subsequent `EventEmitter.PoolStateUpdated` from `pool.syncReserves()`.
+
+### Reads
+- `SidioraNFT.{ownerOf, getFeeStrategy, getPoolAddress}` (via the public
+  ABI; for `ownerOf` it staticcalls because `_requireNftOwner` uses raw
+  `staticcall` rather than direct interface to avoid revert proxying)
+
+### Writes
+- `SidioraNFT.setFeeStrategy`
+- `FeeAccumulator.{claim, burn, triggerAirdrop, claimAirdrop, sendLpRewards}`
+- `SidioraPool.syncReserves` (LP rewards path only)
+
+### Indexer notes
+- The strategy-execution path produces a CHAIN of events that should be
+  joined by `txHash`:
+  - CLAIM: `FeesRouter.FeesClaimed` + `FeeAccumulator.FeesClaimed` +
+    `EventEmitter.FeeDistributed(strategy=0)`
+  - BURN: `FeesRouter.FeesBurned` + `FeeAccumulator.FeesBurned` +
+    `EventEmitter.FeeDistributed(strategy=1)`
+  - AIRDROP TRIGGER: `FeesRouter.AirdropExecuted` +
+    `FeeAccumulator.AirdropTriggered`
+  - AIRDROP CLAIM (per-holder): `FeesRouter.AirdropClaimed` +
+    `FeeAccumulator.AirdropClaimed` +
+    `EventEmitter.FeeDistributed(strategy=2, recipient=holder)`
+  - LP REWARDS: `FeesRouter.LpRewardsExecuted` +
+    `FeeAccumulator.LpRewardsSent` +
+    `EventEmitter.PoolStateUpdated` (post-syncReserves) +
+    `EventEmitter.FeeDistributed(strategy=3, recipient=pool)`
+  Use the EventEmitter `FeeDistributed` events as the primary index;
+  the local events are useful for joining nftId ↔ poolId relationships.
+- `claimAirdrop` is the ONLY function that does NOT require NFT ownership.
+  Subscribe to it with `recipient` indexed for "user airdrop history" UI.
+
+---
+
+## Cross-cutting reads / writes summary
+
+| External Contract | Read by Router       | Read by Quoter         | Read by FeesRouter |
+| ----------------- | -------------------- | ---------------------- | ------------------ |
+| `Factory`         | `createMarketFor`, `treasury` | —              | —                  |
+| `PoolRegistry`    | `isRegisteredPool`, `getPoolByToken` | `getAllPools`, `getPoolsByCreator`, `getPoolByToken` | (configured but not directly read) |
+| `ProtocolConfig`  | `creationFee`        | all params for fee calc | —                  |
+| `SidioraPool`     | `swap`, `tokenAddress` | `getReserves`, `getPriceSnapshots`, `cumulativeVolume`, `creationTimestamp`, `getPrice`, `tokenAddress` | `syncReserves` (LP only) |
+| `SidioraNFT`      | —                    | —                      | `ownerOf`, `getFeeStrategy`, `getPoolAddress`, `setFeeStrategy` |
+| `FeeAccumulator`  | —                    | —                      | `claim`, `burn`, `triggerAirdrop`, `claimAirdrop`, `sendLpRewards` |
+| `USDL ERC20`      | `transferFrom`, `transfer` | —                | —                  |
+| `Token ERC20`     | `transferFrom`, `permit`, `transfer` | `totalSupply` | —             |
+
+## Coverage caveats
+- This freeze locks the on-chain SURFACE only.
+- Router was upgraded recently (see `Router_impl_prev`) — the indexer
+  should refetch `Router.json` ABI from the deployer on any
+  `Timelock.TransactionExecuted` whose `target = Router_proxy`.
+- Quoter does not emit events; freshness of cached results is the
+  consumer's responsibility (recompute on every Swap event affecting the pool).

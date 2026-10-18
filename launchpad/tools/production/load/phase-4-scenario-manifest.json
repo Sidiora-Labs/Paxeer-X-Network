@@ -1,0 +1,119 @@
+{
+  "schema_version": 4,
+  "task": "4.48",
+  "phase": 4,
+  "phase_version": "l48-integrated-harness-v1",
+  "workload_version": "kindle-500k-dau-v1",
+  "root_capacity_ledger": {
+    "source_path": "tools/production/load/workload.py",
+    "source_sha256": "029bec855d6fad3c961e9f02e61f40b77949ddde9c9b97ac0e7600ac7c174667",
+    "projection": "ledger()",
+    "runtime_artifact": "workload-ledger.json"
+  },
+  "root_mix": {
+    "source_path": "tools/production/load/workload.py",
+    "projection": "MIX",
+    "runtime_artifact": "root-mix.json",
+    "total_http_rps": 10000,
+    "quotes_included_rps": 2000,
+    "writes_included_rps": 2000
+  },
+  "isolated_component_proof": {
+    "duration_seconds": 60,
+    "generator_hosts": 4,
+    "http_rps_per_host": 2500,
+    "canonical_publication_replay_rps_per_host": 500,
+    "socket_count": "explicit bounded even real cohort4..25000 per host",
+    "fanout_boundary": "edge_socket_write",
+    "event_boundary": "actual unchanged canonical PostgreSQL envelopes to file-backed JetStream acknowledgment",
+    "new_raw_ingestion_qualified": false,
+    "capacity_qualified": false,
+    "native_driver_source": "tools/production/load/eventdriver/main.go",
+    "entrypoint": [
+      "python3",
+      "tools/production/load/phase4_runner.py",
+      "--config",
+      "{private_config}",
+      "--config-sha256",
+      "{sha256}",
+      "--output",
+      "{owned_phase4_output}"
+    ]
+  },
+  "final_shared_scenarios": {
+    "peak-soak": {
+      "task": "9.1",
+      "duration_seconds": 86400,
+      "sockets": 100000,
+      "http_rps": 10000,
+      "writes_rps": 2000,
+      "quotes_rps": 2000,
+      "events_rps": 2000,
+      "frames_rps": 250000,
+      "payload_bytes_mean": 400,
+      "wire_bytes_budget_mean": 600,
+      "post_gc_heap_compare_seconds": [
+        14400,
+        86400
+      ],
+      "retained_heap_growth_max": 0.05
+    },
+    "connection-surge": {
+      "task": "9.1",
+      "baseline_sockets": 100000,
+      "additional_sockets": 100000,
+      "ramp_seconds": 60,
+      "sockets": 200000,
+      "hold_seconds": 600,
+      "recovery_seconds_max": 120,
+      "authenticated_fraction": "1/2",
+      "subscriptions_mean": 5,
+      "subscriptions_max": 20
+    },
+    "fanout-burst": {
+      "task": "9.1",
+      "frames_rps": 1000000,
+      "duration_seconds": 600,
+      "payload_bytes_mean": 400,
+      "wire_bytes_measured": true,
+      "slow_readers_fraction": "1/100",
+      "slow_reader_queue_bytes_max": 262144,
+      "price_updates_per_topic_second_max": 2
+    },
+    "event-surge": {
+      "task": "9.1",
+      "events_rps": 10000,
+      "duration_seconds": 300,
+      "expected_unique_identities": 3000000,
+      "baseline_events_rps": 2000,
+      "drain_seconds_max": 600,
+      "durable_ingest_p99_ns_max": 500000000,
+      "current_chain_throughput_claim": false
+    },
+    "managed-video": {
+      "task": "9.1",
+      "viewers": 20000,
+      "mean_bits_per_second": 2000000,
+      "application_video_proxy_allowed": false,
+      "actual_provider_playback_required": true
+    },
+    "hot-pool-skew": {
+      "task": "9.1",
+      "baseline_hot_subscribers": 80000,
+      "surge_hot_subscribers": 160000,
+      "subscriptions_hot_fraction": "4/5",
+      "subscriptions_cold_fraction": "1/5",
+      "reads_hot_fraction": "3/5",
+      "cold_read_p99_ns_max": 400000000,
+      "total_read_pool_scope_authority_required": true
+    }
+  },
+  "final_shared_execution_owner": "serial task9.1 after4.99 source freeze",
+  "final_readout_entrypoint": "capture.final_acceptance(config)",
+  "shared_capture_schema": "tools/production/load/final-shared-capture.schema.json",
+  "calibration_rule": "actual4independent external60second generator executions, deliveryerror<=2%,schedulerp99<=10ms,CPU/NIC<=70%, independently admitted clock offset/uncertainty<=5ms",
+  "qualification_boundary": "Isolated proof and harness readiness are distinct from final integrated acceptance. No per-lane24hour soak.",
+  "verify_cmd": "python3 tools/production/qualify.py --task 4.48 --spec spec/production-system/spec.kvx --require-current-source",
+  "capacity_qualified": false,
+  "release_qualified": false
+}

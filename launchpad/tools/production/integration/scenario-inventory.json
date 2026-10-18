@@ -1,0 +1,208 @@
+{
+  "version": 1,
+  "chain_id": 125,
+  "evidence_level": "phase1 independent oracle and local adapters only",
+  "release_qualified": false,
+  "requirements": [
+    {
+      "id": "D16_011",
+      "title": "AZ-loss durability",
+      "acceptance": [
+        "Remove oneapplication and database/broker failure domain afteracknowledgedwrites",
+        "Zero acknowledged durable business data loss; bounded replay restores clients",
+        "PostgreSQLfailover andNATSJetStreamR3 topology must match inventory",
+        "Quorumloss rejects durable mutation instead of acknowledgingvolatile state",
+        "Retain raw inputs and actual outputs for az-loss durability; an absent result blocks this requirement."
+      ],
+      "status": "blocked_pending_integrated_candidate_and_topology"
+    },
+    {
+      "id": "D16_012",
+      "title": "Cross-region recovery",
+      "acceptance": [
+        "Declare regionunavailable atT0 andrestorealternate region with actualuserjourneys",
+        "RPO<=5minutes beforeT0;RTO<=30minutes through login/read/write checks",
+        "IncludePG,outbox,objectsmetadata,brokerpositions anddeploymentregistry; fenceoldwriters",
+        "Raw chain rebuild cannot substitute lostprofile,chat orrewardledger state",
+        "Retain raw inputs and actual outputs for cross-region recovery; an absent result blocks this requirement."
+      ],
+      "status": "blocked_pending_integrated_candidate_and_topology"
+    },
+    {
+      "id": "D16_013",
+      "title": "72hour replay",
+      "acceptance": [
+        "Disconnect eachconsumer72h thenreconnect from durablecursor",
+        "Rebuilt statistics,candles,positions and revisions match canonical goldenchecksums",
+        "JetStream72hhotreplay; expiredcursor transitions to immutablearchive plusPGrebuild",
+        "Replay sharesresourcebudget withliveworkload and never silentlyskipsretention gaps",
+        "Retain raw inputs and actual outputs for 72hour replay; an absent result blocks this requirement."
+      ],
+      "status": "blocked_pending_integrated_candidate_and_topology"
+    },
+    {
+      "id": "D16_014",
+      "title": "Receipt truth regression",
+      "acceptance": [
+        "Withholdreceipt/indexerevidence beyond2seconds thenreturn revertedreceipt",
+        "UI stayspending until evidence and thenreverted; no timer-generatedsuccess",
+        "States prepared,signature_requested,submitted,pending,confirmed,reverted,replaced,unknown",
+        "Existingoptimisticsuccess timer must cause regressionfailure before remediation",
+        "Retain raw inputs and actual outputs for receipt truth regression; an absent result blocks this requirement."
+      ],
+      "status": "blocked_pending_integrated_candidate_and_topology"
+    },
+    {
+      "id": "D16_015",
+      "title": "Statistics idempotency regression",
+      "acceptance": [
+        "Deliver identicalswap10times andcrash afterDBcommit beforeack",
+        "Volume,tradecount,holderdelta andoutboxeffects equaloneapplication",
+        "Inboxidentity chainId/deployment/event plus inbox/effects inoneDBtransaction",
+        "Test10percentduplicatetransport during10kevents/sburst and verifyaggregatechecksum",
+        "Retain raw inputs and actual outputs for statistics idempotency regression; an absent result blocks this requirement."
+      ],
+      "status": "blocked_pending_integrated_candidate_and_topology"
+    },
+    {
+      "id": "D16_016",
+      "title": "Remaining inventory basis regression",
+      "acceptance": [
+        "Buy10for100USDL,sellallfor100,buy10for200,mark20perunit",
+        "Remainingquantity10,cost200,unrealizedPnL0; lifetimebasis15 is rejected",
+        "Integerrawunits,explicitrounding andfrozencostbasis; transferunknownbasis markedunknown",
+        "Independently reviewed lotledger must assertpartialfills,fees andrecipientattribution",
+        "Retain raw inputs and actual outputs for remaining inventory basis regression; an absent result blocks this requirement."
+      ],
+      "status": "blocked_pending_integrated_candidate_and_topology"
+    },
+    {
+      "id": "D16_017",
+      "title": "Candle transaction regression",
+      "acceptance": [
+        "Crash beforecandlecommit and concurrently applytwofills sameUTCminute",
+        "No uncommitted publication; both fills inOHLCV orderedbycanonicalkey",
+        "Candleidentity pool,interval,UTCopen; derivedrevision onlyaftercommit",
+        "Recomputeall7intervals independently and reconcile outbox/inboxidentities",
+        "Retain raw inputs and actual outputs for candle transaction regression; an absent result blocks this requirement."
+      ],
+      "status": "blocked_pending_integrated_candidate_and_topology"
+    },
+    {
+      "id": "D16_018",
+      "title": "Fast chain ordering and integrity",
+      "acceptance": [
+        "Shuffle20blocks ofsame-secondswaps then introduce sourceblockhash disagreement",
+        "Order is height,txIndex,logIndex; disagreement quarantines withoutordinaryreorgrollback",
+        "100msfixtureblockspacing is synthetic,not verified currentspeed",
+        "No watermarkadvance past unknownABI ormissing requiredcanonicaldata",
+        "Retain raw inputs and actual outputs for fast chain ordering and integrity; an absent result blocks this requirement."
+      ],
+      "status": "blocked_pending_integrated_candidate_and_topology"
+    },
+    {
+      "id": "D16_019",
+      "title": "Media fail-closed security",
+      "acceptance": [
+        "Disable scanner duringupload andsendunauthenticatedstreamwebhook",
+        "Uploadrejected/quarantined; webhookdenied withnostatechange",
+        "Scannererror differsfromclean;productionwebhooksecret mandatory",
+        "Oversizedmultipart,polyglot,SVG and webhookreplay variants useactualgatewaypath",
+        "Retain raw inputs and actual outputs for media fail-closed security; an absent result blocks this requirement."
+      ],
+      "status": "blocked_pending_integrated_candidate_and_topology"
+    },
+    {
+      "id": "D16_020",
+      "title": "Deployment registry consistency",
+      "acceptance": [
+        "Compare frontend/backendcontractregistry to siblingdeploymentmanifest andeth_getCode",
+        "Chain125,PAX18,USDL6 andall enabled addresses/ABIs/codehashes agree",
+        "Versionedregistry bindsactivationheight andimplementationidentity",
+        "Do not fallbackto oldJuneaddresses whenmanifestabsent",
+        "Retain raw inputs and actual outputs for deployment registry consistency; an absent result blocks this requirement."
+      ],
+      "status": "blocked_pending_integrated_candidate_and_topology"
+    },
+    {
+      "id": "D16_021",
+      "title": "Real-service journey harness",
+      "acceptance": [
+        "Runcreate/trade/watchlist/chat through actualGo,PG,NATS,Redis andisolatedtestcontracts",
+        "Browsertrace correlatesactualpersistence andtransactionreceipts",
+        "Vendor sandbox evidence declaredseparately; nosettlementorbalancefakes",
+        "Applicationroutes remainserialintegratorowned; harness onlycallsfrozeninterfaces",
+        "Retain raw inputs and actual outputs for real-service journey harness; an absent result blocks this requirement."
+      ],
+      "status": "blocked_pending_integrated_candidate_and_topology"
+    },
+    {
+      "id": "D16_022",
+      "title": "Coverage and defect sensitivity",
+      "acceptance": [
+        "Remove idempotency andreceiptevidence checks in disposablecandidate andrunregressions",
+        "Targetedtests failagainst bothmutations; moneycoverage>=90percent others>=85percent",
+        "Generatedcode excluded byexplicitpolicy; emptymodule ormissingprofile fails",
+        "Mutationnever modifiesreleasecandidate orproductiondeployment",
+        "Retain raw inputs and actual outputs for coverage and defect sensitivity; an absent result blocks this requirement."
+      ],
+      "status": "blocked_pending_integrated_candidate_and_topology"
+    },
+    {
+      "id": "D16_029",
+      "title": "Fault and rollback matrix",
+      "acceptance": [
+        "InjectRedisoutage,NATSoutage,DBpoolexhaustion,RPCdisagreement,R2failure andapprestart",
+        "Durableeffects correct orexplicitlyrejected;recovery neverfabricatesmarketdata",
+        "Eachfault declaresdetectionthreshold,affectedfeatures,recoverycondition andUIstate",
+        "Rollbackrehearsal verifiesforwardcompatibleschema andregistry withoutrealvalidatorchanges",
+        "Retain raw inputs and actual outputs for fault and rollback matrix; an absent result blocks this requirement."
+      ],
+      "status": "blocked_pending_integrated_candidate_and_topology"
+    }
+  ],
+  "fault_matrix": [
+    {
+      "fault": "redis_outage",
+      "detection_threshold_seconds": 5,
+      "ui_state": "unavailable_or_stale_explicitly",
+      "recovery_condition": "fresh authoritative read plus durable effect reconciliation",
+      "status": "not_executed"
+    },
+    {
+      "fault": "nats_outage",
+      "detection_threshold_seconds": 5,
+      "ui_state": "unavailable_or_stale_explicitly",
+      "recovery_condition": "fresh authoritative read plus durable effect reconciliation",
+      "status": "not_executed"
+    },
+    {
+      "fault": "database_pool_exhaustion",
+      "detection_threshold_seconds": 5,
+      "ui_state": "unavailable_or_stale_explicitly",
+      "recovery_condition": "fresh authoritative read plus durable effect reconciliation",
+      "status": "not_executed"
+    },
+    {
+      "fault": "rpc_disagreement",
+      "detection_threshold_seconds": 5,
+      "ui_state": "unavailable_or_stale_explicitly",
+      "recovery_condition": "fresh authoritative read plus durable effect reconciliation",
+      "status": "not_executed"
+    },
+    {
+      "fault": "object_storage_failure",
+      "detection_threshold_seconds": 5,
+      "ui_state": "unavailable_or_stale_explicitly",
+      "recovery_condition": "fresh authoritative read plus durable effect reconciliation",
+      "status": "not_executed"
+    },
+    {
+      "fault": "application_restart",
+      "detection_threshold_seconds": 5,
+      "ui_state": "unavailable_or_stale_explicitly",
+      "recovery_condition": "fresh authoritative read plus durable effect reconciliation",
+      "status": "not_executed"
+    }
+  ]
+}

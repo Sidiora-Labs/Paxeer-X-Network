@@ -1,0 +1,439 @@
+{
+  "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+  "compiler": "0.8.27+commit.40a35a09",
+  "input": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "viaIR": true
+  },
+  "storage": [
+    {
+      "astId": 17,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "_roles",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_mapping(t_bytes32,t_struct(RoleData)12_storage)"
+    },
+    {
+      "astId": 13557,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "priceOracle",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_contract(IPriceOracle)18827"
+    },
+    {
+      "astId": 13560,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "vault",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_contract(IPECORVault)18556"
+    },
+    {
+      "astId": 13563,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "transactionTracker",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_contract(ITransactionTracker)19374"
+    },
+    {
+      "astId": 13566,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "nextOrderId",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 13571,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "limitOrders",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_mapping(t_uint256,t_struct(LimitOrder)17958_storage)"
+    },
+    {
+      "astId": 13576,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "stopLimitOrders",
+      "offset": 0,
+      "slot": "6",
+      "type": "t_mapping(t_uint256,t_struct(StopLimitOrder)17983_storage)"
+    },
+    {
+      "astId": 13581,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "userLimitOrders",
+      "offset": 0,
+      "slot": "7",
+      "type": "t_mapping(t_address,t_array(t_uint256)dyn_storage)"
+    },
+    {
+      "astId": 13586,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "userStopLimitOrders",
+      "offset": 0,
+      "slot": "8",
+      "type": "t_mapping(t_address,t_array(t_uint256)dyn_storage)"
+    },
+    {
+      "astId": 13589,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "activeLimitOrderIds",
+      "offset": 0,
+      "slot": "9",
+      "type": "t_array(t_uint256)dyn_storage"
+    },
+    {
+      "astId": 13592,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "activeStopLimitOrderIds",
+      "offset": 0,
+      "slot": "10",
+      "type": "t_array(t_uint256)dyn_storage"
+    },
+    {
+      "astId": 13597,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "_limitOrderActiveIndex",
+      "offset": 0,
+      "slot": "11",
+      "type": "t_mapping(t_uint256,t_uint256)"
+    },
+    {
+      "astId": 13601,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "_stopLimitOrderActiveIndex",
+      "offset": 0,
+      "slot": "12",
+      "type": "t_mapping(t_uint256,t_uint256)"
+    },
+    {
+      "astId": 13606,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "keepers",
+      "offset": 0,
+      "slot": "13",
+      "type": "t_mapping(t_address,t_bool)"
+    },
+    {
+      "astId": 13611,
+      "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+      "label": "__gap",
+      "offset": 0,
+      "slot": "14",
+      "type": "t_array(t_uint256)50_storage"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_uint256)50_storage": {
+      "base": "t_uint256",
+      "encoding": "inplace",
+      "label": "uint256[50]",
+      "numberOfBytes": "1600"
+    },
+    "t_array(t_uint256)dyn_storage": {
+      "base": "t_uint256",
+      "encoding": "dynamic_array",
+      "label": "uint256[]",
+      "numberOfBytes": "32"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_bytes32": {
+      "encoding": "inplace",
+      "label": "bytes32",
+      "numberOfBytes": "32"
+    },
+    "t_contract(IPECORVault)18556": {
+      "encoding": "inplace",
+      "label": "contract IPECORVault",
+      "numberOfBytes": "20"
+    },
+    "t_contract(IPriceOracle)18827": {
+      "encoding": "inplace",
+      "label": "contract IPriceOracle",
+      "numberOfBytes": "20"
+    },
+    "t_contract(ITransactionTracker)19374": {
+      "encoding": "inplace",
+      "label": "contract ITransactionTracker",
+      "numberOfBytes": "20"
+    },
+    "t_enum(OrderStatus)17935": {
+      "encoding": "inplace",
+      "label": "enum IPECOROrders.OrderStatus",
+      "numberOfBytes": "1"
+    },
+    "t_enum(OrderType)17929": {
+      "encoding": "inplace",
+      "label": "enum IPECOROrders.OrderType",
+      "numberOfBytes": "1"
+    },
+    "t_mapping(t_address,t_array(t_uint256)dyn_storage)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => uint256[])",
+      "numberOfBytes": "32",
+      "value": "t_array(t_uint256)dyn_storage"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_bytes32,t_struct(RoleData)12_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct AccessControl.RoleData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(RoleData)12_storage"
+    },
+    "t_mapping(t_uint256,t_struct(LimitOrder)17958_storage)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => struct IPECOROrders.LimitOrder)",
+      "numberOfBytes": "32",
+      "value": "t_struct(LimitOrder)17958_storage"
+    },
+    "t_mapping(t_uint256,t_struct(StopLimitOrder)17983_storage)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => struct IPECOROrders.StopLimitOrder)",
+      "numberOfBytes": "32",
+      "value": "t_struct(StopLimitOrder)17983_storage"
+    },
+    "t_mapping(t_uint256,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_struct(LimitOrder)17958_storage": {
+      "encoding": "inplace",
+      "label": "struct IPECOROrders.LimitOrder",
+      "members": [
+        {
+          "astId": 17937,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "id",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 17939,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "user",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_address"
+        },
+        {
+          "astId": 17941,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "stablecoin",
+          "offset": 0,
+          "slot": "2",
+          "type": "t_address"
+        },
+        {
+          "astId": 17943,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "token",
+          "offset": 0,
+          "slot": "3",
+          "type": "t_address"
+        },
+        {
+          "astId": 17945,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "amount",
+          "offset": 0,
+          "slot": "4",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 17947,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "targetPrice",
+          "offset": 0,
+          "slot": "5",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 17950,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "orderType",
+          "offset": 0,
+          "slot": "6",
+          "type": "t_enum(OrderType)17929"
+        },
+        {
+          "astId": 17953,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "status",
+          "offset": 1,
+          "slot": "6",
+          "type": "t_enum(OrderStatus)17935"
+        },
+        {
+          "astId": 17955,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "createdAt",
+          "offset": 0,
+          "slot": "7",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 17957,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "expiresAt",
+          "offset": 0,
+          "slot": "8",
+          "type": "t_uint256"
+        }
+      ],
+      "numberOfBytes": "288"
+    },
+    "t_struct(RoleData)12_storage": {
+      "encoding": "inplace",
+      "label": "struct AccessControl.RoleData",
+      "members": [
+        {
+          "astId": 9,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "hasRole",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_address,t_bool)"
+        },
+        {
+          "astId": 11,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "adminRole",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_bytes32"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_struct(StopLimitOrder)17983_storage": {
+      "encoding": "inplace",
+      "label": "struct IPECOROrders.StopLimitOrder",
+      "members": [
+        {
+          "astId": 17960,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "id",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 17962,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "user",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_address"
+        },
+        {
+          "astId": 17964,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "stablecoin",
+          "offset": 0,
+          "slot": "2",
+          "type": "t_address"
+        },
+        {
+          "astId": 17966,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "token",
+          "offset": 0,
+          "slot": "3",
+          "type": "t_address"
+        },
+        {
+          "astId": 17968,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "amount",
+          "offset": 0,
+          "slot": "4",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 17970,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "stopPrice",
+          "offset": 0,
+          "slot": "5",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 17972,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "limitPrice",
+          "offset": 0,
+          "slot": "6",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 17975,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "orderType",
+          "offset": 0,
+          "slot": "7",
+          "type": "t_enum(OrderType)17929"
+        },
+        {
+          "astId": 17978,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "status",
+          "offset": 1,
+          "slot": "7",
+          "type": "t_enum(OrderStatus)17935"
+        },
+        {
+          "astId": 17980,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "createdAt",
+          "offset": 0,
+          "slot": "8",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 17982,
+          "contract": "contracts/meta-ag/engine/PECOROrders.sol:PECOROrders",
+          "label": "expiresAt",
+          "offset": 0,
+          "slot": "9",
+          "type": "t_uint256"
+        }
+      ],
+      "numberOfBytes": "320"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}

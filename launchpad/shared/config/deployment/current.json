@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "deploymentVersion": "paxeer125-a35ff7c6f532d2f9",
+  "sourceManifestSha256": "a35ff7c6f532d2f92e4ca59e4ef2cf0a105d551ae9ac3eba68b95f79a355df4a",
+  "chainId": 125,
+  "activationHeight": 32226215,
+  "status": "active",
+  "roles": {
+    "EventEmitter": {
+      "address": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+      "kind": "erc1967",
+      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+      "implementationAddress": "0x6d48a32e313cc4F08acdeE1F39F7e6B56F03a1cB",
+      "implementationHash": "0xd0dc6f1aa54811dc2b9ea13e4519b6b6992ba0a082ac55c2d9e312443b289c08"
+    },
+    "ProtocolConfig": {
+      "address": "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
+      "kind": "erc1967",
+      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+      "implementationAddress": "0xE612759AaA47E96B0801Fb506e4E115C4756Dca5",
+      "implementationHash": "0x951a356ea08b211a69a8f6247a3cd2cbffbaefb23c6c528c2e9c0d794f6cd9c8"
+    },
+    "Router": {
+      "address": "0x78FB06f525cD964388f2305A489035263E31C6e4",
+      "kind": "erc1967",
+      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+      "implementationAddress": "0xfcBce73f397dF65D5b18364dadDCaE86E95CdB96",
+      "implementationHash": "0x3377796c705ad082dfa476c61f25f9cbf64f39fb80dad47de4f5220a4e65190c"
+    },
+    "Quoter": {
+      "address": "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
+      "kind": "erc1967",
+      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+      "implementationAddress": "0x49Fe29eaAcb16d3D1a8671dD4d6D9070E340B5B8",
+      "implementationHash": "0x26be23199e2a93fc8c3b83982ac9e9dca7e065664bc83b028bf5c804d2a5320c"
+    },
+    "SidioraFactory": {
+      "address": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+      "kind": "erc1967",
+      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+      "implementationAddress": "0xAA348015a0dA5FE65296481B0e98EF240bd57AF4",
+      "implementationHash": "0xd1737d0ee5a34a19259d7efac0f2ca8a4cc6a89de64cffc44c09fa0ecd533389"
+    },
+    "PoolRegistry": {
+      "address": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+      "kind": "erc1967",
+      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+      "implementationAddress": "0x0e4d66894321e7e29803eF63E618bF07B9772687",
+      "implementationHash": "0xc74db1081c5791cda0336d914cdc44cd31cfb656c8b8aaa0c2e200123503e216"
+    },
+    "FeeAccumulator": {
+      "address": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+      "kind": "erc1967",
+      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+      "implementationAddress": "0xc21a8f1f8cd416D8B84a0627b4c4bfcc3a6c15a0",
+      "implementationHash": "0x4117715336d6a32d4e3c26038adbf576f6eb85f9787b296118c49cf5dbbbb40a"
+    },
+    "SidioraNFT": {
+      "address": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+      "kind": "erc1967",
+      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+      "implementationAddress": "0x799CeE9468FCd5B504F267658619C7540b2D9650",
+      "implementationHash": "0x5b62b9bae123fe58a8efc58d966a21718df022a399894d3da7f767b635661d28"
+    },
+    "FeesRouter": {
+      "address": "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
+      "kind": "erc1967",
+      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+      "implementationAddress": "0xaB930A3b2bFCdb38555b57D1254B3424EC7FB328",
+      "implementationHash": "0x32d0cd6ab521f803ee77c700715efb56826b59dadd5c3cbeeaef933c44bcb925"
+    },
+    "OpticalRegistry": {
+      "address": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
+      "kind": "erc1967",
+      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+      "implementationAddress": "0x2d9666F5CC900092Ceb7D3867b1fd7f6178C3F3E",
+      "implementationHash": "0xadf625b36b1dd5241f679fa029e66aa980eb5968f46fe557e8ae864ab157e0e5"
+    },
+    "PoolBeacon": {
+      "address": "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE",
+      "kind": "beacon",
+      "runtimeHash": "0xf06aa3fb14a04a50dcfbb95510fd19bfddc057f95349e63115b8495223aca447",
+      "implementationAddress": "0xd24b239df92CA233dF27676148FDe10aa51104Df",
+      "implementationHash": "0xeeadddb17507c0b32fb9c1c76f66b33b4757efd3531d86ac6a61c96d81d8bde4"
+    },
+    "USDL": {
+      "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+      "kind": "direct",
+      "runtimeHash": "0xa5d84d5e9db89e88646654510a9445271bdd67c3b0e84c64e923c6b82589aaaf"
+    }
+  },
+  "native": {
+    "symbol": "PAX",
+    "decimals": 18
+  },
+  "settlement": {
+    "symbol": "USDL",
+    "decimals": 6
+  },
+  "creationFeeRaw": "1000000",
+  "governance": {
+    "mode": "timelock-handoff",
+    "expectedBeaconOwner": "0xE3e71911664062753b56F72965D906295625d6c0",
+    "timelockDelaySeconds": 172800
+  },
+  "marketModel": "AMM",
+  "graduation": false,
+  "coreOracleRequired": false
+}

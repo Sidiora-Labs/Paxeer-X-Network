@@ -1,0 +1,126 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "MockPausable",
+  "sourceName": "contracts/test/MockPausable.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "NotPaused",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "Paused",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "paused",
+          "type": "bool"
+        }
+      ],
+      "name": "PauseToggled",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "PAUSER_ROLE",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "emergencyAction",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "emergencyPaused",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "pause",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "paused",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_val",
+          "type": "uint256"
+        }
+      ],
+      "name": "protectedAction",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "unpause",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "value",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x608080604052346015576102a3908161001b8239f35b600080fdfe6080604052600436101561001257600080fd5b60003560e01c806327c830a91461022057806329502724146101ef5780633f4ba83a146101795780633fa4f2451461015b5780635c975abb146101565780638456cb59146100f25780639db6c7dc146100b45763e63ab1e91461007457600080fd5b346100af5760003660031901126100af5760206040517f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a8152f35b600080fd5b346100af5760203660031901126100af5760008051602061024e833981519152546100e157600435600055005b6313d0ff5960e31b60005260046000fd5b346100af5760003660031901126100af5760008051602061024e833981519152546100e157600160008051602061024e833981519152557f9077d36bc00859b5c3f320310707208543dd35092cb0a0fe117d0c6a558b148b602060405160018152a1005b610220565b346100af5760003660031901126100af576020600054604051908152f35b346100af5760003660031901126100af5760008051602061024e83398151915254156101de57600060008051602061024e833981519152557f9077d36bc00859b5c3f320310707208543dd35092cb0a0fe117d0c6a558b148b602060405160008152a1005b636cd6020160e01b60005260046000fd5b346100af5760003660031901126100af5760008051602061024e83398151915254156101de57602060405160018152f35b346100af5760003660031901126100af57602060008051602061024e833981519152546040519015158152f3fe62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258a26469706673582212201d7817b5ea806354d30a1ee4d8a660794a785156e20d8dc3677d47d4d81aa39464736f6c634300081b0033",
+  "deployedBytecode": "0x6080604052600436101561001257600080fd5b60003560e01c806327c830a91461022057806329502724146101ef5780633f4ba83a146101795780633fa4f2451461015b5780635c975abb146101565780638456cb59146100f25780639db6c7dc146100b45763e63ab1e91461007457600080fd5b346100af5760003660031901126100af5760206040517f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a8152f35b600080fd5b346100af5760203660031901126100af5760008051602061024e833981519152546100e157600435600055005b6313d0ff5960e31b60005260046000fd5b346100af5760003660031901126100af5760008051602061024e833981519152546100e157600160008051602061024e833981519152557f9077d36bc00859b5c3f320310707208543dd35092cb0a0fe117d0c6a558b148b602060405160018152a1005b610220565b346100af5760003660031901126100af576020600054604051908152f35b346100af5760003660031901126100af5760008051602061024e83398151915254156101de57600060008051602061024e833981519152557f9077d36bc00859b5c3f320310707208543dd35092cb0a0fe117d0c6a558b148b602060405160008152a1005b636cd6020160e01b60005260046000fd5b346100af5760003660031901126100af5760008051602061024e83398151915254156101de57602060405160018152f35b346100af5760003660031901126100af57602060008051602061024e833981519152546040519015158152f3fe62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258a26469706673582212201d7817b5ea806354d30a1ee4d8a660794a785156e20d8dc3677d47d4d81aa39464736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

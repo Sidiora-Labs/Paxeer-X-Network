@@ -1,0 +1,129 @@
+{
+  "fixtureKind": "synthetic arithmetic and owned PostgreSQL fixtures, not chain receipt evidence",
+  "version": "legacy-raw-price18-usdl6-v1",
+  "resolutions": {
+    "1": "1m",
+    "5": "5m",
+    "15": "15m",
+    "60": "1h",
+    "240": "4h",
+    "1D": "1d",
+    "D": "1d",
+    "1W": "1w",
+    "W": "1w"
+  },
+  "rejectResolutions": [
+    "1M",
+    "99",
+    ""
+  ],
+  "exactConversion": {
+    "priceRaw": "1000000000000000001",
+    "priceDecimal": "1.000000000000000001",
+    "volumeUsdlRaw": "1000001",
+    "volumeUsdlDecimal": "1.000001"
+  },
+  "time": {
+    "udfEpochSeconds": 60,
+    "browserEpochMilliseconds": 60000,
+    "browserConversionOwner": "client adapter, integration pending"
+  },
+  "range": {
+    "from": 60,
+    "to": 120,
+    "storedStarts": [
+      60,
+      120
+    ],
+    "expectedStarts": [
+      60
+    ]
+  },
+  "pagination": {
+    "storedStarts": "60*i for i=1..5002",
+    "sequenceNums": "5002-i, intentionally reversed",
+    "from": 60,
+    "to": 300180,
+    "firstPageLength": 5000,
+    "firstPageLast": 300000,
+    "secondPageStarts": [
+      300060,
+      300120
+    ]
+  },
+  "countback": {
+    "to": 300120,
+    "countback": 2,
+    "expectedStarts": [
+      300000,
+      300060
+    ]
+  },
+  "vendorDisplayRelativeTolerance": 1e-15,
+  "rejectMalformedQueries": [
+    "from=0&to=120&countback=%zz",
+    "from=0&to=120&countback=1;ignored=2",
+    "from=0&to=120&cursor=%",
+    "from=0&to=120&unrecognized%=1"
+  ],
+  "adversarial": {
+    "sqlCancellation": {
+      "bars": 5000,
+      "interruption": "cancel after real PostgreSQL lock wait",
+      "expectedStatus": 503,
+      "remainingAcquiredConnections": "table blocker only"
+    },
+    "sqlTimeout": {
+      "expectedStatus": 503,
+      "retryable": true,
+      "maximumSeconds": 2
+    },
+    "cacheIsolation": [
+      "chain125-only",
+      "pool",
+      "resolution",
+      "range",
+      "countback",
+      "mode",
+      "algorithm",
+      "canonical authority",
+      "historical permission"
+    ],
+    "cachePoisoning": {
+      "entry": "body changed without its scope-bound ETag",
+      "expected": "refetch canonical origin; never no_data"
+    },
+    "missingAsset": "reject release manifest with absent script; accessible fallback and live browser authority required",
+    "countbackLookbackMaxSeconds": 31622400
+  },
+  "phase4Measurement": {
+    "entrypoint": "tools/production/charts-history/phase4.py",
+    "sourceStage": "unexecuted measurement harness source",
+    "steadyChartRps": 2000,
+    "surgeChartRps": 4000,
+    "commonSteadyRps": 10000,
+    "commonSurgeRps": 20000,
+    "includedInCommonBudget": true,
+    "barCountFractions": {
+      "500": "1/2",
+      "100": "2/5",
+      "5000": "1/10"
+    },
+    "cacheMissMinimum": "1/5",
+    "singleHotPoolFraction": "1/10",
+    "originP95MaximumMs": 150,
+    "originP99MaximumMs": 400,
+    "originTimingAuthority": "elected canonical API fetch only; cache hits and coalesced responses omit origin latency",
+    "rawEvidence": [
+      "open-arrival HTTP attempts and missed arrivals",
+      "PostgreSQL connections, actual committed outbox rows and write lag",
+      "EXPLAIN ANALYZE BUFFERS JSON",
+      "actual common workload attempts",
+      "source and deployed asset SHA256",
+      "Redis unavailable and restored probes"
+    ],
+    "fullMixedSoakOwner": "9.1",
+    "requiredMixedSoakSeconds": 86400,
+    "finalCapacityQualified": false
+  }
+}

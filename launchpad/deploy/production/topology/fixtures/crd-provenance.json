@@ -1,0 +1,14 @@
+[
+  {
+    "url": "https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/v1.29.0/config/crd/bases/postgresql.cnpg.io_clusters.yaml",
+    "path": "fixtures/cnpg-clusters-v1.29.0.yaml",
+    "sha256": "c4eb835f3f065143150089d56c0d9205da9001c9306e2ce3a1ca34321d68f716",
+    "purpose": "official CRD offline resource structural validation; no deployment proof"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/v1.29.0/config/crd/bases/postgresql.cnpg.io_poolers.yaml",
+    "path": "fixtures/cnpg-poolers-v1.29.0.yaml",
+    "sha256": "14a83e70e24a68e643f1c8e5de96650b366d5e822545f5e11acafef18b625d51",
+    "purpose": "official CRD offline resource structural validation; no deployment proof"
+  }
+]

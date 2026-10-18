@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kindle-observability-measurement-plan-v4",
+  "title": "Source-bound observability measurement plan",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": "4.0"
+    },
+    "binding_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "configuration_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "d16_bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "candidate": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "interface": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "topology": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "generator": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "candidate",
+        "interface",
+        "topology",
+        "generator"
+      ]
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "namespace": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+    },
+    "sample_interval_seconds": {
+      "const": 30
+    },
+    "duration_seconds": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 86400,
+      "multipleOf": 30
+    },
+    "max_capture_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740992
+    },
+    "budget_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "budget_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "required": [
+    "version",
+    "binding_sha256",
+    "configuration_sha256",
+    "source_sha256",
+    "d16_bindings",
+    "run_id",
+    "namespace",
+    "sample_interval_seconds",
+    "duration_seconds",
+    "max_capture_bytes",
+    "budget_path",
+    "budget_sha256"
+  ]
+}

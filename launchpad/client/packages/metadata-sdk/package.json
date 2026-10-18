@@ -1,0 +1,20 @@
+{
+  "name": "metadata-sdk",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --experimental-strip-types --test --test-reporter=tap test/*.test.ts"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,211 @@
+{
+  "storage": [
+    {
+      "astId": 286,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "_roles",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_mapping(t_bytes32,t_struct(RoleData)281_storage)"
+    },
+    {
+      "astId": 18849,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "priceOracle",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_contract(IPriceOracle)25361"
+    },
+    {
+      "astId": 18852,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "vault",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_contract(IPECORVault)25090"
+    },
+    {
+      "astId": 18855,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "transactionTracker",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_contract(ITransactionTracker)25908"
+    },
+    {
+      "astId": 18858,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "weth",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_address"
+    },
+    {
+      "astId": 18861,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "swapFeeBps",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 18864,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "tier1FeeBps",
+      "offset": 0,
+      "slot": "6",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 18867,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "tier2FeeBps",
+      "offset": 0,
+      "slot": "7",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 18870,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "priceImpactEnabled",
+      "offset": 0,
+      "slot": "8",
+      "type": "t_bool"
+    },
+    {
+      "astId": 18873,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "priceImpactScalarBps",
+      "offset": 0,
+      "slot": "9",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 18876,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "feeCollector",
+      "offset": 0,
+      "slot": "10",
+      "type": "t_address"
+    },
+    {
+      "astId": 18881,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "accruedFees",
+      "offset": 0,
+      "slot": "11",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 18884,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "feesInitialized",
+      "offset": 0,
+      "slot": "12",
+      "type": "t_bool"
+    },
+    {
+      "astId": 18886,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "feeMigrationCursor",
+      "offset": 0,
+      "slot": "13",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 18890,
+      "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+      "label": "__gap",
+      "offset": 0,
+      "slot": "14",
+      "type": "t_array(t_uint256)48_storage"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_uint256)48_storage": {
+      "base": "t_uint256",
+      "encoding": "inplace",
+      "label": "uint256[48]",
+      "numberOfBytes": "1536"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_bytes32": {
+      "encoding": "inplace",
+      "label": "bytes32",
+      "numberOfBytes": "32"
+    },
+    "t_contract(IPECORVault)25090": {
+      "encoding": "inplace",
+      "label": "contract IPECORVault",
+      "numberOfBytes": "20"
+    },
+    "t_contract(IPriceOracle)25361": {
+      "encoding": "inplace",
+      "label": "contract IPriceOracle",
+      "numberOfBytes": "20"
+    },
+    "t_contract(ITransactionTracker)25908": {
+      "encoding": "inplace",
+      "label": "contract ITransactionTracker",
+      "numberOfBytes": "20"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_address,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_mapping(t_bytes32,t_struct(RoleData)281_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct AccessControl.RoleData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(RoleData)281_storage"
+    },
+    "t_struct(RoleData)281_storage": {
+      "encoding": "inplace",
+      "label": "struct AccessControl.RoleData",
+      "members": [
+        {
+          "astId": 278,
+          "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+          "label": "hasRole",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_address,t_bool)"
+        },
+        {
+          "astId": 280,
+          "contract": "contracts/meta-ag/engine/PECOR.sol:PECOR",
+          "label": "adminRole",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_bytes32"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}

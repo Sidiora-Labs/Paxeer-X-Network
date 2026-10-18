@@ -1,0 +1,89 @@
+{
+  "chainId": "31337",
+  "events": [
+    {
+      "type": "deployment-confirmed",
+      "label": "t",
+      "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "codeHash": "0x48f81d189a945082cdbbdbecb5b9a407a121ee1cf001288392abe26754bdc714",
+      "at": "2026-10-09T17:04:20.941Z"
+    },
+    {
+      "type": "deployment-confirmed",
+      "label": "t",
+      "address": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "codeHash": "0x48f81d189a945082cdbbdbecb5b9a407a121ee1cf001288392abe26754bdc714",
+      "at": "2026-10-09T17:04:20.973Z"
+    },
+    {
+      "type": "deployment-confirmed",
+      "label": "t",
+      "address": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
+      "codeHash": "0x48f81d189a945082cdbbdbecb5b9a407a121ee1cf001288392abe26754bdc714",
+      "at": "2026-10-09T17:04:20.998Z"
+    },
+    {
+      "type": "deployment-confirmed",
+      "label": "t",
+      "address": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+      "codeHash": "0x48f81d189a945082cdbbdbecb5b9a407a121ee1cf001288392abe26754bdc714",
+      "at": "2026-10-09T17:04:21.021Z"
+    },
+    {
+      "type": "deployment-confirmed",
+      "label": "EventEmitter_impl",
+      "address": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+      "codeHash": "0x34e17831894afdb6bbf1475eb58036f8dc0e85a898cdff51af29f149c497d908",
+      "at": "2026-10-09T17:04:46.545Z"
+    },
+    {
+      "type": "deployment-confirmed",
+      "label": "EventEmitter_proxy",
+      "address": "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+      "codeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+      "at": "2026-10-09T17:04:46.611Z"
+    },
+    {
+      "type": "deployment-confirmed",
+      "label": "ProtocolConfig_impl",
+      "address": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "codeHash": "0xfe1805eb063a3b70227418c5f4029b449f923432cc93d426b87d0d3657318518",
+      "at": "2026-10-09T17:04:46.679Z"
+    },
+    {
+      "type": "deployment-confirmed",
+      "label": "ProtocolConfig_proxy",
+      "address": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+      "codeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+      "at": "2026-10-09T17:04:46.726Z"
+    },
+    {
+      "type": "deployment-confirmed",
+      "label": "Treasury_impl",
+      "address": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+      "codeHash": "0x757927c4aca2cc8b65210d4c09e18f63586ef4780ff87190f6ccffca31e06be2",
+      "at": "2026-10-09T17:04:46.786Z"
+    },
+    {
+      "type": "deployment-confirmed",
+      "label": "Treasury_proxy",
+      "address": "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82",
+      "codeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+      "at": "2026-10-09T17:04:46.832Z"
+    },
+    {
+      "type": "deployment-confirmed",
+      "label": "Timelock",
+      "address": "0x9A676e781A523b5d0C0e43731313A708CB607508",
+      "codeHash": "0x533e56db88702e85e2ad116a20de035e626385baa84b523b466e2e9c04567a7d",
+      "at": "2026-10-09T17:04:46.887Z"
+    },
+    {
+      "type": "deployment-confirmed",
+      "label": "GovernanceModule_impl",
+      "address": "0x0B306BF915C4d645ff596e518fAf3F9669b97016",
+      "codeHash": "0x8a5a5bb64407e9e3b7934fa7a5c53a842faf67cdb2283fa01679464de8af7444",
+      "at": "2026-10-09T17:04:46.978Z"
+    }
+  ]
+}

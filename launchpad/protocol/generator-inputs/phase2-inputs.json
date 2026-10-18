@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 2,
+  "kind": "reviewed_native_correlation_generation_inputs",
+  "chainId": 125,
+  "currentReviewedCatalogSHA256": "8ac70f904a048bca6fbc193c0667fea65b3f5e3d51446c0d5a434ccbbb79103f",
+  "generatorVersion": "L02-revisions-v2",
+  "currentReviewedCatalog": "protocol/catalog/reviewed.json",
+  "preserveExistingGeneratedBindings": true,
+  "historicalRevisions": [],
+  "historicalRevisionState": "authentic_compiled_artifact_required_before_activation",
+  "registryConstructors": [
+    "catalog.New",
+    "catalog.NewWithReviewedRevisions",
+    "Registry.WithReviewedOpticalRegistry"
+  ],
+  "semanticVersion": "native-effects-v2",
+  "receiptSourceMethods": [
+    "SourceContext(context.Context) (string,string,int64,error)",
+    "SourceLogs(context.Context) ([]types.Log,error)"
+  ],
+  "signedTransactionBinding": "exact transaction hash, recovered chain125 sender and signed target",
+  "rawIdentity": [
+    "chainId",
+    "blockHash",
+    "transactionHash",
+    "emitter",
+    "logIndex"
+  ],
+  "effectIdentity": "SHA256(canonical native raw identity and effect kind)",
+  "authorityInputs": [
+    "pinned pool registration and settlement metadata",
+    "effective selector-specific caller permissions with canonical activation positions",
+    "authenticated emitter caller evidence",
+    "execution-specific active adapter evidence",
+    "pinned vault reserve and weth getter evidence",
+    "reviewed implementation ABI/code attestation"
+  ],
+  "consumerRules": [
+    "persist raw records and archive requests before projection",
+    "commit native effect identities, projection state and outbox atomically",
+    "preserve existing accounting FillV1 source identity and receipt/header provenance",
+    "mirrors never create asset, fee, order or vault economics",
+    "native PAX funding remains distinct from wrapped-token reserves",
+    "unknown upgrades disable writes without removing historical decoder revisions"
+  ],
+  "unavailableCurrentContractSurfaces": [
+    "ProtocolFeeSwept is declared but not emitted",
+    "historical EventEmitter compiled revision not supplied"
+  ],
+  "opticalRegistryReview": {
+    "state": "authentic_candidate_prepared_root_review_and_deployment_attestation_pending",
+    "candidateSHA256": "dbfcd243dae0388241b9cb73ac3c051d50c36e57974139a63e0e5e7b89db60db",
+    "abiSHA256": "afbac39f5a59a7264856e4905c7090c2bf4221cb06aac8404ebed1f75cce5540",
+    "currentSourceMatchesCompiledSource": true
+  },
+  "adversarialSourceImplementation": {
+    "correlator": "coverage.Correlator.Correlate",
+    "projection": "coverage.Projection.ApplyReceipt",
+    "pinnedRPCSource": "coverage.RPCSource",
+    "permissionHistory": "coverage.PermissionEpoch",
+    "implementationReview": "coverage.ImplementationReview",
+    "authenticatedInternalCaller": "requires execution trace provider; direct signed emitter calls are supported",
+    "unavailableAuthorityBehavior": "retain raw records with diagnostic status and create no authoritative effects",
+    "economicReplay": "sealed receipt result, exact duplicate conflict detection, atomic complete receipt application",
+    "historicalUpgradeBehavior": "retain registry decode; disable unreviewed writes at observed activation block",
+    "generatorSignatureIdentity": "Keccak256 of canonical event and function signatures"
+  },
+  "measurementHarness": {
+    "entry": "protocol/coverage/cmd/measure",
+    "manifestSchemaVersion": 1,
+    "manifestReader": "coverage.ReadMeasurementManifest",
+    "capture": "coverage.CaptureHistorical",
+    "replay": "coverage.ReplayHistorical",
+    "burst": "coverage.MeasureDecoderBurst",
+    "fixedEventsPerSecond": 10000,
+    "fixedSeconds": 300,
+    "workloadIdentity": "unchanged captured historical raw logs, with repeated decoder invocations counted separately from unique onchain events",
+    "requiredAuthorities": [
+      "independently reviewed historical transaction hashes and expected canonical/projection digests",
+      "actual chain125 historical RPC",
+      "current compiled-source manifest and exact serial interface digest",
+      "attested emitting deployments, selector permission history and reviewed implementation identities",
+      "two real generated Go/frontend binding artifact manifests and prior reviewed ABI export"
+    ],
+    "artifacts": [
+      "raw-history.json",
+      "measurement.json"
+    ],
+    "failureBehavior": "missing authority, expected-result mismatch, missed burst deadline, missing enabled surface or unresolved generator diff blocks the measurement release result"
+  }
+}

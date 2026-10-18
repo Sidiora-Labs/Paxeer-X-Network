@@ -1,0 +1,136 @@
+{
+  "contract": "contracts/meta-ag/quoter/MetaAGQuoter.sol:MetaAGQuoter",
+  "compiler": "0.8.27+commit.40a35a09",
+  "input": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "viaIR": true
+  },
+  "storage": [
+    {
+      "astId": 17,
+      "contract": "contracts/meta-ag/quoter/MetaAGQuoter.sol:MetaAGQuoter",
+      "label": "_roles",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_mapping(t_bytes32,t_struct(RoleData)12_storage)"
+    },
+    {
+      "astId": 4248,
+      "contract": "contracts/meta-ag/quoter/MetaAGQuoter.sol:MetaAGQuoter",
+      "label": "priceOracle",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_contract(IPriceOracle)3668"
+    },
+    {
+      "astId": 4251,
+      "contract": "contracts/meta-ag/quoter/MetaAGQuoter.sol:MetaAGQuoter",
+      "label": "vault",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_contract(IPECORVault)3397"
+    },
+    {
+      "astId": 4254,
+      "contract": "contracts/meta-ag/quoter/MetaAGQuoter.sol:MetaAGQuoter",
+      "label": "weth",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_address"
+    },
+    {
+      "astId": 4257,
+      "contract": "contracts/meta-ag/quoter/MetaAGQuoter.sol:MetaAGQuoter",
+      "label": "pecor",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_address"
+    },
+    {
+      "astId": 4262,
+      "contract": "contracts/meta-ag/quoter/MetaAGQuoter.sol:MetaAGQuoter",
+      "label": "__gap",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_array(t_uint256)50_storage"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_uint256)50_storage": {
+      "base": "t_uint256",
+      "encoding": "inplace",
+      "label": "uint256[50]",
+      "numberOfBytes": "1600"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_bytes32": {
+      "encoding": "inplace",
+      "label": "bytes32",
+      "numberOfBytes": "32"
+    },
+    "t_contract(IPECORVault)3397": {
+      "encoding": "inplace",
+      "label": "contract IPECORVault",
+      "numberOfBytes": "20"
+    },
+    "t_contract(IPriceOracle)3668": {
+      "encoding": "inplace",
+      "label": "contract IPriceOracle",
+      "numberOfBytes": "20"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_bytes32,t_struct(RoleData)12_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct AccessControl.RoleData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(RoleData)12_storage"
+    },
+    "t_struct(RoleData)12_storage": {
+      "encoding": "inplace",
+      "label": "struct AccessControl.RoleData",
+      "members": [
+        {
+          "astId": 9,
+          "contract": "contracts/meta-ag/quoter/MetaAGQuoter.sol:MetaAGQuoter",
+          "label": "hasRole",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_address,t_bool)"
+        },
+        {
+          "astId": 11,
+          "contract": "contracts/meta-ag/quoter/MetaAGQuoter.sol:MetaAGQuoter",
+          "label": "adminRole",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_bytes32"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}

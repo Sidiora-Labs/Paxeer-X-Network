@@ -1,0 +1,4797 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "IEventEmitter",
+  "sourceName": "contracts/interfaces/IEventEmitter.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "Unauthorized",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "asset",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "spender",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "valueOrTokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "isNft",
+          "type": "bool"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "AssetApproval",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "user",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenIn",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenOut",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "routeId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "address[]",
+          "name": "hops",
+          "type": "address[]"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "protocolFeeBps",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "BestRouteSwap",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "sourceId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "reportedPrice",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "referencePrice",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "deviationBps",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "CircuitBreakerTriggered",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "key",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "oldValue",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "newValue",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "ConfigUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "proxy",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "newImplementation",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "kind",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "ContractUpgraded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "msgSender",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "eventNameHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "eventName",
+          "type": "string"
+        },
+        {
+          "components": [
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "value",
+                      "type": "address"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.AddressKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "address[]",
+                      "name": "value",
+                      "type": "address[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.AddressArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.AddressItems",
+              "name": "addressItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "value",
+                      "type": "uint256"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.UintKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "uint256[]",
+                      "name": "value",
+                      "type": "uint256[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.UintArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.UintItems",
+              "name": "uintItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "int256",
+                      "name": "value",
+                      "type": "int256"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.IntKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "int256[]",
+                      "name": "value",
+                      "type": "int256[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.IntArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.IntItems",
+              "name": "intItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bool",
+                      "name": "value",
+                      "type": "bool"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BoolKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bool[]",
+                      "name": "value",
+                      "type": "bool[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BoolArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.BoolItems",
+              "name": "boolItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "value",
+                      "type": "bytes32"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.Bytes32KeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes32[]",
+                      "name": "value",
+                      "type": "bytes32[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.Bytes32ArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.Bytes32Items",
+              "name": "bytes32Items",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes",
+                      "name": "value",
+                      "type": "bytes"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BytesKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes[]",
+                      "name": "value",
+                      "type": "bytes[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BytesArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.BytesItems",
+              "name": "bytesItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "string",
+                      "name": "value",
+                      "type": "string"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.StringKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "string[]",
+                      "name": "value",
+                      "type": "string[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.StringArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.StringItems",
+              "name": "stringItems",
+              "type": "tuple"
+            }
+          ],
+          "indexed": false,
+          "internalType": "struct IEventEmitter.EventData",
+          "name": "eventData",
+          "type": "tuple"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "EventLog",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "msgSender",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "eventNameHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "topic1",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "eventName",
+          "type": "string"
+        },
+        {
+          "components": [
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "value",
+                      "type": "address"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.AddressKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "address[]",
+                      "name": "value",
+                      "type": "address[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.AddressArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.AddressItems",
+              "name": "addressItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "value",
+                      "type": "uint256"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.UintKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "uint256[]",
+                      "name": "value",
+                      "type": "uint256[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.UintArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.UintItems",
+              "name": "uintItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "int256",
+                      "name": "value",
+                      "type": "int256"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.IntKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "int256[]",
+                      "name": "value",
+                      "type": "int256[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.IntArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.IntItems",
+              "name": "intItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bool",
+                      "name": "value",
+                      "type": "bool"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BoolKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bool[]",
+                      "name": "value",
+                      "type": "bool[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BoolArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.BoolItems",
+              "name": "boolItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "value",
+                      "type": "bytes32"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.Bytes32KeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes32[]",
+                      "name": "value",
+                      "type": "bytes32[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.Bytes32ArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.Bytes32Items",
+              "name": "bytes32Items",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes",
+                      "name": "value",
+                      "type": "bytes"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BytesKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes[]",
+                      "name": "value",
+                      "type": "bytes[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BytesArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.BytesItems",
+              "name": "bytesItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "string",
+                      "name": "value",
+                      "type": "string"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.StringKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "string[]",
+                      "name": "value",
+                      "type": "string[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.StringArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.StringItems",
+              "name": "stringItems",
+              "type": "tuple"
+            }
+          ],
+          "indexed": false,
+          "internalType": "struct IEventEmitter.EventData",
+          "name": "eventData",
+          "type": "tuple"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "EventLog1",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "msgSender",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "eventNameHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "topic1",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "topic2",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "eventName",
+          "type": "string"
+        },
+        {
+          "components": [
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "value",
+                      "type": "address"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.AddressKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "address[]",
+                      "name": "value",
+                      "type": "address[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.AddressArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.AddressItems",
+              "name": "addressItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "value",
+                      "type": "uint256"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.UintKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "uint256[]",
+                      "name": "value",
+                      "type": "uint256[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.UintArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.UintItems",
+              "name": "uintItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "int256",
+                      "name": "value",
+                      "type": "int256"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.IntKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "int256[]",
+                      "name": "value",
+                      "type": "int256[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.IntArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.IntItems",
+              "name": "intItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bool",
+                      "name": "value",
+                      "type": "bool"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BoolKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bool[]",
+                      "name": "value",
+                      "type": "bool[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BoolArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.BoolItems",
+              "name": "boolItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "value",
+                      "type": "bytes32"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.Bytes32KeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes32[]",
+                      "name": "value",
+                      "type": "bytes32[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.Bytes32ArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.Bytes32Items",
+              "name": "bytes32Items",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes",
+                      "name": "value",
+                      "type": "bytes"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BytesKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes[]",
+                      "name": "value",
+                      "type": "bytes[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BytesArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.BytesItems",
+              "name": "bytesItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "string",
+                      "name": "value",
+                      "type": "string"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.StringKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "string[]",
+                      "name": "value",
+                      "type": "string[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.StringArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.StringItems",
+              "name": "stringItems",
+              "type": "tuple"
+            }
+          ],
+          "indexed": false,
+          "internalType": "struct IEventEmitter.EventData",
+          "name": "eventData",
+          "type": "tuple"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "EventLog2",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "poolId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "nftId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "strategy",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "FeeDistributed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint8",
+          "name": "kind",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "party",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "protocolCut",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "poolCut",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "epoch",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "FeeFlow",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "poolId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "feeAmount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "protocolCut",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "poolCut",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "FeeRecorded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "poolId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "nftId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "oldStrategy",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "newStrategy",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "FeeStrategyChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint8",
+          "name": "action",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "id",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "actor",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes",
+          "name": "payload",
+          "type": "bytes"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "Governance",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "poolId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "creator",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "optical",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "MarketCreated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "creator",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "strategy",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "NftMint",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "nft",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "NftTransfer",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "poolId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "optical",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "hookName",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes",
+          "name": "data",
+          "type": "bytes"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "OpticalExecuted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint8",
+          "name": "action",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "optical",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "name",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes",
+          "name": "payload",
+          "type": "bytes"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "OpticalLifecycle",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "sourceId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "adapter",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "phase",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "priority",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "OracleAdapterLifecycle",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "pausedContract",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "paused",
+          "type": "bool"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "PauseToggle",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "orderId",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "user",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "orderKind",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "orderType",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "tokenIn",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "tokenOut",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "targetPrice",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "stopPrice",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "limitPrice",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "PecorOrderCreated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "orderId",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "user",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "orderKind",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "phase",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "price",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes",
+          "name": "payload",
+          "type": "bytes"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "PecorOrderLifecycle",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "user",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenIn",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenOut",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "priceIn",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "priceOut",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "volumeUSD",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "feeBps",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "feeAmount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "impactBps",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "swapKind",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "PecorSwap",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "creator",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "optical",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "nftId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "PoolRegistered",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "poolId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "virtualReserve",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "realReserve",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "tokenReserve",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "price",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "PoolStateUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "roundId",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "relayer",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "price",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "confidence",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "sourceId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "PriceUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint8",
+          "name": "action",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "previousAdminRole",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "RoleChange",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint8",
+          "name": "kind",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "tokenIn",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "tokenOut",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "intermediateUsdl",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "RouterTrade",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "poolId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "isBuy",
+          "type": "bool"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "fee",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "price",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "Swap",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "creator",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "salt",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "symbol",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "decimals",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "totalSupply",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "TokenDeployed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "value",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "TokenTransfer",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint8",
+          "name": "direction",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "party",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "TreasuryFlow",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "emitter",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes4",
+          "name": "selector",
+          "type": "bytes4"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "allowed",
+          "type": "bool"
+        }
+      ],
+      "name": "TypedEmitterPermission",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint8",
+          "name": "flowType",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "party",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "newReserve",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "blockNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "VaultFlow",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "EVENT_EMITTER_ROLE",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "VERSION",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "",
+          "type": "string"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "deregisterToken",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "asset",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "spender",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "valueOrTokenId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bool",
+          "name": "isNft",
+          "type": "bool"
+        }
+      ],
+      "name": "emitAssetApproval",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "user",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "tokenIn",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "tokenOut",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "routeId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address[]",
+          "name": "hops",
+          "type": "address[]"
+        },
+        {
+          "internalType": "uint256",
+          "name": "protocolFeeBps",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitBestRouteSwap",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "sourceId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "reportedPrice",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "referencePrice",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "deviationBps",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitCircuitBreaker",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "key",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "oldValue",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "newValue",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitConfigUpdated",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "eventName",
+          "type": "string"
+        },
+        {
+          "components": [
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "value",
+                      "type": "address"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.AddressKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "address[]",
+                      "name": "value",
+                      "type": "address[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.AddressArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.AddressItems",
+              "name": "addressItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "value",
+                      "type": "uint256"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.UintKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "uint256[]",
+                      "name": "value",
+                      "type": "uint256[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.UintArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.UintItems",
+              "name": "uintItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "int256",
+                      "name": "value",
+                      "type": "int256"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.IntKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "int256[]",
+                      "name": "value",
+                      "type": "int256[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.IntArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.IntItems",
+              "name": "intItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bool",
+                      "name": "value",
+                      "type": "bool"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BoolKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bool[]",
+                      "name": "value",
+                      "type": "bool[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BoolArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.BoolItems",
+              "name": "boolItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "value",
+                      "type": "bytes32"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.Bytes32KeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes32[]",
+                      "name": "value",
+                      "type": "bytes32[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.Bytes32ArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.Bytes32Items",
+              "name": "bytes32Items",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes",
+                      "name": "value",
+                      "type": "bytes"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BytesKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes[]",
+                      "name": "value",
+                      "type": "bytes[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BytesArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.BytesItems",
+              "name": "bytesItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "string",
+                      "name": "value",
+                      "type": "string"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.StringKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "string[]",
+                      "name": "value",
+                      "type": "string[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.StringArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.StringItems",
+              "name": "stringItems",
+              "type": "tuple"
+            }
+          ],
+          "internalType": "struct IEventEmitter.EventData",
+          "name": "data",
+          "type": "tuple"
+        }
+      ],
+      "name": "emitEventLog",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "eventName",
+          "type": "string"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "topic1",
+          "type": "bytes32"
+        },
+        {
+          "components": [
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "value",
+                      "type": "address"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.AddressKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "address[]",
+                      "name": "value",
+                      "type": "address[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.AddressArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.AddressItems",
+              "name": "addressItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "value",
+                      "type": "uint256"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.UintKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "uint256[]",
+                      "name": "value",
+                      "type": "uint256[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.UintArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.UintItems",
+              "name": "uintItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "int256",
+                      "name": "value",
+                      "type": "int256"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.IntKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "int256[]",
+                      "name": "value",
+                      "type": "int256[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.IntArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.IntItems",
+              "name": "intItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bool",
+                      "name": "value",
+                      "type": "bool"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BoolKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bool[]",
+                      "name": "value",
+                      "type": "bool[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BoolArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.BoolItems",
+              "name": "boolItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "value",
+                      "type": "bytes32"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.Bytes32KeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes32[]",
+                      "name": "value",
+                      "type": "bytes32[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.Bytes32ArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.Bytes32Items",
+              "name": "bytes32Items",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes",
+                      "name": "value",
+                      "type": "bytes"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BytesKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes[]",
+                      "name": "value",
+                      "type": "bytes[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BytesArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.BytesItems",
+              "name": "bytesItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "string",
+                      "name": "value",
+                      "type": "string"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.StringKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "string[]",
+                      "name": "value",
+                      "type": "string[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.StringArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.StringItems",
+              "name": "stringItems",
+              "type": "tuple"
+            }
+          ],
+          "internalType": "struct IEventEmitter.EventData",
+          "name": "data",
+          "type": "tuple"
+        }
+      ],
+      "name": "emitEventLog1",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "eventName",
+          "type": "string"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "topic1",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "topic2",
+          "type": "bytes32"
+        },
+        {
+          "components": [
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "value",
+                      "type": "address"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.AddressKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "address[]",
+                      "name": "value",
+                      "type": "address[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.AddressArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.AddressItems",
+              "name": "addressItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "value",
+                      "type": "uint256"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.UintKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "uint256[]",
+                      "name": "value",
+                      "type": "uint256[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.UintArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.UintItems",
+              "name": "uintItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "int256",
+                      "name": "value",
+                      "type": "int256"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.IntKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "int256[]",
+                      "name": "value",
+                      "type": "int256[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.IntArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.IntItems",
+              "name": "intItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bool",
+                      "name": "value",
+                      "type": "bool"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BoolKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bool[]",
+                      "name": "value",
+                      "type": "bool[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BoolArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.BoolItems",
+              "name": "boolItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes32",
+                      "name": "value",
+                      "type": "bytes32"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.Bytes32KeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes32[]",
+                      "name": "value",
+                      "type": "bytes32[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.Bytes32ArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.Bytes32Items",
+              "name": "bytes32Items",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes",
+                      "name": "value",
+                      "type": "bytes"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BytesKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "bytes[]",
+                      "name": "value",
+                      "type": "bytes[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.BytesArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.BytesItems",
+              "name": "bytesItems",
+              "type": "tuple"
+            },
+            {
+              "components": [
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "string",
+                      "name": "value",
+                      "type": "string"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.StringKeyValue[]",
+                  "name": "items",
+                  "type": "tuple[]"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "string",
+                      "name": "key",
+                      "type": "string"
+                    },
+                    {
+                      "internalType": "string[]",
+                      "name": "value",
+                      "type": "string[]"
+                    }
+                  ],
+                  "internalType": "struct IEventEmitter.StringArrayKeyValue[]",
+                  "name": "arrayItems",
+                  "type": "tuple[]"
+                }
+              ],
+              "internalType": "struct IEventEmitter.StringItems",
+              "name": "stringItems",
+              "type": "tuple"
+            }
+          ],
+          "internalType": "struct IEventEmitter.EventData",
+          "name": "data",
+          "type": "tuple"
+        }
+      ],
+      "name": "emitEventLog2",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "poolId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "nftId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint8",
+          "name": "strategy",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        }
+      ],
+      "name": "emitFeeDistributed",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint8",
+          "name": "kind",
+          "type": "uint8"
+        },
+        {
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "party",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "protocolCut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "poolCut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "epoch",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitFeeFlow",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "poolId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "feeAmount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "protocolCut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "poolCut",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitFeeRecorded",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "poolId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "nftId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint8",
+          "name": "oldStrategy",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint8",
+          "name": "newStrategy",
+          "type": "uint8"
+        }
+      ],
+      "name": "emitFeeStrategyChanged",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint8",
+          "name": "action",
+          "type": "uint8"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "id",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "actor",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes",
+          "name": "payload",
+          "type": "bytes"
+        }
+      ],
+      "name": "emitGovernance",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "poolId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "creator",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "optical",
+          "type": "address"
+        }
+      ],
+      "name": "emitMarketCreated",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "creator",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "internalType": "uint8",
+          "name": "strategy",
+          "type": "uint8"
+        }
+      ],
+      "name": "emitNftMint",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "nft",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitNftTransfer",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "poolId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "optical",
+          "type": "address"
+        },
+        {
+          "internalType": "string",
+          "name": "hookName",
+          "type": "string"
+        },
+        {
+          "internalType": "bytes",
+          "name": "data",
+          "type": "bytes"
+        }
+      ],
+      "name": "emitOpticalExecuted",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint8",
+          "name": "action",
+          "type": "uint8"
+        },
+        {
+          "internalType": "address",
+          "name": "optical",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "name",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes",
+          "name": "payload",
+          "type": "bytes"
+        }
+      ],
+      "name": "emitOpticalLifecycle",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "sourceId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "adapter",
+          "type": "address"
+        },
+        {
+          "internalType": "uint8",
+          "name": "phase",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint256",
+          "name": "priority",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitOracleAdapterLifecycle",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "pausedContract",
+          "type": "address"
+        },
+        {
+          "internalType": "bool",
+          "name": "paused",
+          "type": "bool"
+        }
+      ],
+      "name": "emitPauseToggle",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "orderId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "user",
+          "type": "address"
+        },
+        {
+          "internalType": "uint8",
+          "name": "orderKind",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint8",
+          "name": "orderType",
+          "type": "uint8"
+        },
+        {
+          "internalType": "address",
+          "name": "tokenIn",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "tokenOut",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "targetPrice",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "stopPrice",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "limitPrice",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitPecorOrderCreated",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "orderId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "user",
+          "type": "address"
+        },
+        {
+          "internalType": "uint8",
+          "name": "orderKind",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint8",
+          "name": "phase",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint256",
+          "name": "price",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "payload",
+          "type": "bytes"
+        }
+      ],
+      "name": "emitPecorOrderLifecycle",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "user",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "tokenIn",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "tokenOut",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "priceIn",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "priceOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "volumeUSD",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "feeBps",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "feeAmount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "impactBps",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint8",
+          "name": "swapKind",
+          "type": "uint8"
+        }
+      ],
+      "name": "emitPecorSwap",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "creator",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "optical",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "nftId",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitPoolRegistered",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "poolId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "virtualReserve",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "realReserve",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "tokenReserve",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "price",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitPoolStateUpdated",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "roundId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "relayer",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "price",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "confidence",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "sourceId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "emitPriceUpdated",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint8",
+          "name": "action",
+          "type": "uint8"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "previousAdminRole",
+          "type": "bytes32"
+        }
+      ],
+      "name": "emitRoleChange",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint8",
+          "name": "kind",
+          "type": "uint8"
+        },
+        {
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "tokenIn",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "tokenOut",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "intermediateUsdl",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitRouterTrade",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "poolId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        },
+        {
+          "internalType": "bool",
+          "name": "isBuy",
+          "type": "bool"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "fee",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "price",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitSwap",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "creator",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "salt",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "string",
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "symbol",
+          "type": "string"
+        },
+        {
+          "internalType": "uint8",
+          "name": "decimals",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint256",
+          "name": "totalSupply",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitTokenDeployed",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "value",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitTokenTransfer",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint8",
+          "name": "direction",
+          "type": "uint8"
+        },
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "party",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitTreasuryFlow",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "proxy",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "newImplementation",
+          "type": "address"
+        },
+        {
+          "internalType": "uint8",
+          "name": "kind",
+          "type": "uint8"
+        }
+      ],
+      "name": "emitUpgraded",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint8",
+          "name": "flowType",
+          "type": "uint8"
+        },
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "party",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "newReserve",
+          "type": "uint256"
+        }
+      ],
+      "name": "emitVaultFlow",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "emitter",
+          "type": "address"
+        }
+      ],
+      "name": "isAuthorizedEmitter",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "isRegisteredToken",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "emitter",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes4",
+          "name": "selector",
+          "type": "bytes4"
+        }
+      ],
+      "name": "isTypedEmitter",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "pool",
+          "type": "address"
+        }
+      ],
+      "name": "registerToken",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "adminWithEmitterRole",
+          "type": "address"
+        }
+      ],
+      "name": "reinitializeV2",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "emitter",
+          "type": "address"
+        },
+        {
+          "internalType": "bool",
+          "name": "authorized",
+          "type": "bool"
+        }
+      ],
+      "name": "setAuthorizedEmitter",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "router",
+          "type": "address"
+        }
+      ],
+      "name": "setMetaAGRouter",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "registry",
+          "type": "address"
+        }
+      ],
+      "name": "setOpticalRegistry",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "factory",
+          "type": "address"
+        }
+      ],
+      "name": "setSidioraFactory",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "registry",
+          "type": "address"
+        }
+      ],
+      "name": "setTokenRegistry",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "emitter",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes4",
+          "name": "selector",
+          "type": "bytes4"
+        },
+        {
+          "internalType": "bool",
+          "name": "allowed",
+          "type": "bool"
+        }
+      ],
+      "name": "setTypedEmitter",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

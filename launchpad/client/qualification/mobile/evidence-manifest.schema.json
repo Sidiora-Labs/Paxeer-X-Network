@@ -1,0 +1,501 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifactDigest",
+    "backendRevision",
+    "platform",
+    "signed",
+    "physicalDevice",
+    "journeys"
+  ],
+  "properties": {
+    "artifactDigest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "backendRevision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "platform": {
+      "enum": [
+        "ios",
+        "android"
+      ]
+    },
+    "signed": {
+      "const": true
+    },
+    "physicalDevice": {
+      "const": true
+    },
+    "journeys": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "requirementId",
+          "scenario",
+          "expected",
+          "observed",
+          "passed",
+          "networkTrace",
+          "authoritativeState",
+          "screenshot",
+          "reviewer"
+        ],
+        "properties": {
+          "requirementId": {
+            "type": "string",
+            "pattern": "^D10_0(2[89]|3[0-6])\\.[1-5]$"
+          },
+          "scenario": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expected": {
+            "type": "string",
+            "minLength": 1
+          },
+          "observed": {
+            "type": "string",
+            "minLength": 1
+          },
+          "passed": {
+            "const": true
+          },
+          "networkTrace": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authoritativeState": {
+            "type": "string",
+            "minLength": 1
+          },
+          "screenshot": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reviewer": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "rawArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "releaseManifestV4": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "environment",
+        "syntheticAccountsOnly",
+        "releaseSetDigest",
+        "sourceDigest",
+        "backendRevision",
+        "runId",
+        "walletSupport",
+        "artifacts",
+        "journeys",
+        "responsive",
+        "manualAccessibility",
+        "axeReports"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 4
+        },
+        "environment": {
+          "const": "staging"
+        },
+        "syntheticAccountsOnly": {
+          "const": true
+        },
+        "releaseSetDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "sourceDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "backendRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^measure_[A-Za-z0-9_-]{16,96}$"
+        },
+        "walletSupport": {
+          "const": true
+        },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ios",
+            "android",
+            "chrome",
+            "firefox",
+            "safari",
+            "android-chrome",
+            "ios-safari"
+          ],
+          "properties": {
+            "ios": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "artifact"
+              ],
+              "properties": {
+                "artifact": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "signature": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "signatureVerification": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "measurements": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "#/$defs/rawArtifact"
+                  }
+                }
+              }
+            },
+            "android": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "artifact"
+              ],
+              "properties": {
+                "artifact": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "signature": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "signatureVerification": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "measurements": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "#/$defs/rawArtifact"
+                  }
+                }
+              }
+            },
+            "chrome": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "artifact"
+              ],
+              "properties": {
+                "artifact": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "signature": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "signatureVerification": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "measurements": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "#/$defs/rawArtifact"
+                  }
+                }
+              }
+            },
+            "firefox": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "artifact"
+              ],
+              "properties": {
+                "artifact": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "signature": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "signatureVerification": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "measurements": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "#/$defs/rawArtifact"
+                  }
+                }
+              }
+            },
+            "safari": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "artifact"
+              ],
+              "properties": {
+                "artifact": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "signature": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "signatureVerification": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "measurements": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "#/$defs/rawArtifact"
+                  }
+                }
+              }
+            },
+            "android-chrome": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "artifact"
+              ],
+              "properties": {
+                "artifact": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "signature": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "signatureVerification": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "measurements": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "#/$defs/rawArtifact"
+                  }
+                }
+              }
+            },
+            "ios-safari": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "artifact"
+              ],
+              "properties": {
+                "artifact": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "signature": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "signatureVerification": {
+                  "$ref": "#/$defs/rawArtifact"
+                },
+                "measurements": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "#/$defs/rawArtifact"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "journeys": {
+          "type": "array",
+          "minItems": 70,
+          "items": {
+            "type": "object",
+            "required": [
+              "platform",
+              "journey",
+              "artifactDigest",
+              "backendRevision",
+              "expected",
+              "observed",
+              "passed",
+              "reviewer",
+              "networkTrace",
+              "authoritativeState",
+              "screenshot",
+              "focusTrace"
+            ],
+            "properties": {
+              "platform": {
+                "enum": [
+                  "ios",
+                  "android",
+                  "chrome",
+                  "firefox",
+                  "safari",
+                  "android-chrome",
+                  "ios-safari"
+                ]
+              },
+              "passed": {
+                "const": true
+              },
+              "networkTrace": {
+                "$ref": "#/$defs/rawArtifact"
+              },
+              "authoritativeState": {
+                "$ref": "#/$defs/rawArtifact"
+              },
+              "screenshot": {
+                "$ref": "#/$defs/rawArtifact"
+              },
+              "focusTrace": {
+                "$ref": "#/$defs/rawArtifact"
+              }
+            }
+          }
+        },
+        "responsive": {
+          "type": "array",
+          "minItems": 120,
+          "items": {
+            "type": "object",
+            "required": [
+              "platform",
+              "width",
+              "zoom",
+              "orientation",
+              "geometryTrace",
+              "screenshot",
+              "settingsTrace"
+            ],
+            "properties": {
+              "platform": {
+                "enum": [
+                  "chrome",
+                  "firefox",
+                  "safari",
+                  "android-chrome",
+                  "ios-safari"
+                ]
+              },
+              "width": {
+                "enum": [
+                  320,
+                  375,
+                  390,
+                  768,
+                  1024,
+                  1440
+                ]
+              },
+              "zoom": {
+                "enum": [
+                  1,
+                  2
+                ]
+              },
+              "orientation": {
+                "enum": [
+                  "portrait",
+                  "landscape"
+                ]
+              },
+              "geometryTrace": {
+                "$ref": "#/$defs/rawArtifact"
+              },
+              "screenshot": {
+                "$ref": "#/$defs/rawArtifact"
+              },
+              "settingsTrace": {
+                "$ref": "#/$defs/rawArtifact"
+              }
+            }
+          }
+        },
+        "manualAccessibility": {
+          "type": "array",
+          "minItems": 20,
+          "items": {
+            "type": "object",
+            "required": [
+              "technology",
+              "journey",
+              "passed",
+              "criticalDefects",
+              "reviewer",
+              "recording",
+              "focusTrace"
+            ],
+            "properties": {
+              "technology": {
+                "enum": [
+                  "NVDA+Chrome",
+                  "VoiceOver+Safari"
+                ]
+              },
+              "passed": {
+                "const": true
+              },
+              "criticalDefects": {
+                "const": 0
+              },
+              "recording": {
+                "$ref": "#/$defs/rawArtifact"
+              },
+              "focusTrace": {
+                "$ref": "#/$defs/rawArtifact"
+              }
+            }
+          }
+        },
+        "axeReports": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/rawArtifact"
+          }
+        }
+      }
+    }
+  }
+}

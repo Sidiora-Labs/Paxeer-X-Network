@@ -1,0 +1,21 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "PECORMath",
+  "sourceName": "contracts/meta-ag/engine/PECORMath.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "InvalidPriceOrDecimals",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "QuoteOverflow",
+      "type": "error"
+    }
+  ],
+  "bytecode": "0x60808060405234601757603a9081601d823930815050f35b600080fdfe600080fdfea264697066735822122073cd925196d522e114030ad744c253112bd1d763f0a77dbd06f65db29224f2b464736f6c634300081b0033",
+  "deployedBytecode": "0x600080fdfea264697066735822122073cd925196d522e114030ad744c253112bd1d763f0a77dbd06f65db29224f2b464736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

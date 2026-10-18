@@ -1,0 +1,90 @@
+{
+  "storage": [
+    {
+      "astId": 286,
+      "contract": "contracts/periphery/FeesRouter.sol:FeesRouter",
+      "label": "_roles",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_mapping(t_bytes32,t_struct(RoleData)281_storage)"
+    },
+    {
+      "astId": 41931,
+      "contract": "contracts/periphery/FeesRouter.sol:FeesRouter",
+      "label": "nftContract",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_address"
+    },
+    {
+      "astId": 41933,
+      "contract": "contracts/periphery/FeesRouter.sol:FeesRouter",
+      "label": "feeAccumulator",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_address"
+    },
+    {
+      "astId": 41935,
+      "contract": "contracts/periphery/FeesRouter.sol:FeesRouter",
+      "label": "poolRegistry",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_address"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_bytes32": {
+      "encoding": "inplace",
+      "label": "bytes32",
+      "numberOfBytes": "32"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_bytes32,t_struct(RoleData)281_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct AccessControl.RoleData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(RoleData)281_storage"
+    },
+    "t_struct(RoleData)281_storage": {
+      "encoding": "inplace",
+      "label": "struct AccessControl.RoleData",
+      "members": [
+        {
+          "astId": 278,
+          "contract": "contracts/periphery/FeesRouter.sol:FeesRouter",
+          "label": "hasRole",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_address,t_bool)"
+        },
+        {
+          "astId": 280,
+          "contract": "contracts/periphery/FeesRouter.sol:FeesRouter",
+          "label": "adminRole",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_bytes32"
+        }
+      ],
+      "numberOfBytes": "64"
+    }
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "storage": [
+    {
+      "astId": 286,
+      "contract": "contracts/opticals/LaunchpadOpticalFactory.sol:LaunchpadOpticalFactory",
+      "label": "_roles",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_mapping(t_bytes32,t_struct(RoleData)281_storage)"
+    },
+    {
+      "astId": 39015,
+      "contract": "contracts/opticals/LaunchpadOpticalFactory.sol:LaunchpadOpticalFactory",
+      "label": "poolRegistry",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_address"
+    },
+    {
+      "astId": 39018,
+      "contract": "contracts/opticals/LaunchpadOpticalFactory.sol:LaunchpadOpticalFactory",
+      "label": "feeAccumulator",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_address"
+    },
+    {
+      "astId": 39021,
+      "contract": "contracts/opticals/LaunchpadOpticalFactory.sol:LaunchpadOpticalFactory",
+      "label": "opticalRegistry",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_address"
+    },
+    {
+      "astId": 39025,
+      "contract": "contracts/opticals/LaunchpadOpticalFactory.sol:LaunchpadOpticalFactory",
+      "label": "_deployedOpticals",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_array(t_address)dyn_storage"
+    },
+    {
+      "astId": 39031,
+      "contract": "contracts/opticals/LaunchpadOpticalFactory.sol:LaunchpadOpticalFactory",
+      "label": "_creatorOpticals",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_mapping(t_address,t_array(t_address)dyn_storage)"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_address)dyn_storage": {
+      "base": "t_address",
+      "encoding": "dynamic_array",
+      "label": "address[]",
+      "numberOfBytes": "32"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_bytes32": {
+      "encoding": "inplace",
+      "label": "bytes32",
+      "numberOfBytes": "32"
+    },
+    "t_mapping(t_address,t_array(t_address)dyn_storage)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => address[])",
+      "numberOfBytes": "32",
+      "value": "t_array(t_address)dyn_storage"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_bytes32,t_struct(RoleData)281_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct AccessControl.RoleData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(RoleData)281_storage"
+    },
+    "t_struct(RoleData)281_storage": {
+      "encoding": "inplace",
+      "label": "struct AccessControl.RoleData",
+      "members": [
+        {
+          "astId": 278,
+          "contract": "contracts/opticals/LaunchpadOpticalFactory.sol:LaunchpadOpticalFactory",
+          "label": "hasRole",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_address,t_bool)"
+        },
+        {
+          "astId": 280,
+          "contract": "contracts/opticals/LaunchpadOpticalFactory.sol:LaunchpadOpticalFactory",
+          "label": "adminRole",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_bytes32"
+        }
+      ],
+      "numberOfBytes": "64"
+    }
+  }
+}

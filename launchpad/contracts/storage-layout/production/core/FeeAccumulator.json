@@ -1,0 +1,319 @@
+{
+  "storage": [
+    {
+      "astId": 286,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_roles",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_mapping(t_bytes32,t_struct(RoleData)281_storage)"
+    },
+    {
+      "astId": 8748,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "protocolConfig",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_address"
+    },
+    {
+      "astId": 8750,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "treasury",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_address"
+    },
+    {
+      "astId": 8752,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "poolRegistry",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_address"
+    },
+    {
+      "astId": 8754,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "eventEmitter",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_address"
+    },
+    {
+      "astId": 8756,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "usdlAddress",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_address"
+    },
+    {
+      "astId": 8760,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_accumulatedFees",
+      "offset": 0,
+      "slot": "6",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 8762,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_protocolFeesPending",
+      "offset": 0,
+      "slot": "7",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 8766,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_airdropBalance",
+      "offset": 0,
+      "slot": "8",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 8770,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_airdropEpoch",
+      "offset": 0,
+      "slot": "9",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 8776,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_airdropEpochAmount",
+      "offset": 0,
+      "slot": "10",
+      "type": "t_mapping(t_address,t_mapping(t_uint256,t_uint256))"
+    },
+    {
+      "astId": 8784,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_airdropClaimed",
+      "offset": 0,
+      "slot": "11",
+      "type": "t_mapping(t_address,t_mapping(t_address,t_mapping(t_uint256,t_bool)))"
+    },
+    {
+      "astId": 8788,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_lpRewardsBalance",
+      "offset": 0,
+      "slot": "12",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 8792,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_opticalSurplus",
+      "offset": 0,
+      "slot": "13",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 8794,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "totalLiabilities",
+      "offset": 0,
+      "slot": "14",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 8800,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "airdropSnapshotBlock",
+      "offset": 0,
+      "slot": "15",
+      "type": "t_mapping(t_address,t_mapping(t_uint256,t_uint256))"
+    },
+    {
+      "astId": 8806,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "airdropEligibleSupply",
+      "offset": 0,
+      "slot": "16",
+      "type": "t_mapping(t_address,t_mapping(t_uint256,t_uint256))"
+    },
+    {
+      "astId": 8812,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "airdropEpochRemaining",
+      "offset": 0,
+      "slot": "17",
+      "type": "t_mapping(t_address,t_mapping(t_uint256,t_uint256))"
+    },
+    {
+      "astId": 8818,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "airdropClaimedSupply",
+      "offset": 0,
+      "slot": "18",
+      "type": "t_mapping(t_address,t_mapping(t_uint256,t_uint256))"
+    },
+    {
+      "astId": 8820,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "accountingInitialized",
+      "offset": 0,
+      "slot": "19",
+      "type": "t_bool"
+    },
+    {
+      "astId": 8822,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "accountingMigrationCursor",
+      "offset": 0,
+      "slot": "20",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 8826,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "_accountingMigratedPool",
+      "offset": 0,
+      "slot": "21",
+      "type": "t_mapping(t_address,t_bool)"
+    },
+    {
+      "astId": 8830,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "legacyAirdropUnallocated",
+      "offset": 0,
+      "slot": "22",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 8836,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "legacyAirdropRoot",
+      "offset": 0,
+      "slot": "23",
+      "type": "t_mapping(t_address,t_mapping(t_uint256,t_bytes32))"
+    },
+    {
+      "astId": 8842,
+      "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+      "label": "legacyAirdropRemaining",
+      "offset": 0,
+      "slot": "24",
+      "type": "t_mapping(t_address,t_mapping(t_uint256,t_uint256))"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_bytes32": {
+      "encoding": "inplace",
+      "label": "bytes32",
+      "numberOfBytes": "32"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_address,t_mapping(t_address,t_mapping(t_uint256,t_bool)))": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => mapping(address => mapping(uint256 => bool)))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_address,t_mapping(t_uint256,t_bool))"
+    },
+    "t_mapping(t_address,t_mapping(t_uint256,t_bool))": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => mapping(uint256 => bool))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint256,t_bool)"
+    },
+    "t_mapping(t_address,t_mapping(t_uint256,t_bytes32))": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => mapping(uint256 => bytes32))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint256,t_bytes32)"
+    },
+    "t_mapping(t_address,t_mapping(t_uint256,t_uint256))": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => mapping(uint256 => uint256))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint256,t_uint256)"
+    },
+    "t_mapping(t_address,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_mapping(t_bytes32,t_struct(RoleData)281_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct AccessControl.RoleData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(RoleData)281_storage"
+    },
+    "t_mapping(t_uint256,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_uint256,t_bytes32)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => bytes32)",
+      "numberOfBytes": "32",
+      "value": "t_bytes32"
+    },
+    "t_mapping(t_uint256,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_struct(RoleData)281_storage": {
+      "encoding": "inplace",
+      "label": "struct AccessControl.RoleData",
+      "members": [
+        {
+          "astId": 278,
+          "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+          "label": "hasRole",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_address,t_bool)"
+        },
+        {
+          "astId": 280,
+          "contract": "contracts/data/FeeAccumulator.sol:FeeAccumulator",
+          "label": "adminRole",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_bytes32"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}

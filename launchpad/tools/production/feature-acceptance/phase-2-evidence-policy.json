@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "task": "2.50",
+  "extends": "tools/production/feature-acceptance/phase-1-evidence-policy.json",
+  "schema": "tools/production/feature-acceptance/journey-evidence.schema.json",
+  "collector_entrypoint": "collect_journeys.collect",
+  "qualification_entrypoint": "journey_policy.qualify_feature",
+  "signature": "Ed25519 over canonical UTF8 JSON; same admitted producer signs journey record index bound to independently reviewed evidence/artifact hashes",
+  "trusted_invocation_fields": [
+    "inventory",
+    "context",
+    "trust",
+    "artifact_root",
+    "dependencies",
+    "authority",
+    "now"
+  ],
+  "trusted_authority_fields": {
+    "providers": "Pinned independently admitted provider IDs, supported chain IDs, support and licensing SHA256 values",
+    "settlements": "Per feature accepted contract address, code SHA256 and allowed action from admitted current registry",
+    "native_builds": "Per iOS/Android actual signed build SHA256, application ID, physical device IDs and exact allowed notification deep-link"
+  },
+  "evidence_max_age_seconds": 604800,
+  "final_smoke_max_age_seconds": 86400,
+  "retention_seconds": 15552000,
+  "feature_coverage": 55,
+  "mandatory_scenarios": [
+    "success",
+    "authorization_denial",
+    "dependency_outage",
+    "reconnect_retry"
+  ],
+  "native_platforms": [
+    "ios",
+    "android"
+  ],
+  "chain_id": 125,
+  "unsupported_behavior": "Keep named mandatory blocker and disabled capability; never manufacture receipts, balances, provider status, device installation or release qualification",
+  "external_dependency_boundary": "Funding vendor support/licensing and real physical push/device/voice execution must be supplied by actual registered feature-owner harnesses. Policy-negative tests do not fulfill them.",
+  "release_qualified": false
+}

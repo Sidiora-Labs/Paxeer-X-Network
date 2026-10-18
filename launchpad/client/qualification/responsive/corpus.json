@@ -1,0 +1,41 @@
+{
+  "widths": [
+    320,
+    375,
+    390,
+    768,
+    1024,
+    1440
+  ],
+  "orientations": [
+    "portrait",
+    "landscape"
+  ],
+  "zoom": [
+    1,
+    2
+  ],
+  "record": [
+    "cssWidth",
+    "cssHeight",
+    "devicePixelRatio",
+    "zoom",
+    "safeArea",
+    "keyboardState",
+    "artifactDigest",
+    "focusTrace"
+  ],
+  "steps": [
+    "open-trade-keyboard",
+    "rotate-preserve-pool-amount-scroll",
+    "dismiss-modal-restore-focus",
+    "check-fixed-header-bottom-nav-toast-occlusion",
+    "copy-full-financial-identifier"
+  ],
+  "targets": {
+    "touchPixels": 44,
+    "CLS": 0.1,
+    "INPp75ms": 200
+  },
+  "observed": false
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "file": "heif-undersized-ispe.heic",
+    "url": "https://codeberg.org/image-size/image-size/raw/commit/e6e83a5578961de81f6d5834d90fb7430d8f29a5/specs/images/invalid/heif-undersized-ispe.heic",
+    "size": 52,
+    "sha256": "1aa8cc11b1825a9f916e08fd6114f30b3356034110bd7578220e1d2ce909e5b5"
+  },
+  {
+    "file": "icns-zero-length-entry.icns",
+    "url": "https://codeberg.org/image-size/image-size/raw/commit/e6e83a5578961de81f6d5834d90fb7430d8f29a5/specs/images/invalid/icns-zero-length-entry.icns",
+    "size": 16,
+    "sha256": "9222447bc632db1bfc48dcbadf914d877e124f41c4167a6731477c80e40c64c3"
+  },
+  {
+    "file": "jxl-header-only-jxlp.jxl",
+    "url": "https://codeberg.org/image-size/image-size/raw/commit/e6e83a5578961de81f6d5834d90fb7430d8f29a5/specs/images/invalid/jxl-header-only-jxlp.jxl",
+    "size": 40,
+    "sha256": "f7751334f280863440c6f12a686ea5ba93335aa42fade7d2ebc68d65edd829e4"
+  }
+]

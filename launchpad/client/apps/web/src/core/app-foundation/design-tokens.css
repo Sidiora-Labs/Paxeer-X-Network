@@ -1,0 +1,13 @@
+/* Version 1 semantic shell tokens. Fixed trusted values aligned to the surface ladder in app/tokens.css. */
+.foundation-shell {
+ --foundation-canvas: #07090D;
+ --foundation-surface: #10141C;
+ --foundation-raised: #171D28;
+ --foundation-text: #F4F5F9;
+ --foundation-muted: #A9B2C4;
+ --foundation-focus: #8bffc5;
+}
+.foundation-shell :focus-visible {
+ outline: 2px solid var(--foundation-focus);
+ outline-offset: 3px;
+}

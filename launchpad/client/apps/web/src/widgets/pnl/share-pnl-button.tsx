@@ -1,0 +1,6 @@
+'use client';
+import SharePnlModal from './share-pnl-modal';
+import {useCardMinter} from './use-card-minter';
+export type ShareCardButtonVariant='primary'|'compact'|'ghost';
+interface Props {poolAddress:string;ownerAddress?:string|null;tokenSymbol?:string|null;variant?:ShareCardButtonVariant;className?:string;label?:string;snapshotId?:string}
+export default function ShareCardButton({poolAddress,ownerAddress,className='',label,snapshotId}:Props){const controller=useCardMinter();const state=controller.state;return <><button className={`rounded-lg px-3 py-2 bg-accent text-on-accent ${className}`} disabled={!ownerAddress||(state.kind==='minting'||state.kind==='ready')} onClick={()=>{if(ownerAddress)void controller.mint({ownerAddress,poolAddress,snapshotId});}}>{state.kind==='minting'?'Loading...':label??'Share PnL'}</button>{state.kind==='error'&&<p role="alert">Couldn&apos;t create your card, try again</p>}{state.kind==='ready'&&snapshotId&&<SharePnlModal snapshotId={snapshotId} preview={state.preview} owner={state.owner} error={state.error} onClose={controller.reset} onSelection={(fields,includeWallet,expiresAt)=>controller.select(snapshotId,fields,includeWallet,expiresAt)} onPublish={controller.publish} onRefresh={controller.refresh} onRevoke={controller.revoke}/>}</>;}

@@ -1,0 +1,47 @@
+{
+  "version": 4,
+  "task": "4.50",
+  "final_gate": "9.1",
+  "extends": "tools/production/feature-acceptance/phase-3-evidence-policy.json",
+  "readiness_entrypoint": "policy.validator_readiness",
+  "final_closure_entrypoint": "policy.final_release_closure",
+  "trusted_readiness_authority_fields": [
+    "tool_sha256",
+    "schema_sha256",
+    "shared_bindings",
+    "root_capacity_ledger",
+    "root_mix",
+    "spec"
+  ],
+  "review_assignment_schema": "evidence.schema.json#/$defs/review_assignment_envelope",
+  "assignment_signature": "Admitted independent reviewer Ed25519 signature over exact feature/candidate/environment/run/tool/schema and producer/implementation ownership mapping",
+  "gate_signature_roles": [
+    "gate_producer",
+    "gate_reviewer"
+  ],
+  "gate_signature_scope": "OC25 with exact per-task coordinator-owned signer/tool assignment, declared verify command, native zero-exit unskipped result and hashed raw log",
+  "required_features": 55,
+  "required_lane_tasks": 200,
+  "root_capacity_ledger": "Actual pinned JSON projection of tools/production/load/workload.py ledger()",
+  "root_workload_mix": "Actual pinned JSON projection of tools/production/load/workload.py MIX",
+  "shared_capture": "Actual read_manifest plus gateway_summary through current load capture.py and types.Bindings; isolated captures never close release",
+  "final_interval_seconds_min": 86400,
+  "final_acceptance_freshness_seconds_max": 86400,
+  "feature_evidence_freshness_seconds_max": 604800,
+  "retention_seconds_min": 15552000,
+  "missing_authority_behavior": "Reject absent assignments, signed current raw owner/gate results, immutable artifacts, final capture, actual accepted final readout, or any mandatory dependency; no default pass",
+  "final_release_boundary": "Returned readiness/closure policy output does not authorize deployment or replace root9.1 security/accounting/capacity/recovery review/go-no-go",
+  "capacity_qualified": false,
+  "release_qualified": false,
+  "trusted_final_closure_authority_fields": [
+    "capture",
+    "gate_authority",
+    "gate_artifact_root",
+    "capture_acceptance",
+    "capture_acceptance_config",
+    "capture_acceptance_tool_sha256"
+  ],
+  "shared_acceptance_entrypoint": "tools/production/load/capture.py:final_acceptance",
+  "shared_acceptance_config": "Pinned actual current bindings/capture/runtime authority/budget and all signed native scenario proof references; recomputed readout must match saved object exactly",
+  "runtime_lane_coverage": "49 service/domain runtime registrations excluding capture-owning L48; L48 remains mandatory in the complete200 task gate join"
+}

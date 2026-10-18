@@ -1,0 +1,144 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "ERC1967UtilsWrapper",
+  "sourceName": "contracts/test/MockProxy.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "InvalidBeacon",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidImplementation",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "previousAdmin",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "newAdmin",
+          "type": "address"
+        }
+      ],
+      "name": "AdminChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "beacon",
+          "type": "address"
+        }
+      ],
+      "name": "BeaconUpgraded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "implementation",
+          "type": "address"
+        }
+      ],
+      "name": "Upgraded",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "getAdmin",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getBeacon",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getImplementation",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "admin",
+          "type": "address"
+        }
+      ],
+      "name": "setAdmin",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "beacon",
+          "type": "address"
+        }
+      ],
+      "name": "setBeacon",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "impl",
+          "type": "address"
+        }
+      ],
+      "name": "setImplementation",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x60808060405234601557610321908161001b8239f35b600080fdfe608080604052600436101561001357600080fd5b60003560e01c9081632d6b3a6b146102a8575080636e9960c314610260578063704b6c02146101bc578063aaf10f4214610174578063d42afb56146100ed5763d784d4261461006157600080fd5b346100e85760203660031901126100e8576004356001600160a01b038116908181036100e857803b156100d7577f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc557fbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b600080a2005b63340aafcd60e11b60005260046000fd5b600080fd5b346100e85760203660031901126100e8576004356001600160a01b038116908181036100e857803b15610163577fa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50557f1cf3b03a6cf19fa2baba4df148e9dcabedea7f8a5c07840e207e5c089be95d3e600080a2005b6330740e7560e01b60005260046000fd5b346100e85760003660031901126100e8577f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc546040516001600160a01b039091168152602090f35b346100e85760203660031901126100e8576004356001600160a01b0381168082036100e8577f7e644d79422f17c01e4894b5f4f588d331ebfa28653d42ae832dc59e38c9798f916040917fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d610354917fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d61035582519160018060a01b031682526020820152a1005b346100e85760003660031901126100e8577fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103546040516001600160a01b039091168152602090f35b346100e85760003660031901126100e8577fa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50546001600160a01b03168152602090f3fea26469706673582212209a17d6c17e2ca63b146c14df04678367b9f6d54885ce747dd96631668551526464736f6c634300081b0033",
+  "deployedBytecode": "0x608080604052600436101561001357600080fd5b60003560e01c9081632d6b3a6b146102a8575080636e9960c314610260578063704b6c02146101bc578063aaf10f4214610174578063d42afb56146100ed5763d784d4261461006157600080fd5b346100e85760203660031901126100e8576004356001600160a01b038116908181036100e857803b156100d7577f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc557fbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b600080a2005b63340aafcd60e11b60005260046000fd5b600080fd5b346100e85760203660031901126100e8576004356001600160a01b038116908181036100e857803b15610163577fa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50557f1cf3b03a6cf19fa2baba4df148e9dcabedea7f8a5c07840e207e5c089be95d3e600080a2005b6330740e7560e01b60005260046000fd5b346100e85760003660031901126100e8577f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc546040516001600160a01b039091168152602090f35b346100e85760203660031901126100e8576004356001600160a01b0381168082036100e8577f7e644d79422f17c01e4894b5f4f588d331ebfa28653d42ae832dc59e38c9798f916040917fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d610354917fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d61035582519160018060a01b031682526020820152a1005b346100e85760003660031901126100e8577fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103546040516001600160a01b039091168152602090f35b346100e85760003660031901126100e8577fa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50546001600160a01b03168152602090f3fea26469706673582212209a17d6c17e2ca63b146c14df04678367b9f6d54885ce747dd96631668551526464736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

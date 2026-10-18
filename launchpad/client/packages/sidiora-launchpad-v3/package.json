@@ -1,0 +1,21 @@
+{
+  "name": "sidiora-launchpad-v3",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./abis": "./src/abis.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsc && node --test --test-reporter=tap test/*.test.mjs",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "viem": "2.21.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

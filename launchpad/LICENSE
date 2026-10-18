@@ -1,0 +1,20 @@
+Paxlabs HyperPax-OS-Protocol License
+
+Copyright © 2026 Paxlabs Inc. All rights reserved.
+
+Summary (non-binding): You may read, use, deploy, and integrate the
+HyperPax-OS-Protocol. If you modify and distribute/deploy a modified version,
+you must release your changes under this same license. No commercial license is
+required until you cross a Commercial Trigger (e.g., charged fees exceeding
+US$100,000 in any rolling 12-month period or in any single calendar month, or
+Liquidity Under Control exceeding US$10,000,000). This summary is for convenience
+only.
+
+The full license text is included in the `contracts/` workspace:
+
+- `contracts/LICENSE` — complete Paxlabs HyperPax-OS-Protocol License.
+
+The Solidity smart contracts in this repository are licensed under the Paxlabs
+HyperPax-OS-Protocol License. The Go backend and other supporting files are
+provided under the same license unless otherwise noted in their headers or in the
+`licenses/` directory.

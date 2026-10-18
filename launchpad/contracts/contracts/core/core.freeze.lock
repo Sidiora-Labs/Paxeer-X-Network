@@ -1,0 +1,255 @@
+# core.freeze.lock — sidiora-contracts/core
+# Generated: 2026-04-26T04:56Z
+# Auditor: Cascade (automated source audit, indexer-oriented)
+# Network: Paxeer (chainId 125)
+# Addresses source: backend/deployments/paxeer-network-addresses.json
+# ABIs source: backend/deployments/abis/
+
+## Group Identity
+- **Group:** core
+- **Path:** smart-contracts/contracts/core/
+- **Contracts:** PoolBeacon, SidioraERC20, SidioraFactory, SidioraNFT, SidioraPool
+- **Language:** Solidity ^0.8.24 (LicenseRef-Paxlabs-HyperPax-OS-Protocol)
+- **Role:** AMM market creation + bonding-curve pool engine. Spawns ERC20 + Pool +
+  fee-rights NFT in one tx. SidioraPool is the constant-product virtual-reserve AMM
+  that executes every Launchpad swap. Pools are beacon-proxy instances; one
+  PoolBeacon upgrade flips every pool atomically.
+
+---
+
+## SidioraFactory
+
+- **ABI:** `backend/deployments/abis/SidioraFactory.json`
+- **Address proxy:** `paxeer-network-addresses.json#SidioraFactory_proxy` —
+  `0x322170E27d0c5Bd252337791fadED31dc4E85cA6`
+- **Address impl:** `paxeer-network-addresses.json#SidioraFactory_impl` —
+  `0x6E33eb03b59b5Eac5D5db3519db221FB754fc97d`
+- **Prev impl:** `paxeer-network-addresses.json#SidioraFactory_impl_prev`
+- **Pattern:** UUPS proxy. `DEFAULT_ADMIN_ROLE` = Timelock. `ROUTER_ROLE`
+  granted to `Router_proxy` for `createMarketFor`.
+
+### Functions
+
+External (writes):
+- `initialize(beacon, nft, registry, eventEmitter, protocolConfig, treasury, feeAccumulator, usdl, admin)` — one-shot
+- `createMarket(name, symbol, feeStrategy, optical)` → `(token, pool, nftId)` — charges `creationFee` (USDL) from caller
+- `createMarketFor(creator, name, symbol, feeStrategy, optical)` — `ROUTER_ROLE` only; no fee charge (Router already pulled it)
+
+Admin (`DEFAULT_ADMIN_ROLE` / Timelock):
+- UUPS `_authorizeUpgrade`
+
+Views:
+- `poolBeacon()`, `nftContract()`, `poolRegistry()`, `eventEmitter()`,
+  `protocolConfig()`, `treasury()`, `feeAccumulator()`, `usdlAddress()`
+- `getNonce(creator)` — per-creator CREATE2 salt nonce
+
+### Events to index
+- `MarketCreated(tokenAddr, poolAddr, creator, nftId, optical)` — local event
+  in addition to `IEventEmitter.MarketCreated` (the indexer SHOULD prefer the
+  EventEmitter copy because that one is salted with `block.timestamp` and
+  `block.number`).
+
+### Reads (cross-contract)
+- `IProtocolConfig.creationFee / virtualUsdlDefault / virtualTokenDefault`
+- `IPoolRegistry` via `register()` write
+- `ISidioraNFT.mint`
+- `IFeeAccumulator.authorizePool` (grants `POOL_ROLE` to the new pool)
+
+### Writes
+- Deploys new `SidioraERC20` via CREATE2 (salt = keccak256(creator,name,symbol,nonce))
+- Deploys new `BeaconProxyDeployer` (pool proxy) via CREATE2 (salt = keccak256(token))
+- Increments `_nonces[creator]`
+- `IEventEmitter.emitMarketCreated`
+
+### Indexer notes
+- `MarketCreated` is the canonical "new pool" signal. Use the indexed
+  `tokenAddr` to dedupe; CREATE2 salt is deterministic given creator+name+symbol+nonce.
+- The pool address is also derivable from `keccak256(token)` salt + beacon proxy
+  init bytecode — useful for back-filling against historical block ranges.
+
+---
+
+## SidioraPool (AMM engine — beacon-proxy instances)
+
+- **ABI:** `backend/deployments/abis/SidioraPool.json`
+- **Implementation address:** `paxeer-network-addresses.json#SidioraPool_impl` —
+  `0xDc84Cdf2D2553FDa2aCa8741409Cb5AB5b7c0942`
+- **Beacon address:** `paxeer-network-addresses.json#PoolBeacon` —
+  `0xe769859e5a9AEd339931E2717AF00606fA0e847f`
+- **Per-pool addresses:** discovered dynamically via `IPoolRegistry.getAllPools()`
+  and `MarketCreated` events. NOT in `paxeer-network-addresses.json`.
+- **Pattern:** BeaconProxy. Initialized once by Factory. `guardian` (creator) can
+  pause/unpause; no per-pool admin role beyond that.
+
+### Functions
+
+External (writes):
+- `initialize(token, usdl, optical, feeAccumulator, eventEmitter, protocolConfig, guardian, virtualUsdlReserve, tokenReserve)` — one-shot
+- `swap(amountIn, minAmountOut, isBuy, recipient, deadline)` → `amountOut` —
+  the only swap entry-point. Buys (USDL→Token) charge fee in USDL routed to
+  FeeAccumulator. Sells (Token→USDL) charge fee in Token, retained in pool.
+- `syncReserves()` → `(usdlBal, tokenBal)` — anyone can call; reconciles
+  `realUsdlBalance` and `tokenReserve` against actual ERC20 balances. Used by
+  FeesRouter after `executeLpRewards`.
+- `pause()` / `unpause()` — guardian-only
+
+Views:
+- `getReserves()` → `(virtualUsdl, realUsdl, tokenReserve)`
+- `getEffectiveReserves()` → `(virtualUsdl + realUsdl, tokenReserve)`
+- `getPrice()` — current AMM mid-price (USDL per token, scaled)
+- `getPoolInfo()` → `PoolInfo` struct
+- `getPriceSnapshots()` → `uint256[8]` ring buffer (used for volatility-driven fees)
+- `tokenAddress()`, `usdlAddress()`, `opticalAddress()`, `feeAccumulator()`,
+  `eventEmitter()`, `protocolConfig()`, `guardian()`, `creationTimestamp()`,
+  `cumulativeVolume()`, `accumulatedUsdlFees()`, `accumulatedTokenFees()`,
+  `paused()`
+
+### Events to index (emitted via `IEventEmitter` on every swap)
+- `Swap(poolId, sender, isBuy, amountIn, amountOut, fee, price, timestamp, blockNumber)`
+- `PoolStateUpdated(poolId, virtualReserve, realReserve, tokenReserve, price, timestamp, blockNumber)`
+  — emitted by `syncReserves()`
+
+### Reads (per swap)
+- `IProtocolConfig.{baseFeeBps, minFeeBps, maxFeeBps, feeDecayRate, volatilityWeight, concentrationWeight}` for dynamic fee
+- `IOpticalMinimal.{getFlags, beforeSwap, afterSwap}` if `opticalAddress != address(0)`
+- ERC20 `balanceOf` of self for `_getBalance` in `syncReserves`
+
+### Writes (per swap)
+- `tokenReserve`, `realUsdlBalance`, `cumulativeVolume`, `priceSnapshots[snapshotIndex]`
+- `accumulatedUsdlFees` (buy-side) or `accumulatedTokenFees` (sell-side)
+- ERC20 `transfer` of token-out to `recipient`, USDL `transfer` to `feeAccumulator`
+- `IFeeAccumulator.recordFee(pool, feeAmount)` (buy-side only)
+- `IEventEmitter.emitSwap` and `emitPoolStateUpdated` (sync only)
+
+### Indexer notes
+- `poolId = bytes32(uint256(uint160(poolAddress)))` — use this as the canonical
+  primary key in `indexer.pools`. Tokens map 1:1 to pools via Factory.
+- Fee is denominated in INPUT token: USDL on buys, the bonded token on sells.
+  Sell-side fees accrue inside the pool — there is NO `recordFee` on sells.
+- Virtual reserves are pricing-only. `realUsdlBalance` is the upper bound for
+  any sell `amountOut`. `VirtualFloorBreached` revert is the canonical signal
+  that the pool is illiquid USDL-side.
+
+---
+
+## SidioraNFT
+
+- **ABI:** `backend/deployments/abis/SidioraNFT.json`
+- **Address proxy:** `paxeer-network-addresses.json#SidioraNFT_proxy` —
+  `0xb36ac5052b43Eef2807D4F91c494cD5D8EeD3fEa`
+- **Address impl:** `paxeer-network-addresses.json#SidioraNFT_impl` —
+  `0xbbd443de09eb9881cDC27b999441F228fDd53828`
+- **Pattern:** UUPS ERC721Enumerable. `MINTER_ROLE` granted to Factory.
+
+### Functions
+
+External (writes):
+- `initialize(name, symbol, eventEmitter, admin)` — one-shot
+- `mint(to, pool, strategy)` → `tokenId` — `MINTER_ROLE` only (Factory)
+- `setFeeStrategy(tokenId, newStrategy)` — token-owner / approved /
+  `STRATEGY_SETTER_ROLE` (FeesRouter)
+
+Standard ERC721:
+- `transferFrom`, `safeTransferFrom`, `approve`, `setApprovalForAll`,
+  `getApproved`, `isApprovedForAll`, `balanceOf`, `ownerOf`,
+  `tokenOfOwnerByIndex`, `tokenByIndex`, `totalSupply`, `name`, `symbol`,
+  `tokenURI` (likely base + tokenId; verify off-chain)
+
+Views:
+- `nextTokenId()`, `getFeeStrategy(tokenId)`, `getPoolAddress(tokenId)`
+- `supportsInterface(bytes4)`
+
+### Events to index
+- ERC721 `Transfer(from, to, tokenId)` — ownership changes (NFT marketplace,
+  fees claim authority transfer)
+- ERC721 `Approval`, `ApprovalForAll`
+- `PoolNFTMinted(tokenId, owner, pool)` — local event (also pair with
+  `MarketCreated` from Factory by `nftId`)
+- `FeeStrategyChanged(tokenId, oldStrategy, newStrategy)` — local; the same
+  signal is also emitted via `IEventEmitter.FeeStrategyChanged` from
+  `FeesRouter.setFeeStrategy`. Indexer should prefer the EventEmitter copy
+  for poolId association.
+
+### Reads / Writes
+- Reads: `_isApprovedOrOwner` for strategy changes
+- Writes: `_feeStrategy[tokenId]`, `_poolAddress[tokenId]`, ERC721 ownership
+
+### Indexer notes
+- Strategy enum: `0 = CLAIM`, `1 = BURN`, `2 = AIRDROP`, `3 = LP_REWARDS`. Any
+  `newStrategy > 3` reverts.
+- Pair `tokenId` ↔ `pool` is fixed at mint and never changes. Cache it.
+
+---
+
+## PoolBeacon
+
+- **ABI:** `backend/deployments/abis/PoolBeacon.json`
+- **Address:** `paxeer-network-addresses.json#PoolBeacon` —
+  `0xe769859e5a9AEd339931E2717AF00606fA0e847f`
+- **Pattern:** Bare `UpgradeableBeacon` (constructor-only, no proxy). Owner =
+  Timelock at deploy time.
+
+### Functions
+- `implementation()` → `address` — currently
+  `paxeer-network-addresses.json#SidioraPool_impl`
+- `upgradeTo(newImplementation)` — owner only (Timelock-queued)
+- `transferOwnership(newOwner)` / `renounceOwnership()`
+
+### Events to index
+- `Upgraded(implementation)` — atomic upgrade for ALL pools. CRITICAL signal
+  for indexer/frontend cache invalidation: the entire pool semantics may have
+  shifted (storage layout, event ABIs).
+- `OwnershipTransferred(previousOwner, newOwner)`
+
+### Indexer notes
+- Listening to `Upgraded` is the only way to know "every pool now runs new
+  bytecode". Not safe to assume the live contract behavior matches the ABI in
+  `backend/deployments/abis/SidioraPool.json` after an `Upgraded` event without
+  re-fetching that ABI for the new impl.
+
+---
+
+## SidioraERC20
+
+- **ABI:** `backend/deployments/abis/SidioraERC20.json`
+- **Address:** NOT in `paxeer-network-addresses.json` — one ERC20 per pool,
+  CREATE2-derived, discovered via Factory `MarketCreated` event.
+- **Pattern:** Immutable, non-upgradeable. Constructor mints `_totalSupply` to
+  `_recipient` (always the new pool). 6 decimals (USDL parity).
+
+### Functions
+- Standard ERC20: `transfer`, `transferFrom`, `approve`, `allowance`,
+  `balanceOf`, `totalSupply`, `name`, `symbol`, `decimals`
+- EIP-2612 permit (verify in `ERC20Base` — Router uses `permit(owner,spender,value,deadline,v,r,s)`)
+
+### Events to index
+- ERC20 `Transfer(from, to, value)` — for holder counts and balance snapshots
+- ERC20 `Approval(owner, spender, value)`
+
+### Indexer notes
+- `decimals == 6`. Total supply is `IProtocolConfig.virtualTokenDefault()` at
+  market creation time (currently `1_000_000_000e6` = 1B with 6 decimals).
+- No mint/burn after constructor. `Transfer(from=0)` only fires once at creation
+  (mint to pool); `Transfer(to=0)` never fires under normal operation but COULD
+  if a user manually transfers to address(0) — track for unique holder count.
+
+---
+
+## Cross-cutting reads / writes summary (Group → External)
+
+| External Contract | Read by                        | Write by                       |
+| ----------------- | ------------------------------ | ------------------------------ |
+| `ProtocolConfig`  | Pool, Factory                  | —                              |
+| `PoolRegistry`    | EventEmitter (auth check)      | Factory (`register`)           |
+| `EventEmitter`    | —                              | Pool, Factory, NFT             |
+| `FeeAccumulator`  | Pool (recordFee dest)          | Pool (`recordFee`), Factory (`authorizePool`) |
+| `Treasury`        | (indirect via FeeAccumulator)  | —                              |
+| `IOpticalMinimal` | Pool (per-swap hooks)          | —                              |
+| `USDL ERC20`      | Pool (transfer in/out)         | —                              |
+| `Token (ERC20)`   | Pool (balance/transfer)        | Factory (deploy + initial mint)|
+
+## Coverage caveats
+- This freeze locks the on-chain SURFACE only. Behavioral edge cases (e.g.
+  optical revert handling, pause races during `syncReserves`) are NOT enumerated
+  here — see `docs/architecture/pecor-sidiora-aggregator-spec.md` for the
+  governing invariants.

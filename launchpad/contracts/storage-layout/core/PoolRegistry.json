@@ -1,0 +1,223 @@
+{
+  "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+  "compiler": "0.8.27+commit.40a35a09",
+  "provenance": {
+    "kind": "original audit compiler snapshot, not asserted live deployment",
+    "buildInfoSha256": "c7226196d703743a9f291414539d6dc5579640844b294d141253bce91b8ed2d7",
+    "sourceManifest": "audit/2026-10-09/source-manifest.json"
+  },
+  "storage": [
+    {
+      "astId": 277,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "_roles",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_mapping(t_bytes32,t_struct(RoleData)272_storage)"
+    },
+    {
+      "astId": 7426,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "_tokenToPool",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_mapping(t_address,t_address)"
+    },
+    {
+      "astId": 7430,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "_poolToNftId",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 7435,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "_creatorToPools",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_mapping(t_address,t_array(t_address)dyn_storage)"
+    },
+    {
+      "astId": 7440,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "_poolMetadata",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_mapping(t_address,t_struct(PoolMetadata)9376_storage)"
+    },
+    {
+      "astId": 7444,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "_registeredPools",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_mapping(t_address,t_bool)"
+    },
+    {
+      "astId": 7447,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "_allPools",
+      "offset": 0,
+      "slot": "6",
+      "type": "t_array(t_address)dyn_storage"
+    },
+    {
+      "astId": 7449,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "eventEmitter",
+      "offset": 0,
+      "slot": "7",
+      "type": "t_address"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_address)dyn_storage": {
+      "base": "t_address",
+      "encoding": "dynamic_array",
+      "label": "address[]",
+      "numberOfBytes": "32"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_bytes32": {
+      "encoding": "inplace",
+      "label": "bytes32",
+      "numberOfBytes": "32"
+    },
+    "t_mapping(t_address,t_address)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => address)",
+      "numberOfBytes": "32",
+      "value": "t_address"
+    },
+    "t_mapping(t_address,t_array(t_address)dyn_storage)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => address[])",
+      "numberOfBytes": "32",
+      "value": "t_array(t_address)dyn_storage"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_address,t_struct(PoolMetadata)9376_storage)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => struct IPoolRegistry.PoolMetadata)",
+      "numberOfBytes": "32",
+      "value": "t_struct(PoolMetadata)9376_storage"
+    },
+    "t_mapping(t_address,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_mapping(t_bytes32,t_struct(RoleData)272_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct AccessControl.RoleData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(RoleData)272_storage"
+    },
+    "t_struct(PoolMetadata)9376_storage": {
+      "encoding": "inplace",
+      "label": "struct IPoolRegistry.PoolMetadata",
+      "members": [
+        {
+          "astId": 9365,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "creator",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_address"
+        },
+        {
+          "astId": 9367,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "token",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_address"
+        },
+        {
+          "astId": 9369,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "optical",
+          "offset": 0,
+          "slot": "2",
+          "type": "t_address"
+        },
+        {
+          "astId": 9371,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "nftId",
+          "offset": 0,
+          "slot": "3",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 9373,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "createdAt",
+          "offset": 0,
+          "slot": "4",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 9375,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "createdBlock",
+          "offset": 0,
+          "slot": "5",
+          "type": "t_uint256"
+        }
+      ],
+      "numberOfBytes": "192"
+    },
+    "t_struct(RoleData)272_storage": {
+      "encoding": "inplace",
+      "label": "struct AccessControl.RoleData",
+      "members": [
+        {
+          "astId": 269,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "hasRole",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_address,t_bool)"
+        },
+        {
+          "astId": 271,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "adminRole",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_bytes32"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}

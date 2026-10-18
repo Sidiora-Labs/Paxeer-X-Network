@@ -1,0 +1,35 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "PrimitiveBadBeacon",
+  "sourceName": "contracts/test/PrimitiveAuditHarness.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "target",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "implementation",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x608034606f57601f61010e38819003918201601f19168301916001600160401b03831184841017607457808492602094604052833981010312606f57516001600160a01b03811690819003606f57600080546001600160a01b0319169190911790556040516083908161008b8239f35b600080fd5b634e487b7160e01b600052604160045260246000fdfe6080806040526004361015601257600080fd5b60003560e01c635c60da1b14602657600080fd5b3460485760003660031901126048576000546001600160a01b03168152602090f35b600080fdfea2646970667358221220d3ac42f752205f2bd068ecb84ef70ebd3c934f3997a192e5ca5af74e391000a764736f6c634300081b0033",
+  "deployedBytecode": "0x6080806040526004361015601257600080fd5b60003560e01c635c60da1b14602657600080fd5b3460485760003660031901126048576000546001600160a01b03168152602090f35b600080fdfea2646970667358221220d3ac42f752205f2bd068ecb84ef70ebd3c934f3997a192e5ca5af74e391000a764736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

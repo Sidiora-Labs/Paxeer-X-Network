@@ -1,0 +1,52 @@
+{
+  "schema_version": 3,
+  "task": "3.49",
+  "chain_id": 125,
+  "required_bindings": [
+    "baseline",
+    "candidate",
+    "interface",
+    "layout",
+    "topology",
+    "attempt",
+    "namespace",
+    "started_epoch",
+    "finished_epoch"
+  ],
+  "allowed_levels": [
+    "actual_integrated_service",
+    "actual_browser",
+    "actual_chain_receipt",
+    "actual_postgresql",
+    "actual_jetstream",
+    "actual_docker_resource"
+  ],
+  "required_artifacts": [
+    "actual browser screenshot and trace for each scenario",
+    "raw gateway request body and response with request IDs",
+    "raw bound native fault provider outputs with SHA256",
+    "actual before/after Docker state under exact isolated resource and named-volume labels",
+    "repeatable-read PostgreSQL acknowledged/blocked/recovered snapshots",
+    "actual per-consumer committed-before-ACK and redelivery transport observations",
+    "actual quorum/failover topology provider observations",
+    "actual denied incompatible candidate rollback outputs"
+  ],
+  "forbidden_substitutions": [
+    "mathematical fixtures for runtime behavior",
+    "source-only prior gate2.99",
+    "fake settlement, synthetic receipt or balance",
+    "broker deduplication for actual consumer delivery",
+    "scanner outage rejection caused only by absent authorization",
+    "fabricated successful state during dependency loss",
+    "ordinary canonical rollback during RPC disagreement",
+    "shared host, production or validator fault targets",
+    "unowned or bind-mounted recovery volumes",
+    "absent provider interpreted as successful scenario"
+  ],
+  "excluded_artifacts": [
+    ".private browser session credentials"
+  ],
+  "production_qualified": false,
+  "capacity_qualified": false,
+  "disaster_recovery_qualified": false
+}

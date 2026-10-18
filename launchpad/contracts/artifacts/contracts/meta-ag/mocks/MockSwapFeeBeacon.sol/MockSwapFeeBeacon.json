@@ -1,0 +1,66 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "MockSwapFeeBeacon",
+  "sourceName": "contracts/meta-ag/mocks/MockSwapFeeBeacon.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "initialFeeBps_",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "ForcedRevert",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "newFeeBps",
+          "type": "uint256"
+        }
+      ],
+      "name": "setFeeBps",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bool",
+          "name": "flag",
+          "type": "bool"
+        }
+      ],
+      "name": "setRevert",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "swapFeeBps",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x608034604d57601f61015838819003918201601f19168301916001600160401b03831184841017605257808492602094604052833981010312604d575160005560405160ef90816100698239f35b600080fd5b634e487b7160e01b600052604160045260246000fdfe6080806040526004361015601257600080fd5b60003560e01c9081632ffdaf891460865750806372c27b6214606f57638fb5f17114603c57600080fd5b34606a576020366003190112606a57600435801515809103606a5760ff801960015416911617600155600080f35b600080fd5b34606a576020366003190112606a57600435600055005b34606a576000366003190112606a5760ff6001541660a8576020906000548152f35b635d7efbe560e11b60005260046000fdfea2646970667358221220c9b7479d8c8914b1e5a3dad43c4796cc473a687208ccaa1e4bcd22b8f543bbd664736f6c634300081b0033",
+  "deployedBytecode": "0x6080806040526004361015601257600080fd5b60003560e01c9081632ffdaf891460865750806372c27b6214606f57638fb5f17114603c57600080fd5b34606a576020366003190112606a57600435801515809103606a5760ff801960015416911617600155600080f35b600080fd5b34606a576020366003190112606a57600435600055005b34606a576000366003190112606a5760ff6001541660a8576020906000548152f35b635d7efbe560e11b60005260046000fdfea2646970667358221220c9b7479d8c8914b1e5a3dad43c4796cc473a687208ccaa1e4bcd22b8f543bbd664736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

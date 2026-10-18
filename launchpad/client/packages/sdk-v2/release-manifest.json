@@ -1,0 +1,15 @@
+{
+  "apiMajor": 2,
+  "generatorSha256": "939b35c965e0469ace271c9f2ffbf8b96836a901b7866d6ce64cdb80010df35e",
+  "inputs": {
+    "asyncapi.json": "067cd398604ba2a29bc05862032bfe75e136e9e51698dad99be8c69d6010e57f",
+    "openapi.json": "2ded9eb2c442d61281a187516bb07bcc35d5197cc554b96e42f8b843fd66a100",
+    "schema-definitions.json": "7e08cc4a215d19d08995c2bda0bd902b60687593727e3c3abfa2605fc136e0cf"
+  },
+  "outputs": {
+    "schemas.gen.json": "b4a27915f9025e6d2a282a10eb119a8897a5fe7d0362852a304d795479ff7eae",
+    "types.gen.ts": "ed911a0a52bc2bff9bc6d7a4c55423da3eb1ea5b336bd4b710fbb3e6ba60a7b2"
+  },
+  "streamMajor": 2,
+  "streamSubprotocol": "sidiora.v2"
+}

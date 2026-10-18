@@ -1,0 +1,414 @@
+{
+  "storage": [
+    {
+      "astId": 286,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "_roles",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_mapping(t_bytes32,t_struct(RoleData)281_storage)"
+    },
+    {
+      "astId": 30751,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "authorizedRelayers",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_mapping(t_address,t_bool)"
+    },
+    {
+      "astId": 30756,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "_tokenConfigs",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_mapping(t_address,t_struct(TokenConfig)25115_storage)"
+    },
+    {
+      "astId": 30761,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "_latestPrices",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_mapping(t_address,t_struct(PriceData)25102_storage)"
+    },
+    {
+      "astId": 30768,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "_priceHistory",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_mapping(t_address,t_mapping(t_uint256,t_struct(PriceData)25102_storage))"
+    },
+    {
+      "astId": 30772,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "_currentRounds",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 30776,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "_priceCumulativeLast",
+      "offset": 0,
+      "slot": "6",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 30780,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "_lastCumulativeTimestamp",
+      "offset": 0,
+      "slot": "7",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 30787,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "_twapSnapshots",
+      "offset": 0,
+      "slot": "8",
+      "type": "t_mapping(t_address,t_mapping(t_uint256,t_struct(TWAPSnapshot)30730_storage))"
+    },
+    {
+      "astId": 30791,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "_twapSnapshotIndex",
+      "offset": 0,
+      "slot": "9",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 30794,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "_registeredTokens",
+      "offset": 0,
+      "slot": "10",
+      "type": "t_array(t_address)dyn_storage"
+    },
+    {
+      "astId": 30798,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "_tokenIndex",
+      "offset": 0,
+      "slot": "11",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 30803,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "__gap",
+      "offset": 0,
+      "slot": "12",
+      "type": "t_array(t_uint256)50_storage"
+    },
+    {
+      "astId": 30817,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "_observations",
+      "offset": 0,
+      "slot": "62",
+      "type": "t_mapping(t_address,t_mapping(t_uint256,t_struct(Observation)30810_storage))"
+    },
+    {
+      "astId": 30821,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "_observationCount",
+      "offset": 0,
+      "slot": "63",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 30825,
+      "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+      "label": "_firstBoundedRound",
+      "offset": 0,
+      "slot": "64",
+      "type": "t_mapping(t_address,t_uint256)"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_address)dyn_storage": {
+      "base": "t_address",
+      "encoding": "dynamic_array",
+      "label": "address[]",
+      "numberOfBytes": "32"
+    },
+    "t_array(t_uint256)50_storage": {
+      "base": "t_uint256",
+      "encoding": "inplace",
+      "label": "uint256[50]",
+      "numberOfBytes": "1600"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_bytes32": {
+      "encoding": "inplace",
+      "label": "bytes32",
+      "numberOfBytes": "32"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_address,t_mapping(t_uint256,t_struct(Observation)30810_storage))": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => mapping(uint256 => struct PriceOracle.Observation))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint256,t_struct(Observation)30810_storage)"
+    },
+    "t_mapping(t_address,t_mapping(t_uint256,t_struct(PriceData)25102_storage))": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => mapping(uint256 => struct IPriceOracle.PriceData))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint256,t_struct(PriceData)25102_storage)"
+    },
+    "t_mapping(t_address,t_mapping(t_uint256,t_struct(TWAPSnapshot)30730_storage))": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => mapping(uint256 => struct PriceOracle.TWAPSnapshot))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint256,t_struct(TWAPSnapshot)30730_storage)"
+    },
+    "t_mapping(t_address,t_struct(PriceData)25102_storage)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => struct IPriceOracle.PriceData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(PriceData)25102_storage"
+    },
+    "t_mapping(t_address,t_struct(TokenConfig)25115_storage)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => struct IPriceOracle.TokenConfig)",
+      "numberOfBytes": "32",
+      "value": "t_struct(TokenConfig)25115_storage"
+    },
+    "t_mapping(t_address,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_mapping(t_bytes32,t_struct(RoleData)281_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct AccessControl.RoleData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(RoleData)281_storage"
+    },
+    "t_mapping(t_uint256,t_struct(Observation)30810_storage)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => struct PriceOracle.Observation)",
+      "numberOfBytes": "32",
+      "value": "t_struct(Observation)30810_storage"
+    },
+    "t_mapping(t_uint256,t_struct(PriceData)25102_storage)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => struct IPriceOracle.PriceData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(PriceData)25102_storage"
+    },
+    "t_mapping(t_uint256,t_struct(TWAPSnapshot)30730_storage)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => struct PriceOracle.TWAPSnapshot)",
+      "numberOfBytes": "32",
+      "value": "t_struct(TWAPSnapshot)30730_storage"
+    },
+    "t_struct(Observation)30810_storage": {
+      "encoding": "inplace",
+      "label": "struct PriceOracle.Observation",
+      "members": [
+        {
+          "astId": 30805,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "cumulative",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 30807,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "timestamp",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 30809,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "price",
+          "offset": 0,
+          "slot": "2",
+          "type": "t_uint256"
+        }
+      ],
+      "numberOfBytes": "96"
+    },
+    "t_struct(PriceData)25102_storage": {
+      "encoding": "inplace",
+      "label": "struct IPriceOracle.PriceData",
+      "members": [
+        {
+          "astId": 25095,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "price",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 25097,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "timestamp",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 25099,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "roundId",
+          "offset": 0,
+          "slot": "2",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 25101,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "relayer",
+          "offset": 0,
+          "slot": "3",
+          "type": "t_address"
+        }
+      ],
+      "numberOfBytes": "128"
+    },
+    "t_struct(RoleData)281_storage": {
+      "encoding": "inplace",
+      "label": "struct AccessControl.RoleData",
+      "members": [
+        {
+          "astId": 278,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "hasRole",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_address,t_bool)"
+        },
+        {
+          "astId": 280,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "adminRole",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_bytes32"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_struct(TWAPSnapshot)30730_storage": {
+      "encoding": "inplace",
+      "label": "struct PriceOracle.TWAPSnapshot",
+      "members": [
+        {
+          "astId": 30727,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "cumulativePrice",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 30729,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "timestamp",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_uint256"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_struct(TokenConfig)25115_storage": {
+      "encoding": "inplace",
+      "label": "struct IPriceOracle.TokenConfig",
+      "members": [
+        {
+          "astId": 25104,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "isRegistered",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_bool"
+        },
+        {
+          "astId": 25106,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "heartbeatInterval",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 25108,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "deviationThresholdBps",
+          "offset": 0,
+          "slot": "2",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 25110,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "maxPriceBound",
+          "offset": 0,
+          "slot": "3",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 25112,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "minPriceBound",
+          "offset": 0,
+          "slot": "4",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 25114,
+          "contract": "contracts/meta-ag/oracle/PriceOracle.sol:PriceOracle",
+          "label": "maxStaleness",
+          "offset": 0,
+          "slot": "5",
+          "type": "t_uint256"
+        }
+      ],
+      "numberOfBytes": "192"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}

@@ -1,0 +1,984 @@
+{
+  "_meta": {
+    "network": "125",
+    "deployer": "0x1DAe78b53C9F39930a2Ff2B6B7AaC12EC75FB154",
+    "status": "finalized",
+    "usdl": "0x85fcd13735f4309833a503ee804ea32395851479",
+    "sid": null,
+    "guardian": "0x1DAe78b53C9F39930a2Ff2B6B7AaC12EC75FB154",
+    "timelockDelay": 172800,
+    "governanceMode": "admin",
+    "governanceAdmin": "0x1DAe78b53C9F39930a2Ff2B6B7AaC12EC75FB154"
+  },
+  "_deployment": {
+    "version": 1,
+    "configHash": "0x4e397aea56d177b0fa53141badedd6b75415b98a106a8ff1ae439f2c32eaeaad",
+    "config": {
+      "usdl": "0x85fcd13735f4309833a503ee804ea32395851479",
+      "sid": null,
+      "governanceMode": "admin",
+      "governanceAdmin": "0x1dae78b53c9f39930a2ff2b6b7aac12ec75fb154",
+      "guardian": "0x1dae78b53c9f39930a2ff2b6b7aac12ec75fb154",
+      "delay": 172800,
+      "network": "paxeer-x-network",
+      "usdlCodeHash": "0xa5d84d5e9db89e88646654510a9445271bdd67c3b0e84c64e923c6b82589aaaf",
+      "sidCodeHash": null
+    },
+    "deployer": "0x1DAe78b53C9F39930a2Ff2B6B7AaC12EC75FB154",
+    "inherited": {},
+    "records": {
+      "EventEmitter_impl": {
+        "name": "EventEmitter",
+        "args": [],
+        "creationHash": "0x49007705c7a17f521925338f0fbccd32477c9814ef05ebcb0b7f348d174800c0",
+        "address": "0x6d48a32e313cc4F08acdeE1F39F7e6B56F03a1cB",
+        "nonce": 0,
+        "value": "0",
+        "preparedBlock": 32225859,
+        "status": "confirmed",
+        "txHash": "0xb6b722e1cb3b6efc315a94d2c29a67f1aed468addefcf6affa45fc145b89c059",
+        "runtimeHash": "0xd0dc6f1aa54811dc2b9ea13e4519b6b6992ba0a082ac55c2d9e312443b289c08",
+        "blockNumber": 32225866
+      },
+      "EventEmitter_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0x6d48a32e313cc4F08acdeE1F39F7e6B56F03a1cB",
+          "0xc4d66de80000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+        ],
+        "creationHash": "0x6182cd516a6f759331b1138f81731cb9220e470ca86327e21bdf4aee62ca1633",
+        "address": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "nonce": 1,
+        "value": "0",
+        "preparedBlock": 32225874,
+        "status": "confirmed",
+        "txHash": "0xa4053aaacbca2956b6e22ab306335208db270c28ab60df1140b18c3702e0ce5a",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 32225877
+      },
+      "ProtocolConfig_impl": {
+        "name": "ProtocolConfig",
+        "args": [],
+        "creationHash": "0xf714f4fd26a31456a3c88966289306a2657bce7f31cbd8687acc9e07f2419247",
+        "address": "0xE612759AaA47E96B0801Fb506e4E115C4756Dca5",
+        "nonce": 2,
+        "value": "0",
+        "preparedBlock": 32225882,
+        "status": "confirmed",
+        "txHash": "0xe959e967c3a6c63f70efb689b6746ea90562b9b151d0a6e2e086a2f8595ae4c8",
+        "runtimeHash": "0x951a356ea08b211a69a8f6247a3cd2cbffbaefb23c6c528c2e9c0d794f6cd9c8",
+        "blockNumber": 32225886
+      },
+      "ProtocolConfig_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0xE612759AaA47E96B0801Fb506e4E115C4756Dca5",
+          "0xc0c53b8b00000000000000000000000085fcd13735f4309833a503ee804ea32395851479000000000000000000000000622e1bb90e0e2b6e6e5e9e2dbe1555389e8a3ef60000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+        ],
+        "creationHash": "0x9d0aee9cfbfd302741fb48b81d0292eaae4612dc335f24583bff29e2b5ebe019",
+        "address": "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
+        "nonce": 3,
+        "value": "0",
+        "preparedBlock": 32225889,
+        "status": "confirmed",
+        "txHash": "0x83b363dc187605d48d29936971b81cfb1742303dbcbe0104eab4f6b97528ba1f",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 32225894
+      },
+      "Treasury_impl": {
+        "name": "Treasury",
+        "args": [],
+        "creationHash": "0x332d8a3392311445aaf2f6b3f202c28fdfedbc5476b590dbabe3659b3e3efed8",
+        "address": "0xF8d7ba698cFd5Ef6607679E506305C38B3A1b7B6",
+        "nonce": 4,
+        "value": "0",
+        "preparedBlock": 32225899,
+        "status": "confirmed",
+        "txHash": "0xc292e302cd453f4e5703ced5af3030e54b2dcc566093251c6a5900fc20e50c59",
+        "runtimeHash": "0xc30ea8fb9d01825692b148659cc2a14af5759f962d14d2216498ed618bca5244",
+        "blockNumber": 32225907
+      },
+      "Treasury_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0xF8d7ba698cFd5Ef6607679E506305C38B3A1b7B6",
+          "0x485cc955000000000000000000000000622e1bb90e0e2b6e6e5e9e2dbe1555389e8a3ef60000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+        ],
+        "creationHash": "0xf72e5e92da8a0d88c4954deee0151d0fab0ccb524cbddd996f2b8c2dc1410212",
+        "address": "0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723",
+        "nonce": 5,
+        "value": "0",
+        "preparedBlock": 32225912,
+        "status": "confirmed",
+        "txHash": "0x60b56aa34a5c29c2917ed3b640753a5bb90cc3b06579117c5410cb3b187d77c9",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 32225918
+      },
+      "Timelock": {
+        "name": "Timelock",
+        "args": [
+          172800,
+          "0x1DAe78b53C9F39930a2Ff2B6B7AaC12EC75FB154",
+          "0x1DAe78b53C9F39930a2Ff2B6B7AaC12EC75FB154"
+        ],
+        "creationHash": "0x124e9e73ffd14fd4e49cc3fd22139ff7691da4351cca09af774ceff4b102a27f",
+        "address": "0xE3e71911664062753b56F72965D906295625d6c0",
+        "nonce": 6,
+        "value": "0",
+        "preparedBlock": 32225922,
+        "status": "confirmed",
+        "txHash": "0x2cdcc990046fae16417e9927fba4251343c18f7d5fead1a488222aa1a1eeb3a3",
+        "runtimeHash": "0x533e56db88702e85e2ad116a20de035e626385baa84b523b466e2e9c04567a7d",
+        "blockNumber": 32225924
+      },
+      "GovernanceModule_impl": {
+        "name": "GovernanceModule",
+        "args": [],
+        "creationHash": "0x31c27f8dc88c9e668a60b6cf64696dbcdc90a2e6f57b9a29b1f975707e1691fd",
+        "address": "0x7680Ba880b651E565eb2ae26AB5448AB5a0dE0F4",
+        "nonce": 7,
+        "value": "0",
+        "preparedBlock": 32225930,
+        "status": "confirmed",
+        "txHash": "0x78864daf3415767bbe550e967b008ad807a7837a7afdc3dddab8ff0a18306348",
+        "runtimeHash": "0x208ab994903b9a0798c4be3aeb1070883359a31946d1635320cd4ef4bc11c2f1",
+        "blockNumber": 32225932
+      },
+      "GovernanceModule_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0x7680Ba880b651E565eb2ae26AB5448AB5a0dE0F4",
+          "0x72c6d4d5000000000000000000000000e3e71911664062753b56f72965d906295625d6c00000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+        ],
+        "creationHash": "0xc2da192a6a7984eae50efe69af39566825c8ceac8df9b78e81bc51adffcf4218",
+        "address": "0xD14307637A6189b9fE872C87e5d62e942a5B4d7c",
+        "nonce": 8,
+        "value": "0",
+        "preparedBlock": 32225937,
+        "status": "confirmed",
+        "txHash": "0x1c8d605cec390aadc48b3808b097cbd5e7a756ddcb0ad904d16d9f69f1bdc0b2",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 32225939
+      },
+      "PoolRegistry_impl": {
+        "name": "PoolRegistry",
+        "args": [],
+        "creationHash": "0x1ef58fa8f2ac4e6486cb4e6d858598ae6a7695727acd64841f3a4ebe4aa07314",
+        "address": "0x0e4d66894321e7e29803eF63E618bF07B9772687",
+        "nonce": 9,
+        "value": "0",
+        "preparedBlock": 32225945,
+        "status": "confirmed",
+        "txHash": "0xc48957f99fc4a391eef1b8fbe20d14af0b0815ea164059fdcd0f12ed9e59c706",
+        "runtimeHash": "0xc74db1081c5791cda0336d914cdc44cd31cfb656c8b8aaa0c2e200123503e216",
+        "blockNumber": 32225949
+      },
+      "PoolRegistry_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0x0e4d66894321e7e29803eF63E618bF07B9772687",
+          "0x485cc955000000000000000000000000622e1bb90e0e2b6e6e5e9e2dbe1555389e8a3ef60000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+        ],
+        "creationHash": "0x0e33db450aec7dc8896a3ce0b4460ecacf1d8218dd53e4bc77031ce51c42673e",
+        "address": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+        "nonce": 10,
+        "value": "0",
+        "preparedBlock": 32225955,
+        "status": "confirmed",
+        "txHash": "0x47410bdc66329a3a0a289e3faf10c9fcd99f7c87683a67bfb598631c3f4006cc",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 32225959
+      },
+      "FeeAccumulator_impl": {
+        "name": "FeeAccumulator",
+        "args": [],
+        "creationHash": "0x107ff7e33af4a7007c167a0acc2a0fa753ffa65cf3f40ad9d7a195a21f937285",
+        "address": "0xc21a8f1f8cd416D8B84a0627b4c4bfcc3a6c15a0",
+        "nonce": 11,
+        "value": "0",
+        "preparedBlock": 32225965,
+        "status": "confirmed",
+        "txHash": "0x03bfc0a70ea53838add2b90736214fb1593bbefc4439ae1b6edc94357c06f91e",
+        "runtimeHash": "0x4117715336d6a32d4e3c26038adbf576f6eb85f9787b296118c49cf5dbbbb40a",
+        "blockNumber": 32225969
+      },
+      "FeeAccumulator_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0xc21a8f1f8cd416D8B84a0627b4c4bfcc3a6c15a0",
+          "0xcc2a9a5b000000000000000000000000f3669edc475cb6e1f0d7635240abd8e8fb7e20c6000000000000000000000000bb82d74e071e03d8e68f1d78fae9efe8b6b7a7230000000000000000000000001dc357d2b7b850332a91f06a9e66634f46fc4ba7000000000000000000000000622e1bb90e0e2b6e6e5e9e2dbe1555389e8a3ef600000000000000000000000085fcd13735f4309833a503ee804ea323958514790000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+        ],
+        "creationHash": "0xd18c81be480d0d835395bdf0e37f0ac379aec641ec1f9a7d50141cc2e9f0e6e2",
+        "address": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+        "nonce": 12,
+        "value": "0",
+        "preparedBlock": 32225973,
+        "status": "confirmed",
+        "txHash": "0x37d57565c1bb6de15113c670f42627c62892b4064c25d7842a43485b9ae5a147",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 32225976
+      },
+      "SidioraPool_impl": {
+        "name": "SidioraPool",
+        "args": [],
+        "creationHash": "0xda0e248417f3cfe2186a3093360d2b9edc8efcf3ca1a9ec6f682890b7181460d",
+        "address": "0xd24b239df92CA233dF27676148FDe10aa51104Df",
+        "nonce": 13,
+        "value": "0",
+        "preparedBlock": 32225980,
+        "status": "confirmed",
+        "txHash": "0x5c7ed7a9bb2be8cd655108ba7f6ca902665f51f13ce9b017afb31a4d95785f49",
+        "runtimeHash": "0xeeadddb17507c0b32fb9c1c76f66b33b4757efd3531d86ac6a61c96d81d8bde4",
+        "blockNumber": 32225983
+      },
+      "PoolBeacon": {
+        "name": "PoolBeacon",
+        "args": [
+          "0xd24b239df92CA233dF27676148FDe10aa51104Df",
+          "0x1DAe78b53C9F39930a2Ff2B6B7AaC12EC75FB154"
+        ],
+        "creationHash": "0x67e414215989bff3df2a8f707dcfb37b343706430afa7746477248224348ebba",
+        "address": "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE",
+        "nonce": 14,
+        "value": "0",
+        "preparedBlock": 32225989,
+        "status": "confirmed",
+        "txHash": "0x8c16682f2ea3cbcbd3c32ca14f8fec31ad3171b75354294995cd25d41e8b9b73",
+        "runtimeHash": "0xf06aa3fb14a04a50dcfbb95510fd19bfddc057f95349e63115b8495223aca447",
+        "blockNumber": 32226006
+      },
+      "SidioraNFT_impl": {
+        "name": "SidioraNFT",
+        "args": [],
+        "creationHash": "0x217a03311632e4d3edd119ef70c3e7254602cd5c68331c093ff3f5bd0989022c",
+        "address": "0x799CeE9468FCd5B504F267658619C7540b2D9650",
+        "nonce": 15,
+        "value": "0",
+        "preparedBlock": 32226017,
+        "status": "confirmed",
+        "txHash": "0x3b018afaa7dbe5f151af3c6fdea9a5ef9893cfaee30035420779949211535c85",
+        "runtimeHash": "0x5b62b9bae123fe58a8efc58d966a21718df022a399894d3da7f767b635661d28",
+        "blockNumber": 32226035
+      },
+      "SidioraNFT_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0x799CeE9468FCd5B504F267658619C7540b2D9650",
+          "0x8f15b414000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000622e1bb90e0e2b6e6e5e9e2dbe1555389e8a3ef60000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb1540000000000000000000000000000000000000000000000000000000000000010536964696f726120506f6f6c204e46540000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000065349444e46540000000000000000000000000000000000000000000000000000"
+        ],
+        "creationHash": "0x494767a966f6f001b93c74a5e9ab3e367efedad969d619792ff1182bf9068f56",
+        "address": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+        "nonce": 16,
+        "value": "0",
+        "preparedBlock": 32226040,
+        "status": "confirmed",
+        "txHash": "0xf2d5bcc51fbc4d5018f147823a4ec5a3a92e67413f8f86daf1ba463665ba3b2f",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 32226053
+      },
+      "SidioraFactory_impl": {
+        "name": "SidioraFactory",
+        "args": [],
+        "creationHash": "0x1949741c397521c3dfa23bd5dba05c3406d222997b3a66ecdf14de3f2da0a682",
+        "address": "0xAA348015a0dA5FE65296481B0e98EF240bd57AF4",
+        "nonce": 17,
+        "value": "0",
+        "preparedBlock": 32226058,
+        "status": "confirmed",
+        "txHash": "0xf89f0d85b713099d42495e84a6ea21f9909d1dc534b4d6064d067c2593d08cbb",
+        "runtimeHash": "0xd1737d0ee5a34a19259d7efac0f2ca8a4cc6a89de64cffc44c09fa0ecd533389",
+        "blockNumber": 32226077
+      },
+      "SidioraFactory_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0xAA348015a0dA5FE65296481B0e98EF240bd57AF4",
+          "0xf5e95acb0000000000000000000000000c60ea33b1dd602a17e1ef1875ee912f3fad71be000000000000000000000000e8dcc844a8006dbf64f5bb851bcad90292a6409b0000000000000000000000001dc357d2b7b850332a91f06a9e66634f46fc4ba7000000000000000000000000622e1bb90e0e2b6e6e5e9e2dbe1555389e8a3ef6000000000000000000000000f3669edc475cb6e1f0d7635240abd8e8fb7e20c6000000000000000000000000bb82d74e071e03d8e68f1d78fae9efe8b6b7a7230000000000000000000000007b14808b72f61664cdb79d25e6d1587655571a6600000000000000000000000085fcd13735f4309833a503ee804ea323958514790000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+        ],
+        "creationHash": "0xce23471be2a5d3378506458a66fc3ec91f03f75bb83f78cdcbb4fcb5e9de37fa",
+        "address": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+        "nonce": 18,
+        "value": "0",
+        "preparedBlock": 32226084,
+        "status": "confirmed",
+        "txHash": "0x8d84d55195a45572539afed2adbf28686d7aa85d3f913d0fcc2c6c924430bc28",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 32226098
+      },
+      "OpticalRegistry_impl": {
+        "name": "OpticalRegistry",
+        "args": [],
+        "creationHash": "0xe8a97ad270aca242071a676e1a02011341bcb8be95b9d1ea7d60ee4e44c1461a",
+        "address": "0x2d9666F5CC900092Ceb7D3867b1fd7f6178C3F3E",
+        "nonce": 19,
+        "value": "0",
+        "preparedBlock": 32226103,
+        "status": "confirmed",
+        "txHash": "0x986bf1f1375eb1a23d673aaf524ecdc6c8a3eb812380161ca112ab1d48246d23",
+        "runtimeHash": "0xadf625b36b1dd5241f679fa029e66aa980eb5968f46fe557e8ae864ab157e0e5",
+        "blockNumber": 32226110
+      },
+      "OpticalRegistry_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0x2d9666F5CC900092Ceb7D3867b1fd7f6178C3F3E",
+          "0x485cc955000000000000000000000000622e1bb90e0e2b6e6e5e9e2dbe1555389e8a3ef60000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+        ],
+        "creationHash": "0x0a1bb57e4b437c9f6c280db66e4f62feab3c13fd6bd1d6e92b97f97cecfbcb53",
+        "address": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
+        "nonce": 20,
+        "value": "0",
+        "preparedBlock": 32226117,
+        "status": "confirmed",
+        "txHash": "0x0cb94ac8dd4075c77db7410aef583a3e1a7627adab8c5de61388134627f7ce06",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 32226123
+      },
+      "Router_impl": {
+        "name": "Router",
+        "args": [],
+        "creationHash": "0x9e653bfee312a88e6ba1b34a7bc3d156199ab3d05effdbd7e3111435ba199d5c",
+        "address": "0xfcBce73f397dF65D5b18364dadDCaE86E95CdB96",
+        "nonce": 21,
+        "value": "0",
+        "preparedBlock": 32226126,
+        "status": "confirmed",
+        "txHash": "0xf6d2abc508e98a8c0c4c6bc837529293e369acb573c5eb7aa207bd8ce0af1276",
+        "runtimeHash": "0x3377796c705ad082dfa476c61f25f9cbf64f39fb80dad47de4f5220a4e65190c",
+        "blockNumber": 32226129
+      },
+      "Router_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0xfcBce73f397dF65D5b18364dadDCaE86E95CdB96",
+          "0x1459457a0000000000000000000000003993d004166738d1069b5c4e0a923f7b9d5d88300000000000000000000000001dc357d2b7b850332a91f06a9e66634f46fc4ba7000000000000000000000000f3669edc475cb6e1f0d7635240abd8e8fb7e20c600000000000000000000000085fcd13735f4309833a503ee804ea323958514790000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+        ],
+        "creationHash": "0xdc274ca1dc8efa6af90bce9f49492d66b39380d7811c71dc47b7ed4f2dd43d48",
+        "address": "0x78FB06f525cD964388f2305A489035263E31C6e4",
+        "nonce": 22,
+        "value": "0",
+        "preparedBlock": 32226132,
+        "status": "confirmed",
+        "txHash": "0xf6db5ac3d36c74b4beeb1fd0c2655fd2532df99f470903a5fa779ab616b1b58e",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 32226134
+      },
+      "Quoter_impl": {
+        "name": "Quoter",
+        "args": [],
+        "creationHash": "0x23db87a93c3ebd0d9418cd67625ad7e064da37a9411e7e7c67efdc28277a732a",
+        "address": "0x49Fe29eaAcb16d3D1a8671dD4d6D9070E340B5B8",
+        "nonce": 23,
+        "value": "0",
+        "preparedBlock": 32226138,
+        "status": "confirmed",
+        "txHash": "0x8dc343f96151b38c3585782df0edcfd20faee58437ff437082af8dd64d9e5cbf",
+        "runtimeHash": "0x26be23199e2a93fc8c3b83982ac9e9dca7e065664bc83b028bf5c804d2a5320c",
+        "blockNumber": 32226143
+      },
+      "Quoter_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0x49Fe29eaAcb16d3D1a8671dD4d6D9070E340B5B8",
+          "0xc0c53b8b0000000000000000000000001dc357d2b7b850332a91f06a9e66634f46fc4ba7000000000000000000000000f3669edc475cb6e1f0d7635240abd8e8fb7e20c60000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+        ],
+        "creationHash": "0x67cf60cd2f931b5c0035796f0f4eca86612e3198a188795cca9d2a264fa3a386",
+        "address": "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
+        "nonce": 24,
+        "value": "0",
+        "preparedBlock": 32226149,
+        "status": "confirmed",
+        "txHash": "0x1f945d247d11a2fa8ef8e18d3b410c997051898a8edce5b506a904232c901389",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 32226152
+      },
+      "FeesRouter_impl": {
+        "name": "FeesRouter",
+        "args": [],
+        "creationHash": "0xb8d3e6f1f38ba1d14de7cb33cdc99755360c74e27fd43a4f38d81a1026a62397",
+        "address": "0xaB930A3b2bFCdb38555b57D1254B3424EC7FB328",
+        "nonce": 25,
+        "value": "0",
+        "preparedBlock": 32226159,
+        "status": "confirmed",
+        "txHash": "0xcd6d4c6e6ba31dd79ae40cca71c633471baccc2e7f99bee2c944ad95e867fae3",
+        "runtimeHash": "0x32d0cd6ab521f803ee77c700715efb56826b59dadd5c3cbeeaef933c44bcb925",
+        "blockNumber": 32226165
+      },
+      "FeesRouter_proxy": {
+        "name": "UUPSProxy",
+        "args": [
+          "0xaB930A3b2bFCdb38555b57D1254B3424EC7FB328",
+          "0xf8c8765e000000000000000000000000e8dcc844a8006dbf64f5bb851bcad90292a6409b0000000000000000000000007b14808b72f61664cdb79d25e6d1587655571a660000000000000000000000001dc357d2b7b850332a91f06a9e66634f46fc4ba70000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+        ],
+        "creationHash": "0x2fed3f0dc0e2ed1ede4ae02701f4085e9c9e220e6029bdab24c6c2915f3239e7",
+        "address": "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
+        "nonce": 26,
+        "value": "0",
+        "preparedBlock": 32226170,
+        "status": "confirmed",
+        "txHash": "0x87b6177c03da63fd78150ae13d5d87bec30faa6e98af03776141f0ac22d50e44",
+        "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
+        "blockNumber": 32226173
+      },
+      "AntiSnipeOptical": {
+        "name": "AntiSnipeOptical",
+        "args": [
+          "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+          "0xE3e71911664062753b56F72965D906295625d6c0",
+          100,
+          10
+        ],
+        "creationHash": "0x58795ff211762aacb67dcdab0010d8c87ebc183a2e644a35547934d475e16221",
+        "address": "0xDFBd72bD39C86a821B3F307E71A0cD3A828B2C26",
+        "nonce": 27,
+        "value": "0",
+        "preparedBlock": 32226179,
+        "status": "confirmed",
+        "txHash": "0xc405623a7b8d6a725570942f065d981dffc2c120048030ac06bbaa0815ffae12",
+        "runtimeHash": "0xf47f6839de825b87fbe8090d5306a2fbcf36f86696b3f7ea752c9ca62580b2cc",
+        "blockNumber": 32226181
+      },
+      "MaxWalletOptical": {
+        "name": "MaxWalletOptical",
+        "args": [
+          "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+          "0xE3e71911664062753b56F72965D906295625d6c0",
+          200
+        ],
+        "creationHash": "0xce17d4b66a202e69bfd1de5e0e39790ac7a61b96f04fcc6709108d61498ea7fa",
+        "address": "0x1296Cf953124621c82560fa0F28FC932496dc985",
+        "nonce": 28,
+        "value": "0",
+        "preparedBlock": 32226186,
+        "status": "confirmed",
+        "txHash": "0xdf5b786ad9d8312dd47b2b46fdd92c4c0cbe51b6691ce9436abcde14e9bf8868",
+        "runtimeHash": "0x1b7cd27fac299730cabb71b2b53777c667bbc4ef583692118c848a40fd708ffe",
+        "blockNumber": 32226188
+      },
+      "TaxOptical": {
+        "name": "TaxOptical",
+        "args": [
+          "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+          "0xE3e71911664062753b56F72965D906295625d6c0",
+          200,
+          200
+        ],
+        "creationHash": "0x994b66bd434f45cf60fa42a19ac0c4622f2ede6e97fffea03e82a52878fc1829",
+        "address": "0xebe1DB7B167Fa97350625f7e8368b6B8eDc015C3",
+        "nonce": 29,
+        "value": "0",
+        "preparedBlock": 32226193,
+        "status": "confirmed",
+        "txHash": "0xba646dd0b95d37046a533c84c3ecc52d59b7686d3b8306c5116944622646a2e9",
+        "runtimeHash": "0x23db09e15173dcdb2c6f5f33261fb473b96af9939ac6a972d000dc3047f79c2d",
+        "blockNumber": 32226195
+      },
+      "CooldownOptical": {
+        "name": "CooldownOptical",
+        "args": [
+          "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+          "0xE3e71911664062753b56F72965D906295625d6c0",
+          60
+        ],
+        "creationHash": "0xa5647ad90fc11cf155e87c93e6946aedc2c1e6802124669b62d7bd374d3f498c",
+        "address": "0xC7C17Cf17D7DAFa255256381B875180cFE910034",
+        "nonce": 30,
+        "value": "0",
+        "preparedBlock": 32226201,
+        "status": "confirmed",
+        "txHash": "0x6499c235bec86e991ddb29310851e740714b8e232c1d58d84877af75a85029b7",
+        "runtimeHash": "0x59f46a0a399e27a0f5d29982d13396724de3b2167aad79ae4f3dc796e6b3ffe4",
+        "blockNumber": 32226206
+      },
+      "BuybackBurnOptical": {
+        "name": "BuybackBurnOptical",
+        "args": [
+          "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+          "0xE3e71911664062753b56F72965D906295625d6c0",
+          1000
+        ],
+        "creationHash": "0xfa20bf25e05a65f2daf85706bfd265ea279c3dc50028a8a0657631dbc8f3685a",
+        "address": "0x7a8905AFF4e39aFb4Be7e03B141DfBebBfa4A7B7",
+        "nonce": 31,
+        "value": "0",
+        "preparedBlock": 32226211,
+        "status": "confirmed",
+        "txHash": "0x6b03e84cf74ab42c05bc8b2c8b49e1cc8ac6a5edc26ffbf0e42de59f97224f2e",
+        "runtimeHash": "0xafcd43bc3eedce1757387727b7e9e4b42c1f30139ed84199ba82d192136a0ea8",
+        "blockNumber": 32226215
+      }
+    },
+    "steps": {
+      "wiring:emitter-registry": {
+        "status": "confirmed",
+        "txHash": "0xc197a9b901d0b5db08b1717f32c41f9cb769f35e9db780a33e9c1a49ee6fa60e",
+        "nonce": 32,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0x7b77cd6a0000000000000000000000001dc357d2b7b850332a91f06a9e66634f46fc4ba7"
+      },
+      "wiring:emitter-factory": {
+        "status": "confirmed",
+        "txHash": "0xdd9cb0a78f0bb6e8e7711dd60153bb96ec50296f0acd116a86cfcdd8e1504028",
+        "nonce": 33,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0xe53122ec0000000000000000000000003993d004166738d1069b5c4e0a923f7b9d5d8830"
+      },
+      "wiring:emitter-opticals": {
+        "status": "confirmed",
+        "txHash": "0xd020ab67306bbdba735542cdd90d88a7c012e5aa7a57bd126a642bc9d2865e76",
+        "nonce": 34,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0xde2b77640000000000000000000000000fb5e510372bd3eddfed16a5dd766d4473cffcf0"
+      },
+      "wiring:registry-factory": {
+        "status": "confirmed",
+        "txHash": "0x3d823326e7b9e96daf3ccd2bf0c6ceb132528830c2288600011ba3a587575be5",
+        "nonce": 35,
+        "to": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+        "data": "0x2f2ff15ddfbefbf47cfe66b701d8cfdbce1de81c821590819cb07e71cb01b6602fb0ee270000000000000000000000003993d004166738d1069b5c4e0a923f7b9d5d8830"
+      },
+      "wiring:nft-minter": {
+        "status": "confirmed",
+        "txHash": "0xd40cca4fa94e8dc9795c1ff50287c1b7b1263570f9d1655cbe5fb9bd36d0244c",
+        "nonce": 36,
+        "to": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+        "data": "0x2f2ff15d9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a60000000000000000000000003993d004166738d1069b5c4e0a923f7b9d5d8830"
+      },
+      "wiring:nft-strategy": {
+        "status": "confirmed",
+        "txHash": "0x5238a32cd3cb85da7cbb973754168585db4dca7d2d1c350b356c4c949386a6f6",
+        "nonce": 37,
+        "to": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+        "data": "0x2f2ff15d55ddad7e51dfd5c3f94e14941f1a52a4cdd1fb397b4d6787d4f6def3552ddb8200000000000000000000000005681da6f611c2dffd3e92611f6de2d247647927"
+      },
+      "wiring:treasury-FeeAccumulator": {
+        "status": "confirmed",
+        "txHash": "0xc1a1439d4a5b80da74601a5695cfe6a87f17d8e44f930c8ba548fdfaae087cfe",
+        "nonce": 38,
+        "to": "0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723",
+        "data": "0x2f2ff15d8f4f2da22e8ac8f11e15f9fc141cddbb5deea8800186560abb6e68c5496619a90000000000000000000000007b14808b72f61664cdb79d25e6d1587655571a66"
+      },
+      "wiring:treasury-SidioraFactory": {
+        "status": "confirmed",
+        "txHash": "0x598988a8d06eae7400c579e436d6b760d7fcd2bd8624265a246cd0016b39bf0f",
+        "nonce": 39,
+        "to": "0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723",
+        "data": "0x2f2ff15d8f4f2da22e8ac8f11e15f9fc141cddbb5deea8800186560abb6e68c5496619a90000000000000000000000003993d004166738d1069b5c4e0a923f7b9d5d8830"
+      },
+      "wiring:treasury-Router": {
+        "status": "confirmed",
+        "txHash": "0xff90048332230d7368d563f8a1551bcc3fd9215ebbc25852d626ee3187ce6877",
+        "nonce": 40,
+        "to": "0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723",
+        "data": "0x2f2ff15d8f4f2da22e8ac8f11e15f9fc141cddbb5deea8800186560abb6e68c5496619a900000000000000000000000078fb06f525cd964388f2305a489035263e31c6e4"
+      },
+      "wiring:factory-router": {
+        "status": "confirmed",
+        "txHash": "0x39726d94d9d343f047180a2f622a647751ec5a8773cbc86ea27d1e87481e5faa",
+        "nonce": 41,
+        "to": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+        "data": "0x2f2ff15d7a05a596cb0ce7fdea8a1e1ec73be300bdb35097c944ce1897202f7a13122eb200000000000000000000000078fb06f525cd964388f2305a489035263e31c6e4"
+      },
+      "wiring:acc-fees-router": {
+        "status": "confirmed",
+        "txHash": "0xa017b61f3a60d6f378832f5a1925daca06da680e3673e15d00e33b418ef381a4",
+        "nonce": 42,
+        "to": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+        "data": "0x2f2ff15dec7add8cdd753efa56dc6a9d0ef21be641c5029802964eed55bd50501be9cca000000000000000000000000005681da6f611c2dffd3e92611f6de2d247647927"
+      },
+      "wiring:acc-factory": {
+        "status": "confirmed",
+        "txHash": "0x0c2da2fd7278974c15087d0f213d688877e61f8248130233083abf94e18d4d7a",
+        "nonce": 43,
+        "to": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+        "data": "0x2f2ff15ddfbefbf47cfe66b701d8cfdbce1de81c821590819cb07e71cb01b6602fb0ee270000000000000000000000003993d004166738d1069b5c4e0a923f7b9d5d8830"
+      },
+      "wiring:generic-SidioraFactory": {
+        "status": "confirmed",
+        "reconciledByPostcondition": true
+      },
+      "wiring:generic-ProtocolConfig": {
+        "status": "confirmed",
+        "txHash": "0x8775041511a527ff633b0ab6d6ef1bd45ecc551916da25c86ce4454de43ffc4f",
+        "nonce": 44,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0x27b81718000000000000000000000000f3669edc475cb6e1f0d7635240abd8e8fb7e20c60000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "wiring:generic-PoolRegistry": {
+        "status": "confirmed",
+        "reconciledByPostcondition": true
+      },
+      "wiring:generic-FeeAccumulator": {
+        "status": "confirmed",
+        "txHash": "0x6978c11a755fc1737ef5c8e9838bee72683caef024e8e9174302f61f7b2cbf8a",
+        "nonce": 45,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0x27b817180000000000000000000000007b14808b72f61664cdb79d25e6d1587655571a660000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "wiring:generic-SidioraNFT": {
+        "status": "confirmed",
+        "txHash": "0x54cb141541ec51d147d5a41de1c4f6d24628011e564aedffa65e94a693213a9e",
+        "nonce": 46,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0x27b81718000000000000000000000000e8dcc844a8006dbf64f5bb851bcad90292a6409b0000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "wiring:generic-Router": {
+        "status": "confirmed",
+        "txHash": "0x064cb33dbdedf7e2f25534281330e75b616d11a935880c92476773279a0a3acf",
+        "nonce": 47,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0x27b8171800000000000000000000000078fb06f525cd964388f2305a489035263e31c6e40000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "wiring:generic-FeesRouter": {
+        "status": "confirmed",
+        "txHash": "0x2fc75c766cd345e3cef1218a002741bd0383b65ab76cd3446134c83c3d9be790",
+        "nonce": 48,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0x27b8171800000000000000000000000005681da6f611c2dffd3e92611f6de2d2476479270000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "wiring:generic-OpticalRegistry": {
+        "status": "confirmed",
+        "txHash": "0xcaf204c5e7c4d8f6fc0594c69b27ca10bc34f00209de7647901e4c9cc129739e",
+        "nonce": 49,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0x27b817180000000000000000000000000fb5e510372bd3eddfed16a5dd766d4473cffcf00000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "wiring:typed-ProtocolConfig-emitConfigUpdated": {
+        "status": "confirmed",
+        "txHash": "0xa57cdb8d59f40912ecd7a89b68fe7adf49c957f88e8a1c99e026fb7bda11bfac",
+        "nonce": 50,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0xb2473503000000000000000000000000f3669edc475cb6e1f0d7635240abd8e8fb7e20c685ceceb5000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "wiring:typed-FeeAccumulator-emitFeeRecorded": {
+        "status": "confirmed",
+        "txHash": "0x94ff9540142ef5401983ebefeebead9de6866460eef458cfbebd3b59ba4016d1",
+        "nonce": 51,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0xb24735030000000000000000000000007b14808b72f61664cdb79d25e6d1587655571a66d6d28200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "wiring:typed-FeeAccumulator-emitFeeDistributed": {
+        "status": "confirmed",
+        "txHash": "0xf5d9fda00198e1fe7ab3974f97dd1f0dbc470f2b834d47310f0bba5ece9e68b5",
+        "nonce": 52,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0xb24735030000000000000000000000007b14808b72f61664cdb79d25e6d1587655571a6606a7cedb000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "wiring:typed-FeeAccumulator-emitFeeFlow": {
+        "status": "confirmed",
+        "txHash": "0x06b5202d5a8cd968d326a85565ffab1e7ae5d78dc9f7054945ee61d9274e8ff7",
+        "nonce": 53,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0xb24735030000000000000000000000007b14808b72f61664cdb79d25e6d1587655571a66fa2e1d5e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "wiring:typed-SidioraNFT-emitFeeStrategyChanged": {
+        "status": "confirmed",
+        "txHash": "0x7468f8dfab5cc8975b449b07b960c772bccc83430d1d7eab45f89eee74010950",
+        "nonce": 54,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0xb2473503000000000000000000000000e8dcc844a8006dbf64f5bb851bcad90292a6409bb2c8dc72000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "wiring:typed-SidioraNFT-emitNftMint": {
+        "status": "confirmed",
+        "txHash": "0x7b3afb211a4af3ffcdd153c8ddf1014302b7b87ab79c64c98829ef52db703fc2",
+        "nonce": 55,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0xb2473503000000000000000000000000e8dcc844a8006dbf64f5bb851bcad90292a6409b75c48038000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "wiring:typed-Router-emitRouterTrade": {
+        "status": "confirmed",
+        "txHash": "0xa0e9ca639a44a15297469a76b3ac76feb4152e6b9dcc49ee942b46ed101148b6",
+        "nonce": 56,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0xb247350300000000000000000000000078fb06f525cd964388f2305a489035263e31c6e4e3cdc125000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "wiring:typed-FeesRouter-emitFeeDistributed": {
+        "status": "confirmed",
+        "txHash": "0x1b86575aa639f4977290409a40b34ced3462bf2e71d9fc397c0f16b9b05e4fff",
+        "nonce": 57,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0xb247350300000000000000000000000005681da6f611c2dffd3e92611f6de2d24764792706a7cedb000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "wiring:optical-AntiSnipeOptical": {
+        "status": "confirmed",
+        "txHash": "0x9298fdeaa50ba548a510adac47f109c63cbf7eccf65432e50f9498dc6faa587a",
+        "nonce": 58,
+        "to": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
+        "data": "0x0ca6ea45000000000000000000000000dfbd72bd39c86a821b3f307e71a0cd3a828b2c2600000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000010416e7469536e6970654f70746963616c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001f44656661756c7420416e7469536e6970654f70746963616c20707265736574000000000000000000000000000000000000000000000000000000000000000007536964696f726100000000000000000000000000000000000000000000000000"
+      },
+      "wiring:optical-MaxWalletOptical": {
+        "status": "confirmed",
+        "txHash": "0xcb82dc27c4f8c1c486549fa5348befa3e8db0643600d8f254c42146ee2ca4740",
+        "nonce": 59,
+        "to": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
+        "data": "0x0ca6ea450000000000000000000000001296cf953124621c82560fa0f28fc932496dc98500000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000104d617857616c6c65744f70746963616c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001f44656661756c74204d617857616c6c65744f70746963616c20707265736574000000000000000000000000000000000000000000000000000000000000000007536964696f726100000000000000000000000000000000000000000000000000"
+      },
+      "wiring:optical-TaxOptical": {
+        "status": "confirmed",
+        "txHash": "0xc6864e39a30c43dc3fe23739a1dc4576e497d9b23cdf5bbbf6d1938067f17e88",
+        "nonce": 60,
+        "to": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
+        "data": "0x0ca6ea45000000000000000000000000ebe1db7b167fa97350625f7e8368b6b8edc015c300000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000120000000000000000000000000000000000000000000000000000000000000000a5461784f70746963616c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001944656661756c74205461784f70746963616c20707265736574000000000000000000000000000000000000000000000000000000000000000000000000000007536964696f726100000000000000000000000000000000000000000000000000"
+      },
+      "wiring:optical-CooldownOptical": {
+        "status": "confirmed",
+        "txHash": "0x78d355175645462782cc2a7cb6bbae429873777437fa0796b45605c795e14182",
+        "nonce": 61,
+        "to": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
+        "data": "0x0ca6ea45000000000000000000000000c7c17cf17d7dafa255256381b875180cfe91003400000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000120000000000000000000000000000000000000000000000000000000000000000f436f6f6c646f776e4f70746963616c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001e44656661756c7420436f6f6c646f776e4f70746963616c2070726573657400000000000000000000000000000000000000000000000000000000000000000007536964696f726100000000000000000000000000000000000000000000000000"
+      },
+      "wiring:optical-BuybackBurnOptical": {
+        "status": "confirmed",
+        "txHash": "0x0db2ff8fc5405ccbbd3e20cb38e37ad0426fb36e25c618b39c754d33f5903f24",
+        "nonce": 62,
+        "to": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
+        "data": "0x0ca6ea450000000000000000000000007a8905aff4e39afb4be7e03b141dfbebbfa4a7b700000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000014000000000000000000000000000000000000000000000000000000000000000124275796261636b4275726e4f70746963616c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002144656661756c74204275796261636b4275726e4f70746963616c20707265736574000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007536964696f726100000000000000000000000000000000000000000000000000"
+      },
+      "handoff:gov-admin": {
+        "status": "confirmed",
+        "txHash": "0x1cc6d71b40458fd3e8f14ff484f2bdef6d599accbf99c26d2fc9e62870287b13",
+        "nonce": 63,
+        "to": "0xD14307637A6189b9fE872C87e5d62e942a5B4d7c",
+        "data": "0x2f2ff15da49807205ce4d355092ef5a8a18f56e8913cf4a201fbe287825b095693c21775000000000000000000000000e3e71911664062753b56f72965d906295625d6c0"
+      },
+      "handoff:gov-controller": {
+        "status": "confirmed",
+        "reconciledByPostcondition": true
+      },
+      "handoff:grant-EventEmitter": {
+        "status": "confirmed",
+        "txHash": "0xf6022ae5f4b0840a7ed03af15c40d0b40888f8ea67f1003292383200e21e3dea",
+        "nonce": 64,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0x2f2ff15d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e3e71911664062753b56f72965d906295625d6c0"
+      },
+      "handoff:EventEmitter": {
+        "status": "confirmed",
+        "txHash": "0x5d2333822b930ee640853a7fe92aaad3783e97dac5d042686f97065e3dbdcf02",
+        "nonce": 65,
+        "to": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+        "data": "0x36568abe00000000000000000000000000000000000000000000000000000000000000000000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+      },
+      "handoff:grant-ProtocolConfig": {
+        "status": "confirmed",
+        "txHash": "0x3ab1ca0e2ec01a8e55a8b886e7068d765e6facef3a427711201fe15e8f11a76d",
+        "nonce": 66,
+        "to": "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
+        "data": "0x2f2ff15d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e3e71911664062753b56f72965d906295625d6c0"
+      },
+      "handoff:ProtocolConfig": {
+        "status": "confirmed",
+        "txHash": "0xb2f2d2079944e5a3442614c9242beefc6c4c6c87e613e34775a8d53ac93e9540",
+        "nonce": 67,
+        "to": "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
+        "data": "0x36568abe00000000000000000000000000000000000000000000000000000000000000000000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+      },
+      "handoff:grant-Treasury": {
+        "status": "confirmed",
+        "txHash": "0xdf6ab1f76dcec806f0ceaa2f4888f26ebb79ebe591435ff6a144726a0760dfa6",
+        "nonce": 68,
+        "to": "0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723",
+        "data": "0x2f2ff15d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e3e71911664062753b56f72965d906295625d6c0"
+      },
+      "handoff:Treasury": {
+        "status": "confirmed",
+        "txHash": "0x9326c61243a83f9014937dd01939a8d602bd511bf0e35e2f042eee0658e81078",
+        "nonce": 69,
+        "to": "0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723",
+        "data": "0x36568abe00000000000000000000000000000000000000000000000000000000000000000000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+      },
+      "handoff:grant-GovernanceModule": {
+        "status": "confirmed",
+        "txHash": "0x6a79eff53f1e9484554505b6b8758872b69c995617649d0ad1407849993cc639",
+        "nonce": 70,
+        "to": "0xD14307637A6189b9fE872C87e5d62e942a5B4d7c",
+        "data": "0x2f2ff15d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e3e71911664062753b56f72965d906295625d6c0"
+      },
+      "handoff:GovernanceModule": {
+        "status": "confirmed",
+        "txHash": "0xaf71daa679b5a216781b150758e83c8cf11aec64ec11ebac05fec4417f0724d5",
+        "nonce": 71,
+        "to": "0xD14307637A6189b9fE872C87e5d62e942a5B4d7c",
+        "data": "0x36568abe00000000000000000000000000000000000000000000000000000000000000000000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+      },
+      "handoff:grant-PoolRegistry": {
+        "status": "confirmed",
+        "txHash": "0x8c0825b15298c156ac3947b7a0c229d6b8c98f8ce93e5261ca2bf273aac10ffb",
+        "nonce": 72,
+        "to": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+        "data": "0x2f2ff15d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e3e71911664062753b56f72965d906295625d6c0"
+      },
+      "handoff:PoolRegistry": {
+        "status": "confirmed",
+        "txHash": "0x3944c2aa9eb36ab6647b292635a928d558d4d6a49be6ef0abe075e854eaf86e4",
+        "nonce": 73,
+        "to": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+        "data": "0x36568abe00000000000000000000000000000000000000000000000000000000000000000000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+      },
+      "handoff:grant-FeeAccumulator": {
+        "status": "confirmed",
+        "txHash": "0x691cda165008b2033a802c2f6b74a34247b2ae874319eb3aef7954d61a07c4ee",
+        "nonce": 74,
+        "to": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+        "data": "0x2f2ff15d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e3e71911664062753b56f72965d906295625d6c0"
+      },
+      "handoff:FeeAccumulator": {
+        "status": "confirmed",
+        "txHash": "0x12a0a617ba614294e1876aef279d2721937d89597f90fd18c7b8fc3cf47cb77d",
+        "nonce": 75,
+        "to": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+        "data": "0x36568abe00000000000000000000000000000000000000000000000000000000000000000000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+      },
+      "handoff:grant-SidioraNFT": {
+        "status": "confirmed",
+        "txHash": "0xc32122f10029797ffad63dd294232bd78e1ddfa17d46743a4db45ded3654f8d5",
+        "nonce": 76,
+        "to": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+        "data": "0x2f2ff15d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e3e71911664062753b56f72965d906295625d6c0"
+      },
+      "handoff:SidioraNFT": {
+        "status": "confirmed",
+        "txHash": "0x801ea07d96006fd5c434a86c7933c121ad20fafebf39970a057fbc5cf46adcad",
+        "nonce": 77,
+        "to": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+        "data": "0x36568abe00000000000000000000000000000000000000000000000000000000000000000000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+      },
+      "handoff:grant-SidioraFactory": {
+        "status": "confirmed",
+        "txHash": "0xe62be3c047638c23b7500a8a1626bf398fdd321cdc3ea90571d3a7dbfc45bac5",
+        "nonce": 78,
+        "to": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+        "data": "0x2f2ff15d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e3e71911664062753b56f72965d906295625d6c0"
+      },
+      "handoff:SidioraFactory": {
+        "status": "confirmed",
+        "txHash": "0x0f3a68bdd9b65c5c4416489b4a2ffbf0b1e6e65d478981b6fe55cf4f524443f8",
+        "nonce": 79,
+        "to": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+        "data": "0x36568abe00000000000000000000000000000000000000000000000000000000000000000000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+      },
+      "handoff:grant-OpticalRegistry": {
+        "status": "confirmed",
+        "txHash": "0xa43c272f5e71b2d67c2d97cc3f405ca389c2bd0b0a39ef6b8b84fc847da99383",
+        "nonce": 80,
+        "to": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
+        "data": "0x2f2ff15d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e3e71911664062753b56f72965d906295625d6c0"
+      },
+      "handoff:OpticalRegistry": {
+        "status": "confirmed",
+        "txHash": "0x4f7d99edf32780641802d0cf1540009a02320c27a784a72da7542d29b0d39def",
+        "nonce": 81,
+        "to": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
+        "data": "0x36568abe00000000000000000000000000000000000000000000000000000000000000000000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+      },
+      "handoff:grant-Router": {
+        "status": "confirmed",
+        "txHash": "0xa9ca46dae5d19109f417b13ab2f952e9d35bde3acacb64af398c087eb1032ada",
+        "nonce": 82,
+        "to": "0x78FB06f525cD964388f2305A489035263E31C6e4",
+        "data": "0x2f2ff15d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e3e71911664062753b56f72965d906295625d6c0"
+      },
+      "handoff:Router": {
+        "status": "confirmed",
+        "txHash": "0x14c2fe16f0ef7aef53379b954732fa3f282dc38d2714c91ca2a5a0dd3fcc8e9c",
+        "nonce": 83,
+        "to": "0x78FB06f525cD964388f2305A489035263E31C6e4",
+        "data": "0x36568abe00000000000000000000000000000000000000000000000000000000000000000000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+      },
+      "handoff:grant-Quoter": {
+        "status": "confirmed",
+        "txHash": "0xf8224e1beebbcbf09a6c3ee7c62cbd6a18d0b8321c59859d3ce4791c54d74b77",
+        "nonce": 84,
+        "to": "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
+        "data": "0x2f2ff15d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e3e71911664062753b56f72965d906295625d6c0"
+      },
+      "handoff:Quoter": {
+        "status": "confirmed",
+        "txHash": "0x1a245627f40be23d9856b4da6ec2564add6c0af7c19987df7984cdcc49c76b90",
+        "nonce": 85,
+        "to": "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
+        "data": "0x36568abe00000000000000000000000000000000000000000000000000000000000000000000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+      },
+      "handoff:grant-FeesRouter": {
+        "status": "confirmed",
+        "txHash": "0x49eb7d9aa1c585cc13eb77ba728569b604041ffcff9f4dda79491143ec3500ed",
+        "nonce": 86,
+        "to": "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
+        "data": "0x2f2ff15d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e3e71911664062753b56f72965d906295625d6c0"
+      },
+      "handoff:FeesRouter": {
+        "status": "confirmed",
+        "txHash": "0x36a7f82cbfe464d7257fb4702527414e9ed99359467df5a37fa34828bd9c7627",
+        "nonce": 87,
+        "to": "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
+        "data": "0x36568abe00000000000000000000000000000000000000000000000000000000000000000000000000000000000000001dae78b53c9f39930a2ff2b6b7aac12ec75fb154"
+      },
+      "handoff:beacon-nominate": {
+        "status": "confirmed",
+        "txHash": "0x5dd62215781afd6896eb0fdee2f3d9c655c842e707e12c633afeacad3b3ab2d9",
+        "nonce": 88,
+        "to": "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE",
+        "data": "0xf2fde38b000000000000000000000000e3e71911664062753b56f72965d906295625d6c0"
+      },
+      "handoff:beacon-queue": {
+        "status": "confirmed",
+        "txHash": "0x303713897e62b9a18ca4fe091734f1c67d7674dbb7f7ab13b18f1b74f80aa82b",
+        "nonce": 89,
+        "to": "0xE3e71911664062753b56F72965D906295625d6c0",
+        "data": "0x8e361cdf0000000000000000000000000c60ea33b1dd602a17e1ef1875ee912f3fad71be00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000006acbc75c000000000000000000000000000000000000000000000000000000000000000479ba509700000000000000000000000000000000000000000000000000000000"
+      },
+      "handoff:proposer": {
+        "status": "confirmed",
+        "txHash": "0xe708d6c6d078c5f31b4fd3254a887d71b004621631a34691aaaab1bb7d13ecd1",
+        "nonce": 90,
+        "to": "0xE3e71911664062753b56F72965D906295625d6c0",
+        "data": "0x1fb4a228000000000000000000000000d14307637a6189b9fe872c87e5d62e942a5b4d7c"
+      }
+    }
+  },
+  "EventEmitter_impl": "0x6d48a32e313cc4F08acdeE1F39F7e6B56F03a1cB",
+  "EventEmitter_proxy": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+  "ProtocolConfig_impl": "0xE612759AaA47E96B0801Fb506e4E115C4756Dca5",
+  "ProtocolConfig_proxy": "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
+  "Treasury_impl": "0xF8d7ba698cFd5Ef6607679E506305C38B3A1b7B6",
+  "Treasury_proxy": "0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723",
+  "Timelock": "0xE3e71911664062753b56F72965D906295625d6c0",
+  "GovernanceModule_impl": "0x7680Ba880b651E565eb2ae26AB5448AB5a0dE0F4",
+  "GovernanceModule_proxy": "0xD14307637A6189b9fE872C87e5d62e942a5B4d7c",
+  "PoolRegistry_impl": "0x0e4d66894321e7e29803eF63E618bF07B9772687",
+  "PoolRegistry_proxy": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+  "FeeAccumulator_impl": "0xc21a8f1f8cd416D8B84a0627b4c4bfcc3a6c15a0",
+  "FeeAccumulator_proxy": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+  "SidioraPool_impl": "0xd24b239df92CA233dF27676148FDe10aa51104Df",
+  "PoolBeacon": "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE",
+  "SidioraNFT_impl": "0x799CeE9468FCd5B504F267658619C7540b2D9650",
+  "SidioraNFT_proxy": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+  "SidioraFactory_impl": "0xAA348015a0dA5FE65296481B0e98EF240bd57AF4",
+  "SidioraFactory_proxy": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+  "OpticalRegistry_impl": "0x2d9666F5CC900092Ceb7D3867b1fd7f6178C3F3E",
+  "OpticalRegistry_proxy": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
+  "Router_impl": "0xfcBce73f397dF65D5b18364dadDCaE86E95CdB96",
+  "Router_proxy": "0x78FB06f525cD964388f2305A489035263E31C6e4",
+  "Quoter_impl": "0x49Fe29eaAcb16d3D1a8671dD4d6D9070E340B5B8",
+  "Quoter_proxy": "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
+  "FeesRouter_impl": "0xaB930A3b2bFCdb38555b57D1254B3424EC7FB328",
+  "FeesRouter_proxy": "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
+  "AntiSnipeOptical": "0xDFBd72bD39C86a821B3F307E71A0cD3A828B2C26",
+  "MaxWalletOptical": "0x1296Cf953124621c82560fa0F28FC932496dc985",
+  "TaxOptical": "0xebe1DB7B167Fa97350625f7e8368b6B8eDc015C3",
+  "CooldownOptical": "0xC7C17Cf17D7DAFa255256381B875180cFE910034",
+  "BuybackBurnOptical": "0x7a8905AFF4e39aFb4Be7e03B141DfBebBfa4A7B7",
+  "_governance": {
+    "governanceMode": "admin",
+    "governanceAdmin": "0x1DAe78b53C9F39930a2Ff2B6B7AaC12EC75FB154",
+    "status": "finalized",
+    "beaconAcceptance": {
+      "target": "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE",
+      "value": "0",
+      "data": "0x79ba5097",
+      "eta": 1791739740
+    },
+    "finalAdmin": "0xE3e71911664062753b56F72965D906295625d6c0"
+  }
+}

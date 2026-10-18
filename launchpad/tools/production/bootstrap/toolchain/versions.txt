@@ -1,0 +1,5 @@
+golang 1.26.4
+nodejs 24.16.0
+pnpm 9.15.0
+typescript 5.9.3
+python 3.12.3

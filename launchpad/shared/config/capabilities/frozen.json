@@ -1,0 +1,309 @@
+{
+  "schemaVersion": 1,
+  "sourceSha256": "7a084a3cb425a6195d192d8cb7564dd1795deab6a8ffdaca61dd17519b13d40a",
+  "capabilities": [
+    {
+      "id": "core_market",
+      "state": "blocked",
+      "requiredForRelease": true,
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified"
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent"
+        },
+        {
+          "id": "core-deployment",
+          "kind": "deployment",
+          "state": "blocked"
+        }
+      ]
+    },
+    {
+      "id": "account_profile",
+      "state": "blocked",
+      "requiredForRelease": true,
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified"
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent"
+        }
+      ]
+    },
+    {
+      "id": "social",
+      "state": "blocked",
+      "requiredForRelease": true,
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified"
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent"
+        }
+      ]
+    },
+    {
+      "id": "media_live",
+      "state": "blocked",
+      "requiredForRelease": true,
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified"
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent"
+        },
+        {
+          "id": "external-provider",
+          "kind": "provider",
+          "state": "present_unverified"
+        }
+      ]
+    },
+    {
+      "id": "funding",
+      "state": "blocked",
+      "requiredForRelease": true,
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified"
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent"
+        },
+        {
+          "id": "execution-authority",
+          "kind": "deployment",
+          "state": "absent"
+        },
+        {
+          "id": "external-provider",
+          "kind": "provider",
+          "state": "absent"
+        }
+      ]
+    },
+    {
+      "id": "conditional_orders",
+      "state": "blocked",
+      "requiredForRelease": true,
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified"
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent"
+        },
+        {
+          "id": "optional-deployment",
+          "kind": "deployment",
+          "state": "absent"
+        },
+        {
+          "id": "wrapped-native-guard",
+          "kind": "source",
+          "state": "blocked"
+        },
+        {
+          "id": "execution",
+          "kind": "source",
+          "state": "present_unverified"
+        }
+      ]
+    },
+    {
+      "id": "automation",
+      "state": "blocked",
+      "requiredForRelease": true,
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified"
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent"
+        },
+        {
+          "id": "execution-authority",
+          "kind": "deployment",
+          "state": "absent"
+        }
+      ]
+    },
+    {
+      "id": "bounty",
+      "state": "blocked",
+      "requiredForRelease": true,
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified"
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent"
+        },
+        {
+          "id": "execution-authority",
+          "kind": "deployment",
+          "state": "absent"
+        }
+      ]
+    },
+    {
+      "id": "rewards",
+      "state": "blocked",
+      "requiredForRelease": true,
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified"
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent"
+        },
+        {
+          "id": "core-fee-rights",
+          "kind": "source",
+          "state": "present_unverified"
+        }
+      ]
+    },
+    {
+      "id": "push",
+      "state": "blocked",
+      "requiredForRelease": true,
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified"
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent"
+        },
+        {
+          "id": "external-provider",
+          "kind": "provider",
+          "state": "absent"
+        }
+      ]
+    },
+    {
+      "id": "voice",
+      "state": "blocked",
+      "requiredForRelease": true,
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified"
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent"
+        },
+        {
+          "id": "external-provider",
+          "kind": "provider",
+          "state": "absent"
+        }
+      ]
+    },
+    {
+      "id": "operator",
+      "state": "blocked",
+      "requiredForRelease": true,
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified"
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent"
+        }
+      ]
+    },
+    {
+      "id": "realtime",
+      "state": "blocked",
+      "requiredForRelease": true,
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified"
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent"
+        }
+      ]
+    },
+    {
+      "id": "external_wallet",
+      "state": "blocked",
+      "requiredForRelease": true,
+      "prerequisites": [
+        {
+          "id": "external-connection",
+          "kind": "source",
+          "state": "present_unverified"
+        },
+        {
+          "id": "wallet-authentication",
+          "kind": "controller",
+          "state": "present_unverified"
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent"
+        }
+      ]
+    }
+  ]
+}

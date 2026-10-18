@@ -1,0 +1,135 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "BitFlagWrapper",
+  "sourceName": "contracts/test/BitFlagWrapper.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "AFTER_FEE_DISTRIBUTION",
+      "outputs": [
+        {
+          "internalType": "uint8",
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "AFTER_SWAP",
+      "outputs": [
+        {
+          "internalType": "uint8",
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "BEFORE_FEE_DISTRIBUTION",
+      "outputs": [
+        {
+          "internalType": "uint8",
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "BEFORE_SWAP",
+      "outputs": [
+        {
+          "internalType": "uint8",
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint8",
+          "name": "flags",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint8",
+          "name": "flag",
+          "type": "uint8"
+        }
+      ],
+      "name": "clearFlag",
+      "outputs": [
+        {
+          "internalType": "uint8",
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint8",
+          "name": "flags",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint8",
+          "name": "flag",
+          "type": "uint8"
+        }
+      ],
+      "name": "hasFlag",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint8",
+          "name": "flags",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint8",
+          "name": "flag",
+          "type": "uint8"
+        }
+      ],
+      "name": "setFlag",
+      "outputs": [
+        {
+          "internalType": "uint8",
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x608080604052346015576101c4908161001b8239f35b600080fdfe608080604052600436101561001357600080fd5b60003560e01c90816313214e01146101405750806349b0aef514610124578063672bf2f0146100f5578063715f52d2146100c557806371d2b85f146100a9578063861e4ca61461008d5763b2fe031f1461006c57600080fd5b3461008857600036600319011261008857602060405160088152f35b600080fd5b3461008857600036600319011261008857602060405160028152f35b3461008857600036600319011261008857602060405160048152f35b3461008857604036600319011261008857602060ff6100e261016e565b6100ea61017e565b191616604051908152f35b3461008857604036600319011261008857602061011061016e565b61011861017e565b1760ff60405191168152f35b3461008857600036600319011261008857602060405160018152f35b346100885760403660031901126100885760209060ff61015e61016e565b61016661017e565b161615158152f35b6004359060ff8216820361008857565b6024359060ff821682036100885756fea2646970667358221220eab469322a8dea6c1d1f5f6eab91c00c27192a5a702a4a96ec45e3d8333d35d664736f6c634300081b0033",
+  "deployedBytecode": "0x608080604052600436101561001357600080fd5b60003560e01c90816313214e01146101405750806349b0aef514610124578063672bf2f0146100f5578063715f52d2146100c557806371d2b85f146100a9578063861e4ca61461008d5763b2fe031f1461006c57600080fd5b3461008857600036600319011261008857602060405160088152f35b600080fd5b3461008857600036600319011261008857602060405160028152f35b3461008857600036600319011261008857602060405160048152f35b3461008857604036600319011261008857602060ff6100e261016e565b6100ea61017e565b191616604051908152f35b3461008857604036600319011261008857602061011061016e565b61011861017e565b1760ff60405191168152f35b3461008857600036600319011261008857602060405160018152f35b346100885760403660031901126100885760209060ff61015e61016e565b61016661017e565b161615158152f35b6004359060ff8216820361008857565b6024359060ff821682036100885756fea2646970667358221220eab469322a8dea6c1d1f5f6eab91c00c27192a5a702a4a96ec45e3d8333d35d664736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

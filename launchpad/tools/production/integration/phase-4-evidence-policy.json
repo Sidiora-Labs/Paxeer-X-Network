@@ -1,0 +1,64 @@
+{
+  "schema_version": 4,
+  "task": "4.49",
+  "scope": "isolated_component",
+  "final_gate": "9.1",
+  "required_bindings": [
+    "baseline",
+    "candidate",
+    "interface",
+    "layout",
+    "topology",
+    "harness_sha256",
+    "generator_sha256",
+    "namespace",
+    "attempt",
+    "provider_source_sha256",
+    "provider_executable_sha256",
+    "native_runtime_authority_sha256",
+    "clock_calibration_sha256",
+    "root_capacity_ledger_sha256",
+    "root_mix_sha256",
+    "scenario_manifest_sha256"
+  ],
+  "allowed_evidence": [
+    "actual_browser",
+    "actual_chain_receipt",
+    "actual_postgresql_commit_timestamp",
+    "actual_physical_base_and_WAL_PITR",
+    "actual_jetstream_durable_cursor",
+    "actual_isolated_resource_fault",
+    "independent_signed_native_recovery_observation"
+  ],
+  "required_artifacts": [
+    "shared CaptureManifest v1 with native_provider artifacts",
+    "all original isolated phase2 browser/receipt/PG/fault artifacts",
+    "raw native PostgreSQL executable output and invocation receipt",
+    "raw actual pg_basebackup backup_manifest",
+    "actual authoritative preloss/restored row snapshots and pertable class checksums",
+    "actual frozen checkpoint oldepoch fence and recovered login/read/write control outputs",
+    "raw NATS before/paused/after stream and durable cursor JSON",
+    "actual UTC and monotonic loss/recovery timestamps and PostgreSQL commit timestamps",
+    "root capacity ledger/workload mix and actual approved provision/cost authority",
+    "actual independent generator raw calibration samples"
+  ],
+  "forbidden_substitutions": [
+    "fixture math for executed provider result",
+    "logical dump as physical PITR proof",
+    "clock_timestamp sampled before commit as durable business commit timestamp",
+    "raw chain rebuilt state for lost profile/chat/reward ledger",
+    "short interruption as actual72hour elapsed proof",
+    "same-wave global load prerequisite",
+    "omitted broker/object/registry positions",
+    "missing credentials/native control interpreted as success",
+    "isolated proof as task9.1 final integrated acceptance",
+    "shared host or live validator action"
+  ],
+  "excluded_artifacts": [
+    ".private browser session credentials"
+  ],
+  "production_qualified": false,
+  "capacity_qualified": false,
+  "disaster_recovery_qualified": false,
+  "final_integrated_gate_passed": false
+}

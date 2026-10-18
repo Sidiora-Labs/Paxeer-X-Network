@@ -1,0 +1,6 @@
+{
+  "compiler": "solc 0.8.30",
+  "source_sha256": "c8db1f95ba2f0e27dd666389a773e34b0c8fe593b79bb801f931502544e558ac",
+  "bytecode_sha256": "52f60e651ed72b9afbe750ee3c9e8532c3beb56f3898b0a1a740d49a652df6bd",
+  "build_command": "forge build --root shared/auth/testdata --contracts . --use 0.8.30 --out <owned-output> --cache-path <owned-cache>"
+}

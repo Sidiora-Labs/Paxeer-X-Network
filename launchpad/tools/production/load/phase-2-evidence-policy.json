@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "task": "2.48",
+  "capacity_qualified": false,
+  "required_bindings": ["candidate", "interface", "topology", "generator"],
+  "required_actual_execution": {
+    "independent_external_hosts": 4,
+    "shared_wallclock_overlap_seconds": 600,
+    "calibration_seconds": 60,
+    "generator_cpu_nic_fraction_max": 0.7,
+    "scheduler_p99_ns_max": 10000000,
+    "delivery_error_fraction_max": 0.02,
+    "utc_clock_uncertainty_ns_max": 5000000
+  },
+  "required_artifacts": ["candidate-bindings.json", "dependencies.json", "generator-calibration.json", "accounts-public.json", "subscription-inventory.json", "http-samples.ndjson", "chain-receipts.ndjson", "event-ingest.ndjson", "receiver-events.ndjson", "browser-delivery.ndjson", "replay-reconciliation.json", "workload-ledger.json", "artifact-sha256.json", "result.json"],
+  "credential_values_persisted": false,
+  "forbidden_substitutions": ["invented quote or balance", "subscription echo used as application delivery", "occurredAt used as durable ingest time", "pre-commit clock_timestamp used as actual commit time", "shortened or reduced connection baseline used as full acceptance", "caller booleans used as external hardware attestation", "phase2 proof used as final task9.1 capacity acceptance"],
+  "aggregation": "Only four genuine current independently collected host results with matching bindings and complete ten-minute overlap qualify the connected phase2 scenario. Individual host execution never declares global capacity.",
+  "replay": "All observed distinct durable trade fill identities since the original snapshot must reconcile with immutable PostgreSQL stream outbox identities; resnapshot controls are explicit failures requiring recovery.",
+  "final_capacity_task": "9.1"
+}

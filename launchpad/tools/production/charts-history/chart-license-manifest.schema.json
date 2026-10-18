@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "implementation",
+    "version",
+    "scope",
+    "domains",
+    "licenseEvidence",
+    "assets",
+    "browserEvidence"
+  ],
+  "properties": {
+    "implementation": {
+      "enum": [
+        "licensed_vendor",
+        "owned_accessible_fallback"
+      ]
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "domains": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9.-]{0,251}[a-zA-Z0-9])?(?::[0-9]{1,5})?$"
+      }
+    },
+    "licenseEvidence": {
+      "$ref": "#/$defs/artifact"
+    },
+    "assets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/artifact"
+      },
+      "uniqueItems": true
+    },
+    "browserEvidence": {
+      "$ref": "#/$defs/artifact"
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

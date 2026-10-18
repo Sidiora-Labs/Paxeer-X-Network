@@ -1,0 +1,106 @@
+{
+  "schema_version": 3,
+  "task": "3.48",
+  "phase": 3,
+  "phase_version": "l48-skew-dependency-loss-v1",
+  "workload_version": "kindle-500k-dau-v1",
+  "interface_version": 2,
+  "capacity_qualified": false,
+  "final_capacity_task": "9.1",
+  "scenarios": [
+    {
+      "id": "80k-hot-pool-subscribers",
+      "duration_seconds": 600,
+      "generator_hosts": 4,
+      "connections": 100000,
+      "hot_pool_subscribers": 80000,
+      "hot_subscription_fraction": 0.8,
+      "cold_subscription_fraction": 0.2,
+      "subscriptions_mean": 5,
+      "subscriptions_max": 20,
+      "authenticated_fraction": 0.5,
+      "http_rps": 10000,
+      "hot_pool_read_fraction": 0.6,
+      "hot_pool_read_denominator": "GET operations with a frozen poolAddress path parameter; unscoped reads remain separately reported",
+      "cold_pool_p99_upper_bound_ns": 400000000,
+      "entrypoint": "tools/production/load/phase3_runner.py"
+    },
+    {
+      "id": "isolated-dependency-pause",
+      "dependencies": [
+        "postgres",
+        "redis",
+        "nats"
+      ],
+      "controller_host_index": 0,
+      "start_offsets_seconds": [
+        120,
+        240,
+        360
+      ],
+      "pause_duration_seconds": 2,
+      "container_project": "kindle-bootstrap-local",
+      "container_scope_label": "isolated-bootstrap-fixture",
+      "transport": "actual hash-bound Docker CLI against exact immutable container IDs",
+      "arrival_schedule": "2500 independent arrivals/second/host; bounded inflight; every timeout, error and miss retained"
+    },
+    {
+      "id": "account-scope-and-ticket-reuse",
+      "providers": [
+        "real SIWE sessions",
+        "actual v2 snapshots",
+        "actual v2 stream tickets and WebSocket handshake"
+      ],
+      "assertions": [
+        "anonymous private snapshot denied401/403",
+        "foreign account private snapshot denied401/403",
+        "consumed one-use ticket cannot handshake twice"
+      ]
+    },
+    {
+      "id": "fault-resource-and-replay-recovery",
+      "per_pool_metrics": [
+        "queue_depth",
+        "queue_capacity",
+        "queue_age_seconds",
+        "lock_wait_seconds",
+        "cache_fill_duplicates_total",
+        "delivery_latency_seconds"
+      ],
+      "process_metrics": [
+        "heap_bytes",
+        "gc_cycles_total",
+        "memory_bytes",
+        "memory_limit_bytes",
+        "oom_kills_total",
+        "cpu_fraction",
+        "file_descriptors",
+        "goroutines"
+      ],
+      "sampling_interval_seconds": 5,
+      "recovery_authority": "exact scoped v2 cursor replay; PostgreSQL canonical fill identity, chart inbox payload and one-minute candle trade totals",
+      "forced_closes": "recorded and reconnected explicitly; unreconciled closes fail"
+    }
+  ],
+  "command": [
+    "python3",
+    "tools/production/load/phase3_runner.py",
+    "--config",
+    "{private_config}",
+    "--config-sha256",
+    "{private_config_sha256}",
+    "--output",
+    "{owned_evidence_directory}"
+  ],
+  "verify_cmd": "python3 tools/production/qualify.py --task 3.48 --spec spec/production-system/spec.kvx --require-current-source",
+  "pending_final_scenarios": [
+    "160k hot-pool subscriber surge",
+    "24h shared integrated peak soak",
+    "200k connection surge",
+    "1m frames/second burst",
+    "3m canonical event surge",
+    "managed CDN playback",
+    "monthly availability"
+  ],
+  "qualification_boundary": "These phase3 scenarios qualify only real skew, isolated dependency fault, account isolation and recovery execution; task9.1 owns final capacity."
+}

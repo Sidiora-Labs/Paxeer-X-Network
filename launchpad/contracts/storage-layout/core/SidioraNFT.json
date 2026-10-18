@@ -1,0 +1,248 @@
+{
+  "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+  "compiler": "0.8.27+commit.40a35a09",
+  "provenance": {
+    "kind": "original audit compiler snapshot, not asserted live deployment",
+    "buildInfoSha256": "c7226196d703743a9f291414539d6dc5579640844b294d141253bce91b8ed2d7",
+    "sourceManifest": "audit/2026-10-09/source-manifest.json"
+  },
+  "storage": [
+    {
+      "astId": 1208,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "name",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_string_storage"
+    },
+    {
+      "astId": 1210,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "symbol",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_string_storage"
+    },
+    {
+      "astId": 1214,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "_owners",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_mapping(t_uint256,t_address)"
+    },
+    {
+      "astId": 1218,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "_balances",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 1222,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "_tokenApprovals",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_mapping(t_uint256,t_address)"
+    },
+    {
+      "astId": 1228,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "_operatorApprovals",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_mapping(t_address,t_mapping(t_address,t_bool))"
+    },
+    {
+      "astId": 1764,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "_allTokens",
+      "offset": 0,
+      "slot": "6",
+      "type": "t_array(t_uint256)dyn_storage"
+    },
+    {
+      "astId": 1768,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "_allTokensIndex",
+      "offset": 0,
+      "slot": "7",
+      "type": "t_mapping(t_uint256,t_uint256)"
+    },
+    {
+      "astId": 1773,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "_ownedTokens",
+      "offset": 0,
+      "slot": "8",
+      "type": "t_mapping(t_address,t_array(t_uint256)dyn_storage)"
+    },
+    {
+      "astId": 1777,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "_ownedTokensIndex",
+      "offset": 0,
+      "slot": "9",
+      "type": "t_mapping(t_uint256,t_uint256)"
+    },
+    {
+      "astId": 277,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "_roles",
+      "offset": 0,
+      "slot": "10",
+      "type": "t_mapping(t_bytes32,t_struct(RoleData)272_storage)"
+    },
+    {
+      "astId": 3589,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "nextTokenId",
+      "offset": 0,
+      "slot": "11",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 3593,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "_feeStrategy",
+      "offset": 0,
+      "slot": "12",
+      "type": "t_mapping(t_uint256,t_uint8)"
+    },
+    {
+      "astId": 3597,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "_poolAddress",
+      "offset": 0,
+      "slot": "13",
+      "type": "t_mapping(t_uint256,t_address)"
+    },
+    {
+      "astId": 3599,
+      "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+      "label": "eventEmitter",
+      "offset": 0,
+      "slot": "14",
+      "type": "t_address"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_uint256)dyn_storage": {
+      "base": "t_uint256",
+      "encoding": "dynamic_array",
+      "label": "uint256[]",
+      "numberOfBytes": "32"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_bytes32": {
+      "encoding": "inplace",
+      "label": "bytes32",
+      "numberOfBytes": "32"
+    },
+    "t_mapping(t_address,t_array(t_uint256)dyn_storage)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => uint256[])",
+      "numberOfBytes": "32",
+      "value": "t_array(t_uint256)dyn_storage"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_address,t_mapping(t_address,t_bool))": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => mapping(address => bool))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_address,t_bool)"
+    },
+    "t_mapping(t_address,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_mapping(t_bytes32,t_struct(RoleData)272_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct AccessControl.RoleData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(RoleData)272_storage"
+    },
+    "t_mapping(t_uint256,t_address)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => address)",
+      "numberOfBytes": "32",
+      "value": "t_address"
+    },
+    "t_mapping(t_uint256,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_mapping(t_uint256,t_uint8)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => uint8)",
+      "numberOfBytes": "32",
+      "value": "t_uint8"
+    },
+    "t_string_storage": {
+      "encoding": "bytes",
+      "label": "string",
+      "numberOfBytes": "32"
+    },
+    "t_struct(RoleData)272_storage": {
+      "encoding": "inplace",
+      "label": "struct AccessControl.RoleData",
+      "members": [
+        {
+          "astId": 269,
+          "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+          "label": "hasRole",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_address,t_bool)"
+        },
+        {
+          "astId": 271,
+          "contract": "contracts/core/SidioraNFT.sol:SidioraNFT",
+          "label": "adminRole",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_bytes32"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    },
+    "t_uint8": {
+      "encoding": "inplace",
+      "label": "uint8",
+      "numberOfBytes": "1"
+    }
+  }
+}

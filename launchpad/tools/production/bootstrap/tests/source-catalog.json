@@ -1,0 +1,3573 @@
+{
+  "schema_version": 1,
+  "status": "inventoried",
+  "mode": "inventory",
+  "evidence_level": "source_inventory_only",
+  "go_modules": [
+    {
+      "path": "shared",
+      "manifest_exists": true,
+      "files": [
+        {
+          "path": "shared/auth/eip191_test.go",
+          "sha256": "d65e1c99e1200be374530c79c5b834fcfe3b676d1461b9ebe47b453c7897d98f",
+          "declarations": [
+            {
+              "name": "TestVerifyWalletSignatureValid",
+              "line": 13
+            },
+            {
+              "name": "TestVerifyWalletSignatureCaseInsensitiveAddress",
+              "line": 20
+            },
+            {
+              "name": "TestVerifyWalletSignatureRejects",
+              "line": 28
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/auth",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/auth/webhook_test.go",
+          "sha256": "d459f44765ec114f0bdfc797e4ae219ee9b29c927efc6badbcf4ae401f154147",
+          "declarations": [
+            {
+              "name": "TestSignWebhookGolden",
+              "line": 9
+            },
+            {
+              "name": "TestVerifyWebhookRoundTrip",
+              "line": 20
+            },
+            {
+              "name": "TestVerifyWebhookFailures",
+              "line": 30
+            },
+            {
+              "name": "TestVerifyWebhookDefaultsWindow",
+              "line": 62
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/auth",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/chain/client_test.go",
+          "sha256": "3323f8020d1bafea296b873e60b587a89e4910cf6257c71416b5266bf409a167",
+          "declarations": [
+            {
+              "name": "TestPaxeerNetworkConfig",
+              "line": 40
+            },
+            {
+              "name": "TestNewClientRequiresURL",
+              "line": 47
+            },
+            {
+              "name": "TestChainIDAndBlockNumber",
+              "line": 54
+            },
+            {
+              "name": "TestFailoverToSecondary",
+              "line": 77
+            },
+            {
+              "name": "TestEthAccessor",
+              "line": 94
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/chain",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/chain/contracts_test.go",
+          "sha256": "2838d8b9179982b7119a109f1f85033e2724782ca6d67bab94ca4fa6117239a1",
+          "declarations": [
+            {
+              "name": "TestParseContractAddresses",
+              "line": 37
+            },
+            {
+              "name": "TestParseContractAddressesErrors",
+              "line": 66
+            },
+            {
+              "name": "TestCreateContractsBindsAll",
+              "line": 91
+            },
+            {
+              "name": "TestCreateContractsNilArgs",
+              "line": 116
+            },
+            {
+              "name": "TestCreateContractsInvalidEnv",
+              "line": 133
+            },
+            {
+              "name": "TestCreateContractsRouting",
+              "line": 152
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/chain",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/config/env_test.go",
+          "sha256": "39c59406f17abbfab203478f5c29b5a5978c8b874b7c1cb69617fd2cdfa53f82",
+          "declarations": [
+            {
+              "name": "TestLoadValidWithDefaults",
+              "line": 25
+            },
+            {
+              "name": "TestLoadCoercesAndOverrides",
+              "line": 48
+            },
+            {
+              "name": "TestLoadMissingRequired",
+              "line": 70
+            },
+            {
+              "name": "TestValidateRejectsBadAddress",
+              "line": 78
+            },
+            {
+              "name": "TestValidateRejectsBadURL",
+              "line": 86
+            },
+            {
+              "name": "TestValidateRejectsBadFallbackURL",
+              "line": 94
+            },
+            {
+              "name": "TestValidateRejectsBadEnums",
+              "line": 102
+            },
+            {
+              "name": "TestValidateRejectsBadNodeEnv",
+              "line": 110
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/config",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/constants/constants_test.go",
+          "sha256": "4e40c512b876c786a250a7e4a41426f77315e65b88950b26a96d5e0f5ae4cdc9",
+          "declarations": [
+            {
+              "name": "TestChannelValues",
+              "line": 5
+            },
+            {
+              "name": "TestQueueValues",
+              "line": 56
+            },
+            {
+              "name": "TestTimeframes",
+              "line": 75
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/constants",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/db/bigint_test.go",
+          "sha256": "fc6c4bce34dea50ef745d9273c6ddc9a762c3fad3eb5c6c22a8886d60ff4254a",
+          "declarations": [
+            {
+              "name": "TestBigintMaxMin",
+              "line": 20
+            },
+            {
+              "name": "TestBigintAddSub",
+              "line": 43
+            },
+            {
+              "name": "TestBigintMulDiv",
+              "line": 58
+            },
+            {
+              "name": "TestComputeMarketCap",
+              "line": 70
+            },
+            {
+              "name": "TestBigintErrors",
+              "line": 86
+            },
+            {
+              "name": "TestNowSeconds",
+              "line": 125
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/db",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/db/client_test.go",
+          "sha256": "40d99bb86de0f13161bfe10b52c29bfa66d9cb8317cbeaf5cdb15addbfbf1c4d",
+          "declarations": [
+            {
+              "name": "TestPoolTag",
+              "line": 11
+            },
+            {
+              "name": "TestNewPoolBadDSN",
+              "line": 26
+            },
+            {
+              "name": "TestNewPoolIntegration",
+              "line": 33
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/db",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/db/crossschema_test.go",
+          "sha256": "cff11bdf189a9407c3cda41d8ce22a4965cd3c0f1dbcb397419f8dd3996996b8",
+          "declarations": [
+            {
+              "name": "TestCrossSchemaTableNames",
+              "line": 5
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/db",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/http/http_test.go",
+          "sha256": "51c8d74d7a1e1eadb32a0bebda9c71e45515ac871b8726843f719a27d70215df",
+          "declarations": [
+            {
+              "name": "TestNewRouterHealth",
+              "line": 20
+            },
+            {
+              "name": "TestCORSHeader",
+              "line": 40
+            },
+            {
+              "name": "TestResolveOrigins",
+              "line": 52
+            },
+            {
+              "name": "TestReadyHealthy",
+              "line": 68
+            },
+            {
+              "name": "TestReadyDegraded",
+              "line": 87
+            },
+            {
+              "name": "TestReadyCustomCheckFails",
+              "line": 102
+            },
+            {
+              "name": "TestWriteErrorMasks5xx",
+              "line": 120
+            },
+            {
+              "name": "TestNotFoundAndMethodHandlers",
+              "line": 134
+            },
+            {
+              "name": "TestRateLimitInMemory",
+              "line": 148
+            },
+            {
+              "name": "TestRateLimitRoutePrefixBypass",
+              "line": 169
+            },
+            {
+              "name": "TestAPIKeyAuth",
+              "line": 184
+            },
+            {
+              "name": "TestScanBufferNotConfigured",
+              "line": 225
+            },
+            {
+              "name": "TestScanBufferUnreachable",
+              "line": 233
+            },
+            {
+              "name": "TestScanBufferClean",
+              "line": 281
+            },
+            {
+              "name": "TestScanBufferInfected",
+              "line": 290
+            },
+            {
+              "name": "TestRateLimitRedis",
+              "line": 302
+            },
+            {
+              "name": "TestClientIP",
+              "line": 336
+            },
+            {
+              "name": "TestResolveClientIP",
+              "line": 349
+            },
+            {
+              "name": "TestRealIPMiddleware",
+              "line": 388
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/http",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/log/log_test.go",
+          "sha256": "aa4a1cfddb4cfe91e5cfd142d66ade800567c07990c49971fdba7c011d635fe2",
+          "declarations": [
+            {
+              "name": "TestParseLevel",
+              "line": 10
+            },
+            {
+              "name": "TestNewEmitsServiceAndLowercaseLevel",
+              "line": 28
+            },
+            {
+              "name": "TestRedactsSecrets",
+              "line": 49
+            },
+            {
+              "name": "TestNewToStdout",
+              "line": 74
+            },
+            {
+              "name": "TestLevelFiltering",
+              "line": 81
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/log",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/process/lifecycle_test.go",
+          "sha256": "3d453eab6d5368f5a664e16988d4c4e12e5b6bcb7756613cd835efd9a202fccd",
+          "declarations": [
+            {
+              "name": "TestRunLogsAllBranches",
+              "line": 14
+            },
+            {
+              "name": "TestRunRunsShutdownOnContextCancel",
+              "line": 37
+            },
+            {
+              "name": "TestRunReturnsShutdownError",
+              "line": 55
+            },
+            {
+              "name": "TestRunTimesOut",
+              "line": 69
+            },
+            {
+              "name": "TestRunRespondsToSignal",
+              "line": 82
+            },
+            {
+              "name": "TestDefaults",
+              "line": 104
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/process",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/queue/queue_test.go",
+          "sha256": "29dcaf5f53cb8f320a9c3e1264c6145471d7e53ea662807a50e1d200f3918015",
+          "declarations": [
+            {
+              "name": "TestParseRedisConn",
+              "line": 11
+            },
+            {
+              "name": "TestParseRedisConnBad",
+              "line": 29
+            },
+            {
+              "name": "TestServerDefaults",
+              "line": 36
+            },
+            {
+              "name": "TestServerWithQueuesAndConcurrency",
+              "line": 45
+            },
+            {
+              "name": "TestConstructorsBadURL",
+              "line": 56
+            },
+            {
+              "name": "TestEnqueueIntegration",
+              "line": 69
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/queue",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/redis/redis_test.go",
+          "sha256": "65694bf7e81efc2bccbd10102d813226e8c818629179e7e581cff9b9ab3c5c69",
+          "declarations": [
+            {
+              "name": "TestNewClientBadURL",
+              "line": 27
+            },
+            {
+              "name": "TestPubSubConstructorsBadURL",
+              "line": 34
+            },
+            {
+              "name": "TestCacheErrorPaths",
+              "line": 44
+            },
+            {
+              "name": "TestSubscribeHandlerError",
+              "line": 77
+            },
+            {
+              "name": "TestClientAndCacheIntegration",
+              "line": 119
+            },
+            {
+              "name": "TestPublishJSON",
+              "line": 171
+            },
+            {
+              "name": "TestPubSubIntegration",
+              "line": 223
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/redis",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/secrets/manager_test.go",
+          "sha256": "adb6d9b1bd3ee6db1fd39f975dfcc9e4911efd1528d7d0392e5d503b850bfe7e",
+          "declarations": [
+            {
+              "name": "TestNewLogsWarnings",
+              "line": 12
+            },
+            {
+              "name": "TestCachedPropagatesDelegateError",
+              "line": 32
+            },
+            {
+              "name": "TestEnvProvider",
+              "line": 42
+            },
+            {
+              "name": "TestNewDefaultsToEnv",
+              "line": 60
+            },
+            {
+              "name": "TestNewUnknownAndCloudFallBackToEnv",
+              "line": 67
+            },
+            {
+              "name": "TestCachedProviderCachesAndExpires",
+              "line": 75
+            },
+            {
+              "name": "TestCachedGetRequired",
+              "line": 97
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/secrets",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/storage/r2_test.go",
+          "sha256": "dd8d2be9a81a8a85de5b278ab4c4132db6fa2fddf0fe34e41f1a876faa8e5306",
+          "declarations": [
+            {
+              "name": "TestClient_PutGetRoundTrip",
+              "line": 77
+            },
+            {
+              "name": "TestClient_GetBytes",
+              "line": 123
+            },
+            {
+              "name": "TestClient_Head",
+              "line": 143
+            },
+            {
+              "name": "TestClient_Delete",
+              "line": 163
+            },
+            {
+              "name": "TestClient_NotFound",
+              "line": 182
+            },
+            {
+              "name": "TestClient_Bucket",
+              "line": 197
+            },
+            {
+              "name": "TestNewFromS3",
+              "line": 204
+            },
+            {
+              "name": "TestClient_BackendErrors",
+              "line": 260
+            },
+            {
+              "name": "TestNew_ConfigValidation",
+              "line": 296
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/storage",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "shared/util/util_test.go",
+          "sha256": "c431bbbb3e50043455643f7d5f11cf601c9a3644e2a880239dacddec0725908b",
+          "declarations": [
+            {
+              "name": "TestHashToInt64Parity",
+              "line": 7
+            },
+            {
+              "name": "TestHashToInt64Deterministic",
+              "line": 28
+            },
+            {
+              "name": "TestFormatPriceParity",
+              "line": 41
+            },
+            {
+              "name": "TestFormatVolumeParity",
+              "line": 65
+            },
+            {
+              "name": "TestFormatErrors",
+              "line": 89
+            },
+            {
+              "name": "TestFormatTrimsWhitespace",
+              "line": 98
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/shared/util",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        }
+      ],
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-json",
+        "./..."
+      ],
+      "environment": {
+        "GOWORK": "off",
+        "GOMAXPROCS": "2"
+      },
+      "manifest_sha256": "7228fc05353177baf5d6b4b2871c345614722aa54b357dcee8fc63da63da873b",
+      "module_import": "github.com/Sidiora-Technologies/KindleLaunch/shared",
+      "declared_test_count": 104
+    },
+    {
+      "path": "protocol",
+      "manifest_exists": true,
+      "files": [
+        {
+          "path": "protocol/addresses_test.go",
+          "sha256": "cec557f01938d47804e3dbf11e85586a41fc9b83fd76123b1a8a6dfa5cfea09c",
+          "declarations": [
+            {
+              "name": "TestLiteralsAreEIP55Checksummed",
+              "line": 38
+            },
+            {
+              "name": "TestChainID",
+              "line": 49
+            },
+            {
+              "name": "TestBoundContractsComplete",
+              "line": 59
+            },
+            {
+              "name": "TestEnvDefaults",
+              "line": 84
+            },
+            {
+              "name": "TestContractAddressesUniqueAndNonZero",
+              "line": 118
+            },
+            {
+              "name": "TestImplementationsPresent",
+              "line": 150
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/protocol",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "protocol/events_test.go",
+          "sha256": "cc1a054e4595cb27634079c65be3e0373aa266a43ca4163d83b9ac30818404e7",
+          "declarations": [
+            {
+              "name": "TestRegistryNonEmpty",
+              "line": 10
+            },
+            {
+              "name": "TestEveryTopicIsKeccakOfSig",
+              "line": 24
+            },
+            {
+              "name": "TestKnownTopics",
+              "line": 42
+            },
+            {
+              "name": "TestLookupUnknownEvent",
+              "line": 74
+            },
+            {
+              "name": "TestEventsDeterministicOrder",
+              "line": 82
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/protocol",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        }
+      ],
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-json",
+        "./..."
+      ],
+      "environment": {
+        "GOWORK": "off",
+        "GOMAXPROCS": "2"
+      },
+      "manifest_sha256": "10d01dfd6839aaf4762b8b766d44f3decb042eff1e0cbb555944e1a8e190bba6",
+      "module_import": "github.com/Sidiora-Technologies/KindleLaunch/protocol",
+      "declared_test_count": 11
+    },
+    {
+      "path": "core/api",
+      "manifest_exists": true,
+      "files": [
+        {
+          "path": "core/api/internal/app/app_test.go",
+          "sha256": "e56c84b17725d7bba54455ba118bc62c68d2e67af0dad6f689331ef3270fa6a9",
+          "declarations": [
+            {
+              "name": "TestApp_HealthReady",
+              "line": 72
+            },
+            {
+              "name": "TestApp_StatusEndpoint",
+              "line": 89
+            },
+            {
+              "name": "TestApp_StatsRESTEndToEnd",
+              "line": 106
+            },
+            {
+              "name": "TestApp_RealtimeSSERoundTrip",
+              "line": 130
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/api/internal/app",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/api/internal/broker/broker_test.go",
+          "sha256": "f8c99b8008dbf6ea817e0dbbf4c7fa3613c846e8c00afeceea125cd95c2f4cb6",
+          "declarations": [
+            {
+              "name": "TestDefaultTransform_CandleFrameShape",
+              "line": 54
+            },
+            {
+              "name": "TestDefaultTransform_GenericEnvelope",
+              "line": 84
+            },
+            {
+              "name": "TestDefaultTransform_InvalidJSON",
+              "line": 106
+            },
+            {
+              "name": "TestDefaultTransform_ResolvesArgsNestedPool",
+              "line": 124
+            },
+            {
+              "name": "TestDispatch_ArgsNestedSwapDoesNotFanOutGlobally",
+              "line": 146
+            },
+            {
+              "name": "TestDispatch_RoutesByChannelAndPool",
+              "line": 163
+            },
+            {
+              "name": "TestDispatch_WildcardReceivesAllChannels",
+              "line": 181
+            },
+            {
+              "name": "TestDispatch_GlobalEventReachesPoolFilteredSubscriber",
+              "line": 194
+            },
+            {
+              "name": "TestDispatch_CoalescesLatestCandlePerKey",
+              "line": 210
+            },
+            {
+              "name": "TestDispatch_DistinctCoalesceKeysKept",
+              "line": 234
+            },
+            {
+              "name": "TestDispatch_MustDeliverPreservesOrder",
+              "line": 248
+            },
+            {
+              "name": "TestDeliver_EvictsSlowConsumerOnOverflow",
+              "line": 273
+            },
+            {
+              "name": "TestDeliver_EvictsOnDistinctCoalesceKeyOverflow",
+              "line": 286
+            },
+            {
+              "name": "TestSignal_FiresForMustDeliverNotCoalesced",
+              "line": 299
+            },
+            {
+              "name": "TestDispatch_DropsInvalidPayload",
+              "line": 321
+            },
+            {
+              "name": "TestResubscribe_SwitchesChannelRouting",
+              "line": 335
+            },
+            {
+              "name": "TestDefaultTransform_DerivedStateChannels",
+              "line": 359
+            },
+            {
+              "name": "TestDispatch_StatsUpdateRoutesByPool",
+              "line": 447
+            },
+            {
+              "name": "TestDispatch_GlobalRankingsReachesPoolFilteredSubscriber",
+              "line": 479
+            },
+            {
+              "name": "TestSubscribe_UnregisterReleasesIndex",
+              "line": 493
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/api/internal/broker",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/api/internal/broker/integration_test.go",
+          "sha256": "5bf775b08f17087afbbcc22fa465dfbbf9210dedf2105e5d33cb8ac2ede74b93",
+          "declarations": [
+            {
+              "name": "TestBroker_RunFansOutRealRedisPublish",
+              "line": 21
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/api/internal/broker",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/api/internal/cache/cache_test.go",
+          "sha256": "4d0d4058e4bb84ac191fc99847064e6e6cd1f1128f47bb4c90091aee798f82f1",
+          "declarations": [
+            {
+              "name": "TestETag_StableAndDistinct",
+              "line": 13
+            },
+            {
+              "name": "TestGetOrFetch_CachesWithinTTL",
+              "line": 28
+            },
+            {
+              "name": "TestGetOrFetch_RefetchesAfterTTL",
+              "line": 47
+            },
+            {
+              "name": "TestGetOrFetch_SingleflightDedupesConcurrent",
+              "line": 62
+            },
+            {
+              "name": "TestGetOrFetch_LRUEviction",
+              "line": 91
+            },
+            {
+              "name": "TestGetOrFetch_ErrorNotCached",
+              "line": 113
+            },
+            {
+              "name": "TestHandler_ServesAndConditional304",
+              "line": 129
+            },
+            {
+              "name": "TestHandler_FetchErrorReturns500",
+              "line": 159
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/api/internal/cache",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/api/internal/config/config_test.go",
+          "sha256": "5e6524cb37814eb2b8c3988275550d2225b4e3d27a915dc52a9d01f7ca33fb96",
+          "declarations": [
+            {
+              "name": "TestLoad_DefaultsHappyPath",
+              "line": 48
+            },
+            {
+              "name": "TestLoad_OverridesAndRedissScheme",
+              "line": 94
+            },
+            {
+              "name": "TestLoad_Errors",
+              "line": 122
+            },
+            {
+              "name": "TestValidate_DirectBoundary",
+              "line": 149
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/api/internal/config",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/api/internal/ratelimit/ratelimit_test.go",
+          "sha256": "53e324cc9641bdae20f988194b08fcffeaf0de7c3368d57bd46166b31a3c6d2c",
+          "declarations": [
+            {
+              "name": "TestClientKey_PrefersAPIKeyThenIP",
+              "line": 10
+            },
+            {
+              "name": "TestLimiter_LoadShedsOverCapacity",
+              "line": 22
+            },
+            {
+              "name": "TestLimiter_HealthBypassesCap",
+              "line": 71
+            },
+            {
+              "name": "TestNewLimiter_DefaultsNonPositive",
+              "line": 96
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/api/internal/ratelimit",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/api/internal/rest/rest_test.go",
+          "sha256": "3191dcc7a04bf69f4e6923a748cc69421fb3fd41964112e961bd1163c26dfe81",
+          "declarations": [
+            {
+              "name": "TestUDF_Config",
+              "line": 48
+            },
+            {
+              "name": "TestUDF_History",
+              "line": 59
+            },
+            {
+              "name": "TestUDF_History_NoData",
+              "line": 83
+            },
+            {
+              "name": "TestStats_ByPool_AndConditional304",
+              "line": 101
+            },
+            {
+              "name": "TestStats_NotFound",
+              "line": 129
+            },
+            {
+              "name": "TestStats_Batch",
+              "line": 137
+            },
+            {
+              "name": "TestRankings_ByCategory",
+              "line": 152
+            },
+            {
+              "name": "TestRankings_InvalidCategory",
+              "line": 176
+            },
+            {
+              "name": "TestPlatformMetrics_HitAndEmpty",
+              "line": 184
+            },
+            {
+              "name": "TestTokenBFF_Aggregates",
+              "line": 200
+            },
+            {
+              "name": "TestTokenBFF_InvalidPool",
+              "line": 229
+            },
+            {
+              "name": "TestTokenBFF_EmptyFallbacks",
+              "line": 237
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/api/internal/rest",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/api/internal/sse/sse_test.go",
+          "sha256": "961f2c0f2988dad5530da6917eda89e2d39a4b433b518be298a2cbea3c049fde",
+          "declarations": [
+            {
+              "name": "TestSSE_StreamsSubscribedChannelFilteredByPool",
+              "line": 114
+            },
+            {
+              "name": "TestSSE_WildcardChannels",
+              "line": 129
+            },
+            {
+              "name": "TestSSE_CandlesEndpoint",
+              "line": 142
+            },
+            {
+              "name": "TestSSE_PerIPConnectionCap",
+              "line": 162
+            },
+            {
+              "name": "TestSSE_OpensWithComment",
+              "line": 179
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/api/internal/sse",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/api/internal/store/store_test.go",
+          "sha256": "29bf58ae7c04f195938c72ecbb9cea1e4ba3145f1469aacbec1b8d52d5cc3908",
+          "declarations": [
+            {
+              "name": "TestCandleHistoryRange",
+              "line": 34
+            },
+            {
+              "name": "TestCandleHistoryCountback",
+              "line": 57
+            },
+            {
+              "name": "TestPoolStatsJSON_DBThenCache",
+              "line": 86
+            },
+            {
+              "name": "TestPoolStatsJSON_ServesFromCache",
+              "line": 108
+            },
+            {
+              "name": "TestPoolStatsJSON_NotFound",
+              "line": 126
+            },
+            {
+              "name": "TestStatsBatch_CacheAndDBFallback",
+              "line": 137
+            },
+            {
+              "name": "TestTopHolders_NumericOrder",
+              "line": 159
+            },
+            {
+              "name": "TestRankings_FromRedisZSet",
+              "line": 184
+            },
+            {
+              "name": "TestCachedJSON_HitAndMiss",
+              "line": 210
+            },
+            {
+              "name": "TestPing",
+              "line": 232
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/api/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/api/internal/ws/ws_test.go",
+          "sha256": "cda3fb866c0f10053660c2dc57932ffb47447e4b24dad6440d6149d849ec76c6",
+          "declarations": [
+            {
+              "name": "TestWS_ConnectedWelcome",
+              "line": 93
+            },
+            {
+              "name": "TestWS_SubscribeAndReceiveFilteredByPool",
+              "line": 101
+            },
+            {
+              "name": "TestWS_Unsubscribe",
+              "line": 126
+            },
+            {
+              "name": "TestWS_Ping",
+              "line": 141
+            },
+            {
+              "name": "TestWS_CandlesEndpointParity",
+              "line": 150
+            },
+            {
+              "name": "TestWS_PerIPConnectionCap",
+              "line": 175
+            },
+            {
+              "name": "TestWS_InvalidJSONFrame",
+              "line": 196
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/api/internal/ws",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        }
+      ],
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-json",
+        "./..."
+      ],
+      "environment": {
+        "GOWORK": "off",
+        "GOMAXPROCS": "2"
+      },
+      "manifest_sha256": "8a7da13f4c8a74c6496b288ad9f84538c33054a10b45551cf788937deb819ec1",
+      "module_import": "github.com/Sidiora-Technologies/KindleLaunch/core/api",
+      "declared_test_count": 75
+    },
+    {
+      "path": "core/indexer",
+      "manifest_exists": true,
+      "files": [
+        {
+          "path": "core/indexer/internal/chainreader/nft_test.go",
+          "sha256": "f4c79e57ad5fbe442e1b7db17ead7d7c5e837d5929d461f635eed7cbc14f8ef2",
+          "declarations": [
+            {
+              "name": "TestNftIDByPool",
+              "line": 49
+            },
+            {
+              "name": "TestNftIDByPoolRevert",
+              "line": 72
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/indexer/internal/chainreader",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/indexer/internal/config/config_test.go",
+          "sha256": "eea1e38e42bf7ecf2c90cc39aff662dfdb7f083bdfad87e1a755e4084e212114",
+          "declarations": [
+            {
+              "name": "TestLoadDefaults",
+              "line": 60
+            },
+            {
+              "name": "TestLoadHeadSourceOverride",
+              "line": 96
+            },
+            {
+              "name": "TestLoadBackfillFromBlock",
+              "line": 112
+            },
+            {
+              "name": "TestLoadCleanListTrims",
+              "line": 124
+            },
+            {
+              "name": "TestLoadWebhookMatchedSecrets",
+              "line": 142
+            },
+            {
+              "name": "TestLoadValidationErrors",
+              "line": 151
+            },
+            {
+              "name": "TestLoadParseError",
+              "line": 197
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/indexer/internal/config",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/indexer/internal/decode/decode_test.go",
+          "sha256": "969ace26360198f8ba37b091151939c6c4dfc71494571f4e5ce8ccd5c50d694c",
+          "declarations": [
+            {
+              "name": "TestDecodeEmptyTopics",
+              "line": 95
+            },
+            {
+              "name": "TestDecodeUnknownTopic",
+              "line": 103
+            },
+            {
+              "name": "TestDecodeMarketCreated",
+              "line": 112
+            },
+            {
+              "name": "TestDecodeSwapHappy",
+              "line": 151
+            },
+            {
+              "name": "TestDecodeSwapEvmosBoolQuirk",
+              "line": 178
+            },
+            {
+              "name": "TestDecodePoolStateUpdated",
+              "line": 213
+            },
+            {
+              "name": "TestDecodeOpticalExecuted",
+              "line": 228
+            },
+            {
+              "name": "TestDecodeFeeDistributedUint8",
+              "line": 249
+            },
+            {
+              "name": "TestDecodeConfigUpdated",
+              "line": 271
+            },
+            {
+              "name": "TestDecodeTopicsUnderflow",
+              "line": 288
+            },
+            {
+              "name": "TestDecodeDataUnpackError",
+              "line": 298
+            },
+            {
+              "name": "TestHumanize",
+              "line": 311
+            },
+            {
+              "name": "TestDecodeConcurrent",
+              "line": 352
+            },
+            {
+              "name": "FuzzDecode",
+              "line": 374
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/indexer/internal/decode",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/indexer/internal/publisher/publisher_test.go",
+          "sha256": "5e25f2dba8963f1a560a47159638f28ba77de180c3bd5f14663bfde84642a71c",
+          "declarations": [
+            {
+              "name": "TestBuildTargets",
+              "line": 69
+            },
+            {
+              "name": "TestPublishBatchDeliversSigned",
+              "line": 85
+            },
+            {
+              "name": "TestPublishBatchMultipleTargets",
+              "line": 114
+            },
+            {
+              "name": "TestPublishBatchNoOpPaths",
+              "line": 132
+            },
+            {
+              "name": "TestDeadLetterOnPermanentFailure",
+              "line": 158
+            },
+            {
+              "name": "TestRetryThenSucceed",
+              "line": 190
+            },
+            {
+              "name": "TestDedupViaRedis",
+              "line": 221
+            },
+            {
+              "name": "TestPublishBatchFansOutToRedis",
+              "line": 257
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/indexer/internal/publisher",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/indexer/internal/source/evm_test.go",
+          "sha256": "9cb894226a3baffdf1671a58eed5296cdabe2ba7b96d8c3a618f901932095dab",
+          "declarations": [
+            {
+              "name": "TestParseHexHelpers",
+              "line": 99
+            },
+            {
+              "name": "TestEVMHeadAndFetchLogs",
+              "line": 115
+            },
+            {
+              "name": "TestEVMFetchLogsEmpty",
+              "line": 171
+            },
+            {
+              "name": "TestEVMMultiURLNameAndFailover",
+              "line": 188
+            },
+            {
+              "name": "TestEVMAllNodesFail",
+              "line": 206
+            },
+            {
+              "name": "TestEVMStaleQuarantine",
+              "line": 224
+            },
+            {
+              "name": "TestNewEVMRequiresURL",
+              "line": 247
+            },
+            {
+              "name": "TestEVMFetchLogsBlockNull",
+              "line": 254
+            },
+            {
+              "name": "TestEVMFetchLogsBadTimestamp",
+              "line": 270
+            },
+            {
+              "name": "TestEVMRPCErrorResponse",
+              "line": 286
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/indexer/internal/source",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/indexer/internal/source/factory_test.go",
+          "sha256": "4adee3ef2a2e28c620bce6e82d9456be4b93de68cc9cd9605c94f097459b72cb",
+          "declarations": [
+            {
+              "name": "TestCreatePaxscanReused",
+              "line": 14
+            },
+            {
+              "name": "TestCreateRPCGetLogs",
+              "line": 35
+            },
+            {
+              "name": "TestCreateMixedSources",
+              "line": 55
+            },
+            {
+              "name": "TestCreateErrors",
+              "line": 79
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/indexer/internal/source",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/indexer/internal/source/paxscan_test.go",
+          "sha256": "0023aa5bb0d79d3335bf4a4ce7c4cd6fc5124eaf4ed83a0aa5898456de1dd708",
+          "declarations": [
+            {
+              "name": "TestPaxscanFetchLogsAndHead",
+              "line": 30
+            },
+            {
+              "name": "TestPaxscanFetchLogsEmpty",
+              "line": 104
+            },
+            {
+              "name": "TestNewPaxscanBadDSN",
+              "line": 129
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/indexer/internal/source",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/indexer/internal/store/store_test.go",
+          "sha256": "69514dfffbc194a0b63d26d5c4f48e730cd0ee482e868e4139db6490aa0d296a",
+          "declarations": [
+            {
+              "name": "TestCursor",
+              "line": 14
+            },
+            {
+              "name": "TestPoolInsertGetCountIdempotent",
+              "line": 64
+            },
+            {
+              "name": "TestSwapInsertCountIdempotent",
+              "line": 107
+            },
+            {
+              "name": "TestInsertAllEventTypes",
+              "line": 129
+            },
+            {
+              "name": "TestBackfillJobLifecycle",
+              "line": 190
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/indexer/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        }
+      ],
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-json",
+        "./..."
+      ],
+      "environment": {
+        "GOWORK": "off",
+        "GOMAXPROCS": "2"
+      },
+      "manifest_sha256": "128fe9db13197b2a67bcccb4f24197792e877017e7f29d9ab9a817349db738a2",
+      "module_import": "github.com/Sidiora-Technologies/KindleLaunch/core/indexer",
+      "declared_test_count": 53
+    },
+    {
+      "path": "core/pnl-tracker",
+      "manifest_exists": true,
+      "files": [
+        {
+          "path": "core/pnl-tracker/internal/app/app_test.go",
+          "sha256": "67e570d8e88eed53b8160b941ae260ed56f9a386ebb31e9aaebe5c795a9f8af1",
+          "declarations": [
+            {
+              "name": "TestAppEndToEnd",
+              "line": 28
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/app",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/card/card_test.go",
+          "sha256": "e76f715ee2cf5b2c5fc2976e723b4c88d3afc14f54e2a4170dfc177c4bfe32e2",
+          "declarations": [
+            {
+              "name": "TestMintCapturesSnapshotAndPersists",
+              "line": 25
+            },
+            {
+              "name": "TestMintRejectsMissingPosition",
+              "line": 82
+            },
+            {
+              "name": "TestGetUnknownCard",
+              "line": 90
+            },
+            {
+              "name": "TestBuildRenderInputFormatting",
+              "line": 99
+            },
+            {
+              "name": "TestBuildRenderInputLossNoMarket",
+              "line": 132
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/card",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/config/config_test.go",
+          "sha256": "403a2fa0c9e930553722f7a91848783cb3a2a45068cb792bf5c1ad94f5faa540",
+          "declarations": [
+            {
+              "name": "TestLoadDefaults",
+              "line": 37
+            },
+            {
+              "name": "TestLoadOverrides",
+              "line": 64
+            },
+            {
+              "name": "TestLoadRejectsShortSecret",
+              "line": 85
+            },
+            {
+              "name": "TestLoadRejectsBadAddress",
+              "line": 93
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/config",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/httpapi/cards_test.go",
+          "sha256": "e931a69531f493dffc3d6b8c535ef83be8e7ae1ad42c626e3b77c13135c62604",
+          "declarations": [
+            {
+              "name": "TestMintAndHydrateCard",
+              "line": 38
+            },
+            {
+              "name": "TestMintRejectsNoPosition",
+              "line": 95
+            },
+            {
+              "name": "TestMintBadBody",
+              "line": 104
+            },
+            {
+              "name": "TestGetCardNotFound",
+              "line": 112
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/httpapi/events_test.go",
+          "sha256": "855042436224709f2b2f82a2a15767718562767eae2c15932dfeb8c6ec07fc87",
+          "declarations": [
+            {
+              "name": "TestLogEventAndSharerStats",
+              "line": 37
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/httpapi/httpapi_test.go",
+          "sha256": "5c11e0a6849aa102be89833b9c6e0ef8dd37dc36e4226320b6e680c51774a3e0",
+          "declarations": [],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/httpapi/reads_test.go",
+          "sha256": "45abadfb092c25b9b057a7cb6837338d18f84c7cc502fcad489ab9e536523cd5",
+          "declarations": [
+            {
+              "name": "TestPositionsAndPositionRoutes",
+              "line": 18
+            },
+            {
+              "name": "TestTradesRoute",
+              "line": 76
+            },
+            {
+              "name": "TestPortfolioRoute",
+              "line": 134
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/httpapi/status_test.go",
+          "sha256": "5ca42be6135f7e46e69dac96292c8821d3fd68cb510d5dc517072933d11979f8",
+          "declarations": [
+            {
+              "name": "TestStatusReportsLagAndCursor",
+              "line": 16
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/httpapi/webhook_test.go",
+          "sha256": "85d94e053599d878c6baedb5fc14cab4add541c5231e5375d8e06053f86bd8cd",
+          "declarations": [
+            {
+              "name": "TestWebhookAuth",
+              "line": 38
+            },
+            {
+              "name": "TestWebhookDispatchFoldsSwaps",
+              "line": 69
+            },
+            {
+              "name": "TestWebhookFailingEventCounted",
+              "line": 107
+            },
+            {
+              "name": "TestWebhookNonArrayBody",
+              "line": 130
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/ogrender/ogrender_test.go",
+          "sha256": "5ede231cc8fbeced304fab1d75906d4566a7e7211f707b73231c564a37f62581",
+          "declarations": [
+            {
+              "name": "TestRenderProducesValidPNG",
+              "line": 26
+            },
+            {
+              "name": "TestRenderHandlesLossAndLongStrings",
+              "line": 49
+            },
+            {
+              "name": "TestRenderMissingFontDirFallsBack",
+              "line": 69
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/ogrender",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/pnlmath/pnlmath_test.go",
+          "sha256": "2527e56ce94f91f4b371b45e6a0fbecd5db35444aae5ced15f1dd3dc43436ea1",
+          "declarations": [
+            {
+              "name": "TestFoldBuysRecomputeAverageCost",
+              "line": 23
+            },
+            {
+              "name": "TestFoldSellRealisesProfit",
+              "line": 55
+            },
+            {
+              "name": "TestFoldSellRealisesLossAndSigned",
+              "line": 79
+            },
+            {
+              "name": "TestFoldOverSellClampsHoldings",
+              "line": 93
+            },
+            {
+              "name": "TestFoldFirstBuyTsStableAcrossSellFirst",
+              "line": 105
+            },
+            {
+              "name": "TestFoldRejectsBadInput",
+              "line": 120
+            },
+            {
+              "name": "TestHoldingValue",
+              "line": 132
+            },
+            {
+              "name": "TestTotalPnl",
+              "line": 158
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/pnlmath",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/position/consumer_test.go",
+          "sha256": "7562bf5348b403aa55d37df5f3e0b0dbb9243dd130596c9dc3172584e67aa2f7",
+          "declarations": [
+            {
+              "name": "TestProcessEventFoldsAndResolvesToken",
+              "line": 38
+            },
+            {
+              "name": "TestProcessEventPublishesPnlUpdate",
+              "line": 74
+            },
+            {
+              "name": "TestProcessEventIdempotentRedelivery",
+              "line": 111
+            },
+            {
+              "name": "TestProcessSellLegSplit",
+              "line": 132
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/position",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/reconcile/reconcile_test.go",
+          "sha256": "a397f146866e15448b20229f60e25ddddcd75bebbe0cb23cb68022eb3b5989cc",
+          "declarations": [
+            {
+              "name": "TestReconcilerBackfillsAndAdvancesCursor",
+              "line": 41
+            },
+            {
+              "name": "TestReconcilerIdempotentWithConsumerOverlap",
+              "line": 75
+            },
+            {
+              "name": "TestReconcilerBatchKeysetDrainsLargeBlock",
+              "line": 100
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/reconcile",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/referral/referral_test.go",
+          "sha256": "1247e4625c283540ed9373951b70cf8c24a17bef5310e4d2d294ae2ff3be092c",
+          "declarations": [
+            {
+              "name": "TestLogClickAndBindToConversion",
+              "line": 37
+            },
+            {
+              "name": "TestBindWithoutTradeIsNotConversion",
+              "line": 72
+            },
+            {
+              "name": "TestLogResolvesByCardID",
+              "line": 86
+            },
+            {
+              "name": "TestLogUnknownReferral",
+              "line": 101
+            },
+            {
+              "name": "TestLogInvalidType",
+              "line": 110
+            },
+            {
+              "name": "TestLogView",
+              "line": 119
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/referral",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/store/cards_test.go",
+          "sha256": "33a7ceab626ba413000ee4e2517f4421e0bc396d4c3a31883faab9a367c05094",
+          "declarations": [
+            {
+              "name": "TestInsertCardCreatesReferralBinding",
+              "line": 11
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/store/portfolio_test.go",
+          "sha256": "a23285d7aeabc01a5f0eac020bff94609848b45b45a89289fc3eb1c6494b9ede",
+          "declarations": [
+            {
+              "name": "TestPortfolioEnrichesAndSumsNetWorth",
+              "line": 8
+            },
+            {
+              "name": "TestPortfolioEmptyUser",
+              "line": 57
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/store/positions_test.go",
+          "sha256": "264916663747ad92469377d89c1f00459027da55f62474b26b238c03dd919620",
+          "declarations": [
+            {
+              "name": "TestFoldTradeAccumulatesAndIsIdempotent",
+              "line": 21
+            },
+            {
+              "name": "TestFoldTradeRealisesLoss",
+              "line": 78
+            },
+            {
+              "name": "TestListPositionsAndTrades",
+              "line": 97
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/store/reconcile_test.go",
+          "sha256": "dce76fd57e3140427f634cc7d82b1250668fd4ee3645af4877efa8847ddc34a1",
+          "declarations": [
+            {
+              "name": "TestCursorAndUnreconciledSwaps",
+              "line": 22
+            },
+            {
+              "name": "TestConsumerBlockTracksFoldedTrades",
+              "line": 85
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/store/referrals_test.go",
+          "sha256": "2fdf3d328666191d0f0337786f43c1b1e4711c5795cd3f93fc19ee671d7eb0d4",
+          "declarations": [
+            {
+              "name": "TestLogReferralEventDedupAndStats",
+              "line": 22
+            },
+            {
+              "name": "TestLogReferralEventRejectsUnknownType",
+              "line": 70
+            },
+            {
+              "name": "TestSharerStatsEmpty",
+              "line": 79
+            },
+            {
+              "name": "TestUserHasAnyPosition",
+              "line": 91
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/pnl-tracker/internal/store/store_test.go",
+          "sha256": "43700369e6823bc7682d324ac2bdee501803b3e8fa4538297d5cec980e5f9bc6",
+          "declarations": [
+            {
+              "name": "TestCrossSchemaReads",
+              "line": 55
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        }
+      ],
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-json",
+        "./..."
+      ],
+      "environment": {
+        "GOWORK": "off",
+        "GOMAXPROCS": "2"
+      },
+      "manifest_sha256": "ece5ba0217a85837424c8e5340c55cc86a0af0d78adcc4b958ee6625a784d404",
+      "module_import": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker",
+      "declared_test_count": 60
+    },
+    {
+      "path": "core/ranking-algo",
+      "manifest_exists": true,
+      "files": [
+        {
+          "path": "core/ranking-algo/internal/app/app_test.go",
+          "sha256": "a2f464cee985c7e924c8f8fe280a96f417e8ad68fd6ab2d78435a572609dca1c",
+          "declarations": [
+            {
+              "name": "TestNewServesAndRanks",
+              "line": 44
+            },
+            {
+              "name": "TestNewFailsOnBadRedisURL",
+              "line": 109
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/ranking-algo/internal/app",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/ranking-algo/internal/config/config_test.go",
+          "sha256": "446df3c03b573cf5c8a463d1fb7da4e123c1e5b9fed8b9a9edbbebcaf0b196c8",
+          "declarations": [
+            {
+              "name": "TestLoadDefaults",
+              "line": 40
+            },
+            {
+              "name": "TestLoadOverrides",
+              "line": 64
+            },
+            {
+              "name": "TestLoadInvalidIntervals",
+              "line": 87
+            },
+            {
+              "name": "TestLoadInvalidBaseEnv",
+              "line": 112
+            },
+            {
+              "name": "TestLoadMissingRequiredBaseVar",
+              "line": 122
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/ranking-algo/internal/config",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/ranking-algo/internal/httpapi/rankings_test.go",
+          "sha256": "2817ce47a4135a237fda12ccac79c87332026421ea679fa859ca8ea5a06aec93",
+          "declarations": [
+            {
+              "name": "TestRankingInvalidCategory",
+              "line": 41
+            },
+            {
+              "name": "TestRankingByCategoryWithEnrichment",
+              "line": 52
+            },
+            {
+              "name": "TestRankingPagination",
+              "line": 104
+            },
+            {
+              "name": "TestPoolAppearances",
+              "line": 133
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/ranking-algo/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/ranking-algo/internal/ranker/integration_test.go",
+          "sha256": "1fb564c7996aac3046052592887674414d4313baf780b6940fd6d7014c84ba25",
+          "declarations": [
+            {
+              "name": "TestRunAllProducesRankings",
+              "line": 43
+            },
+            {
+              "name": "TestMoversExcludesTrendingTop",
+              "line": 75
+            },
+            {
+              "name": "TestRunNewOrdersByCreatedAt",
+              "line": 105
+            },
+            {
+              "name": "TestRunAllEmptyDBProducesNoEntries",
+              "line": 144
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/ranking-algo/internal/ranker",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/ranking-algo/internal/ranker/score_test.go",
+          "sha256": "b741707a4e595bb700c54ce6ea1078d6d564482c245ebca5cb8bc43f75c8de44",
+          "declarations": [
+            {
+              "name": "TestJSParseFloat",
+              "line": 18
+            },
+            {
+              "name": "TestParseFloatOr",
+              "line": 54
+            },
+            {
+              "name": "TestAbsParseFloatOrZero",
+              "line": 75
+            },
+            {
+              "name": "TestScoreTrending",
+              "line": 95
+            },
+            {
+              "name": "TestScoreBreakout",
+              "line": 124
+            },
+            {
+              "name": "TestScoreMovers",
+              "line": 141
+            },
+            {
+              "name": "TestScoreUnusual",
+              "line": 158
+            },
+            {
+              "name": "TestScoreUnusualNoUniqueTraders",
+              "line": 187
+            },
+            {
+              "name": "FuzzJSParseFloat",
+              "line": 200
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/ranking-algo/internal/ranker",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/ranking-algo/internal/ranker/write_test.go",
+          "sha256": "79720e2cc0b36407ab7c77963245e09d60e9985238e450c28589c41ba4ca0364",
+          "declarations": [
+            {
+              "name": "TestWritePublishesRankingsUpdate",
+              "line": 17
+            },
+            {
+              "name": "TestWriteSortsTruncatesAndPublishes",
+              "line": 60
+            },
+            {
+              "name": "TestWriteEmptyDeletesKey",
+              "line": 94
+            },
+            {
+              "name": "TestWriteAtomicReplace",
+              "line": 115
+            },
+            {
+              "name": "TestWriteTruncationKeepsHighestStably",
+              "line": 143
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/ranking-algo/internal/ranker",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/ranking-algo/internal/store/store_test.go",
+          "sha256": "e16b41973c261e309d70c64b974503148c4a7a342f5d0d1add16ca83ed369cc4",
+          "declarations": [
+            {
+              "name": "TestTrendingCandidatesFilters",
+              "line": 52
+            },
+            {
+              "name": "TestBreakoutCandidatesFilters",
+              "line": 71
+            },
+            {
+              "name": "TestMoversCandidatesFilters",
+              "line": 89
+            },
+            {
+              "name": "TestUnusualCandidatesFilters",
+              "line": 108
+            },
+            {
+              "name": "TestTopVolumeOrderingAndLimit",
+              "line": 125
+            },
+            {
+              "name": "TestNewPoolsOrderingAndLimit",
+              "line": 148
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/ranking-algo/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        }
+      ],
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-json",
+        "./..."
+      ],
+      "environment": {
+        "GOWORK": "off",
+        "GOMAXPROCS": "2"
+      },
+      "manifest_sha256": "2fe13e1c464ebaaab9f033453087840de14f24b4a644563651356aedd3444006",
+      "module_import": "github.com/Sidiora-Technologies/KindleLaunch/core/ranking-algo",
+      "declared_test_count": 35
+    },
+    {
+      "path": "core/stats-workers",
+      "manifest_exists": true,
+      "files": [
+        {
+          "path": "core/stats-workers/internal/consumer/consumer_test.go",
+          "sha256": "1cd38b267fc30db3e4af96e1abbc9da389c87b3d7ca87cdfe5746937b9ae7049",
+          "declarations": [],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/consumer",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/consumer/holder_test.go",
+          "sha256": "2e3107d8d6294dce470f914bf48f1739c87c8cb71528afbcf2ab2801c8285ed2",
+          "declarations": [
+            {
+              "name": "TestHolderTracker",
+              "line": 30
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/consumer",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/consumer/market_test.go",
+          "sha256": "958d43aac2c145408c0d1d4929abcf10cea960b72dd9a65ec215d5ede03d9cc3",
+          "declarations": [
+            {
+              "name": "TestMarketConsumer",
+              "line": 15
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/consumer",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/consumer/multihop_test.go",
+          "sha256": "ad94e2562143d043dda038e2fe597bf00ce8fd4ac105ecd81643d814319c2cbc",
+          "declarations": [
+            {
+              "name": "TestMultihopConsumer",
+              "line": 14
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/consumer",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/consumer/publish_test.go",
+          "sha256": "59247be36297b850647e68c3991915bec183d66fae870ab4727be4228c57241b",
+          "declarations": [
+            {
+              "name": "TestSwapPublishesStatsUpdate",
+              "line": 46
+            },
+            {
+              "name": "TestHolderRefreshPublishesHoldersUpdate",
+              "line": 79
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/consumer",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/consumer/state_test.go",
+          "sha256": "25cc7d9a3a6ccaa65b7f8c7e5d497c999d9a8e01d9dd5914f6bb8ac5e6048f16",
+          "declarations": [
+            {
+              "name": "TestStateConsumer",
+              "line": 15
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/consumer",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/consumer/swap_test.go",
+          "sha256": "ef2b989a71b057c18850bd197349caf015aca1639e4355957418c84181912c1b",
+          "declarations": [
+            {
+              "name": "TestSwapConsumer",
+              "line": 21
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/consumer",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/httpapi/cache_test.go",
+          "sha256": "7fe618127ceb22f80233d23650abf1fccc738983f93f21463997a8659ff7e6bc",
+          "declarations": [
+            {
+              "name": "TestPoolStatsRoute",
+              "line": 16
+            },
+            {
+              "name": "TestPressureRoute",
+              "line": 93
+            },
+            {
+              "name": "TestPlatformRoute",
+              "line": 167
+            },
+            {
+              "name": "TestSearchRoute",
+              "line": 211
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/httpapi/httpapi_test.go",
+          "sha256": "4a1d3e534c07305e43d26169623b4173dcd8ab747fdf7547d837347f72bc42e3",
+          "declarations": [],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/httpapi/publish_test.go",
+          "sha256": "8fba990af81f8deac675cb9f4d6147618540d95aeb2e420dda9f3dbd3d5d76a1",
+          "declarations": [
+            {
+              "name": "TestReactionVotePublishesReactionsUpdate",
+              "line": 47
+            },
+            {
+              "name": "TestPrecomputePublishesPlatformUpdate",
+              "line": 92
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/httpapi/reactions_test.go",
+          "sha256": "3b75bf2f819afec0d53e80dbf3089fd3f164ba3e747a0a34ee5d43815e48a859",
+          "declarations": [
+            {
+              "name": "TestReactionsRoutes",
+              "line": 30
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/httpapi/reads_test.go",
+          "sha256": "eac2b7eb67819d608e7144bcf69498f7edf12b9143f59182402def48e7fc1aab",
+          "declarations": [
+            {
+              "name": "TestHolderListRoute",
+              "line": 45
+            },
+            {
+              "name": "TestHolderDistributionRoute",
+              "line": 92
+            },
+            {
+              "name": "TestWhalesRoute",
+              "line": 166
+            },
+            {
+              "name": "TestCreatorActivityRoute",
+              "line": 209
+            },
+            {
+              "name": "TestRiskRoute",
+              "line": 270
+            },
+            {
+              "name": "TestTransactionsRoute",
+              "line": 311
+            },
+            {
+              "name": "TestCrossTokenSwapRoutes",
+              "line": 351
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/httpapi/webhook_test.go",
+          "sha256": "978a9f35906a76deb572fac5485e4a155f862f8a0301c5bed55587f1de808406",
+          "declarations": [
+            {
+              "name": "TestWebhookAuth",
+              "line": 66
+            },
+            {
+              "name": "TestWebhookDispatch",
+              "line": 97
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/risk/risk_test.go",
+          "sha256": "26714247888be37111b5b772843deff7e5c5de2cd2707b72698f75fefd90393f",
+          "declarations": [
+            {
+              "name": "TestCalculate",
+              "line": 12
+            },
+            {
+              "name": "TestCalculateFactorsNeverNil",
+              "line": 183
+            },
+            {
+              "name": "TestCalculateScoreNeverExceeds100",
+              "line": 202
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/risk",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/store/buckets_test.go",
+          "sha256": "cde8941e53a2e69a6f220b65c0fd97371c73e3ba44086216c648b0286eab2bc6",
+          "declarations": [
+            {
+              "name": "TestApplyVolumeBucket",
+              "line": 31
+            },
+            {
+              "name": "TestRecalculateRollingStats",
+              "line": 83
+            },
+            {
+              "name": "TestUpsertPriceSnapshot",
+              "line": 136
+            },
+            {
+              "name": "TestComputePriceChanges",
+              "line": 165
+            },
+            {
+              "name": "TestUpdatePoolStatsPriceAndChanges",
+              "line": 249
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/store/holders_test.go",
+          "sha256": "e8a31ac6d35d29d518a8a86b04248e1a7a39d4e60513d11357511af9d8c97057",
+          "declarations": [
+            {
+              "name": "TestApplyHolderDelta",
+              "line": 25
+            },
+            {
+              "name": "TestRefreshPoolHolderStats",
+              "line": 100
+            },
+            {
+              "name": "TestHolderReads",
+              "line": 154
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/store/platform_test.go",
+          "sha256": "742a5474c73288ae6dadd0cc5a919ea035725e1a0004b4799173dfa000d92c8c",
+          "declarations": [
+            {
+              "name": "TestPlatformMetrics",
+              "line": 35
+            },
+            {
+              "name": "TestPruneBucketTraders",
+              "line": 90
+            },
+            {
+              "name": "TestPressureStats",
+              "line": 114
+            },
+            {
+              "name": "TestSearch",
+              "line": 159
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/store/store_test.go",
+          "sha256": "abdadad1f8a224dffc3d51523705fd7fbe8492e5bf47edfbd17db7be6267fd5a",
+          "declarations": [
+            {
+              "name": "TestStorePoolStats",
+              "line": 33
+            },
+            {
+              "name": "TestStoreAdvisoryLockSerialization",
+              "line": 140
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/stats-workers/internal/store/transactions_test.go",
+          "sha256": "bd7c1d3696209ad0600bb251caec0745e6db8b51871ce359318f2e8a99d9ec4c",
+          "declarations": [
+            {
+              "name": "TestInsertAndListTransactions",
+              "line": 19
+            },
+            {
+              "name": "TestCrossTokenSwaps",
+              "line": 109
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        }
+      ],
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-json",
+        "./..."
+      ],
+      "environment": {
+        "GOWORK": "off",
+        "GOMAXPROCS": "2"
+      },
+      "manifest_sha256": "b12cca53ebd1113532f194a2c1f30b32c7eed668c59d0fde5cb4f177fbf80c17",
+      "module_import": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers",
+      "declared_test_count": 42
+    },
+    {
+      "path": "core/trading-charts",
+      "manifest_exists": true,
+      "files": [
+        {
+          "path": "core/trading-charts/internal/app/app_test.go",
+          "sha256": "40ac7321e7a49f256da3eebf2a8acf52417426d448ab7aa11394d03a01ab4533",
+          "declarations": [
+            {
+              "name": "TestNewServesHealthAndCloses",
+              "line": 35
+            },
+            {
+              "name": "TestNewBadDatabase",
+              "line": 66
+            },
+            {
+              "name": "TestRunShutsDownOnContextCancel",
+              "line": 83
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts/internal/app",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/trading-charts/internal/config/config_test.go",
+          "sha256": "c4412562ba93719f92f9b39999d29f3fe01e8b004df722a559a8177e8a48b5f1",
+          "declarations": [
+            {
+              "name": "TestLoadHappyPath",
+              "line": 40
+            },
+            {
+              "name": "TestLoadOverridesWSLimits",
+              "line": 61
+            },
+            {
+              "name": "TestLoadMissingSecret",
+              "line": 80
+            },
+            {
+              "name": "TestLoadShortSecret",
+              "line": 90
+            },
+            {
+              "name": "TestLoadInvalidBaseEnv",
+              "line": 101
+            },
+            {
+              "name": "TestLoadMissingRequiredBaseVar",
+              "line": 111
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts/internal/config",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/trading-charts/internal/consumer/swap_consumer_test.go",
+          "sha256": "07077005ea28af473a7d5ac3e8b23083f730412da089c9d49c89c0cecffed11e",
+          "declarations": [
+            {
+              "name": "TestAsStringCoercions",
+              "line": 22
+            },
+            {
+              "name": "TestAsBoolCoercions",
+              "line": 41
+            },
+            {
+              "name": "TestAsInt64Coercions",
+              "line": 61
+            },
+            {
+              "name": "TestNewBadRedisURL",
+              "line": 81
+            },
+            {
+              "name": "TestConsumerProcessesSwapFromChannel",
+              "line": 88
+            },
+            {
+              "name": "TestConsumerFallsBackToBlockNumber",
+              "line": 160
+            },
+            {
+              "name": "TestConsumerUsesTopLevelBlockTimestamp",
+              "line": 220
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts/internal/consumer",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/trading-charts/internal/engine/builder_test.go",
+          "sha256": "ef862b811e6109251ab302a2e93cb42882985c357bdf8b1ae94afc840a2e3e07",
+          "declarations": [
+            {
+              "name": "TestProcessSwapNewCandle",
+              "line": 46
+            },
+            {
+              "name": "TestProcessSwapUpdateExisting",
+              "line": 109
+            },
+            {
+              "name": "TestProcessSwapSameTraderNoUniqueIncrement",
+              "line": 165
+            },
+            {
+              "name": "TestProcessSwapInvalidTimestampSkipped",
+              "line": 192
+            },
+            {
+              "name": "TestProcessSwapInvalidAmountErrors",
+              "line": 212
+            },
+            {
+              "name": "TestProcessSwapDedupSameInstance",
+              "line": 229
+            },
+            {
+              "name": "TestProcessSwapDedupDurableAcrossInstances",
+              "line": 259
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts/internal/engine",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/trading-charts/internal/httpapi/convert_test.go",
+          "sha256": "47df02ef7820f68318e8a19455121b874e33e7c97791a5da4ce2f4ebd3da3124",
+          "declarations": [
+            {
+              "name": "TestAsString",
+              "line": 8
+            },
+            {
+              "name": "TestAsBool",
+              "line": 27
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/trading-charts/internal/httpapi/udf_test.go",
+          "sha256": "86871b363979995d94f7158dbe70fa5e5e66c1e09b253df7bcdf3361e8f81664",
+          "declarations": [
+            {
+              "name": "TestUDFConfig",
+              "line": 39
+            },
+            {
+              "name": "TestUDFSymbols",
+              "line": 50
+            },
+            {
+              "name": "TestUDFTime",
+              "line": 58
+            },
+            {
+              "name": "TestUDFHistoryNoData",
+              "line": 72
+            },
+            {
+              "name": "TestUDFHistoryRangeAndCountback",
+              "line": 80
+            },
+            {
+              "name": "TestUDFHistoryToleratesNonNumericStoredValue",
+              "line": 128
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/trading-charts/internal/httpapi/webhook_test.go",
+          "sha256": "92180a3379cff0570104bbe8aa3f76cbfec9db21e1bf44eca9004bbdeae94178",
+          "declarations": [
+            {
+              "name": "TestWebhookValidSwap",
+              "line": 81
+            },
+            {
+              "name": "TestWebhookMissingSignature",
+              "line": 102
+            },
+            {
+              "name": "TestWebhookBadSignature",
+              "line": 112
+            },
+            {
+              "name": "TestWebhookInvalidJSON",
+              "line": 125
+            },
+            {
+              "name": "TestWebhookEventsNotArray",
+              "line": 135
+            },
+            {
+              "name": "TestWebhookSkipsNonSwapAndBadTimestamp",
+              "line": 145
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/trading-charts/internal/httpapi/ws_test.go",
+          "sha256": "1032a3647e312405c7ad2b8f52b11ad41401e5485eac90413d3680765d353682",
+          "declarations": [
+            {
+              "name": "TestWildcardMatches",
+              "line": 29
+            },
+            {
+              "name": "TestEnqueueEvictsSlowClient",
+              "line": 48
+            },
+            {
+              "name": "TestEnqueueAfterQuit",
+              "line": 64
+            },
+            {
+              "name": "TestClientIPFromRequest",
+              "line": 73
+            },
+            {
+              "name": "TestParseRedisOpts",
+              "line": 86
+            },
+            {
+              "name": "TestKeysAndParseFloat",
+              "line": 96
+            },
+            {
+              "name": "TestWSSubscribeReceiveAndPing",
+              "line": 146
+            },
+            {
+              "name": "TestWSUnsubscribeAndInvalidJSON",
+              "line": 234
+            },
+            {
+              "name": "TestWSPerIPLimit",
+              "line": 258
+            },
+            {
+              "name": "TestWSCapacityLimit",
+              "line": 278
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts/internal/httpapi",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/trading-charts/internal/migrate/migrate_test.go",
+          "sha256": "dd2f9286b88dc5c53aee8e3fb92fbe9f1b047355f2d6c037bc5649ebbe5a7d05",
+          "declarations": [
+            {
+              "name": "TestUpIsIdempotent",
+              "line": 11
+            },
+            {
+              "name": "TestUpBadDSN",
+              "line": 32
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts/internal/migrate",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "core/trading-charts/internal/store/store_test.go",
+          "sha256": "19db0a523fddec927effbc6e64b292f7d3a4f9a95b017ab6a83d8d43a4f8e3fd",
+          "declarations": [
+            {
+              "name": "TestCandleInsertGetUpdate",
+              "line": 41
+            },
+            {
+              "name": "TestCursorLifecycle",
+              "line": 81
+            },
+            {
+              "name": "TestHistoryRangeAndCountback",
+              "line": 129
+            },
+            {
+              "name": "TestStoreErrorBranches",
+              "line": 173
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts/internal/store",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        }
+      ],
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-json",
+        "./..."
+      ],
+      "environment": {
+        "GOWORK": "off",
+        "GOMAXPROCS": "2"
+      },
+      "manifest_sha256": "70b2b63dc1832d081bbd0e4db2da19095e62847e8221a32172557ab113ef4db6",
+      "module_import": "github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts",
+      "declared_test_count": 53
+    },
+    {
+      "path": "media/gateway",
+      "manifest_exists": true,
+      "files": [
+        {
+          "path": "media/gateway/internal/app/app_test.go",
+          "sha256": "5c6d5e1bacd3f4a9f5cd9985f5f9aee5546eec61313c4d2926a97dc00aad6de0",
+          "declarations": [
+            {
+              "name": "TestApp_HealthReady",
+              "line": 154
+            },
+            {
+              "name": "TestApp_SocialRESTInjectsActor",
+              "line": 166
+            },
+            {
+              "name": "TestApp_MediaServe_SmallAndLarge",
+              "line": 189
+            },
+            {
+              "name": "TestApp_WSTunnel",
+              "line": 206
+            },
+            {
+              "name": "TestApp_UploadForwardsToMetadata",
+              "line": 231
+            },
+            {
+              "name": "TestRun_GracefulShutdown",
+              "line": 263
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/gateway/internal/app",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/gateway/internal/auth/auth_test.go",
+          "sha256": "31d4b3d40acadf7a03b8ff8472e52073f615e7be26ce16f867d399e5d0a30873",
+          "declarations": [
+            {
+              "name": "TestAuth_FullLoginFlow",
+              "line": 84
+            },
+            {
+              "name": "TestAuth_NonceIsSingleUse",
+              "line": 115
+            },
+            {
+              "name": "TestAuth_RejectsBadSignature",
+              "line": 130
+            },
+            {
+              "name": "TestAuth_RejectsUnknownNonce",
+              "line": 143
+            },
+            {
+              "name": "TestAuth_NonceRejectsBadWallet",
+              "line": 153
+            },
+            {
+              "name": "TestAuth_RequireSessionRejectsMissing",
+              "line": 161
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/gateway/internal/auth",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/gateway/internal/auth/jwt_test.go",
+          "sha256": "8ae2e41a1b1a951eddcaea1705f55052e608bf34cae1da518de27e1e592cce2f",
+          "declarations": [
+            {
+              "name": "TestSigner_MintVerify",
+              "line": 8
+            },
+            {
+              "name": "TestSigner_Verify_Rejects",
+              "line": 23
+            },
+            {
+              "name": "TestSigner_Verify_Expired",
+              "line": 43
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/gateway/internal/auth",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/gateway/internal/common/common_test.go",
+          "sha256": "829f8a8c1d2c12489fdd97b649bc67a9b08615fec98225eb70c0ae93fed7e4a0",
+          "declarations": [
+            {
+              "name": "TestNormalizeAddr",
+              "line": 5
+            },
+            {
+              "name": "TestIsAddr",
+              "line": 11
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/gateway/internal/common",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/gateway/internal/config/config_test.go",
+          "sha256": "8f490648806604a91275e1f3a727ae13881368405092f7ba2a9360911a46fb43",
+          "declarations": [
+            {
+              "name": "TestLoad_Valid",
+              "line": 25
+            },
+            {
+              "name": "TestBuckets_AllThree",
+              "line": 42
+            },
+            {
+              "name": "TestValidate_Failures",
+              "line": 56
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/gateway/internal/config",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/gateway/internal/image/image_test.go",
+          "sha256": "0710598855c8689703ab7a812fa20e069133c534440f16d303534e5591153c3d",
+          "declarations": [
+            {
+              "name": "TestAllowedMime",
+              "line": 5
+            },
+            {
+              "name": "TestAllowedMimeList",
+              "line": 18
+            },
+            {
+              "name": "TestIsSVG",
+              "line": 24
+            },
+            {
+              "name": "TestIsSVGSafe",
+              "line": 33
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/gateway/internal/image",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/gateway/internal/proxy/rest_test.go",
+          "sha256": "df1d31e2f0d812e1de320c62e1d5e547765fdc145f8a196913525575c839fcc6",
+          "declarations": [
+            {
+              "name": "TestREST_StripsPrefix_AndInjectsActor",
+              "line": 42
+            },
+            {
+              "name": "TestREST_StripsClientSuppliedIdentityHeaders",
+              "line": 63
+            },
+            {
+              "name": "TestREST_BadGatewayOnUpstreamDown",
+              "line": 83
+            },
+            {
+              "name": "TestSingleJoin",
+              "line": 98
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/gateway/internal/proxy",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/gateway/internal/proxy/ws_test.go",
+          "sha256": "0cff484dfe3bfcc1182abef573af03e068ac285c2b6b841c3901fedcabf68702",
+          "declarations": [
+            {
+              "name": "TestWS_TunnelsAndInjectsActor",
+              "line": 48
+            },
+            {
+              "name": "TestWS_RejectsWithoutSession",
+              "line": 86
+            },
+            {
+              "name": "TestWS_BadGatewayWhenUpstreamDown",
+              "line": 107
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/gateway/internal/proxy",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/gateway/internal/serve/serve_test.go",
+          "sha256": "5e36a8b1c0270e1b4152ea958cc625c24673a920b75c2ed7eeb342f5c959b5dd",
+          "declarations": [
+            {
+              "name": "TestServe_OK_WithCacheHeaders",
+              "line": 57
+            },
+            {
+              "name": "TestServe_CacheHit_SurvivesOriginDelete",
+              "line": 79
+            },
+            {
+              "name": "TestServe_NotModified",
+              "line": 102
+            },
+            {
+              "name": "TestServe_Range",
+              "line": 117
+            },
+            {
+              "name": "TestServe_StreamLargeUncached",
+              "line": 130
+            },
+            {
+              "name": "TestServe_NoCacheConfigured",
+              "line": 153
+            },
+            {
+              "name": "TestServe_UnknownBucket",
+              "line": 167
+            },
+            {
+              "name": "TestServe_MissingObject",
+              "line": 175
+            },
+            {
+              "name": "TestServe_InvalidKey",
+              "line": 183
+            },
+            {
+              "name": "TestServe_OriginError",
+              "line": 199
+            },
+            {
+              "name": "TestValidKey",
+              "line": 213
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/gateway/internal/serve",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/gateway/internal/upload/upload_test.go",
+          "sha256": "5cdd9ebc668ca4c712cf015a7b24ef44f58aedf0efd1971273085eea81e7643d",
+          "declarations": [
+            {
+              "name": "TestUpload_ForwardsValidUpload",
+              "line": 92
+            },
+            {
+              "name": "TestUpload_RejectsBadMime",
+              "line": 120
+            },
+            {
+              "name": "TestUpload_RejectsUnsafeSVG",
+              "line": 135
+            },
+            {
+              "name": "TestUpload_RejectsInfectedFile",
+              "line": 147
+            },
+            {
+              "name": "TestUpload_RejectsInvalidAddr",
+              "line": 164
+            },
+            {
+              "name": "TestUpload_BadGatewayWhenMetadataDown",
+              "line": 174
+            },
+            {
+              "name": "TestUpload_RejectsOversize",
+              "line": 187
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/gateway/internal/upload",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        }
+      ],
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-json",
+        "./..."
+      ],
+      "environment": {
+        "GOWORK": "off",
+        "GOMAXPROCS": "2"
+      },
+      "manifest_sha256": "f0944c7ecfa2e14624800cb2b322c0af1631c7b9c810f4c243997b3f3da1f2cb",
+      "module_import": "github.com/Sidiora-Technologies/KindleLaunch/media/gateway",
+      "declared_test_count": 49
+    },
+    {
+      "path": "media/livestream",
+      "manifest_exists": true,
+      "files": [],
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-json",
+        "./..."
+      ],
+      "environment": {
+        "GOWORK": "off",
+        "GOMAXPROCS": "2"
+      },
+      "manifest_sha256": "ea073cc81a8d5e38d22f8e21c17de2777cdb3f66809e48d5fe1c300412280186",
+      "module_import": "github.com/Sidiora-Technologies/KindleLaunch/media/livestream",
+      "declared_test_count": 0
+    },
+    {
+      "path": "media/metadata",
+      "manifest_exists": true,
+      "files": [
+        {
+          "path": "media/metadata/internal/config/config_test.go",
+          "sha256": "3de3ede10daaa262a1e4ea4bde788d0ceb23ce031e5d74736e600d132bc5c45e",
+          "declarations": [
+            {
+              "name": "TestLoad_Valid",
+              "line": 49
+            },
+            {
+              "name": "TestLoad_Defaults",
+              "line": 69
+            },
+            {
+              "name": "TestLoad_Invalid",
+              "line": 91
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/metadata/internal/config",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/metadata/internal/image/image_test.go",
+          "sha256": "ddf80496af4ed2cbb1d84f3b7917c4f26807635500df464022f60402ffd12a29",
+          "declarations": [
+            {
+              "name": "TestAllowedMimeAndExt",
+              "line": 9
+            },
+            {
+              "name": "TestAllowedMimeList",
+              "line": 37
+            },
+            {
+              "name": "TestIsSVG",
+              "line": 49
+            },
+            {
+              "name": "TestIsSVGSafe",
+              "line": 61
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/metadata/internal/image",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/metadata/internal/metadata/handlers_test.go",
+          "sha256": "6f88329dab66ee916598ded5c5969312d83cec957d52d5c5746cb45145e03370",
+          "declarations": [
+            {
+              "name": "TestMetadataService",
+              "line": 167
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/metadata/internal/metadata",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/metadata/internal/metadata/helpers_internal_test.go",
+          "sha256": "90b2228aaed3695ff80f113006408e9169c38b237be43393a24d20c1a6a51793",
+          "declarations": [
+            {
+              "name": "TestNormalizeAddr",
+              "line": 13
+            },
+            {
+              "name": "TestStripExt",
+              "line": 19
+            },
+            {
+              "name": "TestExtFromKey",
+              "line": 33
+            },
+            {
+              "name": "TestBaseURL",
+              "line": 47
+            },
+            {
+              "name": "TestParseBatchAddresses",
+              "line": 64
+            },
+            {
+              "name": "TestParseBatchAddresses_Cap",
+              "line": 73
+            },
+            {
+              "name": "TestParseTags",
+              "line": 84
+            },
+            {
+              "name": "TestStrToTextAndTextPtr",
+              "line": 105
+            },
+            {
+              "name": "TestBuildImages",
+              "line": 120
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/metadata/internal/metadata",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        }
+      ],
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-json",
+        "./..."
+      ],
+      "environment": {
+        "GOWORK": "off",
+        "GOMAXPROCS": "2"
+      },
+      "manifest_sha256": "c8f1995233e0c558360e8d20bdc1a3800140f9a3dea579640038f59584f20d41",
+      "module_import": "github.com/Sidiora-Technologies/KindleLaunch/media/metadata",
+      "declared_test_count": 17
+    },
+    {
+      "path": "media/social",
+      "manifest_exists": true,
+      "files": [
+        {
+          "path": "media/social/internal/common/common_test.go",
+          "sha256": "c4d56a89d33694176d87bb3f8a5d6e19424b4cac49558a87a6e433d52b4e1fbe",
+          "declarations": [
+            {
+              "name": "TestNormalizeAddr",
+              "line": 9
+            },
+            {
+              "name": "TestIsAddr",
+              "line": 23
+            },
+            {
+              "name": "TestSanitize",
+              "line": 35
+            },
+            {
+              "name": "TestCanonicalConversationIDOrderInvariant",
+              "line": 50
+            },
+            {
+              "name": "TestSortedPair",
+              "line": 62
+            },
+            {
+              "name": "TestGenerateIDShapeAndOrdering",
+              "line": 71
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/social/internal/common",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/social/internal/config/config_test.go",
+          "sha256": "58fca8de164ae735cfadfa6007c56a843c0a022ab42cfca663712e8cacd1c9af",
+          "declarations": [
+            {
+              "name": "TestLoadDefaults",
+              "line": 13
+            },
+            {
+              "name": "TestLoadOverrides",
+              "line": 36
+            },
+            {
+              "name": "TestLoadMissingRequired",
+              "line": 55
+            },
+            {
+              "name": "TestValidate",
+              "line": 64
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/social/internal/config",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/social/internal/fanout/hub_test.go",
+          "sha256": "65b4e1756bdc8189b8b94ec17e9af5e9b674d7fbb4dd49c27b42ddee85f13c91",
+          "declarations": [
+            {
+              "name": "TestWSAuthRequired",
+              "line": 123
+            },
+            {
+              "name": "TestWSPoolFanout",
+              "line": 136
+            },
+            {
+              "name": "TestWSDMFanout",
+              "line": 173
+            },
+            {
+              "name": "TestWSRateLimit",
+              "line": 196
+            },
+            {
+              "name": "TestWSBanEnforced",
+              "line": 218
+            },
+            {
+              "name": "TestWSSlowClientEvicted",
+              "line": 240
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/social/internal/fanout",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/social/internal/social/handlers_test.go",
+          "sha256": "7f17d0f02b98a7aa72b5be80f3a4c618306010c5f9941753a458f5093a6d1c31",
+          "declarations": [
+            {
+              "name": "TestPoolMessages",
+              "line": 109
+            },
+            {
+              "name": "TestComments",
+              "line": 221
+            },
+            {
+              "name": "TestDMReads",
+              "line": 361
+            },
+            {
+              "name": "TestFollows",
+              "line": 429
+            },
+            {
+              "name": "TestModeration",
+              "line": 500
+            },
+            {
+              "name": "TestAdminDisabled",
+              "line": 589
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/social/internal/social",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        }
+      ],
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-json",
+        "./..."
+      ],
+      "environment": {
+        "GOWORK": "off",
+        "GOMAXPROCS": "2"
+      },
+      "manifest_sha256": "92458f723911a9be0f3348bf6493b81093beeb564f86528f1076f04c40e3690f",
+      "module_import": "github.com/Sidiora-Technologies/KindleLaunch/media/social",
+      "declared_test_count": 22
+    },
+    {
+      "path": "media/user",
+      "manifest_exists": true,
+      "files": [
+        {
+          "path": "media/user/internal/config/config_test.go",
+          "sha256": "454c0ffcc4d9bc76c4f0d1174602633ae60aeabba28b635ba41340231fed1789",
+          "declarations": [
+            {
+              "name": "TestLoadDefaults",
+              "line": 28
+            },
+            {
+              "name": "TestLoadMissingRequired",
+              "line": 51
+            },
+            {
+              "name": "TestValidate",
+              "line": 68
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/user/internal/config",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/user/internal/image/image_test.go",
+          "sha256": "1926ec2f472959a4973c55c977ce24ed881a836030f4125d27d92e16dda3bd32",
+          "declarations": [
+            {
+              "name": "TestAllowedMime",
+              "line": 9
+            },
+            {
+              "name": "TestExtForMime",
+              "line": 31
+            },
+            {
+              "name": "TestAllowedMimeList",
+              "line": 47
+            },
+            {
+              "name": "TestIsValidType",
+              "line": 59
+            },
+            {
+              "name": "TestIsSVG",
+              "line": 74
+            },
+            {
+              "name": "TestIsSVGSafe",
+              "line": 83
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/user/internal/image",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/user/internal/user/handlers_test.go",
+          "sha256": "baf05d3a0149c0b0aebf2bf87d96ef3937c473fd074f1878c94b54c4a098b133",
+          "declarations": [
+            {
+              "name": "TestUserService",
+              "line": 181
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/user/internal/user",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        },
+        {
+          "path": "media/user/internal/user/helpers_internal_test.go",
+          "sha256": "db90746a89161360c6ac55754cede54dd441bf91b8050e8ab302c0f3d226fbde",
+          "declarations": [
+            {
+              "name": "TestNormalizeAddr",
+              "line": 13
+            },
+            {
+              "name": "TestBaseURL",
+              "line": 26
+            },
+            {
+              "name": "TestBuildImages",
+              "line": 40
+            },
+            {
+              "name": "TestBuildCreatedPools",
+              "line": 61
+            },
+            {
+              "name": "TestStrToText",
+              "line": 75
+            },
+            {
+              "name": "TestTextPtr",
+              "line": 88
+            },
+            {
+              "name": "TestInt64Ptr",
+              "line": 98
+            },
+            {
+              "name": "TestItoa64",
+              "line": 104
+            },
+            {
+              "name": "TestFirstNonEmpty",
+              "line": 110
+            }
+          ],
+          "package": "github.com/Sidiora-Technologies/KindleLaunch/media/user/internal/user",
+          "build_constraints": [],
+          "skip_or_focus_markers": []
+        }
+      ],
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-json",
+        "./..."
+      ],
+      "environment": {
+        "GOWORK": "off",
+        "GOMAXPROCS": "2"
+      },
+      "manifest_sha256": "25388bcfa96d087ce781640d0dc8c542c9fa1fc03e9c842c050d245d077dc61e",
+      "module_import": "github.com/Sidiora-Technologies/KindleLaunch/media/user",
+      "declared_test_count": 19
+    }
+  ],
+  "web_files": [
+    {
+      "path": "client/apps/web/src/core/realtime/data-stream.test.ts",
+      "sha256": "4991846598fc805896d9d86230a1da2bfb015af629f4c7d06df4b27f55a210fa",
+      "literal_declarations": [
+        "sends the full union subscribe frame on connect",
+        "routes events to a consumer and applies its client-side pool filter",
+        "escalates the socket to all-pools when a consumer wants all pools, then restricts again",
+        "derives channel + pool for candle frames (no top-level channel/pool)",
+        "ignores control/keepalive frames",
+        "tears the socket down when the last consumer unsubscribes",
+        "re-sends the full union after a reconnect (snapshot+delta resync)"
+      ],
+      "skip_or_focus_markers": []
+    },
+    {
+      "path": "client/apps/web/src/core/realtime/raf-batch.test.ts",
+      "sha256": "95439be18a6caabdcf353e130a5396492a12aeadbf9e719e04861e0c65563aec",
+      "literal_declarations": [
+        "keeps only the latest value per key (coalesces stale ticks)",
+        "drains in insertion order and clears",
+        "evicts the oldest key when bounded capacity is exceeded (backpressure)",
+        "re-setting an existing key refreshes its recency so it is not evicted next",
+        "returns 0 when rng yields 0",
+        "scales the ceiling exponentially with the attempt",
+        "caps the ceiling regardless of attempt",
+        "never returns a value at or above the (capped) ceiling"
+      ],
+      "skip_or_focus_markers": []
+    },
+    {
+      "path": "client/apps/web/src/utils/format.test.ts",
+      "sha256": "2e0645216c6efda0a9fcd1bef86c81b589c14bb0f6ddc42d9154a5883d1143f1",
+      "literal_declarations": [
+        "returns 0 for empty/null/undefined/zero",
+        "converts whole-unit wei amounts",
+        "converts sub-unit wei amounts (length <= 18)",
+        "converts large multi-digit integer parts",
+        "returns 0 for empty/null/undefined/zero",
+        "converts whole-unit amounts",
+        "converts sub-unit amounts (length <= 6)",
+        "formats plain values under 1000",
+        "abbreviates thousands / millions / billions",
+        "coerces numeric strings",
+        "abbreviates without a currency prefix",
+        "adds an explicit sign",
+        "formats zero and values >= 1",
+        "formats values between 0.01 and 1 with 4 decimals",
+        "accepts a wei string and converts via fromWad",
+        "renders tiny sub-cent prices (4 leading zeros or fewer) inline",
+        "renders very tiny sub-cent prices with subscript leading-zero count"
+      ],
+      "skip_or_focus_markers": []
+    },
+    {
+      "path": "client/apps/web/src/utils/units.test.ts",
+      "sha256": "d88f7985a7c6fe94187779c1cdebbb038cd29ccd6dd4ee6773de00cd3969ce07",
+      "literal_declarations": [
+        "formats sub-unit raw values exactly with no float loss",
+        "formats whole and fractional values and trims trailing zeros",
+        "preserves exact precision for very large balances that float64 would corrupt",
+        "handles zero and empty inputs",
+        "accepts bigint and number raw inputs",
+        "supports decimals=0 (pass-through integer)",
+        "is the exact inverse of formatUnitsExact for valid input",
+        "truncates excess fractional digits (never rounds up \u2014 never overspend)",
+        "handles empty / malformed input as zero",
+        "formats >= $1 with two decimals",
+        "formats sub-dollar down to a cent with four decimals",
+        "uses plain leading zeros for up to 3 leading fractional zeros",
+        "uses subscript notation for deeply sub-cent prices, exactly",
+        "returns $0.00 for zero"
+      ],
+      "skip_or_focus_markers": []
+    }
+  ],
+  "issues": [],
+  "testing_gaps": [
+    "build-only module with no declared Go tests: media/livestream"
+  ],
+  "web_discovery_note": "Literal names are source inventory, not runtime test enumeration; native Vitest assertionResults are authoritative.",
+  "web_command": [
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "--reporter=json"
+  ]
+}

@@ -1,0 +1,233 @@
+{
+  "network": "paxeer-x-network",
+  "chainId": "125",
+  "startedAt": "2026-10-09T18:40:26.852Z",
+  "status": "incomplete",
+  "results": [
+    {
+      "label": "EventEmitter_impl",
+      "address": "0x6d48a32e313cc4F08acdeE1F39F7e6B56F03a1cB",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "EventEmitter_proxy",
+      "address": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "ProtocolConfig_impl",
+      "address": "0xE612759AaA47E96B0801Fb506e4E115C4756Dca5",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "verified",
+      "alreadyVerified": true
+    },
+    {
+      "label": "ProtocolConfig_proxy",
+      "address": "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "Treasury_impl",
+      "address": "0xF8d7ba698cFd5Ef6607679E506305C38B3A1b7B6",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "Treasury_proxy",
+      "address": "0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "Timelock",
+      "address": "0xE3e71911664062753b56F72965D906295625d6c0",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "GovernanceModule_impl",
+      "address": "0x7680Ba880b651E565eb2ae26AB5448AB5a0dE0F4",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "verified",
+      "alreadyVerified": true
+    },
+    {
+      "label": "GovernanceModule_proxy",
+      "address": "0xD14307637A6189b9fE872C87e5d62e942a5B4d7c",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "PoolRegistry_impl",
+      "address": "0x0e4d66894321e7e29803eF63E618bF07B9772687",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "PoolRegistry_proxy",
+      "address": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "FeeAccumulator_impl",
+      "address": "0xc21a8f1f8cd416D8B84a0627b4c4bfcc3a6c15a0",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "FeeAccumulator_proxy",
+      "address": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "SidioraPool_impl",
+      "address": "0xd24b239df92CA233dF27676148FDe10aa51104Df",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "PoolBeacon",
+      "address": "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "SidioraNFT_impl",
+      "address": "0x799CeE9468FCd5B504F267658619C7540b2D9650",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "SidioraNFT_proxy",
+      "address": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "SidioraFactory_impl",
+      "address": "0xAA348015a0dA5FE65296481B0e98EF240bd57AF4",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "SidioraFactory_proxy",
+      "address": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "OpticalRegistry_impl",
+      "address": "0x2d9666F5CC900092Ceb7D3867b1fd7f6178C3F3E",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "OpticalRegistry_proxy",
+      "address": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "Router_impl",
+      "address": "0xfcBce73f397dF65D5b18364dadDCaE86E95CdB96",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "Router_proxy",
+      "address": "0x78FB06f525cD964388f2305A489035263E31C6e4",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "Quoter_impl",
+      "address": "0x49Fe29eaAcb16d3D1a8671dD4d6D9070E340B5B8",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "Quoter_proxy",
+      "address": "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "FeesRouter_impl",
+      "address": "0xaB930A3b2bFCdb38555b57D1254B3424EC7FB328",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "FeesRouter_proxy",
+      "address": "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "AntiSnipeOptical",
+      "address": "0xDFBd72bD39C86a821B3F307E71A0cD3A828B2C26",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "MaxWalletOptical",
+      "address": "0x1296Cf953124621c82560fa0F28FC932496dc985",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "TaxOptical",
+      "address": "0xebe1DB7B167Fa97350625f7e8368b6B8eDc015C3",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "CooldownOptical",
+      "address": "0xC7C17Cf17D7DAFa255256381B875180cFE910034",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    },
+    {
+      "label": "BuybackBurnOptical",
+      "address": "0x7a8905AFF4e39aFb4Be7e03B141DfBebBfa4A7B7",
+      "compilerVersion": "v0.8.27+commit.40a35a09",
+      "status": "pending",
+      "error": "Explorer has not confirmed verification; rerun to check or retry"
+    }
+  ],
+  "finishedAt": "2026-10-09T18:50:03.581Z"
+}

@@ -1,0 +1,131 @@
+# Collector contrib 0.123.0 configuration contract; backend endpoints are mandatory.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:4317
+        max_recv_msg_size_mib: 4
+      http:
+        endpoint: 127.0.0.1:4318
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 64
+  transform/privacy:
+    error_mode: propagate
+    trace_statements:
+      - context: span
+        statements:
+          - keep_keys(attributes, ["service.name", "environment", "zone", "stage", "error_code"])
+          - delete_key(attributes, "service.name") where attributes["service.name"] != "apid_rest" and attributes["service.name"] != "apid_sockets" and attributes["service.name"] != "indexerd" and attributes["service.name"] != "chartsd" and attributes["service.name"] != "statsd" and attributes["service.name"] != "pnld" and attributes["service.name"] != "rankingd" and attributes["service.name"] != "mediagatewayd" and attributes["service.name"] != "userd" and attributes["service.name"] != "sociald" and attributes["service.name"] != "metadatad" and attributes["service.name"] != "livestreamd"
+          - delete_key(attributes, "environment") where attributes["environment"] != "qualification" and attributes["environment"] != "production"
+          - delete_key(attributes, "zone") where attributes["zone"] != "zone-a" and attributes["zone"] != "zone-b" and attributes["zone"] != "zone-c"
+          - delete_key(attributes, "stage") where attributes["stage"] != "committed_to_ingested" and attributes["stage"] != "ingested_to_published" and attributes["stage"] != "published_to_browser"
+          - delete_key(attributes, "error_code") where attributes["error_code"] != "none" and attributes["error_code"] != "unavailable" and attributes["error_code"] != "timeout" and attributes["error_code"] != "integrity" and attributes["error_code"] != "validation" and attributes["error_code"] != "commit_failed" and attributes["error_code"] != "unauthorized" and attributes["error_code"] != "rate_limited" and attributes["error_code"] != "other"
+          - set(name, "kindle.operation")
+          - set(status.message, "")
+      - context: spanevent
+        statements:
+          - keep_keys(attributes, ["stage", "error_code"])
+          - delete_key(attributes, "stage") where attributes["stage"] != "committed_to_ingested" and attributes["stage"] != "ingested_to_published" and attributes["stage"] != "published_to_browser"
+          - delete_key(attributes, "error_code") where attributes["error_code"] != "none" and attributes["error_code"] != "unavailable" and attributes["error_code"] != "timeout" and attributes["error_code"] != "integrity" and attributes["error_code"] != "validation" and attributes["error_code"] != "commit_failed" and attributes["error_code"] != "unauthorized" and attributes["error_code"] != "rate_limited" and attributes["error_code"] != "other"
+          - set(name, "kindle.event")
+    log_statements:
+      - context: log
+        statements:
+          - keep_keys(attributes, ["service.name", "environment", "zone", "stage", "error_code"])
+          - delete_key(attributes, "service.name") where attributes["service.name"] != "apid_rest" and attributes["service.name"] != "apid_sockets" and attributes["service.name"] != "indexerd" and attributes["service.name"] != "chartsd" and attributes["service.name"] != "statsd" and attributes["service.name"] != "pnld" and attributes["service.name"] != "rankingd" and attributes["service.name"] != "mediagatewayd" and attributes["service.name"] != "userd" and attributes["service.name"] != "sociald" and attributes["service.name"] != "metadatad" and attributes["service.name"] != "livestreamd"
+          - delete_key(attributes, "environment") where attributes["environment"] != "qualification" and attributes["environment"] != "production"
+          - delete_key(attributes, "zone") where attributes["zone"] != "zone-a" and attributes["zone"] != "zone-b" and attributes["zone"] != "zone-c"
+          - delete_key(attributes, "stage") where attributes["stage"] != "committed_to_ingested" and attributes["stage"] != "ingested_to_published" and attributes["stage"] != "published_to_browser"
+          - delete_key(attributes, "error_code") where attributes["error_code"] != "none" and attributes["error_code"] != "unavailable" and attributes["error_code"] != "timeout" and attributes["error_code"] != "integrity" and attributes["error_code"] != "validation" and attributes["error_code"] != "commit_failed" and attributes["error_code"] != "unauthorized" and attributes["error_code"] != "rate_limited" and attributes["error_code"] != "other"
+          - set(body, "kindle.operation")
+    metric_statements:
+      - context: datapoint
+        statements:
+          - keep_keys(attributes, ["service", "environment", "zone", "route", "status_class", "error_code", "stage", "dependency"])
+          - delete_key(attributes, "service") where attributes["service"] != "apid_rest" and attributes["service"] != "apid_sockets" and attributes["service"] != "indexerd" and attributes["service"] != "chartsd" and attributes["service"] != "statsd" and attributes["service"] != "pnld" and attributes["service"] != "rankingd" and attributes["service"] != "mediagatewayd" and attributes["service"] != "userd" and attributes["service"] != "sociald" and attributes["service"] != "metadatad" and attributes["service"] != "livestreamd"
+          - delete_key(attributes, "environment") where attributes["environment"] != "qualification" and attributes["environment"] != "production"
+          - delete_key(attributes, "zone") where attributes["zone"] != "zone-a" and attributes["zone"] != "zone-b" and attributes["zone"] != "zone-c"
+          - delete_key(attributes, "route") where attributes["route"] != "browse" and attributes["route"] != "quote" and attributes["route"] != "wallet_challenge" and attributes["route"] != "metadata" and attributes["route"] != "websocket_replay" and attributes["route"] != "account_mutation" and attributes["route"] != "other"
+          - delete_key(attributes, "status_class") where attributes["status_class"] != "2xx" and attributes["status_class"] != "3xx" and attributes["status_class"] != "4xx" and attributes["status_class"] != "5xx"
+          - delete_key(attributes, "error_code") where attributes["error_code"] != "none" and attributes["error_code"] != "unavailable" and attributes["error_code"] != "timeout" and attributes["error_code"] != "integrity" and attributes["error_code"] != "validation" and attributes["error_code"] != "commit_failed" and attributes["error_code"] != "unauthorized" and attributes["error_code"] != "rate_limited" and attributes["error_code"] != "other"
+          - delete_key(attributes, "stage") where attributes["stage"] != "committed_to_ingested" and attributes["stage"] != "ingested_to_published" and attributes["stage"] != "published_to_browser"
+          - delete_key(attributes, "dependency") where attributes["dependency"] != "healthy" and attributes["dependency"] != "degraded" and attributes["dependency"] != "unavailable"
+    # Resource attributes must also be allowlisted; raw headers are never retained.
+  resource/privacy:
+    attributes:
+      - key: service.name
+        action: insert
+        value: unknown
+  transform/resource_privacy:
+    error_mode: propagate
+    trace_statements:
+      - context: resource
+        statements:
+          - keep_keys(attributes, ["service.name", "environment", "zone"])
+          - delete_key(attributes, "environment") where attributes["environment"] != "qualification" and attributes["environment"] != "production"
+          - delete_key(attributes, "zone") where attributes["zone"] != "zone-a" and attributes["zone"] != "zone-b" and attributes["zone"] != "zone-c"
+          - set(attributes["service.name"], "unknown") where attributes["service.name"] != "apid_rest" and attributes["service.name"] != "apid_sockets" and attributes["service.name"] != "indexerd" and attributes["service.name"] != "chartsd" and attributes["service.name"] != "statsd" and attributes["service.name"] != "pnld" and attributes["service.name"] != "rankingd" and attributes["service.name"] != "mediagatewayd" and attributes["service.name"] != "userd" and attributes["service.name"] != "sociald" and attributes["service.name"] != "metadatad" and attributes["service.name"] != "livestreamd"
+    log_statements:
+      - context: resource
+        statements:
+          - keep_keys(attributes, ["service.name", "environment", "zone"])
+          - delete_key(attributes, "environment") where attributes["environment"] != "qualification" and attributes["environment"] != "production"
+          - delete_key(attributes, "zone") where attributes["zone"] != "zone-a" and attributes["zone"] != "zone-b" and attributes["zone"] != "zone-c"
+          - set(attributes["service.name"], "unknown") where attributes["service.name"] != "apid_rest" and attributes["service.name"] != "apid_sockets" and attributes["service.name"] != "indexerd" and attributes["service.name"] != "chartsd" and attributes["service.name"] != "statsd" and attributes["service.name"] != "pnld" and attributes["service.name"] != "rankingd" and attributes["service.name"] != "mediagatewayd" and attributes["service.name"] != "userd" and attributes["service.name"] != "sociald" and attributes["service.name"] != "metadatad" and attributes["service.name"] != "livestreamd"
+    metric_statements:
+      - context: resource
+        statements:
+          - keep_keys(attributes, ["service.name", "environment", "zone"])
+          - delete_key(attributes, "environment") where attributes["environment"] != "qualification" and attributes["environment"] != "production"
+          - delete_key(attributes, "zone") where attributes["zone"] != "zone-a" and attributes["zone"] != "zone-b" and attributes["zone"] != "zone-c"
+          - set(attributes["service.name"], "unknown") where attributes["service.name"] != "apid_rest" and attributes["service.name"] != "apid_sockets" and attributes["service.name"] != "indexerd" and attributes["service.name"] != "chartsd" and attributes["service.name"] != "statsd" and attributes["service.name"] != "pnld" and attributes["service.name"] != "rankingd" and attributes["service.name"] != "mediagatewayd" and attributes["service.name"] != "userd" and attributes["service.name"] != "sociald" and attributes["service.name"] != "metadatad" and attributes["service.name"] != "livestreamd"
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 10000
+    expected_new_traces_per_sec: 1000
+    policies:
+      - name: failures
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: routine
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 1
+  batch:
+    timeout: 1s
+    send_batch_size: 512
+    send_batch_max_size: 1024
+exporters:
+  otlp:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    tls:
+      ca_file: ${env:OTEL_CA_FILE}
+      cert_file: ${env:OTEL_CERT_FILE}
+      key_file: ${env:OTEL_KEY_FILE}
+    sending_queue:
+      enabled: true
+      num_consumers: 2
+      queue_size: 256
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 5s
+      max_elapsed_time: 30s
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/privacy, transform/resource_privacy, tail_sampling, batch]
+      exporters: [otlp]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/privacy, transform/resource_privacy, batch]
+      exporters: [otlp]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/privacy, transform/resource_privacy, batch]
+      exporters: [otlp]

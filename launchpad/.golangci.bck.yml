@@ -1,0 +1,58 @@
+# golangci-lint config — KindleLaunch (SECTION 17 standards.code).
+# ZERO warnings tolerated in CI. Applied per-module (each has its own go.mod).
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - gosec
+    - revive
+    - gocritic
+    - bodyclose
+    - sqlclosecheck
+    - contextcheck
+    - errorlint
+    - noctx
+    - ineffassign
+    - unused
+    - misspell
+    - prealloc
+
+linters-settings:
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  gosec:
+    excludes:
+      - G115 # integer overflow conversion handled explicitly with money types
+  revive:
+    rules:
+      - name: exported
+      - name: context-as-argument
+      - name: error-return
+      - name: error-naming
+      - name: unexported-return
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    # Test files may use less strict error handling for fixtures.
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck

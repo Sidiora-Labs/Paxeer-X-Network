@@ -1,0 +1,119 @@
+/* Sidiora Launch chart theme. Values mirror src/app/tokens.css (canvas, surface ladder,
+   text roles, accent); the library runs in its own document so the role tokens are
+   repeated here as values. Separation is background contrast only: no hairlines. */
+
+:root {
+    --tv-color-pane-background: #07090D;
+    --tv-color-platform-background: #07090D;
+
+    --tv-color-toolbar-button-background-hover: #28313F;
+    --tv-color-toolbar-button-background-secondary-hover: #28313F;
+    --tv-color-toolbar-button-background-expanded: #1F2733;
+    --tv-color-toolbar-button-text: #939CAF;
+    --tv-color-toolbar-button-text-hover: #F4F5F9;
+    --tv-color-toolbar-button-text-active: #44E8C8;
+    --tv-color-toolbar-button-text-active-hover: #6BEDD5;
+    --tv-color-toolbar-toggle-button-background-active: #173234;
+    --tv-color-toolbar-toggle-button-background-active-hover: #1F4F4C;
+    --tv-color-toolbar-divider-background: #07090D;
+
+    --tv-color-item-active-text: #44E8C8;
+    --tv-color-popup-background: #1F2733;
+    --tv-color-popup-element-background-hover: #28313F;
+    --tv-color-popup-element-background-active: #323D4D;
+    --tv-color-popup-element-text: #F4F5F9;
+    --tv-color-popup-element-text-hover: #F4F5F9;
+    --tv-color-popup-element-secondary-text: #A9B2C4;
+    --tv-color-popup-element-hint-text: #939CAF;
+    --tv-color-popup-element-divider-background: #1F2733;
+}
+
+body {
+    background: #07090D !important;
+}
+
+.chart-controls-bar,
+.layout__area--top,
+div[class*="headerWrapper"],
+div[class*="toolbar-"],
+.tv-header,
+.header-chart-panel,
+div[data-name="header-toolbar-chart-panel"],
+div[data-name="header-toolbar-properties"] {
+    background: #07090D !important;
+    box-shadow: none !important;
+}
+
+.layout__area--left,
+div[data-name="drawing-toolbar"],
+.tv-side-toolbar {
+    background: #07090D !important;
+    box-shadow: none !important;
+}
+
+.layout__area--bottom,
+div[class*="bottomWidgetBar"],
+.chart-widget .bottom-widgetbar-content,
+.tv-bottom-toolbar,
+div[class*="timeframes"],
+div[class*="seriesControlWrapper"] {
+    background: #10141C !important;
+    box-shadow: none !important;
+}
+
+.layout__area--right {
+    background: #07090D !important;
+}
+
+.chart-container,
+.chart-widget,
+div[class*="chart-markup-table"],
+.tv-chart-container {
+    background: #07090D !important;
+}
+
+div[class*="tabsHeader"],
+div[class*="tabs-header"] {
+    background: #07090D !important;
+    box-shadow: none !important;
+}
+
+::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: #1F2733;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #28313F;
+}
+
+div[class*="loading-screen"],
+.tv-spinner {
+    background: #07090D !important;
+}
+
+div[class*="dialog"],
+div[class*="modalDialog"] {
+    background: #1F2733 !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+}
+
+div[class*="separator"] {
+    background: #10141C !important;
+}
+
+div[class*="legendWrapper"],
+div[class*="sourcesWrapper"],
+div[class*="sources"] {
+    opacity: 0.85;
+}
+div[class*="legendWrapper"]:hover,
+div[class*="sourcesWrapper"]:hover,
+div[class*="sources"]:hover {
+    opacity: 1;
+}

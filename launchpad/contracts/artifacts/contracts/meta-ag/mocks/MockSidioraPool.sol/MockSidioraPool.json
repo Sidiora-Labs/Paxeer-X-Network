@@ -1,0 +1,213 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "MockSidioraPool",
+  "sourceName": "contracts/meta-ag/mocks/MockSidioraPool.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "getPrice",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getReserves",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "opticalAddress",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "price",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "realUsdl",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "revertOnGetPrice",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "revertOnGetReserves",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "optical",
+          "type": "address"
+        }
+      ],
+      "name": "setOpticalAddress",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "p",
+          "type": "uint256"
+        }
+      ],
+      "name": "setPrice",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "v",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "r",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "t",
+          "type": "uint256"
+        }
+      ],
+      "name": "setReserves",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bool",
+          "name": "v",
+          "type": "bool"
+        }
+      ],
+      "name": "setRevertOnGetPrice",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bool",
+          "name": "v",
+          "type": "bool"
+        }
+      ],
+      "name": "setRevertOnGetReserves",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "tokenReserve",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "virtualUsdl",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x608080604052346015576103b3908161001b8239f35b600080fdfe608080604052600436101561001357600080fd5b60003560e01c9081630902f1ac146102ff575080632c607b05146102e157806335392ec7146102c3578063404cedc41461029d578063713f262114610278578063909f45fe1461023557806390fd66731461021257806391b7f5ed146101f957806398d5fdca1461018c578063a035b1fe1461016e578063a2d0292714610145578063cbcb317114610127578063eecc65c8146100f65763fd3630a6146100b957600080fd5b346100f15760203660031901126100f1576004358015158091036100f15761ff006005549160081b169061ff00191617600555600080f35b600080fd5b346100f15760203660031901126100f1576004358015158091036100f15760ff801960055416911617600555600080f35b346100f15760003660031901126100f1576020600454604051908152f35b346100f15760003660031901126100f1576000546040516001600160a01b039091168152602090f35b346100f15760003660031901126100f1576020600154604051908152f35b346100f15760003660031901126100f15760ff600554166101b4576020600154604051908152f35b60405162461bcd60e51b815260206004820152601e60248201527f4d6f636b536964696f7261506f6f6c3a20666f726365642072657665727400006044820152606490fd5b346100f15760203660031901126100f157600435600155005b346100f15760003660031901126100f157602060ff600554166040519015158152f35b346100f15760203660031901126100f1576004356001600160a01b038116908190036100f1576bffffffffffffffffffffffff60a01b6000541617600055600080f35b346100f15760603660031901126100f157600480356002556024356003556044359055005b346100f15760003660031901126100f157602060ff60055460081c166040519015158152f35b346100f15760003660031901126100f1576020600254604051908152f35b346100f15760003660031901126100f1576020600354604051908152f35b346100f15760003660031901126100f15760ff60055460081c1661033b5760606002546003546004549060405192835260208301526040820152f35b62461bcd60e51b815260206004820152601e60248201527f4d6f636b536964696f7261506f6f6c3a20666f726365642072657665727400006044820152606490fdfea26469706673582212200a6eae93ef3e0073850ef19695de160dd59cf2f00e634191aeec6de330f2fe2664736f6c634300081b0033",
+  "deployedBytecode": "0x608080604052600436101561001357600080fd5b60003560e01c9081630902f1ac146102ff575080632c607b05146102e157806335392ec7146102c3578063404cedc41461029d578063713f262114610278578063909f45fe1461023557806390fd66731461021257806391b7f5ed146101f957806398d5fdca1461018c578063a035b1fe1461016e578063a2d0292714610145578063cbcb317114610127578063eecc65c8146100f65763fd3630a6146100b957600080fd5b346100f15760203660031901126100f1576004358015158091036100f15761ff006005549160081b169061ff00191617600555600080f35b600080fd5b346100f15760203660031901126100f1576004358015158091036100f15760ff801960055416911617600555600080f35b346100f15760003660031901126100f1576020600454604051908152f35b346100f15760003660031901126100f1576000546040516001600160a01b039091168152602090f35b346100f15760003660031901126100f1576020600154604051908152f35b346100f15760003660031901126100f15760ff600554166101b4576020600154604051908152f35b60405162461bcd60e51b815260206004820152601e60248201527f4d6f636b536964696f7261506f6f6c3a20666f726365642072657665727400006044820152606490fd5b346100f15760203660031901126100f157600435600155005b346100f15760003660031901126100f157602060ff600554166040519015158152f35b346100f15760203660031901126100f1576004356001600160a01b038116908190036100f1576bffffffffffffffffffffffff60a01b6000541617600055600080f35b346100f15760603660031901126100f157600480356002556024356003556044359055005b346100f15760003660031901126100f157602060ff60055460081c166040519015158152f35b346100f15760003660031901126100f1576020600254604051908152f35b346100f15760003660031901126100f1576020600354604051908152f35b346100f15760003660031901126100f15760ff60055460081c1661033b5760606002546003546004549060405192835260208301526040820152f35b62461bcd60e51b815260206004820152601e60248201527f4d6f636b536964696f7261506f6f6c3a20666f726365642072657665727400006044820152606490fdfea26469706673582212200a6eae93ef3e0073850ef19695de160dd59cf2f00e634191aeec6de330f2fe2664736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

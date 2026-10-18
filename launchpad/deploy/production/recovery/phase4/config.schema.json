@@ -1,0 +1,479 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kindle-recovery-measurement-v4",
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "not": {
+        "const": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^/",
+      "minLength": 2,
+      "maxLength": 4096
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_sha256",
+        "interface_sha256",
+        "deployment_sha256",
+        "inventory_sha256",
+        "environment",
+        "service",
+        "primary_region",
+        "recovery_region",
+        "chain_id",
+        "addresses"
+      ],
+      "properties": {
+        "source_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "interface_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "deployment_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "inventory_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "environment": {
+          "const": "qualification"
+        },
+        "service": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,62}$"
+        },
+        "primary_region": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,62}$"
+        },
+        "recovery_region": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,62}$"
+        },
+        "chain_id": {
+          "const": 125
+        },
+        "addresses": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 128,
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$"
+          }
+        }
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate",
+        "interface",
+        "topology",
+        "generator"
+      ],
+      "properties": {
+        "candidate": {
+          "$ref": "#/$defs/digest"
+        },
+        "interface": {
+          "$ref": "#/$defs/digest"
+        },
+        "topology": {
+          "$ref": "#/$defs/digest"
+        },
+        "generator": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "started_utc_ns",
+        "ended_utc_ns"
+      ],
+      "properties": {
+        "started_utc_ns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ended_utc_ns": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "scenario_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "D14_031",
+        "D14_032",
+        "D14_033",
+        "D14_034",
+        "D14_035",
+        "D14_036",
+        "D14_037",
+        "D14_038",
+        "D14_039",
+        "D14_040"
+      ],
+      "properties": {
+        "D14_031": {
+          "$ref": "#/$defs/reference"
+        },
+        "D14_032": {
+          "$ref": "#/$defs/reference"
+        },
+        "D14_033": {
+          "$ref": "#/$defs/reference"
+        },
+        "D14_034": {
+          "$ref": "#/$defs/reference"
+        },
+        "D14_035": {
+          "$ref": "#/$defs/reference"
+        },
+        "D14_036": {
+          "$ref": "#/$defs/reference"
+        },
+        "D14_037": {
+          "$ref": "#/$defs/reference"
+        },
+        "D14_038": {
+          "$ref": "#/$defs/reference"
+        },
+        "D14_039": {
+          "$ref": "#/$defs/reference"
+        },
+        "D14_040": {
+          "$ref": "#/$defs/reference"
+        }
+      }
+    },
+    "collect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "realm",
+        "identity",
+        "bindings",
+        "run_id",
+        "tools",
+        "telemetry",
+        "allocation",
+        "postgres",
+        "dataset",
+        "duration_seconds",
+        "step_seconds"
+      ],
+      "properties": {
+        "version": {
+          "const": 4
+        },
+        "realm": {
+          "const": "isolated-recovery-qualification"
+        },
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "bindings": {
+          "$ref": "#/$defs/bindings"
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "tools": {
+          "type": "object",
+          "minProperties": 2,
+          "additionalProperties": {
+            "$ref": "#/$defs/reference"
+          }
+        },
+        "duration_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 900
+        },
+        "step_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "dataset": {
+          "$ref": "#/$defs/reference"
+        },
+        "telemetry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "origin",
+            "application_origin",
+            "owned_local",
+            "authority"
+          ],
+          "properties": {
+            "origin": {
+              "type": "string",
+              "format": "uri"
+            },
+            "application_origin": {
+              "type": "string",
+              "format": "uri"
+            },
+            "owned_local": {
+              "type": "boolean"
+            },
+            "authority": {
+              "$ref": "#/$defs/reference"
+            }
+          }
+        },
+        "allocation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "context",
+            "namespace",
+            "namespace_uid",
+            "kubeconfig",
+            "kubeconfig_sha256",
+            "pod_uids",
+            "volume_uids",
+            "expected_images"
+          ],
+          "properties": {
+            "context": {
+              "type": "string",
+              "minLength": 1
+            },
+            "namespace": {
+              "type": "string",
+              "minLength": 1
+            },
+            "namespace_uid": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kubeconfig": {
+              "$ref": "#/$defs/path"
+            },
+            "kubeconfig_sha256": {
+              "$ref": "#/$defs/digest"
+            },
+            "pod_uids": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "volume_uids": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "expected_images": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": {
+                "type": "object",
+                "minProperties": 1,
+                "additionalProperties": {
+                  "type": "string",
+                  "pattern": "@sha256:[0-9a-f]{64}$"
+                }
+              }
+            }
+          }
+        },
+        "postgres": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "service_file",
+            "service",
+            "expected_role"
+          ],
+          "properties": {
+            "service_file": {
+              "$ref": "#/$defs/path"
+            },
+            "service": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expected_role": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "evaluate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "realm",
+        "identity",
+        "bindings",
+        "capture",
+        "authority_sha256",
+        "step_seconds",
+        "scenarios",
+        "attestation_key",
+        "budget",
+        "scenarios_windows",
+        "native_tool_sha256"
+      ],
+      "properties": {
+        "version": {
+          "const": 4
+        },
+        "realm": {
+          "const": "isolated-recovery-qualification"
+        },
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "bindings": {
+          "$ref": "#/$defs/bindings"
+        },
+        "capture": {
+          "$ref": "#/$defs/reference"
+        },
+        "authority_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "step_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "scenarios": {
+          "$ref": "#/$defs/scenario_map"
+        },
+        "attestation_key": {
+          "$ref": "#/$defs/reference"
+        },
+        "budget": {
+          "$ref": "#/$defs/reference"
+        },
+        "scenarios_windows": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "connection-surge",
+            "fanout-burst",
+            "event-surge"
+          ],
+          "properties": {
+            "connection-surge": {
+              "$ref": "#/$defs/window"
+            },
+            "fanout-burst": {
+              "$ref": "#/$defs/window"
+            },
+            "event-surge": {
+              "$ref": "#/$defs/window"
+            }
+          }
+        },
+        "native_tool_sha256": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "D14_031",
+            "D14_032",
+            "D14_033",
+            "D14_034",
+            "D14_035",
+            "D14_036",
+            "D14_037",
+            "D14_038",
+            "D14_039",
+            "D14_040"
+          ],
+          "properties": {
+            "D14_031": {
+              "$ref": "#/$defs/digest"
+            },
+            "D14_032": {
+              "$ref": "#/$defs/digest"
+            },
+            "D14_033": {
+              "$ref": "#/$defs/digest"
+            },
+            "D14_034": {
+              "$ref": "#/$defs/digest"
+            },
+            "D14_035": {
+              "$ref": "#/$defs/digest"
+            },
+            "D14_036": {
+              "$ref": "#/$defs/digest"
+            },
+            "D14_037": {
+              "$ref": "#/$defs/digest"
+            },
+            "D14_038": {
+              "$ref": "#/$defs/digest"
+            },
+            "D14_039": {
+              "$ref": "#/$defs/digest"
+            },
+            "D14_040": {
+              "$ref": "#/$defs/digest"
+            }
+          }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/collect"
+    },
+    {
+      "$ref": "#/$defs/evaluate"
+    }
+  ]
+}

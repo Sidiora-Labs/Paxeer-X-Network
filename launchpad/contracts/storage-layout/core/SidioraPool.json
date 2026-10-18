@@ -1,0 +1,165 @@
+{
+  "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+  "compiler": "0.8.27+commit.40a35a09",
+  "provenance": {
+    "kind": "original audit compiler snapshot, not asserted live deployment",
+    "buildInfoSha256": "c7226196d703743a9f291414539d6dc5579640844b294d141253bce91b8ed2d7",
+    "sourceManifest": "audit/2026-10-09/source-manifest.json"
+  },
+  "storage": [
+    {
+      "astId": 3923,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "tokenAddress",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_address"
+    },
+    {
+      "astId": 3925,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "usdlAddress",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_address"
+    },
+    {
+      "astId": 3928,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "opticalAddress",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_address"
+    },
+    {
+      "astId": 3930,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "feeAccumulator",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_address"
+    },
+    {
+      "astId": 3932,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "eventEmitter",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_address"
+    },
+    {
+      "astId": 3934,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "protocolConfig",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_address"
+    },
+    {
+      "astId": 3936,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "guardian",
+      "offset": 0,
+      "slot": "6",
+      "type": "t_address"
+    },
+    {
+      "astId": 3938,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "virtualUsdlReserve",
+      "offset": 0,
+      "slot": "7",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 3940,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "realUsdlBalance",
+      "offset": 0,
+      "slot": "8",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 3942,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "tokenReserve",
+      "offset": 0,
+      "slot": "9",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 3945,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "creationTimestamp",
+      "offset": 0,
+      "slot": "10",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 3948,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "cumulativeVolume",
+      "offset": 0,
+      "slot": "11",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 3952,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "priceSnapshots",
+      "offset": 0,
+      "slot": "12",
+      "type": "t_array(t_uint256)8_storage"
+    },
+    {
+      "astId": 3954,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "snapshotIndex",
+      "offset": 0,
+      "slot": "20",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 3956,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "snapshotCount",
+      "offset": 0,
+      "slot": "21",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 3958,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "accumulatedUsdlFees",
+      "offset": 0,
+      "slot": "22",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 3960,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "accumulatedTokenFees",
+      "offset": 0,
+      "slot": "23",
+      "type": "t_uint256"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_uint256)8_storage": {
+      "base": "t_uint256",
+      "encoding": "inplace",
+      "label": "uint256[8]",
+      "numberOfBytes": "256"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}

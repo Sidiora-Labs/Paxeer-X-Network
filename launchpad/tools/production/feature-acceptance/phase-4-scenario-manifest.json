@@ -1,0 +1,49 @@
+{
+  "version": 4,
+  "task": "4.50",
+  "phase": 4,
+  "baseline_gate": "3.99",
+  "final_gate": "9.1",
+  "qualification_entrypoint": "policy.validator_readiness",
+  "closure_entrypoint": "policy.final_release_closure",
+  "cli": "tools/production/feature-acceptance/readiness.py",
+  "schema": "tools/production/feature-acceptance/evidence.schema.json",
+  "capture_schema": "tools/production/load/final-shared-capture.schema.json",
+  "required_native_cases": [
+    {
+      "id": "all55-review-schema-mapping",
+      "execution": "Validate actual schema definitions and all55 feature IDs; verify each admitted reviewer signed exact source/tool/schema/producer assignment",
+      "expected": "Missing, conflicted, revoked, stale or wrong-candidate assignment rejects"
+    },
+    {
+      "id": "isolated-native-evidence-calibration",
+      "execution": "Validate actual owner signed feature/journey/audit bundles and immutable artifacts; run real policy against copied one-byte HAR tamper, removed trace, stale30day evidence and source/image/registry/environment mismatches",
+      "expected": "Every negative must reject for its declared reason; raw original objects unchanged; output is current candidate/toolversion bound"
+    },
+    {
+      "id": "missing-task9-final-evidence",
+      "execution": "Invoke final closure without actual task9.1 gate or final_shared capture",
+      "expected": "Rejected with missing task9.1 final evidence/capture"
+    },
+    {
+      "id": "unsupported-mandatory-feature",
+      "execution": "Join all55 actual signed feature bundles through existing audited collector and current dependency authorities",
+      "expected": "Any absent owner result or mandatory dependency/blocker fails closure"
+    }
+  ],
+  "policy_check_command": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tools/production/feature-acceptance/tests",
+    "-p",
+    "test_phase4.py",
+    "-v"
+  ],
+  "verify_cmd": "python3 tools/production/qualify.py --task 4.50 --spec spec/production-system/spec.kvx --require-current-source",
+  "qualification_boundary": "Lane validator and isolated policy calibration only; task9.1 alone owns final shared integrated24h soak and all full-platform acceptance",
+  "capacity_qualified": false,
+  "release_qualified": false
+}

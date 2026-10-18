@@ -1,0 +1,216 @@
+{
+  "storage": [
+    {
+      "astId": 286,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "_roles",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_mapping(t_bytes32,t_struct(RoleData)281_storage)"
+    },
+    {
+      "astId": 10922,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "_tokenToPool",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_mapping(t_address,t_address)"
+    },
+    {
+      "astId": 10926,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "_poolToNftId",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "astId": 10931,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "_creatorToPools",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_mapping(t_address,t_array(t_address)dyn_storage)"
+    },
+    {
+      "astId": 10936,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "_poolMetadata",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_mapping(t_address,t_struct(PoolMetadata)13051_storage)"
+    },
+    {
+      "astId": 10940,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "_registeredPools",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_mapping(t_address,t_bool)"
+    },
+    {
+      "astId": 10943,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "_allPools",
+      "offset": 0,
+      "slot": "6",
+      "type": "t_array(t_address)dyn_storage"
+    },
+    {
+      "astId": 10945,
+      "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+      "label": "eventEmitter",
+      "offset": 0,
+      "slot": "7",
+      "type": "t_address"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_address)dyn_storage": {
+      "base": "t_address",
+      "encoding": "dynamic_array",
+      "label": "address[]",
+      "numberOfBytes": "32"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_bytes32": {
+      "encoding": "inplace",
+      "label": "bytes32",
+      "numberOfBytes": "32"
+    },
+    "t_mapping(t_address,t_address)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => address)",
+      "numberOfBytes": "32",
+      "value": "t_address"
+    },
+    "t_mapping(t_address,t_array(t_address)dyn_storage)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => address[])",
+      "numberOfBytes": "32",
+      "value": "t_array(t_address)dyn_storage"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_address,t_struct(PoolMetadata)13051_storage)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => struct IPoolRegistry.PoolMetadata)",
+      "numberOfBytes": "32",
+      "value": "t_struct(PoolMetadata)13051_storage"
+    },
+    "t_mapping(t_address,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_mapping(t_bytes32,t_struct(RoleData)281_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct AccessControl.RoleData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(RoleData)281_storage"
+    },
+    "t_struct(PoolMetadata)13051_storage": {
+      "encoding": "inplace",
+      "label": "struct IPoolRegistry.PoolMetadata",
+      "members": [
+        {
+          "astId": 13040,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "creator",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_address"
+        },
+        {
+          "astId": 13042,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "token",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_address"
+        },
+        {
+          "astId": 13044,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "optical",
+          "offset": 0,
+          "slot": "2",
+          "type": "t_address"
+        },
+        {
+          "astId": 13046,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "nftId",
+          "offset": 0,
+          "slot": "3",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 13048,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "createdAt",
+          "offset": 0,
+          "slot": "4",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 13050,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "createdBlock",
+          "offset": 0,
+          "slot": "5",
+          "type": "t_uint256"
+        }
+      ],
+      "numberOfBytes": "192"
+    },
+    "t_struct(RoleData)281_storage": {
+      "encoding": "inplace",
+      "label": "struct AccessControl.RoleData",
+      "members": [
+        {
+          "astId": 278,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "hasRole",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_address,t_bool)"
+        },
+        {
+          "astId": 280,
+          "contract": "contracts/data/PoolRegistry.sol:PoolRegistry",
+          "label": "adminRole",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_bytes32"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}

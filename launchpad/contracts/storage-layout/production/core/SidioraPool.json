@@ -1,0 +1,198 @@
+{
+  "storage": [
+    {
+      "astId": 5151,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "tokenAddress",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_address"
+    },
+    {
+      "astId": 5153,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "usdlAddress",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_address"
+    },
+    {
+      "astId": 5156,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "opticalAddress",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_address"
+    },
+    {
+      "astId": 5158,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "feeAccumulator",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_address"
+    },
+    {
+      "astId": 5160,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "eventEmitter",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_address"
+    },
+    {
+      "astId": 5162,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "protocolConfig",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_address"
+    },
+    {
+      "astId": 5164,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "guardian",
+      "offset": 0,
+      "slot": "6",
+      "type": "t_address"
+    },
+    {
+      "astId": 5166,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "virtualUsdlReserve",
+      "offset": 0,
+      "slot": "7",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 5168,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "realUsdlBalance",
+      "offset": 0,
+      "slot": "8",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 5170,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "tokenReserve",
+      "offset": 0,
+      "slot": "9",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 5173,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "creationTimestamp",
+      "offset": 0,
+      "slot": "10",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 5176,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "cumulativeVolume",
+      "offset": 0,
+      "slot": "11",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 5180,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "priceSnapshots",
+      "offset": 0,
+      "slot": "12",
+      "type": "t_array(t_uint256)8_storage"
+    },
+    {
+      "astId": 5182,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "snapshotIndex",
+      "offset": 0,
+      "slot": "20",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 5184,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "snapshotCount",
+      "offset": 0,
+      "slot": "21",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 5186,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "accumulatedUsdlFees",
+      "offset": 0,
+      "slot": "22",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 5188,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "accumulatedTokenFees",
+      "offset": 0,
+      "slot": "23",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 5190,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "factory",
+      "offset": 0,
+      "slot": "24",
+      "type": "t_address"
+    },
+    {
+      "astId": 5192,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "pendingGuardian",
+      "offset": 0,
+      "slot": "25",
+      "type": "t_address"
+    },
+    {
+      "astId": 5194,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "lastSnapshotTimestamp",
+      "offset": 0,
+      "slot": "26",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 5196,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "cumulativeBuyUsdlVolume",
+      "offset": 0,
+      "slot": "27",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 5198,
+      "contract": "contracts/core/SidioraPool.sol:SidioraPool",
+      "label": "cumulativeSellUsdlVolume",
+      "offset": 0,
+      "slot": "28",
+      "type": "t_uint256"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_uint256)8_storage": {
+      "base": "t_uint256",
+      "encoding": "inplace",
+      "label": "uint256[8]",
+      "numberOfBytes": "256"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}

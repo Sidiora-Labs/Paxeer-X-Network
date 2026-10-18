@@ -1,0 +1,406 @@
+# opticals.freeze.lock — sidiora-contracts/opticals
+# Generated: 2026-04-26T04:56Z
+# Auditor: Cascade (automated source audit, indexer-oriented)
+# Network: Paxeer (chainId 125)
+# Addresses source: backend/deployments/paxeer-network-addresses.json
+# ABIs source: backend/deployments/abis/
+
+## Group Identity
+- **Group:** opticals
+- **Path:** smart-contracts/contracts/opticals/
+- **Contracts:**
+  - `BaseOptical.sol` — abstract base (no deployed instance)
+  - `OpticalRegistry.sol` — UUPS registry of approved opticals
+  - `LaunchpadOpticalFactory.sol` — UUPS factory for project-specific opticals
+  - presets:
+    - `AntiSnipeOptical.sol`
+    - `BuybackBurnOptical.sol`
+    - `CooldownOptical.sol`
+    - `MaxWalletOptical.sol`
+    - `TaxOptical.sol`
+    - `LaunchpadOptical.sol` (deployed per-project via factory; not pre-deployed)
+- **Language:** Solidity ^0.8.24 (LicenseRef-Paxlabs-HyperPax-OS-Protocol)
+- **Role:** Pluggable per-pool hooks invoked by `SidioraPool.swap` and
+  `FeeAccumulator.recordFee`. The 4-hook surface (`beforeSwap`, `afterSwap`,
+  `beforeFeeDistribution`, `afterFeeDistribution`) lets pool creators add
+  protections (anti-snipe, cooldown, max-wallet) and economic primitives
+  (tax, buyback-burn, launchpad vesting + capital raise).
+- **Hook flags (uint8 BitFlag):**
+  - `BEFORE_SWAP = 1`
+  - `AFTER_SWAP  = 2`
+  - `BEFORE_FEE_DISTRIBUTION = 4`
+  - `AFTER_FEE_DISTRIBUTION  = 8`
+- **All preset opticals are IMMUTABLE** — once deployed, parameters are
+  encoded in `immutable` slots and cannot be changed. Replace by deploying
+  a new optical and migrating projects (no on-chain migration tooling).
+
+---
+
+## OpticalRegistry
+
+- **ABI:** `backend/deployments/abis/OpticalRegistry.json`
+- **Address proxy:** `paxeer-network-addresses.json#OpticalRegistry_proxy` —
+  `0xA62b58fe655B45179449003279416575B7241449`
+- **Address impl:** `paxeer-network-addresses.json#OpticalRegistry_impl` —
+  `0x9cEB5828aA38495248710aF280B2C21CD48040E6`
+- **Pattern:** UUPS proxy. **Trust-signaling only** — pools can use
+  unregistered opticals; the registry just toggles a "verified" badge.
+
+### Functions
+
+External (admin-only writes):
+- `registerOptical(optical, name, description, riskLevel, auditor)` —
+  `DEFAULT_ADMIN_ROLE` only. `riskLevel` is 1–5.
+- `deregisterOptical(optical)` — `DEFAULT_ADMIN_ROLE` only. Sets approved=false
+  but DOES NOT remove from `_allOpticals` array (paginated view persists).
+- `updateMetadata(optical, name, description, riskLevel, auditor)` —
+  `DEFAULT_ADMIN_ROLE` only. Preserves `registeredAt`.
+
+Admin:
+- `initialize(eventEmitter, admin)`
+- UUPS `_authorizeUpgrade`
+
+Views:
+- `isRegistered(optical)` → `bool`
+- `getOpticalMetadata(optical)` → `OpticalMetadata{name, description, riskLevel, auditor, registeredAt}`
+- `getAllOpticals(offset, limit)` → `address[]`
+- `getOpticalCount()` → `uint256`
+- `eventEmitter()` → `address`
+
+### Events to index (local; NOT routed via EventEmitter)
+- `OpticalRegistered(optical, name, riskLevel, timestamp)`
+- `OpticalDeregistered(optical, timestamp)`
+- `OpticalMetadataUpdated(optical, timestamp)`
+
+### Reads / Writes
+- Reads: nothing external.
+- Writes: `_approved[optical]`, `_metadata[optical]`, `_allOpticals.push(optical)`.
+
+### Indexer notes
+- This registry is ADVISORY. A pool's `optical` field can point to ANY
+  contract implementing `IOptical` — registration is a UI hint, not an
+  enforcement.
+- `_allOpticals` is append-only (deregistered entries persist in the array).
+  Frontend should filter against `isRegistered(optical)` post-fetch.
+
+---
+
+## LaunchpadOpticalFactory
+
+- **ABI:** `backend/deployments/abis/LaunchpadOpticalFactory.json` (if
+  generated; verify in `backend/deployments/abis/index.json`)
+- **Address proxy:** `paxeer-network-addresses.json#LaunchpadOpticalFactory_proxy` —
+  `0x385198712E5B288d64c3E1D3cb91bBeFD7B77b60`
+- **Address impl:** `paxeer-network-addresses.json#LaunchpadOpticalFactory_impl` —
+  `0x660b5Aa3bc80490ED8475d7766658318604a55AC`
+- **Pattern:** UUPS proxy. Self-service factory. Holds `OPTICAL_GRANTER_ROLE`
+  on `FeeAccumulator_proxy`.
+
+### Functions
+
+External (open):
+- `createLaunchpadOptical(teamWallets[], cliffDuration, vestingDuration,
+   capitalRaiseBps, capitalRaiseDuration, teamClaimAddress)` → `optical` —
+  Anyone can call. Deploys a new immutable `LaunchpadOptical`, then calls
+  `FeeAccumulator.authorizeOptical(optical)` to grant `OPTICAL_CLAIM_ROLE`
+  to the new instance.
+  Caller (`msg.sender`) is recorded as both `owner` and `creator` (auto-vested).
+  `capitalRaiseBps ≤ 1000`, `cliffDuration ≤ 365d`, `vestingDuration ≤ 1095d`,
+  `capitalRaiseDuration ≤ 365d`, `teamWallets.length ≤ 20`.
+
+Admin:
+- `initialize(poolRegistry, feeAccumulator, opticalRegistry, admin)`
+- UUPS `_authorizeUpgrade`
+
+Views:
+- `getOpticalsByCreator(creator)` → `address[]`
+- `getDeployedCount()` → `uint256`
+- `getAllOpticals(offset, limit)` → `address[]`
+- `poolRegistry()`, `feeAccumulator()`, `opticalRegistry()`
+
+### Events to index (local; NOT routed via EventEmitter)
+- `LaunchpadOpticalCreated(optical, creator, teamClaimAddress,
+   cliffDuration, vestingDuration, capitalRaiseBps, capitalRaiseDuration)`
+
+### Reads
+- Constructor of `LaunchpadOptical` validates `_creator`, `_teamClaimAddress`,
+  `_feeAccumulator` non-zero and bounds.
+- `IFeeAccumulator.authorizeOptical` (write call, granted via
+  `OPTICAL_GRANTER_ROLE`).
+
+### Writes
+- Deploys new `LaunchpadOptical` (CREATE, not CREATE2 — address is
+  block-order dependent, NOT deterministic).
+- `_deployedOpticals.push(optical)`, `_creatorOpticals[msg.sender].push(optical)`
+- Indirectly grants `OPTICAL_CLAIM_ROLE` on FeeAccumulator.
+
+### Indexer notes
+- Subscribe to `LaunchpadOpticalCreated` to discover all deployed launchpad
+  opticals (no other discovery path exists — they aren't auto-registered
+  in OpticalRegistry).
+- The new optical's address is non-deterministic. The indexer must wait for
+  the event to learn the address.
+
+---
+
+## LaunchpadOptical (per-project, deployed via factory)
+
+- **Pattern:** Immutable. NOT pre-deployed; each project gets its own.
+  Discover via `LaunchpadOpticalFactory.LaunchpadOpticalCreated` events.
+- **Hooks used:** `BEFORE_SWAP | AFTER_SWAP | BEFORE_FEE_DISTRIBUTION = 7`
+- **ABI:** Generated from `contracts/opticals/presets/LaunchpadOptical.sol`.
+  Add to `backend/deployments/abis/` if not present.
+
+### Functions
+
+External (writes; called by pool / by team):
+- `beforeSwap(pool, sender, isBuy, amountIn)` → `(proceed, amountDelta)` —
+  pool-only. Records `poolStartTime` on first call. Enforces cliff lock and
+  linear vesting on team-wallet sells.
+- `afterSwap(pool, sender, isBuy, amountIn, amountOut)` — pool-only. Updates
+  `tokensSold[pool][sender]` for vested wallets selling.
+- `beforeFeeDistribution(pool, feeAmount)` → `adjustedFee` — FeeAccumulator-
+  invoked. Diverts `capitalRaiseBps` to optical surplus while
+  `block.timestamp - poolStartTime[pool] ≤ capitalRaiseDuration`.
+- `claimCapital(pool)` — `teamClaimAddress`-only. Pulls accumulated USDL
+  via `FeeAccumulator.claimOpticalSurplus` to `teamClaimAddress`.
+
+Views:
+- `getVestingInfo(pool, wallet)` → `(vested, cliffEnd, vestEnd, vestedAmount, sold, maxSellableNow)`
+- `getCapitalRaiseInfo(pool)` → `(accumulated, totalRaisedAmount, raiseEndTime, isActive)`
+- `isTeamWallet(wallet)` → `bool`
+- `getFlags()` → `uint8` (constant `7`)
+- Public immutables: `creator`, `teamClaimAddress`, `feeAccumulator`,
+  `cliffDuration`, `vestingDuration`, `capitalRaiseBps`, `capitalRaiseDuration`,
+  `teamWalletCount`, plus `MAX_*` constants.
+- Public storage: `isVested(addr)`, `poolStartTime(pool)`, `tokensSold(pool,wallet)`,
+  `accumulatedUsdl(pool)`, `totalRaised(pool)`.
+
+### Events to index (local)
+- `PoolStartTimeRecorded(pool, startTime)` — first interaction (one per pool)
+- `SellBlockedCliff(pool, sender, amountIn)` — failed sell during cliff
+- `SellBlockedVesting(pool, sender, amountIn, maxSellable)` — over-vest sell
+- `CapitalRaiseAccumulated(pool, amount, totalRaisedAmount)` — every fee div
+- `CapitalRaiseClaimed(pool, amount, recipient)` — team capital draw
+
+### Reads
+- Pool: `pool.tokenAddress()` then `token.balanceOf(wallet)` for vesting math
+- Calls into `IFeeAccumulator.claimOpticalSurplus`
+
+### Writes
+- `poolStartTime[pool]`, `tokensSold[pool][wallet]`,
+  `accumulatedUsdl[pool]`, `totalRaised[pool]`
+
+### Indexer notes
+- The event fields here are richer than the canonical `OpticalExecuted` —
+  index `LaunchpadOptical.*` events DIRECTLY for project dashboards.
+- Vesting math is "originalAllocation = currentBalance + alreadySold" —
+  the indexer must compute `originalAllocation` AT FIRST SELL TIME and
+  cache it; later balance changes do not affect already-vested fractions.
+
+---
+
+## AntiSnipeOptical
+
+- **ABI:** `backend/deployments/abis/AntiSnipeOptical.json`
+- **Address (singleton, pre-deployed):**
+  `paxeer-network-addresses.json#AntiSnipeOptical` —
+  `0x2235a03cC711bb384Ff42CcB7c6B727612bbCBE8`
+- **Pattern:** Immutable. Per-pool state via `poolCreationBlock` map.
+- **Hook:** `BEFORE_SWAP` only (flag `1`).
+
+### Functions
+
+External:
+- `registerPool(pool)` — open. Records `poolCreationBlock[pool]` on first call.
+- `beforeSwap(pool, sender, isBuy, amountIn)` → `(proceed, amountDelta)` —
+  blocks BUYS exceeding `(effectiveUsdl * maxBuyBps / 10000)` while
+  `block.number ≤ creationBlock + protectionBlocks`. Sells unaffected.
+
+Views:
+- `maxBuyBps()`, `protectionBlocks()` (immutables)
+- `poolCreationBlock(pool)` → `uint256`
+- `getFlags()` → `uint8` (constant `1`)
+
+### Events
+- NONE locally. Pool emits `OpticalExecuted` via EventEmitter on block.
+
+### Reads
+- `pool.getReserves()` for `effectiveUsdl` calculation
+
+### Writes
+- `poolCreationBlock[pool]` (one-shot per pool)
+
+### Indexer notes
+- Indexer should call `registerPool(pool)` programmatically (or rely on a
+  user / keeper to call it) — without that, this optical does NOTHING.
+  Surface in dashboards: "AntiSnipeOptical attached but not registered".
+
+---
+
+## CooldownOptical
+
+- **ABI:** `backend/deployments/abis/CooldownOptical.json`
+- **Address:** `paxeer-network-addresses.json#CooldownOptical` —
+  `0x7E739D6A78F07Ab728A9f3217DfF4a994F87fBf1`
+- **Pattern:** Immutable. Per-pool per-wallet last-trade timestamps.
+- **Hook:** `BEFORE_SWAP` only (flag `1`).
+
+### Functions
+
+External:
+- `beforeSwap(pool, sender, _, _)` — rejects if
+  `block.timestamp < lastTradeTime[pool][sender] + cooldownSeconds`.
+  Records `block.timestamp` to `lastTradeTime` if accepted.
+
+Views:
+- `cooldownSeconds()` (immutable)
+- `lastTradeTime(pool, wallet)` → `uint256`
+- `getFlags()` → `uint8` (`1`)
+
+### Events: NONE. Reads: nothing external. Writes: `lastTradeTime`.
+
+---
+
+## MaxWalletOptical
+
+- **ABI:** `backend/deployments/abis/MaxWalletOptical.json`
+- **Address:** `paxeer-network-addresses.json#MaxWalletOptical` —
+  `0xbc02402CD5385f5f67F0Dcc9b91C93eCF4107A7b`
+- **Pattern:** Immutable. Owner-managed exemption list.
+- **Hook:** `AFTER_SWAP` only (flag `2`).
+
+### Functions
+
+External:
+- `setExempt(account, isExempt)` — owner-only.
+- `afterSwap(pool, sender, isBuy, _, _)` — REVERTS with `MaxWalletExceeded`
+  if a buy leaves `sender` holding more than
+  `totalSupply * maxWalletBps / 10000` of the pool's bonded token.
+  Sells exempt. `sender` and `pool` exemptions skip the check.
+
+Views:
+- `maxWalletBps()` (immutable)
+- `exempt(addr)` → `bool`
+- `getFlags()` → `uint8` (`2`)
+
+### Events: NONE.
+### Reads: `pool.tokenAddress`, `token.{balanceOf, totalSupply}`.
+### Writes: `exempt[account]`.
+
+---
+
+## TaxOptical
+
+- **ABI:** `backend/deployments/abis/TaxOptical.json`
+- **Address:** `paxeer-network-addresses.json#TaxOptical` —
+  `0xaaA80699C008e34d537Bb0C8E24bE6f69b5cd9F2`
+- **Pattern:** Immutable. Pure tax surcharge via amountDelta.
+- **Hook:** `BEFORE_SWAP` only (flag `1`).
+- **Cap:** `MAX_TAX_BPS = 1000` (10%) — enforced at construction.
+
+### Functions
+
+External:
+- `beforeSwap(_, _, isBuy, amountIn)` (view) → `(true, -taxAmount)` where
+  `taxAmount = amountIn * (isBuy ? buyTaxBps : sellTaxBps) / 10000`. Pool
+  applies the negative delta to reduce effective `amountIn`. The taxed
+  amount stays in the pool (deepens liquidity).
+
+Views:
+- `buyTaxBps()`, `sellTaxBps()` (immutables)
+- `MAX_TAX_BPS()` constant `1000`
+- `getFlags()` → `uint8` (`1`)
+
+### Events: NONE.
+### Reads / Writes: NONE.
+
+---
+
+## BuybackBurnOptical
+
+- **ABI:** `backend/deployments/abis/BuybackBurnOptical.json`
+- **Address:** `paxeer-network-addresses.json#BuybackBurnOptical` —
+  `0x596467B82722dba67b6ACb0a7dc83B530a4C90BD`
+- **Pattern:** Immutable. Owner-driven buyback execution flag.
+- **Hook:** `BEFORE_FEE_DISTRIBUTION` only (flag `4`).
+- **Cap:** `buybackBps ≤ 5000` (50%) — enforced at construction.
+- **DEAD address:** `0x000000000000000000000000000000000000dEaD`
+
+### Functions
+
+External:
+- `beforeFeeDistribution(pool, feeAmount)` → `adjustedFee` —
+  diverts `feeAmount * buybackBps / 10000` into `accumulatedUsdl[pool]`
+  and emits `BuybackAccumulated`. Returns reduced fee.
+- `markBuybackExecuted(pool)` — owner-only. Zeros `accumulatedUsdl[pool]`,
+  emits `BuybackExecuted`. Off-chain/Router process actually performs the
+  buy + burn (this contract just records the intent).
+
+Views:
+- `buybackBps()` (immutable)
+- `accumulatedUsdl(pool)` → `uint256`
+- `getAccumulatedUsdl(pool)` → `uint256`
+- `getFlags()` → `uint8` (`4`)
+
+### Events to index (local)
+- `BuybackAccumulated(pool, amount)`
+- `BuybackExecuted(pool, usdlUsed)`
+
+### Reads / Writes
+- Reads: nothing external
+- Writes: `accumulatedUsdl[pool]`. Note: this contract does NOT itself
+  hold USDL — the surplus stays in `FeeAccumulator._opticalSurplus[pool]`
+  but BuybackBurnOptical does NOT have `OPTICAL_CLAIM_ROLE` granted (the
+  factory-deployed LaunchpadOptical does, but BuybackBurnOptical is a
+  pre-deployed singleton). VERIFY: surplus is stranded unless the role is
+  manually granted, OR the design intent is that `markBuybackExecuted` is
+  paired with an off-chain Router call that buys back (the `accumulatedUsdl`
+  here is purely accounting).
+
+### Indexer notes
+- Surface `BuybackAccumulated` summed per pool as "pending buyback budget".
+  Surface `BuybackExecuted` as the realization signal. The actual on-chain
+  buyback Tx is NOT inside this contract.
+
+---
+
+## BaseOptical (abstract)
+
+- **NOT DEPLOYED.** Inheritance base only. No address.
+- Provides default no-op `beforeSwap/afterSwap/beforeFeeDistribution/afterFeeDistribution`.
+- Provides `_isRegisteredPool(pool)` (staticcall to PoolRegistry) and
+  `_getPoolReserves(pool)` (staticcall to pool).
+- `onlyPool` modifier and `onlyOwner` modifier patterns.
+
+---
+
+## Cross-cutting reads / writes summary
+
+| Hook                    | Invoked from                                   | Opticals in this group using it                    |
+| ----------------------- | ---------------------------------------------- | -------------------------------------------------- |
+| `beforeSwap`            | `SidioraPool.swap` (top of function)           | AntiSnipe, Cooldown, Tax, LaunchpadOptical         |
+| `afterSwap`             | `SidioraPool.swap` (after transfer)            | MaxWallet, LaunchpadOptical                        |
+| `beforeFeeDistribution` | `FeeAccumulator.recordFee`                     | BuybackBurn, LaunchpadOptical                      |
+| `afterFeeDistribution`  | (defined but UNUSED in current FeeAccumulator) | None of the presets implement it                   |
+
+| External Contract  | Read by opticals                                 | Written by opticals                                |
+| ------------------ | ------------------------------------------------ | -------------------------------------------------- |
+| `PoolRegistry`     | `getPoolMetadata` (BaseOptical `_isRegisteredPool`) | —                                              |
+| `SidioraPool`      | `getReserves`, `tokenAddress`                    | —                                                  |
+| `Token ERC20`      | `balanceOf`, `totalSupply`                       | —                                                  |
+| `FeeAccumulator`   | —                                                | `claimOpticalSurplus` (LaunchpadOptical only),     |
+|                    |                                                  | `authorizeOptical` (Factory only)                  |
+
+## Coverage caveats
+- This freeze locks the on-chain SURFACE only.
+- Pool's `optical` field can be `address(0)` (no optical) — that pool
+  emits NO `OpticalExecuted` events. Still index it normally.
+- Each optical type can be deployed multiple times with different
+  parameters — the addresses in `paxeer-network-addresses.json` are
+  the ONE pre-deployed canonical singleton per preset that frontend
+  templates point creators at; a creator may deploy their own variant
+  with `new` (any address implementing IOptical works as a pool's
+  `optical`).
+- `LaunchpadOptical` instances are created on-demand and are NOT in the
+  paxeer-network-addresses.json file — discover via Factory events.

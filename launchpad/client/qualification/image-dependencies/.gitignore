@@ -1,0 +1,4 @@
+next-http.log
+fixture/.next/
+fixture/node_modules
+standalone-http.log

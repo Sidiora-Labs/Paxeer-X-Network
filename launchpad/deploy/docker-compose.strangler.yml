@@ -1,0 +1,255 @@
+services:
+  api:
+    image: ${API_IMAGE:?immutable service image required}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.svc
+      args: { SERVICE: core/api, BIN: apid }
+    env_file: ["${API_ENV_FILE:?reviewed service environment required}"]
+    environment:
+      NODE_ENV: production
+      RUNTIME_PROFILE: container
+      BIND_ADDRESS: 0.0.0.0
+      PORT: "8080"
+      SECRETS_PROVIDER: env
+      SECRETS_REFRESH_SECONDS: "30"
+      API_ROLE: rest
+    volumes:
+      - ${API_EVIDENCE_DIR:?reviewed startup documents required}:/run/kindle:ro
+    read_only: true
+    tmpfs: [/tmp]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+  sockets:
+    image: ${SOCKETS_IMAGE:?immutable service image required}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.svc
+      args: { SERVICE: core/api, BIN: apid }
+    env_file: ["${SOCKETS_ENV_FILE:?reviewed service environment required}"]
+    environment:
+      NODE_ENV: production
+      RUNTIME_PROFILE: container
+      BIND_ADDRESS: 0.0.0.0
+      PORT: "8080"
+      SECRETS_PROVIDER: env
+      SECRETS_REFRESH_SECONDS: "30"
+      API_ROLE: sockets
+    volumes:
+      - ${SOCKETS_EVIDENCE_DIR:?reviewed startup documents required}:/run/kindle:ro
+    read_only: true
+    tmpfs: [/tmp]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+  indexer:
+    image: ${INDEXER_IMAGE:?immutable service image required}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.svc
+      args: { SERVICE: core/indexer, BIN: indexerd }
+    env_file: ["${INDEXER_ENV_FILE:?reviewed service environment required}"]
+    environment:
+      NODE_ENV: production
+      RUNTIME_PROFILE: container
+      BIND_ADDRESS: 0.0.0.0
+      PORT: "8080"
+      SECRETS_PROVIDER: env
+      SECRETS_REFRESH_SECONDS: "30"
+    volumes:
+      - ${INDEXER_EVIDENCE_DIR:?reviewed startup documents required}:/run/kindle:ro
+    read_only: true
+    tmpfs: [/tmp]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+  charts:
+    image: ${CHARTS_IMAGE:?immutable service image required}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.svc
+      args: { SERVICE: core/trading-charts, BIN: chartsd }
+    env_file: ["${CHARTS_ENV_FILE:?reviewed service environment required}"]
+    environment:
+      NODE_ENV: production
+      RUNTIME_PROFILE: container
+      BIND_ADDRESS: 0.0.0.0
+      PORT: "8080"
+      SECRETS_PROVIDER: env
+      SECRETS_REFRESH_SECONDS: "30"
+    volumes:
+      - ${CHARTS_EVIDENCE_DIR:?reviewed startup documents required}:/run/kindle:ro
+    read_only: true
+    tmpfs: [/tmp]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+  stats:
+    image: ${STATS_IMAGE:?immutable service image required}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.svc
+      args: { SERVICE: core/stats-workers, BIN: statsd }
+    env_file: ["${STATS_ENV_FILE:?reviewed service environment required}"]
+    environment:
+      NODE_ENV: production
+      RUNTIME_PROFILE: container
+      BIND_ADDRESS: 0.0.0.0
+      PORT: "8080"
+      SECRETS_PROVIDER: env
+      SECRETS_REFRESH_SECONDS: "30"
+    volumes:
+      - ${STATS_EVIDENCE_DIR:?reviewed startup documents required}:/run/kindle:ro
+    read_only: true
+    tmpfs: [/tmp]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+  pnl:
+    image: ${PNL_IMAGE:?immutable service image required}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.svc
+      args: { SERVICE: core/pnl-tracker, BIN: pnld }
+    env_file: ["${PNL_ENV_FILE:?reviewed service environment required}"]
+    environment:
+      NODE_ENV: production
+      RUNTIME_PROFILE: container
+      BIND_ADDRESS: 0.0.0.0
+      PORT: "8080"
+      SECRETS_PROVIDER: env
+      SECRETS_REFRESH_SECONDS: "30"
+    volumes:
+      - ${PNL_EVIDENCE_DIR:?reviewed startup documents required}:/run/kindle:ro
+    read_only: true
+    tmpfs: [/tmp]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+  ranking:
+    image: ${RANKING_IMAGE:?immutable service image required}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.svc
+      args: { SERVICE: core/ranking-algo, BIN: rankingd }
+    env_file: ["${RANKING_ENV_FILE:?reviewed service environment required}"]
+    environment:
+      NODE_ENV: production
+      RUNTIME_PROFILE: container
+      BIND_ADDRESS: 0.0.0.0
+      PORT: "8080"
+      SECRETS_PROVIDER: env
+      SECRETS_REFRESH_SECONDS: "30"
+    volumes:
+      - ${RANKING_EVIDENCE_DIR:?reviewed startup documents required}:/run/kindle:ro
+    read_only: true
+    tmpfs: [/tmp]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+  gateway:
+    image: ${GATEWAY_IMAGE:?immutable service image required}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.svc
+      args: { SERVICE: media/gateway, BIN: mediagatewayd }
+    env_file: ["${GATEWAY_ENV_FILE:?reviewed service environment required}"]
+    environment:
+      NODE_ENV: production
+      RUNTIME_PROFILE: container
+      BIND_ADDRESS: 0.0.0.0
+      PORT: "8080"
+      SECRETS_PROVIDER: env
+      SECRETS_REFRESH_SECONDS: "30"
+    volumes:
+      - ${GATEWAY_EVIDENCE_DIR:?reviewed startup documents required}:/run/kindle:ro
+    read_only: true
+    tmpfs: [/tmp]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+  user:
+    image: ${USER_IMAGE:?immutable service image required}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.svc
+      args: { SERVICE: media/user, BIN: userd }
+    env_file: ["${USER_ENV_FILE:?reviewed service environment required}"]
+    environment:
+      NODE_ENV: production
+      RUNTIME_PROFILE: container
+      BIND_ADDRESS: 0.0.0.0
+      PORT: "8080"
+      SECRETS_PROVIDER: env
+      SECRETS_REFRESH_SECONDS: "30"
+    volumes:
+      - ${USER_EVIDENCE_DIR:?reviewed startup documents required}:/run/kindle:ro
+    read_only: true
+    tmpfs: [/tmp]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+  social:
+    image: ${SOCIAL_IMAGE:?immutable service image required}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.svc
+      args: { SERVICE: media/social, BIN: sociald }
+    env_file: ["${SOCIAL_ENV_FILE:?reviewed service environment required}"]
+    environment:
+      NODE_ENV: production
+      RUNTIME_PROFILE: container
+      BIND_ADDRESS: 0.0.0.0
+      PORT: "8080"
+      SECRETS_PROVIDER: env
+      SECRETS_REFRESH_SECONDS: "30"
+    volumes:
+      - ${SOCIAL_EVIDENCE_DIR:?reviewed startup documents required}:/run/kindle:ro
+    read_only: true
+    tmpfs: [/tmp]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+  metadata:
+    image: ${METADATA_IMAGE:?immutable service image required}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.svc
+      args: { SERVICE: media/metadata, BIN: metadatad }
+    env_file: ["${METADATA_ENV_FILE:?reviewed service environment required}"]
+    environment:
+      NODE_ENV: production
+      RUNTIME_PROFILE: container
+      BIND_ADDRESS: 0.0.0.0
+      PORT: "8080"
+      SECRETS_PROVIDER: env
+      SECRETS_REFRESH_SECONDS: "30"
+    volumes:
+      - ${METADATA_EVIDENCE_DIR:?reviewed startup documents required}:/run/kindle:ro
+    read_only: true
+    tmpfs: [/tmp]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+  livestream:
+    image: ${LIVESTREAM_IMAGE:?immutable service image required}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.svc
+      args: { SERVICE: media/livestream, BIN: livestreamd }
+    env_file: ["${LIVESTREAM_ENV_FILE:?reviewed service environment required}"]
+    environment:
+      NODE_ENV: production
+      RUNTIME_PROFILE: container
+      BIND_ADDRESS: 0.0.0.0
+      PORT: "8080"
+      SECRETS_PROVIDER: env
+      SECRETS_REFRESH_SECONDS: "30"
+    volumes:
+      - ${LIVESTREAM_EVIDENCE_DIR:?reviewed startup documents required}:/run/kindle:ro
+    read_only: true
+    tmpfs: [/tmp]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s

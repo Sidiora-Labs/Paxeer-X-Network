@@ -1,0 +1,14 @@
+CREATE SCHEMA IF NOT EXISTS narrative_discovery;
+CREATE TABLE IF NOT EXISTS narrative_discovery.sources(id text PRIMARY KEY,kind text NOT NULL,document jsonb NOT NULL,published_at timestamptz NOT NULL,event_id text NOT NULL,observed_at timestamptz NOT NULL);
+CREATE INDEX IF NOT EXISTS narrative_source_order ON narrative_discovery.sources(published_at DESC,event_id);
+CREATE TABLE IF NOT EXISTS narrative_discovery.consumer_events(consumer text NOT NULL,event_id text NOT NULL,observed_at timestamptz NOT NULL,PRIMARY KEY(consumer,event_id));
+CREATE TABLE IF NOT EXISTS narrative_discovery.snapshots(id text PRIMARY KEY,account_id text NOT NULL,preference_revision numeric(20,0) NOT NULL,graph_revision numeric(20,0) NOT NULL,algorithm text NOT NULL,document jsonb NOT NULL,expires_at timestamptz NOT NULL);
+CREATE TABLE IF NOT EXISTS narrative_discovery.squads(id text PRIMARY KEY,document jsonb NOT NULL);
+CREATE TABLE IF NOT EXISTS narrative_discovery.members(squad_id text NOT NULL REFERENCES narrative_discovery.squads(id),account_id text NOT NULL,document jsonb NOT NULL,PRIMARY KEY(squad_id,account_id));
+CREATE TABLE IF NOT EXISTS narrative_discovery.invitations(squad_id text NOT NULL,account_id text NOT NULL,document jsonb NOT NULL,PRIMARY KEY(squad_id,account_id));
+CREATE TABLE IF NOT EXISTS narrative_discovery.transfers(squad_id text PRIMARY KEY,document jsonb NOT NULL);
+CREATE TABLE IF NOT EXISTS narrative_discovery.callouts(id text PRIMARY KEY,document jsonb NOT NULL);
+CREATE TABLE IF NOT EXISTS narrative_discovery.callout_revisions(id text NOT NULL,revision numeric(20,0) NOT NULL,document jsonb NOT NULL,PRIMARY KEY(id,revision));
+CREATE TABLE IF NOT EXISTS narrative_discovery.rules(id text PRIMARY KEY,account_id text NOT NULL,document jsonb NOT NULL,checkpoint jsonb NOT NULL,last_reason text NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS narrative_discovery.triggers(id text PRIMARY KEY,rule_id text NOT NULL,rule_revision numeric(20,0) NOT NULL,metric_revision numeric(20,0) NOT NULL,document jsonb NOT NULL,UNIQUE(rule_id,rule_revision,metric_revision));
+CREATE TABLE IF NOT EXISTS narrative_discovery.outbox(id text PRIMARY KEY,kind text NOT NULL,document jsonb NOT NULL,published boolean NOT NULL DEFAULT false);

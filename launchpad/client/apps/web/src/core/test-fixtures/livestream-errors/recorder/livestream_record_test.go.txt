@@ -1,0 +1,92 @@
+package streams
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	v2 "github.com/Sidiora-Technologies/KindleLaunch/shared/interfaces/v2"
+)
+
+type recorded struct {
+	Name    string            `json:"name"`
+	Source  string            `json:"source"`
+	Status  int               `json:"status"`
+	Headers map[string]string `json:"headers"`
+	Body    string            `json:"body"`
+}
+
+func capture(name, source string, write func(http.ResponseWriter)) recorded {
+	rec := httptest.NewRecorder()
+	write(rec)
+	h := map[string]string{}
+	for _, k := range []string{"Content-Type", "Cache-Control", "Retry-After", "X-Content-Type-Options"} {
+		if v := rec.Header().Get(k); v != "" {
+			h[k] = v
+		}
+	}
+	return recorded{Name: name, Source: source, Status: rec.Code, Headers: h, Body: rec.Body.String()}
+}
+
+func TestRecordLivestreamEnvelopes(t *testing.T) {
+	out := os.Getenv("REC_OUT")
+	if out == "" {
+		t.Skip("REC_OUT unset")
+	}
+	h := &Handlers{}
+	ce := func(err error) func(http.ResponseWriter) {
+		return func(w http.ResponseWriter) { h.contractError(w, err) }
+	}
+	rows := []recorded{
+		capture("broadcast_not_provisioned", "streams.writeNotProvisioned via (*Handlers).provisioned (unprovisioned runtime)", func(w http.ResponseWriter) {
+			(&Handlers{unprovisioned: true}).provisioned(func(http.ResponseWriter, *http.Request) {})(w, httptest.NewRequest("POST", "/v2/streams", nil))
+		}),
+		capture("live_document_not_provisioned", "(*Handlers).contractError(ErrNotProvisioned)", ce(ErrNotProvisioned)),
+		capture("heartbeat_state_conflict", "(*Handlers).contractError(ErrState)", ce(ErrState)),
+		capture("heartbeat_auth_expired", "(*Handlers).contractError(ErrViewerToken)", ce(ErrViewerToken)),
+		capture("field_invalid", "(*Handlers).contractError(ErrInvalid)", ce(ErrInvalid)),
+		capture("revision_conflict", "(*Handlers).contractError(ErrConflict)", ce(ErrConflict)),
+		capture("rate_limited", "(*Handlers).contractError(ErrQuota)", ce(ErrQuota)),
+		capture("connected_heartbeat_viewer_token", "(*Handlers).lifecycleError(ErrViewerToken) on a provisioned (connected) runtime", func(w http.ResponseWriter) { h.lifecycleError(w, ErrViewerToken) }),
+		capture("connected_heartbeat_state", "(*Handlers).lifecycleError(ErrState) on a provisioned (connected) runtime", func(w http.ResponseWriter) { h.lifecycleError(w, ErrState) }),
+		capture("connected_heartbeat_rate_limited", "streams.writeRateLimited(15) from connectedHeartbeat on a provisioned (connected) runtime", func(w http.ResponseWriter) { writeRateLimited(w, 15, "Viewer heartbeat rate limited") }),
+		capture("connected_request_media_type", "streams.boundedBody(text/plain) on a provisioned (connected) runtime", func(w http.ResponseWriter) {
+			r := httptest.NewRequest("POST", "/v2/streams/x/heartbeat", strings.NewReader("{}"))
+			r.Header.Set("Content-Type", "text/plain")
+			var dst struct{}
+			_, _ = boundedBody(w, r, 1024, &dst)
+		}),
+		capture("connected_request_too_large", "streams.boundedBody(oversize) on a provisioned (connected) runtime", func(w http.ResponseWriter) {
+			r := httptest.NewRequest("POST", "/v2/streams/x/heartbeat", strings.NewReader(`{"sessionId":"`+strings.Repeat("a", 1024)+`"}`))
+			r.Header.Set("Content-Type", "application/json")
+			var dst struct {
+				SessionID string `json:"sessionId"`
+			}
+			_, _ = boundedBody(w, r, 1024, &dst)
+		}),
+		capture("connected_request_invalid_json", "streams.boundedBody(invalid JSON) on a provisioned (connected) runtime", func(w http.ResponseWriter) {
+			r := httptest.NewRequest("POST", "/v2/streams/x/heartbeat", strings.NewReader(`{"sessionId":`))
+			r.Header.Set("Content-Type", "application/json")
+			var dst struct {
+				SessionID string `json:"sessionId"`
+			}
+			_, _ = boundedBody(w, r, 1024, &dst)
+		}),
+		capture("dependency_unavailable", "(*Handlers).contractError(default)", ce(os.ErrClosed)),
+		capture("dependency_unavailable_retry_after", "streams.writeContractError(503, DEPENDENCY_UNAVAILABLE, retryable, retryAfterMs 1000)", func(w http.ResponseWriter) {
+			r := v2.SafeInteger(1000)
+			writeContractError(w, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "Authoritative livestream dependency unavailable", true, &r, &v2.ErrorDetails{Dependency: v2.Optional[string]{Present: true, Value: "livestream_store"}})
+		}),
+	}
+	b, err := json.MarshalIndent(rows, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "livestream.json"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -1,0 +1,42 @@
+{
+  "name": "@sidiora/mobile",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "android": "react-native run-android",
+    "ios": "react-native run-ios"
+  },
+  "dependencies": {
+    "react": "19.2.4",
+    "react-native": "0.86.0",
+    "@kindle/production-contracts": "workspace:*",
+    "@babel/runtime": "7.29.2",
+    "@kindle/sdk": "workspace:*",
+    "@walletconnect/sign-client": "2.26.0",
+    "@walletconnect/react-native-compat": "2.26.0",
+    "@walletconnect/types": "2.26.0",
+    "@react-native-async-storage/async-storage": "3.1.1",
+    "@react-native-community/netinfo": "12.0.1",
+    "react-native-get-random-values": "2.0.0",
+    "buffer": "6.0.3",
+    "viem": "2.37.3"
+  },
+  "devDependencies": {
+    "@react-native/babel-preset": "0.86.0",
+    "@react-native/metro-config": "0.86.0",
+    "typescript": "5.9.3",
+    "@react-native-community/cli": "20.1.0",
+    "@react-native-community/cli-platform-ios": "20.1.0",
+    "@react-native-community/cli-platform-android": "20.1.0",
+    "@babel/core": "7.29.6",
+    "@babel/runtime": "7.29.6",
+    "@types/react": "19.2.14",
+    "@react-native/gradle-plugin": "0.86.0",
+    "@react-native/codegen": "0.86.0"
+  },
+  "type": "module",
+  "engines": {
+    "node": "^20.19.4 || ^22.13.0 || ^24.3.0 || >=25.0.0"
+  }
+}

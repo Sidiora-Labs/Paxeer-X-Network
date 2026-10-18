@@ -1,0 +1,87 @@
+rule_files:
+- ../prometheus-rules.json
+evaluation_interval: 15s
+tests:
+- name: single-missing-journey
+  interval: 15s
+  input_series:
+  - series: synthetic_journey_expected{journey="quote",environment="qualification",zone="zone-a"}
+    values: 1+0x8
+  - series: synthetic_journey_success{journey="browse",environment="qualification",zone="zone-a"}
+    values: 1+0x8
+  promql_expr_test:
+  - expr: ALERTS{alertname="synthetic_failed",alertstate="firing"}
+    eval_time: 1m
+    exp_samples:
+    - labels: ALERTS{alertname="synthetic_failed",alertstate="firing",commander="incident-commander",environment="qualification",journey="quote",owner="platform-oncall",severity="critical",zone="zone-a"}
+      value: 1
+- name: exact14.4x-burn-boundary
+  interval: 15s
+  input_series:
+  - series: sli_read_eligible_requests_total{service="gateway",environment="qualification",zone="zone-a",route="browse"}
+    values: 0+10000x1440
+  - series: sli_read_good_requests_total{service="gateway",environment="qualification",zone="zone-a",route="browse"}
+    values: 0+9928x1440
+  promql_expr_test:
+  - expr: ALERTS{alertname="read_burn_critical",alertstate="firing"}
+    eval_time: 6h
+    exp_samples:
+    - labels: ALERTS{alertname="read_burn_critical",alertstate="firing",commander="incident-commander",environment="qualification",owner="platform-oncall",route="browse",service="gateway",severity="critical",zone="zone-a"}
+      value: 1
+- name: low-denominator-never-pages-burn
+  interval: 15s
+  input_series:
+  - series: sli_read_eligible_requests_total{service="gateway",environment="qualification",zone="zone-a",route="browse"}
+    values: 0+0.01x1440
+  - series: sli_read_good_requests_total{service="gateway",environment="qualification",zone="zone-a",route="browse"}
+    values: 0+0x1440
+  promql_expr_test:
+  - expr: ALERTS{alertname="read_burn_critical",alertstate="firing"}
+    eval_time: 6h
+    exp_samples: []
+- name: below14.4x-critical-boundary
+  interval: 15s
+  input_series:
+  - series: sli_read_eligible_requests_total{service="gateway",environment="qualification",zone="zone-a",route="browse"}
+    values: 0+10000x1440
+  - series: sli_read_good_requests_total{service="gateway",environment="qualification",zone="zone-a",route="browse"}
+    values: 0+9929x1440
+  promql_expr_test:
+  - expr: ALERTS{alertname="read_burn_critical",alertstate="firing"}
+    eval_time: 6h
+    exp_samples: []
+- name: exact6x-warning-boundary
+  interval: 15s
+  input_series:
+  - series: sli_read_eligible_requests_total{service="gateway",environment="qualification",zone="zone-a",route="browse"}
+    values: 0+10000x1440
+  - series: sli_read_good_requests_total{service="gateway",environment="qualification",zone="zone-a",route="browse"}
+    values: 0+9970x1440
+  promql_expr_test:
+  - expr: ALERTS{alertname="read_burn_warning",alertstate="firing"}
+    eval_time: 6h
+    exp_samples:
+    - labels: ALERTS{alertname="read_burn_warning",alertstate="firing",commander="incident-commander",environment="qualification",owner="platform-oncall",route="browse",service="gateway",severity="warning",zone="zone-a"}
+      value: 1
+- name: below6x-warning-boundary
+  interval: 15s
+  input_series:
+  - series: sli_read_eligible_requests_total{service="gateway",environment="qualification",zone="zone-a",route="browse"}
+    values: 0+10000x1440
+  - series: sli_read_good_requests_total{service="gateway",environment="qualification",zone="zone-a",route="browse"}
+    values: 0+9971x1440
+  promql_expr_test:
+  - expr: ALERTS{alertname="read_burn_warning",alertstate="firing"}
+    eval_time: 6h
+    exp_samples: []
+- name: short-window-only-no-critical
+  interval: 15s
+  input_series:
+  - series: sli_read_eligible_requests_total{service="gateway",environment="qualification",zone="zone-a",route="browse"}
+    values: 0+10000x1440
+  - series: sli_read_good_requests_total{service="gateway",environment="qualification",zone="zone-a",route="browse"}
+    values: 0+10000x1416 14169900+9900x23
+  promql_expr_test:
+  - expr: ALERTS{alertname="read_burn_critical",alertstate="firing"}
+    eval_time: 6h
+    exp_samples: []

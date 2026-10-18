@@ -1,0 +1,4 @@
+allowBuilds:
+  cbor-extract: true
+  keccak: true
+  secp256k1: true

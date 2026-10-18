@@ -1,0 +1,54 @@
+{
+  "schema_version": 4,
+  "task": "4.48",
+  "source_version": "l48-integrated-harness-v1",
+  "required_bindings": [
+    "candidate",
+    "interface",
+    "topology",
+    "generator"
+  ],
+  "isolated_actual_proofs": [
+    "real scoped anonymous/authenticated sockets",
+    "current fixed-arrival root HTTPmix shard",
+    "authentic canonical market publication replay and durable NATS acknowledgment",
+    "actual per-second unique gateway socket-write capture",
+    "real external CPU/NIC/schedulerheadroom"
+  ],
+  "required_shared_capture_definitions": [
+    "CaptureManifest",
+    "GatewayInterval",
+    "FaultInterval",
+    "ExpectedBrowserDelivery",
+    "SourceCommit"
+  ],
+  "required_final_gate": "9.1",
+  "other_lane_runtime_authorities_required_at_final_gate": 49,
+  "source_of_wire_overhead": "measured WebSocket,TLS,network native counters;600bytes/frame is a planningbudget only",
+  "coordinated_omission": "Every scheduled arrival,timeout,miss,error stays in eligible/latencydenominator. Censored percentiles return unavailable rather than a successful-only tail.",
+  "required_signed_native_scenario_proofs": [
+    "peak-soak",
+    "connection-surge",
+    "fanout-burst",
+    "event-surge",
+    "managed-video",
+    "hot-pool-skew"
+  ],
+  "native_attestation": "Admitted root Ed25519 key signs exact current candidate/tool/scenario/capture/rawartifact/nativecommand/timestamps/exitcode; no callerbooleans stand in for actual execution.",
+  "forbidden_substitutions": [
+    "calibrationecho as applicationgateway",
+    "modified canonical envelope",
+    "guessed PostgreSQL/NATSauthority",
+    "synthetic throughput or telemetry",
+    "source inspection as calibrated proof",
+    "successful samples alone as denominator",
+    "planning wirebytes as actual TLS/network",
+    "isolated proof as global capacity",
+    "partial24hour capture as final soak",
+    "canonical publication replay as fresh raw event ingest",
+    "unsigned scenario flag as actual9.1 native acceptance"
+  ],
+  "capacity_qualified": false,
+  "release_qualified": false,
+  "monthly_availability_qualified": false
+}

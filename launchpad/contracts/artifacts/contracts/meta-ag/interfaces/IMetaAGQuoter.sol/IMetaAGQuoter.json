@@ -1,0 +1,892 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "IMetaAGQuoter",
+  "sourceName": "contracts/meta-ag/interfaces/IMetaAGQuoter.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "tokenIn",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "tokenOut",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "amount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "isExactIn",
+              "type": "bool"
+            }
+          ],
+          "internalType": "struct IMetaAGQuoter.QuoteRequest[]",
+          "name": "requests",
+          "type": "tuple[]"
+        }
+      ],
+      "name": "batchQuote",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "amountIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "amountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "grossAmountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "executionPrice",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "spotPriceIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "spotPriceOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "sufficientLiquidity",
+              "type": "bool"
+            },
+            {
+              "internalType": "uint256",
+              "name": "availableLiquidity",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceTimestampIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceTimestampOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "priceStaleIn",
+              "type": "bool"
+            },
+            {
+              "internalType": "bool",
+              "name": "priceStaleOut",
+              "type": "bool"
+            }
+          ],
+          "internalType": "struct IMetaAGQuoter.QuoteResult[]",
+          "name": "results",
+          "type": "tuple[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getAllLiquidityInfo",
+      "outputs": [
+        {
+          "internalType": "address[]",
+          "name": "tokens",
+          "type": "address[]"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "reserves",
+          "type": "uint256[]"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "prices",
+          "type": "uint256[]"
+        },
+        {
+          "internalType": "bool[]",
+          "name": "stale",
+          "type": "bool[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "getLiquidityInfo",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "available",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "tokenPrice",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bool",
+          "name": "isStale",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "period",
+          "type": "uint256"
+        }
+      ],
+      "name": "getTWAP",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "getTokenPrice",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "price",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bool",
+          "name": "isStale",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address[]",
+          "name": "tokens",
+          "type": "address[]"
+        }
+      ],
+      "name": "getTokenPrices",
+      "outputs": [
+        {
+          "internalType": "uint256[]",
+          "name": "prices",
+          "type": "uint256[]"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "timestamps",
+          "type": "uint256[]"
+        },
+        {
+          "internalType": "bool[]",
+          "name": "stale",
+          "type": "bool[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "priceOracle",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "vault",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "weth",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "pecor",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "admin",
+          "type": "address"
+        }
+      ],
+      "name": "initialize",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "tokenIn",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "tokenOut",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        }
+      ],
+      "name": "quoteExactIn",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "amountIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "amountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "grossAmountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "executionPrice",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "spotPriceIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "spotPriceOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "sufficientLiquidity",
+              "type": "bool"
+            },
+            {
+              "internalType": "uint256",
+              "name": "availableLiquidity",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceTimestampIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceTimestampOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "priceStaleIn",
+              "type": "bool"
+            },
+            {
+              "internalType": "bool",
+              "name": "priceStaleOut",
+              "type": "bool"
+            }
+          ],
+          "internalType": "struct IMetaAGQuoter.QuoteResult",
+          "name": "result",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "tokenOut",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "nativeAmountIn",
+          "type": "uint256"
+        }
+      ],
+      "name": "quoteExactInNative",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "amountIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "amountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "grossAmountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "executionPrice",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "spotPriceIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "spotPriceOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "sufficientLiquidity",
+              "type": "bool"
+            },
+            {
+              "internalType": "uint256",
+              "name": "availableLiquidity",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceTimestampIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceTimestampOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "priceStaleIn",
+              "type": "bool"
+            },
+            {
+              "internalType": "bool",
+              "name": "priceStaleOut",
+              "type": "bool"
+            }
+          ],
+          "internalType": "struct IMetaAGQuoter.QuoteResult",
+          "name": "result",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "tokenIn",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        }
+      ],
+      "name": "quoteExactInToNative",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "amountIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "amountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "grossAmountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "executionPrice",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "spotPriceIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "spotPriceOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "sufficientLiquidity",
+              "type": "bool"
+            },
+            {
+              "internalType": "uint256",
+              "name": "availableLiquidity",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceTimestampIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceTimestampOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "priceStaleIn",
+              "type": "bool"
+            },
+            {
+              "internalType": "bool",
+              "name": "priceStaleOut",
+              "type": "bool"
+            }
+          ],
+          "internalType": "struct IMetaAGQuoter.QuoteResult",
+          "name": "result",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "tokenIn",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "tokenOut",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        }
+      ],
+      "name": "quoteExactOut",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "amountIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "amountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "grossAmountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "executionPrice",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "spotPriceIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "spotPriceOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "sufficientLiquidity",
+              "type": "bool"
+            },
+            {
+              "internalType": "uint256",
+              "name": "availableLiquidity",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceTimestampIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceTimestampOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "priceStaleIn",
+              "type": "bool"
+            },
+            {
+              "internalType": "bool",
+              "name": "priceStaleOut",
+              "type": "bool"
+            }
+          ],
+          "internalType": "struct IMetaAGQuoter.QuoteResult",
+          "name": "result",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "stablecoin",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "stablecoinAmount",
+          "type": "uint256"
+        }
+      ],
+      "name": "quoteMarketBuy",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "amountIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "amountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "grossAmountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "executionPrice",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "spotPriceIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "spotPriceOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "sufficientLiquidity",
+              "type": "bool"
+            },
+            {
+              "internalType": "uint256",
+              "name": "availableLiquidity",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceTimestampIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceTimestampOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "priceStaleIn",
+              "type": "bool"
+            },
+            {
+              "internalType": "bool",
+              "name": "priceStaleOut",
+              "type": "bool"
+            }
+          ],
+          "internalType": "struct IMetaAGQuoter.QuoteResult",
+          "name": "result",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "stablecoin",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "tokenAmount",
+          "type": "uint256"
+        }
+      ],
+      "name": "quoteMarketSell",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "amountIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "amountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "grossAmountOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "executionPrice",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "spotPriceIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "spotPriceOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "sufficientLiquidity",
+              "type": "bool"
+            },
+            {
+              "internalType": "uint256",
+              "name": "availableLiquidity",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceTimestampIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceTimestampOut",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "priceStaleIn",
+              "type": "bool"
+            },
+            {
+              "internalType": "bool",
+              "name": "priceStaleOut",
+              "type": "bool"
+            }
+          ],
+          "internalType": "struct IMetaAGQuoter.QuoteResult",
+          "name": "result",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

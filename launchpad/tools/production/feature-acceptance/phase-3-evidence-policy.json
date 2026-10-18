@@ -1,0 +1,25 @@
+{
+  "version": 3,
+  "task": "3.50",
+  "extends": "tools/production/feature-acceptance/phase-2-evidence-policy.json",
+  "schema": "tools/production/feature-acceptance/evidence.schema.json#/$defs/audit_envelope",
+  "collector_entrypoint": "collect_journeys.collect",
+  "collector_cli_phase": 3,
+  "qualification_entrypoint": "journey_policy.qualify_audited_feature",
+  "audit_entrypoint": "policy.verify_audit",
+  "adversarial_entrypoint": "policy.audit_adversarial",
+  "trusted_audit_authority_fields": {
+    "required_traces": "Exact expected service trace paths independently supplied by coordinator, never derived from offered evidence",
+    "findings": "Complete current finding inventory with id, feature, severity, disposition and resolution_artifact; critical/high requires resolution proof",
+    "blockers": "Complete current mandatory blocker inventory with feature, owner, dependency, evidence, remediation and review_date; any entry blocks acceptance",
+    "redactions": "Exact mapping of private original immutable artifact descriptor to published redacted path and preserved identity digest",
+    "private_artifact_root": "Restricted original evidence store; original credential-bearing bytes are never copied to outputs"
+  },
+  "signature": "Same admitted independent reviewer signs exact feature, evidence and review hashes, complete candidate bindings, environment, current run/harness and digest of every trusted audit inventory",
+  "redaction": "Deterministic bounded JSON/HAR credential redaction; retain transaction/block/chain/state identities; reject unstructured credentials, missing authority, changed identity or changed output",
+  "max_age_seconds": 604800,
+  "final_smoke_max_age_seconds": 86400,
+  "artifact_retention_seconds": 15552000,
+  "release_qualified": false,
+  "qualification_boundary": "Adversarial evidence policy and independent attestation only; actual feature/device/provider/capacity/recovery and final release gates remain separate"
+}

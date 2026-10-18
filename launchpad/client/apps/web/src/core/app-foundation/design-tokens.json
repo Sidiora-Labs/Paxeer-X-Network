@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "color": { "canvas": "#0b0d12", "surface": "#151923", "raised": "#202736", "text": "#f5f7fa", "muted": "#b5bed0", "focus": "#8bffc5", "error": "#ffb4b4" },
+  "spacing": { "xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24 },
+  "type": { "body": 14, "label": 12, "heading": 24 },
+  "radius": { "control": 8, "panel": 12 },
+  "elevation": { "panel": "0 8px 24px #00000040" },
+  "focus": { "width": 2, "offset": 3, "style": "solid" },
+  "states": { "hover": "raised", "focus": "focus", "disabled": "muted with native disabled", "loading": "aria-busy", "error": "error with visible text" }
+}

@@ -1,0 +1,192 @@
+{
+  "version": 2,
+  "classification": "isolated functional quality corpus; no chain receipt or load qualification",
+  "documents": [
+    {
+      "number": 1,
+      "name": "Café",
+      "ticker": "COIN",
+      "status": "active"
+    },
+    {
+      "number": 2,
+      "name": "Café",
+      "ticker": "COIN",
+      "status": "active"
+    },
+    {
+      "number": 3,
+      "name": "Orion",
+      "ticker": "СOIN",
+      "status": "active"
+    },
+    {
+      "number": 4,
+      "name": "مرحبا 🚀",
+      "ticker": "RTL",
+      "status": "active"
+    },
+    {
+      "number": 5,
+      "name": "<script>alert(1)</script>",
+      "ticker": "MAL",
+      "status": "active"
+    },
+    {
+      "number": 6,
+      "name": "Sleep",
+      "ticker": "COIN",
+      "status": "paused"
+    },
+    {
+      "number": 7,
+      "name": "Robert'); DROP TABLE stats_search.documents_v2;--",
+      "ticker": "SQL",
+      "status": "active"
+    },
+    {
+      "number": 8,
+      "name": "Literal %_\\ wildcard",
+      "ticker": "ESC",
+      "status": "active"
+    },
+    {
+      "number": 9,
+      "name": "Bidirectional‮ label 🚀",
+      "ticker": "BIDI",
+      "status": "active"
+    }
+  ],
+  "cases": [
+    {
+      "query": "Café",
+      "expected": [
+        1,
+        2
+      ]
+    },
+    {
+      "query": "Café",
+      "expected": [
+        1,
+        2
+      ]
+    },
+    {
+      "query": "ＣＯＩＮ",
+      "expected": [
+        1,
+        2,
+        6
+      ]
+    },
+    {
+      "query": "СOIN",
+      "expected": [
+        3
+      ]
+    },
+    {
+      "query": "مرحبا",
+      "expected": [
+        4
+      ]
+    },
+    {
+      "query": "<script>",
+      "expected": [
+        5
+      ]
+    },
+    {
+      "query": "0x0000000000000000000000000000000000000006",
+      "expected": [
+        6
+      ]
+    },
+    {
+      "query": "0x0000000000000000000000000000000000000001",
+      "expected": [
+        1
+      ]
+    },
+    {
+      "query": "Robert'); DROP TABLE stats_search.documents_v2;--",
+      "expected": [
+        7
+      ]
+    },
+    {
+      "query": "%_\\",
+      "expected": [
+        8
+      ]
+    },
+    {
+      "query": "%' OR 1=1 --",
+      "expected": []
+    },
+    {
+      "query": "bidirectional label",
+      "expected": [
+        9
+      ]
+    },
+    {
+      "query": "<img src=x onerror=alert(1)>",
+      "expected": []
+    }
+  ],
+  "profiles": [
+    {
+      "number": 701,
+      "displayName": "Café Caretaker",
+      "deleted": false,
+      "public": true
+    },
+    {
+      "number": 702,
+      "displayName": "مرحبا Caretaker",
+      "deleted": false,
+      "public": true
+    },
+    {
+      "number": 703,
+      "displayName": "Deleted Caretaker",
+      "deleted": true,
+      "public": true
+    },
+    {
+      "number": 704,
+      "displayName": "Private Caretaker",
+      "deleted": false,
+      "public": false
+    }
+  ],
+  "profileCases": [
+    {
+      "query": "ＣＡＦÉ",
+      "expected": [
+        701
+      ]
+    },
+    {
+      "query": "مرحبا",
+      "expected": [
+        702
+      ]
+    },
+    {
+      "query": "Deleted",
+      "expected": []
+    },
+    {
+      "query": "Private",
+      "expected": []
+    },
+    {
+      "query": "0x00000000000000000000000000000000000002bf",
+      "expected": []
+    }
+  ]
+}

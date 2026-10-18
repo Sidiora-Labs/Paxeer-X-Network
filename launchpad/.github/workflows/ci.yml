@@ -1,0 +1,99 @@
+name: Verified production build
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s security/supplychain -p 'test_*.py' -v
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      # Runner provisioning must supply reviewed exact tools and private dependencies.
+      # A missing tool fails rather than downloading an unreviewed executable.
+      - name: Verify reviewed toolchain bytes before execution
+        env:
+          TOOLCHAIN_MANIFEST: ${{ vars.REVIEWED_TOOLCHAIN_MANIFEST }}
+          TOOLCHAIN_SHA256: ${{ vars.REVIEWED_TOOLCHAIN_MANIFEST_SHA256 }}
+        run: python3 security/supplychain/ci_tools.py --manifest "$TOOLCHAIN_MANIFEST" --manifest-sha256 "$TOOLCHAIN_SHA256" --materialize-pnpm-bundle
+      - run: make build vet fmt-check lint race cover-check
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Verify reviewed toolchain bytes before execution
+        env:
+          TOOLCHAIN_MANIFEST: ${{ vars.REVIEWED_TOOLCHAIN_MANIFEST }}
+          TOOLCHAIN_SHA256: ${{ vars.REVIEWED_TOOLCHAIN_MANIFEST_SHA256 }}
+        run: python3 security/supplychain/ci_tools.py --manifest "$TOOLCHAIN_MANIFEST" --manifest-sha256 "$TOOLCHAIN_SHA256" --materialize-pnpm-bundle
+      - name: Frozen contract dependencies, compile and tests with reviewed pnpm bytes
+        env:
+          TOOLCHAIN_MANIFEST: ${{ vars.REVIEWED_TOOLCHAIN_MANIFEST }}
+          TOOLCHAIN_SHA256: ${{ vars.REVIEWED_TOOLCHAIN_MANIFEST_SHA256 }}
+        run: |
+          python3 security/supplychain/ci_tools.py --manifest "$TOOLCHAIN_MANIFEST" --manifest-sha256 "$TOOLCHAIN_SHA256" --tool pnpm --cwd "$GITHUB_WORKSPACE/contracts" -- install --frozen-lockfile
+          python3 security/supplychain/ci_tools.py --manifest "$TOOLCHAIN_MANIFEST" --manifest-sha256 "$TOOLCHAIN_SHA256" --tool pnpm --cwd "$GITHUB_WORKSPACE/contracts" -- compile
+          python3 security/supplychain/ci_tools.py --manifest "$TOOLCHAIN_MANIFEST" --manifest-sha256 "$TOOLCHAIN_SHA256" --tool pnpm --cwd "$GITHUB_WORKSPACE/contracts" -- test
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Verify reviewed toolchain bytes before execution
+        env:
+          TOOLCHAIN_MANIFEST: ${{ vars.REVIEWED_TOOLCHAIN_MANIFEST }}
+          TOOLCHAIN_SHA256: ${{ vars.REVIEWED_TOOLCHAIN_MANIFEST_SHA256 }}
+        run: python3 security/supplychain/ci_tools.py --manifest "$TOOLCHAIN_MANIFEST" --manifest-sha256 "$TOOLCHAIN_SHA256" --materialize-pnpm-bundle
+      - name: Frozen client dependencies and web build with reviewed pnpm bytes
+        env:
+          TOOLCHAIN_MANIFEST: ${{ vars.REVIEWED_TOOLCHAIN_MANIFEST }}
+          TOOLCHAIN_SHA256: ${{ vars.REVIEWED_TOOLCHAIN_MANIFEST_SHA256 }}
+        run: |
+          python3 security/supplychain/ci_tools.py --manifest "$TOOLCHAIN_MANIFEST" --manifest-sha256 "$TOOLCHAIN_SHA256" --tool pnpm --cwd "$GITHUB_WORKSPACE/client" -- install --frozen-lockfile
+          python3 security/supplychain/ci_tools.py --manifest "$TOOLCHAIN_MANIFEST" --manifest-sha256 "$TOOLCHAIN_SHA256" --tool pnpm --cwd "$GITHUB_WORKSPACE/client" -- --filter @sidiora/web build
+  build:
+    needs: [verify, contracts, frontend, policy]
+    if: ${{ success() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Clean frozen eleven-binary and SDK web build
+        env:
+          TOOLCHAIN_MANIFEST: ${{ vars.REVIEWED_TOOLCHAIN_MANIFEST }}
+          TOOLCHAIN_SHA256: ${{ vars.REVIEWED_TOOLCHAIN_MANIFEST_SHA256 }}
+          SOURCE_SHA256: ${{ vars.REVIEWED_BUILD_SOURCE_SHA256 }}
+          PUBLIC_BUILD_ENV: ${{ vars.REVIEWED_PUBLIC_BUILD_ENV }}
+          FIXTURE_COMPILER_MANIFEST: ${{ vars.REVIEWED_FIXTURE_COMPILER_MANIFEST }}
+          FIXTURE_COMPILER_SHA256: ${{ vars.REVIEWED_FIXTURE_COMPILER_MANIFEST_SHA256 }}
+        run: python3 spec/production-system/integration/build.py --source-sha256 "$SOURCE_SHA256" --toolchain-manifest "$TOOLCHAIN_MANIFEST" --toolchain-sha256 "$TOOLCHAIN_SHA256" --public-env "$PUBLIC_BUILD_ENV" --fixture-compiler-manifest "$FIXTURE_COMPILER_MANIFEST" --fixture-compiler-sha256 "$FIXTURE_COMPILER_SHA256" --output-root "$RUNNER_TEMP/kindlelaunch-clean-build"
+      - name: Build reviewed container target
+        env:
+          REVIEWED_BUILD_IMAGE: ${{ vars.REVIEWED_BUILD_IMAGE }}
+          REVIEWED_RUNTIME_IMAGE: ${{ vars.REVIEWED_RUNTIME_IMAGE }}
+        run: python3 security/supplychain/build.py --service core/indexer --binary indexerd --builder "$REVIEWED_BUILD_IMAGE" --runtime "$REVIEWED_RUNTIME_IMAGE" --context . --tag kindlelaunch-candidate:${{ github.sha }}
+# No registry/signing permissions or push command exist here. Publication is a
+# separate trusted controller after signed admission, SBOM and scanner evidence.

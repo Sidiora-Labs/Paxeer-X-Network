@@ -1,0 +1,116 @@
+{
+  "schema_version": 4,
+  "task": "4.49",
+  "scope": "isolated_component",
+  "chain_id": 125,
+  "final_gate": "9.1",
+  "status": "not_executed",
+  "binding_source": "qualified3.99 output plus exact current candidate/runtime/resource lease, independent calibrated generator and provider executable/source identities",
+  "shared_capture_schema": "tools/production/load/final-shared-capture.schema.json#/$defs/CaptureManifest",
+  "root_capacity_source": "tools/production/load/workload.py:ledger",
+  "root_workload_mix_source": "tools/production/load/workload.py:MIX",
+  "scenarios": [
+    {
+      "id": "isolated-regressions",
+      "requirements": [
+        "D16_014",
+        "D16_015",
+        "D16_016",
+        "D16_017",
+        "D16_020",
+        "D16_021"
+      ],
+      "runner": "replay_restore.py --mode isolated -> unchanged actual phase2 Journey",
+      "assertions": [
+        "genuine mined receipt remains pending then reverts after more than2000ms",
+        "ten actual delivery attempts with postcommit/preACK crash",
+        "PostgreSQL independent integer recipient basis, volume, inbox/outbox and all7UTC candles",
+        "actual browser creation/trade/watchlist/chat persistence and deployment code identity"
+      ]
+    },
+    {
+      "id": "durable-replay-calibration",
+      "requirements": [
+        "D16_013",
+        "D16_015",
+        "D16_016",
+        "D16_017"
+      ],
+      "runner": "replay_restore.py --mode isolated",
+      "assertions": [
+        "actual NATS R3 and at least72h hot retention",
+        "stop exact application consumerIDs, produce actual mined source fills while disconnected, observe durable pending deliveries",
+        "actual ACK cursor/inbox movement and independent canonical projection reconciliation",
+        "verified archive/PostgreSQL fallback with no skipped retention gap"
+      ],
+      "bounded_disconnect_seconds_max": 60,
+      "recovery_seconds_max": 120,
+      "actual_elapsed72h_proven": false
+    },
+    {
+      "id": "physical-pitr-checkpoint",
+      "requirements": [
+        "D16_011",
+        "D16_012"
+      ],
+      "runner": "replay_restore.py --mode isolated",
+      "assertions": [
+        "quiesce actual old-region app writers before exact checkpoint",
+        "actual PostgreSQL basebackup/SHA256 manifest/verifybackup/controldata/PITR recovery pause",
+        "all authoritative raw row identities/counts/checksums preserved including profiles/chat/rewards/objectmetadata/registry/outbox/inbox/brokerpositions",
+        "independent old-write/old-publish/old-ACK epoch fences",
+        "no raw-chain substitute for private non-chain business state"
+      ]
+    },
+    {
+      "id": "recovery-journey-timestamps",
+      "requirements": [
+        "D16_012",
+        "D16_029"
+      ],
+      "runner": "replay_restore.py --mode isolated",
+      "assertions": [
+        "actual database transaction commit timestamp authority",
+        "actual region loss and monotonic RTO start",
+        "real recovered login/read/write, browser trace and persisted newepoch",
+        "RPO<=300seconds and RTO<=1800seconds with UTC/monotonic consistency",
+        "capacity and final integrated recovery remain unqualified"
+      ]
+    }
+  ],
+  "post_integration_scenarios": [
+    {
+      "id": "actual72hour-durable-replay",
+      "runner": [
+        "replay_restore.py --mode arm72h",
+        "replay_restore.py --mode resume72h --journal <actual absolute path> --journal-sha256 <actual digest>"
+      ],
+      "final_gate": "9.1",
+      "requires": [
+        "actual elapsed disconnected duration>=259200seconds",
+        "unexpired exact candidate/topology/lease journal",
+        "authoritative archive/PostgreSQL fallback for expired cursor",
+        "actual statistics/candles/positions/revision checksums under frozen mixed live budget"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "final-shared-restore-and-fault-matrix",
+      "final_gate": "9.1",
+      "requires": [
+        "actual integrated finalcandidate",
+        "root shared capacity/workload mix and approved provision/cost ledger",
+        "all native dependency/epoch/object-provider fault controls",
+        "full integrated24hpeak soak and calibrated independent generators",
+        "real oldwriter/oldACK fencing and recovered login/read/write"
+      ],
+      "status": "pending"
+    }
+  ],
+  "qualification_status": "not_executed",
+  "production_qualified": false,
+  "capacity_qualified": false,
+  "disaster_recovery_qualified": false,
+  "final_integrated_gate_passed": false,
+  "evidence_policy": "phase-4-evidence-policy.json"
+}

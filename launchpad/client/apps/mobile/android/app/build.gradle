@@ -1,0 +1,14 @@
+apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+apply plugin: 'com.facebook.react'
+react { root = file('../..'); reactNativeDir = file('../../node_modules/react-native'); codegenDir = file('../../node_modules/@react-native/codegen'); cliFile = file('../../node_modules/react-native/cli.js'); autolinkLibrariesWithApp() }
+android { ndkVersion rootProject.ext.ndkVersion; buildToolsVersion rootProject.ext.buildToolsVersion; namespace 'ag.sidiora.mobile'; compileSdk rootProject.ext.compileSdkVersion; defaultConfig { applicationId 'ag.sidiora.mobile'; minSdk 30; targetSdk 36; versionCode 1; versionName '0.1.0'; manifestPlaceholders = [sidioraAssociatedHost: System.getenv('SIDIORA_ASSOCIATED_HOST') ?: '', sidioraPublicConfiguration: System.getenv('SIDIORA_PUBLIC_CONFIGURATION') ?: ''] }; signingConfigs { ownerRelease { def path = System.getenv('SIDIORA_ANDROID_KEYSTORE'); if (path) { storeFile file(path); storePassword System.getenv('SIDIORA_ANDROID_STORE_PASSWORD'); keyAlias System.getenv('SIDIORA_ANDROID_KEY_ALIAS'); keyPassword System.getenv('SIDIORA_ANDROID_KEY_PASSWORD') } } }; buildTypes { release { minifyEnabled false; signingConfig signingConfigs.ownerRelease } } }
+dependencies { implementation('com.facebook.react:react-android'); implementation('com.facebook.react:hermes-android'); implementation(platform('com.google.firebase:firebase-bom:35.0.0')); implementation('com.google.firebase:firebase-messaging:26.0.0') }
+
+gradle.taskGraph.whenReady { graph ->
+ if (graph.allTasks.any { it.project == project && it.name.toLowerCase().contains('release') }) {
+  def required = ['SIDIORA_ANDROID_KEYSTORE','SIDIORA_ANDROID_STORE_PASSWORD','SIDIORA_ANDROID_KEY_ALIAS','SIDIORA_ANDROID_KEY_PASSWORD','SIDIORA_SIGNING_OWNER','SIDIORA_ASSOCIATED_HOST','SIDIORA_PUBLIC_CONFIGURATION']
+  if (required.any { !System.getenv(it) }) throw new GradleException('Approved signing owner, key provider and public release configuration are required')
+  if (!file(System.getenv('SIDIORA_ANDROID_KEYSTORE')).isFile()) throw new GradleException('Managed signing keystore is unavailable')
+ }
+}

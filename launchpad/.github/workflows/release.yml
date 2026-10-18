@@ -1,0 +1,62 @@
+name: Admit immutable production artifact
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: production-promotion
+  cancel-in-progress: false
+jobs:
+  promote:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    environment: production-release
+    runs-on: [self-hosted, linux, x64, kindlelaunch-release]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Measure release security controls against the approved current candidate
+        env:
+          RELEASE_MEASUREMENT_AUTHORITY: ${{ vars.REVIEWED_RELEASE_MEASUREMENT_AUTHORITY }}
+          RELEASE_MEASUREMENT_AUTHORITY_SHA256: ${{ vars.REVIEWED_RELEASE_MEASUREMENT_AUTHORITY_SHA256 }}
+          QUALIFICATION_CANDIDATE_SHA256: ${{ vars.REVIEWED_RELEASE_CANDIDATE_SHA256 }}
+          RELEASE_STATE_DIRECTORY: ${{ vars.REVIEWED_RELEASE_STATE_DIRECTORY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          test -n "$RELEASE_STATE_DIRECTORY" && test "${RELEASE_STATE_DIRECTORY#/}" != "$RELEASE_STATE_DIRECTORY"
+          python3 security/supplychain/check_phase2.py release-capacity --authority "$RELEASE_MEASUREMENT_AUTHORITY" --authority-sha256 "$RELEASE_MEASUREMENT_AUTHORITY_SHA256" --source-root "$GITHUB_WORKSPACE" --output "$RELEASE_STATE_DIRECTORY/${{ github.run_id }}/measurement-${{ github.run_attempt }}"
+      - name: Admit signed source and checks before copying the approved OCI digest
+        env:
+          RELEASE_AUTHORITY: ${{ vars.REVIEWED_RELEASE_AUTHORITY }}
+          RELEASE_AUTHORITY_SHA256: ${{ vars.REVIEWED_RELEASE_AUTHORITY_SHA256 }}
+          RELEASE_MEASUREMENT_AUTHORITY_SHA256: ${{ vars.REVIEWED_RELEASE_MEASUREMENT_AUTHORITY_SHA256 }}
+          QUALIFICATION_CANDIDATE_SHA256: ${{ vars.REVIEWED_RELEASE_CANDIDATE_SHA256 }}
+          RELEASE_DOCUMENT: ${{ vars.REVIEWED_RELEASE_DOCUMENT }}
+          RELEASE_BUNDLE: ${{ vars.REVIEWED_RELEASE_BUNDLE }}
+          RELEASE_OCI_LAYOUT: ${{ vars.REVIEWED_RELEASE_OCI_LAYOUT }}
+          RELEASE_STATE_DIRECTORY: ${{ vars.REVIEWED_RELEASE_STATE_DIRECTORY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          test -n "$RELEASE_STATE_DIRECTORY" && test "${RELEASE_STATE_DIRECTORY#/}" != "$RELEASE_STATE_DIRECTORY"
+          python3 security/supplychain/controller.py promote --authority "$RELEASE_AUTHORITY" --authority-sha256 "$RELEASE_AUTHORITY_SHA256" --release "$RELEASE_DOCUMENT" --bundle "$RELEASE_BUNDLE" --layout "$RELEASE_OCI_LAYOUT" --measurement "$RELEASE_STATE_DIRECTORY/${{ github.run_id }}/measurement-${{ github.run_attempt }}/phase-4.json" --measurement-authority-sha256 "$RELEASE_MEASUREMENT_AUTHORITY_SHA256" --candidate-sha256 "$QUALIFICATION_CANDIDATE_SHA256" --output "$RELEASE_STATE_DIRECTORY/${{ github.run_id }}/production-promotion.json"
+      - name: Retain promotion evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: production-promotion-${{ github.run_id }}
+          path: |
+            ${{ vars.REVIEWED_RELEASE_STATE_DIRECTORY }}/${{ github.run_id }}/production-promotion.json
+            ${{ vars.REVIEWED_RELEASE_STATE_DIRECTORY }}/${{ github.run_id }}/measurement-${{ github.run_attempt }}/phase-4.json
+            ${{ vars.REVIEWED_RELEASE_STATE_DIRECTORY }}/${{ github.run_id }}/measurement-${{ github.run_attempt }}/*/measurement.json
+            ${{ vars.REVIEWED_RELEASE_STATE_DIRECTORY }}/${{ github.run_id }}/measurement-${{ github.run_attempt }}/*/worker-result.json
+            ${{ vars.REVIEWED_RELEASE_STATE_DIRECTORY }}/${{ github.run_id }}/measurement-${{ github.run_attempt }}/*/stdout.log
+            ${{ vars.REVIEWED_RELEASE_STATE_DIRECTORY }}/${{ github.run_id }}/measurement-${{ github.run_attempt }}/*/stderr.log
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,12 @@
+{
+  "ProtocolConfig": "547266f2c80d021c2cd1696a3d4d7077af0c9cc086bb96f656aa3dae25cc1a7d",
+  "Treasury": "d6eebee548e08894505394b7384bf4dc66e7d3460e1cc2d07aa360220b5e8bd4",
+  "PoolRegistry": "7aafd8d7650c8f5ce02facf85747eacfeed73da6863b893b67d940c5d02c376f",
+  "FeeAccumulator": "dff4a74b66fd395ec038cf6e3139de05c3ce43c878bd0b8d80155acd80c0b6c5",
+  "SidioraNFT": "08bf4a8f120e0317c0c6ceb3dda9323528dfb2bda501d0763e48ed844e5804bd",
+  "SidioraPool": "9bad772ff6c78e8dda581d657682d61ec6b11f3c7d904ff3152544c71ce23805",
+  "FeesRouter": "c8cf660e1d339cf59288319b16dd610027d3f30dc6b4bc015a4d90c8e99ad2c7",
+  "SidioraERC20": "6b2a4b07f770f16df1c99f4f1ddf8219563e4852db30601118c9e030cccbade3",
+  "MockERC20": "7d0a737c7e183061347b4a3c419f08cfa6c67d587c526dcd6ef30efaf93a543c",
+  "UUPSProxy": "391e543eefdbd178511501354b59c36a89cd55fbbbfb2d1c157de234f9c9eaef"
+}

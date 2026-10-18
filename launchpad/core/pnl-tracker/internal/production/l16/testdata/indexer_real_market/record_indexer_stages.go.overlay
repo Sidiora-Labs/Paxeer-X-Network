@@ -1,0 +1,151 @@
+// Recorder of creation.json / traded.json: the real core/indexer pipeline
+// (processor.newInventoryHarness, inventory_publication_postgres_test.go) over
+// the recorded chain 125 market 0xce20…6263, blocks 33963716..33963749.
+// It is added to the indexer's processor package through a build overlay, so
+// the indexer tree is never edited:
+//
+//	printf '{"Replace":{"%s/core/indexer/internal/processor/zz_record_real_market_test.go":"%s"}}' \
+//	  "$REPO" "$PWD/record_indexer_stages.go.overlay" > /tmp/overlay.json
+//	cd "$REPO/core/indexer" && L06_POSTGRES_DSN=... RECORD_REAL_MARKET_DIR=<dir> RECORD_PNL_BASELINE=<row.json> \
+//	  go test -overlay /tmp/overlay.json ./internal/processor -run TestZZRecordRealMarketIndexerStages
+//
+// creation.json is the indexer state after the creation block; traded.json the
+// state after the buy (33963733) and sell (33963749) were committed with the
+// trader's baseline pnl issued on creation.json (RECORD_PNL_BASELINE: the row
+// written by TestBaselineAheadIssuesCreatorBaselineBeforeFirstFillPostgres
+// with L16_RECORD_BASELINE_OUT), including the accounting.inventory.v1 outbox
+// envelopes the indexer bound to it.
+//
+// deferred.json / deferred_published.json (TestZZRecordRealMarketDeferredStages,
+// RECORD_REAL_MARKET_DIR set) record the indexer's inventory deferral: the
+// creator's buy (33963733) committed before pnl issued any baseline (held, no
+// inventory publication, no degradation decision), and then, after the row
+// pnl's BaselineAhead issued on deferred.json (RECORD_PNL_DEFERRED_BASELINE:
+// written by TestBaselineAheadIssuesBaselineForDeferredFirstFillPostgres with
+// L16_RECORD_BASELINE_OUT) was inserted, the state after the next canonical
+// commit (33963734..33963749) published the held buy and the sell. Without
+// RECORD_PNL_DEFERRED_BASELINE only deferred.json is written.
+package processor
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+)
+
+// exportStage records every non-empty table of the indexer schema (and the
+// pnl baselines) exactly as the real indexer pipeline left them.
+func exportStage(t *testing.T, ctx context.Context, h inventoryHarness, path string) {
+	t.Helper()
+	rows, err := h.pool.Query(ctx, `SELECT table_schema,table_name FROM information_schema.tables WHERE table_type='BASE TABLE' AND (table_schema='indexer' OR (table_schema='pnl' AND table_name='inventory_l16_baselines')) ORDER BY 1,2`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type tbl struct{ schema, name string }
+	tables := []tbl{}
+	for rows.Next() {
+		var x tbl
+		if err = rows.Scan(&x.schema, &x.name); err != nil {
+			t.Fatal(err)
+		}
+		tables = append(tables, x)
+	}
+	rows.Close()
+	out := map[string]json.RawMessage{}
+	for _, x := range tables {
+		id := pgx.Identifier{x.schema, x.name}.Sanitize()
+		var raw []byte
+		var n int
+		if err = h.pool.QueryRow(ctx, `SELECT count(*),coalesce(json_agg(t ORDER BY t::text),'[]')::text FROM `+id+` t`).Scan(&n, &raw); err != nil {
+			t.Fatal(err)
+		}
+		if n > 0 {
+			out[x.schema+"."+x.name] = raw
+		}
+	}
+	data, err := json.MarshalIndent(out, "", " ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestZZRecordRealMarketIndexerStages(t *testing.T) {
+	dir := os.Getenv("RECORD_REAL_MARKET_DIR")
+	if dir == "" {
+		t.Skip("recorder")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	h := newInventoryHarness(t, ctx)
+	h.batch(t, ctx, 33963716, 33963716)
+	exportStage(t, ctx, h, filepath.Join(dir, "creation.json"))
+	// The trader's baseline is the row pnl's production BaselineAhead issued
+	// on creation.json (core/pnl-tracker TestBaselineAhead... with
+	// L16_RECORD_BASELINE_OUT), inserted before the buy is committed.
+	row, err := os.ReadFile(os.Getenv("RECORD_PNL_BASELINE"))
+	if err != nil {
+		t.Fatalf("pnl-issued baseline row: %v", err)
+	}
+	var digest string
+	if err = h.pool.QueryRow(ctx, `INSERT INTO pnl.inventory_l16_baselines SELECT * FROM json_populate_record(NULL::pnl.inventory_l16_baselines,$1::json) RETURNING baseline_digest`, string(row)).Scan(&digest); err != nil {
+		t.Fatal(err)
+	}
+	h.batch(t, ctx, 33963717, 33963733)
+	h.batch(t, ctx, 33963734, 33963749)
+	if n := len(h.frames(t, ctx, "accounting.inventory.v1")); n != 2 {
+		t.Fatalf("inventory frames %d", n)
+	}
+	exportStage(t, ctx, h, filepath.Join(dir, "traded.json"))
+	t.Logf("pnl-issued baseline digest %s", digest)
+}
+
+func TestZZRecordRealMarketDeferredStages(t *testing.T) {
+	dir := os.Getenv("RECORD_REAL_MARKET_DIR")
+	if dir == "" {
+		t.Skip("recorder")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	h := newInventoryHarness(t, ctx)
+	h.batch(t, ctx, 33963716, 33963716)
+	h.batch(t, ctx, 33963717, 33963733)
+	if n := len(h.frames(t, ctx, "accounting.inventory.v1")); n != 0 {
+		t.Fatalf("inventory frames without a baseline %d", n)
+	}
+	if decisions := h.inventoryDecisions(t, ctx); len(decisions) != 0 {
+		t.Fatalf("held buy decided within the bound: %v", decisions)
+	}
+	baseline := os.Getenv("RECORD_PNL_DEFERRED_BASELINE")
+	if baseline == "" {
+		exportStage(t, ctx, h, filepath.Join(dir, "deferred.json"))
+		return
+	}
+	row, err := os.ReadFile(baseline)
+	if err != nil {
+		t.Fatalf("pnl-issued baseline row: %v", err)
+	}
+	var digest string
+	if err = h.pool.QueryRow(ctx, `INSERT INTO pnl.inventory_l16_baselines SELECT * FROM json_populate_record(NULL::pnl.inventory_l16_baselines,$1::json) RETURNING baseline_digest`, string(row)).Scan(&digest); err != nil {
+		t.Fatal(err)
+	}
+	h.batch(t, ctx, 33963734, 33963749)
+	if n := len(h.frames(t, ctx, "accounting.inventory.v1")); n != 2 {
+		t.Fatalf("inventory frames %d", n)
+	}
+	if decisions := h.inventoryDecisions(t, ctx); len(decisions) != 0 {
+		t.Fatalf("released pair recorded market-only: %v", decisions)
+	}
+	exportStage(t, ctx, h, filepath.Join(dir, "deferred_published.json"))
+	t.Logf("pnl-issued baseline digest %s", digest)
+}

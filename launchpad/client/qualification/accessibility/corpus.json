@@ -1,0 +1,349 @@
+{
+  "source": "client/apps/web/src/app/**/page.tsx",
+  "observed": false,
+  "routes": [
+    {
+      "route": "/",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/auth/callback",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/chat",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/chat/[conversationId]",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/create",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/docs/dmca",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/docs/do-not-sell",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/docs/privacy",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/docs/terms",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/docs/trademark-guidelines",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/live",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/meta-ag/orders",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/meta-ag/swap",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/new",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/pnl/[cardId]",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/profile",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/profile/[walletAddress]",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/r/[shortCode]",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/rewards",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/swap",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/terminal",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/token",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    },
+    {
+      "route": "/token/[poolAddress]",
+      "checks": [
+        "semantic-landmarks-skip-link-names-headings",
+        "keyboard-focus-order-visible-200-percent",
+        "dialog-trap-escape-restore-trigger",
+        "async-error-announcement",
+        "financial-column-headers-units-sign-text",
+        "coalesced-live-region-chart-table-alternative"
+      ],
+      "account": "synthetic-only",
+      "status": "pending-browser-and-manual-AT"
+    }
+  ],
+  "journeys": {
+    "discovery": [
+      "/",
+      "/new"
+    ],
+    "search": [
+      "/"
+    ],
+    "token-reading": [
+      "/token/[poolAddress]"
+    ],
+    "wallet-owned-execution": [
+      "/swap",
+      "/token/[poolAddress]"
+    ],
+    "portfolio-reconciliation": [
+      "/profile"
+    ],
+    "profile-edit": [
+      "/profile"
+    ],
+    "watchlist": [
+      "/profile"
+    ],
+    "chat": [
+      "/chat",
+      "/chat/[conversationId]"
+    ],
+    "live": [
+      "/live"
+    ],
+    "push": [
+      "/profile"
+    ]
+  },
+  "missingDedicatedRoutes": [
+    "portfolio",
+    "watchlists",
+    "notifications"
+  ],
+  "assistiveTechnology": [
+    "NVDA+Chrome",
+    "VoiceOver+Safari"
+  ]
+}

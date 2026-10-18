@@ -1,0 +1,46 @@
+{
+  "abi_sources": [
+    {
+      "export": "factoryAbi",
+      "artifact": "/root/mk-falcon/contracts/artifacts/contracts/core/SidioraFactory.sol/SidioraFactory.json",
+      "artifact_sha256": "51df37841825e382c351336f1b5ec0e0a4215bc9dbb7e54635e20999b8e8c39d",
+      "source": "contracts/core/SidioraFactory.sol",
+      "source_sha256": "f2b0ffb6fc5b8d2f6cfdcf20324edf183007aa631014868dd092fa6b741a14cf",
+      "license": "// SPDX-License-Identifier: LicenseRef-Paxlabs-HyperPax-OS-Protocol"
+    },
+    {
+      "export": "routerAbi",
+      "artifact": "/root/mk-falcon/contracts/artifacts/contracts/periphery/Router.sol/Router.json",
+      "artifact_sha256": "6d34ea56cfeb9cd7701af68f0c9d278506461f00e70baa2c7ce3fbc0a91b6b03",
+      "source": "contracts/periphery/Router.sol",
+      "source_sha256": "aedb20e550af0ee8682bd7b7d60a6804cf4ab873ae4cd2b592d7df6732e7cbd5",
+      "license": "// SPDX-License-Identifier: LicenseRef-Paxlabs-HyperPax-OS-Protocol"
+    },
+    {
+      "export": "quoterAbi",
+      "artifact": "/root/mk-falcon/contracts/artifacts/contracts/periphery/Quoter.sol/Quoter.json",
+      "artifact_sha256": "b5f425483dc773bef968a326bbc4d8ef575e8b022e966e055963428ee5c90e77",
+      "source": "contracts/periphery/Quoter.sol",
+      "source_sha256": "78ffd0cec849011d9f28ad721ba0fb12a35423e489895e601653c208d4c40666",
+      "license": "// SPDX-License-Identifier: LicenseRef-Paxlabs-HyperPax-OS-Protocol"
+    },
+    {
+      "export": "protocolConfigAbi",
+      "artifact": "/root/mk-falcon/contracts/artifacts/contracts/protocol/ProtocolConfig.sol/ProtocolConfig.json",
+      "artifact_sha256": "547266f2c80d021c2cd1696a3d4d7077af0c9cc086bb96f656aa3dae25cc1a7d",
+      "source": "contracts/protocol/ProtocolConfig.sol",
+      "source_sha256": "2406f457ff41ee2625a7858b0ff6868c5b66485c8b5c375ad69ff12ddbb75f86",
+      "license": "// SPDX-License-Identifier: LicenseRef-Paxlabs-HyperPax-OS-Protocol"
+    },
+    {
+      "export": "erc20Abi",
+      "artifact": "/root/mk-falcon/contracts/artifacts/contracts/base/ERC20Base.sol/ERC20Base.json",
+      "artifact_sha256": "6131ba0eef1d213df350c4ff51b7e4dc86420b68fbaf9d65a4e7f2ea4e538245",
+      "source": "contracts/base/ERC20Base.sol",
+      "source_sha256": "cdf1f4eeb6b8fe28df50aa2ecf61d3b6a4cab111865faf9a8665a7ac437b9c1e",
+      "license": "// SPDX-License-Identifier: LicenseRef-Paxlabs-HyperPax-OS-Protocol"
+    }
+  ],
+  "deployment_defaults": false,
+  "app_imports": []
+}

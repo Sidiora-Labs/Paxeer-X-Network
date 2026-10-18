@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "task": "2.49",
+  "chain_id": 125,
+  "allowed_levels": [
+    "actual_integrated_service",
+    "actual_browser",
+    "actual_chain_receipt",
+    "actual_postgresql",
+    "actual_jetstream"
+  ],
+  "required_bindings": [
+    "baseline",
+    "candidate",
+    "interface",
+    "layout",
+    "topology",
+    "attempt",
+    "namespace",
+    "started_epoch",
+    "finished_epoch"
+  ],
+  "required_artifacts": [
+    "actual browser traces/screenshots",
+    "raw mined receipts",
+    "request trace IDs",
+    "repeatable-read PostgreSQL before/blocked/recovered snapshots",
+    "actual duplicate/crash/redelivery transport record",
+    "source-bound native command/log receipts",
+    "SHA256 of every raw output"
+  ],
+  "forbidden_substitutions": [
+    "mathematical fixture for runtime result",
+    "synthetic receipt",
+    "timer-generated transaction success",
+    "localStorage for persisted watchlist",
+    "fake balance or settlement",
+    "broker deduplication alone for ten consumer deliveries",
+    "source-only implementation for qualified1.99 dependency",
+    "missing external provider as successful gate"
+  ],
+  "production_qualified": false,
+  "capacity_qualified": false,
+  "disaster_recovery_qualified": false
+}

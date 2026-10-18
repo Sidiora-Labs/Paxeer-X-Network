@@ -1,0 +1,43 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    # Schema = the goose migrations (single source of truth). sqlc understands
+    # the goose up/down annotations and applies only the "up" statements.
+    schema:
+      - "migrations"
+    queries: "internal/db/query.sql"
+    gen:
+      go:
+        package: "sqlcdb"
+        out: "internal/db/sqlcdb"
+        sql_package: "pgx/v5"
+        emit_interface: true
+        emit_empty_slices: true
+        emit_exact_table_names: false
+        overrides:
+          # Nullable bigint (pools.nft_id) -> *int64 so the store mapping stays
+          # trivial instead of pgtype.Int8.
+          - db_type: "pg_catalog.int8"
+            nullable: true
+            go_type:
+              type: "int64"
+              pointer: true
+          # Nullable varchar (swaps.router) -> *string.
+          - db_type: "pg_catalog.varchar"
+            nullable: true
+            go_type:
+              type: "string"
+              pointer: true
+          # Nullable text (backfill_jobs.error_message) -> *string.
+          - db_type: "text"
+            nullable: true
+            go_type:
+              type: "string"
+              pointer: true
+          # Nullable timestamp (backfill_jobs.completed_at) -> *time.Time.
+          - db_type: "pg_catalog.timestamp"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true

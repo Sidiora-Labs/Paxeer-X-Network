@@ -1,0 +1,58 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "ERC1967Proxy",
+  "sourceName": "contracts/meta-ag/proxy/ERC1967Proxy.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "implementation",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes",
+          "name": "data",
+          "type": "bytes"
+        }
+      ],
+      "stateMutability": "payable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "InitializationFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidImplementation",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "implementation",
+          "type": "address"
+        }
+      ],
+      "name": "Upgraded",
+      "type": "event"
+    },
+    {
+      "stateMutability": "payable",
+      "type": "fallback"
+    },
+    {
+      "stateMutability": "payable",
+      "type": "receive"
+    }
+  ],
+  "bytecode": "0x608060405261026980380380610014816100d5565b92833981016040828203126100ba578151916001600160a01b03831683036100ba576020810151906001600160401b0382116100ba57019181601f840112156100ba5782519261006b610066856100ff565b6100d5565b92848452602085830101116100ba5760005b8481106100a557505060006020610097948401015261011a565b604051607b90816101ee8239f35b8060208092840101518282870101520161007d565b600080fd5b634e487b7160e01b600052604160045260246000fd5b6040519190601f01601f191682016001600160401b038111838210176100fa57604052565b6100bf565b6001600160401b0381116100fa57601f01601f191660200190565b90813b156101dc577f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc8290556001600160a01b0382167fbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b600080a280518061018157505050565b6000926020849301905af43d156101d4573d906101a0610066836100ff565b9182523d6000602084013e5b156101b45750565b8051156101c357602081519101fd5b630337323560e31b60005260046000fd5b6060906101ac565b63340aafcd60e11b60005260046000fdfe60806040526000807f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc54368280378136915af43d6000803e156040573d6000f35b3d6000fdfea2646970667358221220c059ba420fd1dcafb64763b781aced91fd90e74f3017c12b87f5b33ed18ce03b64736f6c634300081b0033",
+  "deployedBytecode": "0x60806040526000807f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc54368280378136915af43d6000803e156040573d6000f35b3d6000fdfea2646970667358221220c059ba420fd1dcafb64763b781aced91fd90e74f3017c12b87f5b33ed18ce03b64736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

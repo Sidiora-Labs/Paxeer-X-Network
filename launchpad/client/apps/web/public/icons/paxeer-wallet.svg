@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Paxeer Embedded Wallet">
+  <rect width="32" height="32" rx="8" fill="#111416"/>
+  <path d="M9 10h9.5a4.5 4.5 0 0 1 0 9H13v4H9V10zm4 3v3h5.5a1.5 1.5 0 0 0 0-3H13z" fill="#44E8C8"/>
+</svg>

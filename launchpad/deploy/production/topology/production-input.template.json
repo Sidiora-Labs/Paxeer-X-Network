@@ -1,0 +1,241 @@
+{
+  "schemaVersion": 2,
+  "revision": 1,
+  "environment": "production",
+  "namespace": "kindle-production",
+  "region": null,
+  "zones": null,
+  "storageClasses": {
+    "postgres": null,
+    "nats": null
+  },
+  "images": {
+    "api": null,
+    "sockets": null,
+    "indexer": null,
+    "charts": null,
+    "stats": null,
+    "pnl": null,
+    "ranking": null,
+    "postgres": null,
+    "nats": null,
+    "redis": null,
+    "gateway": null,
+    "user": null,
+    "social": null,
+    "metadata": null,
+    "livestream": null
+  },
+  "secretRefs": {
+    "runtime": {
+      "api": null,
+      "sockets": null,
+      "indexer": null,
+      "charts": null,
+      "stats": null,
+      "pnl": null,
+      "ranking": null,
+      "gateway": null,
+      "user": null,
+      "social": null,
+      "metadata": null,
+      "livestream": null
+    },
+    "natsTls": null,
+    "natsAuth": null,
+    "redis": null,
+    "edgeTls": null,
+    "postgresBootstrap": null
+  },
+  "publicHost": null,
+  "edgeNamespace": null,
+  "rpcEndpoints": null,
+  "mediaCdn": null,
+  "operator": {
+    "cnpgVersion": null,
+    "crdDigest": null,
+    "fencingEvidenceDigest": null
+  },
+  "storage": {
+    "postgresBytesPerMember": 4398046511104,
+    "natsBytesPerMember": 2199023255552,
+    "derivedPgBytesPerMember": null,
+    "walBytesPerMember": null,
+    "vacuumBytesPerMember": null,
+    "freeHeadroomPermille": 200,
+    "brokerOverheadPermille": null
+  },
+  "streams": null,
+  "connections": {
+    "poolerReplicas": 3,
+    "serverConnectionsPerPooler": 120,
+    "otherDirectConnections": 120,
+    "acquireTimeoutMs": 500
+  },
+  "admission": {
+    "apiInflightPerReplica": 256,
+    "apiQueuePerReplica": 128,
+    "quoteRps": 2000,
+    "writeRps": 2000,
+    "totalRps": 10000,
+    "burstRps": 20000,
+    "socketConnectionsPerReplica": 5000,
+    "socketSendQueueBytes": 65536,
+    "coldReadInflightPerReplica": 8
+  },
+  "release": {
+    "sourceDigest": null,
+    "interfaceDigest": null,
+    "qualificationMaxAgeSeconds": 86400,
+    "canaryPercent": 5,
+    "canarySeconds": 600
+  },
+  "workloads": {
+    "api": {
+      "replicas": null,
+      "maxReplicas": null,
+      "cpu": null,
+      "memoryGiB": null,
+      "poolConnections": null
+    },
+    "sockets": {
+      "replicas": null,
+      "maxReplicas": null,
+      "cpu": null,
+      "memoryGiB": null,
+      "poolConnections": null
+    },
+    "indexer": {
+      "replicas": null,
+      "maxReplicas": null,
+      "cpu": null,
+      "memoryGiB": null,
+      "poolConnections": null
+    },
+    "charts": {
+      "replicas": null,
+      "maxReplicas": null,
+      "cpu": null,
+      "memoryGiB": null,
+      "poolConnections": null
+    },
+    "stats": {
+      "replicas": null,
+      "maxReplicas": null,
+      "cpu": null,
+      "memoryGiB": null,
+      "poolConnections": null
+    },
+    "pnl": {
+      "replicas": null,
+      "maxReplicas": null,
+      "cpu": null,
+      "memoryGiB": null,
+      "poolConnections": null
+    },
+    "ranking": {
+      "replicas": null,
+      "maxReplicas": null,
+      "cpu": null,
+      "memoryGiB": null,
+      "poolConnections": null
+    },
+    "gateway": {
+      "replicas": null,
+      "maxReplicas": null,
+      "cpu": null,
+      "memoryGiB": null,
+      "poolConnections": null
+    },
+    "user": {
+      "replicas": null,
+      "maxReplicas": null,
+      "cpu": null,
+      "memoryGiB": null,
+      "poolConnections": null
+    },
+    "social": {
+      "replicas": null,
+      "maxReplicas": null,
+      "cpu": null,
+      "memoryGiB": null,
+      "poolConnections": null
+    },
+    "metadata": {
+      "replicas": null,
+      "maxReplicas": null,
+      "cpu": null,
+      "memoryGiB": null,
+      "poolConnections": null
+    },
+    "livestream": {
+      "replicas": null,
+      "maxReplicas": null,
+      "cpu": null,
+      "memoryGiB": null,
+      "poolConnections": null
+    }
+  },
+  "runtimeDocuments": {
+    "api": {
+      "budgetSHA256": null,
+      "expectedSchemaSHA256": null,
+      "poolId": null
+    },
+    "sockets": {
+      "budgetSHA256": null,
+      "expectedSchemaSHA256": null,
+      "poolId": null
+    },
+    "indexer": {
+      "budgetSHA256": null,
+      "expectedSchemaSHA256": null,
+      "poolId": null
+    },
+    "charts": {
+      "budgetSHA256": null,
+      "expectedSchemaSHA256": null,
+      "poolId": null
+    },
+    "stats": {
+      "budgetSHA256": null,
+      "expectedSchemaSHA256": null,
+      "poolId": null
+    },
+    "pnl": {
+      "budgetSHA256": null,
+      "expectedSchemaSHA256": null,
+      "poolId": null
+    },
+    "ranking": {
+      "budgetSHA256": null,
+      "expectedSchemaSHA256": null,
+      "poolId": null
+    },
+    "gateway": {
+      "budgetSHA256": null,
+      "expectedSchemaSHA256": null,
+      "poolId": null
+    },
+    "user": {
+      "budgetSHA256": null,
+      "expectedSchemaSHA256": null,
+      "poolId": null
+    },
+    "social": {
+      "budgetSHA256": null,
+      "expectedSchemaSHA256": null,
+      "poolId": null
+    },
+    "metadata": {
+      "budgetSHA256": null,
+      "expectedSchemaSHA256": null,
+      "poolId": null
+    },
+    "livestream": {
+      "budgetSHA256": null,
+      "expectedSchemaSHA256": null,
+      "poolId": null
+    }
+  }
+}

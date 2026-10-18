@@ -1,0 +1,28 @@
+{
+  "task": "1.48",
+  "phase": 1,
+  "label": "bounded-local-primitives-only",
+  "final_capacity_task": "9.1",
+  "capacity_qualified": false,
+  "scenarios": [
+    "exact DAU arithmetic and included quote/write subsets",
+    "actual loopback timestamped nullreceiver",
+    "two-second backend pause with independent arrivals",
+    "bounded inflight misses and timeouts retained",
+    "actual masked WebSocket frozen subscribe",
+    "frozen price-event positive/negative validation",
+    "CPU/NIC and clock saturation invalidation",
+    "raw sample hash/counter consistency, stale/candidate mismatch rejection"
+  ],
+  "command": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tools/production/load",
+    "-p",
+    "test_*.py",
+    "-v"
+  ]
+}

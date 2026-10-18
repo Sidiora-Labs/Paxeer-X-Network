@@ -1,0 +1,166 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "MockPoolForOptical",
+  "sourceName": "contracts/test/MockPoolForOptical.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "creationTimestamp",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "feeAccumulator",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getEffectiveReserves",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getReserves",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "opticalAddress",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "value",
+          "type": "address"
+        }
+      ],
+      "name": "setFeeAccumulator",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "value",
+          "type": "address"
+        }
+      ],
+      "name": "setOpticalAddress",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "virtualUsdl",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "realUsdl",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "tokenRes",
+          "type": "uint256"
+        }
+      ],
+      "name": "setReserves",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "setTokenAddress",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "tokenAddress",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x608080604052346015576102b1908161001b8239f35b600080fdfe608080604052600436101561001357600080fd5b60003560e01c9081630902f1ac1461024f5750806326a4e8d2146102115780635eaea35f146101e85780636e7f1e46146101a0578063713f26211461017b578063909f45fe1461013d5780639d76ea5814610114578063a0498ff0146100d6578063a2d02927146100ad5763b33110861461008d57600080fd5b346100a85760003660031901126100a8576020604051428152f35b600080fd5b346100a85760003660031901126100a8576001546040516001600160a01b039091168152602090f35b346100a85760203660031901126100a8576004356001600160a01b038116908190036100a8576001600160601b0360a01b6000541617600055600080f35b346100a85760003660031901126100a8576005546040516001600160a01b039091168152602090f35b346100a85760203660031901126100a8576004356001600160a01b038116908190036100a8576001600160601b0360a01b6001541617600155600080f35b346100a85760603660031901126100a857600480356002556024356003556044359055005b346100a85760003660031901126100a85760025460035481018091116101d25760409060045482519182526020820152f35b634e487b7160e01b600052601160045260246000fd5b346100a85760003660031901126100a8576000546040516001600160a01b039091168152602090f35b346100a85760203660031901126100a8576004356001600160a01b038116908190036100a8576001600160601b0360a01b6005541617600555600080f35b346100a85760003660031901126100a85760609060025460035460045491835260208301526040820152f3fea2646970667358221220ea9875f4cc08b8120ed19082baf7239b5bd1ae060d74b4069b606379905725c964736f6c634300081b0033",
+  "deployedBytecode": "0x608080604052600436101561001357600080fd5b60003560e01c9081630902f1ac1461024f5750806326a4e8d2146102115780635eaea35f146101e85780636e7f1e46146101a0578063713f26211461017b578063909f45fe1461013d5780639d76ea5814610114578063a0498ff0146100d6578063a2d02927146100ad5763b33110861461008d57600080fd5b346100a85760003660031901126100a8576020604051428152f35b600080fd5b346100a85760003660031901126100a8576001546040516001600160a01b039091168152602090f35b346100a85760203660031901126100a8576004356001600160a01b038116908190036100a8576001600160601b0360a01b6000541617600055600080f35b346100a85760003660031901126100a8576005546040516001600160a01b039091168152602090f35b346100a85760203660031901126100a8576004356001600160a01b038116908190036100a8576001600160601b0360a01b6001541617600155600080f35b346100a85760603660031901126100a857600480356002556024356003556044359055005b346100a85760003660031901126100a85760025460035481018091116101d25760409060045482519182526020820152f35b634e487b7160e01b600052601160045260246000fd5b346100a85760003660031901126100a8576000546040516001600160a01b039091168152602090f35b346100a85760203660031901126100a8576004356001600160a01b038116908190036100a8576001600160601b0360a01b6005541617600555600080f35b346100a85760003660031901126100a85760609060025460035460045491835260208301526040820152f3fea2646970667358221220ea9875f4cc08b8120ed19082baf7239b5bd1ae060d74b4069b606379905725c964736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

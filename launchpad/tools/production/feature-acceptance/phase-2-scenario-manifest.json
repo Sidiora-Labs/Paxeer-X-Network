@@ -1,0 +1,62 @@
+{
+  "version": 2,
+  "task": "2.50",
+  "phase": 2,
+  "qualification_boundary": "Actual admitted current owner execution, separately reviewed service/provider/device artifacts; no final capacity or release promotion",
+  "baseline_gate": "1.99",
+  "prior_interface": "coordinator-admitted interface emitted by successful1.99; proposed interface is not sufficient",
+  "collector": "tools/production/feature-acceptance/collect_journeys.py",
+  "policy": "tools/production/feature-acceptance/journey_policy.py",
+  "required_native_cases": [
+    {
+      "id": "PF21-real-vendor-chain125-fund-withdraw",
+      "owners": [
+        "L25",
+        "L32"
+      ],
+      "required_artifact_types": [
+        "provider_chain125"
+      ],
+      "actual_execution": "Registered feature-owner real vendor sandbox/browser plus canonical chain125 fund/withdraw receipt reconciliation",
+      "missing_input_behavior": "blocked, nonzero; external wallet transfer is not vendor qualification"
+    },
+    {
+      "id": "PF24-physical-native-push-deep-link",
+      "owners": [
+        "L32",
+        "L25"
+      ],
+      "required_artifact_types": [
+        "native_device"
+      ],
+      "actual_execution": "Signed current native candidate installed on admitted physical iOS and Android; real APNs/FCM delivery, deep-link, auth and trade receipts",
+      "missing_input_behavior": "blocked, nonzero; responsive web is separate evidence"
+    },
+    {
+      "id": "PF27-voice-provider-blocker",
+      "owners": [
+        "L38"
+      ],
+      "required_artifact_types": [
+        "voice_provider",
+        "voice_blocker"
+      ],
+      "actual_execution": "Registered owner executes actual voice controller against admitted provider or observes unavailable response and no grant; record reason/owner/dependency/remediation",
+      "missing_input_behavior": "feature remains blocked; negative blocker result never qualifies voice provider"
+    }
+  ],
+  "policy_check_command": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tools/production/feature-acceptance/tests",
+    "-p",
+    "test_phase2.py",
+    "-v"
+  ],
+  "policy_check_boundary": "Negative policy cases are not real vendor or native product proof",
+  "verify_cmd": "python3 tools/production/qualify.py --task 2.50 --spec spec/production-system/spec.kvx --require-current-source",
+  "release_qualified": false
+}

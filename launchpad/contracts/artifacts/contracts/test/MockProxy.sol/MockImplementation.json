@@ -1,0 +1,50 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "MockImplementation",
+  "sourceName": "contracts/test/MockProxy.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "getValue",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_value",
+          "type": "uint256"
+        }
+      ],
+      "name": "setValue",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "value",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x6080806040523460135760c3908160198239f35b600080fdfe6080806040526004361015601257600080fd5b60003560e01c90816320965255146074575080633fa4f24514605857635524107714603c57600080fd5b346053576020366003190112605357600435600055005b600080fd5b3460535760003660031901126053576020600054604051908152f35b3460535760003660031901126053576020906000548152f3fea2646970667358221220544e9359376a6e87774bb846b8a9c38b50240aad040b5a341b9f5d1acf3980aa64736f6c634300081b0033",
+  "deployedBytecode": "0x6080806040526004361015601257600080fd5b60003560e01c90816320965255146074575080633fa4f24514605857635524107714603c57600080fd5b346053576020366003190112605357600435600055005b600080fd5b3460535760003660031901126053576020600054604051908152f35b3460535760003660031901126053576020906000548152f3fea2646970667358221220544e9359376a6e87774bb846b8a9c38b50240aad040b5a341b9f5d1acf3980aa64736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

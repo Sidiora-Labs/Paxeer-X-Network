@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "task": "2.48",
+  "phase": 2,
+  "workload_version": "kindle-500k-dau-v1",
+  "interface_version": 2,
+  "capacity_qualified": false,
+  "final_capacity_task": "9.1",
+  "scenarios": [
+    {
+      "id": "mixed-connected-baseline",
+      "duration_seconds": 600,
+      "generator_hosts": 4,
+      "connections": 100000,
+      "authenticated_connections": 50000,
+      "public_connections": 50000,
+      "subscriptions_mean": 5,
+      "subscriptions_max": 20,
+      "http_rps": 10000,
+      "quotes_included_rps": 2000,
+      "writes_included_rps": 2000,
+      "required_real_dependencies": ["PostgreSQL", "file-backed NATS JetStream", "Redis", "chain125 receipts", "SIWE identity", "v2 API", "v2 anonymous and authenticated sockets", "actual Chromium browser"],
+      "per_host_connections": 25000,
+      "per_host_scheduled_http_requests": 1500000,
+      "entrypoint": "tools/production/load/phase2_runner.py"
+    },
+    {
+      "id": "disconnected-durable-fill-replay",
+      "receiver_cohort_per_host": 128,
+      "disconnect_at_seconds": 120,
+      "disconnect_duration_seconds": 10,
+      "source": "actual pre-signed transactions submitted to the owned chain125 RPC",
+      "evidence": "actual mined receipts, immutable PostgreSQL source identities and scoped socket sequence/revision/cursor reconciliation"
+    },
+    {
+      "id": "durable-ingest-to-browser",
+      "p99_upper_bound_ns": 1000000000,
+      "timestamp_authority": "postgres_transaction_commit",
+      "clock_uncertainty_max_ns": 5000000,
+      "required_postgres_setting": "track_commit_timestamp=on",
+      "receiver_source": "phase2_browser.ts"
+    }
+  ],
+  "command": ["python3", "tools/production/load/phase2_runner.py", "--config", "{private_config}", "--config-sha256", "{private_config_sha256}", "--output", "{owned_evidence_directory}"],
+  "verify_cmd": "python3 tools/production/qualify.py --task 2.48 --spec spec/production-system/spec.kvx --require-current-source",
+  "pending_final_scenarios": ["24hour integrated peak soak", "200k connection surge", "1million frames per second burst", "80percent hot-pool stress", "3million canonical event surge", "managed CDN actual playback", "monthly availability"]
+}

@@ -1,0 +1,15 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {assertChainId,assertIdentityAttestation}=require('./identity-guard.cjs');
+const observed=()=>JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../../../spec/production-system/integration/contracts/v1/chain/mainnet-attestation.json')));
+test('production accepts chain125 and rejects other identities',()=>{assertChainId(125);assertChainId('0x7d');for(const v of [1,31337,0])assert.throws(()=>assertChainId(v),/Wrong chain/);});
+test('real recorded identity passes independently of pending governance handoff',()=>{const result=assertIdentityAttestation(observed());assert.equal(result.identityVerified,true);assert.equal(result.governanceHandoffComplete,false);assert.equal(result.releaseEligible,false);});
+test('wrong-chain observed record fails closed',()=>{const r=observed();r.chainId='1';assert.throws(()=>assertIdentityAttestation(r),/Wrong chain/);});
+test('wrong USDL identity or scale fails closed',()=>{for(const change of [r=>r.configuration.usdl=r.beacon.address,r=>r.usdlDecimals='18',r=>r.usdlCodeHashMatchesManifest=false]){const r=observed();change(r);assert.throws(()=>assertIdentityAttestation(r));}});
+test('implementation hash or beacon drift fails closed',()=>{for(const change of [r=>r.identities[0].implementationHashMatchesRecorded=false,r=>r.beacon.implementationMatchesManifest=false,r=>r.identities[1].implementationMatchesManifest=false]){const r=observed();change(r);assert.throws(()=>assertIdentityAttestation(r));}});
+test('creation fee drift fails one USDL launch policy',()=>{const r=observed();r.configuration.creationFee='1000001';assert.throws(()=>assertIdentityAttestation(r));});
+test('changed proxy runtime code rejects even if an old match flag survives',()=>{const r=observed();r.identities[0].runtimeHash='0x'+'00'.repeat(32);assert.throws(()=>assertIdentityAttestation(r),/proxy recorded code hash mismatch/);});
+test('false proxy runtime match flag rejects',()=>{const r=observed();r.identities[0].runtimeHashMatchesManifest=false;assert.throws(()=>assertIdentityAttestation(r),/proxy runtime code drift/);});
+test('changed beacon implementation code rejects even with same address',()=>{const r=observed();r.beacon.implementationHash='0x'+'00'.repeat(32);assert.throws(()=>assertIdentityAttestation(r),/Beacon implementation recorded code hash mismatch/);});
+test('beacon implementation artifact mismatch rejects',()=>{const r=observed();r.localArtifactComparison.find(i=>i.role==='SidioraPool').selfPatchedArtifactHash='0x'+'00'.repeat(32);assert.throws(()=>assertIdentityAttestation(r),/SidioraPool:local artifact hash mismatch/);});
+test('duplicate or unknown role cannot replace an expected proxy role',()=>{for(const role of ['EventEmitter','UnexpectedContract']){const r=observed();r.identities[1].role=role;assert.throws(()=>assertIdentityAttestation(r),/exact nine unique proxy roles/);}});

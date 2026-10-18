@@ -1,0 +1,99 @@
+# Private integration fixtures only. These fixed credentials are public test data.
+name: kindle-bootstrap-local
+x-fixture: &fixture
+  restart: "no"
+  networks: [fixture]
+  labels:
+    app.kindlelaunch.scope: isolated-bootstrap-fixture
+  security_opt: [no-new-privileges:true]
+services:
+  postgres:
+    <<: *fixture
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_USER: kindle_fixture
+      POSTGRES_PASSWORD: kindle_fixture_password
+      POSTGRES_DB: kindle_fixture
+    ports: ["127.0.0.1:25432:5432"]
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kindle_fixture -d kindle_fixture -h 127.0.0.1"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+  redis:
+    <<: *fixture
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    command: ["redis-server", "--requirepass", "kindle_fixture_password", "--save", "", "--appendonly", "no"]
+    ports: ["127.0.0.1:26379:6379"]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=kindle_fixture_password redis-cli ping | grep -qx PONG"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  nats:
+    <<: *fixture
+    image: nats:2.11.9-alpine@sha256:777787bbb4c7c4083ec2213b0b8b14151617610a3e0d85776bd995cd46599c73
+    command: ["--config", "/etc/nats/fixture.conf"]
+    ports: ["127.0.0.1:24222:4222", "127.0.0.1:28222:8222"]
+    volumes: ["./nats.conf:/etc/nats/fixture.conf:ro", "nats-data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - 'http://127.0.0.1:8222/healthz?js-enabled-only=true' | grep -q 'ok'"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  minio:
+    <<: *fixture
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    environment:
+      MINIO_ROOT_USER: kindle_fixture
+      MINIO_ROOT_PASSWORD: kindle_fixture_password
+      MC_HOST_local: http://kindle_fixture:kindle_fixture_password@127.0.0.1:9000
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports: ["127.0.0.1:29000:9000", "127.0.0.1:29001:9001"]
+    volumes: ["minio-data:/data"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+  minio-init:
+    <<: *fixture
+    profiles: [bootstrap-init]
+    image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    depends_on:
+      minio: {condition: service_healthy}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        mc alias set fixture http://minio:9000 kindle_fixture kindle_fixture_password;
+        mc mb --ignore-existing fixture/kindle-fixture
+  chain:
+    <<: *fixture
+    image: trufflesuite/ganache:v7.9.2@sha256:7b58eeff2a5cfeb62ee19fe16ce7c5b88b9e9bae0f627719121609e9e188b730
+    command: ["--server.host", "0.0.0.0", "--server.port", "8545", "--chain.chainId", "125", "--chain.networkId", "125", "--wallet.mnemonic", "test test test test test test test test test test test junk", "--wallet.totalAccounts", "10", "--wallet.defaultBalance", "10000", "--miner.blockTime", "0", "--database.dbPath", "/data", "--logging.quiet"]
+    ports: ["127.0.0.1:28545:8545"]
+    volumes: ["chain-data:/data"]
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          const h=require('http');const q=h.request({host:'127.0.0.1',port:8545,method:'POST',headers:{'Content-Type':'application/json'},timeout:1500},r=>{let b='';r.on('data',x=>b+=x);r.on('end',()=>{try{process.exit(JSON.parse(b).result==='0x7d'?0:1)}catch{process.exit(1)}})});q.on('timeout',()=>q.destroy());q.on('error',()=>process.exit(1));q.end(JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_chainId',params:[]}));
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+networks:
+  fixture:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+volumes:
+  postgres-data: {}
+  nats-data: {}
+  minio-data: {}
+  chain-data: {}

@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "phase1_only": true,
+  "capacity_qualified": false,
+  "required": [
+    "fresh executable tests",
+    "source hashes",
+    "raw local timestamp samples",
+    "full frozen schema validation"
+  ],
+  "production_calibration_requires": [
+    "four independent external generator hosts",
+    "60 seconds minimum",
+    "2 percent delivered-error maximum",
+    "10ms scheduler p99 maximum",
+    "70 percent CPU/NIC ceiling",
+    "5ms UTC offset maximum",
+    "trusted collected telemetry; caller booleans are not host attestation"
+  ],
+  "pending": [
+    "single task9.1 24h full integrated peak soak",
+    "independent hardware clock/NIC identity attestation",
+    "managed video provider actual playback",
+    "full surge, hotpool, raw event and fanout scenarios"
+  ]
+}

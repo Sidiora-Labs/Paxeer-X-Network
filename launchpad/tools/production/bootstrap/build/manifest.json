@@ -1,0 +1,267 @@
+{
+  "schemaVersion": 1,
+  "status": "source_command_inventory_not_build_evidence",
+  "environment": {
+    "GOWORK": "off",
+    "GOMAXPROCS": "2",
+    "GOFLAGS": "-mod=readonly"
+  },
+  "modules": [
+    {
+      "path": "shared",
+      "module": "github.com/Sidiora-Technologies/KindleLaunch/shared",
+      "goVersion": "1.25.0",
+      "listArgv": [
+        "go",
+        "list",
+        "./..."
+      ],
+      "buildArgv": [
+        "go",
+        "build",
+        "-p",
+        "1",
+        "./..."
+      ],
+      "entrypoints": []
+    },
+    {
+      "path": "protocol",
+      "module": "github.com/Sidiora-Technologies/KindleLaunch/protocol",
+      "goVersion": "1.25.0",
+      "listArgv": [
+        "go",
+        "list",
+        "./..."
+      ],
+      "buildArgv": [
+        "go",
+        "build",
+        "-p",
+        "1",
+        "./..."
+      ],
+      "entrypoints": []
+    },
+    {
+      "path": "core/api",
+      "module": "github.com/Sidiora-Technologies/KindleLaunch/core/api",
+      "goVersion": "1.25.0",
+      "listArgv": [
+        "go",
+        "list",
+        "./..."
+      ],
+      "buildArgv": [
+        "go",
+        "build",
+        "-p",
+        "1",
+        "./..."
+      ],
+      "entrypoints": [
+        "cmd/apid"
+      ]
+    },
+    {
+      "path": "core/indexer",
+      "module": "github.com/Sidiora-Technologies/KindleLaunch/core/indexer",
+      "goVersion": "1.25.0",
+      "listArgv": [
+        "go",
+        "list",
+        "./..."
+      ],
+      "buildArgv": [
+        "go",
+        "build",
+        "-p",
+        "1",
+        "./..."
+      ],
+      "entrypoints": [
+        "cmd/indexerd"
+      ]
+    },
+    {
+      "path": "core/pnl-tracker",
+      "module": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker",
+      "goVersion": "1.25.0",
+      "listArgv": [
+        "go",
+        "list",
+        "./..."
+      ],
+      "buildArgv": [
+        "go",
+        "build",
+        "-p",
+        "1",
+        "./..."
+      ],
+      "entrypoints": [
+        "cmd/pnld"
+      ]
+    },
+    {
+      "path": "core/ranking-algo",
+      "module": "github.com/Sidiora-Technologies/KindleLaunch/core/ranking-algo",
+      "goVersion": "1.25.0",
+      "listArgv": [
+        "go",
+        "list",
+        "./..."
+      ],
+      "buildArgv": [
+        "go",
+        "build",
+        "-p",
+        "1",
+        "./..."
+      ],
+      "entrypoints": [
+        "cmd/rankingd"
+      ]
+    },
+    {
+      "path": "core/stats-workers",
+      "module": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers",
+      "goVersion": "1.25.0",
+      "listArgv": [
+        "go",
+        "list",
+        "./..."
+      ],
+      "buildArgv": [
+        "go",
+        "build",
+        "-p",
+        "1",
+        "./..."
+      ],
+      "entrypoints": [
+        "cmd/statsd"
+      ]
+    },
+    {
+      "path": "core/trading-charts",
+      "module": "github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts",
+      "goVersion": "1.25.0",
+      "listArgv": [
+        "go",
+        "list",
+        "./..."
+      ],
+      "buildArgv": [
+        "go",
+        "build",
+        "-p",
+        "1",
+        "./..."
+      ],
+      "entrypoints": [
+        "cmd/chartsd"
+      ]
+    },
+    {
+      "path": "media/gateway",
+      "module": "github.com/Sidiora-Technologies/KindleLaunch/media/gateway",
+      "goVersion": "1.25.0",
+      "listArgv": [
+        "go",
+        "list",
+        "./..."
+      ],
+      "buildArgv": [
+        "go",
+        "build",
+        "-p",
+        "1",
+        "./..."
+      ],
+      "entrypoints": [
+        "cmd/mediagatewayd"
+      ]
+    },
+    {
+      "path": "media/livestream",
+      "module": "github.com/Sidiora-Technologies/KindleLaunch/media/livestream",
+      "goVersion": "1.25.0",
+      "listArgv": [
+        "go",
+        "list",
+        "./..."
+      ],
+      "buildArgv": [
+        "go",
+        "build",
+        "-p",
+        "1",
+        "./..."
+      ],
+      "entrypoints": [
+        "cmd/livestreamd"
+      ]
+    },
+    {
+      "path": "media/metadata",
+      "module": "github.com/Sidiora-Technologies/KindleLaunch/media/metadata",
+      "goVersion": "1.25.0",
+      "listArgv": [
+        "go",
+        "list",
+        "./..."
+      ],
+      "buildArgv": [
+        "go",
+        "build",
+        "-p",
+        "1",
+        "./..."
+      ],
+      "entrypoints": [
+        "cmd/metadatad"
+      ]
+    },
+    {
+      "path": "media/social",
+      "module": "github.com/Sidiora-Technologies/KindleLaunch/media/social",
+      "goVersion": "1.25.0",
+      "listArgv": [
+        "go",
+        "list",
+        "./..."
+      ],
+      "buildArgv": [
+        "go",
+        "build",
+        "-p",
+        "1",
+        "./..."
+      ],
+      "entrypoints": [
+        "cmd/sociald"
+      ]
+    },
+    {
+      "path": "media/user",
+      "module": "github.com/Sidiora-Technologies/KindleLaunch/media/user",
+      "goVersion": "1.25.0",
+      "listArgv": [
+        "go",
+        "list",
+        "./..."
+      ],
+      "buildArgv": [
+        "go",
+        "build",
+        "-p",
+        "1",
+        "./..."
+      ],
+      "entrypoints": [
+        "cmd/userd"
+      ]
+    }
+  ]
+}

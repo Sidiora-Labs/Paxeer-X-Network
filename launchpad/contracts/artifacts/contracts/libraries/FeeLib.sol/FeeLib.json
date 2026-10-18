@@ -1,0 +1,10 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "FeeLib",
+  "sourceName": "contracts/libraries/FeeLib.sol",
+  "abi": [],
+  "bytecode": "0x60808060405234601757603a9081601d823930815050f35b600080fdfe600080fdfea2646970667358221220a370a243303e753da3cf11cfddfb846f9d3dbe24182a50568794b8eb9e9c0b5b64736f6c634300081b0033",
+  "deployedBytecode": "0x600080fdfea2646970667358221220a370a243303e753da3cf11cfddfb846f9d3dbe24182a50568794b8eb9e9c0b5b64736f6c634300081b0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

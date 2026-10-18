@@ -1,0 +1,329 @@
+{
+  "groups": [
+    {
+      "name": "kindle-slos-v1",
+      "interval": "15s",
+      "rules": [
+        {
+          "record": "slo:read:burn_rate5m",
+          "expr": "clamp_min((sum by(service, environment, zone, route) (rate(sli_read_eligible_requests_total[5m])) - sum by(service, environment, zone, route) (rate(sli_read_good_requests_total[5m]))) / sum by(service, environment, zone, route) (rate(sli_read_eligible_requests_total[5m])), 0) / 0.0005000"
+        },
+        {
+          "record": "slo:read:requests5m",
+          "expr": "sum by(service, environment, zone, route) (increase(sli_read_eligible_requests_total[5m]))"
+        },
+        {
+          "record": "slo:read:burn_rate1h",
+          "expr": "clamp_min((sum by(service, environment, zone, route) (rate(sli_read_eligible_requests_total[1h])) - sum by(service, environment, zone, route) (rate(sli_read_good_requests_total[1h]))) / sum by(service, environment, zone, route) (rate(sli_read_eligible_requests_total[1h])), 0) / 0.0005000"
+        },
+        {
+          "record": "slo:read:requests1h",
+          "expr": "sum by(service, environment, zone, route) (increase(sli_read_eligible_requests_total[1h]))"
+        },
+        {
+          "record": "slo:read:burn_rate30m",
+          "expr": "clamp_min((sum by(service, environment, zone, route) (rate(sli_read_eligible_requests_total[30m])) - sum by(service, environment, zone, route) (rate(sli_read_good_requests_total[30m]))) / sum by(service, environment, zone, route) (rate(sli_read_eligible_requests_total[30m])), 0) / 0.0005000"
+        },
+        {
+          "record": "slo:read:requests30m",
+          "expr": "sum by(service, environment, zone, route) (increase(sli_read_eligible_requests_total[30m]))"
+        },
+        {
+          "record": "slo:read:burn_rate6h",
+          "expr": "clamp_min((sum by(service, environment, zone, route) (rate(sli_read_eligible_requests_total[6h])) - sum by(service, environment, zone, route) (rate(sli_read_good_requests_total[6h]))) / sum by(service, environment, zone, route) (rate(sli_read_eligible_requests_total[6h])), 0) / 0.0005000"
+        },
+        {
+          "record": "slo:read:requests6h",
+          "expr": "sum by(service, environment, zone, route) (increase(sli_read_eligible_requests_total[6h]))"
+        },
+        {
+          "record": "slo:mutation:burn_rate5m",
+          "expr": "clamp_min((sum by(service, environment, zone, route) (rate(sli_mutation_eligible_requests_total[5m])) - sum by(service, environment, zone, route) (rate(sli_mutation_good_requests_total[5m]))) / sum by(service, environment, zone, route) (rate(sli_mutation_eligible_requests_total[5m])), 0) / 0.0010000"
+        },
+        {
+          "record": "slo:mutation:requests5m",
+          "expr": "sum by(service, environment, zone, route) (increase(sli_mutation_eligible_requests_total[5m]))"
+        },
+        {
+          "record": "slo:mutation:burn_rate1h",
+          "expr": "clamp_min((sum by(service, environment, zone, route) (rate(sli_mutation_eligible_requests_total[1h])) - sum by(service, environment, zone, route) (rate(sli_mutation_good_requests_total[1h]))) / sum by(service, environment, zone, route) (rate(sli_mutation_eligible_requests_total[1h])), 0) / 0.0010000"
+        },
+        {
+          "record": "slo:mutation:requests1h",
+          "expr": "sum by(service, environment, zone, route) (increase(sli_mutation_eligible_requests_total[1h]))"
+        },
+        {
+          "record": "slo:mutation:burn_rate30m",
+          "expr": "clamp_min((sum by(service, environment, zone, route) (rate(sli_mutation_eligible_requests_total[30m])) - sum by(service, environment, zone, route) (rate(sli_mutation_good_requests_total[30m]))) / sum by(service, environment, zone, route) (rate(sli_mutation_eligible_requests_total[30m])), 0) / 0.0010000"
+        },
+        {
+          "record": "slo:mutation:requests30m",
+          "expr": "sum by(service, environment, zone, route) (increase(sli_mutation_eligible_requests_total[30m]))"
+        },
+        {
+          "record": "slo:mutation:burn_rate6h",
+          "expr": "clamp_min((sum by(service, environment, zone, route) (rate(sli_mutation_eligible_requests_total[6h])) - sum by(service, environment, zone, route) (rate(sli_mutation_good_requests_total[6h]))) / sum by(service, environment, zone, route) (rate(sli_mutation_eligible_requests_total[6h])), 0) / 0.0010000"
+        },
+        {
+          "record": "slo:mutation:requests6h",
+          "expr": "sum by(service, environment, zone, route) (increase(sli_mutation_eligible_requests_total[6h]))"
+        },
+        {
+          "alert": "read_burn_critical",
+          "expr": "(slo:read:burn_rate5m >= (14.4 - 1e-9) and slo:read:burn_rate1h >= (14.4 - 1e-9)) and (slo:read:requests5m >= 100 and slo:read:requests1h >= 100)",
+          "for": "0s",
+          "labels": {
+            "severity": "critical",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "read_burn_critical; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/availability.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        },
+        {
+          "alert": "read_burn_warning",
+          "expr": "(slo:read:burn_rate30m >= (6 - 1e-9) and slo:read:burn_rate6h >= (6 - 1e-9)) and (slo:read:requests30m >= 100 and slo:read:requests6h >= 100)",
+          "for": "0s",
+          "labels": {
+            "severity": "warning",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "read_burn_warning; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/availability.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        },
+        {
+          "alert": "read_traffic_insufficient",
+          "expr": "slo:read:requests5m < 100 or absent(slo:read:requests5m)",
+          "for": "5m",
+          "labels": {
+            "severity": "warning",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "read_traffic_insufficient; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/availability.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        },
+        {
+          "alert": "mutation_burn_critical",
+          "expr": "(slo:mutation:burn_rate5m >= (14.4 - 1e-9) and slo:mutation:burn_rate1h >= (14.4 - 1e-9)) and (slo:mutation:requests5m >= 100 and slo:mutation:requests1h >= 100)",
+          "for": "0s",
+          "labels": {
+            "severity": "critical",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "mutation_burn_critical; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/availability.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        },
+        {
+          "alert": "mutation_burn_warning",
+          "expr": "(slo:mutation:burn_rate30m >= (6 - 1e-9) and slo:mutation:burn_rate6h >= (6 - 1e-9)) and (slo:mutation:requests30m >= 100 and slo:mutation:requests6h >= 100)",
+          "for": "0s",
+          "labels": {
+            "severity": "warning",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "mutation_burn_warning; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/availability.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        },
+        {
+          "alert": "mutation_traffic_insufficient",
+          "expr": "slo:mutation:requests5m < 100 or absent(slo:mutation:requests5m)",
+          "for": "5m",
+          "labels": {
+            "severity": "warning",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "mutation_traffic_insufficient; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/availability.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        },
+        {
+          "alert": "storage_warning",
+          "expr": "durable_storage_free_bytes / durable_storage_capacity_bytes <= 0.20",
+          "for": "0s",
+          "labels": {
+            "severity": "warning",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "storage_warning; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/storage.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        },
+        {
+          "alert": "storage_critical",
+          "expr": "durable_storage_free_bytes / durable_storage_capacity_bytes <= 0.10",
+          "for": "0s",
+          "labels": {
+            "severity": "critical",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "storage_critical; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/storage.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        },
+        {
+          "alert": "backlog_warning",
+          "expr": "durable_consumer_oldest_seconds > 60",
+          "for": "0s",
+          "labels": {
+            "severity": "warning",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "backlog_warning; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/storage.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        },
+        {
+          "alert": "rpc_integrity",
+          "expr": "increase(chain_integrity_incidents_total[1m]) > 0",
+          "for": "0s",
+          "labels": {
+            "severity": "critical",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "rpc_integrity; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/integrity.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        },
+        {
+          "alert": "synthetic_failed",
+          "expr": "synthetic_journey_success == 0 or (synthetic_journey_expected unless on(journey,environment,zone) synthetic_journey_success) or (time() - synthetic_journey_last_observed_timestamp_seconds > 60)",
+          "for": "30s",
+          "labels": {
+            "severity": "critical",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "synthetic_failed; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/synthetic.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        },
+        {
+          "alert": "quote_latency",
+          "expr": "histogram_quantile(0.99, sum by(le,service,environment,zone) (rate(quote_duration_seconds_bucket[5m]))) > 0.75",
+          "for": "0s",
+          "labels": {
+            "severity": "warning",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "quote_latency; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/availability.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        },
+        {
+          "alert": "ingest_latency",
+          "expr": "histogram_quantile(0.99, sum by(le,service,environment,zone) (rate(event_delivery_stage_duration_seconds_bucket{stage=\"committed_to_ingested\"}[5m]))) > 0.5",
+          "for": "0s",
+          "labels": {
+            "severity": "warning",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "ingest_latency; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/availability.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        },
+        {
+          "alert": "delivery_latency",
+          "expr": "histogram_quantile(0.99, sum by(le,service,environment,zone) (rate(event_ingest_to_browser_duration_seconds_bucket[5m]))) > 1.0",
+          "for": "0s",
+          "labels": {
+            "severity": "warning",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "delivery_latency; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/availability.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        },
+        {
+          "alert": "telemetry_cardinality",
+          "expr": "telemetry_active_series > 20000",
+          "for": "0s",
+          "labels": {
+            "severity": "warning",
+            "owner": "platform-oncall",
+            "commander": "incident-commander"
+          },
+          "annotations": {
+            "summary": "telemetry_cardinality; inspect dashboard for eligible denominator and route templates",
+            "runbook_url": "runbooks/telemetry.md",
+            "deployment": "{{ $externalLabels.deployment_digest }}",
+            "ack_target": "300s",
+            "update_target": "900s"
+          }
+        }
+      ]
+    }
+  ]
+}

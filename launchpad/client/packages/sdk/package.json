@@ -1,0 +1,55 @@
+{
+  "name": "@kindle/sdk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "examples",
+    "release-manifest.json"
+  ],
+  "scripts": {
+    "generate": "python3 scripts/generate.py",
+    "build": "node scripts/compile-validators.mjs && tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "generate:operations": "python3 scripts/generate.py --major 2 --operations-only",
+    "generate:examples": "python3 scripts/examples.py",
+    "test:phase2": "python3 test/run-phase2.py",
+    "test:phase4": "python3 test/run-phase4.py",
+    "build:phase4": "node test/build-phase4.mjs"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "@kindle/sdk-v2": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "ws": "8.21.0"
+  },
+  "kindleCompatibility": {
+    "apiMajors": [
+      1,
+      2
+    ],
+    "streamMajors": [
+      1,
+      2
+    ],
+    "streamSubprotocols": [
+      "sidiora.v1",
+      "sidiora.v2"
+    ],
+    "v1ReleaseManifest": "release-manifest.json",
+    "v2EvidenceManifest": "evidence/production-system/L24/phase2/manifest.json",
+    "compatibilityWindowRequiredForBreakingChanges": true
+  }
+}

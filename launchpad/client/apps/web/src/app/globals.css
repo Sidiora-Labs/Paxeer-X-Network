@@ -1,0 +1,101 @@
+@import "tailwindcss";
+@import './tokens.css';
+
+@theme inline {
+  /* rem, like Tailwind's own breakpoints, so variants sort in width order (see tokens.css). */
+  --breakpoint-xs: 23.4375rem; /* 375px */
+  --breakpoint-mmd: 56.25rem; /* 900px */
+
+  /* One Manrope family with real 500/600/700/800 faces, so font-medium,
+     font-semibold, font-bold and font-extrabold select real weights. */
+  --font-sans: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@font-face {
+  font-family: 'Manrope';
+  src: url('/fonts/manrope-medium.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Manrope';
+  src: url('/fonts/manrope-semibold.otf') format('opentype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Manrope';
+  src: url('/fonts/manrope-bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Manrope';
+  src: url('/fonts/manrope-extrabold.otf') format('opentype');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Motion utilities: Tailwind v4 has no --duration-* theme namespace, so these map to the motion tokens. */
+@utility duration-instant { transition-duration: var(--sl-duration-instant); }
+@utility duration-fast { transition-duration: var(--sl-duration-fast); }
+@utility duration-base { transition-duration: var(--sl-duration-base); }
+@utility duration-slow { transition-duration: var(--sl-duration-slow); }
+
+* {
+  scrollbar-color: var(--sl-surface-3) transparent;
+  scrollbar-width: thin;
+}
+
+/* clip, not hidden: overflow-x hidden turns html/body into scroll containers
+   (overflow-y computes to auto), and position: sticky then resolves against them
+   instead of the document scroll, so nothing on any page could stick. */
+html, body {
+  overflow-x: clip;
+  max-width: 100vw;
+}
+
+body {
+  background: var(--sl-canvas);
+  color: var(--sl-text);
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+@keyframes toast-progress {
+  0%   { width: 100%; }
+  100% { width: 0%; }
+}
+
+/* Legal doc prose */
+.prose-legal {
+  color: var(--sl-text-muted);
+}
+.prose-legal h1 {
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--sl-text);
+  margin-bottom: 4px;
+}
+.prose-legal p.updated {
+  font-size: 11px;
+  color: var(--sl-text-disabled);
+  margin-bottom: 20px;
+}
+.prose-legal > p {
+  font-size: 13px;
+  line-height: 1.7;
+  margin-bottom: 12px;
+}
+
+/* Scrollbar hide utility */
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }

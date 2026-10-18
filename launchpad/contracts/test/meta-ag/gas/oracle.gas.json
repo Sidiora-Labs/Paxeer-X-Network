@@ -1,0 +1,12 @@
+{
+  "updatePrice_first": 311223,
+  "updatePrice_followup": 229091,
+  "batchUpdatePrices_5": 1339156,
+  "batchUpdatePrices_20": 5210997,
+  "batchUpdatePrices_50": 12297364,
+  "getPrice_view": 35661,
+  "getTWAP_view": 45962,
+  "oracleHub_registerAdapter": 213954,
+  "oracleHub_getPrice_view": 78519,
+  "oracleHub_getAggregatedPrice_view": 87691
+}

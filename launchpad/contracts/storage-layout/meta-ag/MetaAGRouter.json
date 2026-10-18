@@ -1,0 +1,199 @@
+{
+  "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+  "compiler": "0.8.27+commit.40a35a09",
+  "input": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "viaIR": true
+  },
+  "storage": [
+    {
+      "astId": 17,
+      "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+      "label": "_roles",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_mapping(t_bytes32,t_struct(RoleData)12_storage)"
+    },
+    {
+      "astId": 5453,
+      "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+      "label": "_adapterList",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_array(t_struct(AdapterEntry)2587_storage)dyn_storage"
+    },
+    {
+      "astId": 5457,
+      "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+      "label": "_adapterById",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_mapping(t_bytes32,t_address)"
+    },
+    {
+      "astId": 5461,
+      "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+      "label": "_adapterAddresses",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_mapping(t_address,t_bool)"
+    },
+    {
+      "astId": 5465,
+      "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+      "label": "oracleHub",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_address"
+    },
+    {
+      "astId": 5469,
+      "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+      "label": "maxOracleSanityDeviation",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 5473,
+      "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+      "label": "oracleSanityEnabled",
+      "offset": 0,
+      "slot": "6",
+      "type": "t_bool"
+    },
+    {
+      "astId": 5478,
+      "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+      "label": "__gap",
+      "offset": 0,
+      "slot": "7",
+      "type": "t_array(t_uint256)50_storage"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_struct(AdapterEntry)2587_storage)dyn_storage": {
+      "base": "t_struct(AdapterEntry)2587_storage",
+      "encoding": "dynamic_array",
+      "label": "struct IMetaAGRouter.AdapterEntry[]",
+      "numberOfBytes": "32"
+    },
+    "t_array(t_uint256)50_storage": {
+      "base": "t_uint256",
+      "encoding": "inplace",
+      "label": "uint256[50]",
+      "numberOfBytes": "1600"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_bytes32": {
+      "encoding": "inplace",
+      "label": "bytes32",
+      "numberOfBytes": "32"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_bytes32,t_address)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => address)",
+      "numberOfBytes": "32",
+      "value": "t_address"
+    },
+    "t_mapping(t_bytes32,t_struct(RoleData)12_storage)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => struct AccessControl.RoleData)",
+      "numberOfBytes": "32",
+      "value": "t_struct(RoleData)12_storage"
+    },
+    "t_string_storage": {
+      "encoding": "bytes",
+      "label": "string",
+      "numberOfBytes": "32"
+    },
+    "t_struct(AdapterEntry)2587_storage": {
+      "encoding": "inplace",
+      "label": "struct IMetaAGRouter.AdapterEntry",
+      "members": [
+        {
+          "astId": 2580,
+          "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+          "label": "adapterId",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_bytes32"
+        },
+        {
+          "astId": 2582,
+          "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+          "label": "adapter",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_address"
+        },
+        {
+          "astId": 2584,
+          "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+          "label": "active",
+          "offset": 20,
+          "slot": "1",
+          "type": "t_bool"
+        },
+        {
+          "astId": 2586,
+          "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+          "label": "name",
+          "offset": 0,
+          "slot": "2",
+          "type": "t_string_storage"
+        }
+      ],
+      "numberOfBytes": "96"
+    },
+    "t_struct(RoleData)12_storage": {
+      "encoding": "inplace",
+      "label": "struct AccessControl.RoleData",
+      "members": [
+        {
+          "astId": 9,
+          "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+          "label": "hasRole",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_address,t_bool)"
+        },
+        {
+          "astId": 11,
+          "contract": "contracts/meta-ag/router/MetaAGRouter.sol:MetaAGRouter",
+          "label": "adminRole",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_bytes32"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}
