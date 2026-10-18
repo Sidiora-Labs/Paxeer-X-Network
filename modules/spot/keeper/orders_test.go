@@ -458,7 +458,7 @@ func TestMaxActiveOrdersPerUser(t *testing.T) {
 	require.NoError(t, app.BankKeeper.SendCoins(e.ctx, app.EvmKeeper.GetPaxAddressOrDefault(e.ctx, e.user), keeper.CustodyAddress(), sdk.NewCoins(sdk.NewInt64Coin("uhpx", 1_000_000_000))))
 	e.put(limitKey(types.StopLossOrderPrefix, limitID(2)), stop)
 	e.put(limitKey(types.UserOrderPrefix, e.user.Bytes(), limitID(2)), types.UserOrder{User: e.user, OrderID: 2, OrderType: types.OrderTypeStopLoss})
-	e.ctx.KVStore(e.key).Set(limitKey(types.ActiveStopLossPrefix, limitID(2)), []byte{})
+	e.ctx.KVStore(e.key).Set(limitKey(types.ActiveStopLossPrefix, limitID(2)), limitID(0))
 	e.put(limitKey(types.EscrowPrefix, e.token.Bytes()), types.TokenEscrow{Token: e.token, Amount: stop.Amount})
 	e.put(limitKey(types.ActiveCountPrefix, e.user.Bytes()), types.ActiveOrderCount{User: e.user, Count: 2})
 	e.ctx.KVStore(e.key).Set(types.NextOrderIDKey, limitID(3))

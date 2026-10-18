@@ -109,8 +109,8 @@ func (k *Keeper) initGenesis(ctx sdk.Context, gs types.GenesisState) error {
 		{types.ActiveStopLimitPrefix, gs.ActiveStopLimitOrders},
 		{types.ActiveStopLossPrefix, gs.ActiveStopLossOrders},
 	} {
-		for _, id := range index.ids {
-			store.Set(recordKey(index.prefix, orderIDBytes(id)), []byte{})
+		for i, id := range index.ids {
+			store.Set(recordKey(index.prefix, orderIDBytes(id)), orderIDBytes(uint64(i)))
 		}
 	}
 	for _, entry := range gs.Expiries {
@@ -291,13 +291,13 @@ func (k *Keeper) exportGenesis(ctx sdk.Context) (*types.GenesisState, error) {
 	if gs.ActiveCounts, err = exportRecords[types.ActiveOrderCount](store, types.ActiveCountPrefix); err != nil {
 		return nil, err
 	}
-	if gs.ActiveLimitOrders, err = exportIDs(store, types.ActiveLimitPrefix); err != nil {
+	if gs.ActiveLimitOrders, err = activeOrdered(store, types.ActiveLimitPrefix); err != nil {
 		return nil, err
 	}
-	if gs.ActiveStopLimitOrders, err = exportIDs(store, types.ActiveStopLimitPrefix); err != nil {
+	if gs.ActiveStopLimitOrders, err = activeOrdered(store, types.ActiveStopLimitPrefix); err != nil {
 		return nil, err
 	}
-	if gs.ActiveStopLossOrders, err = exportIDs(store, types.ActiveStopLossPrefix); err != nil {
+	if gs.ActiveStopLossOrders, err = activeOrdered(store, types.ActiveStopLossPrefix); err != nil {
 		return nil, err
 	}
 	expiries, err := exportKeys(store, types.ExpiryIndexPrefix, 16)
