@@ -91,6 +91,7 @@ func newUSDLStepEnv(t *testing.T) *usdlStepEnv {
 		require.Equal(t, h.Balance.Int64(), c.balanceOf(h.Address))
 	}
 	require.Len(t, s.golden.Treasuries, 2)
+	c.logStart = len(c.receiptLogs())
 	return s
 }
 
@@ -298,7 +299,7 @@ func TestTreasuryWithdrawnIntoCustody(t *testing.T) {
 	require.NoError(t, s.run())
 	for _, d := range drains {
 		require.Equal(t, int64(0), s.balanceOf(d.Treasury))
-		require.Equal(t, big.NewInt(0), s.view(d.Treasury, "getBalance(address)", addressWord(s.usdl)))
+		require.Zero(t, s.view(d.Treasury, "getBalance(address)", addressWord(s.usdl)).Sign())
 	}
 	require.Equal(t, goldenTreasurySum, s.ledger(keeper.TreasuryHeldLedger()))
 	require.Equal(t, goldenTreasuryLedger, s.treasuryLedger())
