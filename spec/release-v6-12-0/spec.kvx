@@ -10645,7 +10645,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.1.4]
 title = "Compute cross margin with tiered maintenance"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["3.1.1"]
