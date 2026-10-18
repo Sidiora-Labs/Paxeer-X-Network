@@ -169,6 +169,27 @@ genesis["app_state"]["staking"]["params"]["max_voting_power_ratio"] = "1.0000000
 genesis_path.write_text(json.dumps(genesis))
 PY
   "$BIN_DIR/paxd" collect-gentxs --home "$node_home" > "$case_dir/$name-collect.log" 2>&1
+  python3 - "$root/node/testdata/v6120-halt-export.json" "$node_home/config/genesis.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+export = json.loads(Path(sys.argv[1]).read_text())["app_state"]
+genesis_path = Path(sys.argv[2])
+genesis = json.loads(genesis_path.read_text())
+evm = genesis["app_state"]["evm"]
+codes = {entry["address"] for entry in evm["codes"]}
+states = {(entry["address"], entry["key"]) for entry in evm["states"]}
+for entry in export["evm"]["codes"]:
+    assert entry["address"] not in codes, entry["address"]
+for entry in export["evm"]["states"]:
+    assert (entry["address"], entry["key"]) not in states, (entry["address"], entry["key"])
+evm["codes"].extend(export["evm"]["codes"])
+evm["states"].extend(export["evm"]["states"])
+genesis["app_state"]["launchpad"] = export["launchpad"]
+genesis_path.write_text(json.dumps(genesis))
+PY
+  "$BIN_DIR/paxd" validate-genesis --home "$node_home" > "$case_dir/$name-validate.log" 2>&1
   python3 - "$node_home" "$halt" "$denom" <<'PY'
 import json
 from pathlib import Path
@@ -312,7 +333,24 @@ assert any(
     for line in lines.splitlines()
 ), lines[-4000:]
 state = json.loads(Path(sys.argv[3]).read_text())
-assert int(state["height"]) == int(sys.argv[2]), state
+halt = int(sys.argv[2])
+height = int(state["height"])
+if height != halt:
+    assert height == halt + 1, state
+    assert state.get("round") == 0 and state.get("step") == 1, state
+    assert isinstance(state.get("signature"), str) and state["signature"], state
+    signbytes = bytes.fromhex(state.get("signbytes") or "")
+    assert signbytes, state
+    length, shift, offset = 0, 0, 0
+    while True:
+        assert offset < len(signbytes), state
+        byte = signbytes[offset]
+        offset += 1
+        length |= (byte & 0x7F) << shift
+        shift += 7
+        if not byte & 0x80:
+            break
+    assert signbytes[offset:offset + 2] == b"\x08\x20", state
 PY
 }
 
