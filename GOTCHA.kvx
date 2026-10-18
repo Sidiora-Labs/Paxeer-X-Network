@@ -8201,3 +8201,8 @@ fix = "remove <repo>/.logs before a fresh checkout on a reused machine (the flee
 area = "launchpad precompile tests"
 symptom = "go test ./precompiles/launchpad/ -run 'TestNft|TestFee|TestEvent' runs none of the NFT collection tests, which are named TestCollection… and TestFeeRight…, so a gate on that pattern can pass while the NFT logs are wrong"
 fix = "name the tests (TestCollectionServesEverySelector, TestFeeRightReceiverHook, TestFeeRolesServeEverySelector) or run the package with -skip 'Parity' while the golden fixture is absent"
+
+[gotcha.1726]
+area = "git"
+symptom = "git stash followed by git stash pop on a checkout that has no local changes pops an unrelated older stash entry (git stash saves nothing when the tree is clean, so pop takes the previous stash@{0}) and leaves modify/delete and content conflicts in the working tree"
+fix = "check git stash list before any stash/pop pair, or use git stash push -q || true only when git diff --quiet reports changes; recover with git reset --hard HEAD, the popped entry is kept in the stash list on a failed pop"
