@@ -7475,7 +7475,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.23]
 title = "Test the retained contracts against the surfaces"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["2.2.3", "2.2.4", "2.2.5", "2.2.6", "2.2.17"]
