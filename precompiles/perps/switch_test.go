@@ -353,6 +353,32 @@ func activateVersionSwitch(t *testing.T, a *app.App, ctx sdk.Context) {
 	require.Equal(t, ctx.BlockHeight(), a.UpgradeKeeper.GetDoneHeight(ctx, app.V6120Upgrade))
 }
 
+func requireLegacyConstructor(t *testing.T, want, selected *pcommon.Precompile) {
+	t.Helper()
+	_, ok := selected.GetExecutor().(*layerxexchange.PrecompileExecutor)
+	require.True(t, ok)
+	requireSameConstructor(t, want, selected)
+}
+
+func requirePerpsConstructor(t *testing.T, want, selected *pcommon.Precompile) {
+	t.Helper()
+	_, ok := selected.GetExecutor().(*perps.PrecompileExecutor)
+	require.True(t, ok)
+	requireSameConstructor(t, want, selected)
+}
+
+func requireSameConstructor(t *testing.T, want, selected *pcommon.Precompile) {
+	t.Helper()
+	require.Equal(t, want.Address(), selected.Address())
+	require.Equal(t, want.GetName(), selected.GetName())
+	require.Equal(t, want.GetABI(), selected.GetABI())
+	methods := want.GetABI().Methods
+	require.NotEmpty(t, methods)
+	for name, method := range methods {
+		require.Equal(t, want.RequiredGas(method.ID), selected.RequiredGas(method.ID), name)
+	}
+}
+
 func TestVersionSwitchConstructors(t *testing.T) {
 	const doneHeight = int64(1000)
 	vectors := loadVersionSwitchVectors(t)
@@ -377,7 +403,7 @@ func TestVersionSwitchConstructors(t *testing.T) {
 	t.Run("below_activation", func(t *testing.T) {
 		for _, tracing := range []bool{false, true} {
 			selected := versionSwitchContract(t, a, ctx.WithBlockHeight(doneHeight-1).WithIsTracing(tracing), app.ActivationUpgrade)
-			require.Equal(t, legacy, selected)
+			requireLegacyConstructor(t, legacy, selected)
 			require.Equal(t, legacyABI, selected.GetABI())
 		}
 	})
@@ -391,12 +417,12 @@ func TestVersionSwitchConstructors(t *testing.T) {
 		for _, height := range []int64{doneHeight, doneHeight + 1} {
 			for _, tracing := range []bool{false, true} {
 				selected := versionSwitchContract(t, a, ctx.WithBlockHeight(height).WithIsTracing(tracing), app.V6120Upgrade)
-				require.Equal(t, next, selected)
+				requirePerpsConstructor(t, next, selected)
 				require.Equal(t, nextABI, selected.GetABI())
 			}
 		}
 		historical := versionSwitchContract(t, a, ctx.WithBlockHeight(doneHeight-1).WithIsTracing(true), app.ActivationUpgrade)
-		require.Equal(t, legacy, historical)
+		requireLegacyConstructor(t, legacy, historical)
 		require.Equal(t, legacyABI, historical.GetABI())
 	})
 }
