@@ -55,7 +55,7 @@ func (h *harness) register(caller common.Address, key []byte) {
 	out, left, reason := h.call(caller, "registerFeedKey", key)
 	require.Empty(h.t, reason)
 	require.Equal(h.t, []interface{}{common.BytesToAddress(feedAccount(key))}, out)
-	require.Equal(h.t, suppliedGas-32112, left)
+	require.Equal(h.t, suppliedGas-32048, left)
 }
 
 func (h *harness) requireLog(log *ethtypes.Log, eventName, signature string, operator sdk.ValAddress, account sdk.AccAddress) []interface{} {
@@ -204,8 +204,9 @@ func TestRegisterFeedKeyAssociation(t *testing.T) {
 
 	forwarder := common.HexToAddress("0x9003")
 	h.stateDB.SetCode(forwarder, forwardingCode(false))
-	_, associated = evmKeeper.GetPaxAddress(h.ctx(), forwarder)
-	require.False(t, associated)
+	paxAddress, associated := evmKeeper.GetPaxAddress(h.ctx(), forwarder)
+	require.True(t, associated)
+	require.Equal(t, sdk.AccAddress(forwarder.Bytes()), paxAddress)
 	ret, _, err := h.evm.Call(caller, forwarder, h.input("getMarketCount"), suppliedGas, uint256.NewInt(0))
 	require.NoError(t, err)
 	expected, err := h.method("getMarketCount").Outputs.Pack(sdk.NewInt(18).BigInt())
@@ -228,7 +229,7 @@ func TestRevokeFeedKey(t *testing.T) {
 	out, left, reason := h.call(caller, "revokeFeedKey")
 	require.Empty(t, reason)
 	require.Empty(t, out)
-	require.Equal(t, suppliedGas-30064, left)
+	require.Equal(t, suppliedGas-30000, left)
 	h.requireNoFeedKey(operator)
 	h.requireNoHolder(feedAccount(key))
 	logs := h.stateDB.GetAllLogs()

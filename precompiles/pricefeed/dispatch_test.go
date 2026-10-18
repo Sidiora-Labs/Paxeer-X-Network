@@ -106,7 +106,7 @@ func (h *dispatchHarness) call(t *testing.T, name string, args ...interface{}) [
 		ret, left, err = h.evm.Call(h.caller, h.pc.Address(), input, supplied, uint256.NewInt(0))
 	}
 	require.NoError(t, err, "%s: %x", name, ret)
-	require.Equal(t, supplied-base-pricefeed.GasPerByte*uint64(len(input)), left)
+	require.Equal(t, supplied-base-pricefeed.GasPerByte*uint64(len(input)-4), left)
 	out, err := method.Outputs.Unpack(ret)
 	require.NoError(t, err)
 	return out

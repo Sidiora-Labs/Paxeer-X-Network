@@ -184,11 +184,11 @@ func TestConventionRequiredGas(t *testing.T) {
 		length int
 		gas    uint64
 	}{
-		{"getPrice", []interface{}{big.NewInt(0)}, 36, 3576},
-		{"registerFeedKey", []interface{}{make([]byte, 32)}, 100, 31600},
-		{"registerFeedKey", []interface{}{feedPubKey("gas")}, 132, 32112},
-		{"revokeFeedKey", nil, 4, 30064},
-		{"getMarketCount", nil, 4, 3064},
+		{"getPrice", []interface{}{big.NewInt(0)}, 36, 3512},
+		{"registerFeedKey", []interface{}{make([]byte, 32)}, 100, 31536},
+		{"registerFeedKey", []interface{}{feedPubKey("gas")}, 132, 32048},
+		{"revokeFeedKey", nil, 4, 30000},
+		{"getMarketCount", nil, 4, 3000},
 	} {
 		t.Run(fmt.Sprintf("%s_%d", tc.name, tc.length), func(t *testing.T) {
 			input := h.input(tc.name, tc.args...)
@@ -201,12 +201,12 @@ func TestConventionRequiredGas(t *testing.T) {
 		require.Empty(t, reason)
 		require.Len(t, out, 1)
 		require.Equal(t, "18", out[0].(*big.Int).String())
-		require.Equal(t, suppliedGas-3064, left)
+		require.Equal(t, suppliedGas-3000, left)
 	})
 	t.Run("insufficient_write_gas", func(t *testing.T) {
 		operator, caller := h.validator("gas", stakingtypes.Bonded, true)
 		key := feedPubKey("gas")
-		_, left, err := h.evm.Call(caller, pricefeedAddress, h.input("registerFeedKey", key), 32111, uint256.NewInt(0))
+		_, left, err := h.evm.Call(caller, pricefeedAddress, h.input("registerFeedKey", key), 32047, uint256.NewInt(0))
 		require.ErrorIs(t, err, vm.ErrOutOfGas)
 		require.Zero(t, left)
 		_, found := h.keeper.GetFeedKey(h.ctx(), operator)

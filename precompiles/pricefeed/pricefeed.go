@@ -85,7 +85,7 @@ func (PrecompileExecutor) RequiredGas(input []byte, method *abi.Method) uint64 {
 	if isTransaction(method.Name) {
 		base = WriteBaseGas
 	}
-	return base + GasPerByte*(uint64(len(input))+4)
+	return base + GasPerByte*uint64(len(input))
 }
 
 func (p Precompile) Run(evm *vm.EVM, caller common.Address, callingContract common.Address, input []byte,
