@@ -175,6 +175,25 @@ func TestLiabilitiesBacked(t *testing.T) {
 	c.holds(keeper.CustodyInvariantName, custody)
 }
 
+func TestCustodyInvariantNonQuoteTreasury(t *testing.T) {
+	c := newCustodyEnv(t)
+	other := address("other treasury token")
+	gs := types.DefaultGenesis()
+	gs.Params = c.k.GetParams(c.ctx)
+	gs.Treasury = []types.TreasuryBalance{{Token: other.Hex(), Ledger: i(7), Held: i(7)}}
+	c.k.InitGenesis(c.ctx, *gs)
+	require.Zero(t, c.balanceOf(c.custody))
+	c.holds(keeper.CustodyInvariantName, keeper.CustodyInvariant(c.k))
+	c.holds(keeper.LiabilitiesInvariantName, keeper.LiabilitiesInvariant(c.k))
+
+	amount, err := i(8).Marshal()
+	require.NoError(t, err)
+	c.ctx.KVStore(sdk.NewKVStoreKey(types.StoreKey)).Set(types.TreasuryLedgerKey(other), amount)
+	c.breaks(keeper.LiabilitiesInvariantName, keeper.LiabilitiesInvariant(c.k),
+		fmt.Sprintf("treasury %s: held 7 below ledger 8\n", other.Hex()))
+	c.holds(keeper.CustodyInvariantName, keeper.CustodyInvariant(c.k))
+}
+
 func TestCustodyInvariant(t *testing.T) {
 	c := newCustodyEnv(t)
 	custody := keeper.CustodyInvariant(c.k)
