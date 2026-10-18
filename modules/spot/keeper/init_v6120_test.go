@@ -54,7 +54,7 @@ type initEnv struct {
 
 func newInitEnv(t *testing.T) *initEnv {
 	t.Helper()
-	a := app.Setup(t, false, false, false)
+	a := app.Setup(t, false, true, false)
 	ctx := a.GetContextForDeliverTx([]byte{}).WithBlockHeight(initHeight).WithBlockTime(time.Unix(1_800_000_000, 0).UTC())
 	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
 	a.EvmKeeper.BeginBlock(ctx)
@@ -220,7 +220,7 @@ func TestInitV6120RegistersOpeningPairs(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, shareDenom(token), denom)
 		require.Equal(t, uint8(6), e.staticCall(share, "decimals"))
-		require.Equal(t, big.NewInt(0), e.staticCall(share, "totalSupply"))
+		require.Equal(t, 0, big.NewInt(0).Cmp(e.staticCall(share, "totalSupply").(*big.Int)))
 		require.True(t, e.a.BankKeeper.GetSupply(e.ctx, shareDenom(token)).Amount.IsZero())
 	}
 	require.Len(t, shares, 3)
