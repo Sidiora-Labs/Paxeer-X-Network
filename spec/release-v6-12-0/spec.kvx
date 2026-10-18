@@ -11071,7 +11071,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.1.20]
 title = "Declare the EVM and pricefeed expected keepers and 256-bit fixed point helpers"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["3.0.3", "5.1.9"]
