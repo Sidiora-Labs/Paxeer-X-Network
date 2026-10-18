@@ -126,7 +126,8 @@ func newOrdersEnv(t *testing.T) *ordersEnv {
 	blockCtx, err := testApp.EvmKeeper.GetVMBlockContext(ctx, core.GasPool(math.MaxUint64))
 	require.NoError(t, err)
 	cfg := evmtypes.DefaultChainConfig().EthereumConfig(testApp.EvmKeeper.ChainID(ctx))
-	contracts := maps.Clone(testApp.EvmKeeper.CustomPrecompiles(ctx))
+	contracts := map[common.Address]vm.PrecompiledContract{}
+	maps.Copy(contracts, testApp.EvmKeeper.CustomPrecompiles(ctx))
 	contracts[ordersPerps] = precompile
 	e.evm = vm.NewEVM(*blockCtx, e.stateDB, cfg, vm.Config{}, contracts)
 	return e
