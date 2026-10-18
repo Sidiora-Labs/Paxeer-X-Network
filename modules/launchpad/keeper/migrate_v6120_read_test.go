@@ -68,6 +68,9 @@ func TestParamsFromProtocolConfig(t *testing.T) {
 		6: word(100), 7: word(2000), 8: word(500), 9: word(1000), 10: word(0), 11: word(1_000_000)}
 	set(generation2, values)
 	set(generation1, values)
+	_, diffs, err := keeper.ParamsFromProtocolConfig(e.ctx, evm)
+	require.NoError(t, err)
+	require.Empty(t, diffs)
 	set(generation1, map[int64]common.Hash{6: word(150), 11: word(2_000_000)})
 
 	params, diffs, err := keeper.ParamsFromProtocolConfig(e.ctx, evm)
@@ -81,7 +84,27 @@ func TestParamsFromProtocolConfig(t *testing.T) {
 		{Field: "baseFeeBps", Generation1: "150", Generation2: "100"},
 		{Field: "creationFee", Generation1: "2000000", Generation2: "1000000"},
 	}, diffs)
+	require.NoError(t, params.Validate())
 
+	legacyQuote := common.HexToAddress("0x0000000000000000000000000000000000000001")
+	set(generation1, map[int64]common.Hash{1: common.BytesToHash(legacyQuote.Bytes())})
+	params, diffs, err = keeper.ParamsFromProtocolConfig(e.ctx, evm)
+	require.NoError(t, err)
+	require.Equal(t, quote.Hex(), params.QuoteToken)
+	require.Equal(t, keeper.ProtocolConfigDiff{Field: "usdlAddress", Generation1: legacyQuote.Hex(),
+		Generation2: quote.Hex()}, diffs[0])
+
+	for slot := int64(4); slot <= 10; slot++ {
+		t.Run(big.NewInt(slot).String(), func(t *testing.T) {
+			set(generation2, values)
+			set(generation2, map[int64]common.Hash{slot: common.BigToHash(new(big.Int).Lsh(big.NewInt(1), 64))})
+			_, _, err := keeper.ParamsFromProtocolConfig(e.ctx, evm)
+			require.ErrorIs(t, err, types.ErrInvalidParams)
+			require.ErrorContains(t, err, "exceeds uint64")
+		})
+	}
+
+	set(generation2, values)
 	set(generation2, map[int64]common.Hash{10: word(1)})
 	_, _, err = keeper.ParamsFromProtocolConfig(e.ctx, evm)
 	require.ErrorIs(t, err, types.ErrInvalidParams)
