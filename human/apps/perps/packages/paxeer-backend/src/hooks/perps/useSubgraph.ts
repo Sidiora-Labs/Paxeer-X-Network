@@ -29,6 +29,16 @@ export const POSITIONS_QUERY = /* GraphQL */ `
   }
 `;
 
+export const POSITION_CHANGED_QUERY = /* GraphQL */ `
+  subscription PositionChanged($userAddress: String!) {
+    positionChanged(userAddress: $userAddress) {
+      positionId userAddress marketId isLong sizeUsd leverage entryPrice
+      collateralToken collateralAmount collateralUsd status openedAt openTxHash
+      market { symbol }
+    }
+  }
+`;
+
 export const CLOSED_POSITIONS_QUERY = /* GraphQL */ `
   query GetClosedPositions($userAddress: String!, $limit: Int, $offset: Int) {
     positions(userAddress: $userAddress, status: "closed", limit: $limit, offset: $offset) {

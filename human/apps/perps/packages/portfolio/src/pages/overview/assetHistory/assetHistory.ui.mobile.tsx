@@ -1,6 +1,9 @@
 import { FC, useMemo } from "react";
 import { useTranslation } from "@paxeer-network/i18n";
-import { AssetHistoryStatusEnum } from "@paxeer-network/types";
+import {
+  AssetHistorySideEnum,
+  AssetHistoryStatusEnum,
+} from "@paxeer-network/types";
 import {
   Badge,
   DataFilter,
@@ -64,8 +67,11 @@ export const AssetHistoryMobile: FC<AssetHistoryMobileProps> = (props) => {
   };
 
   const renderHistoryItem = (item: any) => {
+    const rowIsDeposit = item.side
+      ? item.side !== AssetHistorySideEnum.WITHDRAW
+      : isDeposit;
     // Amount formatting
-    const formattedAmount = isDeposit
+    const formattedAmount = rowIsDeposit
       ? `+${item.amount - (item.fee ?? 0)}`
       : -(item.amount - (item.fee ?? 0));
 
@@ -96,7 +102,7 @@ export const AssetHistoryMobile: FC<AssetHistoryMobileProps> = (props) => {
       toast.success(t("common.copy.copied"));
     };
 
-    const itemColor = isDeposit ? "buy" : "sell";
+    const itemColor = rowIsDeposit ? "buy" : "sell";
 
     const amountView = (
       <Flex className="oui-text-xs">
@@ -106,7 +112,7 @@ export const AssetHistoryMobile: FC<AssetHistoryMobileProps> = (props) => {
         </Text>
         {isWeb3Wallet && (
           <Badge color={itemColor} className="oui-ms-2">
-            {isDeposit ? t("common.deposit") : t("common.withdraw")}
+            {rowIsDeposit ? t("common.deposit") : t("common.withdraw")}
           </Badge>
         )}
       </Flex>

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePerpsWallet } from "./usePerpsWallet";
 import { useRealtimePrices } from "./useRealtimePrices";
-import { subgraphQuery, POSITIONS_QUERY } from "./useSubgraph";
+import { subgraphQuery, POSITIONS_QUERY, POSITION_CHANGED_QUERY } from "./useSubgraph";
 import { computePositionPnl, type ParsedPosition } from "@paxeer-network/paxeer-backend/core/perps/pnlHelpers";
 import { getVaultAddress } from "./useVault";
 import { getPublicClient } from "@paxeer-network/paxeer-backend/core/viem/clients";
@@ -173,15 +173,7 @@ async function _fetchVault(addr: string) {
   } catch {}
 }
 
-const POSITION_CHANGED_QUERY = /* GraphQL */ `
-  subscription PositionChanged($userAddress: String!) {
-    positionChanged(userAddress: $userAddress) {
-      positionId marketId isLong sizeUsd leverage entryPrice
-      collateralToken collateralAmount collateralUsd status openedAt openTxHash
-      market { symbol }
-    }
-  }
-`;
+let _ownerlessWarned = false;
 
 async function _fetchPositionsOnce(addr: string) {
   try {
@@ -243,6 +235,13 @@ function _startPolling(addr: string) {
     onData: (data) => {
       if (_activeAddress !== addr) return;
       const positions = data.positionChanged ?? [];
+      if (positions.some((p: any) => !p?.userAddress)) {
+        if (!_ownerlessWarned) {
+          _ownerlessWarned = true;
+          console.warn("positionChanged rows without userAddress ignored; keeping previous positions");
+        }
+        return;
+      }
       _reconcileLocallyClosed(positions);
       _setRaw({ positions });
     },

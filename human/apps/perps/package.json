@@ -9,6 +9,7 @@
     "start": "pnpm --filter @paxeer-network/web start",
     "typecheck": "tsc --noEmit -p apps/web/tsconfig.json",
     "check:ui": "node scripts/check-ui-source.mjs",
+    "check:ui:write": "node scripts/write-ui-baseline.mjs",
     "test": "node --test --import tsx tests/*.test.ts",
     "test:browser": "playwright test"
   },

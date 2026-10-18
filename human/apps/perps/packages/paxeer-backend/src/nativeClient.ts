@@ -354,8 +354,9 @@ export async function nativeRequest(
       VAULT_EVENTS_QUERY,
       { userAddress: state.address!.toLowerCase(), limit: 100, offset: 0 },
     );
-    return success({
-      rows: result.vaultEvents.map((row) => {
+    const wantedSide = location.searchParams.get("side");
+    const rows = result.vaultEvents
+      .map((row) => {
         const token = nativeToken(row.tokenAddress);
         return {
           ...row,
@@ -368,7 +369,19 @@ export async function nativeRequest(
           tx_id: row.txHash,
           created_time: Number(row.blockTimestamp) * 1000,
         };
-      }),
+      })
+      .filter(
+        (row) => !wantedSide || wantedSide === "All" || row.side === wantedSide,
+      );
+    const size = Math.max(1, Number(location.searchParams.get("size") ?? 50));
+    const page = Math.max(1, Number(location.searchParams.get("page") ?? 1));
+    return success({
+      rows: rows.slice((page - 1) * size, page * size),
+      meta: {
+        current_page: page,
+        records_per_page: size,
+        total: rows.length,
+      },
     });
   }
   if (path.endsWith("/client/statistics/daily") && state.dailyPnl)

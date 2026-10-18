@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo } from "react";
 import { useTranslation } from "@paxeer-network/i18n";
-import { AssetHistoryStatusEnum } from "@paxeer-network/types";
+import {
+  AssetHistorySideEnum,
+  AssetHistoryStatusEnum,
+} from "@paxeer-network/types";
 import {
   capitalizeFirstLetter,
   Text,
@@ -128,6 +131,9 @@ export const useAssetHistoryColumns = (options: Options) => {
         rule: "price",
         render: (value, record) => {
           const netAmount = new Decimal(value).minus(record.fee ?? 0);
+          const rowIsDeposit = record.side
+            ? record.side !== AssetHistorySideEnum.WITHDRAW
+            : isDeposit;
           return (
             <Text.numeral
               dp={record.decimals}
@@ -136,7 +142,7 @@ export const useAssetHistoryColumns = (options: Options) => {
               showIdentifier
               padding={false}
             >
-              {isDeposit ? netAmount.toNumber() : netAmount.neg().toNumber()}
+              {rowIsDeposit ? netAmount.toNumber() : netAmount.neg().toNumber()}
             </Text.numeral>
           );
         },

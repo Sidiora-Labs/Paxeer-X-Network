@@ -37,6 +37,11 @@ import { useTestnetChainsStore } from "../provider/store/chainInfoTestStore";
 import { useMainTokenStore } from "../provider/store/mainTokenStore";
 import { useTestTokenStore } from "../provider/store/testTokenStore";
 import { useMarketStore } from "../paxeer-network/useMarket/market.store";
+export function walletPositions(rows: any[], address?: string | null) {
+  return rows.filter(
+    (row) => row.userAddress?.toLowerCase() === address?.toLowerCase(),
+  );
+}
 export function NativeRuntime() {
   const wallet = useWagmiAccount();
   const feedMarkets = useMarketsSnapshot();
@@ -106,10 +111,7 @@ export function NativeRuntime() {
           : "ISOLATED"
         : undefined,
       markets,
-      positions: portfolio.positions.filter(
-        (row) =>
-          row.userAddress?.toLowerCase() === wallet.address?.toLowerCase(),
-      ),
+      positions: walletPositions(portfolio.positions, wallet.address),
       totalVaultUsd: portfolio.isLoading ? null : portfolio.totalVaultUsd,
       freeCollateral: portfolio.isLoading ? null : portfolio.freeCollateral,
       unrealizedPnl: portfolio.isLoading ? null : portfolio.unrealizedPnl,
