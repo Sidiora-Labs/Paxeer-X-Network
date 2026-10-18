@@ -16463,7 +16463,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1.13]
 title = "Build quote results for PECOR and the quoter"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["4.1.6", "4.1.12"]
