@@ -1,0 +1,8 @@
+[submodule "core/deps/geth/tests/testdata"]
+	path = core/deps/geth/tests/testdata
+	url = https://github.com/ethereum/tests
+	shallow = true
+[submodule "core/deps/geth/tests/evm-benchmarks"]
+	path = core/deps/geth/tests/evm-benchmarks
+	url = https://github.com/ipsilon/evm-benchmarks
+	shallow = true
