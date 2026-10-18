@@ -287,6 +287,13 @@ func TestVersionSwitchHeightSelection(t *testing.T) {
 	below := ctx.WithBlockHeight(doneHeight - 1)
 	served(below, legacy)
 	require.Equal(t, app.ActivationUpgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(below)[exchange])
+	for _, height := range []int64{doneHeight, doneHeight + 1} {
+		for _, tracing := range []bool{false, true} {
+			inactive := ctx.WithBlockHeight(height).WithIsTracing(tracing)
+			served(inactive, legacy)
+			require.Equal(t, app.ActivationUpgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(inactive)[exchange])
+		}
+	}
 
 	// The v6.12.0 handler sets the flag at 1000.
 	at := ctx.WithBlockHeight(doneHeight)
