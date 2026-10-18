@@ -81,7 +81,8 @@ func (k *Keeper) initGenesis(ctx sdk.Context, gs types.GenesisState) error {
 		store.Set(types.VenueVolumeKey(bucket.Day), wordBytes(bucket.VolumeUsd))
 	}
 	for _, cooldown := range gs.LiquidationCooldowns {
-		store.Set(types.LiquidationCooldownKey(cooldown.PositionID), binary.BigEndian.AppendUint64(nil, cooldown.LastSliceTime))
+		store.Set(types.LiquidationCooldownKey(cooldown.PositionID),
+			types.LiquidationCooldownValue(cooldown.LastSliceTime, cooldown.SliceBasis))
 	}
 	for _, attached := range gs.AttachedTpSls {
 		store.Set(types.AttachedTpSlKey(attached.PositionID),
@@ -333,10 +334,11 @@ func (k *Keeper) exportGenesis(ctx sdk.Context) (*types.GenesisState, error) {
 		}, wordLength},
 		{"liquidation cooldown", types.LiquidationCooldownPrefix, wordLength, func(key, value []byte) error {
 			gs.LiquidationCooldowns = append(gs.LiquidationCooldowns, types.LiquidationCooldown{
-				PositionID: *wordOf(key), LastSliceTime: binary.BigEndian.Uint64(value),
+				PositionID: *wordOf(key), LastSliceTime: binary.BigEndian.Uint64(value[:uint64Length]),
+				SliceBasis: *wordOf(value[uint64Length:]),
 			})
 			return nil
-		}, uint64Length},
+		}, types.LiquidationCooldownValueLength},
 		{"attached TP/SL", types.AttachedTpSlPrefix, wordLength, func(key, value []byte) error {
 			gs.AttachedTpSls = append(gs.AttachedTpSls, types.AttachedTpSl{
 				PositionID: *wordOf(key), TakeProfitOrderID: *wordOf(value[:wordLength]),

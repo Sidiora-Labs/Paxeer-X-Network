@@ -1,7 +1,6 @@
 package keeper
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
@@ -328,7 +327,7 @@ func (k *Keeper) CloseBackstopPositions(ctx sdk.Context) (BackstopCloseResult, e
 		if !fresh {
 			continue
 		}
-		large, closeBase, err := k.liquidationCloseSize(ctx, params, position)
+		large, closeBase, basis, err := k.liquidationCloseSize(ctx, params, position)
 		if err != nil {
 			return result, err
 		}
@@ -342,7 +341,7 @@ func (k *Keeper) CloseBackstopPositions(ctx sdk.Context) (BackstopCloseResult, e
 			}
 		}
 		cacheCtx, write := ctx.CacheContext()
-		events, err := k.backstopClose(cacheCtx, params, position, closeBase, large, now)
+		events, err := k.backstopClose(cacheCtx, params, position, closeBase, basis, large, now)
 		if errors.Is(err, types.ErrNoLiquidity) || errors.Is(err, types.ErrSlippageExceeded) {
 			continue
 		}
@@ -360,8 +359,8 @@ func (k *Keeper) CloseBackstopPositions(ctx sdk.Context) (BackstopCloseResult, e
 // backstopClose matches one reduce-only IOC market order of closeBase of the
 // fund against the book, keeps the slice time of a large position that stays
 // open, and books the change of the fund's collateral and deficit.
-func (k *Keeper) backstopClose(ctx sdk.Context, params types.Params, position types.Position, closeBase uint256.Int,
-	large bool, now uint64) ([]types.EventRecord, error) {
+func (k *Keeper) backstopClose(ctx sdk.Context, params types.Params, position types.Position, closeBase,
+	basis uint256.Int, large bool, now uint64) ([]types.EventRecord, error) {
 	market, err := k.GetMarket(ctx, position.MarketID)
 	if err != nil {
 		return nil, err
@@ -389,13 +388,7 @@ func (k *Keeper) backstopClose(ctx sdk.Context, params types.Params, position ty
 	if err != nil {
 		return nil, err
 	}
-	store := k.store(ctx)
-	cooldownKey := types.LiquidationCooldownKey(position.ID)
-	if store.Has(types.PositionKey(position.ID)) && large {
-		store.Set(cooldownKey, binary.BigEndian.AppendUint64(nil, now))
-	} else {
-		store.Delete(cooldownKey)
-	}
+	k.liquidationRecordSlice(ctx, position.ID, large, now, basis)
 	after, err := k.insuranceFundAccount(ctx)
 	if err != nil {
 		return nil, err

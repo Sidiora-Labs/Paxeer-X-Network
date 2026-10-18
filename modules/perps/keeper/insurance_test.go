@@ -362,7 +362,7 @@ func TestInsuranceClosesBackstop(t *testing.T) {
 		contributionEvent(g.usdl, 2_983_530_000, keeper.InsuranceSourceBackstopProfit),
 	}, result.Events)
 	require.Equal(t, insuranceBase(240_000), g.readPosition(largeID).SizeBase)
-	require.Equal(t, insuranceUint64(uint64(insuranceGenesisTime.Unix())),
+	require.Equal(t, types.LiquidationCooldownValue(uint64(insuranceGenesisTime.Unix()), insuranceBase(300_000)),
 		g.ctx.KVStore(g.key).Get(types.LiquidationCooldownKey(largeID)))
 
 	g.at(10 * time.Second)

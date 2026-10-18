@@ -115,7 +115,8 @@ func scenarioGenesis() types.GenesisState {
 		{Account: genesisB, Day: 20_833, MakerVolumeUsd: genesisE18(180_000)},
 	}
 	gs.VenueVolumeBuckets = []types.VenueVolumeBucket{{Day: 20_833, VolumeUsd: genesisE18(210_000)}}
-	gs.LiquidationCooldowns = []types.LiquidationCooldown{{PositionID: genesisWord(2), LastSliceTime: 1_800_000_050}}
+	gs.LiquidationCooldowns = []types.LiquidationCooldown{{PositionID: genesisWord(2), LastSliceTime: 1_800_000_050,
+		SliceBasis: genesisE18(3)}}
 	gs.AttachedTpSls = []types.AttachedTpSl{
 		{PositionID: genesisWord(1), TakeProfitOrderID: genesisWord(6), StopLossOrderID: genesisWord(7)},
 	}

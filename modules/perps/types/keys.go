@@ -144,6 +144,15 @@ func LiquidationCooldownKey(positionID uint256.Int) []byte {
 	return join(LiquidationCooldownPrefix, uint256Bytes(positionID))
 }
 
+// LiquidationCooldownValueLength is the length of a prefix 0x0F value: the
+// block time of the last slice (8 bytes) and the slice basis in base units
+// (32 bytes).
+const LiquidationCooldownValueLength = 8 + 32
+
+func LiquidationCooldownValue(lastSliceTime uint64, sliceBasis uint256.Int) []byte {
+	return join(uint64Bytes(lastSliceTime), uint256Bytes(sliceBasis))
+}
+
 func SequenceKey(name byte) []byte { return join(SequencePrefix, []byte{name}) }
 
 func AttachedTpSlKey(positionID uint256.Int) []byte {

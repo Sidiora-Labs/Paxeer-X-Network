@@ -2,6 +2,7 @@ package keeper_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"math/big"
 	"sort"
 	"testing"
@@ -10,6 +11,9 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/launchpadtest"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
+	pricefeedtestutil "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/testutil"
+	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
@@ -20,12 +24,15 @@ import (
 var liquidationGenesisTime = time.Unix(1_800_000_000, 0).UTC()
 
 // liquidationEnv is the perps keeper over the test application's EVM keeper
-// with its own store, one BTC market of class A and a fresh mark.
+// and the real pricefeed keeper, each with its own store, one BTC market of
+// class A and a fresh mark.
 type liquidationEnv struct {
 	t        *testing.T
 	ctx      sdk.Context
 	k        *keeper.Keeper
 	key      sdk.StoreKey
+	pfKey    sdk.StoreKey
+	mark     uint256.Int
 	sequence uint64
 	nextID   uint64
 }
@@ -35,10 +42,13 @@ func newLiquidationEnv(t *testing.T, mark uint256.Int) *liquidationEnv {
 	app := testkeeper.EVMTestApp
 	ctx := app.GetContextForDeliverTx([]byte{}).WithBlockTime(liquidationGenesisTime)
 	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
+	pfKey := sdk.NewKVStoreKey(pricefeedtypes.StoreKey)
+	pricefeed := pricefeedkeeper.NewKeeper(pfKey, app.StakingKeeper, app.AccountKeeper, &app.EvmKeeper)
+	ctx = pricefeedtestutil.WithPriceFeedStore(ctx, pfKey)
 	key := sdk.NewKVStoreKey(types.StoreKey)
-	k := keeper.NewKeeper(key, &app.EvmKeeper, nil)
+	k := keeper.NewKeeper(key, &app.EvmKeeper, pricefeed)
 	ctx = launchpadtest.WithStore(ctx, key)
-	e := &liquidationEnv{t: t, ctx: ctx, k: k, key: key, nextID: 100}
+	e := &liquidationEnv{t: t, ctx: ctx, k: k, key: key, pfKey: pfKey, nextID: 100}
 	require.NoError(t, k.SetMarket(ctx, k.Authority(), types.Market{
 		ID: 0, Symbol: "BTC", Name: "Bitcoin", OracleSymbol: "BTC", SzDecimals: 5, PxDecimals: 1,
 		MaxLeverage: types.VenueMaxLeverage, TierClass: types.TierClassA,
@@ -62,7 +72,16 @@ func baseAmount(lots uint64) uint256.Int {
 	return *new(uint256.Int).Mul(uint256.NewInt(lots), uint256.NewInt(10_000_000_000_000))
 }
 
+// setMark stores the market state at mark and the pricefeed aggregate of
+// the market at the block time, so its price reads fresh.
 func (e *liquidationEnv) setMark(mark uint256.Int) {
+	e.mark = mark
+	bz, err := json.Marshal(pricefeedtypes.Aggregate{
+		IndexPrice: sdk.NewIntFromBigInt(mark.ToBig()), MarkPrice: sdk.NewIntFromBigInt(mark.ToBig()),
+		Basis: sdk.ZeroInt(), TimestampMs: uint64(e.ctx.BlockTime().UnixMilli()), Height: e.ctx.BlockHeight(), Sources: 1,
+	})
+	require.NoError(e.t, err)
+	e.ctx.KVStore(e.pfKey).Set(pricefeedtypes.AggregateKey(0), bz)
 	state := types.MarketState{MarketID: 0, IndexPrice: mark, PricefeedMark: mark, Fresh: true, MarkPrice: mark,
 		LastTradePrice: mark, PriceTimestampMs: uint64(e.ctx.BlockTime().UnixMilli())}
 	if bz := e.ctx.KVStore(e.key).Get(types.MarketStateKey(0)); bz != nil {
@@ -84,6 +103,7 @@ func (e *liquidationEnv) addOpenInterest(size uint256.Int) {
 
 func (e *liquidationEnv) at(d time.Duration) {
 	e.ctx = e.ctx.WithBlockTime(liquidationGenesisTime.Add(d))
+	e.setMark(e.mark)
 }
 
 func (e *liquidationEnv) address(n uint64) common.Address {
@@ -200,7 +220,12 @@ func TestLiquidationAccountLevel(t *testing.T) {
 	caller := e.address(3)
 	events, err := e.k.Liquidate(e.ctx, caller, positionID)
 	require.NoError(t, err)
-	require.Equal(t, []types.EventRecord{liquidationEvent(positionID, holder, mark, caller)}, events)
+	require.Equal(t, []types.EventRecord{liquidationEvent(positionID, holder, mark, caller)},
+		eventsNamed(events, types.EventLiquidation))
+	require.Equal(t, liquidationEvent(positionID, holder, mark, caller), events[len(events)-1])
+	require.Equal(t, types.EventRecord{Name: types.EventOrderCancelled, Args: []any{restingAsk.ToBig(), holder}}, events[0],
+		"resting orders are cancelled before the closing order")
+	require.Len(t, eventsNamed(events, types.EventFill), 1, "one reduce-only IOC order closes the position")
 
 	store := e.ctx.KVStore(e.key)
 	_, open := e.positionSize(positionID)
@@ -231,12 +256,15 @@ func TestLiquidationSlices(t *testing.T) {
 
 	events, err := e.k.Liquidate(e.ctx, caller, positionID)
 	require.NoError(t, err)
-	require.Equal(t, []types.EventRecord{liquidationEvent(positionID, holder, mark, caller)}, events)
+	require.Equal(t, []types.EventRecord{liquidationEvent(positionID, holder, mark, caller)},
+		eventsNamed(events, types.EventLiquidation))
+	require.Len(t, eventsNamed(events, types.EventFill), 1)
 	size, open := e.positionSize(positionID)
 	require.True(t, open)
 	require.Equal(t, baseAmount(1_600_000), size, "the first slice closes 200,000 USD")
 	last := e.ctx.KVStore(e.key).Get(types.LiquidationCooldownKey(positionID))
-	require.Equal(t, uint64ToBytes(uint64(liquidationGenesisTime.Unix())), last)
+	require.Equal(t, append(uint64ToBytes(uint64(liquidationGenesisTime.Unix())), wordBytes(baseAmount(2_000_000))...), last,
+		"the cooldown record holds the slice time and the original size as slice basis")
 
 	e.at(10 * time.Second)
 	_, err = e.k.Liquidate(e.ctx, caller, positionID)
@@ -247,9 +275,46 @@ func TestLiquidationSlices(t *testing.T) {
 	e.at(30 * time.Second)
 	events, err = e.k.Liquidate(e.ctx, caller, positionID)
 	require.NoError(t, err)
-	require.Len(t, events, 1)
+	require.Len(t, eventsNamed(events, types.EventLiquidation), 1)
+	require.Len(t, eventsNamed(events, types.EventFill), 1)
 	size, _ = e.positionSize(positionID)
 	require.Equal(t, baseAmount(1_200_000), size, "at t + 30 another 200,000 USD closes")
+
+	// With 455 USD of collateral the account stays below maintenance after
+	// each 90 USD taker fee, so every 30 seconds one 200,000 USD slice of the
+	// original 1,000,000 USD closes; the fifth is capped at the remaining
+	// 200,000 USD, closes the position and clears the cooldown record.
+	f := newLiquidationEnv(t, mark)
+	sliced := f.pair(7, holder, 455_000_000, baseAmount(2_000_000), mark)
+	f.maker(2, mark, baseAmount(2_000_000))
+	cooldownKey := types.LiquidationCooldownKey(sliced)
+	for i := uint64(1); i <= 4; i++ {
+		f.at(time.Duration(i-1) * 30 * time.Second)
+		events, err = f.k.Liquidate(f.ctx, caller, sliced)
+		require.NoError(t, err, "slice %d", i)
+		require.Equal(t, []types.EventRecord{liquidationEvent(sliced, holder, mark, caller)},
+			eventsNamed(events, types.EventLiquidation))
+		require.Len(t, eventsNamed(events, types.EventFill), 1)
+		size, open = f.positionSize(sliced)
+		require.True(t, open)
+		require.Equal(t, baseAmount(2_000_000-400_000*i), size, "slice %d closes 20 percent of the original size", i)
+		require.Equal(t, append(uint64ToBytes(uint64(f.ctx.BlockTime().Unix())), wordBytes(baseAmount(2_000_000))...),
+			f.ctx.KVStore(f.key).Get(cooldownKey), "slice %d keeps the original slice basis", i)
+	}
+	f.at(100 * time.Second)
+	_, err = f.k.Liquidate(f.ctx, caller, sliced)
+	require.ErrorIs(t, err, types.ErrLiquidationCooldown)
+	f.at(120 * time.Second)
+	events, err = f.k.Liquidate(f.ctx, caller, sliced)
+	require.NoError(t, err)
+	require.Equal(t, []types.EventRecord{liquidationEvent(sliced, holder, mark, caller)},
+		eventsNamed(events, types.EventLiquidation))
+	require.Len(t, eventsNamed(events, types.EventFill), 1)
+	_, open = f.positionSize(sliced)
+	require.False(t, open, "the last slice is capped at the remaining size and closes the position")
+	require.Nil(t, f.ctx.KVStore(f.key).Get(cooldownKey), "a full close clears the cooldown record")
+	require.Zero(t, f.readAccount(holder).PositionCount)
+	require.Equal(t, *uint256.NewInt(5_000_000), f.readAccount(holder).Collateral)
 }
 
 func uint64ToBytes(value uint64) []byte {
@@ -295,12 +360,14 @@ func TestLiquidationPerBlockBound(t *testing.T) {
 	require.Equal(t, uint64(64), result.Slices)
 	require.Equal(t, uint64(64), result.Visited)
 	require.LessOrEqual(t, result.Visited, params.LiquidationScanPerBlock)
-	require.Len(t, result.Events, 64)
+	liquidations := eventsNamed(result.Events, types.EventLiquidation)
+	require.Len(t, liquidations, 64)
+	require.Len(t, eventsNamed(result.Events, types.EventFill), 64)
 	for i, entry := range order {
 		_, open := e.positionSize(holders[entry.account])
 		require.Equal(t, i >= 64, open, "accounts liquidate in ascending bucket order, entry %d", i)
 	}
-	for i, event := range result.Events {
+	for i, event := range liquidations {
 		require.Equal(t, liquidationEvent(holders[order[i].account], order[i].account, mark, common.Address{}), event)
 	}
 

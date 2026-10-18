@@ -74,7 +74,7 @@ func (k *Keeper) Liquidate(ctx sdk.Context, caller common.Address, positionID ui
 	if err != nil {
 		return nil, err
 	}
-	large, _, err := k.liquidationCloseSize(ctx, params, named)
+	large, _, _, err := k.liquidationCloseSize(ctx, params, named)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +257,7 @@ func (k *Keeper) liquidateAccount(ctx sdk.Context, params types.Params, account,
 		if slices >= sliceBudget {
 			break
 		}
-		large, closeBase, err := k.liquidationCloseSize(ctx, params, position)
+		large, closeBase, basis, err := k.liquidationCloseSize(ctx, params, position)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -270,7 +270,7 @@ func (k *Keeper) liquidateAccount(ctx sdk.Context, params types.Params, account,
 				continue
 			}
 		}
-		closed, err := k.liquidationClose(ctx, position, closeBase, large, keeper, now)
+		closed, err := k.liquidationClose(ctx, position, closeBase, basis, large, keeper, now)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -281,9 +281,10 @@ func (k *Keeper) liquidateAccount(ctx sdk.Context, params types.Params, account,
 }
 
 // liquidationClose matches one reduce-only IOC market order of closeBase
-// against the book, records the slice time of a large position that stays
-// open and drops the cooldown of a position the order closed.
-func (k *Keeper) liquidationClose(ctx sdk.Context, position types.Position, closeBase uint256.Int, large bool,
+// against the book, records the slice time and slice basis of a large
+// position that stays open and drops the cooldown of a position the order
+// closed.
+func (k *Keeper) liquidationClose(ctx sdk.Context, position types.Position, closeBase, basis uint256.Int, large bool,
 	keeper common.Address, now uint64) ([]types.EventRecord, error) {
 	market, err := k.GetMarket(ctx, position.MarketID)
 	if err != nil {
@@ -312,13 +313,7 @@ func (k *Keeper) liquidationClose(ctx sdk.Context, position types.Position, clos
 	if err != nil {
 		return nil, err
 	}
-	store := k.store(ctx)
-	cooldownKey := types.LiquidationCooldownKey(position.ID)
-	if store.Has(types.PositionKey(position.ID)) && large {
-		store.Set(cooldownKey, binary.BigEndian.AppendUint64(nil, now))
-	} else {
-		store.Delete(cooldownKey)
-	}
+	k.liquidationRecordSlice(ctx, position.ID, large, now, basis)
 	return append(matched.Events, types.EventRecord{
 		Name: types.EventLiquidation,
 		Args: []any{position.ID.ToBig(), position.Account, new(big.Int).SetUint64(position.MarketID),
@@ -327,47 +322,86 @@ func (k *Keeper) liquidationClose(ctx sdk.Context, position types.Position, clos
 }
 
 // liquidationCloseSize reports whether the position's notional at mark is
-// above the slice threshold and the base size its closing order sends: the
-// slice share of its size rounded down to the lot when large, else its size.
-func (k *Keeper) liquidationCloseSize(ctx sdk.Context, params types.Params, position types.Position) (bool, uint256.Int, error) {
+// above the slice threshold, the base size its closing order sends and the
+// slice basis: when large, the slice share of the basis rounded down to the
+// lot and capped at the position's size, else its size. The basis is the size
+// of the position at its first slice, read from its cooldown record, or its
+// current size before any slice.
+func (k *Keeper) liquidationCloseSize(ctx sdk.Context, params types.Params,
+	position types.Position) (bool, uint256.Int, uint256.Int, error) {
 	market, err := k.GetMarket(ctx, position.MarketID)
 	if err != nil {
-		return false, uint256.Int{}, err
+		return false, uint256.Int{}, uint256.Int{}, err
 	}
 	mark, err := k.liquidationMark(ctx, position.MarketID)
 	if err != nil {
-		return false, uint256.Int{}, err
+		return false, uint256.Int{}, uint256.Int{}, err
 	}
 	if liquidationNotional(position.SizeBase, mark).Cmp(params.LiquidationSliceThresholdUsd.BigInt()) <= 0 {
-		return false, position.SizeBase, nil
+		return false, position.SizeBase, position.SizeBase, nil
+	}
+	_, basis, found, err := k.liquidationCooldownRecord(ctx, position.ID)
+	if err != nil {
+		return false, uint256.Int{}, uint256.Int{}, err
+	}
+	if !found {
+		basis = position.SizeBase
 	}
 	lot := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(types.USDDecimals)-int64(market.SzDecimals)), nil)
-	slice := new(big.Int).Mul(position.SizeBase.ToBig(), new(big.Int).SetUint64(params.LiquidationSlicePpm))
+	slice := new(big.Int).Mul(basis.ToBig(), new(big.Int).SetUint64(params.LiquidationSlicePpm))
 	slice.Quo(slice, big.NewInt(types.PpmDenominator))
 	slice.Sub(slice, new(big.Int).Rem(slice, lot))
 	if slice.Sign() == 0 {
 		slice.Set(lot)
 	}
 	if slice.Cmp(position.SizeBase.ToBig()) >= 0 {
-		return true, position.SizeBase, nil
+		return true, position.SizeBase, basis, nil
 	}
 	out, _ := uint256.FromBig(slice)
-	return true, *out, nil
+	return true, *out, basis, nil
 }
 
 // liquidationCooling reports whether the position's last slice lies less than
 // Params.LiquidationCooldownSeconds of block time before now.
 func (k *Keeper) liquidationCooling(ctx sdk.Context, params types.Params, positionID uint256.Int, now uint64) (bool, error) {
+	last, _, found, err := k.liquidationCooldownRecord(ctx, positionID)
+	if err != nil || !found {
+		return false, err
+	}
+	return now < last || now-last < params.LiquidationCooldownSeconds, nil
+}
+
+// liquidationCooldownRecord reads the prefix 0x0F record of the position: the
+// block time of its last slice and its slice basis in base units.
+func (k *Keeper) liquidationCooldownRecord(ctx sdk.Context, positionID uint256.Int) (uint64, uint256.Int, bool, error) {
 	bz := k.store(ctx).Get(types.LiquidationCooldownKey(positionID))
 	if bz == nil {
-		return false, nil
+		return 0, uint256.Int{}, false, nil
 	}
-	if len(bz) != 8 {
-		return false, fmt.Errorf("%w: liquidation cooldown of position %s holds %d bytes",
+	if len(bz) != types.LiquidationCooldownValueLength {
+		return 0, uint256.Int{}, false, fmt.Errorf("%w: liquidation cooldown of position %s holds %d bytes",
 			types.ErrInvalidParams, positionID.Dec(), len(bz))
 	}
-	last := binary.BigEndian.Uint64(bz)
-	return now < last || now-last < params.LiquidationCooldownSeconds, nil
+	var basis uint256.Int
+	basis.SetBytes32(bz[8:])
+	if basis.IsZero() {
+		return 0, uint256.Int{}, false, fmt.Errorf("%w: liquidation cooldown of position %s holds a zero slice basis",
+			types.ErrInvalidParams, positionID.Dec())
+	}
+	return binary.BigEndian.Uint64(bz[:8]), basis, true, nil
+}
+
+// liquidationRecordSlice keeps the slice time and slice basis of a large
+// position that stays open after a slice and drops the cooldown record of a
+// position that closed or was closed whole.
+func (k *Keeper) liquidationRecordSlice(ctx sdk.Context, positionID uint256.Int, large bool, now uint64, basis uint256.Int) {
+	store := k.store(ctx)
+	cooldownKey := types.LiquidationCooldownKey(positionID)
+	if store.Has(types.PositionKey(positionID)) && large {
+		store.Set(cooldownKey, types.LiquidationCooldownValue(now, basis))
+	} else {
+		store.Delete(cooldownKey)
+	}
 }
 
 // liquidationRebucket recomputes the account's equity and maintenance margin

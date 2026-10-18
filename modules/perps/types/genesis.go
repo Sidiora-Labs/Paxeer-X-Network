@@ -73,6 +73,7 @@ type VenueVolumeBucket struct {
 type LiquidationCooldown struct {
 	PositionID    uint256.Int `json:"position_id"`
 	LastSliceTime uint64      `json:"last_slice_time"`
+	SliceBasis    uint256.Int `json:"slice_basis"`
 }
 
 // AttachedTpSl is one entry of prefix 0x11; an order id of 0 means none.
@@ -419,6 +420,9 @@ func (idx genesisIndex) validatePositionIndexes(gs GenesisState) error {
 		}
 		if cooldowns[entry.PositionID] {
 			return invalidGenesis("duplicate liquidation cooldown of position %s", entry.PositionID.Dec())
+		}
+		if entry.SliceBasis.IsZero() {
+			return invalidGenesis("liquidation cooldown of position %s without a slice basis", entry.PositionID.Dec())
 		}
 		cooldowns[entry.PositionID] = true
 	}

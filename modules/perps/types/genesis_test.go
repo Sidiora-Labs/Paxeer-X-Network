@@ -60,7 +60,8 @@ func validGenesis() types.GenesisState {
 		RankScore: e18(5), OpenedAt: 1_800_000_000,
 	}}
 	gs.AccountMarketPositions = []types.AccountMarketPositionEntry{{Account: holderA, MarketID: 0, PositionID: word(7)}}
-	gs.LiquidationCooldowns = []types.LiquidationCooldown{{PositionID: word(7), LastSliceTime: 1_800_000_050}}
+	gs.LiquidationCooldowns = []types.LiquidationCooldown{{PositionID: word(7), LastSliceTime: 1_800_000_050,
+		SliceBasis: word(16_500_000_000_000_000)}}
 	gs.AttachedTpSls = []types.AttachedTpSl{{PositionID: word(7), StopLossOrderID: word(3)}}
 	gs.MarginRatioEntries = []types.MarginRatioEntry{{Bucket: 140, Account: holderA}}
 	gs.AdlRankEntries = []types.AdlRankEntry{{MarketID: 0, Side: types.SideBuy, RankScore: e18(5), PositionID: word(7)}}

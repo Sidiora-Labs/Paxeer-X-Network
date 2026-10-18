@@ -1,7 +1,6 @@
 package perps_test
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"go/ast"
 	"go/parser"
@@ -782,9 +781,8 @@ func TestRevertLiquidationCooldown(t *testing.T) {
 	e.fund(revertA, 400_000_000)
 	e.fund(revertB, 1_000_000_000_000)
 	e.seedPair(7, revertA, revertB, 0, revertE18(15), 60_000, 1_000)
-	sliced := make([]byte, 8)
-	binary.BigEndian.PutUint64(sliced, revertNow-10)
-	e.store().Set(perpstypes.LiquidationCooldownKey(*uint256.NewInt(7)), sliced)
+	e.store().Set(perpstypes.LiquidationCooldownKey(*uint256.NewInt(7)),
+		perpstypes.LiquidationCooldownValue(revertNow-10, revertWord(revertE18(15))))
 	ret, err := e.call(revertB, "liquidate", big.NewInt(7))
 	e.requireRevert("PerpsLiquidationCooldown", ret, err)
 	account, ok := e.account(revertA)
