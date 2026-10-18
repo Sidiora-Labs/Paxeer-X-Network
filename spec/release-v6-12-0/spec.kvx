@@ -18755,7 +18755,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1.13]
 title = "Write the module and its mid-block hook"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["5.1.8", "5.1.10", "5.1.11"]
