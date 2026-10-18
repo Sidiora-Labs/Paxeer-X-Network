@@ -6566,7 +6566,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.1.7]
 title = "Rewrite fee accrual and distribution over the FeeAccumulator ledger"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["2.1.1", "2.1.9", "2.1.14", "2.1.16"]
