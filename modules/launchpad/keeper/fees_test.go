@@ -355,4 +355,13 @@ func TestLiabilityBacking(t *testing.T) {
 	require.Equal(t, int64(22_600), f.liabilities())
 	require.Equal(t, f.ledger(f.fees), f.liabilities())
 	require.ErrorIs(t, f.k.RecordOpticalSurplus(f.ctx, f.denom, i(1)), types.ErrInsufficientSurplus)
+	f.fund(1_000)
+	protocolCut, poolCut := f.record(1_000)
+	require.Equal(t, int64(100), protocolCut)
+	require.Equal(t, int64(720), poolCut)
+	require.Equal(t, int64(22_320), f.accumulated())
+	require.Equal(t, int64(1_180), f.surplus())
+	require.Equal(t, int64(23_500), f.liabilities())
+	require.Equal(t, f.ledger(f.fees), f.liabilities())
+	require.Equal(t, int64(3_100), f.ledger(keeper.TreasuryHeldLedger()))
 }
