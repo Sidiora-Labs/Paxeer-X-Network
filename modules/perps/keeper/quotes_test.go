@@ -85,9 +85,10 @@ func newQuotesFixture(t *testing.T) quotesFixture {
 	}
 	orderID := uint256.NewInt(1).Bytes32()
 	positionID := uint256.NewInt(7).Bytes32()
+	placement := uint256.NewInt(1).Bytes32()
 	ctx.KVStore(key).Set(types.SequenceKey(types.SequenceOrderID), orderID[:])
 	ctx.KVStore(key).Set(types.SequenceKey(types.SequencePositionID), positionID[:])
-	ctx.KVStore(key).Set(types.SequenceKey(types.SequencePlacement), binary.BigEndian.AppendUint64(nil, 1))
+	ctx.KVStore(key).Set(types.SequenceKey(types.SequencePlacement), placement[:])
 	ctx.KVStore(key).Set(types.VenueBooksKey, (types.VenueBooks{}).Marshal())
 	ctx.KVStore(transientKey).Set([]byte("receipt"), []byte("retained"))
 	return quotesFixture{k, ctx, key, feedKey, transientKey, common.Address{19: 1}}
