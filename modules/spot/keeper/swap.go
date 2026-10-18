@@ -355,7 +355,7 @@ func (k *Keeper) swapExactInput(ctx sdk.Context, user, input, output common.Addr
 			"TieredFeeApplied(address,address,uint256,uint256,uint256)",
 			[]common.Address{user, output}, volume.BigInt(), new(big.Int).SetUint64(feeBps), fee))
 	}
-	if impactBps > 0 {
+	if deduction.Sign() > 0 {
 		result.Logs = append(result.Logs, swapLog(types.PECORAddress,
 			"PriceImpactApplied(address,address,uint256,uint256)",
 			[]common.Address{user, output}, new(big.Int).SetUint64(impactBps), deduction))

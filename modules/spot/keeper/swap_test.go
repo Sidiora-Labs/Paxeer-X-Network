@@ -150,6 +150,15 @@ func TestSwapLiquidityCheckedOnGross(t *testing.T) {
 			require.Equal(t, "1000000000", result.AmountIn.String())
 			require.Equal(t, "2000000000", result.GrossOutput.String())
 			require.Equal(t, "1974060000", result.AmountOut.String())
+			impactEvent := result.Logs[1]
+			require.Equal(t, common.HexToAddress(types.PECORAddress), impactEvent.Address)
+			require.Equal(t, []common.Hash{
+				crypto.Keccak256Hash([]byte("PriceImpactApplied(address,address,uint256,uint256)")),
+				common.BytesToHash(f.user.Bytes()), common.BytesToHash(f.pax.Bytes()),
+			}, impactEvent.Topics)
+			require.Len(t, impactEvent.Data, 64)
+			require.Equal(t, uint64(100), new(big.Int).SetBytes(impactEvent.Data[:32]).Uint64())
+			require.Equal(t, "19940000", new(big.Int).SetBytes(impactEvent.Data[32:]).String())
 			require.Equal(t, "0", bank.GetBalance(f.ctx, f.account, "uquote").Amount.String())
 			require.Equal(t, "1974060000", bank.GetBalance(f.ctx, f.account, "uhpx").Amount.String())
 			var inputBook, outputBook types.TokenBook
@@ -171,6 +180,25 @@ func TestSwapLiquidityCheckedOnGross(t *testing.T) {
 			require.Equal(t, "1974060000", new(big.Int).SetBytes(event.Data[32:64]).String())
 			require.Equal(t, uint64(1), new(big.Int).SetBytes(event.Data[64:]).Uint64())
 		})
+	}
+}
+
+func TestSwapImpactRoundedToZeroDoesNotEmitEvent(t *testing.T) {
+	f := newSwapFixture(t, 100, 10000)
+	amount := sdk.OneInt()
+	quote, err := f.keeper.Price(f.ctx, common.HexToAddress(types.PECORAddress), f.stable, f.pax, amount)
+	require.NoError(t, err)
+	require.Greater(t, quote.ImpactBps, uint64(0))
+	require.True(t, quote.Deduction.IsZero())
+	require.True(t, quote.Net.IsPositive())
+
+	result, err := f.keeper.SwapExactIn(f.ctx, f.user, f.stable, f.pax, amount.BigInt(), new(big.Int), new(big.Int))
+	require.NoError(t, err)
+	require.Equal(t, quote.Net.BigInt(), result.AmountOut)
+	impactTopic := crypto.Keccak256Hash([]byte("PriceImpactApplied(address,address,uint256,uint256)"))
+	for _, event := range result.Logs {
+		require.NotEmpty(t, event.Topics)
+		require.NotEqual(t, impactTopic, event.Topics[0])
 	}
 }
 
