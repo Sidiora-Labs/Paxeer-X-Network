@@ -384,6 +384,14 @@ export async function nativeRequest(
       },
     });
   }
+  if (/\/internal_transfer_history$/.test(path)) {
+    const size = Math.max(1, Number(location.searchParams.get("size") ?? 50));
+    const page = Math.max(1, Number(location.searchParams.get("page") ?? 1));
+    return success({
+      rows: [],
+      meta: { current_page: page, records_per_page: size, total: 0 },
+    });
+  }
   if (path.endsWith("/client/statistics/daily") && state.dailyPnl)
     return success({ rows: state.dailyPnl });
   if (path.endsWith("/client/leverage"))
