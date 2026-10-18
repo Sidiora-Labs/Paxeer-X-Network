@@ -27508,7 +27508,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.2.11]
 title = "Chain explorer queries with network explorer links"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["7.1.4"]
