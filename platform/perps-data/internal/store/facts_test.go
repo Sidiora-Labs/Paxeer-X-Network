@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -276,4 +277,28 @@ FROM perps.protocol_events WHERE block = 410`,
 		c.want(`SELECT account = $1, tx_hash = $2 FROM perps.tx_actions WHERE block = 410 AND kind = 'Fill'`, []string{"true", "true"},
 			traderB.Bytes(), fill.TxHash.Bytes())
 	})
+}
+
+func TestTokenOfSpotRows(t *testing.T) {
+	usdl := common.HexToAddress("0x00000000000000000000000000000000000001a1")
+	pax := common.HexToAddress("0x00000000000000000000000000000000000002a2")
+	sid := common.HexToAddress("0x00000000000000000000000000000000000003a3")
+	stable := map[common.Address]bool{usdl: true, pax: false, sid: false}
+	for _, c := range []struct {
+		name string
+		row  decode.Row
+		want []common.Address
+	}{
+		{"sale_into_stablecoin", decode.SpotSimpleSwapRow{TokenIn: sid, TokenOut: usdl}, []common.Address{sid}},
+		{"buy_with_stablecoin", decode.SpotSimpleSwapRow{TokenIn: usdl, TokenOut: sid}, []common.Address{sid}},
+		{"token_to_token", decode.SpotSimpleSwapRow{TokenIn: pax, TokenOut: sid}, []common.Address{sid}},
+		{"native_swap_of_token", decode.SpotNativeSwapRow{TokenOther: sid}, []common.Address{sid, pax}},
+		{"native_swap_of_stablecoin", decode.SpotNativeSwapRow{TokenOther: usdl}, []common.Address{pax}},
+		{"market_order", decode.SpotMarketOrderRow{Stablecoin: usdl, Token: sid}, []common.Address{sid}},
+		{"tiered_fee", decode.SpotTieredFeeRow{TokenOut: usdl}, []common.Address{usdl}},
+	} {
+		if got := tokensOf(c.row, pax, stable); !slices.Equal(got, c.want) {
+			t.Errorf("%s: tokensOf = %v, want %v", c.name, got, c.want)
+		}
+	}
 }

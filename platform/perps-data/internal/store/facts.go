@@ -634,16 +634,78 @@ func put(ctx context.Context, tx *sql.Tx, policy delivery.Policy, subject, kind,
 	return nil
 }
 
-// tokenOf returns the spot token of a spot row.
-func tokenOf(row decode.Row) (common.Address, bool) {
-	for _, name := range []string{"Token", "TokenOther", "TokenOut", "TokenIn"} {
-		if v, ok := field(row, name); ok {
-			if a, ok := v.Interface().(common.Address); ok && a != (common.Address{}) {
-				return a, true
+// tokensOf returns the spot tokens whose subjects a spot row wakes, the first
+// one carrying the row's own event id. A simple swap wakes its tokenOut, or
+// its tokenIn when tokenOut is a stablecoin: the base token sold into it. A
+// native swap wakes its other token unless that is a stablecoin, and PAX (pax,
+// zero while unregistered), whose tape lists every native swap. Any other row
+// wakes its one token.
+func tokensOf(row decode.Row, pax common.Address, stable map[common.Address]bool) []common.Address {
+	var out []common.Address
+	add := func(a common.Address) {
+		if a != (common.Address{}) && !slices.Contains(out, a) {
+			out = append(out, a)
+		}
+	}
+	switch r := row.(type) {
+	case decode.SpotSimpleSwapRow:
+		if stable[r.TokenOut] {
+			add(r.TokenIn)
+		} else {
+			add(r.TokenOut)
+		}
+	case decode.SpotNativeSwapRow:
+		if !stable[r.TokenOther] {
+			add(r.TokenOther)
+		}
+		add(pax)
+		if len(out) == 0 {
+			add(r.TokenOther)
+		}
+	default:
+		for _, name := range []string{"Token", "TokenOther", "TokenOut", "TokenIn"} {
+			if v, ok := field(row, name); ok {
+				if a, ok := v.Interface().(common.Address); ok && a != (common.Address{}) {
+					add(a)
+					break
+				}
 			}
 		}
 	}
-	return common.Address{}, false
+	return out
+}
+
+const spotRegistrySQL = `SELECT token, is_stablecoin FROM perps.spot_token_registry WHERE kind = 'token_registered'
+ORDER BY block, tx_index, log_index, sub`
+
+// spotRegistry reads the registered spot tokens in tx: PAX, the first
+// registered non-stablecoin token, and the stablecoins.
+func spotRegistry(ctx context.Context, tx *sql.Tx) (common.Address, map[common.Address]bool, error) {
+	rows, err := tx.QueryContext(ctx, spotRegistrySQL)
+	if err != nil {
+		return common.Address{}, nil, fmt.Errorf("store: spot registry: %w", err)
+	}
+	defer rows.Close()
+	var pax common.Address
+	stable := map[common.Address]bool{}
+	for rows.Next() {
+		var (
+			raw      []byte
+			isStable bool
+		)
+		if err := rows.Scan(&raw, &isStable); err != nil {
+			return common.Address{}, nil, fmt.Errorf("store: spot registry: %w", err)
+		}
+		token := common.BytesToAddress(raw)
+		if !isStable && pax == (common.Address{}) {
+			pax = token
+		}
+		stable[token] = isStable
+	}
+	if err := rows.Err(); err != nil {
+		return common.Address{}, nil, fmt.Errorf("store: spot registry: %w", err)
+	}
+	return pax, stable, nil
 }
 
 // marketKind and userKind route the perps fact tables; the spot tables route
@@ -672,12 +734,18 @@ var (
 const orderMarketSQL = `SELECT market_id::text FROM perps.orders WHERE order_id = $1`
 
 // enqueue writes the outbox messages of one block: a fact row goes to its
-// market, spot token or account subject, the block to chain.block and each
-// tx_actions row to chain.tx. The ids of the chain messages carry
+// market, spot token (tokensOf) or account subject, the block to chain.block
+// and each tx_actions row to chain.tx. The ids of the chain messages carry
 // keccak256("perps-block" || hash) and keccak256("perps-tx" || hash) in the
-// hash slot, so they never meet the id of a fact row.
+// hash slot, and a spot row's message to each further token
+// keccak256("perps-spot" || hash || token), so they never meet the id of a
+// fact row.
 func enqueue(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Result, actions []txAction) error {
 	policy := Policy(chainID)
+	var (
+		pax    common.Address
+		stable map[common.Address]bool
+	)
 	placed := map[string]string{}
 	for _, d := range rows.Decoded {
 		for _, row := range d.Rows {
@@ -704,7 +772,15 @@ func enqueue(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Result, 
 					}
 				}
 			}
-			token, hasToken := tokenOf(row)
+			var tokens []common.Address
+			if spotKind[table] != "" {
+				if stable == nil {
+					if pax, stable, err = spotRegistry(ctx, tx); err != nil {
+						return err
+					}
+				}
+				tokens = tokensOf(row, pax, stable)
+			}
 			switch k, isMarket := marketKind[table]; {
 			case isMarket && hasMarket:
 				n, perr := strconv.ParseUint(market, 10, 64)
@@ -713,9 +789,9 @@ func enqueue(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Result, 
 				}
 				kind = k
 				subject, err = stream.MarketSubject(chainID, n, kind)
-			case spotKind[table] != "" && hasToken:
+			case len(tokens) > 0:
 				kind = spotKind[table]
-				subject, err = stream.SpotSubject(chainID, token, kind)
+				subject, err = stream.SpotSubject(chainID, tokens[0], kind)
 			case userKind[table] != "":
 				kind = userKind[table]
 				subject, err = stream.UserSubject(chainID, f.Account, kind)
@@ -735,6 +811,17 @@ func enqueue(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Result, 
 			}
 			if err := put(ctx, tx, policy, subject, kind, id, f, body, block.Time); err != nil {
 				return err
+			}
+			for _, token := range tokens[1:] {
+				if subject, err = stream.SpotSubject(chainID, token, kind); err != nil {
+					return err
+				}
+				if id, err = eventID(f, crypto.Keccak256Hash([]byte("perps-spot"), f.BlockHash.Bytes(), token.Bytes())); err != nil {
+					return err
+				}
+				if err := put(ctx, tx, policy, subject, kind, id, f, body, block.Time); err != nil {
+					return err
+				}
 			}
 		}
 	}
