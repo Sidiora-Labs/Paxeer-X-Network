@@ -66,7 +66,7 @@ func (t *TransportWS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	s := &wsSession{t: t, conn: conn, subs: map[string]context.CancelFunc{}}
+	s := &wsSession{t: t, conn: conn, subs: map[string]*wsSub{}}
 	if conn.Subprotocol() != Subprotocol {
 		s.close(closeBadSubprotocol, "Subprotocol not acceptable")
 		_ = conn.Close()
@@ -91,6 +91,12 @@ type wsError struct {
 	Message string `json:"message"`
 }
 
+// wsSub is one registered subscription; its pointer identifies the instance,
+// so a later subscription reusing the id is never mistaken for it.
+type wsSub struct {
+	stop context.CancelFunc
+}
+
 type wsSession struct {
 	t    *TransportWS
 	conn *websocket.Conn
@@ -99,7 +105,7 @@ type wsSession struct {
 
 	mu    sync.Mutex
 	acked bool
-	subs  map[string]context.CancelFunc
+	subs  map[string]*wsSub
 	wg    sync.WaitGroup
 }
 
@@ -177,11 +183,11 @@ func (s *wsSession) handle(ctx context.Context, m wsMessage) bool {
 			return false
 		}
 		s.mu.Lock()
-		stop := s.subs[m.ID]
+		sub := s.subs[m.ID]
 		delete(s.subs, m.ID)
 		s.mu.Unlock()
-		if stop != nil {
-			stop()
+		if sub != nil {
+			sub.stop()
 		}
 		return true
 	default:
@@ -212,25 +218,26 @@ func (s *wsSession) subscribe(ctx context.Context, m wsMessage) bool {
 		return s.sendErrors(m.ID, []wsError{{Message: "too many subscriptions"}})
 	}
 	subCtx, stop := context.WithCancel(ctx)
-	s.subs[m.ID] = stop
+	sub := &wsSub{stop: stop}
+	s.subs[m.ID] = sub
 	s.mu.Unlock()
 
 	responses, err := s.t.Schema.Subscribe(subCtx, p.Query, p.OperationName, p.Variables)
 	if err != nil {
-		s.forget(m.ID)
+		s.forget(m.ID, sub)
 		stop()
 		return s.sendErrors(m.ID, []wsError{{Message: err.Error()}})
 	}
 	s.wg.Add(1)
-	go s.forward(subCtx, m.ID, stop, responses)
+	go s.forward(subCtx, m.ID, sub, responses)
 	return true
 }
 
-// forward sends the responses of subscription id until it ends; a response
-// without data is the error message ending the subscription.
-func (s *wsSession) forward(ctx context.Context, id string, stop context.CancelFunc, responses <-chan any) {
+// forward sends the responses of subscription sub under id until it ends; a
+// response without data is the error message ending the subscription.
+func (s *wsSession) forward(ctx context.Context, id string, sub *wsSub, responses <-chan any) {
 	defer s.wg.Done()
-	defer stop()
+	defer sub.stop()
 	for {
 		var v any
 		var open bool
@@ -240,7 +247,7 @@ func (s *wsSession) forward(ctx context.Context, id string, stop context.CancelF
 		case v, open = <-responses:
 		}
 		if !open {
-			if s.forget(id) {
+			if s.forget(id, sub) {
 				_ = s.write(wsMessage{ID: id, Type: "complete"})
 			}
 			return
@@ -250,7 +257,7 @@ func (s *wsSession) forward(ctx context.Context, id string, stop context.CancelF
 			continue
 		}
 		if resp.Data == nil && len(resp.Errors) > 0 {
-			if s.forget(id) {
+			if s.forget(id, sub) {
 				errs := make([]wsError, len(resp.Errors))
 				for i, e := range resp.Errors {
 					errs[i] = wsError{Message: e.Message}
@@ -261,7 +268,7 @@ func (s *wsSession) forward(ctx context.Context, id string, stop context.CancelF
 		}
 		payload, err := json.Marshal(resp)
 		if err != nil {
-			if s.forget(id) {
+			if s.forget(id, sub) {
 				_ = s.sendErrors(id, []wsError{{Message: err.Error()}})
 			}
 			return
@@ -272,13 +279,16 @@ func (s *wsSession) forward(ctx context.Context, id string, stop context.CancelF
 	}
 }
 
-// forget drops subscription id and reports whether it was still registered.
-func (s *wsSession) forget(id string) bool {
+// forget drops sub from id and reports whether sub was still the
+// subscription registered under id.
+func (s *wsSession) forget(id string, sub *wsSub) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, ok := s.subs[id]
+	if s.subs[id] != sub {
+		return false
+	}
 	delete(s.subs, id)
-	return ok
+	return true
 }
 
 func (s *wsSession) sendErrors(id string, errs []wsError) bool {
