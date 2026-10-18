@@ -9,6 +9,7 @@ import (
 	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
 	putils "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	upgradekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
@@ -34,6 +35,10 @@ const (
 const (
 	BankAddress = "0x0000000000000000000000000000000000001001"
 )
+
+// v6120Upgrade is the plan from whose height a pointer send over the
+// sender's balance returns false instead of reverting.
+const v6120Upgrade = "v6.12.0"
 
 // LayerXReceiptEvent is the log the context-hash send overload emits.
 const LayerXReceiptEvent = "LayerXReceipt"
@@ -209,6 +214,18 @@ func (p PrecompileExecutor) mergePlanActive(ctx sdk.Context) bool {
 	return getter.UpgradeKeeper().IsUpgradeActiveAtHeight(ctx.WithGasMeter(sdk.NewInfiniteGasMeter(1, 1)), pcommon.MergeUpgrade, ctx.BlockHeight())
 }
 
+// v6120Active reports whether the v6.12.0 plan is active at the height of the
+// call's block. It reads the plan without charging the call.
+func (p PrecompileExecutor) v6120Active(ctx sdk.Context) bool {
+	getter, ok := p.evmKeeper.(interface {
+		UpgradeKeeper() *upgradekeeper.Keeper
+	})
+	if !ok {
+		return false
+	}
+	return getter.UpgradeKeeper().IsUpgradeActiveAtHeight(ctx.WithGasMeter(sdk.NewInfiniteGasMeter(1, 1)), v6120Upgrade, ctx.BlockHeight())
+}
+
 func (p PrecompileExecutor) send(ctx sdk.Context, caller common.Address, method *abi.Method, args []interface{}, value *big.Int, readOnly bool) ([]byte, uint64, error) {
 	if readOnly {
 		return nil, 0, errors.New("cannot call send from staticcall")
@@ -220,9 +237,23 @@ func (p PrecompileExecutor) send(ctx sdk.Context, caller common.Address, method 
 	if err := pcommon.ValidateArgsLength(args, 4); err != nil {
 		return nil, 0, argCountRefusal(err)
 	}
-	if _, err := p.pointerSend(ctx, caller, args); err != nil {
-		return nil, 0, err
+	if !p.v6120Active(ctx) {
+		if _, err := p.pointerSend(ctx, caller, args); err != nil {
+			return nil, 0, err
+		}
+		bz, err := method.Outputs.Pack(true)
+		return bz, pcommon.GetRemainingGas(ctx, p.evmKeeper), err
 	}
+	cache, write := ctx.CacheContext()
+	if _, err := p.pointerSend(cache, caller, args); err != nil {
+		if !errors.Is(err, sdkerrors.ErrInsufficientFunds) {
+			return nil, 0, err
+		}
+		bz, err := method.Outputs.Pack(false)
+		return bz, pcommon.GetRemainingGas(ctx, p.evmKeeper), err
+	}
+	write()
+	ctx.EventManager().EmitEvents(cache.EventManager().Events())
 	bz, err := method.Outputs.Pack(true)
 	return bz, pcommon.GetRemainingGas(ctx, p.evmKeeper), err
 }

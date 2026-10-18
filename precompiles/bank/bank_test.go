@@ -717,3 +717,53 @@ func TestSendContextHashSubAccount(t *testing.T) {
 	require.Len(t, logs, 1)
 	require.Equal(t, []common.Hash{common.HexToHash(sendContextTopic0), common.BytesToHash(subEVM.Bytes()), common.BytesToHash(e.to.Bytes())}, logs[0].Topics)
 }
+
+func TestSendInsufficientFundsV6120(t *testing.T) {
+	testApp := testkeeper.EVMTestApp
+	ctx, _ := testApp.NewContext(false, tmtypes.Header{}).WithBlockHeight(2).CacheContext()
+	k := &testApp.EvmKeeper
+	const activationHeight = int64(10)
+
+	senderAddr, senderEVMAddr := testkeeper.MockAddressPair()
+	k.SetAddressMapping(ctx, senderAddr, senderEVMAddr)
+	receiverAddr, receiverEVMAddr := testkeeper.MockAddressPair()
+	k.SetAddressMapping(ctx, receiverAddr, receiverEVMAddr)
+	require.Nil(t, k.BankKeeper().MintCoins(ctx, types.ModuleName, sdk.NewCoins(sdk.NewCoin("ufoo", sdk.NewInt(100)))))
+	require.Nil(t, k.BankKeeper().SendCoinsFromModuleToAccount(ctx, types.ModuleName, senderAddr, sdk.NewCoins(sdk.NewCoin("ufoo", sdk.NewInt(100)))))
+	_, fooPointer := testkeeper.MockAddressPair()
+	k.SetERC20NativePointer(ctx, "ufoo", fooPointer)
+
+	p, err := bank.NewPrecompile(testApp.GetPrecompileKeepers())
+	require.Nil(t, err)
+	executor := p.GetExecutor().(*bank.PrecompileExecutor)
+	send, err := p.ABI.MethodById(executor.SendID)
+	require.Nil(t, err)
+	args, err := send.Inputs.Pack(senderEVMAddr, receiverEVMAddr, "ufoo", big.NewInt(101))
+	require.Nil(t, err)
+	input := append(append([]byte{}, executor.SendID...), args...)
+	run := func(height int64) ([]byte, sdk.Context, error) {
+		db := state.NewDBImpl(ctx.WithBlockHeight(height), k, false)
+		ret, _, err := p.RunAndCalculateGas(&vm.EVM{StateDB: db}, fooPointer, fooPointer, input, 100000, nil, nil, false, false)
+		return ret, db.Ctx(), err
+	}
+	requireBalances := func(ctx sdk.Context) {
+		require.Equal(t, sdk.NewInt(100), k.BankKeeper().GetBalance(ctx, senderAddr, "ufoo").Amount)
+		require.Equal(t, sdk.NewInt(0), k.BankKeeper().GetBalance(ctx, receiverAddr, "ufoo").Amount)
+	}
+
+	// EVMTestApp records v6.12.0 as done at height 1; move it to activationHeight.
+	testApp.UpgradeKeeper.SetDone(ctx.WithBlockHeight(activationHeight), "v6.12.0")
+
+	// Below the v6.12.0 height a send over the sender's balance reverts.
+	_, runCtx, err := run(activationHeight - 1)
+	require.Equal(t, vm.ErrExecutionReverted, err)
+	requireBalances(runCtx)
+
+	// From the v6.12.0 height the same send returns false and moves nothing.
+	ret, runCtx, err := run(activationHeight)
+	require.Nil(t, err)
+	out, err := send.Outputs.Unpack(ret)
+	require.Nil(t, err)
+	require.Equal(t, []interface{}{false}, out)
+	requireBalances(runCtx)
+}

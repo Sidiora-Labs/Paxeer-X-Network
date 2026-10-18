@@ -75,15 +75,20 @@ func loadVaultTestABI(t *testing.T, path string) abi.ABI {
 // newVaultEnv is the vault executor on the spot keeper over the real bank,
 // EVM and pricefeed keepers of the test application, with USDL (ERC20,
 // stable), PAX (the uhpx native pointer) and SID (a native pointer)
-// registered in that order and the share token of each created.
+// registered in that order and the share token of each created. v6.12.0 is
+// marked done at the context's height.
 func newVaultEnv(t *testing.T) *vaultEnv {
 	t.Helper()
 	testApp := testkeeper.EVMTestApp
 	ctx := testApp.GetContextForDeliverTx([]byte{})
 	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
+	if ctx.BlockHeight() == 0 {
+		ctx = ctx.WithBlockHeight(1)
+	}
 	pricefeed, ctx := pricefeedtestutil.NewKeeper(testApp, ctx)
 	key := sdk.NewKVStoreKey(types.StoreKey)
 	ctx = pricefeedtestutil.WithPriceFeedStore(ctx, key)
+	testApp.UpgradeKeeper.SetDone(ctx, "v6.12.0")
 	k := spotkeeper.NewKeeper(key, testApp.BankKeeper, &testApp.EvmKeeper, pricefeed)
 	e := &vaultEnv{t: t, app: testApp, ctx: ctx, k: k, exec: spot.NewVaultExecutor(k, &testApp.EvmKeeper),
 		vault: loadVaultTestABI(t, "abi/vault.json"), share: loadVaultTestABI(t, "abi/share.json"),
