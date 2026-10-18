@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -610,17 +611,37 @@ func TestMatchingGolden(t *testing.T) {
 			}
 			require.Equal(t, op.Expect.Cancelled, cancelled, "operation %d", i+1)
 
-			wantEvents := [][]string{}
+			type makerEvent struct {
+				maker types.Order
+				args  []string
+			}
+			makerEvents := []makerEvent{}
 			for _, id := range op.Expect.Cancelled {
 				if id == op.Expect.OrderID {
 					continue
 				}
-				wantEvents = append(wantEvents, []string{types.EventOrderCancelled, id,
-					e.order(t, matchWord(t, id)).Account.Hex()})
+				maker := e.order(t, matchWord(t, id))
+				makerEvents = append(makerEvents, makerEvent{maker,
+					[]string{types.EventOrderCancelled, id, maker.Account.Hex()}})
 			}
 			for _, fill := range op.Expect.Fills {
-				wantEvents = append(wantEvents, fillArgs(fill.MakerOrderID, op.Expect.OrderID, accounts[fill.Maker],
-					account, op.IsLong, fill.Price, fill.SizeUsd, fill.MakerFeeUsd, fill.TakerFeeUsd))
+				makerEvents = append(makerEvents, makerEvent{e.order(t, matchWord(t, fill.MakerOrderID)),
+					fillArgs(fill.MakerOrderID, op.Expect.OrderID, accounts[fill.Maker],
+						account, op.IsLong, fill.Price, fill.SizeUsd, fill.MakerFeeUsd, fill.TakerFeeUsd)})
+			}
+			sort.SliceStable(makerEvents, func(a, b int) bool {
+				x, y := makerEvents[a].maker, makerEvents[b].maker
+				if !x.LimitPrice.Eq(&y.LimitPrice) {
+					if op.IsLong {
+						return x.LimitPrice.Lt(&y.LimitPrice)
+					}
+					return x.LimitPrice.Gt(&y.LimitPrice)
+				}
+				return x.Sequence < y.Sequence
+			})
+			wantEvents := [][]string{}
+			for _, event := range makerEvents {
+				wantEvents = append(wantEvents, event.args)
 			}
 			for _, id := range op.Expect.Cancelled {
 				if id == op.Expect.OrderID {
