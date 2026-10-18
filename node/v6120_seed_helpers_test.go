@@ -109,7 +109,8 @@ func TestV6120HaltExportLoads(t *testing.T) {
 	require.Equal(t, heights[V610Upgrade], a.UpgradeKeeper.GetDoneHeight(ctx, V610Upgrade))
 	require.Zero(t, a.UpgradeKeeper.GetDoneHeight(ctx, V6120Upgrade))
 
-	// The launchpad state is the exported one, with its traded market.
+	// The launchpad state is the exported one, and the export carries no
+	// native market, so the v6.12.0 plan can apply to it.
 	var appState map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(doc.AppState, &appState))
 	exported, ok := appState[launchpadtypes.ModuleName]
@@ -117,15 +118,11 @@ func TestV6120HaltExportLoads(t *testing.T) {
 	var want launchpadtypes.GenesisState
 	require.NoError(t, json.Unmarshal(exported, &want))
 	require.NoError(t, want.Validate())
-	require.NotEmpty(t, want.Markets)
+	require.Empty(t, want.Markets)
 	got, err := json.Marshal(a.LaunchpadKeeper.ExportGenesis(ctx))
 	require.NoError(t, err)
 	require.JSONEq(t, string(exported), string(got))
-	for _, market := range want.Markets {
-		live, found := a.LaunchpadKeeper.GetMarket(ctx, market.Denom)
-		require.True(t, found, market.Denom)
-		require.True(t, live.RealQuoteBalance.IsPositive(), market.Denom)
-	}
+	require.Zero(t, a.LaunchpadKeeper.GetMarketCount(ctx))
 
 	// The SID proxy slots the handler reads hold the snapshot balances and a
 	// legacy supply above their sum, and no migration is recorded yet.
