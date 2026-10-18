@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"testing"
 
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
@@ -40,6 +41,9 @@ type custodyEnv struct {
 	custody common.Address
 	holder  common.Address
 	caller  keeper.NestedCaller
+	// logStart is the receipt log count when the environment was ready, so
+	// logs leaves out the setup logs written before it.
+	logStart int
 }
 
 func address(name string) common.Address {
@@ -72,6 +76,7 @@ func newCustodyEnv(t *testing.T) *custodyEnv {
 	require.Equal(t, common.BytesToAddress(e.k.ModuleAddress()), c.custody)
 	require.Equal(t, usdlSupply, c.totalSupply())
 	require.Equal(t, usdlSupply, c.balanceOf(holder))
+	c.logStart = len(c.receiptLogs())
 	return c
 }
 
@@ -129,16 +134,25 @@ func (c *custodyEnv) since(before int) []transferLog {
 	return c.logs()[before:]
 }
 
-// logs is the USDL Transfer logs of the current transaction so far.
-func (c *custodyEnv) logs() []transferLog {
+// receiptLogs is the logs of the current transaction's receipt so far.
+func (c *custodyEnv) receiptLogs() []*evmtypes.Log {
 	c.t.Helper()
 	r, err := testkeeper.EVMTestApp.EvmKeeper.GetTransientReceipt(c.ctx, c.ctx.TxSum(), uint64(c.ctx.TxIndex()))
 	if errors.Is(err, receipt.ErrNotFound) {
 		return nil
 	}
 	require.NoError(c.t, err)
-	out := make([]transferLog, 0, len(r.Logs))
-	for _, l := range r.Logs {
+	return r.Logs
+}
+
+// logs is the USDL Transfer logs of the current transaction so far, after
+// the setup logs of newCustodyEnv.
+func (c *custodyEnv) logs() []transferLog {
+	c.t.Helper()
+	all := c.receiptLogs()
+	require.GreaterOrEqual(c.t, len(all), c.logStart)
+	out := make([]transferLog, 0, len(all)-c.logStart)
+	for _, l := range all[c.logStart:] {
 		if len(l.Topics) == 0 || common.HexToHash(l.Topics[0]) != transferTopic {
 			continue
 		}
