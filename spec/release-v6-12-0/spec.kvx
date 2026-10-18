@@ -16408,7 +16408,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1.11]
 title = "Create share denoms with ERC20 pointers and mint and burn shares"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["4.1.10"]
