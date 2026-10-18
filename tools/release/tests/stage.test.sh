@@ -79,7 +79,23 @@ assert_sha() {
 }
 
 assert_receipt() {
-	python3 - "$case_dir/receipt.json" "$1" "$2" "$3" <<'PY'
+	python3 - "$case_dir/receipt.json" "$1" "$2" <<'PY'
+import json
+import pathlib
+import stat
+import sys
+
+path = pathlib.Path(sys.argv[1])
+assert json.loads(path.read_text()) == {
+    "hosts_staged": int(sys.argv[2]),
+    "result": sys.argv[3],
+}
+assert stat.S_IMODE(path.stat().st_mode) == 0o600
+PY
+}
+
+assert_automation_receipt() {
+	python3 - "$case_dir/automation.json" "$1" "$2" "$3" <<'PY'
 import json
 import pathlib
 import stat
@@ -103,14 +119,14 @@ stage_keeps_previous_binary() {
 	assert_sha "$case_dir/bin/paxd.v6.12.0" "$release_sha"
 	assert_sha "$case_dir/bin/price-sidecar" "$sidecar_sha"
 	[[ $(stat -c %a "$case_dir/bin/paxd.v6.12.0") == 755 ]] || fail 'release mode differs'
-	assert_receipt 1 0 pass
+	assert_receipt 1 pass
 	retained=$(stat -c '%i:%Y:%a' "$case_dir/bin/paxd.pre-r1")
 	cp -- "$case_dir/bin/paxd.v6.12.0" "$case_dir/bin/paxd"
 	invoke --local
 	assert_sha "$case_dir/bin/paxd.pre-r1" "$old_sha"
 	[[ $(stat -c '%i:%Y:%a' "$case_dir/bin/paxd.pre-r1") == "$retained" ]] || fail 'retained binary changed'
 	invoke --local --verify --receipt "$case_dir/receipt.json"
-	assert_receipt 1 0 pass
+	assert_receipt 1 pass
 }
 
 unresolved_library_refused() {
@@ -134,7 +150,7 @@ C
 	[[ ! -e $case_dir/bin/paxd.v6.12.0 && ! -e $case_dir/bin/price-sidecar ]] || fail 'unresolved binary installed'
 	[[ ! -e $case_dir/bin/paxd.pre-r1 ]] || fail 'rollback copy created before validation'
 	assert_sha "$case_dir/bin/paxd" "$old_sha"
-	assert_receipt 0 0 fail
+	assert_receipt 0 fail
 }
 
 old_feeder_reported() {
@@ -165,6 +181,12 @@ old_feeder_reported() {
 	stage_unit_report AUTOMATION_UNITS watchdog.timer \
 		$'LoadState=loaded\nActiveState=inactive\nUnitFileState=enabled' >"$case_dir/status"
 	[[ $stage_units == 2 ]] || fail 'paused automation counted active'
+	(
+		stage_work= stage_receipt=$case_dir/automation.json stage_mode=automation-status stage_hosts=0
+		true
+		stage_finish
+	)
+	assert_automation_receipt 0 2 pass
 }
 
 empty_input_refused() {
@@ -192,7 +214,7 @@ sha_mismatch_refused() {
 		[[ ! -e $case_dir/bin/paxd.v6.12.0 && ! -e $case_dir/bin/price-sidecar ]] || fail 'corrupt release installed'
 		[[ ! -e $case_dir/bin/paxd.pre-r1 ]] || fail 'rollback copy created before validation'
 		assert_sha "$case_dir/bin/paxd" "$old_sha"
-		assert_receipt 0 0 fail
+		assert_receipt 0 fail
 	done
 }
 
@@ -210,7 +232,7 @@ installed_corruption_refused() {
 	invoke --local
 	printf 'corrupt' >>"$case_dir/bin/paxd.v6.12.0"
 	refusal 'stage: checksum mismatch for paxd.v6.12.0' invoke --local --verify --receipt "$case_dir/receipt.json"
-	assert_receipt 0 0 fail
+	assert_receipt 0 fail
 	fixture
 	invoke --local
 	printf 'corrupt' >>"$case_dir/bin/price-sidecar"

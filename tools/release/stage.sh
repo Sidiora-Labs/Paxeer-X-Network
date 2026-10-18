@@ -271,8 +271,11 @@ stage_finish() {
 	if [[ -n $stage_receipt ]]; then
 		directory=$(dirname -- "$stage_receipt")
 		if mkdir -p -- "$directory" && temporary=$(mktemp "$directory/.stage-receipt.XXXXXXXX"); then
-			if printf '{"hosts_staged":%d,"units_active":%d,"result":"%s"}\n' \
-				"$stage_hosts" "$stage_units" "$result" >"$temporary" && mv -fT -- "$temporary" "$stage_receipt"; then
+			if if [[ $stage_mode == automation-status ]]; then
+				printf '{"hosts_staged":%d,"units_active":%d,"result":"%s"}\n' "$stage_hosts" "$stage_units" "$result"
+			else
+				printf '{"hosts_staged":%d,"result":"%s"}\n' "$stage_hosts" "$result"
+			fi >"$temporary" && mv -fT -- "$temporary" "$stage_receipt"; then
 				:
 			else
 				rm -f -- "$temporary"
@@ -292,7 +295,7 @@ stage_main() {
 	export LC_ALL=C
 	umask 077
 	local file=.env.rollout-v6120 mode= local_mode=0 root line tool
-	stage_work= stage_receipt= stage_hosts=0 stage_units=0
+	stage_work= stage_receipt= stage_mode= stage_hosts=0 stage_units=0
 	while [[ $# -gt 0 ]]; do
 		case $1 in
 		--env-file | --receipt)
@@ -330,6 +333,7 @@ stage_main() {
 		stage_fail '--check does not write receipts'
 		return 1
 	fi
+	stage_mode=$mode
 	trap stage_finish EXIT
 	root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 	declare -ga stage_keys=()
