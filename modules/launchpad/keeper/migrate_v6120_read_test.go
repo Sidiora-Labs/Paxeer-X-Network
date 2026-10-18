@@ -38,8 +38,10 @@ func TestMigrateV6120Signature(t *testing.T) {
 	legacy := keeperv610.NewKeeper(key, app.BankKeeper, tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper),
 		&app.EvmKeeper)
 	legacy.InitGenesis(ctx, *typesv610.DefaultGenesis())
-	e := &env{t: t, ctx: ctx, k: k}
-	creator := e.account(250_000_000)
+	creator, _ := testkeeper.MockAddressPair()
+	coins := sdk.NewCoins(sdk.NewCoin(typesv610.DefaultQuoteDenom, sdk.NewInt(250_000_000)))
+	require.NoError(t, app.BankKeeper.MintCoins(ctx, "evm", coins))
+	require.NoError(t, app.BankKeeper.SendCoinsFromModuleToAccount(ctx, "evm", creator, coins))
 	_, err := legacy.CreateMarket(ctx, nil, creator, "Kindle Token", "KNDL", typesv610.FeeStrategyClaim)
 	require.NoError(t, err)
 
