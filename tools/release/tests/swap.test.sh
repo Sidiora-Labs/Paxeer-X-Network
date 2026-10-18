@@ -121,6 +121,19 @@ PY
     > "$case_dir/$name-account.log" 2>&1
   "$BIN_DIR/paxd" gentx operator "1000000000000000000$denom" --chain-id swap_9000-1 \
     --keyring-backend test --home "$node_home" > "$case_dir/$name-gentx.log" 2>&1
+  python3 - "$node_home" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+home = Path(sys.argv[1])
+genesis_path = home / "config/genesis.json"
+genesis = json.loads(genesis_path.read_text())
+public_key = json.loads((home / "config/priv_validator_key.json").read_text())["pub_key"]
+genesis["validators"] = [{"power": "1000000000000", "pub_key": public_key}]
+genesis["app_state"]["staking"]["params"]["max_voting_power_ratio"] = "1.000000000000000000"
+genesis_path.write_text(json.dumps(genesis))
+PY
   "$BIN_DIR/paxd" collect-gentxs --home "$node_home" > "$case_dir/$name-collect.log" 2>&1
   python3 - "$node_home" "$halt" "$denom" <<'PY'
 import json
@@ -163,7 +176,7 @@ edit(home / "config/config.toml", {
     ("rpc", "pprof-laddr"): '""',
     ("p2p", "laddr"): json.dumps(f"tcp://{loopback}:{peer}"),
     ("p2p", "persistent-peers"): '""',
-    ("p2p", "seeds"): '""',
+    ("p2p", "bootstrap-peers"): '""',
     ("consensus", "create-empty-blocks"): "true",
     ("consensus", "create-empty-blocks-interval"): '"10ms"',
     ("consensus", "unsafe-commit-timeout-override"): '"10ms"',
