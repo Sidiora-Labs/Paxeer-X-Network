@@ -7,13 +7,17 @@ import (
 	"testing"
 	"time"
 
+	minttypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
 	pricefeedtestutil "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/testutil"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
 	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	stakingkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/keeper"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,6 +61,22 @@ func TestAppModule(t *testing.T) {
 
 	params := types.DefaultParams(types.DefaultAuthority())
 	require.NoError(t, k.SetParams(ctx, params))
+
+	pubkey := ed25519.GenPrivKeyFromSecret([]byte("pricefeed-module-validator")).PubKey()
+	operator := sdk.ValAddress(pubkey.Address())
+	bond := sdk.NewCoin(testApp.StakingKeeper.BondDenom(ctx), testApp.StakingKeeper.TokensFromConsensusPower(ctx, 1))
+	require.NoError(t, testApp.BankKeeper.MintCoins(ctx, minttypes.ModuleName, sdk.NewCoins(bond)))
+	require.NoError(t, testApp.BankKeeper.SendCoinsFromModuleToAccount(ctx, minttypes.ModuleName,
+		sdk.AccAddress(operator), sdk.NewCoins(bond)))
+	commission := testApp.StakingKeeper.MinCommissionRate(ctx)
+	msg, err := stakingtypes.NewMsgCreateValidator(operator, pubkey, bond, stakingtypes.Description{},
+		stakingtypes.NewCommissionRates(commission, commission, sdk.ZeroDec()), sdk.OneInt())
+	require.NoError(t, err)
+	_, err = stakingkeeper.NewMsgServerImpl(testApp.StakingKeeper).CreateValidator(sdk.WrapSDKContext(ctx), msg)
+	require.NoError(t, err)
+	_, err = testApp.StakingKeeper.ApplyAndReturnValidatorSetUpdates(ctx)
+	require.NoError(t, err)
+	ctx = ctx.WithEventManager(sdk.NewEventManager())
 
 	var operators []sdk.ValAddress
 	for _, validator := range testApp.StakingKeeper.GetBondedValidatorsByPower(ctx) {
