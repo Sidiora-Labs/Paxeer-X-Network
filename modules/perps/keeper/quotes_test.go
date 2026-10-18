@@ -206,8 +206,8 @@ func TestQuotesCloseEqualsExecution(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, "499590000000000000000", quotesEventSum(t, events, types.EventTradeSettled, f.account, 4).String())
 				require.Equal(t, quote.ClosedPnl, quotesEventSum(t, events, types.EventTradeSettled, f.account, 6))
-				require.Equal(t, quote.Fee, quotesEventSum(t, events, types.EventFeeCollected, f.account, 5))
-				require.Equal(t, "224816", quote.Fee.String())
+				require.Equal(t, quote.Fee, quotesEventSum(t, events, types.EventTradeSettled, f.account, 7))
+				require.Equal(t, "224815500000000000", quote.Fee.String())
 				require.Equal(t, quote.EstimatedPayout, quotesEventSum(t, events, types.EventTradeSettled, f.account, 9))
 			} else {
 				quote, err := f.keeper.QuoteClose(f.ctx, id)

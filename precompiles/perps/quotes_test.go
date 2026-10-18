@@ -329,7 +329,7 @@ func TestQuotesQuoteClosePosition(t *testing.T) {
 	require.Equal(t, big.NewInt(274_500), quote.TradingFee)
 	require.Equal(t, wordBig(usdWord(1)), new(big.Int).Neg(quote.FundingOwed))
 	require.Equal(t, wordBig(fixedWord(t, "8.7255")), quote.NetPnl)
-	require.Equal(t, big.NewInt(108_725_500), quote.EstimatedPayout)
+	require.Equal(t, big.NewInt(8_725_500), quote.EstimatedPayout)
 
 	order, err := env.k.ClosePosition(env.ctx, quotesHolder, *uint256.NewInt(7))
 	require.NoError(t, err)
@@ -337,7 +337,8 @@ func TestQuotesQuoteClosePosition(t *testing.T) {
 	require.Len(t, result.Fills, 1)
 	require.Equal(t, quote.ExitPrice, result.Fills[0].Price.ToBig())
 	require.Equal(t, quote.TradingFeeUsd, result.Fills[0].TakerFeeUsd.ToBig())
-	require.Equal(t, quote.EstimatedPayout, wordBig(env.account(branch, quotesHolder).Collateral))
+	credited := new(big.Int).Sub(wordBig(env.account(branch, quotesHolder).Collateral), big.NewInt(100_000_000))
+	require.Equal(t, credited, quote.EstimatedPayout)
 	require.Nil(t, branch.KVStore(env.perpsKey).Get(perpstypes.PositionKey(*uint256.NewInt(7))))
 }
 
@@ -353,10 +354,10 @@ func TestQuotesQuotePartialCloseMatchesExecution(t *testing.T) {
 	exitPrice, closedPnl, fee, payout := out[0].(*big.Int), out[1].(*big.Int), out[2].(*big.Int), out[3].(*big.Int)
 
 	// 500 USD at mark 61,000 is 0.00819 BTC after the lot rounding; it fills
-	// at 61,000 for 499.59 USD, closing 0.00819 x (61,000 - 60,000) of PnL at
-	// the 450 ppm taker rate.
+	// at 61,000 for 499.59 USD at the 450 ppm taker rate, and settlement
+	// realises the whole 0.02 x (61,000 - 60,000) of PnL.
 	require.Equal(t, wordBig(usdWord(61_000)), exitPrice)
-	require.Equal(t, wordBig(fixedWord(t, "8.19")), closedPnl)
+	require.Equal(t, wordBig(usdWord(20)), closedPnl)
 	require.Equal(t, wordBig(fixedWord(t, "0.2248155")), fee)
 
 	order, err := env.k.PartialClose(env.ctx, quotesHolder, *uint256.NewInt(7), usdWord(500))
@@ -366,6 +367,16 @@ func TestQuotesQuotePartialCloseMatchesExecution(t *testing.T) {
 	require.Len(t, result.Fills, 1)
 	require.Equal(t, exitPrice, result.Fills[0].Price.ToBig())
 	require.Equal(t, fee, result.Fills[0].TakerFeeUsd.ToBig())
+	settled := 0
+	for _, event := range result.Events {
+		if event.Name != perpstypes.EventTradeSettled || event.Args[1] != quotesHolder {
+			continue
+		}
+		require.Equal(t, closedPnl, event.Args[6])
+		require.Equal(t, fee, event.Args[7])
+		settled++
+	}
+	require.Equal(t, 1, settled)
 	credited := new(big.Int).Sub(wordBig(env.account(branch, quotesHolder).Collateral), big.NewInt(100_000_000))
 	require.Equal(t, credited, payout)
 	bz := branch.KVStore(env.perpsKey).Get(perpstypes.PositionKey(*uint256.NewInt(7)))

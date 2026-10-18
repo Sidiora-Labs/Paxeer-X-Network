@@ -257,7 +257,7 @@ func (k Keeper) QuotePartialClose(ctx sdk.Context, positionID, closeSizeUsd uint
 	if err != nil {
 		return PartialCloseQuote{}, err
 	}
-	return PartialCloseQuote{quote.ExitPrice, quote.UnrealizedPnl, quote.TradingFee, quote.EstimatedPayout}, nil
+	return PartialCloseQuote{quote.ExitPrice, quote.UnrealizedPnl, quote.TradingFeeUsd, quote.EstimatedPayout}, nil
 }
 
 func (k Keeper) QuoteMarket(ctx sdk.Context, marketID uint64) (MarketQuote, error) {
