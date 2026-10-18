@@ -240,6 +240,10 @@ func (r *Runner) Run(ctx context.Context, req Request) (rep Report, err error) {
 		return rep, err
 	}
 	totals := map[string]*TableCount{}
+	wholeTables := map[string]bool{}
+	for _, name := range projectionTables {
+		wholeTables["perps."+name] = true
+	}
 	for from := req.From; from <= req.To; {
 		to := from + int64(r.BatchSize) - 1
 		if to > req.To {
@@ -251,7 +255,11 @@ func (r *Runner) Run(ctx context.Context, req Request) (rep Report, err error) {
 		}
 		for _, c := range counts {
 			if t, ok := totals[c.Table]; ok {
-				t.Rows += c.Rows
+				if wholeTables[c.Table] {
+					t.Rows = c.Rows
+				} else {
+					t.Rows += c.Rows
+				}
 				t.Changed += c.Changed
 				continue
 			}
