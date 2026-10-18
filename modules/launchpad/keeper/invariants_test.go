@@ -188,7 +188,15 @@ func TestCustodyInvariantNonQuoteTreasury(t *testing.T) {
 
 	amount, err := i(8).Marshal()
 	require.NoError(t, err)
-	c.ctx.KVStore(sdk.NewKVStoreKey(types.StoreKey)).Set(types.TreasuryLedgerKey(other), amount)
+	var key sdk.StoreKey
+	for _, registered := range c.ctx.MultiStore().StoreKeys() {
+		if registered.Name() == types.StoreKey {
+			key = registered
+			break
+		}
+	}
+	require.NotNil(t, key)
+	c.ctx.KVStore(key).Set(types.TreasuryLedgerKey(other), amount)
 	c.breaks(keeper.LiabilitiesInvariantName, keeper.LiabilitiesInvariant(c.k),
 		fmt.Sprintf("treasury %s: held 7 below ledger 8\n", other.Hex()))
 	c.holds(keeper.CustodyInvariantName, keeper.CustodyInvariant(c.k))
