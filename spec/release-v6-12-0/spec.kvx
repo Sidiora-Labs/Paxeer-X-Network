@@ -29652,7 +29652,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.16]
 title = "Retire the v6.11 name across release, governance and bring-up files"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["1.0.3", "1.0.5"]
