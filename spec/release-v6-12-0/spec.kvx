@@ -27451,7 +27451,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.2.9]
 title = "The application operation set runs unchanged against the schema"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["7.2.7", "7.2.8", "7.2.19"]
