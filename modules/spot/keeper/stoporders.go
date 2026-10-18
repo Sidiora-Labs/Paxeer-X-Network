@@ -428,6 +428,7 @@ func (k *Keeper) ActivateStopLimit(ctx sdk.Context, id uint64) (bool, error) {
 	}
 	stopEvent(cache, "StopLimitActivated", id, sdk.NewAttribute("activationPrice", price.String()))
 	write()
+	ctx.EventManager().EmitEvents(cache.EventManager().Events())
 	return true, nil
 }
 
@@ -554,6 +555,7 @@ func (k *Keeper) ExecuteStopLimit(ctx sdk.Context, id uint64) error {
 	}
 	stopEvent(cache, "StopLimitExecuted", id, sdk.NewAttribute("executionPrice", price.String()))
 	write()
+	ctx.EventManager().EmitEvents(cache.EventManager().Events())
 	return nil
 }
 
@@ -598,6 +600,7 @@ func (k *Keeper) ExecuteStopLoss(ctx sdk.Context, id uint64) error {
 	}
 	stopEvent(cache, "StopLossOrderExecuted", id, sdk.NewAttribute("executionPrice", price.String()))
 	write()
+	ctx.EventManager().EmitEvents(cache.EventManager().Events())
 	return nil
 }
 
@@ -639,6 +642,7 @@ func (k *Keeper) refundStopLimit(ctx sdk.Context, caller common.Address, id uint
 	}
 	stopEvent(cache, "StopLimitCancelled", id)
 	write()
+	ctx.EventManager().EmitEvents(cache.EventManager().Events())
 	return nil
 }
 
@@ -680,6 +684,7 @@ func (k *Keeper) refundStopLoss(ctx sdk.Context, caller common.Address, id uint6
 	}
 	stopEvent(cache, "StopLossOrderCancelled", id)
 	write()
+	ctx.EventManager().EmitEvents(cache.EventManager().Events())
 	return nil
 }
 
