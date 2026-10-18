@@ -8176,3 +8176,8 @@ do = "enumerate holders exhaustively (layout contracts, retained-range Transfer 
 area = "modules/spot genesis tests"
 symptom = "Keeper.InitGenesis calls EnsureModuleAccount, which needs a real EVM/account keeper; the old launchpad citations genesis.go:11/:53 are now spot genesis.go:55/:177"
 do = "build the keeper over testkeeper.EVMTestApp with pricefeedtestutil.NewKeeper and WithPriceFeedStore, as msg_server_test newSpotEnv does"
+
+[gotcha.1721]
+area = "repo hygiene"
+symptom = "a stray codec.go at the repository root (package types, duplicating modules/layerxauth/types/codec.go) turns the module root into a Go package that cannot compile, and scripts/specgen.sh was rewritten with a hard-coded checkout path and a wrong relative tool path"
+fix = "keep generated or copied files out of the module root; specgen.sh derives the root from BASH_SOURCE and runs ./tools/specgen; delete the stray file instead of committing it"
