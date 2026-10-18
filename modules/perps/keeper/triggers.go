@@ -327,12 +327,12 @@ func (k *Keeper) triggerOrder(ctx sdk.Context, market types.Market, order types.
 			return uint256.Int{}, nil, err
 		}
 		order.Sequence = sequence
-		k.setTriggerOrderRecord(ctx, order)
 		crosses, err := k.limitCrossesBook(ctx, order)
 		if err != nil {
 			return uint256.Int{}, nil, err
 		}
 		if crosses {
+			k.setTriggerOrderRecord(ctx, order)
 			matched, err := k.Match(ctx, market, order)
 			if err != nil {
 				return uint256.Int{}, nil, err

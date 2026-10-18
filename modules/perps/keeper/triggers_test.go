@@ -102,12 +102,12 @@ func (env triggerEnv) seedOrder(t *testing.T, order types.Order) types.Order {
 	if order.Leverage.IsZero() {
 		order.Leverage = e18(10)
 	}
-	env.store().Set(types.OrderKey(order.ID), order.Marshal())
 	env.store().Set(types.AccountOrderKey(order.Account, order.ID), []byte{})
 	account := env.account(t, order.Account)
 	account.OpenOrderCount++
 	env.setAccount(account)
 	if order.Status == types.OrderStatusUntriggered {
+		env.store().Set(types.OrderKey(order.ID), order.Marshal())
 		require.NoError(t, env.k.TriggerInsert(env.ctx, order))
 	} else {
 		require.NoError(t, env.k.BookInsert(env.ctx, order))
