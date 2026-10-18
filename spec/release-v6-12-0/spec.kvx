@@ -7261,7 +7261,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.16]
 title = "Write step 1: move launchpad-held USDL into custody at the launchpad module EVM address"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["2.1.4", "2.1.14", "2.1.16", "2.2.14"]
