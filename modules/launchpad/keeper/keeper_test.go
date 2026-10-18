@@ -619,7 +619,7 @@ func TestQuoteConservation(t *testing.T) {
 }
 
 func TestSwapRejections(t *testing.T) {
-	e := newEnv(t)
+	e := newSurfacedEnv(t)
 	creator := e.account(100_000_000)
 	trader := e.account(1_000_000_000)
 	denom := e.create(creator, types.FeeStrategyClaim).Denom
@@ -637,7 +637,8 @@ func TestSwapRejections(t *testing.T) {
 	quoteBefore := e.usdlOf(trader)
 	tokenBefore := e.balance(trader, denom)
 	require.ErrorIs(t, swap(true, 1_000_000, 1_000_000_000_000_000, trader, now), types.ErrSlippageExceeded)
-	require.ErrorIs(t, swap(false, 1, 1_000_000_000, trader, now), types.ErrSlippageExceeded)
+	require.ErrorIs(t, swap(false, 1, 1_000_000_000, trader, now), types.ErrInsufficientInput)
+	require.ErrorIs(t, swap(false, tokenBefore.QuoRaw(2).Int64(), 1_000_000_000, trader, now), types.ErrSlippageExceeded)
 	sameJSON(t, before, e.k.ExportGenesis(e.ctx))
 	require.Equal(t, quoteBefore, e.usdlOf(trader))
 	require.Equal(t, tokenBefore, e.balance(trader, denom))
@@ -1148,7 +1149,10 @@ func TestMsgUpdateParamsCodecAndSigners(t *testing.T) {
 	k, ctx := e.k, e.ctx
 	authority := k.Authority()
 	_, cdc := parameterRouter(t, k)
-	msg := &types.MsgUpdateParams{Authority: authority, Params: k.GetParams(ctx)}
+	assignment := types.RoleAssignment{Contract: keeper.Generation2Surfaces[types.RoleFeeAccumulator].Hex(),
+		Role: crypto.Keccak256Hash([]byte("POOL_ROLE")).Hex(), Account: address("account A").Hex()}
+	msg := &types.MsgUpdateParams{Authority: authority, Params: k.GetParams(ctx),
+		RoleGrants: []types.RoleAssignment{assignment}, RoleRevokes: []types.RoleAssignment{assignment}}
 	require.NoError(t, msg.ValidateBasic())
 	signer, err := sdk.AccAddressFromBech32(authority)
 	require.NoError(t, err)
