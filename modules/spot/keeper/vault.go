@@ -346,18 +346,27 @@ func (k *Keeper) Deposit(ctx sdk.Context, depositor, token common.Address,
 	if err := k.checkDepositNAV(ctx, token); err != nil {
 		return sdk.Int{}, nil, err
 	}
-	ctx, received, err := k.pullTokens(ctx, vaultAddress, token, depositor, amount)
-	if err != nil {
+	var shares sdk.Int
+	var logs []*ethtypes.Log
+	if _, err := k.atomically(ctx, func(ctx sdk.Context) (sdk.Context, error) {
+		ctx, received, err := k.pullTokens(ctx, vaultAddress, token, depositor, amount)
+		if err != nil {
+			return ctx, err
+		}
+		minted, book, before, err := k.creditDeposit(ctx, token, depositor, received)
+		if err != nil {
+			return ctx, err
+		}
+		shares = minted
+		logs = []*ethtypes.Log{
+			reservesUpdatedLog(ctx, token, before, book.Reserves),
+			vaultLog(ctx, DepositTopic, []common.Address{token, depositor}, received.BigInt(), book.Reserves.BigInt()),
+		}
+		return ctx, nil
+	}); err != nil {
 		return sdk.Int{}, nil, err
 	}
-	shares, book, before, err := k.creditDeposit(ctx, token, depositor, received)
-	if err != nil {
-		return sdk.Int{}, nil, err
-	}
-	return shares, []*ethtypes.Log{
-		reservesUpdatedLog(ctx, token, before, book.Reserves),
-		vaultLog(ctx, DepositTopic, []common.Address{token, depositor}, received.BigInt(), book.Reserves.BigInt()),
-	}, nil
+	return shares, logs, nil
 }
 
 // DepositBatch deposits each (token, amount) pair; lists of different
@@ -368,15 +377,22 @@ func (k *Keeper) DepositBatch(ctx sdk.Context, depositor common.Address, tokens 
 	if len(tokens) == 0 || len(tokens) != len(amounts) {
 		return nil, nil, types.ErrInvalidArrayLength
 	}
-	minted := make([]sdk.Int, 0, len(tokens))
+	var minted []sdk.Int
 	var logs []*ethtypes.Log
-	for i, token := range tokens {
-		shares, depositLogs, err := k.Deposit(ctx, depositor, token, amounts[i])
-		if err != nil {
-			return nil, nil, err
+	if _, err := k.atomically(ctx, func(ctx sdk.Context) (sdk.Context, error) {
+		minted = make([]sdk.Int, 0, len(tokens))
+		logs = nil
+		for i, token := range tokens {
+			shares, depositLogs, err := k.Deposit(ctx, depositor, token, amounts[i])
+			if err != nil {
+				return ctx, err
+			}
+			minted = append(minted, shares)
+			logs = append(logs, depositLogs...)
 		}
-		minted = append(minted, shares)
-		logs = append(logs, depositLogs...)
+		return ctx, nil
+	}); err != nil {
+		return nil, nil, err
 	}
 	return minted, logs, nil
 }
@@ -417,21 +433,30 @@ func (k *Keeper) DepositNative(ctx sdk.Context, depositor common.Address, value 
 	if err := k.checkDepositNAV(ctx, pax.Address); err != nil {
 		return sdk.Int{}, nil, err
 	}
-	ctx, received, err := k.pullNative(ctx, vaultAddress, value)
-	if err != nil {
+	var shares sdk.Int
+	var logs []*ethtypes.Log
+	if _, err := k.atomically(ctx, func(ctx sdk.Context) (sdk.Context, error) {
+		ctx, received, err := k.pullNative(ctx, vaultAddress, value)
+		if err != nil {
+			return ctx, err
+		}
+		if !received.IsPositive() {
+			return ctx, types.ErrZeroAmount
+		}
+		minted, book, before, err := k.creditDeposit(ctx, pax.Address, depositor, received)
+		if err != nil {
+			return ctx, err
+		}
+		shares = minted
+		logs = []*ethtypes.Log{
+			reservesUpdatedLog(ctx, pax.Address, before, book.Reserves),
+			vaultLog(ctx, NativeDepositTopic, []common.Address{depositor}, received.BigInt(), book.Reserves.BigInt()),
+		}
+		return ctx, nil
+	}); err != nil {
 		return sdk.Int{}, nil, err
 	}
-	if !received.IsPositive() {
-		return sdk.Int{}, nil, types.ErrZeroAmount
-	}
-	shares, book, before, err := k.creditDeposit(ctx, pax.Address, depositor, received)
-	if err != nil {
-		return sdk.Int{}, nil, err
-	}
-	return shares, []*ethtypes.Log{
-		reservesUpdatedLog(ctx, pax.Address, before, book.Reserves),
-		vaultLog(ctx, NativeDepositTopic, []common.Address{depositor}, received.BigInt(), book.Reserves.BigInt()),
-	}, nil
+	return shares, logs, nil
 }
 
 // debitPayout takes amount out of the book of token after checking it
@@ -471,40 +496,49 @@ func (k *Keeper) Withdraw(ctx sdk.Context, provider, token common.Address, share
 	if shares.IsNil() || !shares.IsPositive() {
 		return sdk.Int{}, nil, types.ErrZeroAmount
 	}
-	if _, err := k.registered(ctx, token); err != nil {
-		return sdk.Int{}, nil, err
-	}
-	supply := k.shareSupply(ctx, token)
-	if supply.Sign() == 0 {
-		return sdk.Int{}, nil, types.ErrZeroAmount
-	}
-	nav, err := k.NAV(ctx, token)
-	if err != nil {
-		return sdk.Int{}, nil, err
-	}
-	payout := new(big.Int).Mul(shares.BigInt(), nav.BigInt())
-	payout.Quo(payout, supply)
-	if payout.Sign() == 0 {
-		return sdk.Int{}, nil, types.ErrZeroAmount
-	}
-	book, before, err := k.debitPayout(ctx, token, payout)
-	if err != nil {
-		return sdk.Int{}, nil, err
-	}
-	if err := k.withShareEVM(ctx, func(evm *vm.EVM) error {
-		return k.BurnShares(ctx, evm, k.ShareDenom(token), provider, shares)
+	var amount sdk.Int
+	var logs []*ethtypes.Log
+	if _, err := k.atomically(ctx, func(ctx sdk.Context) (sdk.Context, error) {
+		if _, err := k.registered(ctx, token); err != nil {
+			return ctx, err
+		}
+		supply := k.shareSupply(ctx, token)
+		if supply.Sign() == 0 {
+			return ctx, types.ErrZeroAmount
+		}
+		nav, err := k.NAV(ctx, token)
+		if err != nil {
+			return ctx, err
+		}
+		payout := new(big.Int).Mul(shares.BigInt(), nav.BigInt())
+		payout.Quo(payout, supply)
+		if payout.Sign() == 0 {
+			return ctx, types.ErrZeroAmount
+		}
+		book, before, err := k.debitPayout(ctx, token, payout)
+		if err != nil {
+			return ctx, err
+		}
+		if err := k.withShareEVM(ctx, func(evm *vm.EVM) error {
+			return k.BurnShares(ctx, evm, k.ShareDenom(token), provider, shares)
+		}); err != nil {
+			return ctx, err
+		}
+		paid := sdk.NewIntFromBigInt(payout)
+		if ctx, err = k.pushTokens(ctx, token, provider, paid); err != nil {
+			return ctx, err
+		}
+		amount = paid
+		logs = []*ethtypes.Log{
+			reservesUpdatedLog(ctx, token, before, book.Reserves),
+			vaultLog(ctx, LPWithdrawalTopic, []common.Address{token, provider}, shares.BigInt(), payout),
+			vaultLog(ctx, WithdrawalTopic, []common.Address{token, provider}, payout, book.Reserves.BigInt()),
+		}
+		return ctx, nil
 	}); err != nil {
 		return sdk.Int{}, nil, err
 	}
-	amount := sdk.NewIntFromBigInt(payout)
-	if _, err := k.pushTokens(ctx, token, provider, amount); err != nil {
-		return sdk.Int{}, nil, err
-	}
-	return amount, []*ethtypes.Log{
-		reservesUpdatedLog(ctx, token, before, book.Reserves),
-		vaultLog(ctx, LPWithdrawalTopic, []common.Address{token, provider}, shares.BigInt(), payout),
-		vaultLog(ctx, WithdrawalTopic, []common.Address{token, provider}, payout, book.Reserves.BigInt()),
-	}, nil
+	return amount, logs, nil
 }
 
 // WithdrawNative burns the PAX shares of provider worth amount, amount x
@@ -519,44 +553,53 @@ func (k *Keeper) WithdrawNative(ctx sdk.Context, provider common.Address, amount
 	if amount.IsNil() || !amount.IsPositive() {
 		return sdk.Int{}, nil, types.ErrZeroAmount
 	}
-	pax, err := k.PAXToken(ctx)
-	if err != nil {
-		return sdk.Int{}, nil, err
-	}
-	nav, err := k.NAV(ctx, pax.Address)
-	if err != nil {
-		return sdk.Int{}, nil, err
-	}
-	if nav.IsZero() || amount.BigInt().Cmp(nav.BigInt()) > 0 {
-		return sdk.Int{}, nil, types.ErrInsufficientLiquidity
-	}
-	supply := k.shareSupply(ctx, pax.Address)
-	burned := new(big.Int).Mul(amount.BigInt(), supply)
-	burned.Add(burned, new(big.Int).Sub(nav.BigInt(), big.NewInt(1)))
-	burned.Quo(burned, nav.BigInt())
-	if burned.Sign() == 0 {
-		return sdk.Int{}, nil, types.ErrZeroAmount
-	}
-	shares, err := toUint256(burned)
-	if err != nil {
-		return sdk.Int{}, nil, err
-	}
-	book, before, err := k.debitPayout(ctx, pax.Address, amount.BigInt())
-	if err != nil {
-		return sdk.Int{}, nil, err
-	}
-	if err := k.withShareEVM(ctx, func(evm *vm.EVM) error {
-		return k.BurnShares(ctx, evm, k.ShareDenom(pax.Address), provider, shares)
+	var shares sdk.Int
+	var logs []*ethtypes.Log
+	if _, err := k.atomically(ctx, func(ctx sdk.Context) (sdk.Context, error) {
+		pax, err := k.PAXToken(ctx)
+		if err != nil {
+			return ctx, err
+		}
+		nav, err := k.NAV(ctx, pax.Address)
+		if err != nil {
+			return ctx, err
+		}
+		if nav.IsZero() || amount.BigInt().Cmp(nav.BigInt()) > 0 {
+			return ctx, types.ErrInsufficientLiquidity
+		}
+		supply := k.shareSupply(ctx, pax.Address)
+		burned := new(big.Int).Mul(amount.BigInt(), supply)
+		burned.Add(burned, new(big.Int).Sub(nav.BigInt(), big.NewInt(1)))
+		burned.Quo(burned, nav.BigInt())
+		if burned.Sign() == 0 {
+			return ctx, types.ErrZeroAmount
+		}
+		burn, err := toUint256(burned)
+		if err != nil {
+			return ctx, err
+		}
+		book, before, err := k.debitPayout(ctx, pax.Address, amount.BigInt())
+		if err != nil {
+			return ctx, err
+		}
+		if err := k.withShareEVM(ctx, func(evm *vm.EVM) error {
+			return k.BurnShares(ctx, evm, k.ShareDenom(pax.Address), provider, burn)
+		}); err != nil {
+			return ctx, err
+		}
+		if ctx, err = k.pushTokens(ctx, pax.Address, recipient, amount); err != nil {
+			return ctx, err
+		}
+		shares = burn
+		logs = []*ethtypes.Log{
+			reservesUpdatedLog(ctx, pax.Address, before, book.Reserves),
+			vaultLog(ctx, NativeWithdrawalTopic, []common.Address{recipient}, amount.BigInt(), book.Reserves.BigInt()),
+		}
+		return ctx, nil
 	}); err != nil {
 		return sdk.Int{}, nil, err
 	}
-	if _, err := k.pushTokens(ctx, pax.Address, recipient, amount); err != nil {
-		return sdk.Int{}, nil, err
-	}
-	return shares, []*ethtypes.Log{
-		reservesUpdatedLog(ctx, pax.Address, before, book.Reserves),
-		vaultLog(ctx, NativeWithdrawalTopic, []common.Address{recipient}, amount.BigInt(), book.Reserves.BigInt()),
-	}, nil
+	return shares, logs, nil
 }
 
 // ApplyTrade adds amountIn to the book of tokenIn and takes netOut from the
