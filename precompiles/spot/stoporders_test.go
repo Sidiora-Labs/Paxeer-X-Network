@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"math/big"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -203,7 +204,35 @@ func (f *stopOrdersFixture) invoke(caller common.Address, name string, args ...i
 	}
 	values, err := method.Outputs.Unpack(output)
 	require.NoError(f.t, err)
+	for i, value := range values {
+		values[i] = stopOrdersTestCanonical(reflect.ValueOf(value)).Interface()
+	}
 	return values, nil
+}
+
+func stopOrdersTestCanonical(value reflect.Value) reflect.Value {
+	switch value.Kind() {
+	case reflect.Ptr:
+		if n, ok := value.Interface().(*big.Int); ok && n != nil {
+			return reflect.ValueOf(new(big.Int).Set(n))
+		}
+	case reflect.Slice:
+		if value.IsNil() {
+			return value
+		}
+		canonical := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+		for i := 0; i < value.Len(); i++ {
+			canonical.Index(i).Set(stopOrdersTestCanonical(value.Index(i)))
+		}
+		return canonical
+	case reflect.Struct:
+		canonical := reflect.New(value.Type()).Elem()
+		for i := 0; i < value.NumField(); i++ {
+			canonical.Field(i).Set(stopOrdersTestCanonical(value.Field(i)))
+		}
+		return canonical
+	}
+	return value
 }
 
 func (f *stopOrdersFixture) call(name string, args ...interface{}) []interface{} {
