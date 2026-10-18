@@ -487,7 +487,7 @@ func TestPECORCollectFees(t *testing.T) {
 	require.Empty(t, ret)
 	require.Equal(t, new(big.Int).Add(before, big.NewInt(6_000000)), f.balance(f.pax, f.collector))
 	values, _ := f.call("accumulatedFees", f.pax)
-	require.Equal(t, new(big.Int), values[0])
+	require.Zero(t, new(big.Int).Cmp(values[0].(*big.Int)))
 	ret, _, err = f.invoke(f.collector, f.pack("collectFees", f.pax), new(big.Int), false)
 	require.ErrorIs(t, err, types.ErrNoFeesToCollect)
 	require.Equal(t, types.ErrNoFeesToCollect.Data(), ret)
