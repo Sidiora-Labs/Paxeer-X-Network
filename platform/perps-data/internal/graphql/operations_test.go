@@ -205,8 +205,8 @@ func TestOperations(t *testing.T) {
 			if got := scalar(row["orderId"]); got != want {
 				t.Errorf("%s orderId = %s, want %s", alias, got, want)
 			}
-			if got := scalar(row["positionId"]); got != "1" {
-				t.Errorf("%s positionId = %s, want 1", alias, got)
+			if positionID, ok := row["positionId"]; !ok || positionID != nil {
+				t.Errorf("%s positionId = %v (present %t), want null until OrderExecuted", alias, positionID, ok)
 			}
 			if got := scalar(row["marketId"]); got != "0" {
 				t.Errorf("%s marketId = %s, want 0", alias, got)
