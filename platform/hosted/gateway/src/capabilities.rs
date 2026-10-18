@@ -623,6 +623,11 @@ mod tests {
             evm::address_hex(&evm::LAUNCHPAD_PRECOMPILE),
             "0x0000000000000000000000000000000000001017"
         );
+        assert!(Surface::Launchpad.decodes(&[0; 32]));
+        assert!(Surface::Launchpad.decodes(&[0xff; 32]));
+        for length in [0, 1, 31, 33, 64] {
+            assert!(!Surface::Launchpad.decodes(&vec![0; length]));
+        }
 
         let launchpad_calls = Cell::new(0);
         let pools = format!("0x{}", "00".repeat(31) + "03");
@@ -656,6 +661,7 @@ mod tests {
         let live = probe(node("pools"), 1_790_000_045).unwrap_or_else(|code| panic!("{code}"));
         assert_eq!(launchpad_calls.get(), 1);
         assert!(live.launchpad);
+        assert_eq!(live.document()["launchpad"], json!(true));
         assert_eq!(live.rpc_height, 0x16c_1321);
 
         for absent in ["0x", "0x03"] {
