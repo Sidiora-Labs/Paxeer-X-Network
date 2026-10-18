@@ -11150,7 +11150,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.3]
 title = "Serve the account and margin methods"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["3.1.3", "3.1.4", "3.2.1", "3.2.8"]
