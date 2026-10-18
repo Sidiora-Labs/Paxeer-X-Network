@@ -129,8 +129,14 @@ func aggregateOf(marketID uint64, index, mark int64, sources uint32) types.Genes
 	}}
 }
 
+// canonical re-sets a decoded integer so that zero carries the same internal
+// representation as big.NewInt(0) under deep equality.
+func canonical(x *big.Int) *big.Int { return new(big.Int).Set(x) }
+
 func priceOf(out []interface{}) priceView {
-	return *abi.ConvertType(out[0], new(priceView)).(*priceView)
+	price := *abi.ConvertType(out[0], new(priceView)).(*priceView)
+	price.IndexPrice, price.MarkPrice = canonical(price.IndexPrice), canonical(price.MarkPrice)
+	return price
 }
 
 func TestViewVersionedSetup(t *testing.T) {
@@ -234,7 +240,7 @@ func TestViewMarketIdOf(t *testing.T) {
 
 	require.Equal(t, big.NewInt(8), h.meteredView("marketIdOf", "XAU")[0])
 	for _, market := range types.Markets {
-		require.Equal(t, new(big.Int).SetUint64(market.ID), h.meteredView("marketIdOf", market.Symbol)[0], market.Symbol)
+		require.Equal(t, new(big.Int).SetUint64(market.ID), canonical(h.meteredView("marketIdOf", market.Symbol)[0].(*big.Int)), market.Symbol)
 	}
 	h.requireReverts(unknownMarket, "marketIdOf", "xau")
 	h.requireReverts(unknownMarket, "marketIdOf", "PERP_XAU_USDC")
@@ -266,7 +272,9 @@ func TestViewGetObservation(t *testing.T) {
 
 	observation := func(id int64, validator common.Address) observationView {
 		out := h.meteredView("getObservation", big.NewInt(id), validator)
-		return *abi.ConvertType(out[0], new(observationView)).(*observationView)
+		got := *abi.ConvertType(out[0], new(observationView)).(*observationView)
+		got.IndexPrice, got.MarkPrice = canonical(got.IndexPrice), canonical(got.MarkPrice)
+		return got
 	}
 	require.Equal(t, observationView{Sequence: 7, IndexPrice: record.IndexPrice.BigInt(),
 		MarkPrice: record.MarkPrice.BigInt(), SourceTimestampMs: 1_699_999_999_500, Height: 100}, observation(0, validatorV))
