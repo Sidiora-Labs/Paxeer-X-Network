@@ -125,8 +125,35 @@ def signing_state(raw, height, validator):
     )
     if validator:
         require(
-            state["height"] == height, "validator signing state is not at HALT_HEIGHT"
+            state["height"] == height or halt_proposal(state, height),
+            "validator signing state is not at HALT_HEIGHT",
         )
+
+
+def halt_proposal(state, height):
+    if state["height"] != str(int(height) + 1):
+        return False
+    if not all(
+        type(state.get(key)) is int and state[key] == value
+        for key, value in (("round", 0), ("step", 1))
+    ):
+        return False
+    signature = state.get("signature")
+    signbytes = state.get("signbytes")
+    if not isinstance(signature, str) or not signature:
+        return False
+    if not isinstance(signbytes, str) or not re.fullmatch(
+        r"(?:[0-9A-Fa-f]{2})+", signbytes
+    ):
+        return False
+    raw = bytes.fromhex(signbytes)
+    length = 0
+    for i, byte in enumerate(raw[:10]):
+        length |= (byte & 0x7F) << (7 * i)
+        if byte < 0x80:
+            body = raw[i + 1 :]
+            return len(body) == length and body[:2] == b"\x08\x20"
+    return False
 
 
 def verify(archive, height, validator):
