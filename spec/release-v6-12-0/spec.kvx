@@ -7449,7 +7449,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.22]
 title = "Commit keeper state before nested calls and propagate nested reverts"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["2.2.1"]
