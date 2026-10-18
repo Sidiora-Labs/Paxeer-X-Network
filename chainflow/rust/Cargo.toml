@@ -1,0 +1,66 @@
+[package]
+name = "chainflow-data-gateway"
+version = "0.1.0" # x-release-please-version
+edition = "2024"
+rust-version = "1.85"
+description = "Rust library to access the Chainflow Data Gateway API"
+authors = ["Chainflow Data Gateway"]
+license = "Apache-2.0"
+keywords = ["api", "sdk", "client"]
+categories = ["api-bindings"]
+
+[dependencies]
+http = "1"
+http-body = "1"
+bytes = "1"
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+serde = { version = "1.0.181", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+url = "2"
+reqwest = { version = "0.13", optional = true, default-features = false, features = ["stream"] }
+tokio = { version = "1", optional = true, features = ["net", "time"] }
+tokio-tungstenite = { version = "0.30", optional = true, default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+tracing = { version = "0.1", optional = true, default-features = false, features = ["std"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
+http-body-util = "0.1"
+
+[features]
+default = ["reqwest", "rustls", "websocket"]
+reqwest = ["dep:reqwest", "tokio"]
+tokio = ["dep:tokio"]
+rustls = ["reqwest?/rustls"]
+native-tls = ["reqwest?/native-tls"]
+mock = []
+tracing = ["dep:tracing"]
+websocket = ["dep:tokio-tungstenite", "tokio"]
+
+[[test]]
+name = "mock"
+required-features = ["mock", "tokio"]
+
+[[example]]
+name = "byo_transport_hyper"
+required-features = ["tokio"]
+
+[[example]]
+name = "mock_transport"
+required-features = ["mock", "tokio"]
+
+[lints.rust]
+# No rustc lint is relaxed: every one keeps its default level.
+
+[lints.clippy]
+# Generated response and webhook enums wrap payload models of genuinely
+# different sizes; boxing every large variant would cost an indirection and
+# the ergonomics of matching on the common path.
+large_enum_variant = "allow"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

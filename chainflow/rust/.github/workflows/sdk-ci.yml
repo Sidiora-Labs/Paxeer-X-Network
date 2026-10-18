@@ -1,0 +1,33 @@
+name: Rust SDK CI
+
+on:
+  push:
+  pull_request:
+
+# Least privilege for a verification-only workflow: every job below only reads the checked-out
+# tree, so the run's GITHUB_TOKEN is narrowed to that regardless of the repository's default
+# grants. Declared at the workflow level so a job added later inherits the floor.
+permissions:
+  contents: read
+
+jobs:
+  # One verification job, matching every other target's generated CI: build the crate, then hold it
+  # to the toolchain's own checks. `--all-features` is load-bearing rather than cosmetic — the mock
+  # tests declare `required-features = ["mock", "tokio"]` so a bare `cargo test` would silently skip
+  # them, and the feature-gated surfaces (multipart, websocket) only compile — and only have their
+  # doctests collected — with their features on.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - run: cargo build --all-features
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test --all-features
+      # Verification only, never auto-fix: the SDK is generated rustfmt-clean against the committed
+      # `rustfmt.toml`, so a diff here means either hand-edited custom code or a regenerate that was
+      # not committed. Auto-fixing would make the pushed bytes differ from generator output.
+      - run: cargo fmt --check

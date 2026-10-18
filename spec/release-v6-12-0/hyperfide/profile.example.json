@@ -1,0 +1,25 @@
+{
+  "_comment": "EXAMPLE ONLY. Every 00000000-0000-0000-0000-* UUID and every placeholder:* string is a placeholder; the projection refuses them unless --allow-placeholders is passed. Replace them with the real environment profile, model profile, credential profile and reviewer ids.",
+  "environment_profile_id": "00000000-0000-0000-0000-000000000001",
+  "resource_requirements": {
+    "cpu_millis": 4000,
+    "memory_bytes": "17179869184",
+    "disk_bytes": "107374182400",
+    "build_slots": 1,
+    "test_slots": 1,
+    "max_descendants": 0
+  },
+  "execution_profile": {
+    "model_profile_ref": "placeholder:model-profile",
+    "credential_profile_ref": "placeholder:credential-profile"
+  },
+  "max_process_lifetime_seconds": 3600,
+  "review": {
+    "reviewer_ids": ["00000000-0000-0000-0000-000000000002"]
+  },
+  "graph_inputs": {
+    "required": false,
+    "manifest_id": null,
+    "reason": "Release tasks name their scope in touches; no graph manifest is bound."
+  }
+}

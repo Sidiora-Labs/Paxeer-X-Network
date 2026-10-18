@@ -1,0 +1,6 @@
+@media(min-width: 540px) {
+    .gemini-container .banner-grid {
+        grid-template-columns: repeat(2, 1fr);
+        --banner-grid-gap: 32px
+    }
+}

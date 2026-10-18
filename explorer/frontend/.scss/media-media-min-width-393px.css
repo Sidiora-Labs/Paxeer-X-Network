@@ -1,0 +1,10 @@
+@media(min-width: 393px) {
+    .footer-main-links__content-wrapper {
+        grid-template-columns: repeat(2, 1fr)
+    }
+}
+@media(min-width: 393px) {
+    .prompt-message-block .prompt-message-audio-block {
+        max-width: 340px
+    }
+}

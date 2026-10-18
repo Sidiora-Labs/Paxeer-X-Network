@@ -1,0 +1,5 @@
+@media(min-width: 600px) {
+    .glue-jumplinks {
+        max-width: calc(100% - 48px)
+    }
+}

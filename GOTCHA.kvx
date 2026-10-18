@@ -8041,3 +8041,138 @@ fix = "create the module account in genesis and in the upgrade handler"
 area = "build"
 symptom = "make paxd-build depends on paxd-native-libs which runs cargo even when the libs are already linked"
 fix = "run the recipe body directly when the native libs are present"
+
+[gotcha.1694]
+area = "hyperfide"
+symptom = "install-service.mjs refuses RELEASE_INVALID when manifest.sig sits inside the release root, because the detached signature is an unpinned file in the tree"
+fix = "keep manifest.sig beside the tarball and pass it with --signature-file from outside the release root"
+
+[gotcha.1695]
+area = "hyperfide"
+symptom = "install-service.mjs rejects --service-gid below 1000; useradd -r allocates a system gid"
+fix = "groupmod -g 1900 hyperfide (uid and gid both need four digits) before installing"
+
+[gotcha.1696]
+area = "hyperfide"
+symptom = "the three service units run as three different users (hyperfide, hyperfide-provisioner, hyperfide-dispatch) in group hyperfide, and the authority journal directory must be owned by the running user with mode 0700"
+fix = "create all three users and one journal directory per role under /var/lib/hyperfide before writing the env files"
+
+[gotcha.1697]
+area = "hyperfide"
+symptom = "an ordinary control/provisioner/dispatch service refuses at start with DURABILITY_POLICY_REQUIRED unless HYPERFIDE_REQUIRE_SYNC_REPLICA is 0 or 1, and with EXTERNAL_JOURNAL_REQUIRED unless HYPERFIDE_DEPLOYMENT_ID and HYPERFIDE_AUTHORITY_JOURNAL_DIR are set and an ACTIVE authority epoch exists"
+fix = "set both variables explicitly and activate the first authority epoch before the first service start"
+
+[gotcha.1698]
+area = "hyperfide"
+symptom = "the Railway 9.3 process actions, 9.1 capture and checkpoint lookup, and 9.4 inventory and quota actions all refuse in mode live; only the runtime adapter the provisioner installs executes against Railway"
+fix = "do not drive live Railway work through those component actions; treat them as fixture diagnostics"
+
+[gotcha.1699]
+area = "fleet gateway"
+symptom = "Claude Code through the Centra gateway fails every request with 400 reasoning_effort: Extra inputs are not permitted; the body carries no such field, the gateway adds it when the User-Agent is claude-cli or the x-app header is cli"
+fix = "send the request with ANTHROPIC_CUSTOM_HEADERS overriding User-Agent and x-app until the gateway stops keying on the client name"
+
+[gotcha.1700]
+area = "fleet gateway"
+symptom = "with the client headers overridden the gateway renames every tool with an _ide suffix on the way up and returns tool_use names such as Bash_ide, so Claude Code reports No such tool available for every call; non-stream JSON responses also end with a stray data: [DONE] line"
+fix = "the gateway must preserve tool names on the Anthropic path; until then the Claude attempt yields nothing and the Codex retry does the work"
+
+[gotcha.1701]
+area = "fleet runtime"
+symptom = "parallel runners started in the same second all try to create the same base-<tip>.bundle and die on the git bundle lock; the first owner dispatch worked only because the base equalled the checkpoint commit"
+fix = "the dispatcher builds the base bundle once before spawning runners and claims each worker in its pool record at spawn time, with a short stagger"
+
+[gotcha.1702]
+area = "fleet runtime"
+symptom = "a sandbox bash -lc command that contains pkill -f <name> kills its own shell, because the shell's command line also matches <name>, and the whole exec returns nothing"
+fix = "start helpers in the background, keep their pid, and kill by pid"
+
+[gotcha.1703]
+area = "fleet runtime"
+symptom = "the perps-data gates fail with PERPS_DATA_TEST_DATABASE_URL unset; the sandbox image ships a Postgres 18 cluster that is down by default and no packet starts it"
+fix = "the runner's prepare phase starts the cluster, creates perps_test and exports the URL from /etc/profile.d so every login shell and tool inherits it"
+
+[gotcha.1704]
+area = "fleet runtime"
+symptom = "a run whose verify passes with no code change produces an empty bundle, is never merged, is never counted done by the dispatcher, and so never unblocks its dependents"
+fix = "flip the task status to done in the integration spec with one commit per task once its verify passed on the integration base, then regenerate the packet index"
+
+[gotcha.1705]
+area = "fleet runtime"
+symptom = "Claude Code runs through the Centra gateway exit cleanly but every tool call fails with No such tool available: the gateway appends _ide to every tool name upstream and returns tool_use blocks named Bash_ide, Read_ide; 62 runs, zero commits, while the gateway dashboard shows them as successful requests"
+fix = "run a stdlib reverse proxy inside the sandbox between Claude Code and the gateway that strips the _ide suffix from tool_use names (streamed content_block_start events line by line, non-stream JSON bodies whole) and drops the stray data: [DONE]; validate with a probe that requires a real Bash call, not a text-only reply"
+
+[gotcha.1706]
+area = "fleet runtime"
+symptom = "a sandbox background process started as python3 … & survives kill $!: the mise python3 shim forks, and a && b & backgrounds the whole list as a subshell so $! names the wrong pid"
+fix = "start the real interpreter from sys.executable as a simple command after a ; and kill that saved pid; in bash -lc exec shells use a bracketed pgrep pattern ([c]laude-proxy) and check PPID before acting on a pid"
+
+[gotcha.1707]
+area = "fleet runtime"
+symptom = "dispatch.mjs accepts --dry, not --dry-run; an unknown flag is ignored and the call dispatches for real"
+fix = "use --dry for a plan; read the usage line of every fleet script before trusting a flag name"
+
+[gotcha.1708]
+area = "fleet packets"
+symptom = "workers told to record pre-existing failures and to leave code and check intact when they disagree repair nothing: nearly every verify failure on an already-implemented tree is pre-existing, so 17 tasks came back fail with zero repair cycles"
+fix = "packet rule: a failing build or verify is the task's work whether or not it pre-existed; fix the root cause in the task's files, test setup and same-package helpers with every assertion kept as strong; the spec acceptance text decides a code-versus-test disagreement; only an out-of-scope root cause or a dependency's missing code is a blocker"
+
+[gotcha.1709]
+area = "fleet runtime"
+symptom = "a task attempt whose verify passes with no code change (commits=0) is scored failed and triggers the retry harness, which then invents a change to have something to commit"
+fix = "score an attempt done when it has commits or its evidence index says result pass with verify_exit 0; collect records the empty bundle and the leader flips the spec status"
+
+[gotcha.1710]
+area = "release toolchain"
+symptom = "sandbox images on Ubuntu 26.04 ship gcc 15 while tools/release/toolchain.env pins CC_VERSION=13.3.0 and build-paxd.sh refuses"
+fix = "install the nine Ubuntu 24.04 gcc-13 debs (13.3.0-6ubuntu2~24.04.1: gcc-13-base, libgcc-13-dev, libstdc++-13-dev, cpp-13, cpp-13-x86-64-linux-gnu, gcc-13, gcc-13-x86-64-linux-gnu, g++-13, g++-13-x86-64-linux-gnu) and point cc/gcc/g++/c++ at them with update-alternatives; do not register cpp, its alternative loops with Too many levels of symbolic links"
+
+[gotcha.1711]
+area = "fleet runtime"
+symptom = "a fix-mode evidence index carries a commands list and no verify_exit, so outcome scoring sees result without verify_exit and scores the attempt by commits alone; a fix that confirms the tree already passes ends FAILED with zero commits"
+fix = "read the fix ledger before reacting: commands all exit 0 plus defects fixed means nothing to land; only a task or requal run flips the spec status"
+
+[gotcha.1712]
+area = "fleet runtime"
+symptom = "requal dispatch skips a task as not-integrated when its task ledger is done but the bundle merged empty, and gen-requalify.py silently writes zero packets when ids are comma-joined"
+fix = "pass ids space-separated to gen-requalify.py; rerun a not-integrated task in task mode with --only, or accept the fix-run gate evidence when the task is already done"
+
+[gotcha.1713]
+area = "mainnet rpc"
+symptom = "https://api-mainnet-beta.paxeer.network/rpc answers 502 while every node is synced: the edge nginx proxies to paxeer-shared-endpoint.fly.dev, which no longer resolves"
+fix = "read chain state over ssh from a full node (curl 127.0.0.1:8645) or a local ssh -L tunnel; the edge manifest line for api-mainnet-beta needs a new upstream, an operator host write"
+
+[gotcha.1714]
+area = "mainnet rpc"
+symptom = "every full node prunes with min-retain-blocks 100000 and refuses state at the v6.12.0 halt height 34742400, except the single archive node (min-retain-blocks 0), whose debug_traceCall still refuses with beyond max lookback of 10000"
+fix = "eth_call, eth_getStorageAt and eth_getCode at H work on the archive node; debug_traceCall at H needs max_trace_lookback_blocks = -1 in its app.toml [json-rpc] section and a restart"
+
+[gotcha.1715]
+area = "shell"
+symptom = "pgrep -f <pattern> run from a bash -c command whose own text contains the pattern matches the running shell and reports the process as present"
+fix = "check listeners with ss -ltn or use pgrep -x on the binary name; never grep for a string that appears in the invoking command line"
+
+[gotcha.1716]
+area = "fleet runtime"
+symptom = "dispatch --mode fix --only <id> happily runs a stale packets-fix/<id>.md from an earlier round when the new triage file carries the same id and assemble-fix-plan.py stopped at the duplicate without rewriting fix-plan.json"
+fix = "later triage files now override earlier entries for the same id; always confirm gen-fix.py wrote the packet count you expect before dispatching, and close an aborted ledger (state FAILED, finishedAt) before redispatching"
+
+[gotcha.1717]
+area = "edge / public RPC"
+symptom = "api-mainnet-beta.paxeer.network/rpc returns 502 after the Fly exit: the edge manifest still lists the paxeer-shared-endpoint.fly.dev upstream, which no longer resolves"
+do = "point the manifest line for api-mainnet-beta.paxeer.network at a live upstream and re-render with tools/bringup/edge.sh; until then use the api1..api16 node names or the archive tunnel for reads"
+
+[gotcha.1718]
+area = "fleet-6120 assemble-fix-plan"
+symptom = "a fix id present in two triage files was assembled from the alphabetically later file (spot-perps.json beat round5.json), so the worker ran a stale round-1 packet and recorded nothing to fix"
+do = "assemble-fix-plan.py now orders triage files by mtime so the latest written entry wins; touch the file you mean to win and check fix-plan.json title before gen-fix"
+
+[gotcha.1719]
+area = "launchpad migration fixture"
+symptom = "MigrateV6120 on the halt-height export aborts with holder balances differ from total supply: holders.json lists only the holders the recording lane knew, and the archive node serves logs only from 30252301 while paxscan never indexed some pool tokens"
+do = "enumerate holders exhaustively (layout contracts, retained-range Transfer logs, explorer APIs, balanceOf probes) and require sum == totalSupply at H for every token before writing holders.json"
+
+[gotcha.1720]
+area = "modules/spot genesis tests"
+symptom = "Keeper.InitGenesis calls EnsureModuleAccount, which needs a real EVM/account keeper; the old launchpad citations genesis.go:11/:53 are now spot genesis.go:55/:177"
+do = "build the keeper over testkeeper.EVMTestApp with pricefeedtestutil.NewKeeper and WithPriceFeedStore, as msg_server_test newSpotEnv does"

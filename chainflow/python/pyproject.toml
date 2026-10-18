@@ -1,0 +1,32 @@
+[project]
+name = "chainflow-data-gateway"
+version = "0.1.0" # x-release-please-version
+description = "API-key-protected SDK contract for the Chainflow public data gateway. Covers all 18 price feeds, TradingView UDF history, books/trades/stats, market summaries, EVM block observations, explorer activity, CoinGecko/CMC-compatible adapters, and WebSocket handshakes/messages. AUTHENTICATION: REST requires the REST X-API-Key. POST /auth/ws-token requires a separate WS X-API-Key. Keep both keys server-side. WebSocket clients exchange the WS key for an opaque, short-lived, scope-bound token, then connect using"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+  { name = "Chainflow Data Gateway" },
+]
+requires-python = ">= 3.9"
+dependencies = [
+  "httpx>=0.23.0, <1",
+  "pydantic>=1.9.0, <3",
+  "typing-extensions>=4.14, <5",
+  "anyio>=3.5.0, <5",
+  "distro>=1.7.0, <2",
+  "sniffio",
+]
+
+[project.optional-dependencies]
+aiohttp = ["aiohttp", "httpx_aiohttp>=0.1.9"]
+websockets = ["websockets >= 13, < 16"]
+
+[build-system]
+requires = ["hatchling>=1.18.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/chainflow_data_gateway"]
+
+[tool.ruff]
+line-length = 120

@@ -1,0 +1,64 @@
+{
+  "name": "@sidioralabs/chainflow-data-gateway",
+  "version": "0.1.0",
+  "description": "API-key-protected SDK contract for the Chainflow public data gateway. Covers all 18 price feeds, TradingView UDF history, books/trades/stats, market summaries, EVM block observations, explorer activity, CoinGecko/CMC-compatible adapters, and WebSocket handshakes/messages. AUTHENTICATION: REST requires the REST X-API-Key. POST /auth/ws-token requires a separate WS X-API-Key. Keep both keys server-side. WebSocket clients exchange the WS key for an opaque, short-lived, scope-bound token, then connect using",
+  "author": "Chainflow Data Gateway",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
+    },
+    "./*.mjs": {
+      "types": "./dist/esm/*.d.ts",
+      "import": "./dist/esm/*.js",
+      "default": "./dist/esm/*.js"
+    },
+    "./*.js": {
+      "types": "./dist/esm/*.d.ts",
+      "import": "./dist/esm/*.js",
+      "require": "./dist/cjs/*.js",
+      "default": "./dist/esm/*.js"
+    },
+    "./*": {
+      "types": "./dist/esm/*.d.ts",
+      "import": "./dist/esm/*.js",
+      "require": "./dist/cjs/*.js",
+      "default": "./dist/esm/*.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "api.md",
+    "SKILL.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/finalize-build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.cjs.json --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^6.0.0"
+  },
+  "peerDependencies": {
+    "ws": "^8.18.0"
+  },
+  "peerDependenciesMeta": {
+    "ws": {
+      "optional": true
+    }
+  },
+  "license": "Apache-2.0"
+}

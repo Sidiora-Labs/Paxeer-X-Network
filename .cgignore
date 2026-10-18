@@ -151,3 +151,17 @@ coverage.out
 /storage/state_db/bench/cryptosim/logs/
 /storage/ledger_db/block/blocksim/bin/
 /storage/db_engine/litt/bin/
+node/wasmbinding/
+wasm-runtime/
+spec/
+scripts/
+example/
+docs/
+tools/benchmark/
+programs/vendor/
+programs/porting/
+platform/docs/
+platform/examples/
+platform/tools/
+human/apps/wallet/public/
+human/tools/

@@ -1,0 +1,6 @@
+@media(max-width: 768px) {
+    .explore-modal__header {
+        flex-direction: column;
+        align-items: flex-start
+    }
+}

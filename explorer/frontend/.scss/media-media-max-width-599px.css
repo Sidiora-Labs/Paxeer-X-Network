@@ -1,0 +1,5 @@
+@media(max-width: 599px) {
+    .prompt-card__badge {
+        height: 18px
+    }
+}

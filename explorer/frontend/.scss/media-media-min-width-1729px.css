@@ -1,0 +1,24 @@
+@media(min-width: 1729px) {
+    main>.section-cover:first-child .section-cover--full-page {
+        max-height: calc((100svh - 64px)*.85);
+        max-height: calc((100svh - var(--header-height))*.85);
+        height: calc((100svh - 64px)*.85);
+        height: calc((100svh - var(--header-height))*.85)
+    }
+}
+@media(min-width: 1729px) {
+    .section-cover--full-page {
+        max-height: 85svh;
+        height: 85svh
+    }
+}
+@media(min-width: 1729px) {
+
+    .carousel-block .section-cover--full-page,
+    .carousel-block .section-cover--full-page-small-text {
+        max-height: calc((100svh - var(--grid-margin) - 64px - var(--spacer-xl))*.85);
+        max-height: calc((100svh - var(--grid-margin) - var(--header-height) - var(--spacer-xl))*.85);
+        height: calc((100svh - var(--grid-margin) - 64px - var(--spacer-xl))*.85);
+        height: calc((100svh - var(--grid-margin) - var(--header-height) - var(--spacer-xl))*.85)
+    }
+}
