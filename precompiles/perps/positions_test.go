@@ -226,9 +226,13 @@ func (e *positionsEnv) call(caller common.Address, method string, args ...interf
 		ret     []byte
 		callErr error
 	)
+	snapshot := e.stateDB.Snapshot()
 	require.NotPanics(e.t, func() {
 		ret, callErr = e.precompile.Run(e.evm, caller, caller, input, big.NewInt(0), false, false, nil)
 	})
+	if callErr != nil {
+		e.stateDB.RevertToSnapshot(snapshot)
+	}
 	return ret, callErr
 }
 
@@ -342,16 +346,21 @@ func TestPositionsOpenPositionCompatMarketOrder(t *testing.T) {
 	require.Zero(t, e.usdlBalance(positionsTraderA).Sign())
 	require.Equal(t, new(big.Int).Add(moduleBefore, big.NewInt(100_000_000)), e.usdlBalance(module))
 
+	maker, ok := e.position(positionsMakerB)
+	require.True(t, ok)
 	logs, fields := e.perpsLogs("PositionOpened")
-	require.Len(t, logs, 1)
+	require.Len(t, logs, 2)
+	require.Equal(t, []common.Hash{e.perpsABI.Events["PositionOpened"].ID, positionsTopic(maker.ID.ToBig()),
+		positionsAddressTopic(positionsMakerB), positionsTopic(big.NewInt(0))}, logs[0].Topics)
+	require.Equal(t, false, fields[0]["isLong"])
 	require.Equal(t, []common.Hash{e.perpsABI.Events["PositionOpened"].ID, positionsTopic(id),
-		positionsAddressTopic(positionsTraderA), positionsTopic(big.NewInt(0))}, logs[0].Topics)
-	require.Equal(t, true, fields[0]["isLong"])
-	require.Equal(t, positionsE18(990), fields[0]["sizeUsd"])
-	require.Equal(t, positionsE18(10), fields[0]["leverage"])
-	require.Equal(t, positionsE18(60_000), fields[0]["entryPrice"])
-	require.Equal(t, e.usdl, fields[0]["collateralToken"])
-	require.Equal(t, big.NewInt(100_000_000), fields[0]["collateralAmount"])
+		positionsAddressTopic(positionsTraderA), positionsTopic(big.NewInt(0))}, logs[1].Topics)
+	require.Equal(t, true, fields[1]["isLong"])
+	require.Equal(t, positionsE18(990), fields[1]["sizeUsd"])
+	require.Equal(t, positionsE18(10), fields[1]["leverage"])
+	require.Equal(t, positionsE18(60_000), fields[1]["entryPrice"])
+	require.Equal(t, e.usdl, fields[1]["collateralToken"])
+	require.Equal(t, big.NewInt(100_000_000), fields[1]["collateralAmount"])
 	fills, _ := e.perpsLogs("Fill")
 	require.Len(t, fills, 1)
 
@@ -378,11 +387,14 @@ func TestPositionsAddSizeReweightsEntry(t *testing.T) {
 	require.Equal(t, *uint256.NewInt(182_331_858), e.collateral(positionsTraderA))
 	require.Zero(t, e.usdlBalance(positionsTraderA).Sign())
 
+	maker, ok := e.position(positionsMakerB)
+	require.True(t, ok)
 	logs, fields := e.perpsLogs("PositionEntryPriceChanged")
-	require.Len(t, logs, 1)
-	require.Equal(t, positionsTopic(id), logs[0].Topics[1])
-	require.Equal(t, positionsE18(60_000), fields[0]["oldEntryPrice"])
-	require.Equal(t, wordBig(positionsWord(t, "60651960784313725490196")), fields[0]["newEntryPrice"])
+	require.Len(t, logs, 2)
+	require.Equal(t, positionsTopic(maker.ID.ToBig()), logs[0].Topics[1])
+	require.Equal(t, positionsTopic(id), logs[1].Topics[1])
+	require.Equal(t, positionsE18(60_000), fields[1]["oldEntryPrice"])
+	require.Equal(t, wordBig(positionsWord(t, "60651960784313725490196")), fields[1]["newEntryPrice"])
 
 	e.requireRevert("PerpsNotPositionHolder", positionsBidderC, "addSize", id, big.NewInt(1_000_000), positionsE18(10))
 	e.requireRevert("PerpsUnknownPosition", positionsTraderA, "addSize", big.NewInt(999), big.NewInt(1_000_000),
