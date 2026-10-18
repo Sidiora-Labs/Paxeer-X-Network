@@ -11308,7 +11308,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.9]
 title = "Run the EndBlock pass"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["3.1.7", "3.1.8", "3.1.12", "3.1.13", "3.1.14", "3.1.15", "3.1.16", "3.2.10"]
