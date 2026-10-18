@@ -523,5 +523,5 @@ func accountAdd(word uint256.Int, amount *big.Int) (uint256.Int, error) {
 }
 
 func collateralEvent(name string, address common.Address, amount, balance uint256.Int) types.EventRecord {
-	return types.EventRecord{Name: name, Args: []any{address, amount.ToBig(), balance.ToBig()}}
+	return types.EventRecord{Name: name, Args: []any{address, new(big.Int).Set(amount.ToBig()), new(big.Int).Set(balance.ToBig())}}
 }
