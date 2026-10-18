@@ -6,6 +6,7 @@ import (
 
 	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
+	layerxexchangekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/keeper"
 	perpskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
 	perpstypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
 	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
@@ -39,10 +40,13 @@ type wiredKeepers struct {
 
 func (k wiredKeepers) PerpsK() *perpskeeper.Keeper { return k.perps }
 
-// bareKeepers expose only the Keepers interface, so PerpsK is not promoted.
+// bareKeepers expose only the Keepers interface, so PerpsK is not promoted,
+// and carry no layerxexchange keeper.
 type bareKeepers struct {
 	utils.Keepers
 }
+
+func (bareKeepers) LayerXExchangeK() *layerxexchangekeeper.Keeper { return nil }
 
 type harness struct {
 	t          *testing.T
