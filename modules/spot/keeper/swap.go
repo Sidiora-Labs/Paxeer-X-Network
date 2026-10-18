@@ -250,6 +250,22 @@ func (k *Keeper) swapTokens(ctx sdk.Context, input, output common.Address) error
 			return types.ErrTokenPaused
 		}
 	}
+	for _, address := range []common.Address{input, output} {
+		token, err := k.tokenOf(ctx, address)
+		if err != nil {
+			return err
+		}
+		if token.IsStablecoin {
+			continue
+		}
+		index, err := k.IndexPrice(ctx, address)
+		if err != nil {
+			return err
+		}
+		if err := k.CheckTwapSanity(ctx, address, index); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
