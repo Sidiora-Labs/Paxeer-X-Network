@@ -294,10 +294,11 @@ func TestMarginThousandXConsequences(t *testing.T) {
 		require.True(t, takerFee.MulRaw(2).GT(im.Sub(mm)), "%s round trip exceeds the buffer", m.symbol)
 
 		opener := marginAccount(100 + m.id)
-		env.putAccount(t, opener, 14_499_999)
-		require.ErrorIs(t, env.open(opener, m.id, true, notional, thousandX), types.ErrInsufficientMargin, m.symbol)
-		env.putAccount(t, opener, 14_500_000)
-		require.NoError(t, env.open(opener, m.id, true, notional, thousandX), "%s opens with 14.5 bps", m.symbol)
+		openNotional := usdWhole(5_000)
+		env.putAccount(t, opener, 7_249_999)
+		require.ErrorIs(t, env.open(opener, m.id, true, openNotional, thousandX), types.ErrInsufficientMargin, m.symbol)
+		env.putAccount(t, opener, 7_250_000)
+		require.NoError(t, env.open(opener, m.id, true, openNotional, thousandX), "%s opens with 14.5 bps", m.symbol)
 
 		holder := marginAccount(200 + m.id)
 		env.putAccount(t, holder, 10_000_000)
