@@ -7611,7 +7611,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.4]
 title = "Probe the launchpad with getPoolCount in the gateway"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["2.0.4"]
