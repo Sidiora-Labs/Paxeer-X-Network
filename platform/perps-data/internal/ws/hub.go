@@ -16,6 +16,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery/natsdriver"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/publish"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/stream"
 )
@@ -191,16 +192,12 @@ func (h *Hub) Run(ctx context.Context, nc *nats.Conn) error {
 	if ctx == nil || nc == nil || nc.IsClosed() {
 		return errors.New("ws: hub needs a context and an open connection")
 	}
-	js, err := jetstream.New(nc)
-	if err != nil {
-		return err
-	}
 	inner, cancel := context.WithCancel(ctx)
 	defer cancel()
 	timed := make(chan error, 1)
 	go func() { timed <- h.provider.Run(inner, h.emit) }()
 	for {
-		err := h.consume(inner, js)
+		err := h.consume(inner, nc)
 		if ctx.Err() != nil {
 			break
 		}
@@ -222,32 +219,36 @@ func (h *Hub) Run(ctx context.Context, nc *nats.Conn) error {
 
 // consume attaches the consumer at the resume sequence and applies its
 // messages until the consumer fails or ctx ends.
-func (h *Hub) consume(ctx context.Context, js jetstream.JetStream) error {
+func (h *Hub) consume(ctx context.Context, nc *nats.Conn) error {
+	js, err := jetstream.New(nc)
+	if err != nil {
+		return err
+	}
 	start, err := h.resumeFrom(ctx, js)
 	if err != nil {
 		return err
 	}
-	c, err := js.OrderedConsumer(ctx, stream.Name, jetstream.OrderedConsumerConfig{
-		FilterSubjects: []string{h.prefix + ">"},
-		DeliverPolicy:  jetstream.DeliverByStartSequencePolicy,
-		OptStartSeq:    start,
+	c, err := natsdriver.NewConsumer(ctx, nc, natsdriver.ConsumerConfig{
+		Stream:        stream.Name,
+		Subject:       h.prefix + ">",
+		StartSequence: start,
+		Batch:         64,
+		FetchWait:     time.Second,
 	})
 	if err != nil {
 		return fmt.Errorf("ws: hub consumer: %w", err)
 	}
-	it, err := c.Messages()
-	if err != nil {
-		return fmt.Errorf("ws: hub messages: %w", err)
-	}
-	defer it.Stop()
-	stop := context.AfterFunc(ctx, it.Stop)
+	defer c.Close()
+	stop := context.AfterFunc(ctx, c.Close)
 	defer stop()
 	for {
-		msg, err := it.Next()
-		if err != nil {
-			return err
+		messages, err := c.Fetch(ctx)
+		for _, m := range messages {
+			if err := h.apply(ctx, m); err != nil {
+				return err
+			}
 		}
-		if err := h.apply(ctx, msg); err != nil {
+		if err != nil {
 			return err
 		}
 	}
@@ -279,12 +280,8 @@ func (h *Hub) resumeFrom(ctx context.Context, js jetstream.JetStream) (uint64, e
 // apply applies one message once. A stream sequence beyond the one after the
 // last applied message is a range the hub cannot fill: every subscribed
 // socket closes with 1013 and the client resyncs through REST.
-func (h *Hub) apply(ctx context.Context, msg jetstream.Msg) error {
-	meta, err := msg.Metadata()
-	if err != nil {
-		return fmt.Errorf("ws: hub message metadata: %w", err)
-	}
-	seq := meta.Sequence.Stream
+func (h *Hub) apply(ctx context.Context, m *natsdriver.Message) error {
+	seq := m.Sequence
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if seq <= h.applied {
@@ -295,8 +292,8 @@ func (h *Hub) apply(ctx context.Context, msg jetstream.Msg) error {
 		h.closeAllLocked()
 	}
 	h.applied = seq
-	subject := msg.Subject()
-	env, perpsSeq, err := h.decode(subject, msg)
+	subject := m.Subject
+	env, perpsSeq, err := h.decode(subject, m)
 	if err != nil {
 		h.logger.Error("ws: hub message", slog.Uint64("stream_seq", seq), slog.Any("err", err))
 		h.resnapshotLocked(ctx, h.watchedLocked(), 0)
@@ -330,18 +327,18 @@ func (h *Hub) apply(ctx context.Context, msg jetstream.Msg) error {
 	return nil
 }
 
-// decode reads the delivery envelope of msg, checked against its headers.
-func (h *Hub) decode(subject string, msg jetstream.Msg) (delivery.Envelope, int64, error) {
+// decode reads the delivery envelope of m, checked against its headers.
+func (h *Hub) decode(subject string, m *natsdriver.Message) (delivery.Envelope, int64, error) {
 	if !strings.HasPrefix(subject, h.prefix) {
 		return delivery.Envelope{}, 0, fmt.Errorf("ws: subject %q outside %s>", subject, h.prefix)
 	}
-	headers := msg.Headers()
+	headers := m.Header
 	perpsSeq, err := strconv.ParseInt(headers.Get(publish.HeaderSeq), 10, 64)
 	if err != nil || perpsSeq <= 0 {
 		return delivery.Envelope{}, 0, fmt.Errorf("ws: invalid %s header %q", publish.HeaderSeq, headers.Get(publish.HeaderSeq))
 	}
 	policy := delivery.Policy{Subjects: map[string]bool{subject: true}, EventTypes: map[string]bool{headers.Get(publish.HeaderKind): true}}
-	env, err := delivery.Decode(msg.Data(), policy, subject)
+	env, err := delivery.Decode(m.Wire, policy, subject)
 	if err != nil {
 		return delivery.Envelope{}, 0, err
 	}

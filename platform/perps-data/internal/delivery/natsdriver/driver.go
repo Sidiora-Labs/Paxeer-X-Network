@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,11 +22,16 @@ import (
 
 var identifier = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 var subjectName = regexp.MustCompile(`^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$`)
+var subjectFilter = regexp.MustCompile(`^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*(\.>)?$`)
 var eventIdentity = regexp.MustCompile(`^(0|[1-9][0-9]{0,19}):(0|[1-9][0-9]{0,19}):0x[0-9a-f]{64}:(-1|0|[1-9][0-9]{0,9}):(0|[1-9][0-9]{0,9}):(0|[1-9][0-9]{0,9})$`)
 var ErrClosed = errors.New("natsdriver: consumer closed")
 var ErrEventID = errors.New("natsdriver: invalid event id")
 
 const publishTimeout = 5 * time.Second
+
+// drainWait bounds the wait for each further buffered message of an ordered
+// fetch once its first message has arrived.
+const drainWait = time.Millisecond
 
 // MsgID maps the event id <chain>:<block>:<block_hash>:<tx_index>:<log_index>:<sub>
 // to the lower-case hex SHA-256 of its bytes, the envelope event id and the
@@ -79,10 +85,11 @@ type ConsumerConfig struct {
 	Stream, Durable, Subject                     string
 	Batch, MaxAckPending, MaxWaiting, MaxDeliver int
 	FetchWait, AckWait                           time.Duration
+	StartSequence                                uint64
 }
 
 func (c ConsumerConfig) validate() error {
-	if !identifier.MatchString(c.Stream) || !identifier.MatchString(c.Durable) || len(c.Subject) > 256 || !subjectName.MatchString(c.Subject) || c.Batch < 1 || c.Batch > 64 || c.MaxAckPending < c.Batch || c.MaxAckPending > 10000 || c.MaxWaiting < 1 || c.MaxWaiting > 32 || c.MaxDeliver < 1 || c.MaxDeliver > 100 || c.FetchWait < 10*time.Millisecond || c.FetchWait > time.Second || c.AckWait < time.Second || c.AckWait > time.Hour {
+	if c.StartSequence != 0 || !identifier.MatchString(c.Stream) || !identifier.MatchString(c.Durable) || len(c.Subject) > 256 || !subjectName.MatchString(c.Subject) || c.Batch < 1 || c.Batch > 64 || c.MaxAckPending < c.Batch || c.MaxAckPending > 10000 || c.MaxWaiting < 1 || c.MaxWaiting > 32 || c.MaxDeliver < 1 || c.MaxDeliver > 100 || c.FetchWait < 10*time.Millisecond || c.FetchWait > time.Second || c.AckWait < time.Second || c.AckWait > time.Hour {
 		return errors.New("natsdriver: invalid bounded durable configuration")
 	}
 	return nil
@@ -101,8 +108,34 @@ func (c ConsumerConfig) BrokerConsumerConfig() (jetstream.ConsumerConfig, error)
 	}, nil
 }
 
+// ordered reports whether c selects an ordered ephemeral consumer that starts
+// at StartSequence.
+func (c ConsumerConfig) ordered() bool {
+	return c.Durable == "" && c.StartSequence > 0
+}
+
+func (c ConsumerConfig) validateOrdered() error {
+	if !c.ordered() || c.StartSequence > 1<<63-1 || !identifier.MatchString(c.Stream) || len(c.Subject) > 256 || !subjectFilter.MatchString(c.Subject) || c.Batch < 1 || c.Batch > 64 || c.FetchWait < 10*time.Millisecond || c.FetchWait > time.Second || c.MaxAckPending != 0 || c.MaxWaiting != 0 || c.MaxDeliver != 0 || c.AckWait != 0 {
+		return errors.New("natsdriver: invalid bounded durable configuration")
+	}
+	return nil
+}
+
+// matches reports whether subject is delivered by the subject of c: equal for
+// a durable consumer, under the filter for an ordered one.
+func (c ConsumerConfig) matches(subject string) bool {
+	if !c.ordered() {
+		return subject == c.Subject
+	}
+	if prefix, wildcard := strings.CutSuffix(c.Subject, ">"); wildcard {
+		return len(subject) > len(prefix) && strings.HasPrefix(subject, prefix)
+	}
+	return subject == c.Subject
+}
+
 type Consumer struct {
 	consumer  jetstream.Consumer
+	iter      jetstream.MessagesContext
 	config    ConsumerConfig
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -113,6 +146,9 @@ type Consumer struct {
 func NewConsumer(ctx context.Context, nc *nats.Conn, cfg ConsumerConfig) (*Consumer, error) {
 	if ctx == nil || nc == nil || nc.IsClosed() {
 		return nil, errors.New("natsdriver: context and connection required")
+	}
+	if cfg.ordered() {
+		return newOrderedConsumer(ctx, nc, cfg)
 	}
 	expected, err := cfg.BrokerConsumerConfig()
 	if err != nil {
@@ -149,19 +185,50 @@ func NewConsumer(ctx context.Context, nc *nats.Conn, cfg ConsumerConfig) (*Consu
 	return &Consumer{consumer: consumer, config: cfg, ctx: lifecycle, cancel: cancel, fetch: make(chan struct{}, 1)}, nil
 }
 
+// newOrderedConsumer attaches an ordered ephemeral consumer of cfg.Subject at
+// cfg.StartSequence; its messages are not acknowledged.
+func newOrderedConsumer(ctx context.Context, nc *nats.Conn, cfg ConsumerConfig) (*Consumer, error) {
+	if err := cfg.validateOrdered(); err != nil {
+		return nil, err
+	}
+	js, err := jetstream.New(nc)
+	if err != nil {
+		return nil, err
+	}
+	consumer, err := js.OrderedConsumer(ctx, cfg.Stream, jetstream.OrderedConsumerConfig{
+		FilterSubjects: []string{cfg.Subject},
+		DeliverPolicy:  jetstream.DeliverByStartSequencePolicy,
+		OptStartSeq:    cfg.StartSequence,
+	})
+	if err != nil {
+		return nil, err
+	}
+	iter, err := consumer.Messages(jetstream.PullMaxMessages(cfg.Batch))
+	if err != nil {
+		return nil, err
+	}
+	lifecycle, cancel := context.WithCancel(context.Background())
+	return &Consumer{consumer: consumer, iter: iter, config: cfg, ctx: lifecycle, cancel: cancel, fetch: make(chan struct{}, 1)}, nil
+}
+
 type Message struct {
 	Subject    string
 	EventID    string
+	Header     nats.Header
 	Wire       []byte
 	Stream     string
 	Sequence   uint64
 	Deliveries uint64
 	msg        jetstream.Msg
+	ordered    bool
 }
 
 func (m *Message) Ack(ctx context.Context) error {
 	if m == nil || m.msg == nil || ctx == nil {
 		return errors.New("natsdriver: actual broker message and context required")
+	}
+	if m.ordered {
+		return errors.New("natsdriver: ordered consumer messages are not acknowledged")
 	}
 	bounded, cancel := context.WithTimeout(ctx, publishTimeout)
 	defer cancel()
@@ -190,13 +257,13 @@ func (c *Consumer) Fetch(ctx context.Context) ([]*Message, error) {
 	stop := context.AfterFunc(c.ctx, cancel)
 	defer stop()
 	defer cancel()
-	batch, err := c.consumer.Fetch(c.config.Batch, jetstream.FetchContext(bounded))
+	received, terminal, err := c.receive(bounded)
 	if err != nil {
 		return nil, err
 	}
 	messages := make([]*Message, 0, c.config.Batch)
 	var invalid error
-	for msg := range batch.Messages() {
+	for _, msg := range received {
 		metadata, metaErr := msg.Metadata()
 		if metaErr != nil {
 			invalid = errors.Join(invalid, metaErr)
@@ -204,13 +271,12 @@ func (c *Consumer) Fetch(ctx context.Context) ([]*Message, error) {
 		}
 		body := msg.Data()
 		eventID := msg.Headers().Get("Nats-Msg-Id")
-		if metadata.Stream != c.config.Stream || metadata.Sequence.Stream == 0 || metadata.Sequence.Stream > 1<<63-1 || msg.Subject() != c.config.Subject || !identifier.MatchString(eventID) || len(body) == 0 || len(body) > delivery.MaxEnvelopeBytes {
+		if metadata.Stream != c.config.Stream || metadata.Sequence.Stream == 0 || metadata.Sequence.Stream > 1<<63-1 || !c.config.matches(msg.Subject()) || !identifier.MatchString(eventID) || len(body) == 0 || len(body) > delivery.MaxEnvelopeBytes {
 			invalid = errors.Join(invalid, errors.New("natsdriver: invalid broker message"))
 			continue
 		}
-		messages = append(messages, &Message{Subject: msg.Subject(), EventID: eventID, Wire: append([]byte(nil), body...), Stream: metadata.Stream, Sequence: metadata.Sequence.Stream, Deliveries: metadata.NumDelivered, msg: msg})
+		messages = append(messages, &Message{Subject: msg.Subject(), EventID: eventID, Header: copyHeader(msg.Headers()), Wire: append([]byte(nil), body...), Stream: metadata.Stream, Sequence: metadata.Sequence.Stream, Deliveries: metadata.NumDelivered, msg: msg, ordered: c.config.ordered()})
 	}
-	terminal := batch.Error()
 	if ctx.Err() != nil {
 		return messages, errors.Join(ctx.Err(), terminal, invalid)
 	}
@@ -224,6 +290,46 @@ func (c *Consumer) Fetch(ctx context.Context) ([]*Message, error) {
 		return messages, errors.Join(invalid, terminal)
 	}
 	return messages, nil
+}
+
+// receive returns up to Batch broker messages delivered within bounded. A
+// durable consumer sends one pull request; an ordered consumer waits for its
+// first message and then takes the messages already buffered behind it.
+func (c *Consumer) receive(bounded context.Context) ([]jetstream.Msg, error, error) {
+	var received []jetstream.Msg
+	if c.iter == nil {
+		batch, err := c.consumer.Fetch(c.config.Batch, jetstream.FetchContext(bounded))
+		if err != nil {
+			return nil, nil, err
+		}
+		for msg := range batch.Messages() {
+			received = append(received, msg)
+		}
+		return received, batch.Error(), nil
+	}
+	msg, err := c.iter.Next(jetstream.NextContext(bounded))
+	for err == nil {
+		received = append(received, msg)
+		if len(received) == c.config.Batch {
+			return received, nil, nil
+		}
+		msg, err = c.iter.Next(jetstream.NextMaxWait(drainWait))
+	}
+	if len(received) > 0 && errors.Is(err, nats.ErrTimeout) {
+		return received, nil, nil
+	}
+	if errors.Is(err, jetstream.ErrMsgIteratorClosed) && c.ctx.Err() != nil {
+		err = ErrClosed
+	}
+	return received, err, nil
+}
+
+func copyHeader(h nats.Header) nats.Header {
+	out := make(nats.Header, len(h))
+	for key, values := range h {
+		out[key] = append([]string(nil), values...)
+	}
+	return out
 }
 
 func (c *Consumer) Run(ctx context.Context, consume func(context.Context, *Message) error) error {
@@ -248,7 +354,12 @@ func (c *Consumer) Run(ctx context.Context, consume func(context.Context, *Messa
 
 func (c *Consumer) Close() {
 	if c != nil && c.cancel != nil {
-		c.closeOnce.Do(c.cancel)
+		c.closeOnce.Do(func() {
+			c.cancel()
+			if c.iter != nil {
+				c.iter.Stop()
+			}
+		})
 	}
 }
 

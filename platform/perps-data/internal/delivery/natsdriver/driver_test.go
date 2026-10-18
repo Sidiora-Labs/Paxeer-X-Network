@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -362,6 +363,77 @@ func TestNATSDriver(t *testing.T) {
 		consumer.Close()
 		if _, err = consumer.Fetch(ctx); !errors.Is(err, ErrClosed) {
 			t.Fatalf("fetch after close = %v", err)
+		}
+	})
+
+	t.Run("ordered_start_sequence", func(t *testing.T) {
+		nc := inProcessBroker(t)
+		createStream(t, nc)
+		js, err := jetstream.New(nc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		const markSubject = "perps.125.7.mark"
+		published := []struct{ subject, eventID string }{
+			{fillSubject, "125:500:" + hashA + ":2:0:0"},
+			{markSubject, "125:500:" + hashA + ":3:0:0"},
+			{fillSubject, "125:501:" + hashB + ":0:0:0"},
+		}
+		tokens := make([]string, len(published))
+		for i, p := range published {
+			token, wire := envelopeWire(t, p.eventID)
+			msg := &nats.Msg{Subject: p.subject, Data: wire, Header: nats.Header{}}
+			msg.Header.Set("Perps-Seq", strconv.Itoa(i+1))
+			ack, err := js.PublishMsg(ctx, msg, jetstream.WithMsgID(token), jetstream.WithExpectStream(testStream))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ack.Sequence != uint64(i+1) {
+				t.Fatalf("publication %d stored at %d", i, ack.Sequence)
+			}
+			tokens[i] = token
+		}
+		cfg := ConsumerConfig{Stream: testStream, Subject: "perps.125.>", StartSequence: 2, Batch: 4, FetchWait: 250 * time.Millisecond}
+		for _, bad := range []func(*ConsumerConfig){
+			func(c *ConsumerConfig) { c.Durable = "gateway_v1" },
+			func(c *ConsumerConfig) { c.MaxAckPending = 4 },
+		} {
+			refused := cfg
+			bad(&refused)
+			if _, err = NewConsumer(ctx, nc, refused); err == nil || err.Error() != "natsdriver: invalid bounded durable configuration" {
+				t.Fatalf("ordered config %+v accepted: %v", refused, err)
+			}
+		}
+		consumer, err := NewConsumer(ctx, nc, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(consumer.Close)
+		var messages []*Message
+		for deadline := time.Now().Add(5 * time.Second); len(messages) < 2 && time.Now().Before(deadline); {
+			fetched, err := consumer.Fetch(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			messages = append(messages, fetched...)
+		}
+		if len(messages) != 2 {
+			t.Fatalf("fetched %d messages, want 2", len(messages))
+		}
+		if more, err := consumer.Fetch(ctx); err != nil || len(more) != 0 {
+			t.Fatalf("fetch past the stream head = %d messages, %v", len(more), err)
+		}
+		for i, m := range messages {
+			n := i + 1
+			if m.Sequence != uint64(n+1) || m.Subject != published[n].subject || m.EventID != tokens[n] || m.Stream != testStream {
+				t.Fatalf("message %d = %+v", i, m)
+			}
+			if m.Header.Get(jetstream.MsgIDHeader) != tokens[n] || m.Header.Get("Perps-Seq") != strconv.Itoa(n+1) {
+				t.Fatalf("message %d headers = %v", i, m.Header)
+			}
+			if err = m.Ack(ctx); err == nil {
+				t.Fatalf("ordered message %d acknowledged", i)
+			}
 		}
 	})
 }
