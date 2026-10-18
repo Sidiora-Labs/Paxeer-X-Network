@@ -16763,7 +16763,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.9]
 title = "Run resting order execution in the spot EndBlocker"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["4.1.9", "4.1.12", "1.0.6"]
