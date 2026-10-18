@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"encoding/json"
 	"math/big"
 	"testing"
 	"time"
@@ -8,6 +9,9 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/launchpadtest"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
+	pricefeedtestutil "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/testutil"
+	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
@@ -18,13 +22,14 @@ import (
 var insuranceGenesisTime = time.Unix(1_800_000_000, 0).UTC()
 
 // insuranceEnv is the perps keeper over the test application's EVM keeper
-// with its own store, one BTC market of class A (lot 1e-5 BTC, maintenance 5
+// and the real pricefeed keeper, each with its own store, one BTC market of class A (lot 1e-5 BTC, maintenance 5
 // bps in tier 0) and a fresh mark.
 type insuranceEnv struct {
 	t        *testing.T
 	ctx      sdk.Context
 	k        *keeper.Keeper
 	key      sdk.StoreKey
+	pfKey    sdk.StoreKey
 	usdl     common.Address
 	sequence uint64
 	nextID   uint64
@@ -35,10 +40,13 @@ func newInsuranceEnv(t *testing.T, mark uint256.Int) *insuranceEnv {
 	app := testkeeper.EVMTestApp
 	ctx := app.GetContextForDeliverTx([]byte{}).WithBlockTime(insuranceGenesisTime)
 	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
+	pfKey := sdk.NewKVStoreKey(pricefeedtypes.StoreKey)
+	pricefeed := pricefeedkeeper.NewKeeper(pfKey, app.StakingKeeper, app.AccountKeeper, &app.EvmKeeper)
+	ctx = pricefeedtestutil.WithPriceFeedStore(ctx, pfKey)
 	key := sdk.NewKVStoreKey(types.StoreKey)
-	k := keeper.NewKeeper(key, &app.EvmKeeper, nil)
+	k := keeper.NewKeeper(key, &app.EvmKeeper, pricefeed)
 	ctx = launchpadtest.WithStore(ctx, key)
-	e := &insuranceEnv{t: t, ctx: ctx, k: k, key: key, nextID: 100}
+	e := &insuranceEnv{t: t, ctx: ctx, k: k, key: key, pfKey: pfKey, nextID: 100}
 	require.NoError(t, k.SetMarket(ctx, k.Authority(), types.Market{
 		ID: 0, Symbol: "BTC", Name: "Bitcoin", OracleSymbol: "BTC", SzDecimals: 5, PxDecimals: 1,
 		MaxLeverage: types.VenueMaxLeverage, TierClass: types.TierClassA,
@@ -71,7 +79,15 @@ func insuranceBase(lots uint64) uint256.Int {
 	return *new(uint256.Int).Mul(uint256.NewInt(lots), uint256.NewInt(10_000_000_000_000))
 }
 
+// setMark stores the market state at mark and the pricefeed aggregate of
+// the market at the block time, so its price reads fresh.
 func (e *insuranceEnv) setMark(mark uint256.Int) {
+	bz, err := json.Marshal(pricefeedtypes.Aggregate{
+		IndexPrice: sdk.NewIntFromBigInt(mark.ToBig()), MarkPrice: sdk.NewIntFromBigInt(mark.ToBig()),
+		Basis: sdk.ZeroInt(), TimestampMs: uint64(e.ctx.BlockTime().UnixMilli()), Height: e.ctx.BlockHeight(), Sources: 1,
+	})
+	require.NoError(e.t, err)
+	e.ctx.KVStore(e.pfKey).Set(pricefeedtypes.AggregateKey(0), bz)
 	state := types.MarketState{MarketID: 0, IndexPrice: mark, PricefeedMark: mark, Fresh: true, MarkPrice: mark,
 		LastTradePrice: mark, PriceTimestampMs: uint64(e.ctx.BlockTime().UnixMilli())}
 	if bz := e.ctx.KVStore(e.key).Get(types.MarketStateKey(0)); bz != nil {
@@ -233,8 +249,9 @@ func contributionEvent(usdl common.Address, amount uint64, source uint8) types.E
 }
 
 func drawEvent(amount, newBalance uint64) types.EventRecord {
+	balance := uint256.NewInt(newBalance)
 	return types.EventRecord{Name: types.EventInsuranceDraw, Args: []any{new(big.Int), insuranceUnits(amount),
-		insuranceUnits(newBalance)}}
+		balance.ToBig()}}
 }
 
 func TestInsuranceBackstopTakeover(t *testing.T) {
@@ -333,9 +350,13 @@ func TestInsuranceClosesBackstop(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, result.Failures)
 	require.Equal(t, uint64(1), result.Slices)
+	require.Len(t, eventsNamed(result.Events, types.EventFill), 1, "one reduce-only IOC order closes against the book")
 	require.Equal(t, []types.EventRecord{
 		contributionEvent(e.usdl, 972_550_000, keeper.InsuranceSourceBackstopProfit),
-	}, result.Events)
+	}, eventsNamed(result.Events, types.EventInsuranceContribution))
+	require.Empty(t, eventsNamed(result.Events, types.EventInsuranceDraw))
+	require.Equal(t, contributionEvent(e.usdl, 972_550_000, keeper.InsuranceSourceBackstopProfit),
+		result.Events[len(result.Events)-1])
 	_, held := e.fundPositionID()
 	require.False(t, held)
 	require.False(t, e.ctx.KVStore(e.key).Has(types.PositionKey(positionID)))
@@ -358,9 +379,13 @@ func TestInsuranceClosesBackstop(t *testing.T) {
 	require.Equal(t, uint64(1), result.Slices)
 	// The fill settles the whole position at 61,000 (3,000 USD) and charges
 	// 0.6 x 61,000 x 450 ppm = 16.47 USD.
+	require.Len(t, eventsNamed(result.Events, types.EventFill), 1, "one reduce-only IOC order closes against the book")
 	require.Equal(t, []types.EventRecord{
 		contributionEvent(g.usdl, 2_983_530_000, keeper.InsuranceSourceBackstopProfit),
-	}, result.Events)
+	}, eventsNamed(result.Events, types.EventInsuranceContribution))
+	require.Empty(t, eventsNamed(result.Events, types.EventInsuranceDraw))
+	require.Equal(t, contributionEvent(g.usdl, 2_983_530_000, keeper.InsuranceSourceBackstopProfit),
+		result.Events[len(result.Events)-1])
 	require.Equal(t, insuranceBase(240_000), g.readPosition(largeID).SizeBase)
 	require.Equal(t, types.LiquidationCooldownValue(uint64(insuranceGenesisTime.Unix()), insuranceBase(300_000)),
 		g.ctx.KVStore(g.key).Get(types.LiquidationCooldownKey(largeID)))
