@@ -172,6 +172,11 @@ func (k *Keeper) match(ctx sdk.Context, market types.Market, taker types.Order, 
 			return MatchResult{}, fmt.Errorf("%w: execution price of order %s", types.ErrOverflow, taker.ID.Dec())
 		}
 		result.Events = append(result.Events, orderExecuted(taker.ID, takerPosition, *vwap))
+		attached, err := k.attachOrderTpSl(ctx, taker)
+		if err != nil {
+			return MatchResult{}, err
+		}
+		result.Events = append(result.Events, attached...)
 		if err := k.recordFillVolume(ctx, result.Fills); err != nil {
 			return MatchResult{}, err
 		}
@@ -439,6 +444,7 @@ func (k *Keeper) fillMaker(ctx sdk.Context, marketID uint64, maker, taker types.
 		makerFeeTokens.Neg(makerFeeTokens)
 	}
 
+	firstFill := maker.FilledBase.IsZero()
 	maker.FilledBase.Add(&maker.FilledBase, &size)
 	if maker.FilledBase.Eq(&maker.SizeBase) {
 		maker.Status = types.OrderStatusFilled
@@ -483,6 +489,13 @@ func (k *Keeper) fillMaker(ctx sdk.Context, marketID uint64, maker, taker types.
 	events = append(events, takerApplied.TradeSettledEvents(takerFee.FeeUsd.ToBig(), takerFee.Tokens.ToBig())...)
 	events = append(events, reconciled...)
 	events = append(events, orderExecuted(maker.ID, makerPosition, price))
+	if firstFill {
+		attached, err := k.attachOrderTpSl(ctx, maker)
+		if err != nil {
+			return FillResult{}, nil, err
+		}
+		events = append(events, attached...)
+	}
 	return fill, events, nil
 }
 

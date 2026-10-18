@@ -145,6 +145,22 @@ func (k *Keeper) LiquidationScan(ctx sdk.Context) (LiquidationScanResult, error)
 			write()
 			continue
 		}
+		below, err := k.belowBackstopLine(cacheCtx, params, account)
+		if err != nil {
+			result.Failures = append(result.Failures, fmt.Errorf("account %s: %w", account, err))
+			continue
+		}
+		if below {
+			events, err := k.Backstop(cacheCtx, account)
+			if err != nil {
+				result.Failures = append(result.Failures, fmt.Errorf("account %s: %w", account, err))
+				continue
+			}
+			write()
+			result.Liquidated++
+			result.Events = append(result.Events, events...)
+			continue
+		}
 		events, slices, err := k.liquidateAccount(cacheCtx, params, account, common.Address{}, now,
 			params.SlicesPerBlock-result.Slices)
 		if err == nil {

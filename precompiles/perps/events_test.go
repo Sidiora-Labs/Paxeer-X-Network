@@ -451,6 +451,7 @@ func fillScenario(e *eventsEnv, rebate bool) (a, b common.Address, makerID, take
 	a = e.trader("account A", 10_000_000_000)
 	if rebate {
 		e.seedMakerShare(a)
+		e.storeAccount(e.k.FeesAccountAddress(), 1_000_000)
 	}
 	_, makerID = e.place(a, eventsLimitOrder(false, perpstypes.TimeInForceGTC, usd(60_000), usd(600), usd(10)))
 	b = e.trader("account B", 10_000_000_000)
@@ -579,7 +580,7 @@ func TestEventCollateralWithdrawn(t *testing.T) {
 func TestEventCollateralTransferred(t *testing.T) {
 	e := newEventsEnv(t)
 	a := e.trader("account A", 250_000_000)
-	b := eventsAddress("account B")
+	b := e.trader("account B", 1_000_000)
 	logs, _ := e.tx(a, "transferCollateral", b, units(60_000_000))
 	e.requireLog(logs, "CollateralTransferred", a, b, units(60_000_000))
 	for _, l := range logs {
@@ -620,8 +621,11 @@ func TestEventOrderExpired(t *testing.T) {
 	require.Equal(t, int64(1_800_000_101), e.ctx.BlockTime().Unix())
 	logs := e.endBlock()
 	e.requireLog(logs, "OrderExpired", id, a, eventsZero)
-	_, err := e.k.GetOrder(e.ctx, *uint256.MustFromBig(id))
-	require.Error(t, err, "the expired order is gone")
+	order, err := e.k.GetOrder(e.ctx, *uint256.MustFromBig(id))
+	require.NoError(t, err)
+	require.Equal(t, perpstypes.OrderStatusExpired, order.Status)
+	require.Nil(t, e.ctx.KVStore(e.key).Get(perpstypes.ExpiryKey(order.Deadline, order.ID)),
+		"the expired order leaves the expiry index")
 }
 
 func TestEventOrderTriggered(t *testing.T) {
@@ -657,7 +661,15 @@ func TestEventOrderExecuted(t *testing.T) {
 	logs, takerID := e.place(b, eventsLimitOrder(true, perpstypes.TimeInForceIOC, usd(60_100), usd(1_202), usd(10)))
 	require.Len(t, e.indices(logs, "Fill"), 2)
 	e.requireLog(logs, "OrderExecuted", takerID, e.positionOf(b), usd(60_050))
-	require.Len(t, e.indices(logs, "OrderExecuted"), 1)
+	perOrder := map[common.Hash]int{}
+	for _, i := range e.indices(logs, "OrderExecuted") {
+		perOrder[logs[i].Topics[1]]++
+	}
+	require.Equal(t, 1, perOrder[common.BigToHash(takerID)], "the taker order logs OrderExecuted once")
+	for _, i := range e.indices(logs, "Fill") {
+		require.Equal(t, 1, perOrder[logs[i].Topics[2]], "each maker order logs OrderExecuted once")
+	}
+	require.Len(t, perOrder, 3)
 }
 
 func TestEventFill(t *testing.T) {

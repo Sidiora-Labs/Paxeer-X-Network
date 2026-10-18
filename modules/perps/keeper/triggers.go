@@ -417,6 +417,15 @@ func (k *Keeper) SetPositionTpSl(ctx sdk.Context, caller common.Address, positio
 	if err != nil {
 		return nil, err
 	}
+	return k.attachPositionTpSl(ctx, params, market, position, takeProfitPrice, stopLossPrice, mark)
+}
+
+// attachPositionTpSl validates the TP/SL pair against mark, cancels the pair
+// attached to the position, places the new reduce-only trigger orders, stores
+// their ids under prefix 0x11 and logs PositionTpSlSet.
+func (k *Keeper) attachPositionTpSl(ctx sdk.Context, params types.Params, market types.Market,
+	position types.Position, takeProfitPrice, stopLossPrice, mark uint256.Int) ([]types.EventRecord, error) {
+	positionID := position.ID
 	legs := []struct {
 		orderType types.OrderType
 		price     uint256.Int
@@ -457,6 +466,38 @@ func (k *Keeper) SetPositionTpSl(ctx sdk.Context, caller common.Address, positio
 		Name: types.EventPositionTpSlSet,
 		Args: []any{positionID.ToBig(), takeProfitPrice.ToBig(), stopLossPrice.ToBig()},
 	}), nil
+}
+
+// attachOrderTpSl attaches the TakeProfitPrice/StopLossPrice of an order that
+// is not reduce-only to the account's position once its fills leave one.
+func (k *Keeper) attachOrderTpSl(ctx sdk.Context, order types.Order) ([]types.EventRecord, error) {
+	if order.ReduceOnly || (order.TakeProfitPrice.IsZero() && order.StopLossPrice.IsZero()) {
+		return nil, nil
+	}
+	positionID, err := k.triggerPositionID(ctx, order.Account, order.MarketID)
+	if err != nil || positionID.IsZero() {
+		return nil, err
+	}
+	position, err := k.triggerPositionRecord(ctx, positionID)
+	if err != nil {
+		return nil, err
+	}
+	if position.SizeBase.IsZero() {
+		return nil, nil
+	}
+	market, err := k.GetMarket(ctx, order.MarketID)
+	if err != nil {
+		return nil, err
+	}
+	mark, err := k.freshMark(ctx, market.ID)
+	if err != nil {
+		return nil, err
+	}
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return k.attachPositionTpSl(ctx, params, market, position, order.TakeProfitPrice, order.StopLossPrice, mark)
 }
 
 // GetAttachedTpSl returns the TP/SL pair attached to a position, the zero
