@@ -27733,7 +27733,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.2.14]
 title = "Venue REST routes for the order book, open interest and ticker"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["7.2.5"]
