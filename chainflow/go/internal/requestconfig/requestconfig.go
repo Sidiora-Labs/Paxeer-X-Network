@@ -463,12 +463,14 @@ func (cfg *RequestConfig) Execute() (err error) {
 
 	var res *http.Response
 	var cancel context.CancelFunc
+	callerCtx := cfg.Request.Context()
 	for retryCount := 0; retryCount <= cfg.MaxRetries; retryCount += 1 {
-		ctx := cfg.Request.Context()
+		// Each attempt gets its own timeout, derived from the caller's context only when the attempt starts.
+		ctx := callerCtx
 		if cfg.RequestTimeout != time.Duration(0) && isBeforeContextDeadline(time.Now().Add(cfg.RequestTimeout), ctx) {
 			ctx, cancel = context.WithTimeout(ctx, cfg.RequestTimeout)
 			defer func() {
-				// The cancel function is nil if it was handed off to be handled in a different scope.
+				// The cancel function is nil if it was released after its attempt or handed off to be handled in a different scope.
 				if cancel != nil {
 					cancel()
 				}
@@ -506,10 +508,18 @@ func (cfg *RequestConfig) Execute() (err error) {
 			_ = res.Body.Close()
 		}
 
+		// The attempt is complete, so release its timeout; the backoff is bounded only by the caller's context.
+		if cancel != nil {
+			cancel()
+			cancel = nil
+		}
+
+		timer := time.NewTimer(retryDelay(res, retryCount))
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(retryDelay(res, retryCount)):
+		case <-callerCtx.Done():
+			timer.Stop()
+			return callerCtx.Err()
+		case <-timer.C:
 		}
 	}
 
