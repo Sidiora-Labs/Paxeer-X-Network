@@ -113,13 +113,25 @@ export class NativeWebSocket extends EventEmitter {
       stopPoll = this.streams.subscribeNativeOrderbook(
         toNativeSymbol(symbol),
         (book) =>
-          emit({
-            symbol,
-            snapshot: true,
-            ts: book.ts,
-            asks: book.asks.map((level) => [level.price, level.size]),
-            bids: book.bids.map((level) => [level.price, level.size]),
-          }),
+          emit(
+            book
+              ? {
+                  symbol,
+                  snapshot: true,
+                  ts: book.ts,
+                  asks: book.asks.map((level) => [level.price, level.size]),
+                  bids: book.bids.map((level) => [level.price, level.size]),
+                }
+              : // The producer disconnected; its last book is no longer authoritative.
+                {
+                  symbol,
+                  snapshot: true,
+                  reset: true,
+                  ts: Date.now(),
+                  asks: [],
+                  bids: [],
+                },
+          ),
       );
     } else if (symbol && (name.includes("trade") || requestType === "trade")) {
       const seen = new Set<string>();

@@ -358,6 +358,13 @@ export const useOrderbookStream = (
           if (symbolRef.current !== symbol) {
             return;
           }
+          // Stream outage: drop stale rows and stay loading until the next snapshot.
+          if (wsData.reset === true) {
+            orderbooksService.resetOrderBook(symbol);
+            setData(INIT_DATA);
+            setIsLoading(true);
+            return;
+          }
           if (wsData.snapshot === true) {
             orderbooksService.setFullOrderbook(symbol, { asks, bids, ts });
             setIsLoading(false);
@@ -394,8 +401,14 @@ export const useOrderbookStream = (
           formatter: (message) => message,
           onMessage: (message: any) => {
             // when current symbol is not the same as the ws symbol, skip update data
-            const { symbol, asks, bids, ts } = message.data;
+            const { symbol, asks, bids, ts, reset } = message.data;
             if (symbolRef.current !== symbol) {
+              return;
+            }
+            if (reset === true) {
+              orderbooksService.resetOrderBook(symbol);
+              setData(INIT_DATA);
+              setIsLoading(true);
               return;
             }
             orderbooksService.setFullOrderbook(symbol, { asks, bids, ts });

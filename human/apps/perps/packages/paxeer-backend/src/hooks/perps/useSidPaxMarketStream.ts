@@ -702,13 +702,13 @@ export function subscribeKline(
 }
 
 /** Native non-React consumers share the original paxeer-network stream registry. */
-export function subscribeNativeOrderbook(symbol: string, callback: (book: SidPaxOrderbook) => void): () => void {
+/** A null book is the disconnect reset; consumers must drop their rows until the next snapshot. */
+export function subscribeNativeOrderbook(symbol: string, callback: (book: SidPaxOrderbook | null) => void): () => void {
  const stream = ensureStream(symbol);
  if (!stream) return () => {};
- const listener = (book: SidPaxOrderbook | null) => { if (book) callback(book); };
- stream.subsOrderbook.add(listener);
+ stream.subsOrderbook.add(callback);
  if (stream.orderbook) callback(stream.orderbook);
- return () => { stream.subsOrderbook.delete(listener); releaseIfIdle(symbol, stream); };
+ return () => { stream.subsOrderbook.delete(callback); releaseIfIdle(symbol, stream); };
 }
 export function subscribeNativeTrades(symbol: string, callback: (trades: SidPaxTrade[]) => void): () => void {
  const stream = ensureStream(symbol);
