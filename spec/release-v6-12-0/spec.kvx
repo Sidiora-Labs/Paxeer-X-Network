@@ -11488,7 +11488,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.3.2]
 title = "Replay deterministic venue scenarios"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["3.1.19", "3.2.9", "3.2.10"]
