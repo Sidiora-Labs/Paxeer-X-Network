@@ -6674,7 +6674,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.1.11]
 title = "Rewrite the invariants over custody"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["2.1.1", "2.1.14", "2.1.16"]
