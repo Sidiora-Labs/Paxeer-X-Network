@@ -76,6 +76,7 @@ func newQuoterEnv(t *testing.T) *quoterEnv {
 	require.NoError(t, a.BankKeeper.SendCoins(ctx, authtypes.NewModuleAddress(evmtypes.ModuleName), a.EvmKeeper.GetPaxAddressOrDefault(ctx, e.caller), callerFunds))
 	require.NotEmpty(t, a.EvmKeeper.GetCode(ctx, e.usdl))
 	params := types.DefaultParams()
+	params.SwapFeeBps, params.Tier1FeeBps, params.Tier2FeeBps = 30, 20, 50
 	params.Tokens = types.OpeningTokens(e.pax, e.sid)
 	params.Tokens[0].Address = e.usdl
 	require.NoError(t, k.UpdateParams(ctx, k.Authority(), params))
