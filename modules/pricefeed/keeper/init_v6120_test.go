@@ -26,6 +26,11 @@ func storeKeys(ctx sdk.Context, k keeper.Keeper) [][]byte {
 
 func TestInitV6120Seeds(t *testing.T) {
 	k, ctx := registryKeeper(t)
+	operator := setValidator(t, ctx, "activation", stakingtypes.Bonded)
+	staking := testkeeper.EVMTestApp.StakingKeeper
+	validator, found := staking.GetValidator(ctx, operator)
+	require.True(t, found)
+	staking.SetValidatorByPowerIndex(ctx, validator)
 	require.Empty(t, storeKeys(ctx, k))
 
 	require.NoError(t, keeper.InitV6120(ctx, k))
@@ -131,10 +136,12 @@ func TestInitV6120GenesisRoundTrip(t *testing.T) {
 	require.Equal(t, "-4", exported.Aggregates[0].Aggregate.Basis.String())
 	first, err := json.Marshal(exported)
 	require.NoError(t, err)
+	var decoded types.GenesisState
+	require.NoError(t, json.Unmarshal(first, &decoded))
 
 	fresh, freshCtx := pricefeedtestutil.NewKeeper(testkeeper.EVMTestApp, ctx)
 	require.Empty(t, storeKeys(freshCtx, fresh))
-	require.NoError(t, fresh.InitGenesis(freshCtx, exported))
+	require.NoError(t, fresh.InitGenesis(freshCtx, decoded))
 	reexported, err := fresh.ExportGenesis(freshCtx)
 	require.NoError(t, err)
 	second, err := json.Marshal(reexported)
