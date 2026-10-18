@@ -249,9 +249,12 @@ func (k *Keeper) drainTreasury(ctx sdk.Context, caller NestedCaller, d TreasuryD
 	return ctx, quoteReceived, nil
 }
 
-// withdrawTreasuryToken runs withdraw(token, 0x1017, getBalance(token)) and
-// recoverSurplus(token, 0x1017, surplus) from the Treasury admin, moves what
-// 0x1017 received into custody by token.transfer called by 0x1017, credits
+// withdrawTreasuryToken runs withdraw(token, 0x1017, getBalance(token)) from
+// the Treasury admin, moves the surplus to 0x1017 by recoverSurplus(token,
+// 0x1017, surplus) from the admin at the generation 2 Treasury and by
+// token.transfer(0x1017, surplus) called by the generation 1 Treasury, whose
+// implementation has no recoverSurplus, moves what 0x1017 received into
+// custody by token.transfer called by 0x1017, credits
 // TreasuryHeld with the full amount and TreasuryLedger with the withdrawn
 // ledger amount, and requires the Treasury to hold none of token afterwards.
 func (k *Keeper) withdrawTreasuryToken(ctx sdk.Context, caller NestedCaller, d TreasuryDrain,
@@ -283,9 +286,15 @@ func (k *Keeper) withdrawTreasuryToken(ctx sdk.Context, caller NestedCaller, d T
 		return ctx, sdk.Int{}, err
 	}
 	if surplus.IsPositive() {
-		ctx, err = k.treasuryCall(ctx, caller, d.Admin, d.Treasury,
-			erc20Call(treasuryRecoverSurplus, addressWord(token), addressWord(launchpadAddress),
-				amountWord(surplus.BigInt())), types.ErrTransferFailed)
+		if d.Treasury == k.TreasuryContract() {
+			ctx, err = k.treasuryCall(ctx, caller, d.Admin, d.Treasury,
+				erc20Call(treasuryRecoverSurplus, addressWord(token), addressWord(launchpadAddress),
+					amountWord(surplus.BigInt())), types.ErrTransferFailed)
+		} else {
+			ctx, err = k.treasuryCall(ctx, caller, d.Treasury, token,
+				erc20Call(erc20Transfer, addressWord(launchpadAddress), amountWord(surplus.BigInt())),
+				types.ErrTransferFailed)
+		}
 		if err != nil {
 			return ctx, sdk.Int{}, err
 		}
