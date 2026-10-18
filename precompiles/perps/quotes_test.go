@@ -111,9 +111,9 @@ func newQuotesEnv(t *testing.T, mark int64) *quotesEnv {
 
 	precompile, err := perps.NewPrecompile(quotesKeepers{Keepers: &utils.EmptyKeepers{}, perps: k})
 	require.NoError(t, err)
-	executor, ok := precompile.GetExecutor().(perps.PrecompileExecutor)
+	executor, ok := precompile.GetExecutor().(*perps.PrecompileExecutor)
 	require.True(t, ok)
-	env := &quotesEnv{t: t, k: k, ctx: ctx, perpsKey: perpsKey, executor: executor, abi: precompile.GetABI()}
+	env := &quotesEnv{t: t, k: k, ctx: ctx, perpsKey: perpsKey, executor: *executor, abi: precompile.GetABI()}
 	env.fund(quotesMaker, 1_000_000_000_000)
 	return env
 }
@@ -304,7 +304,9 @@ func TestQuotesQuoteOpenPositionWalksBook(t *testing.T) {
 	require.NoError(t, position.Unmarshal(bz))
 	require.Equal(t, fixedWord(t, "0.0165"), position.SizeBase)
 	require.Equal(t, quote.EntryPrice, position.EntryPrice.ToBig())
-	require.Equal(t, *uint256.NewInt(100_000_000 - 445_793), env.account(branch, quotesHolder).Collateral)
+	// The 0.01 held from the first fill is settled at 60,100 before the second
+	// fill grows it, realising 0.01 x 100 = 1 USD into collateral.
+	require.Equal(t, *uint256.NewInt(100_000_000 - 445_793 + 1_000_000), env.account(branch, quotesHolder).Collateral)
 }
 
 func TestQuotesQuoteClosePosition(t *testing.T) {
