@@ -55,6 +55,7 @@ type env struct {
 	t    *testing.T
 	ctx  sdk.Context
 	k    *keeper.Keeper
+	key  sdk.StoreKey
 	usdl common.Address
 }
 
@@ -85,7 +86,7 @@ func newEnv(t *testing.T) *env {
 	params := k.GetParams(ctx)
 	params.QuoteToken = usdl.Hex()
 	require.NoError(t, k.UpdateParams(ctx, k.Authority(), params))
-	return &env{t: t, ctx: ctx, k: k, usdl: usdl}
+	return &env{t: t, ctx: ctx, k: k, key: app.GetKey(types.StoreKey), usdl: usdl}
 }
 
 func calldata(signature string, words ...[]byte) []byte {
@@ -722,7 +723,7 @@ func TestProtocolFeesPerMarket(t *testing.T) {
 	traders := []sdk.AccAddress{e.account(10_000), e.account(10_000)}
 	markets := []string{e.create(creator, types.FeeStrategyClaim).Denom,
 		e.create(creator, types.FeeStrategyClaim).Denom}
-	key := sdk.NewKVStoreKey(types.StoreKey)
+	key := e.key
 	store := e.ctx.KVStore(key)
 	for index, denom := range markets {
 		fees, err := e.k.GetProtocolFees(e.ctx, denom)
@@ -778,7 +779,7 @@ func testProtocolFeeMarketStateIsolation(t *testing.T) {
 	markets := []string{e.create(creator, types.FeeStrategyClaim).Denom,
 		e.create(creator, types.FeeStrategyClaim).Denom}
 	pools := []common.Address{e.pool(markets[0]), e.pool(markets[1])}
-	key := sdk.NewKVStoreKey(types.StoreKey)
+	key := e.key
 	versions := multiversion.NewMultiVersionStore(e.ctx.MultiStore().GetKVStore(key))
 	app := testkeeper.EVMTestApp
 	transactionKeeper := keeper.NewKeeper(key, app.BankKeeper, tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper), &app.EvmKeeper)

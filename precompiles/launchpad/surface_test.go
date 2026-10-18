@@ -142,6 +142,12 @@ func newSurfaceHarness(t *testing.T) *surfaceHarness {
 		migratedMarket(1, types.Generation1, s.pools[0], s.tokens[0], creator, k.Generation2()),
 		migratedMarket(2, types.Generation2, s.pools[1], s.tokens[1], creator, k.Generation2()),
 	}
+	for i, market := range gs.Markets {
+		gs.Surfaces = append(gs.Surfaces, types.Surface{Address: market.PoolAddress, Role: types.RolePool})
+		gs.PoolMetadata = append(gs.PoolMetadata, types.PoolMetadata{Pool: market.PoolAddress,
+			Creator: s.creator.Hex(), Token: s.tokens[i].Hex(), Optical: market.Optical,
+			NFTID: market.FeeRightID, CreatedAt: market.CreationTime, CreatedBlock: ctx.BlockHeight()})
+	}
 	gs.FeeRights = types.FeeRightCollection{NextTokenID: 3, PoolIndexMigrationCursor: 3, PoolIndexReady: true}
 	k.InitGenesis(ctx, *gs)
 	require.NoError(t, launchpad.InstallRoleSurfaces(ctx, evmKeeper, k))
