@@ -8191,3 +8191,8 @@ fix = "spell every path out in the index filter, then prove the result with git 
 area = "edge proxy"
 symptom = "tools/bringup/edge.sh set stops with 'manifest line of <name> has no upstream mode this script renders' on an edge host whose manifest was written by the September script: those lines carry four fields (name mode fly-app port) while the current script reads six (name mode upstream port kind sni), and the script copy at EDGE_NGINX_DIR/edge/edge.sh only exists after a successful set"
 fix = "convert each old http line to '<name> http <app>.fly.dev:<port> <port> railway -' (awk over a saved copy), confirm with awk 'NF!=6' that nothing is left, then rerun set; a balanced RPC name needs only an env file with EDGE_APP pointing at a comment-only map plus EDGE_RPC_NAME and EDGE_RPC_POOL"
+
+[gotcha.1724]
+area = "release rehearsal tests"
+symptom = "a worker's 29 GB disk fills after a handful of tools/release/tests/swap.test.sh or rollback.test.sh runs: each run keeps its node homes and the previous-binary source under <repo>/.logs/swap.* (about 2 GB per run, gitignored, so git clean -fd leaves them) until git checkout fails with 'No space left on device'"
+fix = "remove <repo>/.logs before a fresh checkout on a reused machine (the fleet runner now does so in its prepare step), and keep only the run under investigation while triaging"

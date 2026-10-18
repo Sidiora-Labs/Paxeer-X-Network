@@ -1891,3 +1891,11 @@ exit = 1
 log = fleet/logs/fix-8.4.9-translated-validate.log
 observed = The previous binary stores a single native protocol_fees_pending record at launchpad key 0x03 that the v6.12.0 keeper reads as a per-token prefix, so paxd export after the upgrade decodes an empty token and panics; MigrateV6120 reads the quote token before readParams and refuses the mainnet params shape (quote_denom, no quote_token).
 assumption = The spec names only the FeeAccumulator contract fees; the migration reads params first, deletes the legacy total when it is zero and refuses the upgrade when it is nonzero, and the halt export fixture drops the stale test-chain fee entry so the rehearsal seeds the real zero total.
+
+[finding.task-3-2-14-position-modified-equity]
+revision = 597df7b67d01
+command = go test ./precompiles/perps/ -run 'TestEvent'
+exit = 1
+log = fleet/logs/requal-3.2.14-verify.log
+observed = TestEventPositionModified is the only failing clause: the keeper emits PositionModified with the account equity measured before the fill's trading fee is debited (positions.go emits before the fee step) while the test expects the equity after the fee, 0.222642 USDL lower, and the spec says only "share of account equity".
+assumption = The keeper's pre-fee equity stands and the test clause stays as written until a ruling on acceptance 3008.17 fixes the measurement point; every other TestEvent clause including the backstop wiring passes on this revision.
