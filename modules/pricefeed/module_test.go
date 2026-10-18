@@ -1,6 +1,7 @@
 package pricefeed_test
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"strconv"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	pricefeedtestutil "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/testutil"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
 	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/require"
 )
@@ -125,6 +127,43 @@ func TestAppModuleNoParams(t *testing.T) {
 	defer func() { _ = iterator.Close() }()
 	require.False(t, iterator.Valid())
 	require.Empty(t, ctx.EventManager().Events())
+}
+
+func TestAppModuleInitGenesis(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		_, am, k, _, ctx := newModule(t, 1)
+		genesis := types.DefaultGenesis()
+		encoded, err := json.Marshal(genesis)
+		require.NoError(t, err)
+		require.Empty(t, am.InitGenesis(ctx, nil, encoded))
+		require.Equal(t, genesis.Params, k.GetParams(ctx))
+	})
+
+	t.Run("duplicate feed account", func(t *testing.T) {
+		_, am, _, key, ctx := newModule(t, 1)
+		pubKey := secp256k1.GenPrivKeyFromSecret([]byte("pricefeed-module-genesis")).PubKey()
+		feedKey := types.FeedKey{
+			PubKey:      hex.EncodeToString(pubKey.Bytes()),
+			FeedAccount: sdk.AccAddress(pubKey.Address()).String(),
+		}
+		genesis := types.DefaultGenesis()
+		genesis.FeedKeys = []types.GenesisFeedKey{
+			{Operator: sdk.ValAddress([]byte("pricefeed-operator-a")), FeedKey: feedKey},
+			{Operator: sdk.ValAddress([]byte("pricefeed-operator-b")), FeedKey: feedKey},
+		}
+		encoded, err := json.Marshal(genesis)
+		require.NoError(t, err)
+		genesisErr := keeper.ValidateGenesis(*genesis)
+		require.ErrorIs(t, genesisErr, types.ErrInvalidGenesis)
+		require.Contains(t, genesisErr.Error(), "is mapped to validators")
+		require.PanicsWithError(t, genesisErr.Error(), func() {
+			am.InitGenesis(ctx, nil, encoded)
+		})
+		iterator := ctx.KVStore(key).Iterator(nil, nil)
+		defer func() { _ = iterator.Close() }()
+		require.False(t, iterator.Valid())
+		require.Empty(t, ctx.EventManager().Events())
+	})
 }
 
 func TestAppModuleValidateGenesis(t *testing.T) {

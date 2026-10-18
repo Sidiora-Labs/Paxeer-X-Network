@@ -114,7 +114,9 @@ func (am AppModule) InitGenesis(ctx sdk.Context, _ codec.JSONCodec, gs json.RawM
 	if err := json.Unmarshal(gs, &genesis); err != nil {
 		panic(fmt.Errorf("failed to unmarshal %s genesis state: %w", types.ModuleName, err))
 	}
-	am.keeper.InitGenesis(ctx, genesis)
+	if err := am.keeper.InitGenesis(ctx, genesis); err != nil {
+		panic(err)
+	}
 	return []abci.ValidatorUpdate{}
 }
 
