@@ -10940,7 +10940,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.1.15]
 title = "Back stop accounts into the insurance fund"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["3.1.14", "3.1.16"]
