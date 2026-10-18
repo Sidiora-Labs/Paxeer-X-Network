@@ -29,7 +29,6 @@ var endblockHour = uint64(liquidationGenesisTime.Unix()) / keeper.SecondsPerHour
 // own in-memory store, at block height 10 and liquidationGenesisTime.
 type endblockEnv struct {
 	*liquidationEnv
-	pfKey sdk.StoreKey
 }
 
 func newEndblockEnv(t *testing.T, marketIDs ...uint64) *endblockEnv {
@@ -56,7 +55,7 @@ func newEndblockEnv(t *testing.T, marketIDs ...uint64) *endblockEnv {
 	word := uint256.NewInt(10_000).Bytes32()
 	ctx.KVStore(key).Set(types.SequenceKey(types.SequenceOrderID), word[:])
 	ctx.KVStore(key).Set(types.SequenceKey(types.SequencePositionID), word[:])
-	return &endblockEnv{liquidationEnv: &liquidationEnv{t: t, ctx: ctx, k: k, key: key, nextID: 100}, pfKey: pfKey}
+	return &endblockEnv{liquidationEnv: &liquidationEnv{t: t, ctx: ctx, k: k, key: key, pfKey: pfKey, nextID: 100}}
 }
 
 // setAggregate stores the pricefeed aggregate GetPrice reads for a market,
