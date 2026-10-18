@@ -18891,7 +18891,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.2.3]
 title = "Test the precompile views and write the versioned setup"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["5.2.2"]
