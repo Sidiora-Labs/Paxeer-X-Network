@@ -141,6 +141,9 @@ func newTreasuryEnv(t *testing.T) *treasuryEnv {
 	gs.Markets = []types.Market{market}
 	gs.Surfaces = []types.Surface{{Address: market.Factory, Role: types.RoleFactory},
 		{Address: market.PoolAddress, Role: types.RolePool}, {Address: e.surface.Hex(), Role: types.RoleTreasury}}
+	gs.PoolMetadata = []types.PoolMetadata{{Pool: market.PoolAddress, Creator: guardian.Hex(),
+		Token: market.TokenAddress, Optical: market.Optical, NFTID: market.FeeRightID, CreatedAt: market.CreationTime,
+		CreatedBlock: 1}}
 	gs.RoleMembers = []types.RoleMember{{Contract: e.surface.Hex(),
 		Role: launchpadkeeper.TreasuryDepositorRole.Hex(), Account: e.depositor.Hex()}}
 	require.NoError(t, gs.Validate())

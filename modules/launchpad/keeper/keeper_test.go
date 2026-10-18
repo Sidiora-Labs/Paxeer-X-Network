@@ -524,7 +524,7 @@ func TestBuyMovesUsdlIntoCustody(t *testing.T) {
 }
 
 func TestSnapshotRingWraps(t *testing.T) {
-	e := newEnv(t)
+	e := newSurfacedEnv(t)
 	creator := e.account(100_000_000)
 	alice := e.account(1_000_000_000)
 	denom := e.create(creator, types.FeeStrategyClaim).Denom
@@ -1007,7 +1007,7 @@ func TestParamsChangeOnlyThroughGovernance(t *testing.T) {
 }
 
 func TestGenesisRoundTrip(t *testing.T) {
-	e := newEnv(t)
+	e := newSurfacedEnv(t)
 	params := e.k.GetParams(e.ctx)
 	params.ProtocolFeeBps = 2000
 	require.NoError(t, e.k.UpdateParams(e.ctx, e.k.Authority(), params))

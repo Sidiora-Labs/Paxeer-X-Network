@@ -229,6 +229,9 @@ func TestRoleAdministrationByGovernanceFeeAccountingGenesis(t *testing.T) {
 	gs.Params = e.k.GetParams(e.ctx)
 	gs.Markets = []types.Market{market}
 	gs.Surfaces = []types.Surface{{Address: pool.Hex(), Role: types.RolePool}}
+	gs.PoolMetadata = []types.PoolMetadata{{Pool: pool.Hex(), Creator: common.BytesToAddress(e.k.ModuleAddress()).Hex(),
+		Token: market.TokenAddress, Optical: market.Optical, NFTID: market.FeeRightID, CreatedAt: market.CreationTime,
+		CreatedBlock: 1}}
 	gs.FeeHeld = i(125)
 	gs.FeeAccounting.TotalLiabilities = i(125)
 	gs.FeeAccounting.Pools = []types.PoolFeeAccount{{Pool: pool.Hex(), AccumulatedFees: i(80),

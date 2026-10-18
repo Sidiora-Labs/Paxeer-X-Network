@@ -133,6 +133,9 @@ func newPoolEnv(t *testing.T) *poolEnv {
 	gs.Markets = []types.Market{market}
 	gs.Surfaces = []types.Surface{{Address: market.Factory, Role: types.RoleFactory},
 		{Address: market.PoolAddress, Role: types.RolePool}}
+	gs.PoolMetadata = []types.PoolMetadata{{Pool: market.PoolAddress, Creator: guardian.Hex(),
+		Token: market.TokenAddress, Optical: market.Optical, NFTID: market.FeeRightID, CreatedAt: market.CreationTime,
+		CreatedBlock: 1}}
 	gs.RoleMembers = []types.RoleMember{{Contract: market.Factory,
 		Role: crypto.Keccak256Hash([]byte("ROUTER_ROLE")).Hex(), Account: e.router.Hex()}}
 	require.NoError(t, gs.Validate())

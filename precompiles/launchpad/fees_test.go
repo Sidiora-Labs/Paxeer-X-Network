@@ -126,6 +126,9 @@ func newFeeTestEnv(t *testing.T) *feeTestEnv {
 	gs.Surfaces = []types.Surface{{Address: e.pool.Hex(), Role: types.RolePool},
 		{Address: accumulator, Role: types.RoleFeeAccumulator},
 		{Address: e.roles.FeesRouter.Hex(), Role: types.RoleFeesRouter}}
+	gs.PoolMetadata = []types.PoolMetadata{{Pool: e.pool.Hex(), Creator: common.BytesToAddress(guardianAcc).Hex(),
+		Token: e.token.Hex(), Optical: market.Optical, NFTID: market.FeeRightID, CreatedAt: market.CreationTime,
+		CreatedBlock: 1}}
 	gs.RoleMembers = []types.RoleMember{
 		{Contract: accumulator, Role: common.Hash(feeTestPoolRole).Hex(), Account: e.pool.Hex()},
 		{Contract: accumulator, Role: common.Hash(launchpadkeeper.FeesRouterRole).Hex(), Account: e.roles.FeesRouter.Hex()},

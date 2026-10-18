@@ -125,6 +125,9 @@ func newViewEnv(t *testing.T, markets []types.Market, members []types.RoleMember
 	for _, market := range markets {
 		if market.Generation != types.GenerationNative {
 			gs.Surfaces = append(gs.Surfaces, types.Surface{Address: market.PoolAddress, Role: types.RolePool})
+			gs.PoolMetadata = append(gs.PoolMetadata, types.PoolMetadata{Pool: market.PoolAddress,
+				Creator: mappings[market.Creator].Hex(), Token: market.TokenAddress, Optical: market.Optical,
+				NFTID: market.FeeRightID, CreatedAt: market.CreationTime, CreatedBlock: 77})
 			byPool[common.HexToAddress(market.PoolAddress)] = market
 		}
 	}
@@ -431,6 +434,11 @@ func TestViewRolesServeEverySelector(t *testing.T) {
 	metadata := abi.ConvertType(e.one(reg, stranger, "getPoolMetadata", notPool),
 		new(launchpad.RegistryPoolMetadata)).(*launchpad.RegistryPoolMetadata)
 	same(t, launchpad.RegistryPoolMetadata{NftId: n(0), CreatedAt: n(0), CreatedBlock: n(0)}, *metadata)
+	metadata = abi.ConvertType(e.one(reg, stranger, "getPoolMetadata", poolA),
+		new(launchpad.RegistryPoolMetadata)).(*launchpad.RegistryPoolMetadata)
+	same(t, launchpad.RegistryPoolMetadata{Creator: creator, Token: tokenA, Optical: zero,
+		NftId: n(int64(marketA.FeeRightID)), CreatedAt: n(marketA.CreationTime), CreatedBlock: n(77)}, *metadata)
+	ctx.KVStore(sdk.NewKVStoreKey(types.StoreKey)).Delete(append([]byte{0x51}, poolA.Bytes()...))
 	e.refused(types.ErrInvalidMarket, "no registry metadata", reg, stranger, "getPoolMetadata", poolA)
 
 	newPool, newToken := address(0x77), address(0x78)

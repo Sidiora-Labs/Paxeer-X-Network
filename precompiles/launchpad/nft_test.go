@@ -175,6 +175,8 @@ func nftGenesis(t *testing.T, holder common.Address) types.GenesisState {
 	gs.Markets = []types.Market{market}
 	gs.Surfaces = []types.Surface{{Address: nftCollection.Hex(), Role: types.RoleFeeRights},
 		{Address: nftPool.Hex(), Role: types.RolePool}}
+	gs.PoolMetadata = []types.PoolMetadata{{Pool: nftPool.Hex(), Creator: nftOwner.Hex(), Token: market.TokenAddress,
+		Optical: market.Optical, NFTID: market.FeeRightID, CreatedAt: market.CreationTime, CreatedBlock: 1}}
 	gs.RoleMembers = []types.RoleMember{
 		{Contract: nftCollection.Hex(), Role: launchpadkeeper.FeeRightMinterRole.Hex(), Account: nftFactory.Hex()},
 		{Contract: nftCollection.Hex(), Role: launchpadkeeper.FeeRightStrategySetterRole.Hex(), Account: nftSetter.Hex()},
