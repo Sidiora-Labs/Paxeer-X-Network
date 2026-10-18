@@ -1,0 +1,1639 @@
+# Monorepo layout: target tree core, sdk, services, apps, tests; phase A runs now, phase B is held until release v6.12.0 is applied on mainnet.
+
+[meta]
+name = "Monorepo layout: core, sdk, services, apps, tests"
+slug = "monorepo-layout"
+version = "1.0.0"
+status = "draft"
+goal = "Every top-level directory of the repository sits under core, sdk, services, apps, tests, scripts or the group that stays at the root (contracts, docs, deploy, docker, tools, spec, api), the upstream Paxeer-Network repositories the node builds from live in the tree as pinned directory snapshots, and the build, CI, deploy and spec references follow every move in the same commit."
+scope = "Phase A: eleven upstream directory imports, the tests consolidation, the off-chain moves to apps, services, sdk, contracts and tools, and the phase A docs refresh. Phase B: the kernel C tree and every root Go package to core, the Cosmos SDK fork to core/cosmos-sdk, programs, the go.mod directory replace wiring of the vendored Go deps and the sdk/js wiring of the integration tests."
+revision = "39dd0991d"
+phase_a = "Waves 0 to 7, tasks 0.1 to 7.1; runs now."
+phase_b = "Waves 8 to 11, tasks 8.1 to 11.3; held. Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+completion = "Every task verify_cmd passes at one revision; the wave check tasks 3.6, 4.7, 5.5, 6.7 and 9.12 and the docs tasks 7.1 and 11.3 pass on their merged wave revisions; every acceptance criterion of req.1 to req.11 holds on the final revision."
+
+[design]
+layout = "apps: user-facing frontends (perps, wallet, web, explorer, launchpad). services: off-chain programs (agent, interop, platform, human, wallet, explorer, launchpad, bridge). sdk: client and guest SDKs (platform, integrations, wallet, chainflow, launchpad, programs, js). core: the chain (kernel, every root Go package, cosmos-sdk, programs, deps). tests: every test tree (fuzz, integration, fixtures/example, occ, testutil and the existing kernel, Python, Solidity and vector suites). tools: developer and operator tools (hpx, platform cli, emulator and release, launchpad tools, loadtest, paxctl, uci, wasm-tools). contracts: on-chain sources (the root Foundry tree, bridge, launchpad)."
+stays = "api (buf module buf.build/pax-protocol/pax-chain), contracts, docs, deploy, docker, scripts, spec, tools, and the root build and community files: Makefile, chain.mk, go.mod, go.sum, buf.yaml, buf.gen.yaml, buf.lock, foundry.toml, foundry.paxeer.toml, rust-toolchain.toml, package.json, package-lock.json, README.md, LICENSE, NOTICE, CONTRIBUTING.md, SECURITY.md, SUPPORT.md, CHANGELOG.md, CODE_OF_CONDUCT.md, CONTRIBUTORS.md, GOVERNANCE.md, CITATION.cff, RELEASE.md, GOTCHA.kvx, CODEMAP.md, AGENTS.md, CLAUDE.md, codify.kvx and the dot-directories and dot-files of tool configuration."
+vendoring = "Each imported repository is a plain directory snapshot without .git at its final home, with a VENDOR.kvx pin record (url, ref, full sha) and a nested .gitignore whose appended negations re-include every upstream file the root ignore patterns hide; scripts/ci/vendor-verify.sh proves the tree equals a fresh fetch of the pinned sha. Phase A changes no consumer; phase B wires go.mod and the integration tests to the directories."
+sdk_overlap = "During phase A sdk/ holds the Cosmos SDK fork beside the new SDK directories; no fork entry shares a name with them, and task 9.1 moves the fork entries by name to core/cosmos-sdk."
+go_module = "go.mod stays at the root and the module path github.com/Sidiora-Labs/Paxeer-X-Network does not change; every moved root-module package changes its import path, which is rewritten mechanically in the same commit. Nested modules keep their module paths."
+references = "scripts/ci/layout-check.sh is the dangling-reference gate: it fails while any tracked file sits under an old path or any build, CI, deploy or tool configuration file names an old root-anchored path."
+
+[execution]
+planning_state = "Task completion requires the declared implementation and its verify_cmd evidence at one revision. A specification or task status alone establishes no runtime result."
+task_policy = "Read the exact declared paths, move with git mv, rewrite every reference in the same commit, then run one bounded qualification pass. Implementation and qualification evidence are recorded separately."
+gate_policy = "A verify_cmd names a target that exists at the revision or is listed in planned_paths with gate_kind planned. Every verify_cmd runs from the repository root."
+candidate_policy = "Aggregate, sanitizer and full CI matrices run once per wave on the merged wave revision through the wave check task, not per task."
+parallelism = "The eleven import tasks of wave 1 touch disjoint directories and run in parallel. Every move task edits Makefile, .github, docker or the active spec files, so the move tasks of a wave run one after another in requires order."
+phase_policy = "Task status uses the workflow set pending, in_progress, done. Phase B tasks carry phase = B and a hold reason and stay pending until release v6.12.0 is applied on mainnet; no phase B task is claimed before then."
+privacy = "Credentials, key material, operational inventories, host names and raw execution logs stay in access-controlled storage. Everything in this feature directory is public and is reviewed before publication."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+requirement_ids = "req.1 to req.11 are the requirements of this feature; a task reqs entry <n>.<a> names acceptance criterion a of req.<n>."
+
+[req.1]
+title = "Every top-level entry has its target home"
+ac_1 = "After phase B the tracked top-level directories are exactly apps, core, sdk, services, tests, scripts, tools, contracts, docs, deploy, docker, spec, api and the dot-directories of tool configuration, beside the root build and community files listed in [design] stays."
+ac_2 = "Phase A tests consolidation: fuzz -> tests/fuzz, integration_test -> tests/integration, example -> tests/fixtures/example, occ_tests -> tests/occ, testutil -> tests/testutil; the existing tests tree, tests/solidity and tests/vectors stay where foundry.toml reads them."
+ac_3 = "Phase A services: agent -> services/agent whole with its shared Rust crates and its sdk; interop -> services/interop; platform/cli, platform/emulator and platform/release -> tools/platform; platform/sdk -> sdk/platform; platform/integrations -> sdk/integrations; the rest of platform -> services/platform; the human Rust workspace -> services/human; human/wallet -> services/wallet; human/wallet/sdk -> sdk/wallet; human/apps/{perps,wallet,web} -> apps/{perps,wallet,web}."
+ac_4 = "Phase A other trees: chainflow -> sdk/chainflow; hpx -> tools/hpx; explorer/frontend -> apps/explorer and the rest of explorer -> services/explorer; bridge/evm, bridge/solana, bridge/vectors and the bridge docs -> contracts/bridge and bridge/deploy -> services/bridge/deploy."
+ac_5 = "Phase A launchpad flatten: launchpad/client/apps/{web,mobile} -> apps/launchpad/{web,mobile} with the client workspace files at apps/launchpad; launchpad/client/packages/* -> sdk/launchpad/packages/*; launchpad/protocol and launchpad/shared -> sdk/launchpad; launchpad/core/* and launchpad/media/* -> services/launchpad/<name>; launchpad/security, go.work, Makefile and licenses -> services/launchpad; launchpad/deploy -> deploy/launchpad; launchpad/tools -> tools/launchpad; launchpad/contracts -> contracts/launchpad."
+ac_6 = "Phase B core: src, include, cmd and migrations -> core/kernel/{src,include,cmd,migrations}; sdk -> core/cosmos-sdk; consensus, interchain, wasm, wasm-runtime, storage, modules, precompiles, node, rpc, engine, daemon, admin, custodyproof, layerxproof and utils -> core/<name>; programs/sdk -> sdk/programs; the rest of programs -> core/programs."
+ac_7 = "api stays at the root; docs/MONOREPO.md describes the tree of the current phase."
+
+[req.2]
+title = "Every wave ends with a green build"
+ac_1 = "Every task that touches the root Go module ends with go build ./... and go vet of the touched packages passing."
+ac_2 = "Every moved tree with make targets passes them after its move: fuzz-codec-smoke, agent-build, interop-build, platform-build, human-build, bridge-test-evm, hpx-public-check, programs-build, test-kernel, test-layerxctl, test-lxphost and make -f chain.mk build."
+ac_3 = "Every moved TypeScript app or package passes its typecheck (pnpm -C <dir> typecheck, or -r for workspaces) and npm ls --workspaces passes for the root npm workspace."
+ac_4 = "Every moved Rust workspace passes cargo check or cargo metadata with --locked, and no resolved crate version changes; only path entries of Cargo.toml and Cargo.lock change."
+ac_5 = "Every moved contract tree passes forge build (or the hardhat compile of its own toolchain), and the root forge build skips contracts/bridge and contracts/launchpad."
+ac_6 = "The wave check task runs the wave gate once on the merged wave revision."
+
+[req.3]
+title = "References follow every move in the same commit"
+ac_1 = "Every moved path is rewritten in Makefile, chain.mk, the included .mk files, .github (workflows, labeler, codecov, dependabot, codeql config and the review assignment file), Dockerfiles and compose files under docker and deploy, buf.yaml and buf.gen.yaml."
+ac_2 = "Every moved path is rewritten in Fly tomls, Railway json files, vercel.json and nixpacks.toml, package.json workspaces and lockfiles, pnpm workspace files, Cargo path dependencies, nested go.mod replace directives and go.work use lines."
+ac_3 = "Every moved path is rewritten in codify.kvx, .gitignore, .cgignore, .gitattributes, .pre-commit-config.yaml, spec/specgen and scripts/specgen.sh, the scripts and tools trees, and the required-file list and secret-scan allowlist of scripts/ci/public-repo-audit.sh, which passes after every task that touches it."
+ac_4 = "docs/MONOREPO.md, README.md, the seven translations under docs/readme, docs/site/docs/overview and the in-tree READMEs of moved trees name only current paths after the docs task of each phase."
+ac_5 = "Every move is a git mv so git log --follow traces each moved file."
+
+[req.4]
+title = "No dangling path references"
+ac_1 = "scripts/ci/layout-check.sh exits 0 for every old path a wave moved: no tracked file remains under the old path and no build, CI, deploy or tool configuration file names it as a root-anchored path."
+ac_2 = "One check task per wave (3.6, 4.7, 5.5, 6.7, 9.12) and each docs task (7.1, 11.3) runs layout-check.sh over every path moved so far."
+
+[req.5]
+title = "Active spec paths follow every move"
+ac_1 = "In the same commit as each move, the open tasks of spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx name only post-move paths in touches, do_n, build_cmd, verify_cmd and planned_paths, and their [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*] text names only post-move paths."
+ac_2 = "Each commit that rewrites an active spec raises the minor version in that spec's [meta]."
+ac_3 = "Done tasks and their evidence keep their historical paths."
+
+[req.6]
+title = "Upstream repositories are vendored as pinned snapshots"
+ac_1 = "The eleven trees sit at their final homes: pax-geth -> core/deps/geth (v1.15.7-pax.17, d9111440), pax-tm-db -> core/deps/tm-db (v0.0.5-pax.1, beba0f87), pax-db-backend -> core/deps/db-backend (v0.0.4-pax.1, 152aa183), paxlog -> core/deps/log (v0.0.3-pax.1, 5eeb5730), pax-utils -> core/deps/utils (v0.0.2-pax.1, 8cb50156), pax-load -> tools/loadtest (v0.0.1-pax.1, c3b0feb1), pax-js -> sdk/js (v1.0.6-pax.1, 5d299156), paxctl -> tools/paxctl, pax-uci -> tools/uci, pax-cosmwasm -> core/deps/cosmwasm and pax-wasm-tools -> tools/wasm-tools (the last four at the main head)."
+ac_2 = "Each tree holds VENDOR.kvx with url (https://github.com/Paxeer-Network/<repo>), ref (tag or main) and the full 40-hex sha; a tag sha starts with the prefix listed in ac_1."
+ac_3 = "scripts/ci/vendor-verify.sh <dir> exits 0: the tracked files of the tree equal a fresh fetch of the pinned sha byte for byte and mode for mode, with no .git, beside VENDOR.kvx and the appended negations of the tree's .gitignore."
+ac_4 = "Every upstream file is tracked: the nested .gitignore negates each root pattern (*.o, *.a, *.so, *.key, *.pem, .env, node_modules/, /target/ and the rest) that would hide one."
+ac_5 = "The phase A imports change no go.mod, go.sum, package.json or lockfile outside the imported tree, and the root .gitignore no longer ignores the core directory while it still ignores a root core dump."
+ac_6 = "Phase B wires the root module to core/deps/geth, core/deps/db-backend, core/deps/tm-db, core/deps/log, core/deps/utils and tools/loadtest with directory replace lines, and the integration rpc tests to the @pax-js/cosmos package in sdk/js."
+
+[req.7]
+title = "Generated files stay in step"
+ac_1 = "spec/specgen leaves AGENTS.md and CLAUDE.md with no diff after every wave check and docs task."
+ac_2 = "CODEMAP.md is regenerated with cg codemap in the docs task of each phase, and the vendored trees are excluded from the index through .cgignore."
+
+[req.8]
+title = "Settings held outside the repository change when the task lands"
+ac_1 = "When task 6.1 lands, the Railway services built from explorer/deploy/railway/backend.railway.json and frontend.railway.json have their config-as-code path and root directory set to services/explorer/deploy/railway and the split trees."
+ac_2 = "When task 5.1 lands, the Railway service of human/apps/wallet/railway.json (and its nixpacks.toml) points at apps/wallet, and the Vercel project of human/apps/perps/vercel.json has its root directory set to apps/perps."
+ac_3 = "When tasks 4.2, 4.5 and 6.6 land, the Fly apps of platform/hosted/interop/fly.toml, platform/hosted/dashboard/web/fly.toml, platform/hosted/node/fly.toml and hpx/hosting/fly.toml are deployed from their new paths; tools/flyci stays."
+ac_4 = "Each such change is made by the operator of that service in the landing window of the task, and the task's commit message names the setting that must change."
+
+[req.9]
+title = "Phase B waits for the release"
+ac_1 = "Every phase B task (8.1 to 11.3) carries phase = B and its hold reason, stays pending until release v6.12.0 is applied on mainnet, and is never claimed before then."
+ac_2 = "The core moves keep each buf module root whole: proto file paths inside a module root do not change, the go_package options are rewritten and every *.pb.go is regenerated with buf generate, and buf generate leaves no diff."
+ac_3 = "The -X version ldflags of chain.mk and Makefile move with the sdk move in the same commit and ./build/paxd version prints the release version afterwards."
+ac_4 = "The depth-relative cgo -I and -L flags of lxphost follow the kernel, modules and programs moves; BUILD_DIR=build stays at the root."
+
+[req.10]
+title = "Moved trees keep their own invariants"
+ac_1 = "services/wallet/attestor and services/wallet/ceremony keep the replace => ../../.. directive at depth 3 to the root module."
+ac_2 = "tools/hpx/registry keeps its module path and the hpx-registry-<sha> tag scheme; the registry workflow's working-directory and go-version-file follow the move."
+ac_3 = "The launchpad Go modules keep their module paths; every replace directive and go.work use line points at the new relative paths and make -C services/launchpad build passes."
+ac_4 = "sdk/chainflow/go and the other nested modules keep their module paths."
+ac_5 = "Rust workspace members that leave their workspace root directory keep resolving the same crate versions as the workspace lock they left."
+
+[req.11]
+title = "Vendored trees pass the repository audit"
+ac_1 = "scripts/ci/public-repo-audit.sh passes after the imports, with any allowlist entry naming one exact upstream test file, never a whole tree."
+
+[task.0.1]
+title = "Add the layout and vendor check scripts and fix the root ignore rules the new tree needs"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 0
+requires = []
+reqs = ["4.1", "6.3", "6.6", "11.1"]
+do_1 = "Add scripts/ci/layout-check.sh taking old root-relative paths as arguments: exit 1 when git ls-files lists any file under an argument, or when git grep finds the argument followed by a slash and not preceded by a letter, digit, dot, dash, underscore or slash in a file whose paths resolve from the repository root: Makefile, chain.mk, the .mk files under tools, .github, docker, deploy, the shell and Python scripts under scripts, buf.yaml, buf.gen.yaml, codify.kvx, the root package.json, .gitignore, .cgignore, .gitattributes, .pre-commit-config.yaml, foundry.toml, foundry.paxeer.toml and go.mod; print every hit as path:line. Manifests that resolve paths from their own directory (nested Cargo.toml, package.json, go.mod, go.work, pnpm-workspace.yaml, fly.toml, railway.json) are proven by the build gates instead."
+do_2 = "Add scripts/ci/vendor-verify.sh taking one directory: read url, ref and sha from <dir>/VENDOR.kvx, fetch that sha at depth 1 into a fresh temporary clone, and exit 1 unless the sha matches, every file tracked upstream is tracked under <dir> with identical bytes and mode, no other file is tracked under <dir> except VENDOR.kvx, and <dir>/.gitignore equals the upstream .gitignore (or is absent upstream) followed only by negation lines; print each difference."
+do_3 = "In .gitignore replace the broken last line CONSTITUTION.md.pytest_cache/ with two lines /CONSTITUTION.md and /.pytest_cache/."
+do_4 = "In .gitignore keep the root core-dump rules /core and /core.* but add !/core/ after them so the core/ directory is not ignored while a root core file still is."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["scripts/ci/layout-check.sh", "scripts/ci/vendor-verify.sh", ".gitignore"]
+build_cmd = "bash -n scripts/ci/layout-check.sh && bash -n scripts/ci/vendor-verify.sh"
+verify_cmd = "bash -n scripts/ci/layout-check.sh && bash -n scripts/ci/vendor-verify.sh && git check-ignore -q .pytest_cache && git check-ignore -q core && ! git check-ignore -q core/deps/geth/go.mod"
+gate_kind = "planned"
+planned_paths = ["scripts/ci/layout-check.sh", "scripts/ci/vendor-verify.sh"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.1]
+title = "Import pax-geth at v1.15.7-pax.17 into core/deps/geth with its pin record"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 1
+requires = ["0.1"]
+reqs = ["6.1", "6.2", "6.3", "6.4", "6.5"]
+do_1 = "Fetch https://github.com/Paxeer-Network/pax-geth at v1.15.7-pax.17 and copy its tracked tree without .git into core/deps/geth; add core/deps/geth/VENDOR.kvx with one [vendor] section holding url = https://github.com/Paxeer-Network/pax-geth, ref and sha."
+do_2 = "Record ref v1.15.7-pax.17 and the full 40-hex sha of that tag, which starts with d9111440, in core/deps/geth/VENDOR.kvx; refuse the import when the tag resolves to a different sha."
+do_3 = "Run git status --ignored on core/deps/geth and append to core/deps/geth/.gitignore (after any upstream content) one negation line per root pattern that hides an upstream file (for example *.o, *.a, *.so, *.key, *.pem, .env, node_modules/, /target/), so git ls-files core/deps/geth lists every upstream file."
+do_4 = "Leave go.mod and go.sum unchanged: the root module keeps requiring github.com/ethereum/go-ethereum => github.com/paxeer-network/pax-geth v1.15.7-pax.17; the nested go.mod of core/deps/geth keeps the tree out of the root ./... pattern. Wiring the root module to the tree is task 11.1."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["core/deps/geth"]
+build_cmd = "git ls-files --error-unmatch core/deps/geth/VENDOR.kvx"
+verify_cmd = "scripts/ci/vendor-verify.sh core/deps/geth"
+gate_kind = "planned"
+planned_paths = ["core/deps/geth/VENDOR.kvx"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.2]
+title = "Import pax-tm-db at v0.0.5-pax.1 into core/deps/tm-db with its pin record"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 1
+requires = ["0.1"]
+reqs = ["6.1", "6.2", "6.3", "6.4", "6.5"]
+do_1 = "Fetch https://github.com/Paxeer-Network/pax-tm-db at v0.0.5-pax.1 and copy its tracked tree without .git into core/deps/tm-db; add core/deps/tm-db/VENDOR.kvx with one [vendor] section holding url = https://github.com/Paxeer-Network/pax-tm-db, ref and sha."
+do_2 = "Record ref v0.0.5-pax.1 and the full 40-hex sha of that tag, which starts with beba0f87, in core/deps/tm-db/VENDOR.kvx; refuse the import when the tag resolves to a different sha."
+do_3 = "Run git status --ignored on core/deps/tm-db and append to core/deps/tm-db/.gitignore (after any upstream content) one negation line per root pattern that hides an upstream file (for example *.o, *.a, *.so, *.key, *.pem, .env, node_modules/, /target/), so git ls-files core/deps/tm-db lists every upstream file."
+do_4 = "Leave go.mod and go.sum unchanged: the root module keeps requiring github.com/paxeer-network/pax-tm-db v0.0.5-pax.1; the nested go.mod of core/deps/tm-db keeps the tree out of the root ./... pattern. Wiring the root module to the tree is task 11.1."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["core/deps/tm-db"]
+build_cmd = "git ls-files --error-unmatch core/deps/tm-db/VENDOR.kvx"
+verify_cmd = "scripts/ci/vendor-verify.sh core/deps/tm-db"
+gate_kind = "planned"
+planned_paths = ["core/deps/tm-db/VENDOR.kvx"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.3]
+title = "Import pax-db-backend at v0.0.4-pax.1 into core/deps/db-backend with its pin record"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 1
+requires = ["0.1"]
+reqs = ["6.1", "6.2", "6.3", "6.4", "6.5"]
+do_1 = "Fetch https://github.com/Paxeer-Network/pax-db-backend at v0.0.4-pax.1 and copy its tracked tree without .git into core/deps/db-backend; add core/deps/db-backend/VENDOR.kvx with one [vendor] section holding url = https://github.com/Paxeer-Network/pax-db-backend, ref and sha."
+do_2 = "Record ref v0.0.4-pax.1 and the full 40-hex sha of that tag, which starts with 152aa183, in core/deps/db-backend/VENDOR.kvx; refuse the import when the tag resolves to a different sha."
+do_3 = "Run git status --ignored on core/deps/db-backend and append to core/deps/db-backend/.gitignore (after any upstream content) one negation line per root pattern that hides an upstream file (for example *.o, *.a, *.so, *.key, *.pem, .env, node_modules/, /target/), so git ls-files core/deps/db-backend lists every upstream file."
+do_4 = "Leave go.mod and go.sum unchanged: the root module keeps requiring github.com/tendermint/tm-db => github.com/paxeer-network/pax-db-backend v0.0.4-pax.1; the nested go.mod of core/deps/db-backend keeps the tree out of the root ./... pattern. Wiring the root module to the tree is task 11.1."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["core/deps/db-backend"]
+build_cmd = "git ls-files --error-unmatch core/deps/db-backend/VENDOR.kvx"
+verify_cmd = "scripts/ci/vendor-verify.sh core/deps/db-backend"
+gate_kind = "planned"
+planned_paths = ["core/deps/db-backend/VENDOR.kvx"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.4]
+title = "Import paxlog at v0.0.3-pax.1 into core/deps/log with its pin record"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 1
+requires = ["0.1"]
+reqs = ["6.1", "6.2", "6.3", "6.4", "6.5"]
+do_1 = "Fetch https://github.com/Paxeer-Network/paxlog at v0.0.3-pax.1 and copy its tracked tree without .git into core/deps/log; add core/deps/log/VENDOR.kvx with one [vendor] section holding url = https://github.com/Paxeer-Network/paxlog, ref and sha."
+do_2 = "Record ref v0.0.3-pax.1 and the full 40-hex sha of that tag, which starts with 5eeb5730, in core/deps/log/VENDOR.kvx; refuse the import when the tag resolves to a different sha."
+do_3 = "Run git status --ignored on core/deps/log and append to core/deps/log/.gitignore (after any upstream content) one negation line per root pattern that hides an upstream file (for example *.o, *.a, *.so, *.key, *.pem, .env, node_modules/, /target/), so git ls-files core/deps/log lists every upstream file."
+do_4 = "Leave go.mod and go.sum unchanged: the root module keeps requiring github.com/paxeer-network/paxlog v0.0.3-pax.1; the nested go.mod of core/deps/log keeps the tree out of the root ./... pattern. Wiring the root module to the tree is task 11.1."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["core/deps/log"]
+build_cmd = "git ls-files --error-unmatch core/deps/log/VENDOR.kvx"
+verify_cmd = "scripts/ci/vendor-verify.sh core/deps/log"
+gate_kind = "planned"
+planned_paths = ["core/deps/log/VENDOR.kvx"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.5]
+title = "Import pax-utils at v0.0.2-pax.1 into core/deps/utils with its pin record"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 1
+requires = ["0.1"]
+reqs = ["6.1", "6.2", "6.3", "6.4", "6.5"]
+do_1 = "Fetch https://github.com/Paxeer-Network/pax-utils at v0.0.2-pax.1 and copy its tracked tree without .git into core/deps/utils; add core/deps/utils/VENDOR.kvx with one [vendor] section holding url = https://github.com/Paxeer-Network/pax-utils, ref and sha."
+do_2 = "Record ref v0.0.2-pax.1 and the full 40-hex sha of that tag, which starts with 8cb50156, in core/deps/utils/VENDOR.kvx; refuse the import when the tag resolves to a different sha."
+do_3 = "Run git status --ignored on core/deps/utils and append to core/deps/utils/.gitignore (after any upstream content) one negation line per root pattern that hides an upstream file (for example *.o, *.a, *.so, *.key, *.pem, .env, node_modules/, /target/), so git ls-files core/deps/utils lists every upstream file."
+do_4 = "Leave go.mod and go.sum unchanged: the root module keeps requiring github.com/paxeer-network/pax-utils v0.0.2-pax.1; the nested go.mod of core/deps/utils keeps the tree out of the root ./... pattern. Wiring the root module to the tree is task 11.1."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["core/deps/utils"]
+build_cmd = "git ls-files --error-unmatch core/deps/utils/VENDOR.kvx"
+verify_cmd = "scripts/ci/vendor-verify.sh core/deps/utils"
+gate_kind = "planned"
+planned_paths = ["core/deps/utils/VENDOR.kvx"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.6]
+title = "Import pax-load at v0.0.1-pax.1 into tools/loadtest with its pin record"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 1
+requires = ["0.1"]
+reqs = ["6.1", "6.2", "6.3", "6.4", "6.5"]
+do_1 = "Fetch https://github.com/Paxeer-Network/pax-load at v0.0.1-pax.1 and copy its tracked tree without .git into tools/loadtest; add tools/loadtest/VENDOR.kvx with one [vendor] section holding url = https://github.com/Paxeer-Network/pax-load, ref and sha."
+do_2 = "Record ref v0.0.1-pax.1 and the full 40-hex sha of that tag, which starts with c3b0feb1, in tools/loadtest/VENDOR.kvx; refuse the import when the tag resolves to a different sha."
+do_3 = "Run git status --ignored on tools/loadtest and append to tools/loadtest/.gitignore (after any upstream content) one negation line per root pattern that hides an upstream file (for example *.o, *.a, *.so, *.key, *.pem, .env, node_modules/, /target/), so git ls-files tools/loadtest lists every upstream file."
+do_4 = "Leave go.mod and go.sum unchanged: the root module keeps requiring github.com/paxeer-network/pax-load v0.0.1-pax.1; the nested go.mod of tools/loadtest keeps the tree out of the root ./... pattern. Wiring the root module to the tree is task 11.1."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["tools/loadtest"]
+build_cmd = "git ls-files --error-unmatch tools/loadtest/VENDOR.kvx"
+verify_cmd = "scripts/ci/vendor-verify.sh tools/loadtest"
+gate_kind = "planned"
+planned_paths = ["tools/loadtest/VENDOR.kvx"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.7]
+title = "Import pax-js at v1.0.6-pax.1 into sdk/js with its pin record"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 1
+requires = ["0.1"]
+reqs = ["6.1", "6.2", "6.3", "6.4", "6.5"]
+do_1 = "Fetch https://github.com/Paxeer-Network/pax-js at v1.0.6-pax.1 and copy its tracked tree without .git into sdk/js; add sdk/js/VENDOR.kvx with one [vendor] section holding url = https://github.com/Paxeer-Network/pax-js, ref and sha."
+do_2 = "Record ref v1.0.6-pax.1 and the full 40-hex sha of that tag, which starts with 5d299156, in sdk/js/VENDOR.kvx; refuse the import when the tag resolves to a different sha."
+do_3 = "Run git status --ignored on sdk/js and append to sdk/js/.gitignore (after any upstream content) one negation line per root pattern that hides an upstream file (for example *.o, *.a, *.so, *.key, *.pem, .env, node_modules/, /target/), so git ls-files sdk/js lists every upstream file."
+do_4 = "Leave the consumer unchanged: @pax-js/cosmos github:Paxeer-Network/pax-js#v1.0.6-pax.1 in integration_test/rpc_tests/package.json stays as it is; pointing it at sdk/js is task 11.2."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["sdk/js"]
+build_cmd = "git ls-files --error-unmatch sdk/js/VENDOR.kvx"
+verify_cmd = "scripts/ci/vendor-verify.sh sdk/js"
+gate_kind = "planned"
+planned_paths = ["sdk/js/VENDOR.kvx"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.8]
+title = "Import paxctl at main into tools/paxctl with its pin record"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 1
+requires = ["0.1"]
+reqs = ["6.1", "6.2", "6.3", "6.4", "6.5"]
+do_1 = "Fetch https://github.com/Paxeer-Network/paxctl at main and copy its tracked tree without .git into tools/paxctl; add tools/paxctl/VENDOR.kvx with one [vendor] section holding url = https://github.com/Paxeer-Network/paxctl, ref and sha."
+do_2 = "Record ref main and the full 40-hex sha of the main head fetched at import time in tools/paxctl/VENDOR.kvx."
+do_3 = "Run git status --ignored on tools/paxctl and append to tools/paxctl/.gitignore (after any upstream content) one negation line per root pattern that hides an upstream file (for example *.o, *.a, *.so, *.key, *.pem, .env, node_modules/, /target/), so git ls-files tools/paxctl lists every upstream file."
+do_4 = "Change no file outside the imported directory."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["tools/paxctl"]
+build_cmd = "git ls-files --error-unmatch tools/paxctl/VENDOR.kvx"
+verify_cmd = "scripts/ci/vendor-verify.sh tools/paxctl"
+gate_kind = "planned"
+planned_paths = ["tools/paxctl/VENDOR.kvx"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.9]
+title = "Import pax-uci at main into tools/uci with its pin record"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 1
+requires = ["0.1"]
+reqs = ["6.1", "6.2", "6.3", "6.4", "6.5"]
+do_1 = "Fetch https://github.com/Paxeer-Network/pax-uci at main and copy its tracked tree without .git into tools/uci; add tools/uci/VENDOR.kvx with one [vendor] section holding url = https://github.com/Paxeer-Network/pax-uci, ref and sha."
+do_2 = "Record ref main and the full 40-hex sha of the main head fetched at import time in tools/uci/VENDOR.kvx."
+do_3 = "Run git status --ignored on tools/uci and append to tools/uci/.gitignore (after any upstream content) one negation line per root pattern that hides an upstream file (for example *.o, *.a, *.so, *.key, *.pem, .env, node_modules/, /target/), so git ls-files tools/uci lists every upstream file."
+do_4 = "Change no file outside the imported directory."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["tools/uci"]
+build_cmd = "git ls-files --error-unmatch tools/uci/VENDOR.kvx"
+verify_cmd = "scripts/ci/vendor-verify.sh tools/uci"
+gate_kind = "planned"
+planned_paths = ["tools/uci/VENDOR.kvx"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.10]
+title = "Import pax-cosmwasm at main into core/deps/cosmwasm with its pin record"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 1
+requires = ["0.1"]
+reqs = ["6.1", "6.2", "6.3", "6.4", "6.5"]
+do_1 = "Fetch https://github.com/Paxeer-Network/pax-cosmwasm at main and copy its tracked tree without .git into core/deps/cosmwasm; add core/deps/cosmwasm/VENDOR.kvx with one [vendor] section holding url = https://github.com/Paxeer-Network/pax-cosmwasm, ref and sha."
+do_2 = "Record ref main and the full 40-hex sha of the main head fetched at import time in core/deps/cosmwasm/VENDOR.kvx."
+do_3 = "Run git status --ignored on core/deps/cosmwasm and append to core/deps/cosmwasm/.gitignore (after any upstream content) one negation line per root pattern that hides an upstream file (for example *.o, *.a, *.so, *.key, *.pem, .env, node_modules/, /target/), so git ls-files core/deps/cosmwasm lists every upstream file."
+do_4 = "Change no file outside the imported directory."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["core/deps/cosmwasm"]
+build_cmd = "git ls-files --error-unmatch core/deps/cosmwasm/VENDOR.kvx"
+verify_cmd = "scripts/ci/vendor-verify.sh core/deps/cosmwasm"
+gate_kind = "planned"
+planned_paths = ["core/deps/cosmwasm/VENDOR.kvx"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.11]
+title = "Import pax-wasm-tools at main into tools/wasm-tools with its pin record"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 1
+requires = ["0.1"]
+reqs = ["6.1", "6.2", "6.3", "6.4", "6.5"]
+do_1 = "Fetch https://github.com/Paxeer-Network/pax-wasm-tools at main and copy its tracked tree without .git into tools/wasm-tools; add tools/wasm-tools/VENDOR.kvx with one [vendor] section holding url = https://github.com/Paxeer-Network/pax-wasm-tools, ref and sha."
+do_2 = "Record ref main and the full 40-hex sha of the main head fetched at import time in tools/wasm-tools/VENDOR.kvx."
+do_3 = "Run git status --ignored on tools/wasm-tools and append to tools/wasm-tools/.gitignore (after any upstream content) one negation line per root pattern that hides an upstream file (for example *.o, *.a, *.so, *.key, *.pem, .env, node_modules/, /target/), so git ls-files tools/wasm-tools lists every upstream file."
+do_4 = "Change no file outside the imported directory."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["tools/wasm-tools"]
+build_cmd = "git ls-files --error-unmatch tools/wasm-tools/VENDOR.kvx"
+verify_cmd = "scripts/ci/vendor-verify.sh tools/wasm-tools"
+gate_kind = "planned"
+planned_paths = ["tools/wasm-tools/VENDOR.kvx"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.2.1]
+title = "Admit the vendored trees to the repository audit and the code index"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 2
+requires = ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11"]
+reqs = ["3.3", "6.5", "2.1"]
+do_1 = "Run scripts/ci/public-repo-audit.sh; for every secret-scan hit inside core/deps, sdk/js, tools/loadtest, tools/paxctl, tools/uci or tools/wasm-tools that is upstream test material, add that exact upstream path to the scan allowlist of scripts/ci/public-repo-audit.sh next to the existing programs/vendor entry; never allowlist a whole tree."
+do_2 = "Add core/deps, sdk/js, tools/loadtest, tools/paxctl, tools/uci and tools/wasm-tools to .cgignore so the code index and CODEMAP.md exclude vendored code."
+do_3 = "Confirm go build ./... at the root is unchanged by the imports."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["scripts/ci/public-repo-audit.sh", ".cgignore"]
+build_cmd = "go build ./..."
+verify_cmd = "scripts/ci/public-repo-audit.sh"
+gate_kind = "planned"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.3.1]
+title = "Move fuzz to tests/fuzz"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 3
+requires = ["2.1"]
+reqs = ["1.2", "2.2", "3.1", "3.3", "3.5"]
+do_1 = "git mv fuzz tests/fuzz."
+do_2 = "Rewrite the 18 fuzz paths of Makefile (harness sources, corpus and build rules of fuzz-codec-smoke and its siblings) and the fuzz entries of .gitignore and .cgignore."
+do_3 = "Rewrite the fuzz paths in docs and in README.md."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["fuzz", "tests/fuzz", "Makefile", ".gitignore", ".cgignore", "docs", "README.md"]
+build_cmd = "make -n fuzz-codec-smoke"
+verify_cmd = "make fuzz-codec-smoke"
+gate_kind = "planned"
+planned_paths = ["tests/fuzz"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.3.2]
+title = "Move example to tests/fixtures/example"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 3
+requires = ["3.1"]
+reqs = ["1.2", "2.1", "3.1", "3.3", "3.5"]
+do_1 = "git mv example tests/fixtures/example."
+do_2 = "Rewrite the Go imports of .../example in modules/evm, rpc/simulate_test.go and rpc/pending_simulate_test.go."
+do_3 = "Rewrite the example paths of Makefile, platform/Makefile.inc, scripts/programs, .github (workflows, labeler, codecov, review assignment), .gitignore (the cosmwasm parallelization and target rules) and .cgignore, and the 46 relative references inside the moved tree whose depth changes."
+do_4 = "Rewrite contracts/test/lib.js references to the example contracts."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["example", "tests/fixtures/example", "modules/evm", "rpc/simulate_test.go", "rpc/pending_simulate_test.go", "Makefile", "platform/Makefile.inc", "scripts/programs", ".github", ".gitignore", ".cgignore", "contracts/test/lib.js"]
+build_cmd = "go build ./..."
+verify_cmd = "go vet ./modules/evm/... ./rpc/... ./precompiles/..."
+gate_kind = "planned"
+planned_paths = ["tests/fixtures/example"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.3.3]
+title = "Move integration_test to tests/integration"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 3
+requires = ["3.2"]
+reqs = ["1.2", "2.1", "2.2", "3.1", "3.3", "5.1"]
+do_1 = "git mv integration_test tests/integration."
+do_2 = "Rewrite integration_test paths in Makefile, chain.mk, docker/localnode, scripts/workspace, .github (workflows, labeler, codecov, dependabot, review assignment), .gitignore (yarn.lock, txt and dapp_tests artifact rules) and .cgignore."
+do_3 = "Keep the npm packages dapp_tests and rpc_tests resolving: their package.json and lockfiles move unchanged, and the github: dependency on pax-js stays until task 11.2."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["integration_test", "tests/integration", "Makefile", "chain.mk", "docker/localnode", "scripts/workspace", ".github", ".gitignore", ".cgignore", "spec/layerx-merge/spec.kvx"]
+build_cmd = "make -f chain.mk build"
+verify_cmd = "go vet ./tests/integration/..."
+gate_kind = "planned"
+planned_paths = ["tests/integration"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.3.4]
+title = "Move testutil to tests/testutil"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 3
+requires = ["3.3"]
+reqs = ["1.2", "2.1", "3.1", "3.3", "5.1"]
+do_1 = "git mv testutil tests/testutil."
+do_2 = "Rewrite the import path .../testutil to .../tests/testutil in the importing files under engine, modules, node, precompiles, rpc and tests/chain, then gofmt them."
+do_3 = "Rewrite testutil paths in chain.mk, .github (workflows, labeler, codecov, review assignment) and docs."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["testutil", "tests/testutil", "engine", "modules", "node", "precompiles", "rpc", "tests/chain", "chain.mk", ".github", "docs", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "go build ./..."
+verify_cmd = "go vet ./tests/testutil/... ./node/... ./precompiles/..."
+gate_kind = "planned"
+planned_paths = ["tests/testutil"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.3.5]
+title = "Move occ_tests to tests/occ"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 3
+requires = ["3.4"]
+reqs = ["1.2", "2.1", "3.1", "3.3", "5.1"]
+do_1 = "git mv occ_tests tests/occ."
+do_2 = "Rewrite the import path .../occ_tests in engine/deps, engine/tests, node and rpc test files, then gofmt them."
+do_3 = "Rewrite occ_tests paths in chain.mk (TARGET_PACKAGE) and .github (workflows, labeler, review assignment)."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["occ_tests", "tests/occ", "engine/deps", "engine/tests", "node", "rpc", "chain.mk", ".github", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "go build ./..."
+verify_cmd = "go vet ./tests/occ/... ./engine/... ./rpc/..."
+gate_kind = "planned"
+planned_paths = ["tests/occ"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.3.6]
+title = "Check wave 3: no reference to the old test paths and the test tree builds"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 3
+requires = ["3.5"]
+reqs = ["2.6", "4.2", "7.1"]
+do_1 = "Run the wave gate once on the merged wave revision and record its evidence; regenerate AGENTS.md and CLAUDE.md with spec/specgen and commit only if they changed."
+do_2 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["AGENTS.md", "CLAUDE.md"]
+build_cmd = "go build ./..."
+verify_cmd = "scripts/ci/layout-check.sh fuzz integration_test example occ_tests testutil && go vet ./tests/... && make fuzz-codec-smoke && make -f chain.mk build && spec/specgen && git diff --exit-code AGENTS.md CLAUDE.md"
+gate_kind = "existing"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.4.1]
+title = "Move agent whole to services/agent"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 4
+requires = ["3.6"]
+reqs = ["1.3", "2.2", "2.4", "3.1", "3.2", "3.3", "5.1"]
+do_1 = "git mv agent services/agent, keeping crates (layerx-types, wire, proof, crypto and the rest), sdk, include, schema, tools, fuzz and tests together."
+do_2 = "Rewrite the Cargo path dependencies on agent crates in cmd/layerxctl, human/Cargo.toml, human/crates, human/wallet, interop/Cargo.toml, interop/crates, platform/Cargo.toml, platform/cli, platform/docs, platform/emulator, platform/hosted and programs/crates; rewrite the outgoing relative paths inside services/agent (programs, include) to the new depth."
+do_3 = "Rewrite agent paths in Makefile (71 lines), platform/Makefile.inc, tools/paxeer-x/build/104.30.2.mk, package.json and package-lock.json (workspace agent/sdk/typescript), .gitignore (agent/target, agent/tools/*/target), .cgignore, .pre-commit-config.yaml, .github, docker/human-service, docker/kernel, docker/layerx, docker/wallet-pwa, docker/web, scripts/ci, scripts/paxeer-x and scripts/wallet."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["agent", "services/agent", "cmd/layerxctl", "human/Cargo.toml", "human/crates", "human/wallet", "interop/Cargo.toml", "interop/crates", "platform", "programs/crates", "Makefile", "tools/paxeer-x/build/104.30.2.mk", "package.json", "package-lock.json", ".gitignore", ".cgignore", ".pre-commit-config.yaml", ".github", "docker", "scripts/ci", "scripts/paxeer-x", "scripts/wallet", "spec/layerx-merge/spec.kvx"]
+build_cmd = "cargo metadata --locked --format-version 1 --manifest-path services/agent/Cargo.toml"
+verify_cmd = "make agent-build"
+gate_kind = "planned"
+planned_paths = ["services/agent"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.4.2]
+title = "Move interop to services/interop"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 4
+requires = ["4.1"]
+reqs = ["1.3", "2.2", "2.4", "3.1", "3.2", "3.3", "5.1", "8.3"]
+do_1 = "git mv interop services/interop."
+do_2 = "Rewrite the relative Cargo paths from services/interop to services/agent and programs; rewrite interop paths in Makefile, platform/Makefile.inc, .gitattributes, .pre-commit-config.yaml, .github, docker (bridge-relayer, gas-station, intent-ingester, interop-gateway, interop-mirror, kernel, layerx, search-front, x-websearch), scripts/ci, scripts/interop and scripts/qualify-mirror-live.sh."
+do_3 = "Rewrite the relative dockerfile path of platform/hosted/interop/fly.toml that names interop."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["interop", "services/interop", "Makefile", "platform/Makefile.inc", "platform/hosted/interop/fly.toml", ".gitattributes", ".pre-commit-config.yaml", ".github", "docker", "scripts/ci", "scripts/interop", "scripts/qualify-mirror-live.sh", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "cargo metadata --locked --format-version 1 --manifest-path services/interop/Cargo.toml"
+verify_cmd = "make interop-build"
+gate_kind = "planned"
+planned_paths = ["services/interop"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.4.3]
+title = "Move platform cli, emulator and release to tools/platform"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 4
+requires = ["4.2"]
+reqs = ["1.3", "2.4", "3.1", "3.2", "3.3", "5.1"]
+do_1 = "git mv platform/cli tools/platform/cli, platform/emulator tools/platform/emulator and platform/release tools/platform/release."
+do_2 = "Remove cli, emulator and release from the members of platform/Cargo.toml; add tools/platform/Cargo.toml declaring a workspace of the three crates with the workspace dependencies, lints and profiles they inherit from the platform workspace, and a tools/platform/Cargo.lock that resolves every shared crate to the version platform/Cargo.lock resolved; rewrite their relative path dependencies to services/agent, platform and programs."
+do_3 = "Rewrite the cli, emulator and release paths in Makefile, platform/Makefile.inc, .github, docker and scripts."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["platform/cli", "platform/emulator", "platform/release", "platform/Cargo.toml", "platform/Cargo.lock", "tools/platform", "Makefile", "platform/Makefile.inc", ".github", "docker", "scripts", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "cargo metadata --locked --format-version 1 --manifest-path platform/Cargo.toml"
+verify_cmd = "cargo check --locked --workspace --manifest-path tools/platform/Cargo.toml"
+gate_kind = "planned"
+planned_paths = ["tools/platform/Cargo.toml", "tools/platform/Cargo.lock"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.4.4]
+title = "Move platform/sdk to sdk/platform and platform/integrations to sdk/integrations"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 4
+requires = ["4.3"]
+reqs = ["1.3", "2.3", "2.4", "3.1", "3.2", "3.3", "5.1"]
+do_1 = "git mv platform/sdk sdk/platform and platform/integrations sdk/integrations."
+do_2 = "Remove sdk/generators from the members of platform/Cargo.toml; give sdk/platform/generators its own workspace with a Cargo.lock that resolves every shared crate to the version platform/Cargo.lock resolved."
+do_3 = "Rewrite the npm workspace entries platform/integrations/{agents,express,next,next/example} in package.json and package-lock.json; rewrite platform/sdk/dotnet entries of .gitignore; rewrite the secret-scan allowlist entries platform/integrations/ios and platform/integrations/android of scripts/ci/public-repo-audit.sh."
+do_4 = "Rewrite sdk and integrations paths in Makefile (41 + 26 lines), platform/Makefile.inc, scripts/paxeer-x and .github."
+do_5 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["platform/sdk", "platform/integrations", "platform/Cargo.toml", "platform/Cargo.lock", "sdk/platform", "sdk/integrations", "package.json", "package-lock.json", ".gitignore", "scripts/ci/public-repo-audit.sh", "Makefile", "platform/Makefile.inc", "scripts/paxeer-x", ".github", "spec/layerx-merge/spec.kvx"]
+build_cmd = "cargo metadata --locked --format-version 1 --manifest-path platform/Cargo.toml"
+verify_cmd = "cargo metadata --locked --format-version 1 --manifest-path sdk/platform/generators/Cargo.toml && npm ls --workspaces && scripts/ci/public-repo-audit.sh"
+gate_kind = "planned"
+planned_paths = ["sdk/platform", "sdk/integrations"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.4.5]
+title = "Move the rest of platform to services/platform"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 4
+requires = ["4.4"]
+reqs = ["1.3", "2.2", "2.4", "3.1", "3.2", "3.3", "5.1", "8.3"]
+do_1 = "git mv platform services/platform (ramps, hosted, middleware, perps-data, relay_archive, docs, examples, tests, tools, workspace.kvx, Makefile.inc and the Cargo workspace files)."
+do_2 = "Rewrite include platform/Makefile.inc in Makefile and the 152 platform lines of Makefile and Makefile.inc; rewrite the 18 platform workspace entries of package.json and package-lock.json; rewrite the relative Cargo paths from services/platform to services/agent, programs, tools/platform and sdk/platform."
+do_3 = "Rewrite platform paths in .gitignore, .cgignore, .pre-commit-config.yaml, .github, the platform-* docker directories, docker/human-service, docker/kernel, docker/layerx, docker/paxeer, docker/ramps, docker/redis, docker/relay-archive, scripts/ci, scripts/paxeer-x, scripts/programs, scripts/qualification and scripts/workspace."
+do_4 = "Rewrite the relative dockerfile paths of services/platform/hosted/dashboard/web/fly.toml, services/platform/hosted/interop/fly.toml and services/platform/hosted/node/fly.toml for their new depth."
+do_5 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["platform", "services/platform", "Makefile", "package.json", "package-lock.json", ".gitignore", ".cgignore", ".pre-commit-config.yaml", ".github", "docker", "scripts", "tools/platform/Cargo.toml", "sdk/platform", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "cargo metadata --locked --format-version 1 --manifest-path services/platform/Cargo.toml"
+verify_cmd = "make platform-build"
+gate_kind = "planned"
+planned_paths = ["services/platform"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.4.6]
+title = "Move the human Rust workspace to services/human"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 4
+requires = ["4.5"]
+reqs = ["1.3", "2.4", "3.1", "3.2", "3.3", "5.1"]
+do_1 = "git mv human/Cargo.toml, human/Cargo.lock, human/README.md, human/clippy.toml, human/deny.toml, human/crates, human/schema and human/tools into services/human; human/apps and human/wallet stay for wave 5."
+do_2 = "Rewrite the relative Cargo paths from services/human to services/agent and programs; remove human/apps and human/wallet members if the workspace lists them by the old relative path and list them by their path relative to services/human until wave 5 moves them."
+do_3 = "Rewrite human crate paths in Makefile (human-build and its siblings), .cgignore, .pre-commit-config.yaml, .github, docker (human-service and every Dockerfile copying human/crates) and scripts/ci."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["human/Cargo.toml", "human/Cargo.lock", "human/README.md", "human/clippy.toml", "human/deny.toml", "human/crates", "human/schema", "human/tools", "services/human", "Makefile", ".cgignore", ".pre-commit-config.yaml", ".github", "docker", "scripts/ci", "spec/layerx-merge/spec.kvx"]
+build_cmd = "cargo metadata --locked --format-version 1 --manifest-path services/human/Cargo.toml"
+verify_cmd = "make human-build"
+gate_kind = "planned"
+planned_paths = ["services/human"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.4.7]
+title = "Check wave 4: no reference to the old service paths and every moved workspace builds"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 4
+requires = ["4.6"]
+reqs = ["2.2", "2.4", "2.6", "4.2", "7.1"]
+do_1 = "Run the wave gate once on the merged wave revision and record its evidence; regenerate AGENTS.md and CLAUDE.md with spec/specgen and commit only if they changed."
+do_2 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["AGENTS.md", "CLAUDE.md"]
+build_cmd = "make agent-build"
+verify_cmd = "scripts/ci/layout-check.sh agent interop platform human/crates human/schema human/tools human/Cargo.toml && make agent-build interop-build platform-build human-build && cargo check --locked --workspace --manifest-path tools/platform/Cargo.toml && npm ls --workspaces && spec/specgen && git diff --exit-code AGENTS.md CLAUDE.md"
+gate_kind = "existing"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.5.1]
+title = "Move human/apps perps, wallet and web to apps"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 5
+requires = ["4.7"]
+reqs = ["1.3", "2.3", "3.1", "3.2", "3.3", "5.1", "8.2"]
+do_1 = "git mv human/apps/perps apps/perps, human/apps/wallet apps/wallet and human/apps/web apps/web."
+do_2 = "Rewrite the app paths in Makefile, .github, docker/wallet-pwa, docker/web and every other Dockerfile or compose file that copies an app, and in apps/wallet/railway.json, apps/wallet/nixpacks.toml and apps/perps/vercel.json where they name repository paths; rewrite relative imports from the apps into services/agent or other trees for the new depth."
+do_3 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["human/apps", "apps/perps", "apps/wallet", "apps/web", "Makefile", ".github", "docker", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "pnpm -C apps/wallet install --frozen-lockfile"
+verify_cmd = "pnpm -C apps/perps -r typecheck && pnpm -C apps/wallet typecheck && pnpm -C apps/web typecheck"
+gate_kind = "planned"
+planned_paths = ["apps/perps", "apps/wallet", "apps/web"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.5.2]
+title = "Move the wallet SDK to sdk/wallet"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 5
+requires = ["5.1"]
+reqs = ["1.3", "2.3", "3.2", "3.3", "5.1"]
+do_1 = "git mv human/wallet/sdk sdk/wallet."
+do_2 = "Replace the sdk entry of human/wallet/pnpm-workspace.yaml with the relative path of sdk/wallet and update human/wallet/pnpm-lock.yaml and every workspace dependency on the SDK package; rewrite the SDK paths in .github, docker and scripts/wallet."
+do_3 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["human/wallet/sdk", "human/wallet/pnpm-workspace.yaml", "human/wallet/pnpm-lock.yaml", "sdk/wallet", ".github", "docker", "scripts/wallet", "spec/layerx-merge/spec.kvx"]
+build_cmd = "pnpm -C human/wallet install --frozen-lockfile"
+verify_cmd = "pnpm -C human/wallet -r typecheck"
+gate_kind = "planned"
+planned_paths = ["sdk/wallet"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.5.3]
+title = "Move human/wallet to services/wallet"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 5
+requires = ["5.2"]
+reqs = ["1.3", "2.2", "2.3", "3.1", "3.2", "3.3", "5.1", "10.1"]
+do_1 = "git mv human/wallet services/wallet (attestor, ceremony, demo, deploy, docs, gateway, schema, workspace files); the attestor and ceremony replace => ../../.. directives keep depth 3 and stay unchanged."
+do_2 = "Rewrite the relative sdk/wallet entry of services/wallet/pnpm-workspace.yaml for the new depth; rewrite the relative Cargo path from services/human; rewrite wallet paths in .github, docker/wallet-attestor, docker/wallet-gateway, docker/wallet-pwa and scripts/wallet."
+do_3 = "Remove the now-empty human directory."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["human/wallet", "services/wallet", "services/human/Cargo.toml", ".github", "docker", "scripts/wallet", "spec/layerx-merge/spec.kvx"]
+build_cmd = "(cd services/wallet/attestor && go build ./...)"
+verify_cmd = "(cd services/wallet/attestor && go build ./...) && (cd services/wallet/ceremony && go build ./...) && pnpm -C services/wallet -r typecheck"
+gate_kind = "planned"
+planned_paths = ["services/wallet"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.5.4]
+title = "Move chainflow to sdk/chainflow"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 5
+requires = ["5.3"]
+reqs = ["1.4", "2.1", "3.4", "10.4"]
+do_1 = "git mv chainflow sdk/chainflow (go, python, rust, typescript); the Go module path in sdk/chainflow/go/go.mod stays unchanged."
+do_2 = "Rewrite chainflow paths in docs."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["chainflow", "sdk/chainflow", "docs"]
+build_cmd = "(cd sdk/chainflow/go && go vet ./...)"
+verify_cmd = "(cd sdk/chainflow/go && go build ./...) && cargo check --locked --manifest-path sdk/chainflow/rust/Cargo.toml"
+gate_kind = "planned"
+planned_paths = ["sdk/chainflow"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.5.5]
+title = "Check wave 5: no reference to human or chainflow and the apps and wallet build"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 5
+requires = ["5.4"]
+reqs = ["2.3", "2.6", "4.2", "7.1"]
+do_1 = "Run the wave gate once on the merged wave revision and record its evidence; regenerate AGENTS.md and CLAUDE.md with spec/specgen and commit only if they changed."
+do_2 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["AGENTS.md", "CLAUDE.md"]
+build_cmd = "pnpm -C apps/wallet typecheck"
+verify_cmd = "scripts/ci/layout-check.sh human chainflow && pnpm -C apps/perps -r typecheck && pnpm -C apps/wallet typecheck && pnpm -C apps/web typecheck && pnpm -C services/wallet -r typecheck && docker build -f docker/wallet-pwa/Dockerfile . && spec/specgen && git diff --exit-code AGENTS.md CLAUDE.md"
+gate_kind = "existing"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.6.1]
+title = "Split explorer: frontend to apps/explorer, backend, services and deploy to services/explorer"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 6
+requires = ["5.5"]
+reqs = ["1.4", "2.2", "2.3", "3.1", "3.2", "3.3", "5.1", "8.1"]
+do_1 = "git mv explorer/frontend apps/explorer; git mv explorer/backend, explorer/services, explorer/deploy, explorer/LICENSE, explorer/README.md and explorer/UPSTREAM.md into services/explorer."
+do_2 = "Rewrite the build contexts and paths of services/explorer/deploy/docker-compose.local.yml, services/explorer/deploy/railway/backend.railway.json and frontend.railway.json, services/explorer/deploy/tools and services/explorer/deploy/tests for the split."
+do_3 = "Rewrite explorer paths in docker/explorer-backend, docker/explorer-elixir-builder, docker/explorer-frontend, docker/explorer-sig-provider, docker/explorer-smart-contract-verifier, .github (workflows and codeql config), .gitignore (the frontend .env.vitest negation), .cgignore, scripts/ci, scripts/explorer, scripts/paxeer-x and scripts/qualify-mirror-verification-live.sh."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["explorer", "apps/explorer", "services/explorer", "docker", ".github", ".gitignore", ".cgignore", "scripts/ci", "scripts/explorer", "scripts/paxeer-x", "scripts/qualify-mirror-verification-live.sh", "spec/layerx-merge/spec.kvx"]
+build_cmd = "docker compose -f services/explorer/deploy/docker-compose.local.yml config -q"
+verify_cmd = "docker compose -f services/explorer/deploy/docker-compose.local.yml config -q && yarn --cwd apps/explorer install --frozen-lockfile && yarn --cwd apps/explorer lint:tsc"
+gate_kind = "planned"
+planned_paths = ["apps/explorer", "services/explorer"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.6.2]
+title = "Flatten the launchpad Go workspace: services to services/launchpad, libraries to sdk/launchpad, deploy and tools to the root groups"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 6
+requires = ["6.1"]
+reqs = ["1.5", "2.1", "3.1", "3.2", "10.3"]
+do_1 = "git mv each launchpad/core/<name> (api, discovery, indexer, notifications, pnl-tracker, ranking-algo, stats-workers, trading-charts) and each launchpad/media/<name> (gateway, livestream, metadata, social, user) to services/launchpad/<name>; git mv launchpad/security to services/launchpad/security."
+do_2 = "git mv launchpad/protocol sdk/launchpad/protocol and launchpad/shared sdk/launchpad/shared; git mv launchpad/deploy deploy/launchpad and launchpad/tools tools/launchpad; git mv launchpad/go.work, go.work.sum, Makefile, LICENSE and licenses into services/launchpad."
+do_3 = "Keep every module path github.com/Sidiora-Technologies/KindleLaunch/... unchanged; rewrite every replace directive of every moved go.mod and every use line of services/launchpad/go.work (including ./deploy/production/recovery/phase2/broker, now ../../deploy/launchpad/production/recovery/phase2/broker) to the new relative paths."
+do_4 = "Rewrite the MODULES and MONEY_MODULES lists of services/launchpad/Makefile, the paths of deploy/launchpad Dockerfiles, compose files and scripts, and the tools/launchpad scripts for the new layout."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["launchpad/core", "launchpad/media", "launchpad/security", "launchpad/protocol", "launchpad/shared", "launchpad/deploy", "launchpad/tools", "launchpad/go.work", "launchpad/go.work.sum", "launchpad/Makefile", "launchpad/LICENSE", "launchpad/licenses", "services/launchpad", "sdk/launchpad", "deploy/launchpad", "tools/launchpad"]
+build_cmd = "make -C services/launchpad build"
+verify_cmd = "make -C services/launchpad build vet"
+gate_kind = "planned"
+planned_paths = ["services/launchpad", "sdk/launchpad", "deploy/launchpad", "tools/launchpad"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.6.3]
+title = "Move the launchpad client: apps to apps/launchpad, packages to sdk/launchpad/packages"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 6
+requires = ["6.2"]
+reqs = ["1.5", "2.3", "3.1", "3.2"]
+do_1 = "git mv launchpad/client/apps/web apps/launchpad/web and launchpad/client/apps/mobile apps/launchpad/mobile; git mv launchpad/client/package.json, pnpm-lock.yaml, pnpm-workspace.yaml, patches, production_checklist.md and qualification into apps/launchpad."
+do_2 = "git mv each launchpad/client/packages/<name> to sdk/launchpad/packages/<name>."
+do_3 = "Rewrite apps/launchpad/pnpm-workspace.yaml to list web, mobile and the relative path of sdk/launchpad/packages/*, regenerate apps/launchpad/pnpm-lock.yaml importer keys for the new paths without changing any resolved version, and rewrite the client paths in deploy/launchpad Dockerfile.web and Dockerfile.svc."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["launchpad/client", "apps/launchpad", "sdk/launchpad/packages", "deploy/launchpad"]
+build_cmd = "pnpm -C apps/launchpad install --frozen-lockfile"
+verify_cmd = "pnpm -C apps/launchpad build:packages"
+gate_kind = "planned"
+planned_paths = ["apps/launchpad", "sdk/launchpad/packages"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.6.4]
+title = "Move the launchpad contracts to contracts/launchpad"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 6
+requires = ["6.3"]
+reqs = ["1.5", "2.5", "3.1", "3.2", "3.5"]
+do_1 = "git mv launchpad/contracts contracts/launchpad and remove the now-empty launchpad directory."
+do_2 = "Add contracts/launchpad/** to the skip list and the [fmt] ignore list of foundry.toml so the root Foundry project does not compile the hardhat tree; rewrite contract paths in deploy/launchpad and tools/launchpad."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["launchpad", "contracts/launchpad", "foundry.toml", "deploy/launchpad", "tools/launchpad"]
+build_cmd = "pnpm -C contracts/launchpad install --frozen-lockfile"
+verify_cmd = "pnpm -C contracts/launchpad exec hardhat compile && forge build"
+gate_kind = "planned"
+planned_paths = ["contracts/launchpad"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.6.5]
+title = "Split bridge: on-chain programs to contracts/bridge, deploy and relayer configuration to services/bridge"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 6
+requires = ["6.4"]
+reqs = ["1.4", "2.1", "2.5", "3.1", "3.2", "3.3", "3.5", "5.1"]
+do_1 = "git mv bridge/evm, bridge/solana, bridge/vectors, bridge/README.md and bridge/ATTESTATION-SOLANA.md into contracts/bridge; git mv bridge/deploy services/bridge/deploy."
+do_2 = "Rewrite the Go import of .../bridge/vectors in services/bridge/deploy; rewrite bridge-test-evm and bridge-test-solana and the other bridge lines of Makefile, the /bridge/evm/lib/, /bridge/evm/build/ and /bridge/solana/target/ rules of .gitignore, .cgignore, .github, docker/bridge-relayer and docker/kernel."
+do_3 = "Add contracts/bridge/** to the skip list and the [fmt] ignore list of foundry.toml."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["bridge", "contracts/bridge", "services/bridge", "Makefile", ".gitignore", ".cgignore", ".github", "docker", "foundry.toml", "spec/layerx-merge/spec.kvx"]
+build_cmd = "go build ./..."
+verify_cmd = "bash contracts/bridge/evm/bootstrap-libs.sh && forge build --root contracts/bridge/evm && cargo check --locked --manifest-path contracts/bridge/solana/Cargo.toml && go build ./..."
+gate_kind = "planned"
+planned_paths = ["contracts/bridge", "services/bridge"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.6.6]
+title = "Move hpx to tools/hpx"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 6
+requires = ["6.5"]
+reqs = ["1.4", "2.1", "3.1", "3.2", "3.3", "5.1", "8.3", "10.2"]
+do_1 = "git mv hpx tools/hpx; keep the module path of tools/hpx/registry/go.mod and the hpx-registry-<sha> tag scheme unchanged."
+do_2 = "Rewrite working-directory and go-version-file of the hpx registry workflow and every hpx path in .github (workflows, labeler, dependabot, review assignment), Makefile (hpx-public-check), docker/README.md, docker/hpx-registry and docker/layerx; rewrite the relative dockerfile path of tools/hpx/hosting/fly.toml."
+do_3 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["hpx", "tools/hpx", ".github", "Makefile", "docker", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "(cd tools/hpx/registry && go vet ./...)"
+verify_cmd = "(cd tools/hpx/registry && go build ./... && go test ./...) && make hpx-public-check"
+gate_kind = "planned"
+planned_paths = ["tools/hpx"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.6.7]
+title = "Check wave 6: no reference to explorer, launchpad, bridge or hpx at the root"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 6
+requires = ["6.6"]
+reqs = ["2.5", "2.6", "4.2", "7.1"]
+do_1 = "Run the wave gate once on the merged wave revision and record its evidence; regenerate AGENTS.md and CLAUDE.md with spec/specgen and commit only if they changed."
+do_2 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["AGENTS.md", "CLAUDE.md"]
+build_cmd = "go build ./..."
+verify_cmd = "scripts/ci/layout-check.sh explorer launchpad bridge hpx && go build ./... && make -C services/launchpad build && forge build --root contracts/bridge/evm && (cd tools/hpx/registry && go build ./...) && spec/specgen && git diff --exit-code AGENTS.md CLAUDE.md"
+gate_kind = "existing"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.7.1]
+title = "Refresh the layout docs, labeler, audit allowlist and generated maps for phase A"
+status = "pending"
+mode = "BUILD"
+phase = "A"
+wave = 7
+requires = ["6.7"]
+reqs = ["1.7", "3.4", "4.1", "7.1", "7.2"]
+do_1 = "Rewrite docs/MONOREPO.md to the phase A tree (apps, services, sdk, tests, tools, contracts groups and the vendored trees with their VENDOR.kvx pins); update the layout section of README.md and the seven translations under docs/readme, and docs/site/docs/overview."
+do_2 = "Regroup .github/labeler.yml areas by apps, services, sdk, tests, tools and contracts; confirm every secret-scan allowlist path in scripts/ci/public-repo-audit.sh exists."
+do_3 = "Regenerate CODEMAP.md with cg codemap and AGENTS.md and CLAUDE.md with spec/specgen."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["docs/MONOREPO.md", "README.md", "docs/readme", "docs/site/docs/overview", ".github/labeler.yml", "scripts/ci/public-repo-audit.sh", "CODEMAP.md", "AGENTS.md", "CLAUDE.md"]
+build_cmd = "cg codemap"
+verify_cmd = "scripts/ci/layout-check.sh fuzz integration_test example occ_tests testutil agent interop platform human chainflow explorer launchpad bridge hpx && scripts/ci/public-repo-audit.sh && spec/specgen && git diff --exit-code AGENTS.md CLAUDE.md"
+gate_kind = "existing"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.8.1]
+title = "Move the kernel C tree src, include, cmd and migrations to core/kernel"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 8
+requires = ["7.1"]
+reqs = ["1.6", "2.2", "3.1", "3.2", "3.3", "9.1", "9.3"]
+do_1 = "git mv src core/kernel/src, include core/kernel/include, cmd core/kernel/cmd and migrations core/kernel/migrations; BUILD_DIR=build stays at the root."
+do_2 = "Rewrite -Iinclude (Makefile:31), find src (Makefile:44), the 157 cmd lines and the 4 migrations lines of Makefile, the 21 kernel lines of the included tools/paxeer-x/build/*.mk and tools/build/*.mk, and docker/kernel/Dockerfile."
+do_3 = "Rewrite the depth-relative cgo -I and -L flags of modules/lxphost/host.go:6-7 for include; rewrite the include_str and build.rs paths of services/agent/crates (layerx-types, layerx-proof, layerx-client) and core/kernel/cmd/layerxctl, and the ../../include reads of node/sequencer/resolution_test.go and precompiles/layerxexchange/errors_test.go."
+do_4 = "Rewrite kernel paths in .github (workflows, labeler area:protocol), .cgignore and docs."
+do_5 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["src", "include", "cmd", "migrations", "core/kernel", "Makefile", "tools/paxeer-x/build", "tools/build", "docker/kernel", "modules/lxphost/host.go", "services/agent/crates", "node/sequencer/resolution_test.go", "precompiles/layerxexchange/errors_test.go", ".github", ".cgignore", "docs", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "make all"
+verify_cmd = "make all test-kernel test-layerxctl test-lxphost && cargo check --locked --manifest-path services/agent/Cargo.toml -p layerx-types"
+gate_kind = "planned"
+planned_paths = ["core/kernel"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.9.1]
+title = "Move the Cosmos SDK fork sdk to core/cosmos-sdk"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 9
+requires = ["8.1"]
+reqs = ["1.6", "2.1", "3.1", "3.2", "3.3", "5.1", "9.1", "9.2"]
+do_1 = "git mv each entry of the Cosmos SDK fork (baseapp, client, codec, contrib, cosmovisor, crypto, ics23, internal, proto, scripts, server, snapshots, std, store, storev2, tasks, telemetry, tests, testutil, third_party, types, utils, version, x, Makefile and README.md) from sdk to core/cosmos-sdk by name, leaving the phase A SDK directories (sdk/platform, sdk/integrations, sdk/wallet, sdk/chainflow, sdk/launchpad, sdk/js) in place; the nested modules core/cosmos-sdk/cosmovisor and core/cosmos-sdk/ics23 keep their module paths unless the root module imports them through a replace, whose directory path then changes."
+do_2 = "Rewrite the -X .../sdk/version.* ldflags of chain.mk:65-69 and Makefile:3149 to .../core/cosmos-sdk/version.* in this commit, so ./build/paxd version keeps printing the release version."
+do_3 = "Rewrite the import path in every importing .go file with gofmt -r or an equivalent mechanical rewrite and gofmt the result; rewrite the go_package option of every proto under the moved buf module root, keep every proto file path inside the module root unchanged, and regenerate the matching *.pb.go files with buf generate (never hand-edited)."
+do_4 = "Rewrite the two sdk module paths of buf.yaml and the /sdk/build/ rule of .gitignore; rewrite sdk paths in .github and docker."
+do_5 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["sdk/baseapp", "sdk/client", "sdk/codec", "sdk/contrib", "sdk/cosmovisor", "sdk/crypto", "sdk/ics23", "sdk/internal", "sdk/proto", "sdk/scripts", "sdk/server", "sdk/snapshots", "sdk/std", "sdk/store", "sdk/storev2", "sdk/tasks", "sdk/telemetry", "sdk/tests", "sdk/testutil", "sdk/third_party", "sdk/types", "sdk/utils", "sdk/version", "sdk/x", "sdk/Makefile", "sdk/README.md", "core/cosmos-sdk", "chain.mk", "Makefile", "buf.yaml", ".gitignore", ".github", "docker", "core/kernel", "modules", "precompiles", "node", "rpc", "engine", "consensus", "interchain", "wasm", "storage", "daemon", "admin", "utils", "tests", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "go build ./..."
+verify_cmd = "go build ./... && make -f chain.mk build && ./build/paxd version && buf lint"
+gate_kind = "planned"
+planned_paths = ["core/cosmos-sdk"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.9.2]
+title = "Move consensus to core/consensus"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 9
+requires = ["9.1"]
+reqs = ["1.6", "2.1", "3.1", "3.2", "3.3", "5.1", "9.1", "9.2"]
+do_1 = "git mv consensus core/consensus."
+do_2 = "Rewrite the import path in every importing .go file with gofmt -r or an equivalent mechanical rewrite and gofmt the result; rewrite the go_package option of every proto under the moved buf module root, keep every proto file path inside the module root unchanged, and regenerate the matching *.pb.go files with buf generate (never hand-edited)."
+do_3 = "Rewrite the two consensus module paths of buf.yaml, the /consensus/build/ rule of .gitignore and consensus paths in .github."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["consensus", "core/consensus", "buf.yaml", ".gitignore", ".github", "core", "modules", "node", "rpc", "precompiles", "engine", "interchain", "wasm", "storage", "tests", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "go build ./..."
+verify_cmd = "go build ./... && buf lint && buf generate && git diff --exit-code -- '*.pb.go'"
+gate_kind = "planned"
+planned_paths = ["core/consensus"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.9.3]
+title = "Move interchain to core/interchain"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 9
+requires = ["9.2"]
+reqs = ["1.6", "2.1", "3.1", "3.2", "3.3", "5.1", "9.1", "9.2"]
+do_1 = "git mv interchain core/interchain."
+do_2 = "Rewrite the import path in every importing .go file with gofmt -r or an equivalent mechanical rewrite and gofmt the result; rewrite the go_package option of every proto under the moved buf module root, keep every proto file path inside the module root unchanged, and regenerate the matching *.pb.go files with buf generate (never hand-edited)."
+do_3 = "Rewrite the two interchain module paths of buf.yaml, the /interchain/build/ rule of .gitignore and interchain paths in .github."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["interchain", "core/interchain", "buf.yaml", ".gitignore", ".github", "core", "modules", "node", "precompiles", "wasm", "tests"]
+build_cmd = "go build ./..."
+verify_cmd = "go build ./... && buf lint && buf generate && git diff --exit-code -- '*.pb.go'"
+gate_kind = "planned"
+planned_paths = ["core/interchain"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.9.4]
+title = "Move wasm and wasm-runtime to core"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 9
+requires = ["9.3"]
+reqs = ["1.6", "2.1", "3.1", "3.2", "3.3", "5.1", "9.1", "9.2"]
+do_1 = "git mv wasm core/wasm and wasm-runtime core/wasm-runtime."
+do_2 = "Rewrite the import path in every importing .go file with gofmt -r or an equivalent mechanical rewrite and gofmt the result; rewrite the go_package option of every proto under the moved buf module root, keep every proto file path inside the module root unchanged, and regenerate the matching *.pb.go files with buf generate (never hand-edited)."
+do_3 = "Rewrite the wasm/proto module path of buf.yaml; rewrite the tracked libwasmvm negation rules and the /wasm/build/ rule of .gitignore so the tracked libwasmvm libraries stay tracked at their new paths; rewrite wasm paths in Makefile, docker and .github."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["wasm", "wasm-runtime", "core/wasm", "core/wasm-runtime", "buf.yaml", ".gitignore", "Makefile", "docker", ".github", "core", "modules", "node", "precompiles", "tests", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "go build ./..."
+verify_cmd = "go build ./... && buf lint && git ls-files --error-unmatch core/wasm-runtime/internal/api"
+gate_kind = "planned"
+planned_paths = ["core/wasm", "core/wasm-runtime"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.9.5]
+title = "Move storage to core/storage"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 9
+requires = ["9.4"]
+reqs = ["1.6", "2.1", "3.1", "3.2", "3.3", "5.1", "9.1", "9.2"]
+do_1 = "git mv storage core/storage."
+do_2 = "Rewrite the import path in every importing .go file with gofmt -r or an equivalent mechanical rewrite and gofmt the result; rewrite the go_package option of every proto under the moved buf module root, keep every proto file path inside the module root unchanged, and regenerate the matching *.pb.go files with buf generate (never hand-edited)."
+do_3 = "Rewrite the /storage/... bench and bin rules of .gitignore and storage paths in Makefile and .github."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["storage", "core/storage", ".gitignore", "Makefile", ".github", "core", "modules", "node", "rpc", "precompiles", "tests", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "go build ./..."
+verify_cmd = "go build ./... && go vet ./core/storage/..."
+gate_kind = "planned"
+planned_paths = ["core/storage"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.9.6]
+title = "Move modules to core/modules"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 9
+requires = ["9.5"]
+reqs = ["1.6", "2.1", "3.1", "3.2", "3.3", "5.1", "9.1", "9.2"]
+do_1 = "git mv modules core/modules."
+do_2 = "Rewrite the import path in every importing .go file with gofmt -r or an equivalent mechanical rewrite and gofmt the result; rewrite the go_package option of every proto under the moved buf module root, keep every proto file path inside the module root unchanged, and regenerate the matching *.pb.go files with buf generate (never hand-edited)."
+do_3 = "Rewrite the depth-relative cgo -I and -L flags of core/modules/lxphost/host.go for core/kernel/include, build and programs/target, which change depth with the move; rewrite modules paths in Makefile, docker, .github and docs."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["modules", "core/modules", "api", "Makefile", "docker", ".github", "docs", "core", "node", "rpc", "precompiles", "tests", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "go build ./..."
+verify_cmd = "go build ./... && make test-lxphost && buf generate && git diff --exit-code -- '*.pb.go'"
+gate_kind = "planned"
+planned_paths = ["core/modules"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.9.7]
+title = "Move precompiles to core/precompiles"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 9
+requires = ["9.6"]
+reqs = ["1.6", "2.1", "3.1", "3.2", "3.3", "5.1", "9.1", "9.2"]
+do_1 = "git mv precompiles core/precompiles."
+do_2 = "Rewrite the import path in every importing .go file with gofmt -r or an equivalent mechanical rewrite and gofmt the result; rewrite the go_package option of every proto under the moved buf module root, keep every proto file path inside the module root unchanged, and regenerate the matching *.pb.go files with buf generate (never hand-edited)."
+do_3 = "Rewrite precompiles paths in Makefile, docker, .github and docs."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["precompiles", "core/precompiles", "Makefile", "docker", ".github", "docs", "core", "node", "rpc", "tests", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "go build ./..."
+verify_cmd = "go build ./... && go vet ./core/precompiles/..."
+gate_kind = "planned"
+planned_paths = ["core/precompiles"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.9.8]
+title = "Move node to core/node"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 9
+requires = ["9.7"]
+reqs = ["1.6", "2.1", "3.1", "3.2", "3.3", "5.1", "9.1", "9.2"]
+do_1 = "git mv node core/node."
+do_2 = "Rewrite the import path in every importing .go file with gofmt -r or an equivalent mechanical rewrite and gofmt the result; rewrite the go_package option of every proto under the moved buf module root, keep every proto file path inside the module root unchanged, and regenerate the matching *.pb.go files with buf generate (never hand-edited)."
+do_3 = "Rewrite node paths in Makefile, .github and docs."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["node", "core/node", "Makefile", ".github", "docs", "core", "rpc", "tests", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "go build ./..."
+verify_cmd = "go build ./... && go vet ./core/node/..."
+gate_kind = "planned"
+planned_paths = ["core/node"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.9.9]
+title = "Move rpc and engine to core"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 9
+requires = ["9.8"]
+reqs = ["1.6", "2.1", "3.1", "3.2", "3.3", "5.1", "9.1", "9.2"]
+do_1 = "git mv rpc core/rpc and engine core/engine."
+do_2 = "Rewrite the import path in every importing .go file with gofmt -r or an equivalent mechanical rewrite and gofmt the result; rewrite the go_package option of every proto under the moved buf module root, keep every proto file path inside the module root unchanged, and regenerate the matching *.pb.go files with buf generate (never hand-edited)."
+do_3 = "Rewrite the rpc/tests/mock_data secret-scan allowlist entry of scripts/ci/public-repo-audit.sh; rewrite rpc and engine paths in Makefile, docker and .github."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["rpc", "engine", "core/rpc", "core/engine", "scripts/ci/public-repo-audit.sh", "Makefile", "docker", ".github", "core", "tests", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "go build ./..."
+verify_cmd = "go build ./... && scripts/ci/public-repo-audit.sh"
+gate_kind = "planned"
+planned_paths = ["core/rpc", "core/engine"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.9.10]
+title = "Move daemon and admin to core"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 9
+requires = ["9.9"]
+reqs = ["1.6", "2.1", "3.1", "3.2", "3.3", "5.1", "9.1", "9.2"]
+do_1 = "git mv daemon core/daemon and admin core/admin."
+do_2 = "Rewrite the import path in every importing .go file with gofmt -r or an equivalent mechanical rewrite and gofmt the result; rewrite the go_package option of every proto under the moved buf module root, keep every proto file path inside the module root unchanged, and regenerate the matching *.pb.go files with buf generate (never hand-edited)."
+do_3 = "Rewrite the go_package of api/pax/admin/v0/admin.proto and regenerate admin.pb.go with buf generate; rewrite daemon paths in Makefile (8 lines), docker and .github."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["daemon", "admin", "core/daemon", "core/admin", "api/pax/admin/v0/admin.proto", "Makefile", "docker", ".github", "core", "tests", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "go build ./..."
+verify_cmd = "go build ./... && buf generate && git diff --exit-code -- '*.pb.go'"
+gate_kind = "planned"
+planned_paths = ["core/daemon", "core/admin"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.9.11]
+title = "Move custodyproof, layerxproof and utils to core"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 9
+requires = ["9.10"]
+reqs = ["1.6", "2.1", "3.1", "3.2", "3.3", "5.1", "9.1", "9.2"]
+do_1 = "git mv custodyproof core/custodyproof, layerxproof core/layerxproof and utils core/utils."
+do_2 = "Rewrite the import path in every importing .go file with gofmt -r or an equivalent mechanical rewrite and gofmt the result; rewrite the go_package option of every proto under the moved buf module root, keep every proto file path inside the module root unchanged, and regenerate the matching *.pb.go files with buf generate (never hand-edited)."
+do_3 = "Rewrite their paths in Makefile and .github."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["custodyproof", "layerxproof", "utils", "core/custodyproof", "core/layerxproof", "core/utils", "Makefile", ".github", "core", "tests", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "go build ./..."
+verify_cmd = "go build ./... && go vet ./core/..."
+gate_kind = "planned"
+planned_paths = ["core/custodyproof", "core/layerxproof", "core/utils"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.9.12]
+title = "Check wave 9: no root Go package left outside core and the node binary ships"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 9
+requires = ["9.11"]
+reqs = ["2.1", "2.6", "4.2", "7.1", "9.2"]
+do_1 = "Run the wave gate once on the merged wave revision and record its evidence; regenerate AGENTS.md and CLAUDE.md with spec/specgen and commit only if they changed."
+do_2 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["AGENTS.md", "CLAUDE.md"]
+build_cmd = "go build ./..."
+verify_cmd = "scripts/ci/layout-check.sh sdk/baseapp sdk/client sdk/codec sdk/contrib sdk/cosmovisor sdk/crypto sdk/ics23 sdk/internal sdk/proto sdk/scripts sdk/server sdk/snapshots sdk/std sdk/store sdk/storev2 sdk/tasks sdk/telemetry sdk/tests sdk/testutil sdk/third_party sdk/types sdk/utils sdk/version sdk/x consensus interchain wasm wasm-runtime storage modules precompiles node rpc engine daemon admin custodyproof layerxproof utils src include cmd migrations && go build ./... && go vet ./... && buf lint && buf generate && git diff --exit-code -- '*.pb.go' && make -f chain.mk build && make test-lxphost && ./build/paxd version && spec/specgen && git diff --exit-code AGENTS.md CLAUDE.md"
+gate_kind = "existing"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.10.1]
+title = "Move the guest SDK programs/sdk to sdk/programs"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 10
+requires = ["9.12"]
+reqs = ["1.6", "2.4", "3.1", "3.2", "3.3", "5.1"]
+do_1 = "git mv programs/sdk sdk/programs (rust, c, assemblyscript, vectors, abi-manifest.tsv)."
+do_2 = "Keep sdk/programs/rust and its lint, examples, quickstart and response-fixture crates building with the programs workspace lock: list them in programs/Cargo.toml by relative path when cargo accepts the out-of-tree members, otherwise give sdk/programs its own workspace whose Cargo.lock resolves every shared crate to the version programs/Cargo.lock resolved; record the choice in qualification.kvx."
+do_3 = "Rewrite the path column of programs/abi-frozen.sha256 so every hash value stays byte-identical; rewrite programs/sdk paths in Makefile, docker, .github and docs."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["programs/sdk", "programs/Cargo.toml", "programs/Cargo.lock", "programs/abi-frozen.sha256", "sdk/programs", "Makefile", "docker", ".github", "docs", "spec/layerx-merge/spec.kvx"]
+build_cmd = "cargo metadata --locked --format-version 1 --manifest-path programs/Cargo.toml"
+verify_cmd = "make programs-build"
+gate_kind = "planned"
+planned_paths = ["sdk/programs"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.10.2]
+title = "Move programs to core/programs"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 10
+requires = ["10.1"]
+reqs = ["1.6", "2.4", "3.1", "3.2", "3.3", "3.4", "5.1"]
+do_1 = "git mv programs core/programs."
+do_2 = "Rewrite the -L programs/target search path of core/modules/lxphost/host.go and the programs lines of Makefile (43), docker (24) and .github; rewrite the programs/vendor secret-scan allowlist entry of scripts/ci/public-repo-audit.sh and the !programs/vendor/** negation of .gitignore."
+do_3 = "Rewrite the incoming relative Cargo paths from services/agent, services/platform, services/human, services/interop and tools/platform to core/programs, and the outgoing ones from core/programs to services/agent and sdk/programs."
+do_4 = "Rewrite every root-anchored reference to the moved paths in spec/layerx-merge/spec.kvx and spec/release-v6-12-0/spec.kvx: touches, do_n, build_cmd, verify_cmd and planned_paths of every task whose status is not done, and the text of [req.*], [acceptance.*], [capability.*], [decision.*] and [resolution.*]; leave done tasks unchanged and raise the minor version in the [meta] of each spec the commit changes."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["programs", "core/programs", "core/modules/lxphost/host.go", "Makefile", "docker", ".github", "scripts/ci/public-repo-audit.sh", ".gitignore", "services/agent", "services/platform", "services/human", "services/interop", "tools/platform", "sdk/programs", "spec/layerx-merge/spec.kvx", "spec/release-v6-12-0/spec.kvx"]
+build_cmd = "cargo metadata --locked --format-version 1 --manifest-path core/programs/Cargo.toml"
+verify_cmd = "make programs-build agent-build platform-build test-lxphost"
+gate_kind = "planned"
+planned_paths = ["core/programs"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.11.1]
+title = "Wire the vendored Go deps into go.mod with directory replace lines"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 11
+requires = ["10.2"]
+reqs = ["6.6", "9.4"]
+do_1 = "In go.mod replace github.com/ethereum/go-ethereum => ./core/deps/geth, github.com/tendermint/tm-db => ./core/deps/db-backend, github.com/paxeer-network/pax-tm-db => ./core/deps/tm-db, github.com/paxeer-network/paxlog => ./core/deps/log, github.com/paxeer-network/pax-utils => ./core/deps/utils and github.com/paxeer-network/pax-load => ./tools/loadtest; run go mod tidy and keep go.sum entries only for modules still fetched."
+do_2 = "Apply the same directory replaces to every nested module of this repository that requires those modules, with paths relative to that module."
+do_3 = "Confirm go list -m shows each replacement as the local directory and the vendored trees still pass scripts/ci/vendor-verify.sh."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["go.mod", "go.sum"]
+build_cmd = "go build ./..."
+verify_cmd = "go build ./... && go list -m github.com/ethereum/go-ethereum github.com/tendermint/tm-db | grep -q core/deps && scripts/ci/vendor-verify.sh core/deps/geth && make -f chain.mk build"
+gate_kind = "existing"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.11.2]
+title = "Point the integration rpc tests at sdk/js"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 11
+requires = ["11.1"]
+reqs = ["6.6"]
+do_1 = "Replace the github:Paxeer-Network/pax-js#v1.0.6-pax.1 dependency of tests/integration/rpc_tests/package.json with a file: path to the @pax-js/cosmos package inside sdk/js and update tests/integration/rpc_tests/package-lock.json."
+do_2 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["tests/integration/rpc_tests/package.json", "tests/integration/rpc_tests/package-lock.json"]
+build_cmd = "npm --prefix tests/integration/rpc_tests ci"
+verify_cmd = "npm --prefix tests/integration/rpc_tests ci && npm --prefix tests/integration/rpc_tests ls @pax-js/cosmos"
+gate_kind = "existing"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.11.3]
+title = "Refresh the layout docs, labeler and generated maps for phase B"
+status = "pending"
+mode = "BUILD"
+phase = "B"
+hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
+wave = 11
+requires = ["11.2"]
+reqs = ["1.1", "1.7", "3.4", "4.1", "7.1", "7.2"]
+do_1 = "Rewrite docs/MONOREPO.md, the layout section of README.md and the seven translations under docs/readme, and docs/site/docs/overview to the final tree; regroup the core areas of .github/labeler.yml."
+do_2 = "Regenerate CODEMAP.md with cg codemap and AGENTS.md and CLAUDE.md with spec/specgen."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["docs/MONOREPO.md", "README.md", "docs/readme", "docs/site/docs/overview", ".github/labeler.yml", "CODEMAP.md", "AGENTS.md", "CLAUDE.md"]
+build_cmd = "cg codemap"
+verify_cmd = "scripts/ci/layout-check.sh sdk/baseapp sdk/client sdk/codec sdk/contrib sdk/cosmovisor sdk/crypto sdk/ics23 sdk/internal sdk/proto sdk/scripts sdk/server sdk/snapshots sdk/std sdk/store sdk/storev2 sdk/tasks sdk/telemetry sdk/tests sdk/testutil sdk/third_party sdk/types sdk/utils sdk/version sdk/x consensus interchain wasm wasm-runtime storage modules precompiles node rpc engine daemon admin custodyproof layerxproof utils src include cmd migrations programs && scripts/ci/public-repo-audit.sh && spec/specgen && git diff --exit-code AGENTS.md CLAUDE.md"
+gate_kind = "existing"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Every move uses git mv so history follows the files; every reference to a moved path in the repository is rewritten in the same commit; open tasks of the active specs are rewritten in the same commit and done tasks keep their historical paths."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."

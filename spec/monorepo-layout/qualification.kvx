@@ -1,0 +1,2 @@
+# Qualification findings for monorepo-layout: one [finding.<task>] per failure outside the task scope.
+# Keys: revision, command, exit_code, log_path, observed_and_assumption.
