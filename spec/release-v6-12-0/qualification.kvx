@@ -1899,3 +1899,11 @@ exit = 1
 log = fleet/logs/requal-3.2.14-verify.log
 observed = TestEventPositionModified is the only failing clause: the keeper emits PositionModified with the account equity measured before the fill's trading fee is debited (positions.go emits before the fee step) while the test expects the equity after the fee, 0.222642 USDL lower, and the spec says only "share of account equity".
 assumption = The keeper's pre-fee equity stands and the test clause stays as written until a ruling on acceptance 3008.17 fixes the measurement point; every other TestEvent clause including the backstop wiring passes on this revision.
+
+[finding.fixture-generation2-protocolconfig]
+revision = 2b36dd290
+command = bash -l testenv-node.sh (perps test node seeded from node/testdata/v6120-halt-export.json, upgrade-info v6.12.0 at initial_height)
+exit = 1
+log = fleet/logs/fix-gh-613-testenv-node.log
+observed = The node panics at the upgrade height with "upgrade v6.12.0: launchpad: LXP_LAUNCHPAD_INVALID_PARAMS: quote token is the zero address" because the fixture carries generation 2 code for SidioraFactory, PoolRegistry, Treasury and PoolBeacon only and no ProtocolConfig 0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6 code or storage, which MigrateV6120 reads first since the 2.2.17 fix.
+assumption = The fixture, not the migration, is wrong against task 1.2.3 do_1 ("the launchpad state the migration hook reads"); the regenerated export from tools/v6120-halt-export must add the generation 2 role contracts, and until it lands the DB-only test environment serves the store and feeds gates while 7.1.3, 7.1.7 and 7.1.9 stay on their passing revision.

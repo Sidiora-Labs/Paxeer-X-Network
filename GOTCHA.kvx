@@ -8196,3 +8196,8 @@ fix = "convert each old http line to '<name> http <app>.fly.dev:<port> <port> ra
 area = "release rehearsal tests"
 symptom = "a worker's 29 GB disk fills after a handful of tools/release/tests/swap.test.sh or rollback.test.sh runs: each run keeps its node homes and the previous-binary source under <repo>/.logs/swap.* (about 2 GB per run, gitignored, so git clean -fd leaves them) until git checkout fails with 'No space left on device'"
 fix = "remove <repo>/.logs before a fresh checkout on a reused machine (the fleet runner now does so in its prepare step), and keep only the run under investigation while triaging"
+
+[gotcha.1725]
+area = "launchpad precompile tests"
+symptom = "go test ./precompiles/launchpad/ -run 'TestNft|TestFee|TestEvent' runs none of the NFT collection tests, which are named TestCollection… and TestFeeRight…, so a gate on that pattern can pass while the NFT logs are wrong"
+fix = "name the tests (TestCollectionServesEverySelector, TestFeeRightReceiverHook, TestFeeRolesServeEverySelector) or run the package with -skip 'Parity' while the golden fixture is absent"
