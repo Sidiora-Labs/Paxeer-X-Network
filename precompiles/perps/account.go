@@ -313,7 +313,7 @@ func (p PrecompileExecutor) depositLeg(ctx sdk.Context, evm *vm.EVM, caller, tok
 	if value.IsZero() {
 		return nil, fmt.Errorf("%w: deposit", types.ErrZeroAmount)
 	}
-	leg := accountLeg{evm: evm, token: token, from: p.address, gas: TokenCallGas}
+	leg := accountLeg{evm: evm, token: token, from: p.address, readGas: accountReadGas}
 	held, err := leg.balanceOf(caller)
 	if err != nil {
 		return nil, err
@@ -360,7 +360,7 @@ func (p PrecompileExecutor) withdrawalLeg(ctx sdk.Context, evm *vm.EVM, account 
 // the perps module EVM address and requires the receiving balance to move by
 // exactly amount.
 func (p PrecompileExecutor) payLeg(evm *vm.EVM, token, to common.Address, amount uint256.Int) error {
-	leg := accountLeg{evm: evm, token: token, from: p.keeper.ModuleEVMAddress(), gas: TokenCallGas}
+	leg := accountLeg{evm: evm, token: token, from: p.keeper.ModuleEVMAddress(), readGas: accountReadGas}
 	return leg.move(to, amount, accountTransfer, common.LeftPadBytes(to.Bytes(), 32),
 		common.LeftPadBytes(amount.Bytes(), 32))
 }
@@ -441,19 +441,24 @@ func (p PrecompileExecutor) packAccountEvents(method *abi.Method, evm *vm.EVM, r
 	return method.Outputs.Pack()
 }
 
-// accountLeg runs the nested USDL calls of one token leg from one address
-// within one TokenCallGas budget.
+// accountReadGas is the budget the USDL view reads of one token leg share;
+// it is the part of a token leg's surcharge above TokenCallGas.
+const accountReadGas uint64 = 30_000
+
+// accountLeg runs the nested USDL calls of one token leg from one address:
+// the view reads share readGas and the token call gets TokenCallGas.
 type accountLeg struct {
-	evm   *vm.EVM
-	token common.Address
-	from  common.Address
-	gas   uint64
+	evm     *vm.EVM
+	token   common.Address
+	from    common.Address
+	readGas uint64
 }
 
 // read static-calls a one-word USDL view.
 func (l *accountLeg) read(selector []byte, words ...[]byte) (*big.Int, error) {
-	ret, left, err := l.evm.StaticCall(l.from, l.token, bytes.Join(append([][]byte{selector}, words...), nil), l.gas)
-	l.gas = left
+	ret, left, err := l.evm.StaticCall(l.from, l.token, bytes.Join(append([][]byte{selector}, words...), nil),
+		l.readGas)
+	l.readGas = left
 	if err != nil {
 		return nil, accountLegError(err)
 	}
@@ -475,9 +480,8 @@ func (l *accountLeg) move(receiver common.Address, amount uint256.Int, selector 
 	if err != nil {
 		return err
 	}
-	ret, left, err := l.evm.Call(l.from, l.token, bytes.Join(append([][]byte{selector}, words...), nil), l.gas,
+	ret, _, err := l.evm.Call(l.from, l.token, bytes.Join(append([][]byte{selector}, words...), nil), TokenCallGas,
 		uint256.NewInt(0))
-	l.gas = left
 	if err != nil {
 		return accountLegError(err)
 	}
