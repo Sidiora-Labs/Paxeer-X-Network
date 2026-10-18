@@ -383,9 +383,53 @@ receipts_use_key_set() {
   cp -p "$root/dist/paxeer-network/v6.12.0/price-sidecar-v6.12.0-linux-amd64" "$case_dir/"
   SIDECAR_SHA256=$(hash "$case_dir/price-sidecar-v6.12.0-linux-amd64")
   cp -p "$candidate" "$case_dir/paxd-v6.12.0-linux-amd64"
+  python3 - "$case_dir" "$node_home" "$RELEASE_SHA256" "$SIDECAR_SHA256" <<'PY'
+from pathlib import Path
+import sys
+import tomllib
+
+directory, home = Path(sys.argv[1]), Path(sys.argv[2])
+config = tomllib.loads((home / "config/config.toml").read_text())
+app = tomllib.loads((home / "config/app.toml").read_text())
+rpc = config["rpc"]["laddr"].replace("tcp://", "http://")
+evm = f'http://{app["evm"]["http_address"]}:{app["evm"]["http_port"]}'
+values = {
+    "RELEASE_ID": "receipt-check",
+    "RELEASE_TAG": "paxeer-network/v6.12.0",
+    "RELEASE_SHA256": sys.argv[3],
+    "SIDECAR_SHA256": sys.argv[4],
+    "HALT_HEIGHT": "20",
+    "CHAIN_ID": "swap_9000-1",
+    "KEYRING_BACKEND": "test",
+    "BIN_DIR": str(directory / "bin"),
+    "OPERATOR_KEY_NAMES": "operator",
+    "FULLNODE_HOMES": str(home),
+    "SNAPSHOT_DIR": str(directory),
+    "CREDENTIAL_DIR": str(home / "keyring-test"),
+    "CHAINFLOW_KEY_FILE": str(home / "config/priv_validator_key.json"),
+    "CONSENSUS_RPC": rpc,
+    "EVM_RPC": evm,
+    "DATA_SERVICE_URLS": rpc,
+    "APP_URL": evm,
+    "APP_BUILD_ID": "v6.12.0",
+    "INVENTORY_FILE": str(directory / "stage-inputs"),
+    "RECEIPT_DIR": str(directory),
+}
+for key in ("VALIDATOR_HOSTS", "FULLNODE_HOSTS", "ARCHIVE_HOST", "EDGE_HOST",
+            "OPS_HOST", "BUILD_HOST"):
+    values[key] = "localhost"
+values["VALIDATOR_HOMES"] = str(home)
+for key in ("VALIDATOR_UNITS", "FULLNODE_UNITS", "AUTOMATION_UNITS",
+            "OLD_FEEDER_UNITS", "SIDECAR_UNITS"):
+    values[key] = "paxd.service"
+(directory / "stage-inputs").write_text(
+    "".join(f"{key}={value}\n" for key, value in values.items())
+)
+PY
   (
     cd "$case_dir"
-    bash "$root/tools/release/stage.sh" --local --receipt "$case_dir/stage.json"
+    bash "$root/tools/release/stage.sh" --env-file "$case_dir/stage-inputs" \
+      --local --receipt "$case_dir/stage.json"
   )
   swap --role full --receipt "$case_dir/swap-full.json"
   swap --role full --verify --receipt "$case_dir/verify.json"
@@ -395,7 +439,8 @@ from pathlib import Path
 import sys
 
 root = Path(sys.argv[1])
-assert json.loads((root / "stage.json").read_text()) == {"hosts_staged": 1, "result": "pass"}
+stage = json.loads((root / "stage.json").read_text())
+assert stage == {"hosts_staged": 1, "result": "pass"}, stage
 expected = {"nodes_checked": 1, "nodes_passed": 1, "result": "pass"}
 for name in ("swap-full.json", "verify.json"):
     assert json.loads((root / name).read_text()) == expected
