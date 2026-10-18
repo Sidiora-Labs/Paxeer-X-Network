@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pricefeed"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -129,6 +131,24 @@ func aggregateOf(marketID uint64, index, mark int64, sources uint32) types.Genes
 
 func priceOf(out []interface{}) priceView {
 	return *abi.ConvertType(out[0], new(priceView)).(*priceView)
+}
+
+func TestViewVersionedSetup(t *testing.T) {
+	h := newHarness(t)
+	versions := pricefeed.GetVersioned("v6.12.0", keepers{
+		Keepers: testkeeper.EVMTestApp.GetPrecompileKeepers(), pricefeed: h.keeper,
+	})
+	require.Len(t, versions, 1)
+	contract, ok := versions["v6.12.0"]
+	require.True(t, ok)
+	p, ok := contract.(*pricefeed.Precompile)
+	require.True(t, ok)
+	require.Equal(t, pricefeedAddress, p.Address())
+	ret, err := p.Run(h.evm, h.caller, h.caller, h.input("getMarketCount"), big.NewInt(0), true, false, nil)
+	require.NoError(t, err)
+	out, err := h.method("getMarketCount").Outputs.Unpack(ret)
+	require.NoError(t, err)
+	require.Equal(t, big.NewInt(18), out[0])
 }
 
 func TestViewGetPrice(t *testing.T) {
