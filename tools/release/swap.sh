@@ -251,7 +251,7 @@ def url(host, port):
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 rpc = urlsplit(config["rpc"]["laddr"])
 with opener.open(url(rpc.hostname, rpc.port) + "/status", timeout=3) as response:
-    status = json.load(response)["result"]["sync_info"]
+    status = json.load(response)["sync_info"]
 if int(status["latest_block_height"]) < int(sys.argv[2]):
     sys.exit("swap: node has not reached halt height")
 evm = app["evm"]

@@ -74,13 +74,47 @@ if [[ -z "$candidate" ]]; then
     -o "$candidate" ./daemon/paxd
 fi
 candidate=$(realpath "$candidate")
-previous=$(realpath "${OLD_BIN:-$candidate}")
-[[ -x "$candidate" && -x "$previous" ]]
+[[ -x "$candidate" ]]
 [[ $("$candidate" version) == v6.12.0 ]]
 
 hash() {
   sha256sum "$1" | cut -d ' ' -f 1
 }
+
+previous_commit=ab0ea61c8
+previous=${OLD_BIN:-$root/build/paxd.previous}
+if [[ -z "${OLD_BIN:-}" && ! -e "$previous" ]]; then
+  previous_src=$root/build/paxd.previous.src
+  rm -rf -- "$previous_src"
+  mkdir -p "$previous_src"
+  git -C "$root" archive "$previous_commit" | tar -x -C "$previous_src"
+  (
+    cd "$previous_src"
+    package=$(go list -m)/sdk/version
+    go build -p 2 -trimpath -buildvcs=false -tags 'netgo ledger' \
+      -ldflags "-checklinkname=0 -X $package.Version=v6.10" \
+      -o "$previous" ./daemon/paxd
+  )
+fi
+refuse_previous() {
+  printf 'FAIL prerequisite: %s\n' "$1" >&2
+  printf 'swap: 0 passed, 1 failed prerequisites; 6 scenarios not run\n'
+  exit 1
+}
+[[ -f "$previous" && -x "$previous" ]] || refuse_previous "OLD_BIN must name the real previous paxd binary: $previous"
+previous=$(realpath "$previous")
+previous_version=$("$previous" version) || refuse_previous "OLD_BIN does not report a version: $previous"
+[[ "$previous_version" != v6.12.0 ]] || refuse_previous "OLD_BIN reports the candidate version v6.12.0: $previous"
+[[ $(hash "$previous") != "$(hash "$candidate")" ]] || refuse_previous "OLD_BIN and NEW_BIN must be different binaries"
+
+sidecar=${SIDECAR_BIN:-$root/dist/paxeer-network/v6.12.0/price-sidecar-v6.12.0-linux-amd64}
+if [[ -z "${SIDECAR_BIN:-}" && ! -f "$sidecar" ]]; then
+  cargo build --locked --release --manifest-path platform/Cargo.toml -p layerx-oracle-feeder --bin price-sidecar
+  platform_target=$(cargo metadata --locked --format-version 1 --no-deps --manifest-path platform/Cargo.toml | jq -er '.target_directory')
+  sidecar=$platform_target/release/price-sidecar
+fi
+[[ -f "$sidecar" && -x "$sidecar" ]] || refuse_previous "price-sidecar binary is missing: $sidecar"
+sidecar=$(realpath "$sidecar")
 
 write_release() {
   printf '%s  paxd-v6.12.0-linux-amd64\n' "$RELEASE_SHA256" > "$case_dir/SHA256SUMS"
@@ -229,7 +263,7 @@ deadline = time.monotonic() + 180
 while time.monotonic() < deadline:
     try:
         with opener.open(url, timeout=2) as response:
-            current = int(json.load(response)["result"]["sync_info"]["latest_block_height"])
+            current = int(json.load(response)["sync_info"]["latest_block_height"])
         if current >= height:
             break
     except (OSError, ValueError, KeyError, urllib.error.URLError):
@@ -392,8 +426,7 @@ receipts_use_key_set() {
   export RELEASE_ID=receipt-check
   export SIDECAR_SHA256
   export SIDECAR_UNITS= AUTOMATION_UNITS= OLD_FEEDER_UNITS=
-  [[ -f "$root/dist/paxeer-network/v6.12.0/price-sidecar-v6.12.0-linux-amd64" ]]
-  cp -p "$root/dist/paxeer-network/v6.12.0/price-sidecar-v6.12.0-linux-amd64" "$case_dir/"
+  cp -p "$sidecar" "$case_dir/price-sidecar-v6.12.0-linux-amd64"
   SIDECAR_SHA256=$(hash "$case_dir/price-sidecar-v6.12.0-linux-amd64")
   cp -p "$candidate" "$case_dir/paxd-v6.12.0-linux-amd64"
   python3 - "$case_dir" "$node_home" "$RELEASE_SHA256" "$SIDECAR_SHA256" <<'PY'

@@ -319,7 +319,9 @@ func (app *BaseApp) Commit(ctx context.Context) (res *abci.ResponseCommit, err e
 		// response with the commit ID hash. This will allow the node to successfully
 		// restart and process blocks assuming the halt configuration has been
 		// reset or moved to a more distant value.
-		app.halt()
+		if err := app.halt(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	if header.Height < 0 {
@@ -354,9 +356,16 @@ func (app *BaseApp) SnapshotIfApplicable(height uint64) {
 	}
 }
 
+// haltExitDeadline bounds how long halt waits for the signalled shutdown before
+// exiting the process itself.
+const haltExitDeadline = 60 * time.Second
+
 // halt attempts to gracefully shutdown the node via SIGINT and SIGTERM falling
-// back on os.Exit if both fail.
-func (app *BaseApp) halt() {
+// back on os.Exit if both fail. It holds Commit until the shutdown cancels the
+// consensus context and then returns an error, so consensus never applies the
+// halt height and cannot sign anything for the next height; os.Exit is the last
+// resort if the signals never stop the node.
+func (app *BaseApp) halt(ctx context.Context) error {
 	logger.Info("halting node per configuration", "height", app.haltHeight, "time", app.haltTime)
 
 	p, err := os.FindProcess(os.Getpid())
@@ -366,7 +375,15 @@ func (app *BaseApp) halt() {
 		sigTermErr := p.Signal(syscall.SIGTERM)
 
 		if sigIntErr == nil || sigTermErr == nil {
-			return
+			deadline := time.NewTimer(haltExitDeadline)
+			defer deadline.Stop()
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("node halted per configuration: %w", ctx.Err())
+			case <-deadline.C:
+				logger.Info("node did not stop after SIGINT/SIGTERM; exiting...")
+				os.Exit(0)
+			}
 		}
 	}
 
@@ -374,6 +391,7 @@ func (app *BaseApp) halt() {
 	// via SIGINT/SIGTERM signals.
 	logger.Info("failed to send SIGINT/SIGTERM; exiting...")
 	os.Exit(0)
+	return nil
 }
 
 // Snapshot takes a snapshot of the current state and prunes any old snapshottypes.

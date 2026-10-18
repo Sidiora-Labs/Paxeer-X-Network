@@ -3,6 +3,11 @@ package baseapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
+	"os/exec"
+	"os/signal"
+	"syscall"
 	"testing"
 
 	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
@@ -269,4 +274,27 @@ func TestProcessProposalCleanContextNotAffectedByHandler(t *testing.T) {
 
 type mockNonQueryableMultiStore struct {
 	sdk.CommitMultiStore
+}
+
+func TestHaltNeverReturnsToCommit(t *testing.T) {
+	if os.Getenv("BASEAPP_HALT_CHILD") == "1" {
+		ctx, cancel := context.WithCancel(context.Background())
+		signals := make(chan os.Signal, 2)
+		signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-signals
+			cancel()
+		}()
+		app := &BaseApp{haltHeight: 20}
+		if err := app.halt(ctx); errors.Is(err, context.Canceled) {
+			os.Exit(0)
+		}
+		os.Exit(3)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestHaltNeverReturnsToCommit$", "-test.count=1")
+	cmd.Env = append(os.Environ(), "BASEAPP_HALT_CHILD=1")
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+	require.Equal(t, 0, cmd.ProcessState.ExitCode(), string(output))
 }
