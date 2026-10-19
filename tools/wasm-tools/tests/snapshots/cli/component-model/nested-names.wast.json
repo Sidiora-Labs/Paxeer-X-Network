@@ -1,0 +1,23 @@
+{
+  "source_filename": "tests/cli/component-model/nested-names.wast",
+  "commands": [
+    {
+      "type": "module",
+      "line": 6,
+      "filename": "nested-names.0.wasm",
+      "module_type": "binary"
+    },
+    {
+      "type": "module",
+      "line": 13,
+      "filename": "nested-names.1.wasm",
+      "module_type": "binary"
+    },
+    {
+      "type": "module",
+      "line": 24,
+      "filename": "nested-names.2.wasm",
+      "module_type": "binary"
+    }
+  ]
+}

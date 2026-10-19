@@ -1,0 +1,26 @@
+(module
+  (type (;0;) (func (param (ref 0)) (result (ref 0))))
+  (rec
+    (type (;1;) (func (param (ref 2))))
+    (type (;2;) (func (result (ref 1))))
+  )
+  (rec)
+  (rec
+    (type (;3;) (func))
+  )
+  (rec
+    (type $t (;4;) (func))
+  )
+  (rec
+    (type $t1 (;5;) (func))
+    (type (;6;) (func))
+    (type $t2 (;7;) (func))
+  )
+  (rec
+    (type $g (;8;) (func (param (ref $g)) (result (ref $g))))
+  )
+  (rec
+    (type $h (;9;) (func (param (ref $k))))
+    (type $k (;10;) (func (result (ref $h))))
+  )
+)

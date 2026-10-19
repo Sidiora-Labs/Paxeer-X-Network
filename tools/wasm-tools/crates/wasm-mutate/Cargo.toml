@@ -1,0 +1,27 @@
+[package]
+name = "wasm-mutate"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository = "https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-mutate"
+description = "A WebAssembly test case mutator"
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = { workspace = true, optional = true }
+egg = "0.6.0"
+log = { workspace = true }
+rand = { workspace = true }
+thiserror = { workspace = true }
+wasm-encoder = { workspace = true, features = ['std', 'wasmparser'] }
+wasmparser = { workspace = true, features = ['std', 'simd'] }
+
+[dev-dependencies]
+anyhow = { workspace = true }
+env_logger = { workspace = true }
+wasmparser = { workspace = true, features = ['std', 'validate', 'features', 'simd'] }
+wasmprinter = { workspace = true }
+wat = { workspace = true }

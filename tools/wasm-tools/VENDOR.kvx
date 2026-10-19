@@ -1,0 +1,4 @@
+[vendor]
+url = "https://github.com/Paxeer-Network/pax-wasm-tools"
+ref = "main"
+sha = "22a56f143c1193bb27ce0a2ebd7054a72b509528"

@@ -1,0 +1,28 @@
+[package]
+name = "wasm-wave"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors = ["lann.martin@fermyon.com"]
+description = "WebAssembly Value Encoding"
+documentation = "https://docs.rs/wasm-wave"
+categories = ["wasm", "encoding", "parser-implementations"]
+repository = "https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-wave"
+readme = "README.md"
+
+[lints]
+workspace = true
+
+[features]
+default = ["std", "wit"]
+std = []
+wit = ["dep:wit-parser", "std"]
+
+[dependencies]
+logos = { version = "0.14.2", default-features = false, features = ["export_derive", "forbid_unsafe"] }
+thiserror = { workspace = true }
+wit-parser = { workspace = true, optional = true }
+
+[dev-dependencies]
+anyhow.workspace = true

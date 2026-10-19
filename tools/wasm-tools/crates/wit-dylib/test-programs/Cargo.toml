@@ -1,0 +1,17 @@
+[package]
+name = "test-programs"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+
+[dependencies]
+wit-dylib-ffi = { path = '../ffi', features = ["async-runtime"] }
+wit-bindgen = { workspace = true, features = ['async-spawn'] }
+rand = { workspace = true }
+
+[lints]
+workspace = true
+
+[lib]
+test = false
+doctest = false

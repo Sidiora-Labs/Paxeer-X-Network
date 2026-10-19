@@ -1,0 +1,15 @@
+(component
+  (core module $m (;0;)
+    (type (;0;) (func (param i32 i32) (result i32)))
+    (import "" "future.read" (func $future-read (;0;) (type 0)))
+  )
+  (type $future-type (;0;) (future))
+  (core func $future-read (;0;) (canon future.read $future-type async))
+  (core instance (;0;)
+    (export "future.read" (func $future-read))
+  )
+  (core instance $i (;1;) (instantiate $m
+      (with "" (instance 0))
+    )
+  )
+)

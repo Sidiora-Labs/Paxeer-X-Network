@@ -1,0 +1,120 @@
+(module
+  (type $a32 (;0;) (array (mut i32)))
+  (type $a64 (;1;) (array (mut i64)))
+  (type (;2;) (func))
+  (export "f0" (func 0))
+  (export "f1" (func 1))
+  (export "f2" (func 2))
+  (export "f3" (func 3))
+  (export "f4" (func 4))
+  (export "f9" (func 5))
+  (export "g0" (func 6))
+  (export "g1" (func 7))
+  (export "g4" (func 8))
+  (export "g7" (func 9))
+  (export "g8" (func 10))
+  (export "g9" (func 11))
+  (func (;0;) (type 2)
+    i32.const 1
+    array.new_default $a32
+    i32.const 0
+    i32.const 0
+    i32.const 1
+    array.init_data $a32 $data0
+  )
+  (func (;1;) (type 2)
+    i32.const 1
+    array.new_default $a32
+    i32.const 0
+    i32.const 0
+    i32.const 1
+    array.init_data $a32 $data1
+  )
+  (func (;2;) (type 2)
+    i32.const 1
+    array.new_default $a32
+    i32.const 0
+    i32.const 0
+    i32.const 1
+    array.init_data $a32 $data2
+  )
+  (func (;3;) (type 2)
+    i32.const 1
+    array.new_default $a32
+    i32.const 0
+    i32.const 0
+    i32.const 1
+    array.init_data $a32 $data3
+  )
+  (func (;4;) (type 2)
+    i32.const 1
+    array.new_default $a32
+    i32.const 0
+    i32.const 0
+    i32.const 1
+    array.init_data $a32 $data4
+  )
+  (func (;5;) (type 2)
+    i32.const 1
+    array.new_default $a32
+    i32.const 0
+    i32.const 6
+    i32.const 1
+    array.init_data $a32 $data9
+  )
+  (func (;6;) (type 2)
+    i32.const 1
+    array.new_default $a64
+    i32.const 0
+    i32.const 0
+    i32.const 1
+    array.init_data $a64 $data0
+  )
+  (func (;7;) (type 2)
+    i32.const 1
+    array.new_default $a64
+    i32.const 0
+    i32.const 0
+    i32.const 1
+    array.init_data $a64 $data1
+  )
+  (func (;8;) (type 2)
+    i32.const 1
+    array.new_default $a64
+    i32.const 0
+    i32.const 0
+    i32.const 1
+    array.init_data $a64 $data4
+  )
+  (func (;9;) (type 2)
+    i32.const 1
+    array.new_default $a64
+    i32.const 0
+    i32.const 0
+    i32.const 1
+    array.init_data $a64 $data7
+  )
+  (func (;10;) (type 2)
+    i32.const 1
+    array.new_default $a64
+    i32.const 0
+    i32.const 0
+    i32.const 1
+    array.init_data $a64 $data9
+  )
+  (func (;11;) (type 2)
+    i32.const 1
+    array.new_default $a64
+    i32.const 0
+    i32.const 2
+    i32.const 1
+    array.init_data $a64 $data9
+  )
+  (data $data0 (;0;) "")
+  (data $data1 (;1;) "1")
+  (data $data2 (;2;) "12")
+  (data $data3 (;3;) "123")
+  (data $data4 (;4;) "1234")
+  (data $data7 (;5;) "1234567")
+  (data $data9 (;6;) "123456789")
+)

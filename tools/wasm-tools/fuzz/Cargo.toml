@@ -1,0 +1,52 @@
+[package]
+name = "wasm-tools-fuzz"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+
+[package.metadata]
+cargo-fuzz = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+arbitrary = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+tempfile = { workspace = true }
+wasm-encoder = { workspace = true }
+wasm-mutate = { workspace = true }
+wasm-smith = { workspace = true, features = ['component-model', 'wasmparser'] }
+wasmparser = { workspace = true, features = ['std', 'features'] }
+wasmprinter = { workspace = true, features = ['component-model'] }
+wasmtime = { workspace = true, optional = true }
+wast = { workspace = true }
+wat = { workspace = true }
+wit-component = { workspace = true, features = ['dummy-module'] }
+wit-parser = { workspace = true }
+wit-smith = { workspace = true }
+
+[dependencies.wit-parser-old]
+package = 'wit-parser'
+version = '0.214.0'
+
+[dependencies.wit-component-old]
+package = 'wit-component'
+version = '0.214.0'
+
+[target.'cfg(fuzzing)'.dependencies]
+libfuzzer-sys = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
+
+[lib]
+doctest = false
+
+[[bin]]
+name = "run"
+path = "fuzz_targets/run.rs"
+test = false
+bench = false

@@ -1,0 +1,12 @@
+instantiations:
+  root:
+    arguments:
+      b: a1
+  a1:
+    dependency: a
+    arguments:
+      b: a2
+  a2:
+    dependency: a
+    arguments:
+      b: a1

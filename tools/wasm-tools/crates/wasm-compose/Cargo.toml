@@ -1,0 +1,36 @@
+[package]
+name = "wasm-compose"
+version.workspace = true
+edition.workspace = true
+authors = ["Peter Huene <peter@huene.dev>"]
+license.workspace = true
+readme = "README.md"
+repository = "https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-compose"
+homepage = "https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-compose"
+documentation = "https://docs.rs/wasm-compose"
+description = "A library for composing WebAssembly components."
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+heck = "0.5.0"
+im-rc = "15.1.0"
+indexmap = { workspace = true, features = ["std", "serde"] }
+log = { workspace = true }
+petgraph = "0.6.2"
+serde = { workspace = true }
+serde_derive = { workspace = true }
+serde_yaml = "0.9.22"
+smallvec = "1.10.0"
+wasm-encoder = { workspace = true, features = ['std', 'wasmparser', 'component-model'] }
+wasmparser = { workspace = true, features = ['std', 'validate', 'component-model', 'features'] }
+wat = { workspace = true, features = ['component-model'] }
+
+[dev-dependencies]
+glob = "0.3.0"
+pretty_assertions = "1.2.1"
+wasmprinter = { workspace = true, features = ['component-model'] }
+wit-component = { workspace = true }

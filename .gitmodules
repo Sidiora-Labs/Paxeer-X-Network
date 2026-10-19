@@ -6,3 +6,6 @@
 	path = core/deps/geth/tests/evm-benchmarks
 	url = https://github.com/ipsilon/evm-benchmarks
 	shallow = true
+[submodule "tools/wasm-tools/tests/testsuite"]
+	path = tools/wasm-tools/tests/testsuite
+	url = https://github.com/WebAssembly/testsuite

@@ -1,0 +1,23 @@
+package root:root;
+
+world root {
+  import a: interface {
+  }
+  import a:b/b;
+  use a:b/b.{t};
+  import c: func() -> t;
+}
+package a:b {
+  interface b {
+    type t = u32;
+  }
+  world into {
+  }
+  world %from {
+    import a: interface {
+    }
+    import b;
+    use b.{t};
+    import c: func() -> t;
+  }
+}
