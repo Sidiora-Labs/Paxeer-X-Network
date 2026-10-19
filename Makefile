@@ -3695,9 +3695,9 @@ programs-protocol-regression: test-kernel test-module-ctx test-dispatch \
 		test-receipts test-state-root test-snapshot test-replay-golden-local
 
 programs-fuzz-smoke:
-	cd programs && $(PROGRAMS_CARGO) run --locked -p layerx-programs-fuzz --bin programs-fuzz -- validation fuzz/corpus/validation
-	cd programs && $(PROGRAMS_CARGO) run --locked -p layerx-programs-fuzz --bin programs-fuzz -- instantiation fuzz/corpus/instantiation
-	cd programs && $(PROGRAMS_CARGO) run --locked -p layerx-programs-fuzz --bin programs-fuzz -- execution fuzz/corpus/execution
+	cd programs && $(PROGRAMS_CARGO) run --locked -p layerx-programs-fuzz --bin programs-fuzz -- validation $(CURDIR)/programs/fuzz/corpus/validation
+	cd programs && $(PROGRAMS_CARGO) run --locked -p layerx-programs-fuzz --bin programs-fuzz -- instantiation $(CURDIR)/programs/fuzz/corpus/instantiation
+	cd programs && $(PROGRAMS_CARGO) run --locked -p layerx-programs-fuzz --bin programs-fuzz -- execution $(CURDIR)/programs/fuzz/corpus/execution
 
 programs-adversarial:
 	cd programs && $(PROGRAMS_CARGO) test --locked -p layerx-programs-runtime --test isolation --test composition --test monetary_law

@@ -47,7 +47,7 @@ build_program() {
     (cd "$example" && CARGO_TARGET_DIR="$target_dir" \
         "$CARGO" build --locked --release --target "$target")
     test -s "$artifact"
-    if [ -f "$example/layerx-program.json" ]; then
+    if [ -f "${example}/layerx-program.json" ]; then
         (cd "$programs_dir" && "$CARGO" run --locked --quiet \
             -p layerx-program-lint --bin layerx-program-lint -- "$example" "$artifact")
     fi

@@ -155,7 +155,7 @@ node/wasmbinding/
 wasm-runtime/
 spec/
 scripts/
-example/
+/tests/fixtures/example/
 docs/
 tools/benchmark/
 programs/vendor/

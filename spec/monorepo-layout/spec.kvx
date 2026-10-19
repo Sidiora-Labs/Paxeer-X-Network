@@ -598,7 +598,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.6]
 title = "Check wave 3: no reference to the old test paths and the test tree builds"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 3

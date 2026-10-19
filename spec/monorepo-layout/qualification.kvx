@@ -56,3 +56,10 @@ command = "scripts/ci/public-repo-audit.sh"
 exit_code = 1
 log_path = ".logs/task-2.1.log"
 observed_and_assumption = "The audit's last step ran cd spec/specgen, which has been the bash entry point to tools/specgen since before the imports, and now runs spec/specgen -check, which reports 1426 validation errors in the active layerx-merge feature spec; that predates this task and needs its own task."
+
+[finding.3.6-layout-check-relative-matches]
+revision = "d1ba6a2b8 with the three rewrites of this commit applied"
+command = "scripts/ci/layout-check.sh fuzz integration_test example occ_tests testutil && go vet ./tests/... && make fuzz-codec-smoke && make -f chain.mk build && spec/specgen && git diff --exit-code AGENTS.md CLAUDE.md"
+exit_code = 0
+log_path = "fleet/logs/layout-3.6.log"
+observed_and_assumption = "The first run exited 1 on five lines whose paths resolve from another directory (the programs fuzz corpus after cd programs, the unanchored example/ ignore pattern, the $example shell variable); resolved by passing $(CURDIR)/programs/fuzz/corpus in the Makefile, anchoring /tests/fixtures/example/ in .cgignore and writing ${example} in the fixture script, after which the rerun exits 0 and specgen leaves AGENTS.md and CLAUDE.md unchanged."

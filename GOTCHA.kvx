@@ -8291,3 +8291,8 @@ fix = "the test wrapper registers a cleanup after the app is built that waits on
 area = "launchpad"
 symptom = "createMarket on a fresh test chain refuses LXP_LAUNCHPAD_TRANSFER_FAILED: execution reverted on the pool-token transfer although every surface is installed"
 fix = "SidioraERC20 calls pool.opticalAddress() on each transfer once bound and the pool surface forwards to 0x1017, which serves the v6.10 launchpad on a fresh chain until the v6.12.0 plan is done; read a surface-routed failure against the precompile set InitChainer selects before suspecting the surface records"
+
+[gotcha.1744]
+area = "layout moves"
+symptom = "layout-check.sh reads text lexically, so a path that resolves from another directory (a corpus path after cd programs, an unanchored ignore pattern, a $name/ shell expansion) reads as a root-anchored reference to a moved directory and fails the gate although nothing was left behind"
+fix = "write each such line so it says what it means: a root-anchored $(CURDIR)/... path, a leading-slash ignore pattern at the new location, ${name}/ for a variable; never relax the script"
