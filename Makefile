@@ -3093,18 +3093,18 @@ workspace-node-preflight:
 	@node -e 'const major=Number(process.versions.node.split(".")[0]); if (major < 24) { console.error(`Node >=24 required by workspace packages; found $${process.version}`); process.exit(1); }'
 
 PAXEER_LOCKED_RUST_MANIFESTS := \
-	example/cosmwasm/cw1155/Cargo.toml \
-	example/cosmwasm/cw20/Cargo.toml \
-	example/cosmwasm/cw721/Cargo.toml \
-	example/cosmwasm/echo/Cargo.toml \
-	example/cosmwasm/iter/Cargo.toml \
+	tests/fixtures/example/cosmwasm/cw1155/Cargo.toml \
+	tests/fixtures/example/cosmwasm/cw20/Cargo.toml \
+	tests/fixtures/example/cosmwasm/cw721/Cargo.toml \
+	tests/fixtures/example/cosmwasm/echo/Cargo.toml \
+	tests/fixtures/example/cosmwasm/iter/Cargo.toml \
 	tools/benchmark/loadtest/contracts/jupiter/Cargo.toml \
 	tools/benchmark/loadtest/contracts/mars/Cargo.toml \
 	tools/benchmark/loadtest/contracts/saturn/Cargo.toml \
 	tools/benchmark/loadtest/contracts/venus/Cargo.toml \
-	example/cosmwasm/parallelization/bank/Cargo.toml \
-	example/cosmwasm/parallelization/staking/Cargo.toml \
-	example/cosmwasm/parallelization/wasm/Cargo.toml \
+	tests/fixtures/example/cosmwasm/parallelization/bank/Cargo.toml \
+	tests/fixtures/example/cosmwasm/parallelization/staking/Cargo.toml \
+	tests/fixtures/example/cosmwasm/parallelization/wasm/Cargo.toml \
 	wasm-runtime/libwasmvm/Cargo.toml
 
 PAXEER_NESTED_GO_DIRS := hpx/registry \

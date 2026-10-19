@@ -9,9 +9,9 @@ Tools: solc (Solidity compiler) and abigen (the go-ethereum binding generator).
 
 Regenerate an example from the repository root (simplestorage as the example):
 
-solc --overwrite --bin -o example/contracts/simplestorage example/contracts/simplestorage/SimpleStorage.sol
-solc --overwrite --abi -o example/contracts/simplestorage example/contracts/simplestorage/SimpleStorage.sol
-abigen --abi=example/contracts/simplestorage/SimpleStorage.abi --pkg=simplestorage --out=example/contracts/simplestorage/SimpleStorage.go
+solc --overwrite --bin -o tests/fixtures/example/contracts/simplestorage tests/fixtures/example/contracts/simplestorage/SimpleStorage.sol
+solc --overwrite --abi -o tests/fixtures/example/contracts/simplestorage tests/fixtures/example/contracts/simplestorage/SimpleStorage.sol
+abigen --abi=tests/fixtures/example/contracts/simplestorage/SimpleStorage.abi --pkg=simplestorage --out=tests/fixtures/example/contracts/simplestorage/SimpleStorage.go
 
 The pointer contract artifacts under modules/evm/artifacts are regenerated from
 contracts/src; see modules/evm/artifacts/README.

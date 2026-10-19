@@ -65,9 +65,9 @@ const WASM = {
     CW1155: "../contracts/wasm/cw1155_base.wasm",
     CW721: "../contracts/wasm/cw721_base.wasm",
     CW20: "../contracts/wasm/cw20_base.wasm",
-    POINTER_CW20: "../example/cosmwasm/cw20/artifacts/cwerc20.wasm",
-    POINTER_CW721: "../example/cosmwasm/cw721/artifacts/cwerc721.wasm",
-    POINTER_CW1155: "../example/cosmwasm/cw721/artifacts/cwerc1155.wasm",
+    POINTER_CW20: "../tests/fixtures/example/cosmwasm/cw20/artifacts/cwerc20.wasm",
+    POINTER_CW721: "../tests/fixtures/example/cosmwasm/cw721/artifacts/cwerc721.wasm",
+    POINTER_CW1155: "../tests/fixtures/example/cosmwasm/cw721/artifacts/cwerc1155.wasm",
 }
 
 function sleep(ms) {

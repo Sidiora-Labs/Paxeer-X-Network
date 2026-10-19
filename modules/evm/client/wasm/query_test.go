@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Sidiora-Labs/Paxeer-X-Network/example/contracts/simplestorage"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/ante"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/client/wasm"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/client/wasm/bindings"
@@ -20,6 +19,7 @@ import (
 	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/fixtures/example/contracts/simplestorage"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	ethabi "github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -79,7 +79,7 @@ func TestHandleERC20TokenInfo(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc20/ERC20.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc20/ERC20.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -120,7 +120,7 @@ func TestHandleERC20Balance(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc20/ERC20.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc20/ERC20.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -136,7 +136,7 @@ func TestHandleERC721Owner(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc721/DummyERC721.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc721/DummyERC721.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -151,7 +151,7 @@ func TestHandleERC20Allowance(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc20/ERC20.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc20/ERC20.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	addr2, e2 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
@@ -169,7 +169,7 @@ func TestHandleERC721Approved(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc721/DummyERC721.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc721/DummyERC721.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	addr2, e2 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
@@ -186,7 +186,7 @@ func TestHandleERC721IsApprovedForAll(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc721/DummyERC721.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc721/DummyERC721.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	addr2, e2 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
@@ -203,7 +203,7 @@ func TestHandleERC721TotalSupply(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc721/DummyERC721.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc721/DummyERC721.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -219,7 +219,7 @@ func TestHandleERC721NameSymbol(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc721/DummyERC721.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc721/DummyERC721.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -235,7 +235,7 @@ func TestHandleERC721TokenURI(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc721/DummyERC721.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc721/DummyERC721.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -250,7 +250,7 @@ func TestHandleERC721RoyaltyInfo(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc721/DummyERC721.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc721/DummyERC721.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -308,7 +308,7 @@ func TestHandleERC1155IsApprovedForAll(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc1155/ERC1155Example.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc1155/ERC1155Example.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	addr2, e2 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
@@ -326,7 +326,7 @@ func TestHandleERC1155BalanceOf(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc1155/ERC1155Example.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc1155/ERC1155Example.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -343,7 +343,7 @@ func TestHandleERC1155BalanceOfBatch(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc1155/ERC1155Example.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc1155/ERC1155Example.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -360,7 +360,7 @@ func TestHandleERC1155TotalSupply(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc1155/ERC1155Example.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc1155/ERC1155Example.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -376,7 +376,7 @@ func TestHandleERC1155TotalSupplyForToken(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc1155/ERC1155Example.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc1155/ERC1155Example.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -392,7 +392,7 @@ func TestHandleERC1155TokenExists(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc1155/ERC1155Example.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc1155/ERC1155Example.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -412,7 +412,7 @@ func TestHandleERC1155NameSymbol(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc1155/ERC1155Example.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc1155/ERC1155Example.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -428,7 +428,7 @@ func TestHandleERC1155Uri(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc1155/ERC1155Example.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc1155/ERC1155Example.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -444,7 +444,7 @@ func TestHandleERC1155RoyaltyInfo(t *testing.T) {
 	k := &testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx(nil)
 	privKey := testkeeper.MockPrivateKey()
-	res, _ := deployContract(t, ctx, k, "../../../../example/contracts/erc1155/ERC1155Example.bin", privKey)
+	res, _ := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/erc1155/ERC1155Example.bin", privKey)
 	addr1, e1 := testkeeper.MockAddressPair()
 	k.SetAddressMapping(ctx, addr1, e1)
 	receipt := testkeeper.WaitForReceipt(t, k, ctx, common.HexToHash(res.Hash))
@@ -570,7 +570,7 @@ func TestHandleStaticCall(t *testing.T) {
 	testPrivHex := hex.EncodeToString(privKey.Bytes())
 	key, _ := crypto.HexToECDSA(testPrivHex)
 	signer := createSigner(k, ctx)
-	res, msgServer := deployContract(t, ctx, k, "../../../../example/contracts/simplestorage/SimpleStorage.bin", privKey)
+	res, msgServer := deployContract(t, ctx, k, "../../../../tests/fixtures/example/contracts/simplestorage/SimpleStorage.bin", privKey)
 	require.LessOrEqual(t, res.GasUsed, uint64(200000))
 	require.Empty(t, res.VmError)
 	require.NotEmpty(t, res.ReturnData)
@@ -609,7 +609,7 @@ func TestHandleStaticCall(t *testing.T) {
 	require.LessOrEqual(t, res.GasUsed, uint64(200000))
 	require.Empty(t, res.VmError)
 
-	abibz, err := os.ReadFile("../../../../example/contracts/simplestorage/SimpleStorage.abi")
+	abibz, err := os.ReadFile("../../../../tests/fixtures/example/contracts/simplestorage/SimpleStorage.abi")
 	require.Nil(t, err)
 	parsedABI, err := ethabi.JSON(strings.NewReader(string(abibz)))
 	require.Nil(t, err)

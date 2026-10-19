@@ -15,7 +15,6 @@ import (
 
 	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/privval"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/example/contracts/simplestorage"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
 	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
@@ -27,6 +26,7 @@ import (
 	evmrpc "github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/fixtures/example/contracts/simplestorage"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -125,7 +125,7 @@ func pendingSimulateAccept(t *testing.T, exec sequencer.Executor, tx []byte) *se
 // calldata of set(20) and get().
 func pendingSimulateStorage(t *testing.T) (creation, set, get []byte) {
 	t.Helper()
-	code, err := os.ReadFile("../example/contracts/simplestorage/SimpleStorage.bin")
+	code, err := os.ReadFile("../tests/fixtures/example/contracts/simplestorage/SimpleStorage.bin")
 	require.NoError(t, err)
 	creation, err = hex.DecodeString(string(code))
 	require.NoError(t, err)

@@ -24,7 +24,7 @@ docker
 !docker/kernel/init.sh
 engine
 !engine/deps/store
-example
+tests/fixtures/example
 hpx
 integration_test
 interchain

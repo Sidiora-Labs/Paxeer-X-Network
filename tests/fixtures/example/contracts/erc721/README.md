@@ -3,12 +3,12 @@
 To regenerate the artifacts, run from the repository root and keep only the `DummyERC721` files:
 
 ```
-solc --bin -o example/contracts/erc721 example/contracts/erc721/ERC721.sol --overwrite
-solc --abi -o example/contracts/erc721 example/contracts/erc721/ERC721.sol --overwrite
+solc --bin -o tests/fixtures/example/contracts/erc721 tests/fixtures/example/contracts/erc721/ERC721.sol --overwrite
+solc --abi -o tests/fixtures/example/contracts/erc721 tests/fixtures/example/contracts/erc721/ERC721.sol --overwrite
 ```
 
 To produce a Go binding as well:
 
 ```
-abigen --abi=example/contracts/erc721/DummyERC721.abi --pkg=erc721 --out=example/contracts/erc721/ERC721.go
+abigen --abi=tests/fixtures/example/contracts/erc721/DummyERC721.abi --pkg=erc721 --out=tests/fixtures/example/contracts/erc721/ERC721.go
 ```

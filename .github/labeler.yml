@@ -56,7 +56,7 @@ area:paxeer:
           - daemon/**
           - docker/**
           - engine/**
-          - example/**
+          - tests/fixtures/example/**
           - hpx/**
           - integration_test/**
           - interchain/**

@@ -8261,3 +8261,8 @@ fix = "end ranges at the next header pattern, never at a guessed id, and read th
 area = "layout moves"
 symptom = "a moved directory still carried its own old path inside a source file (a fuzz harness opening its seed corpus by a hard-coded relative path), and the reference search ran only over the rest of the tree"
 fix = "after git mv, grep the moved tree itself for its former path before the first gate"
+
+[gotcha.1738]
+area = "layout moves"
+symptom = "rewriting a Go import path from example/... to tests/fixtures/example/... left the import block unsorted, so gofmt -l reported four test files although only the path text changed"
+fix = "run gofmt -w on every Go file whose imports a move rewrites, before the build gate"

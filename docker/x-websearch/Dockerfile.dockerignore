@@ -23,7 +23,7 @@ daemon
 docker
 !docker/x-websearch/entrypoint.sh
 engine
-example
+tests/fixtures/example
 hpx
 integration_test
 interchain

@@ -59,7 +59,7 @@ func cw20Initializer(mnemonic string, pointer bool) func(ctx sdk.Context, a *app
 
 func cwIterInitializer(mnemonic string) func(ctx sdk.Context, a *app.App) {
 	return func(ctx sdk.Context, a *app.App) {
-		code, err := os.ReadFile("../../example/cosmwasm/iter/artifacts/iter.wasm")
+		code, err := os.ReadFile("../../tests/fixtures/example/cosmwasm/iter/artifacts/iter.wasm")
 		if err != nil {
 			panic(err)
 		}

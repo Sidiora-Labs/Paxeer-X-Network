@@ -20,9 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/Sidiora-Labs/Paxeer-X-Network/example/contracts/echo"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/example/contracts/sendall"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/example/contracts/simplestorage"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/ante"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/erc1155"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/erc20"
@@ -33,6 +30,9 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
 	node "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/fixtures/example/contracts/echo"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/fixtures/example/contracts/sendall"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/fixtures/example/contracts/simplestorage"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 )
 
@@ -50,7 +50,7 @@ func (tx mockTx) GetGasEstimate() uint64                          { return 0 }
 
 func TestEVMTransaction(t *testing.T) {
 	k, ctx := testkeeper.MockEVMKeeper(t)
-	code, err := os.ReadFile("../../../example/contracts/simplestorage/SimpleStorage.bin")
+	code, err := os.ReadFile("../../../tests/fixtures/example/contracts/simplestorage/SimpleStorage.bin")
 	require.Nil(t, err)
 	bz, err := hex.DecodeString(string(code))
 	require.Nil(t, err)
@@ -194,7 +194,7 @@ func TestEVMTransactionError(t *testing.T) {
 
 func TestEVMTransactionInsufficientGas(t *testing.T) {
 	k, ctx := testkeeper.MockEVMKeeper(t)
-	code, err := os.ReadFile("../../../example/contracts/simplestorage/SimpleStorage.bin")
+	code, err := os.ReadFile("../../../tests/fixtures/example/contracts/simplestorage/SimpleStorage.bin")
 	require.Nil(t, err)
 	bz, err := hex.DecodeString(string(code))
 	require.Nil(t, err)
@@ -242,7 +242,7 @@ func TestEVMTransactionInsufficientGas(t *testing.T) {
 
 func TestEVMDynamicFeeTransaction(t *testing.T) {
 	k, ctx := testkeeper.MockEVMKeeper(t)
-	code, err := os.ReadFile("../../../example/contracts/simplestorage/SimpleStorage.bin")
+	code, err := os.ReadFile("../../../tests/fixtures/example/contracts/simplestorage/SimpleStorage.bin")
 	require.Nil(t, err)
 	bz, err := hex.DecodeString(string(code))
 	require.Nil(t, err)
@@ -300,7 +300,7 @@ func TestEVMPrecompiles(t *testing.T) {
 	k, ctx := testkeeper.MockEVMKeeperWithPrecompiles()
 	params := k.GetParams(ctx)
 	k.SetParams(ctx, params)
-	code, err := os.ReadFile("../../../example/contracts/sendall/SendAll.bin")
+	code, err := os.ReadFile("../../../tests/fixtures/example/contracts/sendall/SendAll.bin")
 	require.Nil(t, err)
 	bz, err := hex.DecodeString(string(code))
 	require.Nil(t, err)
@@ -418,7 +418,7 @@ func TestEVMAssociateTx(t *testing.T) {
 
 func TestEVMBlockEnv(t *testing.T) {
 	k, ctx := testkeeper.MockEVMKeeper(t)
-	code, err := os.ReadFile("../../../example/contracts/echo/Echo.bin")
+	code, err := os.ReadFile("../../../tests/fixtures/example/contracts/echo/Echo.bin")
 	require.Nil(t, err)
 	bz, err := hex.DecodeString(string(code))
 	require.Nil(t, err)
@@ -701,7 +701,7 @@ func TestRegisterPointer(t *testing.T) {
 func TestEvmError(t *testing.T) {
 	k := testkeeper.EVMTestApp.EvmKeeper
 	ctx := testkeeper.EVMTestApp.GetContextForDeliverTx([]byte{})
-	code, err := os.ReadFile("../../../example/contracts/simplestorage/SimpleStorage.bin")
+	code, err := os.ReadFile("../../../tests/fixtures/example/contracts/simplestorage/SimpleStorage.bin")
 	require.Nil(t, err)
 	bz, err := hex.DecodeString(string(code))
 	require.Nil(t, err)

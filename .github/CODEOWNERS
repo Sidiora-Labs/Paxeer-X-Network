@@ -16,7 +16,7 @@ contracts/ @Sidiora-Labs/core
 /daemon/ @Sidiora-Labs/core
 /docker/ @Sidiora-Labs/core
 /engine/ @Sidiora-Labs/core
-/example/ @Sidiora-Labs/core
+/tests/fixtures/example/ @Sidiora-Labs/core
 /hpx/ @Sidiora-Labs/core
 /integration_test/ @Sidiora-Labs/core
 /interchain/ @Sidiora-Labs/core

@@ -490,7 +490,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2]
 title = "Move example to tests/fixtures/example"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 3

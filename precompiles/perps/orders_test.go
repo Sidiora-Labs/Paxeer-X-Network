@@ -36,7 +36,7 @@ import (
 const (
 	ordersNowMs   int64  = 1_700_000_010_000
 	ordersCallGas uint64 = 30_000_000
-	ordersERC20   string = "../../example/contracts/erc20/ERC20"
+	ordersERC20   string = "../../tests/fixtures/example/contracts/erc20/ERC20"
 	// ordersBalanceSlot is the storage slot of the balanceOf mapping of the
 	// example ERC20 (name, symbol and decimals take slots 0 to 2).
 	ordersBalanceSlot int64 = 3

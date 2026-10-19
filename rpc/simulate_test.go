@@ -18,7 +18,6 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/mock"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/example/contracts/simplestorage"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
@@ -32,6 +31,7 @@ import (
 	txtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	receipt "github.com/Sidiora-Labs/Paxeer-X-Network/storage/ledger_db/receipt"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/fixtures/example/contracts/simplestorage"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -90,7 +90,7 @@ func TestEstimateGas(t *testing.T) {
 
 	// contract call
 	_, contractAddr := testkeeper.MockAddressPair()
-	code, err := os.ReadFile("../example/contracts/simplestorage/SimpleStorage.bin")
+	code, err := os.ReadFile("../tests/fixtures/example/contracts/simplestorage/SimpleStorage.bin")
 	require.Nil(t, err)
 	bz, err := hex.DecodeString(string(code))
 	require.Nil(t, err)
@@ -176,7 +176,7 @@ func TestEstimateGasAfterCalls(t *testing.T) {
 	EVMKeeper.BankKeeper().MintCoins(Ctx, types.ModuleName, amts)
 	EVMKeeper.BankKeeper().SendCoinsFromModuleToAccount(Ctx, types.ModuleName, sdk.AccAddress(from[:]), amts)
 	_, contractAddr := testkeeper.MockAddressPair()
-	code, err := os.ReadFile("../example/contracts/simplestorage/SimpleStorage.bin")
+	code, err := os.ReadFile("../tests/fixtures/example/contracts/simplestorage/SimpleStorage.bin")
 	require.Nil(t, err)
 	bz, err := hex.DecodeString(string(code))
 	require.Nil(t, err)
@@ -215,7 +215,7 @@ func TestCreateAccessList(t *testing.T) {
 
 	_, from := testkeeper.MockAddressPair()
 	_, contractAddr := testkeeper.MockAddressPair()
-	code, err := os.ReadFile("../example/contracts/simplestorage/SimpleStorage.bin")
+	code, err := os.ReadFile("../tests/fixtures/example/contracts/simplestorage/SimpleStorage.bin")
 	require.Nil(t, err)
 	bz, err := hex.DecodeString(string(code))
 	require.Nil(t, err)
@@ -251,7 +251,7 @@ func TestCall(t *testing.T) {
 
 	_, from := testkeeper.MockAddressPair()
 	_, contractAddr := testkeeper.MockAddressPair()
-	code, err := os.ReadFile("../example/contracts/simplestorage/SimpleStorage.bin")
+	code, err := os.ReadFile("../tests/fixtures/example/contracts/simplestorage/SimpleStorage.bin")
 	require.Nil(t, err)
 	bz, err := hex.DecodeString(string(code))
 	require.Nil(t, err)

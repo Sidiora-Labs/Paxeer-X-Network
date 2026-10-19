@@ -23,7 +23,7 @@ daemon
 docker
 !docker/gas-station/init.sh
 engine
-example
+tests/fixtures/example
 hpx
 integration_test
 interchain

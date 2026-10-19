@@ -111,7 +111,7 @@ func newPositionsEnv(t *testing.T, walletA int64) *positionsEnv {
 	require.NoError(t, err)
 	ctx.KVStore(pfKey).Set(pricefeedtypes.AggregateKey(0), aggregate)
 
-	erc20ABI := positionsReadABI(t, "../../example/contracts/erc20/ERC20.abi")
+	erc20ABI := positionsReadABI(t, "../../tests/fixtures/example/contracts/erc20/ERC20.abi")
 	perpsABI, err := perpsabi.ABI()
 	require.NoError(t, err)
 	params, err := k.GetParams(ctx)
@@ -119,7 +119,7 @@ func newPositionsEnv(t *testing.T, walletA int64) *positionsEnv {
 	e := &positionsEnv{t: t, k: k, perpsKey: perpsKey, perpsABI: perpsABI, erc20ABI: erc20ABI,
 		usdl: params.CollateralToken}
 
-	creation, err := os.ReadFile("../../example/contracts/erc20/ERC20.bin")
+	creation, err := os.ReadFile("../../tests/fixtures/example/contracts/erc20/ERC20.bin")
 	require.NoError(t, err)
 	deployer := common.HexToAddress("0x00000000000000000000000000000000000DE910")
 	nonce := app.EvmKeeper.GetNonce(ctx, deployer)
