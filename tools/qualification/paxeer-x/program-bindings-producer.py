@@ -288,7 +288,7 @@ def build(args):
     commands = [cargo + ['test', '--locked', '--manifest-path', str(ROOT / 'programs/Cargo.toml'),
                          '-p', 'layerx-program-sdk', '--lib', '--test', 'bindgen_conformance',
                          '--no-run', '--message-format=json'],
-                cargo + ['build', '--locked', '--manifest-path', str(ROOT / 'platform/Cargo.toml'),
+                cargo + ['build', '--locked', '--manifest-path', str(ROOT / 'tools/platform/Cargo.toml'),
                          '-p', 'layerx-platform-cli', '--bin', 'layerx', '--message-format=json']]
     for index, command in enumerate(commands):
         item = run(command, directory / f'build-{index}.log', environment, ROOT, deadline)

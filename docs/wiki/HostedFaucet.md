@@ -22,10 +22,10 @@ The same grant is also reachable without curl. `POST
 /v1/faucet/service-claims` is a service route the public gateway proxies
 as the JSON-RPC method `lx_requestFunds`
 (`platform/hosted/gateway/src/rpc_faucet.rs`), and that method backs the
-`layerx faucet` command (`platform/cli/src/main.rs:66`;
-`platform/cli/src/faucet.rs`), the SDK call `RpcClient::request_funds`
+`layerx faucet` command (`tools/platform/cli/src/main.rs:66`;
+`tools/platform/cli/src/faucet.rs`), the SDK call `RpcClient::request_funds`
 (`services/agent/crates/layerx-sdk/src/rpc.rs`), and the served MCP tool
-`faucet.request` (`platform/cli/src/toolset.rs:38-44`). See
+`faucet.request` (`tools/platform/cli/src/toolset.rs:38-44`). See
 [Public JSON-RPC](PublicRpc.md) and [CLI](Cli.md).
 
 The image is `ghcr.io/sidiora-labs/layerx-faucet:0.1.0`, user

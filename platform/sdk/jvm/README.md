@@ -33,7 +33,7 @@ domain of Paxeer X Network. Hosted documentation lives at
 mvn -f platform/sdk/jvm/pom.xml install
 ```
 
-[`platform/release/registries.kvx`](../../release/registries.kvx) registers the
+[`tools/platform/release/registries.kvx`](../../../tools/platform/release/registries.kvx) registers the
 `com.sidiora.layerx:layerx-sdk` coordinate for Maven Central. Once installed
 locally, depend on it as:
 

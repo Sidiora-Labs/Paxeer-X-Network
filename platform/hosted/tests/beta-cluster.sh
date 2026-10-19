@@ -2015,7 +2015,7 @@ registry_deployment_produce() (
     local request=${2:-"$WORK_DIR/human-evidence-input/program-deployment.lxa"}
     if [ "$#" -eq 0 ]; then
         CARGO_TARGET_DIR="$WORK_DIR/program-target" make -C "$REPO_ROOT" programs-reference-escrow >&2
-        CARGO_TARGET_DIR="$WORK_DIR/smoke-target" cargo build --manifest-path "$REPO_ROOT/platform/Cargo.toml" \
+        CARGO_TARGET_DIR="$WORK_DIR/smoke-target" cargo build --manifest-path "$REPO_ROOT/tools/platform/Cargo.toml" \
             -p layerx-platform-cli --bin layerx --example hosted-send >&2
     fi
     [ -s "$artifact" ] || fail "the program artifact $artifact was not built"
@@ -3299,7 +3299,7 @@ boundary_checks() {
         # shellcheck disable=SC1090
         . "$ENV_FILE"
         set +a
-        : "${LAYERX_RECEIPT_VERIFY_BIN:=$REPO_ROOT/platform/target/release/layerx}"
+        : "${LAYERX_RECEIPT_VERIFY_BIN:=$REPO_ROOT/tools/platform/target/release/layerx}"
         export LAYERX_RECEIPT_VERIFY_BIN
         sh "$REPO_ROOT/platform/hosted/gateway/tests/hosted-boundary.sh"
     )

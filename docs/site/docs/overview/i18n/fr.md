@@ -21,7 +21,7 @@ Ce dépôt est le monorepo Sidiora Labs pour LayerX Network et le Paxeer Network
 
 ## Essayer le réseau
 
-Le parcours complet est [`docs/wiki/Quickstart.md`](../quickstart.md) : installer le CLI `layerx` depuis `platform/cli`, démarrer le cluster, sourcer `build/beta-cluster/env`, puis créer un identifiant, réclamer au faucet, soumettre une activité, vérifier le reçu, et déployer un programme.
+Le parcours complet est [`docs/wiki/Quickstart.md`](../quickstart.md) : installer le CLI `layerx` depuis `tools/platform/cli`, démarrer le cluster, sourcer `build/beta-cluster/env`, puis créer un identifiant, réclamer au faucet, soumettre une activité, vérifier le reçu, et déployer un programme.
 
 ```sh
 layerx key create quickstart
@@ -127,7 +127,7 @@ make paxeer-ci
 | .NET | `platform/sdk/dotnet` |
 | Swift | `platform/sdk/swift` |
 
-`layerx-agentd` est `services/agent/crates/layerx-agentd`. Le serveur MCP est `services/agent/crates/layerx-mcp`. Le CLI développeur dans `platform/cli` installe ces transports avec `layerx install mcp` et `layerx install a2a`.
+`layerx-agentd` est `services/agent/crates/layerx-agentd`. Le serveur MCP est `services/agent/crates/layerx-mcp`. Le CLI développeur dans `tools/platform/cli` installe ces transports avec `layerx install mcp` et `layerx install a2a`.
 
 ## Contribuer
 

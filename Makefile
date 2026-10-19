@@ -3298,6 +3298,7 @@ workspace-install:
 	cargo fetch --manifest-path services/agent/Cargo.toml --locked
 	cargo fetch --manifest-path human/Cargo.toml --locked
 	cargo fetch --manifest-path platform/Cargo.toml --locked
+	cargo fetch --manifest-path tools/platform/Cargo.toml --locked
 	cd programs && cargo fetch --locked
 	cargo fetch --manifest-path services/interop/Cargo.toml --locked
 	$(MAKE) platform-js-install programs-js-install

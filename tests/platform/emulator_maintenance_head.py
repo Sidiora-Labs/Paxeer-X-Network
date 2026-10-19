@@ -10,9 +10,9 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 TEST = "maintenance_head_tests::retained_maintenance_head_is_verified_and_survives_restart"
 SOURCES = {
-    "platform/emulator/src/main.rs",
-    "platform/emulator/core/emulator_core.c",
-    "platform/emulator/core/emulator_core.h",
+    "tools/platform/emulator/src/main.rs",
+    "tools/platform/emulator/core/emulator_core.c",
+    "tools/platform/emulator/core/emulator_core.h",
     "tests/platform/emulator_maintenance_head.py",
 }
 CASES = {

@@ -18,9 +18,9 @@ OUT = Path(os.environ.get('PAXEER_X_INSTALL_ARTIFACTS',
 CARGO = os.environ.get('PAXEER_X_CARGO', '/root/.cargo/bin/cargo')
 TARGET = Path(os.environ.get('CARGO_TARGET_DIR', '/root/lx-target/platform-cli-install'))
 PACKAGE = 'layerx-platform-cli'
-SOURCES = (b'platform/', b'services/agent/crates/', b'programs/', b'tools/paxeer-x/gates/104.17.6.sh')
-JOURNEY = ROOT / 'platform/cli/tests/install-journey.sh'
-BOOTSTRAP = ROOT / 'platform/cli/tests/clean-bootstrap.sh'
+SOURCES = (b'platform/', b'tools/platform/', b'services/agent/crates/', b'programs/', b'tools/paxeer-x/gates/104.17.6.sh')
+JOURNEY = ROOT / 'tools/platform/cli/tests/install-journey.sh'
+BOOTSTRAP = ROOT / 'tools/platform/cli/tests/clean-bootstrap.sh'
 
 
 class Missing(Exception):
@@ -61,7 +61,7 @@ def run(argv, label, timeout=900, env=None, cwd=None, expect=0):
 
 
 def compile_artifacts(arguments, label, env):
-    raw = run([CARGO, *arguments, '--offline', '--locked', '--manifest-path', 'platform/Cargo.toml',
+    raw = run([CARGO, *arguments, '--offline', '--locked', '--manifest-path', 'tools/platform/Cargo.toml',
                '-p', PACKAGE, '--message-format=json'], label, timeout=3600, env=env)
     rows = []
     for line in raw.splitlines():
@@ -133,7 +133,7 @@ def verify():
     for script in (JOURNEY, BOOTSTRAP):
         run(['bash', '-n', str(script)], 'syntax-' + script.name)
         count += 1
-    cli = ROOT / 'platform/cli'
+    cli = ROOT / 'tools/platform/cli'
     environment = dict(os.environ, CARGO_MANIFEST_DIR=str(cli))
     for name in ('LAYERX_CONFIG', 'LAYERX_INSTALL_ROOT', 'LAYERX_CREDENTIAL_STORE', 'LAYERX_GATEWAY_KEY_ID'):
         environment.pop(name, None)

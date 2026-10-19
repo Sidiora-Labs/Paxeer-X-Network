@@ -118,7 +118,7 @@ make paxeer-ci
 | .NET | `platform/sdk/dotnet` |
 | Swift | `platform/sdk/swift` |
 
-`layerx-agentd` 位于 `services/agent/crates/layerx-agentd`。MCP 服务器位于 `services/agent/crates/layerx-mcp`。`platform/cli` 中的开发者 CLI 通过 `layerx install mcp` 和 `layerx install a2a` 安装这些传输方式。
+`layerx-agentd` 位于 `services/agent/crates/layerx-agentd`。MCP 服务器位于 `services/agent/crates/layerx-mcp`。`tools/platform/cli` 中的开发者 CLI 通过 `layerx install mcp` 和 `layerx install a2a` 安装这些传输方式。
 
 ## 架构
 

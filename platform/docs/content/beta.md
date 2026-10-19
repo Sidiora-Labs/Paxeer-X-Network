@@ -96,7 +96,7 @@ no public faucet or control surface on the mainnet-beta.
 | interop | x402, AP2, UCP, Visa TAP, bridge relayer, gas station and web search | functional | runtime_proven | source_present | services/interop/crates |
 | agent | layerx-agentd, MCP surface | functional | runtime_proven | source_present | services/agent/crates |
 | sdks | TypeScript, Python, Rust, Go, JVM, Swift and .NET SDKs | functional | runtime_proven | source_present | services/agent/sdk, services/agent/crates/layerx-sdk, platform/sdk |
-| platform-cli | CLI and local emulator | functional | runtime_proven | source_present | platform/cli, platform/emulator |
+| platform-cli | CLI and local emulator | functional | runtime_proven | source_present | tools/platform/cli, tools/platform/emulator |
 | programs | Programs runtime: deploy, paid call, restart | functional | runtime_proven | source_present | programs/crates |
 | docs-site | documentation site and executable samples | functional | runtime_proven | source_present | platform/docs |
 

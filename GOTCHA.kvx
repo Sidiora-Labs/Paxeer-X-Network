@@ -8311,3 +8311,8 @@ fix = "resolve each ../ chain against every plausible base in the pre-move tree 
 area = "layout moves"
 symptom = "a root path built from a variable ($REPO_ROOT/interop, root + \"/interop, a fixture tree $fx/interop that mirrors the repository) and a Path join of separate segments (ROOT / \"interop\") are preceded by a letter or are slash-less, so neither the root-anchored search nor layout-check.sh sees them and they keep the old path after a move"
 fix = "after the lexical rewrite, search for variable-prefixed and segment-joined forms of the moved name, rewrite those whose variable is the repository root or a fixture copy of it, and leave runtime directories that only share the name"
+
+[gotcha.1748]
+area = "layout moves"
+symptom = "moving crates out of a Cargo workspace into their own leaves every caller that selects them by package name against the old manifest (-p layerx-platform-cli, --features layerx-platform-cli/test-credential-store, a manifest variable built from segments) and every default binary path under the old workspace target (platform/target/release/layerx) pointing at the old workspace, and none of them names the moved directory, so neither a path search nor layout-check.sh finds them"
+fix = "after the path rewrite, search for the moved package names and for the old workspace target paths of their binaries, point each at the new manifest and target, and fetch and lint the new workspace wherever the old one is fetched and linted"

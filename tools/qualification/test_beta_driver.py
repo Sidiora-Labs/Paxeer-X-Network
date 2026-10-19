@@ -18,7 +18,7 @@ from tools.qualification.release_runner import EVIDENCE_SPECS, SCHEMA
 
 ROOT = Path(__file__).resolve().parents[2]
 DRIVER = ROOT / "tools" / "qualification" / "beta_driver.py"
-PLATFORM_MANIFEST = ROOT / "platform" / "Cargo.toml"
+PLATFORM_TOOLS_MANIFEST = ROOT / "tools" / "platform" / "Cargo.toml"
 NETWORK_ID = "402"
 SOURCE_IDENTITY = "beta-driver-test-source-identity"
 DRIVER_TIMEOUT_SECONDS = 3600.0
@@ -61,7 +61,7 @@ class LocalEmulatorStack:
         self.work = work
         self.home = work / "home"
         self.home.mkdir()
-        self.target = Path(os.environ.get("CARGO_TARGET_DIR", str(ROOT / "platform" / "target")))
+        self.target = Path(os.environ.get("CARGO_TARGET_DIR", str(ROOT / "tools" / "platform" / "target")))
         self.binary = self.target / "debug" / "layerx"
         self.port = free_port()
         self.url = f"http://127.0.0.1:{self.port}"
@@ -88,7 +88,7 @@ class LocalEmulatorStack:
                 "build",
                 "--offline",
                 "--manifest-path",
-                str(PLATFORM_MANIFEST),
+                str(PLATFORM_TOOLS_MANIFEST),
                 "--locked",
                 "-p",
                 "layerx-platform-cli",

@@ -40,7 +40,7 @@ Program CALL terminal verification for the generated clients is
 
 ## CLI and RPC
 
-The developer CLI in `platform/cli` is [CLI](../platform/cli.md). Public
+The developer CLI in `tools/platform/cli` is [CLI](../platform/cli.md). Public
 JSON-RPC methods are [Public JSON-RPC](../platform/gateway-rpc.md).
 `layerx --rpc` and `--gateway-credential` apply to `wallet`, `token`, and
 `program`.

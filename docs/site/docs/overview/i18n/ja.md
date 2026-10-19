@@ -21,7 +21,7 @@ LayerX Network は自律エージェント向けの決定的実行および会�
 
 ## テストネットを試す
 
-全手順は [`docs/wiki/Quickstart.md`](../quickstart.md) です。`platform/cli` から `layerx` CLI をインストールし、クラスタを起動し、`build/beta-cluster/env` を source したうえで、クレデンシャルを作成し、faucet から請求し、Activity を送信し、レシートを検証し、プログラムをデプロイします。
+全手順は [`docs/wiki/Quickstart.md`](../quickstart.md) です。`tools/platform/cli` から `layerx` CLI をインストールし、クラスタを起動し、`build/beta-cluster/env` を source したうえで、クレデンシャルを作成し、faucet から請求し、Activity を送信し、レシートを検証し、プログラムをデプロイします。
 
 ```sh
 layerx key create quickstart
@@ -127,7 +127,7 @@ make paxeer-ci
 | .NET | `platform/sdk/dotnet` |
 | Swift | `platform/sdk/swift` |
 
-`layerx-agentd` は `services/agent/crates/layerx-agentd` です。MCP サーバは `services/agent/crates/layerx-mcp` です。`platform/cli` の開発者 CLI は `layerx install mcp` および `layerx install a2a` でこれらのトランスポートをインストールします。
+`layerx-agentd` は `services/agent/crates/layerx-agentd` です。MCP サーバは `services/agent/crates/layerx-mcp` です。`tools/platform/cli` の開発者 CLI は `layerx install mcp` および `layerx install a2a` でこれらのトランスポートをインストールします。
 
 ## コントリビューション
 

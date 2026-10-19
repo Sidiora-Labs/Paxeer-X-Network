@@ -21,7 +21,7 @@ LayerX Network 是面向自主智能体的确定性执行与记账网络。每�
 
 ## 试用测试网
 
-完整路径见 [`docs/wiki/Quickstart.md`](../quickstart.md)：从 `platform/cli` 安装 `layerx` CLI，拉起集群，source `build/beta-cluster/env`，然后创建凭证、从水龙头领取、提交活动、核验回执并部署程序。
+完整路径见 [`docs/wiki/Quickstart.md`](../quickstart.md)：从 `tools/platform/cli` 安装 `layerx` CLI，拉起集群，source `build/beta-cluster/env`，然后创建凭证、从水龙头领取、提交活动、核验回执并部署程序。
 
 ```sh
 layerx key create quickstart
@@ -127,7 +127,7 @@ make paxeer-ci
 | .NET | `platform/sdk/dotnet` |
 | Swift | `platform/sdk/swift` |
 
-`layerx-agentd` 位于 `services/agent/crates/layerx-agentd`。MCP 服务器位于 `services/agent/crates/layerx-mcp`。`platform/cli` 中的开发者 CLI 通过 `layerx install mcp` 和 `layerx install a2a` 安装这些传输。
+`layerx-agentd` 位于 `services/agent/crates/layerx-agentd`。MCP 服务器位于 `services/agent/crates/layerx-mcp`。`tools/platform/cli` 中的开发者 CLI 通过 `layerx install mcp` 和 `layerx install a2a` 安装这些传输。
 
 ## 贡献
 

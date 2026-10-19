@@ -2084,7 +2084,7 @@ unset CHECK_LIVE_TEST_MIRROR_REQUEST
 # POST to the gateway, answers /readyz from its mode file, the x402 routes with
 # the shapes of layerx-interop-service, and settles only the payload the build
 # returned, for the activity the encoder signed. The encoder stand-in answers
-# the signing request of platform/cli/examples/hosted-send.rs only for the
+# the signing request of tools/platform/cli/examples/hosted-send.rs only for the
 # payer's seed and the kernel asset.
 mkdir -p "$work/interop" "$fx/platform/hosted/node"
 cp "$root/platform/hosted/node/bootstrap.sh" "$fx/platform/hosted/node/"

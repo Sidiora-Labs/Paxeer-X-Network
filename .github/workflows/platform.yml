@@ -61,7 +61,7 @@ jobs:
           distribution: temurin
           java-version: "21"
       - name: Fetch locked platform workspace crates
-        run: cargo fetch --locked --manifest-path platform/Cargo.toml
+        run: cargo fetch --locked --manifest-path platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml
       - name: Install platform sample and policy dependencies
         run: make platform-dependencies-install
       - name: Install private Secret Service dependencies for CLI tests
@@ -556,7 +556,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Fetch locked platform workspace crates
-        run: cargo fetch --locked --manifest-path platform/Cargo.toml
+        run: cargo fetch --locked --manifest-path platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml
       - name: Verify the release manifest and the release workflow agree
         run: make platform-release-check
       - name: Verify the generated SDKs against the schemas
@@ -1533,7 +1533,7 @@ jobs:
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.91.1 --profile minimal && rustup default 1.91.1
       - name: Fetch locked platform workspace crates
-        run: cargo fetch --locked --manifest-path platform/Cargo.toml
+        run: cargo fetch --locked --manifest-path platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml
       - name: Install Node.js for actual published quickstart imports
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
@@ -1568,7 +1568,7 @@ jobs:
           echo "rollback identity: ${previous:-none}"
       - name: Emit the source-bound artifact manifest from the retained publication bundles
         run: |
-          cargo run --offline --manifest-path platform/Cargo.toml --locked -p layerx-platform-release -- manifest \
+          cargo run --offline --manifest-path tools/platform/Cargo.toml --locked -p layerx-platform-release -- manifest \
             --release-dir build/release \
             --output build/release/artifact-manifest.json \
             --rollback-version "${LAYERX_RELEASE_ROLLBACK_VERSION:-none}"
@@ -1576,7 +1576,7 @@ jobs:
       - name: Fetch every published artifact from its registry and verify its bytes against the manifest
         if: startsWith(github.ref, 'refs/tags/sdk-v')
         run: |
-          cargo run --offline --manifest-path platform/Cargo.toml --locked -p layerx-platform-release -- verify \
+          cargo run --offline --manifest-path tools/platform/Cargo.toml --locked -p layerx-platform-release -- verify \
             --manifest build/release/artifact-manifest.json \
             --fetch build/release/verification \
             --source-revision "$GITHUB_SHA"
@@ -1649,7 +1649,7 @@ jobs:
           rustup toolchain install 1.91.1 --profile minimal --target wasm32-unknown-unknown &&
           sudo apt-get update && sudo apt-get install --yes dbus-x11 gnome-keyring jq python3-venv python3-cryptography
       - name: Build the receipt-verifying CLI
-        run: cargo build --locked --release --manifest-path platform/Cargo.toml -p layerx-platform-cli --bin layerx --example hosted-send
+        run: cargo build --locked --release --manifest-path tools/platform/Cargo.toml -p layerx-platform-cli --bin layerx --example hosted-send
       - name: Build the real escrow guest and prepare independent verification
         run: |
           cargo build --locked --release --target wasm32-unknown-unknown --manifest-path programs/sdk/rust/examples/escrow/Cargo.toml
@@ -1692,15 +1692,15 @@ jobs:
           LAYERX_TEST_DESTINATION_AUTH_TOKEN_FILE: ${{ runner.temp }}/layerx-destination-token
           LAYERX_TEST_SOURCE_KEY_FILE: ${{ runner.temp }}/layerx-source-key
           LAYERX_TEST_SEQUENCER_PUBLIC_KEY: ${{ vars.LAYERX_SCHEDULED_SEQUENCER_PUBLIC_KEY }}
-          LAYERX_TEST_SEND_ENCODER: platform/target/release/examples/hosted-send
+          LAYERX_TEST_SEND_ENCODER: tools/platform/target/release/examples/hosted-send
           LAYERX_TEST_ESCROW_WASM: programs/sdk/rust/examples/escrow/target/wasm32-unknown-unknown/release/layerx_reference_escrow.wasm
           LAYERX_TEST_ASSET: ${{ vars.LAYERX_SCHEDULED_ASSET }}
           LAYERX_TEST_AMOUNT: "1"
-          LAYERX_BIN: platform/target/release/layerx
+          LAYERX_BIN: tools/platform/target/release/layerx
         run: make platform-hosted-smoke
       - name: Install MCP and A2A runtimes and complete real scoped payments
         env:
-          LAYERX_BIN: platform/target/release/layerx
+          LAYERX_BIN: tools/platform/target/release/layerx
           LAYERX_GATEWAY_URL: ${{ vars.LAYERX_SCHEDULED_GATEWAY_URL }}
           LAYERX_NETWORK_ID: ${{ vars.LAYERX_AGENT_INSTALL_NETWORK_ID }}
           LAYERX_IDENTITY_TOKEN: ${{ secrets.LAYERX_AGENT_INSTALL_IDENTITY_TOKEN }}
@@ -1717,7 +1717,7 @@ jobs:
       - name: Exercise the four reference applications against hosted testnet
         if: ${{ vars.LAYERX_REFERENCE_APPS_ENABLED == 'true' }}
         env:
-          LAYERX_BIN: platform/target/release/layerx
+          LAYERX_BIN: tools/platform/target/release/layerx
           LAYERX_TESTNET_TOKEN: ${{ secrets.LAYERX_SCHEDULED_TESTNET_TOKEN }}
           LAYERX_TESTNET_SOURCE: ${{ vars.LAYERX_SCHEDULED_SOURCE_DID }}
           LAYERX_TESTNET_ASSET: ${{ vars.LAYERX_SCHEDULED_ASSET }}

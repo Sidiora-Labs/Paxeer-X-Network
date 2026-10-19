@@ -3395,7 +3395,7 @@ PY
 # payer's transfer to agent:<CHECK_LIVE_INTEROP_PAYEE_DID>:main of
 # CHECK_LIVE_INTEROP_AMOUNT (default 1) base units of the kernel asset of
 # platform/hosted/node/bootstrap.sh signed by CHECK_LIVE_INTEROP_ENCODER (the
-# built hosted-send example of platform/cli) from the account state the router
+# built hosted-send example of tools/platform/cli) from the account state the router
 # at CHECK_LIVE_INTEROP_RPC (default https://api-mainnet-beta.paxeer.network/rpc)
 # reports, the buyer's PAYMENT-SIGNATURE and the settlement whose
 # PAYMENT-RESPONSE carries success, the lxp:<activity id> transaction and the

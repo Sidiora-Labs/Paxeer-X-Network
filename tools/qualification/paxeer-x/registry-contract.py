@@ -455,8 +455,8 @@ def discovery_artifacts(candidate_digest):
         'platform/hosted/registry/src/node_state.rs',
         'platform/hosted/registry/src/head_attestation.rs',
         'platform/hosted/registry/src/program_state.rs',
-        'platform/emulator/core/emulator_core.c',
-        'platform/emulator/src/main.rs',
+        'tools/platform/emulator/core/emulator_core.c',
+        'tools/platform/emulator/src/main.rs',
         'platform/hosted/registry/tests/native_deployment.rs',
         'tools/qualification/paxeer-x/registry-contract.py',
         'cmd/layerxd/lxp_daemon_protocol.c',
@@ -1103,9 +1103,9 @@ def conformance_artifacts(candidate_digest):
             and value['candidate_manifest_sha256'] == candidate_digest, 'conformance candidate binding')
     require(value['source_revision'] == subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
             and not subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT), 'clean immutable conformance candidate')
-    paths = {'platform/emulator/tests/conformance.sh', 'platform/emulator/tests/gateway.rs',
-             'platform/emulator/tests/authority.rs', 'tools/qualification/paxeer-x/registry-contract.py',
-             'platform/emulator/src/main.rs', 'platform/emulator/core/emulator_core.c',
+    paths = {'tools/platform/emulator/tests/conformance.sh', 'tools/platform/emulator/tests/gateway.rs',
+             'tools/platform/emulator/tests/authority.rs', 'tools/qualification/paxeer-x/registry-contract.py',
+             'tools/platform/emulator/src/main.rs', 'tools/platform/emulator/core/emulator_core.c',
              'platform/hosted/agent-boundary/src/main.rs'}
     require(isinstance(value['source_files'], dict) and set(value['source_files']) == paths, 'exact conformance source inventory')
     for name, digest in value['source_files'].items():

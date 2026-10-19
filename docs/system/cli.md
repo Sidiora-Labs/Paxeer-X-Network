@@ -2,7 +2,7 @@
 
 # CLI commands
 
-Source: the clap `Subcommand` definitions in `platform/cli/src`. Binary name `layerx`; run `layerx <command> --help` for flags.
+Source: the clap `Subcommand` definitions in `tools/platform/cli/src`. Binary name `layerx`; run `layerx <command> --help` for flags.
 
 - `layerx wallet`: Manage native wallet keys, accounts, transfers, and receipts.
   - `layerx wallet create`: Generate a key, register its identity, and open its main account.

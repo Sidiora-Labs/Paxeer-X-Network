@@ -327,7 +327,7 @@ def kebab(name):
 
 
 def gen_cli():
-    cli = ROOT / "platform/cli/src"
+    cli = ROOT / "tools/platform/cli/src"
     enums = {}
     variant_re = re.compile(r"((?:[ \t]*(?:///[^\n]*|#\[[^\n]*\])\n)*)[ \t]{4}([A-Z]\w*)\s*(\(([\w:]+)\)|\{|,)")
     for src in sorted(cli.rglob("*.rs")):

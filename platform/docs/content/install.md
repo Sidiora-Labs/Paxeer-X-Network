@@ -7,7 +7,7 @@ This page describes the install path at the source revision it is built from. Th
 ## Install the command line tool
 
 ```text
-cargo install --path platform/cli
+cargo install --path tools/platform/cli
 ```
 
 The binary is called `layerx`. Every subcommand accepts `--json` and will then emit exactly one JSON object, which is what you want in a script.

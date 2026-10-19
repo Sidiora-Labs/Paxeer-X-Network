@@ -83,7 +83,7 @@ The MCP server is [`crates/layerx-mcp`](crates/layerx-mcp/README.md): one
 tenant, one scope set, daemon-only routing. The interop MCP/A2A transports live
 in [`services/interop/`](../../services/interop/README.md), and the `layerx install mcp`,
 `layerx install a2a`, `layerx mcp serve` and `layerx a2a serve` commands live in
-[`platform/cli/`](../../platform/cli/README.md).
+[`tools/platform/cli/`](../../tools/platform/cli/README.md).
 
 Wallet, token and grant tools use the same daemon prepare, disclose, sign,
 submit and track path as other writes. Developer path:

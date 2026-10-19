@@ -21,7 +21,7 @@ Dieses Repository ist das Monorepo von Sidiora Labs für LayerX Network und das 
 
 ## Schnellstart
 
-Der vollständige Pfad steht in [`docs/wiki/Quickstart.md`](../quickstart.md): die `layerx` CLI aus `platform/cli` installieren, den Cluster hochfahren, `build/beta-cluster/env` sourcen, dann ein Credential anlegen, vom Faucet beanspruchen, eine Activity einreichen, die Quittung prüfen und ein Programm deployen.
+Der vollständige Pfad steht in [`docs/wiki/Quickstart.md`](../quickstart.md): die `layerx` CLI aus `tools/platform/cli` installieren, den Cluster hochfahren, `build/beta-cluster/env` sourcen, dann ein Credential anlegen, vom Faucet beanspruchen, eine Activity einreichen, die Quittung prüfen und ein Programm deployen.
 
 ```sh
 layerx key create quickstart
@@ -127,7 +127,7 @@ make paxeer-ci
 | .NET | `platform/sdk/dotnet` |
 | Swift | `platform/sdk/swift` |
 
-`layerx-agentd` ist `services/agent/crates/layerx-agentd`. Der MCP-Server ist `services/agent/crates/layerx-mcp`. Die Entwickler-CLI in `platform/cli` installiert diese Transports mit `layerx install mcp` und `layerx install a2a`.
+`layerx-agentd` ist `services/agent/crates/layerx-agentd`. Der MCP-Server ist `services/agent/crates/layerx-mcp`. Die Entwickler-CLI in `tools/platform/cli` installiert diese Transports mit `layerx install mcp` und `layerx install a2a`.
 
 ## Mitwirken
 

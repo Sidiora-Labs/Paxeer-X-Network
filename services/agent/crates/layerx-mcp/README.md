@@ -15,7 +15,7 @@ This crate lives in the agent workspace (`services/agent/`). Related surfaces:
 | This server | `services/agent/crates/layerx-mcp` |
 | Daemon | `services/agent/crates/layerx-agentd` |
 | MCP / A2A as interop transports | [`services/interop/`](../../../../services/interop/README.md) |
-| `layerx install mcp` / `layerx mcp serve` | [`platform/cli/`](../../../../platform/cli/README.md) |
+| `layerx install mcp` / `layerx mcp serve` | [`tools/platform/cli/`](../../../../tools/platform/cli/README.md) |
 
 ## Tools in this crate
 
@@ -78,7 +78,7 @@ every call through `src/stdio.rs`, so no signing seed and no gateway credential
 is read on the served path. The CLI's gateway-bound `layerx a2a serve` surface
 is a different catalogue (`receipt.get`, `activity.submit` and
 `faucet.request` against the hosted gateway, `SERVED` in
-`platform/cli/src/toolset.rs`); it shares only the `faucet.request` definition,
+`tools/platform/cli/src/toolset.rs`); it shares only the `faucet.request` definition,
 the `FAUCET_REQUEST` constant in `src/server.rs`, so the two surfaces cannot
 drift apart on that tool's name, kind, scope, mutation or evidence.
 

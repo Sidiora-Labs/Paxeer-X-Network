@@ -29,7 +29,7 @@ claim vocabulary.
 | ETH / Solana migration | `services/interop/crates/layerx-migrate` | See `services/interop/crates/layerx-migrate/OPERATIONS.md` |
 
 There is no standalone `layerx-a2a` crate. A2A is a transport on the gateway
-and on x402, plus the CLI installer in `platform/cli`.
+and on x402, plus the CLI installer in `tools/platform/cli`.
 
 ## Honesty rule
 

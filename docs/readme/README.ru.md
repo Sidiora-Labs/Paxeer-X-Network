@@ -118,7 +118,7 @@ make paxeer-ci
 | .NET | `platform/sdk/dotnet` |
 | Swift | `platform/sdk/swift` |
 
-`layerx-agentd` находится в `services/agent/crates/layerx-agentd`. MCP-сервер находится в `services/agent/crates/layerx-mcp`. CLI для разработчиков из `platform/cli` устанавливает эти транспорты командами `layerx install mcp` и `layerx install a2a`.
+`layerx-agentd` находится в `services/agent/crates/layerx-agentd`. MCP-сервер находится в `services/agent/crates/layerx-mcp`. CLI для разработчиков из `tools/platform/cli` устанавливает эти транспорты командами `layerx install mcp` и `layerx install a2a`.
 
 ## Архитектура
 

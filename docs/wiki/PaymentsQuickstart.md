@@ -46,7 +46,7 @@ Build the hosted CLI and put `platform/target/debug` on `PATH`. For a
 public identity, create an ordinary key and select it:
 
 ```sh
-cargo build --manifest-path platform/cli/Cargo.toml
+cargo build --manifest-path tools/platform/cli/Cargo.toml
 export PATH="$PWD/platform/target/debug:$PATH"
 layerx key create alice
 layerx key default alice
@@ -55,7 +55,7 @@ layerx wallet list
 
 The OS keyring is the default. A headless host must configure the encrypted
 file store before creating the wallet; see
-[headless credential storage](../../platform/cli/README.md#headless-credential-storage).
+[headless credential storage](../../tools/platform/cli/README.md#headless-credential-storage).
 `layerx wallet create` is emulator-only: it generates a key, registers the DID,
 and opens the native main account in that emulator. Against a public endpoint
 it returns `wallet_registration_unavailable` and generates no key. `wallet
@@ -280,6 +280,6 @@ The payment MCP catalogue has 20 tools
 and `grant.draw`; they use the daemon's ordinary prepare, disclose, sign,
 submit, and track stages. Burn, account-open, Asset info/list, fee estimate,
 receipt wait, and live watch are not in the catalogue and are not CLI commands
-in this tree either (`platform/cli/src/main.rs:44-84`).
+in this tree either (`tools/platform/cli/src/main.rs:44-84`).
 
 [Home](Home.md)

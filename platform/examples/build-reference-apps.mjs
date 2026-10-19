@@ -29,7 +29,7 @@ async function command(executable, arguments_, cwd = root) {
 }
 
 await command("npm", ["run", "build", "--workspace", "@sidiora/layerx-sdk", "--workspace", "@sidiora/layerx-seller-middleware", "--workspace", "@sidiora/layerx-buyer-middleware", "--workspace", "@sidiora/layerx-merchant-middleware"]);
-const compiled = await command(process.env.CARGO ?? "cargo", ["build", "--locked", "--manifest-path", "platform/Cargo.toml", "-p", "layerx-platform-cli", "--bin", "layerx", "--message-format=json"]);
+const compiled = await command(process.env.CARGO ?? "cargo", ["build", "--locked", "--manifest-path", "tools/platform/Cargo.toml", "-p", "layerx-platform-cli", "--bin", "layerx", "--message-format=json"]);
 const executables = compiled.split("\n").filter((line) => line.startsWith("{")).map((line) => JSON.parse(line))
   .filter((item) => item.reason === "compiler-artifact" && item.target?.name === "layerx" && typeof item.executable === "string");
 if (executables.length !== 1) throw new Error("compiler_omitted_unique_reference_cli");

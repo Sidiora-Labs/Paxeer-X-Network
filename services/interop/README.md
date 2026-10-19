@@ -20,14 +20,14 @@ This is the Rust workspace in `services/interop/` (members listed in [`Cargo.tom
 | Web search sidecar | `x-websearch`: paid `/search` and `/fetch`, free `/health` | `crates/x-websearch`; deploy files in `deploy/x-websearch/` and `deploy/search-front/` |
 | Other adapters | AP2, UCP, Visa TAP, fiat rails | `crates/layerx-ap2`, `crates/layerx-ucp`, `crates/layerx-visa-tap`, `crates/layerx-fiat` |
 
-There is no standalone `layerx-a2a` crate. A2A is a transport on the gateway and on x402, plus the CLI installer in `platform/cli/`.
+There is no standalone `layerx-a2a` crate. A2A is a transport on the gateway and on x402, plus the CLI installer in `tools/platform/cli/`.
 
 ## Two MCP surfaces
 
 | Surface | Role |
 | --- | --- |
 | `services/agent/crates/layerx-mcp` | Tenant- and scope-bound MCP server that routes every call through `layerx-agentd` |
-| This workspace + `platform/cli/` | MCP as an interop ingress; `layerx install mcp` / `layerx mcp serve` from the developer CLI |
+| This workspace + `tools/platform/cli/` | MCP as an interop ingress; `layerx install mcp` / `layerx mcp serve` from the developer CLI |
 
 MCP tool inventory: [`services/agent/crates/layerx-mcp/README.md`](../../services/agent/crates/layerx-mcp/README.md). CLI install copy: [`platform/docs/content/install.md`](../../platform/docs/content/install.md) and [`platform/docs/content/guide/interop.md`](../../platform/docs/content/guide/interop.md).
 

@@ -13,7 +13,9 @@ area:agent:
 
 area:platform:
   - changed-files:
-      - any-glob-to-any-file: platform/**
+      - any-glob-to-any-file:
+          - platform/**
+          - tools/platform/**
 
 area:programs:
   - changed-files:

@@ -154,8 +154,8 @@ Build and test:
 - cargo (`services/interop/crates/x-websearch/Cargo.toml`, run in `services/interop/crates/x-websearch/`): `cargo build`, `cargo test`
 - npm (`package.json`): `npm run build`
 - cargo (`platform/Cargo.toml`, run in `platform/`): `cargo build`, `cargo test`
-- cargo (`platform/cli/Cargo.toml`, run in `platform/cli/`): `cargo build`, `cargo test`
-- cargo (`platform/emulator/Cargo.toml`, run in `platform/emulator/`): `cargo build`, `cargo test`
+- cargo (`tools/platform/cli/Cargo.toml`, run in `tools/platform/cli/`): `cargo build`, `cargo test`
+- cargo (`tools/platform/emulator/Cargo.toml`, run in `tools/platform/emulator/`): `cargo build`, `cargo test`
 - cargo (`platform/hosted/agent-boundary/Cargo.toml`, run in `platform/hosted/agent-boundary/`): `cargo build`, `cargo test`
 - cargo (`platform/hosted/ai-artifacts/Cargo.toml`, run in `platform/hosted/ai-artifacts/`): `cargo build`, `cargo test`
 - cargo (`platform/hosted/ai-evaluator/Cargo.toml`, run in `platform/hosted/ai-evaluator/`): `cargo build`, `cargo test`
@@ -195,7 +195,7 @@ Build and test:
 - npm (`platform/middleware/seller/package.json`, run in `platform/middleware/seller/`): `npm run build`, `npm test`
 - cargo (`platform/ramps/reference/Cargo.toml`, run in `platform/ramps/reference/`): `cargo build`, `cargo test`
 - cargo (`platform/ramps/toolkit/Cargo.toml`, run in `platform/ramps/toolkit/`): `cargo build`, `cargo test`
-- cargo (`platform/release/Cargo.toml`, run in `platform/release/`): `cargo build`, `cargo test`
+- cargo (`tools/platform/release/Cargo.toml`, run in `tools/platform/release/`): `cargo build`, `cargo test`
 - npm (`platform/sdk/conformance-runner/package.json`, run in `platform/sdk/conformance-runner/`): `npm install`
 - cargo (`platform/sdk/generators/Cargo.toml`, run in `platform/sdk/generators/`): `cargo build`, `cargo test`
 - go (`platform/sdk/go/go.mod`, run in `platform/sdk/go/`): `go build ./...`, `go test ./...`
@@ -477,9 +477,9 @@ _Not shown: 7 directories._
 - `main` — `services/interop/crates/x-websearch/src/main.rs:1258` `fn main() -> ExitCode`
 - `main` — `services/interop/deploy/gateway/render.py:835` `def main(argv)`
 - `main` — `services/interop/deploy/mirror/render-config.py:150` `def main(argv)`
-- `main` — `platform/cli/examples/hosted-send.rs:148` `fn main()`
-- `main` — `platform/cli/src/main.rs:1563` `fn main() -> ExitCode`
-- `main` — `platform/emulator/build.rs:12` `fn main()`
+- `main` — `tools/platform/cli/examples/hosted-send.rs:148` `fn main()`
+- `main` — `tools/platform/cli/src/main.rs:1563` `fn main() -> ExitCode`
+- `main` — `tools/platform/emulator/build.rs:12` `fn main()`
 - `main` — `platform/hosted/agent-boundary/src/main.rs:2441` `fn main()`
 - `main` — `platform/hosted/agentd/manifest_check.py:252` `def main()`
 - `main` — `platform/hosted/ai-artifacts/src/main.rs:1711` `fn main()`
@@ -537,7 +537,7 @@ _Not shown: 7 directories._
 - `main` — `platform/ramps/reference/src/main.rs:202` `fn main()`
 - `main` — `platform/ramps/toolkit/src/bin/ramp-verify-receipt.rs:117` `fn main()`
 - `main` — `platform/relay_archive/runtime.py:1325` `def main(argv: list[str] | None = None) -> int`
-- `main` — `platform/release/src/main.rs:2438` `fn main()`
+- `main` — `tools/platform/release/src/main.rs:2438` `fn main()`
 - `main` — `platform/sdk/generators/generate_jvm.py:344` `def main() -> int`
 - `main` — `platform/sdk/generators/generate_lifecycle.py:50` `def main()`
 - `main` — `platform/sdk/generators/generate_portable.py:307` `def main() -> int`
@@ -922,9 +922,9 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
   - _+1 more_
 - `tests/occ/messages/` — 1 test file
   - _+1 more_
-- `platform/cli/` — 18 test files
+- `tools/platform/cli/` — 18 test files
   - _+18 more_
-- `platform/emulator/` — 3 test files
+- `tools/platform/emulator/` — 3 test files
   - _+3 more_
 - `platform/hosted/` — 134 test files
   - _+134 more_
@@ -934,7 +934,7 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
   - _+24 more_
 - `platform/ramps/` — 4 test files
   - _+4 more_
-- `platform/release/` — 2 test files
+- `tools/platform/release/` — 2 test files
   - _+2 more_
 - `platform/sdk/` — 35 test files
   - _+35 more_
@@ -1191,7 +1191,7 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
 - `layerxproof/testdata/` — 4 fixture files
 - `modules/xweb/types/testdata/` — 3 fixture files
 - `node/testdata/` — 1 fixture file
-- `platform/cli/tests/fixtures/` — 3 fixture files
+- `tools/platform/cli/tests/fixtures/` — 3 fixture files
 - `platform/hosted/authority/tests/fixtures/` — 5 fixture files: `native-sessions/`
 - `platform/hosted/feeder/tests/fixtures/` — 4 fixture files
 - `platform/hosted/gateway/tests/fixtures/` — 3 fixture files

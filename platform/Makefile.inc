@@ -1,5 +1,6 @@
 PLATFORM_CARGO ?= cargo
 PLATFORM_MANIFEST := platform/Cargo.toml
+PLATFORM_TOOLS_MANIFEST := tools/platform/Cargo.toml
 PLATFORM_BETA_CLUSTER_ENV ?= build/beta-cluster/env
 
 .PHONY: platform-js-install platform-build platform-build-all platform-lint platform-test platform-sdk-check \
@@ -94,8 +95,9 @@ platform-js-install:
 
 platform-build:
 	$(PLATFORM_CARGO) build --offline --manifest-path $(PLATFORM_MANIFEST) --locked --workspace
+	$(PLATFORM_CARGO) build --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked --workspace
 	$(MAKE) platform-sdk-check
-	$(PLATFORM_CARGO) run --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-release -- --check platform/release/registries.kvx
+	$(PLATFORM_CARGO) run --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked -p layerx-platform-release -- --check tools/platform/release/registries.kvx
 
 platform-build-all: platform-build platform-sample-dependencies-ready
 	npm run build
@@ -109,35 +111,38 @@ platform-build-all: platform-build platform-sample-dependencies-ready
 
 platform-lint:
 	$(PLATFORM_CARGO) clippy --offline --manifest-path $(PLATFORM_MANIFEST) --locked --workspace --all-targets -- -D warnings
+	$(PLATFORM_CARGO) clippy --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked --workspace --all-targets -- -D warnings
 	$(PLATFORM_CARGO) run --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-workspace-gate -- platform/workspace.kvx .
 	cargo clippy --offline --locked --manifest-path platform/examples/marketplace/program/Cargo.toml --target wasm32-unknown-unknown --lib -- -D warnings
 	sh platform/tools/dependency-policy.sh
 	cargo deny --manifest-path $(PLATFORM_MANIFEST) check --disable-fetch advisories bans sources
+	cargo deny --manifest-path $(PLATFORM_TOOLS_MANIFEST) check --disable-fetch advisories bans sources
 
 platform-test: public-tls-test-prerequisites
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked --workspace --features layerx-platform-cli/test-credential-store
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked --workspace
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked --workspace --features layerx-platform-cli/test-credential-store
 
 platform-test-tooling: platform-test-cli-production-credential-refusal public-tls-test-prerequisites
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-cli --features test-credential-store
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-emulator
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked -p layerx-platform-cli --features test-credential-store
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked -p layerx-platform-emulator
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-faucet
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-testnet
 	sh -n platform/hosted/testnet/run-testnet.sh platform/hosted/testnet/reset-testnet.sh \
 		platform/hosted/testnet/render-status.sh platform/hosted/testnet/tests/hosted-smoke.sh \
 		platform/hosted/paxeer/init-chain.sh
-	bash -n platform/cli/tests/install-journey.sh \
+	bash -n tools/platform/cli/tests/install-journey.sh \
 		platform/examples/agent-program-call/walkthrough.sh \
 		platform/hosted/tests/topology-check.sh \
 		platform/hosted/tests/beta-cluster.sh \
 		platform/hosted/node/bootstrap.sh platform/hosted/node/supervisor.sh \
 		platform/hosted/paxeer/deploy-contracts.sh scripts/ci/beta-contract-check.sh
 	python3 -m py_compile platform/hosted/paxeer/settlement-domain.py platform/hosted/paxeer/prepare-beta.py
-	bash -n platform/cli/tests/clean-bootstrap.sh
-	$(PLATFORM_CARGO) build --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-cli
-	bash platform/cli/tests/clean-bootstrap.sh
+	bash -n tools/platform/cli/tests/clean-bootstrap.sh
+	$(PLATFORM_CARGO) build --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked -p layerx-platform-cli
+	bash tools/platform/cli/tests/clean-bootstrap.sh
 
 platform-test-cli-production-credential-refusal:
-	bash platform/cli/tests/production-credential-refusal.sh
+	bash tools/platform/cli/tests/production-credential-refusal.sh
 
 platform-test-registry:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-registry
@@ -184,8 +189,8 @@ platform-hosted-smoke:
 		eval "value=\$${$$variable:-}"; \
 		if [ -z "$$value" ]; then echo "platform-hosted-smoke: missing input $$variable" >&2; exit 1; fi; \
 	done; \
-	if [ -z "$${LAYERX_BIN:-}" ] && [ -x "$${CARGO_TARGET_DIR:-$(CURDIR)/platform/target}/debug/layerx" ]; then \
-		export LAYERX_BIN="$${CARGO_TARGET_DIR:-$(CURDIR)/platform/target}/debug/layerx"; \
+	if [ -z "$${LAYERX_BIN:-}" ] && [ -x "$${CARGO_TARGET_DIR:-$(CURDIR)/tools/platform/target}/debug/layerx" ]; then \
+		export LAYERX_BIN="$${CARGO_TARGET_DIR:-$(CURDIR)/tools/platform/target}/debug/layerx"; \
 	fi; \
 	sh platform/hosted/testnet/tests/hosted-smoke.sh
 
@@ -219,11 +224,11 @@ platform-test-agent-install:
 	@test -n "$${LAYERX_PAYMENT_DESTINATION:-}"
 	@test -n "$${LAYERX_MCP_SEQUENCE:-}"
 	@test -n "$${LAYERX_A2A_SEQUENCE:-}"
-	bash platform/cli/tests/install-journey.sh
+	bash tools/platform/cli/tests/install-journey.sh
 
 platform-emulator-conformance:
 	@test -n "$${LAYERX_TESTNET_URL:-}" && test -n "$${LAYERX_CONFORMANCE_ACTIVITIES:-}"
-	sh platform/emulator/tests/conformance.sh \
+	sh tools/platform/emulator/tests/conformance.sh \
 		"$${LAYERX_EMULATOR_URL:-http://127.0.0.1:9402}" \
 		"$$LAYERX_TESTNET_URL" "$${LAYERX_CONFORMANCE_ACTIVITIES}"
 
@@ -288,13 +293,13 @@ platform-verify-sdks: programs-check-native-lifecycle-fixtures programs-check-ca
 platform-test-sdks: platform-verify-sdks
 
 platform-release-check:
-	$(PLATFORM_CARGO) run --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-release -- --check platform/release/registries.kvx
+	$(PLATFORM_CARGO) run --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked -p layerx-platform-release -- --check tools/platform/release/registries.kvx
 
 platform-release-plan:
-	$(PLATFORM_CARGO) run --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-release -- --plan platform/release/registries.kvx
+	$(PLATFORM_CARGO) run --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked -p layerx-platform-release -- --plan tools/platform/release/registries.kvx
 
 platform-release-test:
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-release
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked -p layerx-platform-release
 
 .PHONY: platform-build-connected-middleware platform-test-connected-middleware
 

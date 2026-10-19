@@ -16,7 +16,7 @@ There are two MCP surfaces in this repository (`services/interop/README.md`,
 
 There is no standalone `layerx-a2a` crate. A2A is a transport on the
 interoperability gateway and on x402, plus `layerx install a2a` /
-`layerx a2a serve` in `platform/cli`. The gateway-bound A2A catalogue is a
+`layerx a2a serve` in `tools/platform/cli`. The gateway-bound A2A catalogue is a
 different tool set (`receipt.get`, `activity.submit`, `faucet.request`) and
 is not an MCP surface ([Running an agent](running.md)).
 

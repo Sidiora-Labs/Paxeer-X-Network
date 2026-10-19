@@ -21,7 +21,7 @@ LayerX Network является детерминированной сетью и
 
 ## Попробовать тестовую сеть
 
-Полный путь описан в [`docs/wiki/Quickstart.md`](../quickstart.md): установите CLI `layerx` из `platform/cli`, поднимите кластер, выполните source `build/beta-cluster/env`, затем создайте учётные данные, запросите средства из faucet, отправьте активность, проверьте квитанцию и разверните программу.
+Полный путь описан в [`docs/wiki/Quickstart.md`](../quickstart.md): установите CLI `layerx` из `tools/platform/cli`, поднимите кластер, выполните source `build/beta-cluster/env`, затем создайте учётные данные, запросите средства из faucet, отправьте активность, проверьте квитанцию и разверните программу.
 
 ```sh
 layerx key create quickstart
@@ -127,7 +127,7 @@ make paxeer-ci
 | .NET | `platform/sdk/dotnet` |
 | Swift | `platform/sdk/swift` |
 
-`layerx-agentd` находится в `services/agent/crates/layerx-agentd`. MCP-сервер находится в `services/agent/crates/layerx-mcp`. CLI разработчика в `platform/cli` устанавливает эти транспорты командами `layerx install mcp` и `layerx install a2a`.
+`layerx-agentd` находится в `services/agent/crates/layerx-agentd`. MCP-сервер находится в `services/agent/crates/layerx-mcp`. CLI разработчика в `tools/platform/cli` устанавливает эти транспорты командами `layerx install mcp` и `layerx install a2a`.
 
 ## Участие
 

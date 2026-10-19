@@ -1,6 +1,5 @@
 # kind|path|classification
 rust|platform/Cargo.toml|locked-workspace-root
-rust|platform/cli/Cargo.toml|covered-by-platform-cargo
 dotnet|platform/docs/samples/first-payment-csharp/FirstPayment.csproj|install-resolved
 go|platform/docs/samples/first-payment-go/go.mod|local-replacements
 maven|platform/docs/samples/first-payment-jvm/pom.xml|install-resolved
@@ -14,7 +13,6 @@ python|platform/docs/samples/paid-endpoint-fastapi/requirements.txt|compile-only
 maven|platform/docs/samples/paid-endpoint-spring/pom.xml|install-resolved
 npm|platform/docs/samples/paid-route-next/package.json|covered-by-root-npm
 rust|platform/docs/samples/verify-receipt-rust/Cargo.toml|locked-independent
-rust|platform/emulator/Cargo.toml|covered-by-platform-cargo
 npm|platform/examples/agent-spend/package.json|covered-by-root-npm
 npm|platform/examples/buyer-agent/package.json|covered-by-root-npm
 npm|platform/examples/marketplace/package.json|covered-by-root-npm
@@ -69,7 +67,6 @@ npm|platform/middleware/merchant/package.json|covered-by-root-npm
 npm|platform/middleware/seller/package.json|covered-by-root-npm
 rust|platform/ramps/reference/Cargo.toml|covered-by-platform-cargo
 rust|platform/ramps/toolkit/Cargo.toml|covered-by-platform-cargo
-rust|platform/release/Cargo.toml|covered-by-platform-cargo
 npm|platform/sdk/conformance-runner/package.json|compile-only-manifest
 dotnet|platform/sdk/dotnet/LayerX.Sdk.csproj|install-resolved
 dotnet|platform/sdk/dotnet/tests/LayerX.Sdk.Tests/LayerX.Sdk.Tests.csproj|install-resolved

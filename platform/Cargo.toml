@@ -2,8 +2,6 @@
 members = [
     "ramps/toolkit",
     "ramps/reference",
-    "cli",
-    "emulator",
     "hosted/faucet",
     "hosted/core",
     "hosted/authority",
@@ -24,7 +22,6 @@ members = [
     "hosted/perps-keeper",
     "hosted/ai-evaluator",
     "sdk/generators",
-    "release",
     "tools/kvx",
     "tools/workspace-gate",
     "tools/benchmark",

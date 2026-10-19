@@ -8,6 +8,8 @@ trap 'rm -f -- "$metadata_file" "$license_file"' EXIT HUP INT TERM
 
 cargo metadata --manifest-path "$repo_root/platform/Cargo.toml" \
     --locked --format-version 1 >"$metadata_file"
+cargo metadata --manifest-path "$repo_root/tools/platform/Cargo.toml" \
+    --locked --format-version 1 >>"$metadata_file"
 
 banned='^(bindgen|libsqlite3-sys|rusqlite|sqlx-sqlite|layerx-core|layerx-protocol-core|ctor|inventory)$'
 if jq -r '.packages[].name' "$metadata_file" | grep -Eq "$banned"; then
@@ -69,9 +71,9 @@ LICENSE_ALTERNATIVES
 done <"$license_file"
 
 if command -v rg >/dev/null 2>&1; then
-    unsafe_hits=$(rg -n --glob '*.rs' '\bunsafe\s+(fn|trait|impl|extern)|\bunsafe\s*\{' "$repo_root/platform/cli" "$repo_root/platform/sdk" "$repo_root/platform/release" "$repo_root/platform/tools" || true)
+    unsafe_hits=$(rg -n --glob '*.rs' '\bunsafe\s+(fn|trait|impl|extern)|\bunsafe\s*\{' "$repo_root/tools/platform/cli" "$repo_root/platform/sdk" "$repo_root/tools/platform/release" "$repo_root/platform/tools" || true)
 else
-    unsafe_hits=$(grep -rEn --include='*.rs' '\bunsafe[[:space:]]+(fn|trait|impl|extern)|\bunsafe[[:space:]]*\{' "$repo_root/platform/cli" "$repo_root/platform/sdk" "$repo_root/platform/release" "$repo_root/platform/tools" || true)
+    unsafe_hits=$(grep -rEn --include='*.rs' '\bunsafe[[:space:]]+(fn|trait|impl|extern)|\bunsafe[[:space:]]*\{' "$repo_root/tools/platform/cli" "$repo_root/platform/sdk" "$repo_root/tools/platform/release" "$repo_root/platform/tools" || true)
 fi
 if [ -n "$unsafe_hits" ]; then
     printf '%s\n' "$unsafe_hits" >&2
