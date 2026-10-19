@@ -1932,12 +1932,12 @@ log = fleet/logs/fixture-name-trim.log
 observed = Resolved: MigrateV6120 now trims surrounding Unicode whitespace from the pool token name and symbol before building the market record and logs each trim as a launchpad_migration_market_name_trimmed event, so the generator completed at H with 1 code and 6361 states added and the fixture was regenerated; the token contract and the market validation are unchanged.
 assumption = golden.json and TestAccountingMatchesGolden still wait on the trader address for the record tool.
 [finding.fixture-v6120-spot-share-token]
-revision = 3155bc3ef
-command = go test ./node/
+revision = ab52b3bb9
+command = go test ./node/ -run TestV6120AppliesThePlanOnTheHaltExport -count=1
 exit = 1
-log = fleet/logs/fixture-name-trim.log
-observed = On the regenerated fixture TestV6120AppliesThePlanOnTheHaltExport passes the launchpad step and panics in the spot step with "share token of 0x85FcD13735F4309833A503EE804ea32395851479: UnsupportedToken()", and TestVersionSwitchHeightSelection still fails, so the generation 2 ProtocolConfig finding stays open.
-assumption = The spot step and the other node failures in the same run (giga precompile switch, launchpad airdrop and governance, optimistic processing, price feed live path, v6.12.0 known plan) lie outside the launchpad migration and were not changed.
+log = fleet/logs/fixture-spot-share-token.log
+observed = Resolved for the spot step: the generator replayed only the launchpad migration, so USDL 0x85FcD13735F4309833A503EE804ea32395851479 storage slot 4 (symbol "USDL") was absent, symbol() returned an empty string and CreateShareToken refused with UnsupportedToken(); the generator now applies the whole v6.12.0 plan, added that slot, and the plan applies at H+1, after which the test fails at its later ProcessBlock call with "invalid height: 7; expected: 6".
+assumption = The ProcessBlock height failure lies in the test's block sequencing after the upgrade, not in the plan or the fixture, and was not changed.
 [finding.spec-lint-tool-hang]
 revision = "c78681cb6"
 command = "cg spec lint"

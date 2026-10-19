@@ -1,7 +1,7 @@
 // Command v6120-halt-export adds the mainnet Launch-x contract code and
-// storage the v6.12.0 launchpad migration reads to the halt export fixture.
-// It runs MigrateV6120 on the export, records every EVM code and storage key
-// the run reads, fetches the keys the export lacks with eth_getCode and
+// storage the v6.12.0 upgrade reads to the halt export fixture. It applies
+// the v6.12.0 plan on the export, records every EVM code and storage key the
+// run reads, fetches the keys the export lacks with eth_getCode and
 // eth_getStorageAt at one height and repeats until a run reads nothing new.
 //
 // Run from the repository root:
@@ -25,12 +25,10 @@ import (
 	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
-	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
-	launchpadkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
 	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
-	launchpadprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/launchpad"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -142,14 +140,6 @@ func (s recordingKV) Has(key []byte) bool {
 	return s.KVStore.Has(key)
 }
 
-// migrationEVM is the EVM keeper as the upgrade handler hands it to
-// MigrateV6120.
-type migrationEVM struct{ *evmkeeper.Keeper }
-
-func (e migrationEVM) InstallRetired(ctx sdk.Context, retired, replacement common.Address) error {
-	return launchpadprecompile.InstallRetired(ctx, e.Keeper, retired, replacement)
-}
-
 type codeEntry struct {
 	Address string `json:"address"`
 	Code    []byte `json:"code"`
@@ -218,8 +208,9 @@ func (f *fetcher) fetch(ctx context.Context, keys []readKey) error {
 	return nil
 }
 
-// migrate runs MigrateV6120 on a discarded branch of the base state and
-// returns the EVM keys it read and its result.
+// migrate applies the v6.12.0 plan at the height after the export on a
+// discarded branch of the base state and returns the EVM keys it read and its
+// result.
 func (f *fetcher) migrate() (reads []readKey, err error) {
 	rec := &recorder{evmStore: evmtypes.StoreKey, reads: map[readKey]bool{}}
 	cc, _ := f.base.CacheContext()
@@ -230,7 +221,11 @@ func (f *fetcher) migrate() (reads []readKey, err error) {
 				err = fmt.Errorf("migration panicked: %v", r)
 			}
 		}()
-		err = launchpadkeeper.MigrateV6120(cc, *f.a.LaunchpadKeeper, migrationEVM{&f.a.EvmKeeper})
+		plan := upgradetypes.Plan{Name: app.V6120Upgrade, Height: cc.BlockHeight() + 1}
+		if err = f.a.UpgradeKeeper.ScheduleUpgrade(cc, plan); err != nil {
+			return
+		}
+		f.a.UpgradeKeeper.ApplyUpgrade(cc.WithBlockHeight(plan.Height), plan)
 	}()
 	for k := range rec.reads {
 		reads = append(reads, k)
@@ -539,7 +534,7 @@ func run() error {
 		}
 	}
 	if migrateErr != nil {
-		return fmt.Errorf("MigrateV6120 on the export at height %d: %w", height, migrateErr)
+		return fmt.Errorf("v6.12.0 plan on the export at height %d: %w", height, migrateErr)
 	}
 	return nil
 }
