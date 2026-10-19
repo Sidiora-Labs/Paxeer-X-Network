@@ -622,7 +622,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1]
 title = "Move agent whole to services/agent"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 4

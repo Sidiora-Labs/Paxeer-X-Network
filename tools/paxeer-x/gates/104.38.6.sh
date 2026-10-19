@@ -55,7 +55,7 @@ try:
     credit('generator drift', sum(map(int, summary)))
 
     out = run('Rust SDK receipts',
-              ['cargo', 'test', '--offline', '--locked', '--manifest-path', 'agent/Cargo.toml',
+              ['cargo', 'test', '--offline', '--locked', '--manifest-path', 'services/agent/Cargo.toml',
                '-p', 'layerx-sdk', '--test', 'receipt_fixture'])
     summary = re.findall(r'test result: ok\. (\d+) passed; 0 failed; 0 ignored', out)
     require(len(summary) == 1, 'Rust receipt suite summary missing')
@@ -70,11 +70,11 @@ try:
 
     tsc = os.path.join('node_modules', '.bin', 'tsc')
     require(os.access(tsc, os.X_OK), 'TypeScript toolchain is not installed (run make platform-js-install)')
-    run('TypeScript SDK build', [tsc, '-p', 'agent/sdk/typescript/tsconfig.json'])
-    run('TypeScript SDK receipts', ['node', 'agent/sdk/typescript/dist/test/receipt-fixture.test.js'])
+    run('TypeScript SDK build', [tsc, '-p', 'services/agent/sdk/typescript/tsconfig.json'])
+    run('TypeScript SDK receipts', ['node', 'services/agent/sdk/typescript/dist/test/receipt-fixture.test.js'])
     credit('TypeScript', 1)
 
-    env = dict(os.environ, PYTHONPATH='agent/sdk/python', PYTHONDONTWRITEBYTECODE='1')
+    env = dict(os.environ, PYTHONPATH='services/agent/sdk/python', PYTHONDONTWRITEBYTECODE='1')
     out = run('Python SDK receipts',
               ['python3', '-m', 'unittest', '-v', 'tests/agent/sdk/python/test_receipt_fixture.py'], env=env)
     ran = re.findall(r'^Ran (\d+) tests? in', out, re.M)

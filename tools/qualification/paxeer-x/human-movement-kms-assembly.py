@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = 'paxeer-x.human-movement-kms-assembly.v1'
 MANIFEST = Path(os.environ.get('PAXEER_X_MOVEMENT_KMS_ASSEMBLY_MANIFEST',
                                ROOT / 'human/target/paxeer-x/human-movement-kms-assembly.json'))
-SOURCES = ['human/Cargo.toml', 'human/Cargo.lock', 'human/crates', 'agent/crates',
+SOURCES = ['human/Cargo.toml', 'human/Cargo.lock', 'human/crates', 'services/agent/crates',
            'platform/Cargo.toml', 'platform/Cargo.lock', 'platform/crates', 'platform/hosted/runtime-clock',
            'docker/kernel/init.sh', 'docker/human-service/entrypoint.sh', 'tools/bringup/ca.sh',
            'platform/hosted/human/material.py', 'tests/fixtures/custody/native-credit-receipt/profile',

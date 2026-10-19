@@ -56,7 +56,7 @@ names that start with `..`, which are skipped
 `human/crates` maps `GET /internal/v1/principal` onto schema path
 `/v1/sessions` inside the human HTTP server
 (`human/crates/layerx-human-service/src/server/http.rs:141-146`). That
-path is not a request to `layerx-identity`. `agent/crates` has no
+path is not a request to `layerx-identity`. `services/agent/crates` has no
 `/v1/introspect`, `/v1/sessions`, or `/v1/principals` route to this
 service.
 

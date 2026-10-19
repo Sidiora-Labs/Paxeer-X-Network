@@ -6224,7 +6224,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6245,7 +6245,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6266,7 +6266,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6287,7 +6287,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6308,7 +6308,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6329,7 +6329,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6350,7 +6350,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6371,7 +6371,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6392,7 +6392,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6413,7 +6413,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6434,7 +6434,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6455,7 +6455,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6476,7 +6476,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6497,7 +6497,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6518,7 +6518,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6539,7 +6539,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6560,7 +6560,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6581,7 +6581,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6602,7 +6602,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6623,7 +6623,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6644,7 +6644,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6665,7 +6665,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -6686,7 +6686,7 @@
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "source": "services/agent/crates/layerx-mcp/src/listener.rs",
       "proxy": false,
       "endpoint_path": "/mcp"
     },
@@ -8965,7 +8965,7 @@
         "agent",
         "developer"
       ],
-      "source": "agent/crates/layerx-agentd/src/agent_rpc_tls.rs",
+      "source": "services/agent/crates/layerx-agentd/src/agent_rpc_tls.rs",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -9001,7 +9001,7 @@
       "idempotency": "idempotency_key carried in the request body only; no Idempotency-Key header forwarded",
       "unknown_policy": "edge 502/503 or transport loss on a mutating operation is Unknown and never resent",
       "distinct_contracts": "native /rpc, /rpc/schema and Programs paths keep their own contracts",
-      "owner_source": "agent/crates/layerx-agentd/src/agent_rpc.rs"
+      "owner_source": "services/agent/crates/layerx-agentd/src/agent_rpc.rs"
     },
     {
       "id": "archive:GET:/v1/peers",
@@ -44972,7 +44972,7 @@
         "agent",
         "developer"
       ],
-      "source": "agent/crates/layerx-mcp/src/stdio.rs",
+      "source": "services/agent/crates/layerx-mcp/src/stdio.rs",
       "proxy": false
     },
     {
@@ -44994,7 +44994,7 @@
         "agent",
         "developer"
       ],
-      "source": "agent/crates/layerx-mcp/src/stdio.rs",
+      "source": "services/agent/crates/layerx-mcp/src/stdio.rs",
       "proxy": false
     },
     {
@@ -45016,7 +45016,7 @@
         "agent",
         "developer"
       ],
-      "source": "agent/crates/layerx-mcp/src/stdio.rs",
+      "source": "services/agent/crates/layerx-mcp/src/stdio.rs",
       "proxy": false
     },
     {
@@ -45038,7 +45038,7 @@
         "agent",
         "developer"
       ],
-      "source": "agent/crates/layerx-mcp/src/stdio.rs",
+      "source": "services/agent/crates/layerx-mcp/src/stdio.rs",
       "proxy": false
     },
     {
@@ -45060,7 +45060,7 @@
         "agent",
         "developer"
       ],
-      "source": "agent/crates/layerx-mcp/src/stdio.rs",
+      "source": "services/agent/crates/layerx-mcp/src/stdio.rs",
       "proxy": false
     },
     {

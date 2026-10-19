@@ -10,10 +10,10 @@ import sys
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
 TEST = 'real_remote_native_budget_proofs_refuse_report_selector_principal_and_finality_substitution'
-SOURCES = ('agent/crates/layerx-agentd/src/human_runtime.rs', 'agent/crates/layerx-agentd/src/human.rs',
-           'agent/crates/layerx-agentd/src/budget/budget_proof.rs', 'agent/crates/layerx-agentd/src/budget/mod.rs',
+SOURCES = ('services/agent/crates/layerx-agentd/src/human_runtime.rs', 'services/agent/crates/layerx-agentd/src/human.rs',
+           'services/agent/crates/layerx-agentd/src/budget/budget_proof.rs', 'services/agent/crates/layerx-agentd/src/budget/mod.rs',
            'human/crates/layerx-human-service/src/server/agent_runtime.rs',
-           'agent/crates/layerx-agentd/tests/budget_proof_intake.rs',
+           'services/agent/crates/layerx-agentd/tests/budget_proof_intake.rs',
            'tools/qualification/paxeer-x/budget-proof-intake.py',
            'platform/hosted/authority/src/human/budget_state.rs', 'platform/hosted/authority/src/human/dynamic.rs')
 

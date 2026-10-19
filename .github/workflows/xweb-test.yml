@@ -32,11 +32,11 @@ on:
       - 'tests/test_web_program_path.c'
       - 'programs/crates/layerx-programs-runtime/**'
       - 'programs/sdk/rust/**'
-      - 'agent/sdk/typescript/src/web-search.ts'
-      - 'agent/sdk/typescript/test/**'
-      - 'agent/sdk/python/layerx_sdk/web_search.py'
+      - 'services/agent/sdk/typescript/src/web-search.ts'
+      - 'services/agent/sdk/typescript/test/**'
+      - 'services/agent/sdk/python/layerx_sdk/web_search.py'
       - 'tests/agent/sdk/python/**'
-      - 'agent/crates/**'
+      - 'services/agent/crates/**'
       - 'scripts/ci/xweb-forge-libs.sh'
       - '.github/workflows/xweb-test.yml'
   push:
@@ -72,11 +72,11 @@ on:
       - 'tests/test_web_program_path.c'
       - 'programs/crates/layerx-programs-runtime/**'
       - 'programs/sdk/rust/**'
-      - 'agent/sdk/typescript/src/web-search.ts'
-      - 'agent/sdk/typescript/test/**'
-      - 'agent/sdk/python/layerx_sdk/web_search.py'
+      - 'services/agent/sdk/typescript/src/web-search.ts'
+      - 'services/agent/sdk/typescript/test/**'
+      - 'services/agent/sdk/python/layerx_sdk/web_search.py'
       - 'tests/agent/sdk/python/**'
-      - 'agent/crates/**'
+      - 'services/agent/crates/**'
       - 'scripts/ci/xweb-forge-libs.sh'
       - '.github/workflows/xweb-test.yml'
 
@@ -200,10 +200,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes python3-pytest
 
       - name: Run cargo test for the layerx-mcp web tool
-        run: cargo test --locked --manifest-path agent/Cargo.toml -p layerx-mcp --test web
+        run: cargo test --locked --manifest-path services/agent/Cargo.toml -p layerx-mcp --test web
 
       - name: Run npm for the TypeScript web search client test
-        run: (cd agent/sdk/typescript && npm ci && npm run build && node dist/test/web-search.test.js)
+        run: (cd services/agent/sdk/typescript && npm ci && npm run build && node dist/test/web-search.test.js)
 
       - name: Run pytest for the Python web search client test
-        run: (cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py)
+        run: (cd services/agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py)

@@ -40,7 +40,7 @@ SOURCE_PATHS = (
     "Makefile", "tools/build/sanitizers.mk", "platform/Makefile.inc",
     "src", "include", "contracts/config", "programs/Cargo.toml",
     "programs/Cargo.lock", "programs/crates", "programs/sdk/rust", "programs/.cargo",
-    "programs/vendor", "agent/Cargo.toml", "agent/Cargo.lock", "agent/crates",
+    "programs/vendor", "services/agent/Cargo.toml", "services/agent/Cargo.lock", "services/agent/crates",
     ".cargo", "rust-toolchain.toml", "tests/programs",
     "tools/qualification/paxeer-x/program_execution_context.py", MAKEFILE,
     "tools/paxeer-x/gates/104.31.1.sh",

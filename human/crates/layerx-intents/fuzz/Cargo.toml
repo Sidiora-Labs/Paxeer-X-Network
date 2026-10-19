@@ -10,8 +10,8 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 layerx-intents = { path = ".." }
-layerx-types = { path = "../../../../agent/crates/layerx-types" }
-layerx-wire = { path = "../../../../agent/crates/layerx-wire" }
+layerx-types = { path = "../../../../services/agent/crates/layerx-types" }
+layerx-wire = { path = "../../../../services/agent/crates/layerx-wire" }
 
 [[bin]]
 name = "intent"

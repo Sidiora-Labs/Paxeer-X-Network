@@ -40,7 +40,7 @@ AgentdFixture, FixtureRefused = _FIXTURE.AgentdFixture, _FIXTURE.FixtureRefused
 ROOT = Path(__file__).resolve().parents[3]
 COMMAND = "timeout 30m python3 tools/qualification/paxeer-x/agent_http_bounds.py"
 
-# Bounds the daemon declares in agent/crates/layerx-agentd/src/main.rs.
+# Bounds the daemon declares in services/agent/crates/layerx-agentd/src/main.rs.
 WORKERS = 8
 QUEUE = 16
 DEADLINE = 5.0

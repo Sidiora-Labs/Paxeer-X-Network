@@ -2,7 +2,7 @@
 
 ## Container image
 
-The image is defined in [`docker/wallet-pwa/Dockerfile`](../../../../../docker/wallet-pwa/Dockerfile) and is built from the repository root, because it also copies `agent/sdk/typescript` and `human/wallet` to build the wallet SDK:
+The image is defined in [`docker/wallet-pwa/Dockerfile`](../../../../../docker/wallet-pwa/Dockerfile) and is built from the repository root, because it also copies `services/agent/sdk/typescript` and `human/wallet` to build the wallet SDK:
 
 ```sh
 docker build -f docker/wallet-pwa/Dockerfile \

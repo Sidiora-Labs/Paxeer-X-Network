@@ -7,11 +7,11 @@ tools prepare and submit canonical activities and return receipts. No MCP tool
 returns a claimed outcome that is not backed by a receipt or proof.
 
 There are two MCP surfaces in this repository (`interop/README.md`,
-`agent/crates/layerx-mcp/README.md`):
+`services/agent/crates/layerx-mcp/README.md`):
 
 | Surface | Role |
 | --- | --- |
-| `agent/crates/layerx-mcp` | Tenant- and scope-bound server. Every call routes through `layerx-agentd`. |
+| `services/agent/crates/layerx-mcp` | Tenant- and scope-bound server. Every call routes through `layerx-agentd`. |
 | Developer CLI | `layerx install mcp` and `layerx mcp serve` bind the same daemon session from a binding document. |
 
 There is no standalone `layerx-a2a` crate. A2A is a transport on the
@@ -65,7 +65,7 @@ payment-CLI overlap note, and this table as the crate inventory.
 the document names and serves the catalogue on a peer-credential admitted
 Unix socket. `layerx mcp serve --daemon-binding <path>` serves the same
 session on standard input and output. The binding document fields are in
-`agent/crates/layerx-mcp/README.md`. The served path holds no signing seed
+`services/agent/crates/layerx-mcp/README.md`. The served path holds no signing seed
 and no gateway credential.
 
 Host values for `layerx install mcp` are `layerx`, `claude-code`,

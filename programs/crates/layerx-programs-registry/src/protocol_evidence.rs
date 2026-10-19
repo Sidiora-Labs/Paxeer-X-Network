@@ -2961,13 +2961,13 @@ mod signed_authority_policy_tests {
     use super::*;
     use layerx_proof::signed_authority::SignedAuthorityHistory;
     const GENESIS: &[u8] = include_bytes!(
-        "../../../../agent/crates/layerx-proof/tests/fixtures/signed-authority/genesis.bin"
+        "../../../../services/agent/crates/layerx-proof/tests/fixtures/signed-authority/genesis.bin"
     );
     const HEADERS: &[u8] = include_bytes!(
-        "../../../../agent/crates/layerx-proof/tests/fixtures/signed-authority/headers.bin"
+        "../../../../services/agent/crates/layerx-proof/tests/fixtures/signed-authority/headers.bin"
     );
     const ACTIVITY: &[u8] = include_bytes!(
-        "../../../../agent/crates/layerx-proof/tests/fixtures/signed-authority/handover.activity"
+        "../../../../services/agent/crates/layerx-proof/tests/fixtures/signed-authority/handover.activity"
     );
 
     fn must<T, E: std::fmt::Debug>(value: Result<T, E>) -> T {

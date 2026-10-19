@@ -13,6 +13,6 @@ printf '%s\n' \
     "  make build" \
     "Workspace suites that need the rest of the image toolchain:" \
     "  make test" \
-    "  cargo fmt --check --manifest-path agent/Cargo.toml --all" \
+    "  cargo fmt --check --manifest-path services/agent/Cargo.toml --all" \
     "  forge fmt --check"
 exit 1

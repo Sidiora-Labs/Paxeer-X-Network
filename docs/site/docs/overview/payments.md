@@ -274,7 +274,7 @@ behavior.
 ## CLI and MCP boundaries
 
 The payment MCP catalogue has 20 tools
-(`agent/crates/layerx-mcp/src/server.rs:51`). Its payment writes are
+(`services/agent/crates/layerx-mcp/src/server.rs:51`). Its payment writes are
 `wallet.send`, `token.create`, `token.mint`, `token.transfer`, `grant.issue`,
 and `grant.draw`; they use the daemon's ordinary prepare, disclose, sign,
 submit, and track stages. Burn, account-open, Asset info/list, fee estimate,

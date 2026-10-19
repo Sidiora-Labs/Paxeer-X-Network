@@ -10,24 +10,24 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 PRIVATE = Path('/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1041317')
-TS = ROOT / 'agent/sdk/typescript'
-PYTHON = ROOT / 'agent/sdk/python'
+TS = ROOT / 'services/agent/sdk/typescript'
+PYTHON = ROOT / 'services/agent/sdk/python'
 SOURCES = (
-    'agent/sdk/typescript/src/native-effect.ts',
-    'agent/sdk/typescript/src/agent-http.ts',
-    'agent/sdk/typescript/src/index.ts',
-    'agent/sdk/typescript/test/native-effect.test.ts',
-    'agent/sdk/python/layerx_sdk/native_effect.py',
-    'agent/sdk/python/layerx_sdk/agent_http.py',
-    'agent/sdk/python/layerx_sdk/agent_http.pyi',
-    'agent/sdk/python/layerx_sdk/__init__.py',
-    'agent/sdk/python/layerx_sdk/__init__.pyi',
+    'services/agent/sdk/typescript/src/native-effect.ts',
+    'services/agent/sdk/typescript/src/agent-http.ts',
+    'services/agent/sdk/typescript/src/index.ts',
+    'services/agent/sdk/typescript/test/native-effect.test.ts',
+    'services/agent/sdk/python/layerx_sdk/native_effect.py',
+    'services/agent/sdk/python/layerx_sdk/agent_http.py',
+    'services/agent/sdk/python/layerx_sdk/agent_http.pyi',
+    'services/agent/sdk/python/layerx_sdk/__init__.py',
+    'services/agent/sdk/python/layerx_sdk/__init__.pyi',
     'tests/agent/sdk/python/test_native_effect.py',
-    'agent/crates/layerx-sdk/src/agent_envelope.rs',
-    'agent/crates/layerx-sdk/src/native_effect.rs',
-    'agent/crates/layerx-sdk/src/lib.rs',
+    'services/agent/crates/layerx-sdk/src/agent_envelope.rs',
+    'services/agent/crates/layerx-sdk/src/native_effect.rs',
+    'services/agent/crates/layerx-sdk/src/lib.rs',
     'tools/qualification/paxeer-x/native-effect-sdk.py',
-    'agent/crates/layerx-crypto/tests/fixtures/payments/native-1-5.hex',
+    'services/agent/crates/layerx-crypto/tests/fixtures/payments/native-1-5.hex',
 )
 
 
@@ -64,11 +64,11 @@ def build(environment):
     sys.pycache_prefix = environment['PYTHONPYCACHEPREFIX']
     artifacts = []
     for relative in SOURCES:
-        if (relative.startswith('agent/sdk/python/') or relative == 'tests/agent/sdk/python/test_native_effect.py') and relative.endswith('.py'):
+        if (relative.startswith('services/agent/sdk/python/') or relative == 'tests/agent/sdk/python/test_native_effect.py') and relative.endswith('.py'):
             compiled = py_compile.compile(str(ROOT / relative), doraise=True)
             artifacts.append(Path(compiled))
     print('EXIT 0 LOG Python codecs compiled', flush=True)
-    cargo = ['/root/.cargo/bin/cargo', 'test', '--locked', '--manifest-path', 'agent/Cargo.toml',
+    cargo = ['/root/.cargo/bin/cargo', 'test', '--locked', '--manifest-path', 'services/agent/Cargo.toml',
              '-p', 'layerx-sdk', '--lib', 'native_effect::tests', '--no-run', '--message-format=json']
     run(cargo, ROOT, environment, PRIVATE / 'build-rust.log', 900)
     binaries = []

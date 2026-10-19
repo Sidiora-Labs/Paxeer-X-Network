@@ -588,7 +588,7 @@ class Run:
             and re.fullmatch(r"0x(?:[0-9a-fA-F]{64}){5,}", encoded),
             "getUnifiedAccount ABI result required",
         )
-        sys.path.insert(0, str(ROOT / "agent/sdk/python"))
+        sys.path.insert(0, str(ROOT / "services/agent/sdk/python"))
         from layerx_sdk.exchange import _decode_word, _word
 
         raw = bytes.fromhex(encoded[2:])
@@ -612,7 +612,7 @@ class Run:
             isinstance(address, str) and re.fullmatch(r"0x[0-9a-fA-F]{40}", address),
             "bound account EVM address required",
         )
-        sys.path.insert(0, str(ROOT / "agent/sdk/python"))
+        sys.path.insert(0, str(ROOT / "services/agent/sdk/python"))
         from layerx_sdk.exchange import encode_abi_call
 
         data = encode_abi_call("getUnifiedAccount", ["address"], [address])

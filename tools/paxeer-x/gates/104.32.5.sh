@@ -75,7 +75,7 @@ def ordered(text, markers, reason):
 
 
 def production_path():
-    payload = (ROOT / 'agent/crates/layerx-types/src/program_call.rs').read_text()
+    payload = (ROOT / 'services/agent/crates/layerx-types/src/program_call.rs').read_text()
     require(re.search(r'for body in \[\s*self\.entrypoint,\s*self\.calldata,\s*self\.capabilities,\s*self\.access_declaration,\s*\]', payload),
             'native call activity does not carry the declaration as a length-delimited body')
     ffi = (SRC / 'ffi_call.rs').read_text()

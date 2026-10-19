@@ -20,7 +20,7 @@ import (
 
 const (
 	vectorCopyPath   = "testdata/activities.json"
-	vectorSourcePath = "../../../../../agent/crates/layerx-wire/tests/support/wallet_vectors/activities.json"
+	vectorSourcePath = "../../../../../services/agent/crates/layerx-wire/tests/support/wallet_vectors/activities.json"
 )
 
 type bytesField struct {

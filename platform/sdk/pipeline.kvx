@@ -4,7 +4,7 @@ generators = ["platform-sdkgen", "agent-sdk-gen", "human-api-gen"]
 outputs = ["agent-api-rust", "agent-rust", "agent-typescript", "agent-python", "agent-compatibility", "human-typescript", "platform-go", "platform-jvm", "platform-conformance", "platform-swift", "platform-dotnet", "platform-portable-conformance"]
 
 [source.agent-api]
-root = "agent/schema/agent-api"
+root = "services/agent/schema/agent-api"
 digest = "f140758cb4a75363f3e0ddbe859875863acf9697d998d9e76a1dd30634b229da"
 
 [source.human-api]
@@ -20,7 +20,7 @@ root = "platform/sdk/generators"
 digest = "e2fd4e186bdefa865169fc9f4fc6d3b5149a1d35ec1b8088c83b214b6d2f985a"
 
 [generator.agent-sdk-gen]
-root = "agent/tools/sdk-gen"
+root = "services/agent/tools/sdk-gen"
 digest = "9b078fac07ba256c64d80d37df4cc5113a724adf33d15d2054f04103c5b84b99"
 
 [generator.human-api-gen]
@@ -29,7 +29,7 @@ digest = "a1bc95c3cb076014c0d93322b761c4e1d855853b1f8707468a6a913df4f6e4ee"
 
 [output.agent-api-rust]
 language = "rust"
-root = "agent/crates/layerx-agent-api/src"
+root = "services/agent/crates/layerx-agent-api/src"
 
 [files.agent-api-rust]
 "operation_generated.rs" = "15639a6bf35ae43f77291233111b0b8b8be59fb78648d49215a92498c7e76236"
@@ -45,7 +45,7 @@ root = "agent/crates/layerx-agent-api/src"
 
 [output.agent-rust]
 language = "rust"
-root = "agent/crates/layerx-sdk/src"
+root = "services/agent/crates/layerx-sdk/src"
 
 [files.agent-rust]
 "mirror_generated.rs" = "36c041d89f4cb23a73ea0baec0f7a15e6568763d603716b641e3d99dff2571fa"
@@ -79,7 +79,7 @@ root = "agent/crates/layerx-sdk/src"
 
 [output.agent-typescript]
 language = "typescript"
-root = "agent/sdk/typescript/src/generated"
+root = "services/agent/sdk/typescript/src/generated"
 
 [files.agent-typescript]
 "client.ts" = "49263986a36e3eafef9d4f679e2d990c63062c8858e0dc2fef5852b8a10fca6f"
@@ -89,7 +89,7 @@ root = "agent/sdk/typescript/src/generated"
 
 [output.agent-python]
 language = "python"
-root = "agent/sdk/python/layerx_sdk/generated"
+root = "services/agent/sdk/python/layerx_sdk/generated"
 
 [files.agent-python]
 "__init__.py" = "5542bf19c9f1b61d1a0a9cb748dc1f0062a9a8df1a3db4b1e525cb8dbd1f6e34"
@@ -103,7 +103,7 @@ root = "agent/sdk/python/layerx_sdk/generated"
 
 [output.agent-compatibility]
 language = "markdown"
-root = "agent/sdk"
+root = "services/agent/sdk"
 
 [files.agent-compatibility]
 "COMPATIBILITY.md" = "923af97b0371af79f30fe985576ad529c8ce7ad0823c09fdb2f405a1068b457d"

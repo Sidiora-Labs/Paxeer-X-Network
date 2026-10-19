@@ -1,5 +1,5 @@
 {
-  "generator": "agent/crates/layerx-client/examples/go_verifier_vectors.rs",
+  "generator": "services/agent/crates/layerx-client/examples/go_verifier_vectors.rs",
   "ed25519": [
     {
       "name": "domain-2",

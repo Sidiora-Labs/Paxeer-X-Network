@@ -21,7 +21,7 @@ ed25519-dalek.workspace = true
 k256.workspace = true
 layerx-crypto.workspace = true
 layerx-mirror.workspace = true
-layerx-paxeer-verifier = { path = "../../../agent/crates/layerx-paxeer-verifier" }
+layerx-paxeer-verifier = { path = "../../../services/agent/crates/layerx-paxeer-verifier" }
 openssl.workspace = true
 serde.workspace = true
 serde_json.workspace = true

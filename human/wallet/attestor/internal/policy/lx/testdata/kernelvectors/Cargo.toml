@@ -6,9 +6,9 @@ publish = false
 
 [dependencies]
 ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["digest"] }
-layerx-crypto = { path = "../../../../../../../../agent/crates/layerx-crypto" }
-layerx-types = { path = "../../../../../../../../agent/crates/layerx-types" }
-layerx-wire = { path = "../../../../../../../../agent/crates/layerx-wire" }
+layerx-crypto = { path = "../../../../../../../../services/agent/crates/layerx-crypto" }
+layerx-types = { path = "../../../../../../../../services/agent/crates/layerx-types" }
+layerx-wire = { path = "../../../../../../../../services/agent/crates/layerx-wire" }
 sha2 = "=0.10.9"
 
 [workspace]

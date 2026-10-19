@@ -12,18 +12,18 @@ import tempfile
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
 TEST = 'real_native_effect_prepare_human_owner_decision_and_reopen'
-SOURCES = ('agent/crates/layerx-agentd/src/human_runtime.rs',
-           'agent/crates/layerx-agentd/src/human.rs',
-           'agent/crates/layerx-agentd/src/approval/native_effect.rs',
-           'agent/crates/layerx-agentd/src/capability/binding.rs',
-           'agent/crates/layerx-agentd/src/capability/effects.rs',
-           'agent/crates/layerx-agentd/src/policy/native_program.rs',
-           'agent/crates/layerx-agentd/src/budget/reserve.rs',
-           'agent/crates/layerx-agentd/src/budget/program_sources.rs',
-           'agent/crates/layerx-agentd/src/budget/program_settlement.rs',
-           'agent/crates/layerx-agentd/src/budget/budget_proof.rs',
-           'agent/crates/layerx-agentd/src/agent_rpc_wire.rs',
-           'agent/crates/layerx-agentd/tests/human_approval_admission.rs',
+SOURCES = ('services/agent/crates/layerx-agentd/src/human_runtime.rs',
+           'services/agent/crates/layerx-agentd/src/human.rs',
+           'services/agent/crates/layerx-agentd/src/approval/native_effect.rs',
+           'services/agent/crates/layerx-agentd/src/capability/binding.rs',
+           'services/agent/crates/layerx-agentd/src/capability/effects.rs',
+           'services/agent/crates/layerx-agentd/src/policy/native_program.rs',
+           'services/agent/crates/layerx-agentd/src/budget/reserve.rs',
+           'services/agent/crates/layerx-agentd/src/budget/program_sources.rs',
+           'services/agent/crates/layerx-agentd/src/budget/program_settlement.rs',
+           'services/agent/crates/layerx-agentd/src/budget/budget_proof.rs',
+           'services/agent/crates/layerx-agentd/src/agent_rpc_wire.rs',
+           'services/agent/crates/layerx-agentd/tests/human_approval_admission.rs',
            'tools/qualification/paxeer-x/human-approval-admission.py')
 
 

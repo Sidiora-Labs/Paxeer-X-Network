@@ -32,7 +32,7 @@ def main():
                 "mutation": "Applied amount byte toggled after real execution; applied and terminal digests recomputed and receipt signed again; transfer root retained." if "mutated" in name else "none",
             }
             Path(directory, name).write_text(json.dumps(document, indent=2) + "\n")
-        subprocess.run(["cargo", "test", "--locked", "--manifest-path", str(ROOT / "agent/Cargo.toml"),
+        subprocess.run(["cargo", "test", "--locked", "--manifest-path", str(ROOT / "services/agent/Cargo.toml"),
                         "-p", "layerx-proof", "--test", "terminal_v4"], check=True,
                        env={**os.environ, "LAYERX_TERMINAL_FIXTURE_DIR": directory, "CARGO_BUILD_JOBS": "4"})
         for name in CASES:

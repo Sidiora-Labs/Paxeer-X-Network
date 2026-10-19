@@ -18,7 +18,7 @@ import time
 from urllib.parse import urlsplit
 
 root = Path(sys.argv[1]).resolve()
-sys.path.insert(0, str(root / "agent/sdk/python"))
+sys.path.insert(0, str(root / "services/agent/sdk/python"))
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from layerx_sdk.verifier import AuthorizedReceiptBatch, verify_receipt_outcome

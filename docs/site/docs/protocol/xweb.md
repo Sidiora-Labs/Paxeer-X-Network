@@ -238,7 +238,7 @@ The single level is for an API that tolerates one call only, or one credential t
 
 ### Building envelopes off chain
 
-`agent/sdk/typescript` and `agent/sdk/python` build the payload and its envelopes from the attestor set `getAttestors` returns, so a developer needs no encoding knowledge:
+`services/agent/sdk/typescript` and `services/agent/sdk/python` build the payload and its envelopes from the attestor set `getAttestors` returns, so a developer needs no encoding knowledge:
 
 ```typescript
 const set = decodeXWebAttestors(await provider.call({ to: XWEB_PRECOMPILE, data: xwebGetAttestorsCallData() }));
@@ -256,7 +256,7 @@ In Python the same steps are `decode_xweb_attestors`, `build_xweb_api_request` w
 
 ## Agent clients
 
-`agent/sdk/typescript` and `agent/sdk/python` carry web search clients that perform the full 402LXP exchange against a sidecar for search, fetch and content by digest, verify the `PAYMENT-RESPONSE` settlement before returning content, and recompute the content digest locally. The MCP server exposes `web.search`, `web.fetch` and `web.content`; each spends through the server's approval boundary, and everything they return is untrusted external content. [SDKs](../agents/sdks.md) and [MCP](../agents/mcp.md) describe the clients around them.
+`services/agent/sdk/typescript` and `services/agent/sdk/python` carry web search clients that perform the full 402LXP exchange against a sidecar for search, fetch and content by digest, verify the `PAYMENT-RESPONSE` settlement before returning content, and recompute the content digest locally. The MCP server exposes `web.search`, `web.fetch` and `web.content`; each spends through the server's approval boundary, and everything they return is untrusted external content. [SDKs](../agents/sdks.md) and [MCP](../agents/mcp.md) describe the clients around them.
 
 ---
 

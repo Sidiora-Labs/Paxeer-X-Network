@@ -2,8 +2,8 @@
   "moduleId": 12,
   "name": "receipt-sequencer-v1",
   "provenance": {
-    "command": "LAYERX_UPDATE_FIXTURES=1 cargo test --locked --manifest-path agent/Cargo.toml -p layerx-proof --test sequencer_corpus",
-    "generator": "agent/crates/layerx-proof/tests/sequencer_corpus.rs"
+    "command": "LAYERX_UPDATE_FIXTURES=1 cargo test --locked --manifest-path services/agent/Cargo.toml -p layerx-proof --test sequencer_corpus",
+    "generator": "services/agent/crates/layerx-proof/tests/sequencer_corpus.rs"
   },
   "vectors": [
     {

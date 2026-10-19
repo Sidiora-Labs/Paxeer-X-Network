@@ -12,10 +12,10 @@ path = "src/main.rs"
 
 [dependencies]
 libc = "0.2"
-layerx-client = { path = "../../../../../agent/crates/layerx-client" }
-layerx-proof = { path = "../../../../../agent/crates/layerx-proof" }
-layerx-types = { path = "../../../../../agent/crates/layerx-types" }
-layerx-wire = { path = "../../../../../agent/crates/layerx-wire" }
+layerx-client = { path = "../../../../../services/agent/crates/layerx-client" }
+layerx-proof = { path = "../../../../../services/agent/crates/layerx-proof" }
+layerx-types = { path = "../../../../../services/agent/crates/layerx-types" }
+layerx-wire = { path = "../../../../../services/agent/crates/layerx-wire" }
 layerx-platform-core = { path = "../../../core" }
 
 [workspace]

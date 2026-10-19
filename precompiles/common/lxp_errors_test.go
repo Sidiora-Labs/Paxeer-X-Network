@@ -76,7 +76,7 @@ func lxpHeaderResultsForTest(t *testing.T) []lxpKernelResultForTest {
 
 func lxpRustResultsForTest(t *testing.T) []lxpKernelResultForTest {
 	t.Helper()
-	source := lxpReadRepoFileForTest(t, "agent/crates/layerx-types/src/result.rs")
+	source := lxpReadRepoFileForTest(t, "services/agent/crates/layerx-types/src/result.rs")
 	start := strings.Index(source, "protocol_result_codes! {")
 	require.True(t, start >= 0, "protocol_result_codes! invocation not found")
 	end := strings.Index(source[start:], "\n}")

@@ -1,6 +1,6 @@
 # Python SDK quickstart
 
-Package: `layerx-sdk` at `agent/sdk/python`. There is no `rpc`
+Package: `layerx-sdk` at `services/agent/sdk/python`. There is no `rpc`
 module of typed `lx_*` wrappers. `PaymentRpc` in
 `layerx_sdk.x402_rpc` is a generic JSON-RPC client whose public
 `call` can name any method. Dedicated helpers exist only for

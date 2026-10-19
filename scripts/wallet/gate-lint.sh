@@ -17,7 +17,7 @@ the Go modules human/wallet/attestor and human/wallet/ceremony; eslint in
 every package of the pnpm workspace human/wallet that has an eslint config
 and tsc --noEmit in every package that has a tsconfig.json, after building
 the sdk with its own build script, which first builds the linked sdk
-agent/sdk/typescript; eslint and
+services/agent/sdk/typescript; eslint and
 tsc --noEmit for the app human/apps/wallet; cargo fmt --check and
 cargo clippy -- -D warnings for layerx-human-kms,
 layerx-human-identity-provider and layerx-human-service in the human

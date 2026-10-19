@@ -79,7 +79,7 @@ def write_private(path, value):
 def sources():
     tracked = subprocess.check_output([
         'git', 'ls-files', '-z', '--', 'src', 'include', 'programs',
-        'agent/crates', 'agent/Cargo.toml', 'agent/Cargo.lock',
+        'services/agent/crates', 'services/agent/Cargo.toml', 'services/agent/Cargo.lock',
         'contracts/config/checkpoint-settlement.json', 'tests/programs', '.cargo',
     ], cwd=ROOT).decode().split('\0')
     names = set(OWN)

@@ -11,10 +11,10 @@ RUN_PREFIX ?=
 QUALIFICATION_CORPUS ?= build/qualification/replay/replay-10m.lxq
 FUZZ_QUAL_ITERATIONS ?= 100000
 AGENT_CARGO ?= cargo
-AGENT_MANIFEST := agent/Cargo.toml
+AGENT_MANIFEST := services/agent/Cargo.toml
 AGENT_FUZZ_TOOLCHAIN ?= nightly-2025-11-10
-AGENT_BOUNDARY_HARNESS := $(abspath $(or $(CARGO_TARGET_DIR),agent/tests/boundary/target))/debug/agent-boundary-conformance
-AGENT_WIRE_HARNESS := $(abspath $(or $(CARGO_TARGET_DIR),agent/tools/wire-differential/target))/debug/agent-wire-differential
+AGENT_BOUNDARY_HARNESS := $(abspath $(or $(CARGO_TARGET_DIR),services/agent/tests/boundary/target))/debug/agent-boundary-conformance
+AGENT_WIRE_HARNESS := $(abspath $(or $(CARGO_TARGET_DIR),services/agent/tools/wire-differential/target))/debug/agent-wire-differential
 HUMAN_CARGO ?= cargo
 HUMAN_MANIFEST := human/Cargo.toml
 HUMAN_WEB_DIR := human/apps/web
@@ -2279,7 +2279,7 @@ agent-build:
 
 .PHONY: human-js-install
 human-js-install:
-	npm --prefix agent/sdk/typescript ci --ignore-scripts --no-audit --no-fund
+	npm --prefix services/agent/sdk/typescript ci --ignore-scripts --no-audit --no-fund
 	$(HUMAN_NPM) ci --ignore-scripts --no-audit --no-fund
 
 human-gen-api:
@@ -2553,14 +2553,14 @@ agent-test agent-test-sanitize: export LAYERX_CUSTODY_PROOF_BIN = $(abspath $(BU
 agent-test agent-test-sanitize: export LAYERX_TEST_NATIVE_BIN_DIR = $(abspath $(BUILD_DIR)/bin)
 agent-test agent-test-sanitize: export LAYERX_TEST_NATIVE_BUILD_DIR = $(abspath $(BUILD_DIR))
 agent-test-native-prerequisites:
-	LAYERX_TEST_NATIVE_BUILD_DIR="$(abspath $(BUILD_DIR))" CARGO_TARGET_DIR="$(AGENT_TEST_TARGET_DIR)" sh agent/tools/run-real-node-tests.sh prepare
+	LAYERX_TEST_NATIVE_BUILD_DIR="$(abspath $(BUILD_DIR))" CARGO_TARGET_DIR="$(AGENT_TEST_TARGET_DIR)" sh services/agent/tools/run-real-node-tests.sh prepare
 
 agent-test: public-tls-test-prerequisites
 	LAYERX_PAXEER_BOUNDARY_BIN="$(PUBLIC_TLS_TEST_BOUNDARY)" LAYERX_RUNTIME_CLOCK_BIN="$(PUBLIC_TLS_TEST_CLOCK)" LAYERX_TEST_RUNTIME_CLOCK_BIN="$(PUBLIC_TLS_TEST_CLOCK)" sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked --workspace
 
 agent-lint:
 	$(AGENT_CARGO) clippy --manifest-path $(AGENT_MANIFEST) --locked --workspace --all-targets -- -D warnings
-	sh agent/tools/dependency-policy.sh
+	sh services/agent/tools/dependency-policy.sh
 
 AGENT_WIRE_FUZZ_TARGETS := primitive_decode envelope_decode payload_decode \
 	receipt_decode proof_decode roundtrip
@@ -2584,7 +2584,7 @@ agent-fuzz-wire agent-fuzz-interface agent-fuzz-all:
 	trap 'rm -rf -- "$$agent_fuzz_tmp"' EXIT HUP INT TERM; \
 	for target in $(AGENT_FUZZ_SELECTED); do \
 		mkdir -p "$$agent_fuzz_tmp/$$target"; \
-		cd agent/fuzz; \
+		cd services/agent/fuzz; \
 		$(AGENT_CARGO) +$(AGENT_FUZZ_TOOLCHAIN) fuzz run "$$target" \
 			"$$agent_fuzz_tmp/$$target" "corpus/$$target" -- \
 			-runs=$(AGENT_FUZZ_RUNS) -max_len=$(AGENT_FUZZ_MAX_LEN) \
@@ -2600,7 +2600,7 @@ agent-fuzz-long agent-fuzz-wire-long:
 	trap 'rm -rf -- "$$agent_fuzz_tmp"' EXIT HUP INT TERM; \
 	for target in $(AGENT_FUZZ_SELECTED); do \
 		mkdir -p "$$agent_fuzz_tmp/$$target"; \
-		cd agent/fuzz; \
+		cd services/agent/fuzz; \
 		$(AGENT_CARGO) +$(AGENT_FUZZ_TOOLCHAIN) fuzz run "$$target" \
 			"$$agent_fuzz_tmp/$$target" "corpus/$$target" -- \
 			-max_total_time=$(AGENT_FUZZ_LONG_SECONDS) -max_len=$(AGENT_FUZZ_MAX_LEN) \
@@ -2616,8 +2616,8 @@ agent-fuzz-minimize agent-fuzz-wire-minimize:
 	for target in $(AGENT_FUZZ_SELECTED); do \
 		rm -rf -- "$(AGENT_FUZZ_MINIMIZED_ROOT)/$$target"; \
 		mkdir -p "$(AGENT_FUZZ_MINIMIZED_ROOT)/$$target"; \
-		cp agent/fuzz/corpus/$$target/* "$(AGENT_FUZZ_MINIMIZED_ROOT)/$$target/"; \
-		cd agent/fuzz; \
+		cp services/agent/fuzz/corpus/$$target/* "$(AGENT_FUZZ_MINIMIZED_ROOT)/$$target/"; \
+		cd services/agent/fuzz; \
 		$(AGENT_CARGO) +$(AGENT_FUZZ_TOOLCHAIN) fuzz cmin "$$target" \
 			"$(AGENT_FUZZ_MINIMIZED_ROOT)/$$target" -- \
 			-max_len=$(AGENT_FUZZ_MAX_LEN) -rss_limit_mb=$(AGENT_FUZZ_RSS_MB) \
@@ -2698,29 +2698,29 @@ agent-test-lni-schema:
 
 agent-test-lni-transport:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-client --test lni_transport
-	$(AGENT_CARGO) check --manifest-path agent/fuzz/Cargo.toml --locked --bin lni_frame
+	$(AGENT_CARGO) check --manifest-path services/agent/fuzz/Cargo.toml --locked --bin lni_frame
 
 agent-test-lni-handshake:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-client --test lni_handshake
 
 agent-test-lni-abi:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-client --test lni_abi
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path agent/tools/boundary-check/Cargo.toml --locked
-	$(AGENT_CARGO) run --manifest-path agent/tools/boundary-check/Cargo.toml --locked --quiet -- agent
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path services/agent/tools/boundary-check/Cargo.toml --locked
+	$(AGENT_CARGO) run --manifest-path services/agent/tools/boundary-check/Cargo.toml --locked --quiet -- services/agent
 
-$(BUILD_DIR)/agent/layerxd-lni: agent/tests/boundary/node/layerxd_lni.c \
+$(BUILD_DIR)/agent/layerxd-lni: services/agent/tests/boundary/node/layerxd_lni.c \
 		$(LAYERXD_SOURCES) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) agent/tests/boundary/node/layerxd_lni.c \
+	$(CC) $(CPPFLAGS) $(CFLAGS) services/agent/tests/boundary/node/layerxd_lni.c \
 		$(LAYERXD_SOURCES) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/agent/lni-preparation-state: \
-		agent/tests/boundary/node/preparation_state.c \
+		services/agent/tests/boundary/node/preparation_state.c \
 		$(LAYERXD_SOURCES) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) \
-		agent/tests/boundary/node/preparation_state.c \
+		services/agent/tests/boundary/node/preparation_state.c \
 		$(LAYERXD_SOURCES) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
@@ -2729,57 +2729,57 @@ agent-test-boundary: $(BUILD_DIR)/agent/layerxd-lni \
 	$(RUN_PREFIX) $(BUILD_DIR)/agent/lni-preparation-state
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked \
 		-p layerx-client --test lni_preparation
-	$(AGENT_CARGO) run --manifest-path agent/tests/boundary/Cargo.toml --locked -- \
+	$(AGENT_CARGO) run --manifest-path services/agent/tests/boundary/Cargo.toml --locked -- \
 		$(CURDIR)/$(BUILD_DIR)/agent/layerxd-lni $(CURDIR)
 
 agent-qualify-boundary: $(BUILD_DIR)/agent/layerxd-lni
-	$(AGENT_CARGO) build --manifest-path agent/tests/boundary/Cargo.toml --locked
-	$(AGENT_CARGO) run --manifest-path agent/tests/qualify/Cargo.toml --locked -- boundary \
+	$(AGENT_CARGO) build --manifest-path services/agent/tests/boundary/Cargo.toml --locked
+	$(AGENT_CARGO) run --manifest-path services/agent/tests/qualify/Cargo.toml --locked -- boundary \
 		$(CURDIR) $(CURDIR)/$(BUILD_DIR)/agent/layerxd-lni \
 		$(AGENT_BOUNDARY_HARNESS)
 
 agent-qualify-fabrication:
 	$(MAKE) agent-test-sdk-ts
 	$(MAKE) agent-test-sdk-py
-	$(AGENT_CARGO) run --manifest-path agent/tests/qualify/Cargo.toml --locked -- fabrication $(CURDIR)
+	$(AGENT_CARGO) run --manifest-path services/agent/tests/qualify/Cargo.toml --locked -- fabrication $(CURDIR)
 
 agent-qualify-faults: $(BUILD_DIR)/agent/layerxd-lni
 	$(MAKE) agent-test-sdk-parity
-	$(AGENT_CARGO) run --manifest-path agent/tests/qualify/Cargo.toml --locked -- faults $(CURDIR)
+	$(AGENT_CARGO) run --manifest-path services/agent/tests/qualify/Cargo.toml --locked -- faults $(CURDIR)
 
 agent-qualify-fuzz:
-	$(AGENT_CARGO) run --manifest-path agent/tests/qualify/Cargo.toml --locked -- fuzz \
+	$(AGENT_CARGO) run --manifest-path services/agent/tests/qualify/Cargo.toml --locked -- fuzz \
 		$(CURDIR) $(AGENT_FUZZ_MINIMIZED_ROOT)
 
 agent-test-capability-report: agent-test-boundary
 
 agent-test-client-connection:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-client --test connection
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path agent/tools/boundary-check/Cargo.toml --locked
-	$(AGENT_CARGO) run --manifest-path agent/tools/boundary-check/Cargo.toml --locked --quiet -- agent
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path services/agent/tools/boundary-check/Cargo.toml --locked
+	$(AGENT_CARGO) run --manifest-path services/agent/tools/boundary-check/Cargo.toml --locked --quiet -- services/agent
 
 agent-test-client-submit:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-client --test submit
-	$(AGENT_CARGO) run --manifest-path agent/tools/boundary-check/Cargo.toml --locked --quiet -- agent
+	$(AGENT_CARGO) run --manifest-path services/agent/tools/boundary-check/Cargo.toml --locked --quiet -- services/agent
 
 agent-test-client-submit-focused:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-client --test submit
 
 agent-test-client-receipt:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-client --test receipt
-	$(AGENT_CARGO) run --manifest-path agent/tools/boundary-check/Cargo.toml --locked --quiet -- agent
+	$(AGENT_CARGO) run --manifest-path services/agent/tools/boundary-check/Cargo.toml --locked --quiet -- services/agent
 
 agent-test-client-reads:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-client --test reads
-	$(AGENT_CARGO) run --manifest-path agent/tools/boundary-check/Cargo.toml --locked --quiet -- agent
+	$(AGENT_CARGO) run --manifest-path services/agent/tools/boundary-check/Cargo.toml --locked --quiet -- services/agent
 
 agent-test-client-stream:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-client --test stream
-	$(AGENT_CARGO) run --manifest-path agent/tools/boundary-check/Cargo.toml --locked --quiet -- agent
+	$(AGENT_CARGO) run --manifest-path services/agent/tools/boundary-check/Cargo.toml --locked --quiet -- services/agent
 
 agent-test-client-availability:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-client --test availability
-	$(AGENT_CARGO) run --manifest-path agent/tools/boundary-check/Cargo.toml --locked --quiet -- agent
+	$(AGENT_CARGO) run --manifest-path services/agent/tools/boundary-check/Cargo.toml --locked --quiet -- services/agent
 
 agent-test-contract-schema:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-agent-api --test schema
@@ -2849,7 +2849,7 @@ agent-test-agentd-policy:
 
 agent-test-agentd-policy-version:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-agentd --test policy_version
-	$(AGENT_CARGO) check --manifest-path agent/fuzz/Cargo.toml --locked --bin policy_loader
+	$(AGENT_CARGO) check --manifest-path services/agent/fuzz/Cargo.toml --locked --bin policy_loader
 
 agent-test-agentd-policy-dryrun:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-agentd --test policy_dryrun
@@ -2862,8 +2862,8 @@ agent-test-approvals:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-mcp --test approval
 
 agent-test-policy-adversarial:
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path agent/tools/policy-harness/Cargo.toml --locked
-	$(AGENT_CARGO) run --manifest-path agent/tools/policy-harness/Cargo.toml --locked --quiet
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path services/agent/tools/policy-harness/Cargo.toml --locked
+	$(AGENT_CARGO) run --manifest-path services/agent/tools/policy-harness/Cargo.toml --locked --quiet
 
 agent-test-agentd-prepare:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-agentd --test prepare
@@ -2949,7 +2949,7 @@ agent-test-limits-exactly-once:
 
 agent-test-agentd-tenant-store:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-agentd --test tenant_store
-	$(AGENT_CARGO) check --manifest-path agent/fuzz/Cargo.toml --locked --bin tenant_key
+	$(AGENT_CARGO) check --manifest-path services/agent/fuzz/Cargo.toml --locked --bin tenant_key
 
 agent-test-agentd-tenant-resolve:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-agentd --test tenant_resolve
@@ -2962,15 +2962,15 @@ agent-test-agentd-tenant-leakage:
 
 agent-test-agentd-audit-chain:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-agentd --test audit_chain
-	$(AGENT_CARGO) check --manifest-path agent/tools/audit-verify/Cargo.toml --locked
+	$(AGENT_CARGO) check --manifest-path services/agent/tools/audit-verify/Cargo.toml --locked
 
 agent-test-agentd-audit-coverage:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-agentd --test audit_coverage
 
 agent-test-agentd-redaction:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-agentd --test redaction
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path agent/tools/secret-check/Cargo.toml --locked
-	$(AGENT_CARGO) run --manifest-path agent/tools/secret-check/Cargo.toml --locked --quiet -- agent
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path services/agent/tools/secret-check/Cargo.toml --locked
+	$(AGENT_CARGO) run --manifest-path services/agent/tools/secret-check/Cargo.toml --locked --quiet -- services/agent
 
 agent-test-agentd-observability:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-agentd --test observability
@@ -2994,7 +2994,7 @@ agent-test-agentd-migration:
 
 agent-test-agentd-operator:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-agentd --test operator
-	$(AGENT_CARGO) run --manifest-path agent/tools/secret-check/Cargo.toml --locked --quiet -- agent
+	$(AGENT_CARGO) run --manifest-path services/agent/tools/secret-check/Cargo.toml --locked --quiet -- services/agent
 
 agent-test-mcp-scope:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-mcp --test scope
@@ -3010,7 +3010,7 @@ agent-test-mcp-approval:
 
 agent-test-mcp-injection:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-mcp --test injection
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path agent/tests/isolation/Cargo.toml --locked mcp_untrusted
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path services/agent/tests/isolation/Cargo.toml --locked mcp_untrusted
 
 agent-test-mcp-readonly:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-mcp --test readonly
@@ -3019,64 +3019,64 @@ agent-test-sdk-rust:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-sdk --test sdk
 
 agent-sdk-generate:
-	cargo run --manifest-path agent/tools/sdk-gen/Cargo.toml --locked -- --write
+	cargo run --manifest-path services/agent/tools/sdk-gen/Cargo.toml --locked -- --write
 
 agent-test-sdk-generate:
-	cargo test --manifest-path agent/tools/sdk-gen/Cargo.toml --locked
-	cargo run --manifest-path agent/tools/sdk-gen/Cargo.toml --locked -- --check
+	cargo test --manifest-path services/agent/tools/sdk-gen/Cargo.toml --locked
+	cargo run --manifest-path services/agent/tools/sdk-gen/Cargo.toml --locked -- --check
 
 agent-test-sdk-ts:
 	$(MAKE) agent-test-sdk-generate
-	cd agent/sdk/typescript && npm test
+	cd services/agent/sdk/typescript && npm test
 
 agent-test-sdk-py:
 	$(MAKE) agent-test-sdk-generate
-	PYTHONPATH=agent/sdk/python python3 -m unittest discover -s tests/agent/sdk/python -p 'test_*.py'
-	PYTHONPATH=agent/sdk/python python3 -m compileall -q agent/sdk/python/layerx_sdk agent/sdk/python/examples
+	PYTHONPATH=services/agent/sdk/python python3 -m unittest discover -s tests/agent/sdk/python -p 'test_*.py'
+	PYTHONPATH=services/agent/sdk/python python3 -m compileall -q services/agent/sdk/python/layerx_sdk services/agent/sdk/python/examples
 
 agent-test-sdk-parity: $(BUILD_DIR)/agent/layerxd-lni
 	$(MAKE) agent-test-sdk-ts
 	$(MAKE) agent-test-sdk-py
-	$(AGENT_CARGO) run --manifest-path agent/tests/parity/Cargo.toml --locked -- \
+	$(AGENT_CARGO) run --manifest-path services/agent/tests/parity/Cargo.toml --locked -- \
 		$(CURDIR)/$(BUILD_DIR)/agent/layerxd-lni $(CURDIR)
 
 agent-test-sdk-compat:
 	$(MAKE) agent-test-contract-schema
 	$(MAKE) agent-test-sdk-generate
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path agent/tools/doc-check/Cargo.toml --locked
-	$(AGENT_CARGO) run --manifest-path agent/tools/doc-check/Cargo.toml --locked -- $(CURDIR)
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path services/agent/tools/doc-check/Cargo.toml --locked
+	$(AGENT_CARGO) run --manifest-path services/agent/tools/doc-check/Cargo.toml --locked -- $(CURDIR)
 
 agent-test-mcp-untrusted-input:
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path agent/tests/isolation/Cargo.toml --locked mcp_untrusted
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path services/agent/tests/isolation/Cargo.toml --locked mcp_untrusted
 
 agent-test-isolation: agent-test-policy-adversarial agent-test-mcp-untrusted-input
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path agent/tests/isolation/Cargo.toml --locked agent_isolation
-	$(AGENT_CARGO) run --manifest-path agent/tests/isolation/Cargo.toml --locked --quiet
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path services/agent/tests/isolation/Cargo.toml --locked agent_isolation
+	$(AGENT_CARGO) run --manifest-path services/agent/tests/isolation/Cargo.toml --locked --quiet
 
-$(BUILD_DIR)/agent-wire-reference: agent/tools/wire-differential/reference.c $(LIBRARY)
+$(BUILD_DIR)/agent-wire-reference: services/agent/tools/wire-differential/reference.c $(LIBRARY)
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -o $@
 
 agent-test-wire-parity: $(BUILD_DIR)/agent-wire-reference
 	LAYERX_REPOSITORY_ROOT=$(CURDIR) LAYERX_C_REFERENCE=$(CURDIR)/$(BUILD_DIR)/agent-wire-reference \
-		sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path agent/tools/wire-differential/Cargo.toml --locked
+		sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path services/agent/tools/wire-differential/Cargo.toml --locked
 
 agent-qualify-wire: $(BUILD_DIR)/agent-wire-reference
-	$(AGENT_CARGO) build --manifest-path agent/tools/wire-differential/Cargo.toml --locked
-	$(AGENT_CARGO) run --manifest-path agent/tests/qualify/Cargo.toml --locked -- wire \
+	$(AGENT_CARGO) build --manifest-path services/agent/tools/wire-differential/Cargo.toml --locked
+	$(AGENT_CARGO) run --manifest-path services/agent/tests/qualify/Cargo.toml --locked -- wire \
 		$(CURDIR) $(CURDIR)/$(BUILD_DIR)/agent-wire-reference \
 		$(AGENT_WIRE_HARNESS)
 
 agent-test-sanitize: public-tls-test-prerequisites
-	LAYERX_PAXEER_BOUNDARY_BIN="$(PUBLIC_TLS_TEST_BOUNDARY)" LAYERX_RUNTIME_CLOCK_BIN="$(PUBLIC_TLS_TEST_CLOCK)" LAYERX_TEST_RUNTIME_CLOCK_BIN="$(PUBLIC_TLS_TEST_CLOCK)" sh $(CURDIR)/tools/runtime/run-with-clock.sh sh agent/tools/run-sanitizers.sh
+	LAYERX_PAXEER_BOUNDARY_BIN="$(PUBLIC_TLS_TEST_BOUNDARY)" LAYERX_RUNTIME_CLOCK_BIN="$(PUBLIC_TLS_TEST_CLOCK)" LAYERX_TEST_RUNTIME_CLOCK_BIN="$(PUBLIC_TLS_TEST_CLOCK)" sh $(CURDIR)/tools/runtime/run-with-clock.sh sh services/agent/tools/run-sanitizers.sh
 
 agent-check-boundary:
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path agent/tools/boundary-check/Cargo.toml --locked
-	$(AGENT_CARGO) run --manifest-path agent/tools/boundary-check/Cargo.toml --locked --quiet -- agent
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path services/agent/tools/boundary-check/Cargo.toml --locked
+	$(AGENT_CARGO) run --manifest-path services/agent/tools/boundary-check/Cargo.toml --locked --quiet -- services/agent
 
 agent-check-secrets:
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path agent/tools/secret-check/Cargo.toml --locked
-	$(AGENT_CARGO) run --manifest-path agent/tools/secret-check/Cargo.toml --locked --quiet -- agent
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path services/agent/tools/secret-check/Cargo.toml --locked
+	$(AGENT_CARGO) run --manifest-path services/agent/tools/secret-check/Cargo.toml --locked --quiet -- services/agent
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-crypto --test secrets
 
 ci: public-audit test reproducible scan-consensus test-sanitizers
@@ -3295,7 +3295,7 @@ core-qualification-environment: test-replay-golden qualify-replay qualify-fuzz
 
 workspace-install:
 	$(MAKE) workspace-node-preflight
-	cargo fetch --manifest-path agent/Cargo.toml --locked
+	cargo fetch --manifest-path services/agent/Cargo.toml --locked
 	cargo fetch --manifest-path human/Cargo.toml --locked
 	cargo fetch --manifest-path platform/Cargo.toml --locked
 	cd programs && cargo fetch --locked
@@ -3860,9 +3860,9 @@ test-daemon-guarantor-feedback: $(BUILD_DIR)/tests/lxp_test_guarantor_feedback
 test-daemon-handover-consumers: test-guarantor-receipt $(BUILD_DIR)/tests/lxp_test_guarantor_feedback
 	sh programs/sdk/rust/examples/escrow/build.sh
 	cargo build --locked --manifest-path platform/Cargo.toml -p layerx-runtime-clock
-	cargo build --locked --manifest-path agent/Cargo.toml -p layerx-client --example native_handover_history
-	cargo build --locked --manifest-path agent/Cargo.toml -p layerx-agentd --example native_handover_reads --example native_handover_programs
-	$(MAKE) test-daemon-handover-peers LAYERX_TEST_GUARANTOR_FEEDBACK_BIN=$(abspath $(BUILD_DIR)/tests/lxp_test_guarantor_feedback) LAYERX_TEST_HANDOVER_CONSUMER_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),agent/target)/debug/examples/native_handover_history) LAYERX_TEST_HANDOVER_READ_CONSUMER_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),agent/target)/debug/examples/native_handover_reads) LAYERX_TEST_HANDOVER_CLOCK_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),platform/target)/debug/layerx-runtime-clock) LAYERX_TEST_HANDOVER_PROGRAM_CONSUMER_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),agent/target)/debug/examples/native_handover_programs) LAYERX_TEST_HANDOVER_ESCROW_WASM=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),programs/sdk/rust/examples/escrow/target)/wasm32-unknown-unknown/release/layerx_reference_escrow.wasm)
+	cargo build --locked --manifest-path services/agent/Cargo.toml -p layerx-client --example native_handover_history
+	cargo build --locked --manifest-path services/agent/Cargo.toml -p layerx-agentd --example native_handover_reads --example native_handover_programs
+	$(MAKE) test-daemon-handover-peers LAYERX_TEST_GUARANTOR_FEEDBACK_BIN=$(abspath $(BUILD_DIR)/tests/lxp_test_guarantor_feedback) LAYERX_TEST_HANDOVER_CONSUMER_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),services/agent/target)/debug/examples/native_handover_history) LAYERX_TEST_HANDOVER_READ_CONSUMER_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),services/agent/target)/debug/examples/native_handover_reads) LAYERX_TEST_HANDOVER_CLOCK_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),platform/target)/debug/layerx-runtime-clock) LAYERX_TEST_HANDOVER_PROGRAM_CONSUMER_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),services/agent/target)/debug/examples/native_handover_programs) LAYERX_TEST_HANDOVER_ESCROW_WASM=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),programs/sdk/rust/examples/escrow/target)/wasm32-unknown-unknown/release/layerx_reference_escrow.wasm)
 
 .PHONY: test-program-admission
 test-program-admission: $(BUILD_DIR)/tests/lxp_test_program_admission $(BUILD_DIR)/bin/layerxd $(BUILD_DIR)/bin/layerx-genesis-build
@@ -4046,7 +4046,7 @@ $(BUILD_DIR)/tests/lxp_test_state_diff: tests/state/lxp_test_state_diff.c $(LIBR
 .PHONY: test-daemon-availability
 test-daemon-availability: $(BUILD_DIR)/tests/lxp_test_daemon_finality_authority $(BUILD_DIR)/tests/lxp_test_program_admission $(BUILD_DIR)/bin/layerxd $(BUILD_DIR)/bin/layerx-genesis-build
 	LAYERX_TEST_NATIVE_BIN_DIR="$(CURDIR)/$(BUILD_DIR)/bin" cargo test --locked \
-		--manifest-path agent/Cargo.toml -p layerx-client --test availability_daemon \
+		--manifest-path services/agent/Cargo.toml -p layerx-client --test availability_daemon \
 		-- --nocapture --test-threads=1
 
 GUARANTOR_SOURCES = cmd/layerx-guarantor/main.c cmd/layerx-guarantor/lni.c \

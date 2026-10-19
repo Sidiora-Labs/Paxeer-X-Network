@@ -20,7 +20,7 @@ public final class GoldenVectorTest {
 
     @Test
     void testAgentApiVersion() throws Exception {
-        Path goldenRoot = REPO_ROOT.resolve("agent/schema/agent-api/golden");
+        Path goldenRoot = REPO_ROOT.resolve("services/agent/schema/agent-api/golden");
         byte[] request = hexDecode(readHex(goldenRoot.resolve("version-request.hex")));
         byte[] response = hexDecode(readHex(goldenRoot.resolve("version-response.hex")));
         assertNotNull(request);

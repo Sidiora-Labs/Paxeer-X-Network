@@ -81,8 +81,8 @@ def source():
     require(not capture(['git', 'status', '--porcelain=v1', '--untracked-files=normal']),
         'source candidate must be clean')
     paths = capture(['git', 'ls-files', '--', 'src', 'include', 'programs/crates',
-        'programs/sdk/rust', 'programs/.cargo', 'programs/vendor', 'agent/crates',
-        'agent/Cargo.lock', 'agent/Cargo.toml', 'programs/Cargo.lock', 'programs/Cargo.toml',
+        'programs/sdk/rust', 'programs/.cargo', 'programs/vendor', 'services/agent/crates',
+        'services/agent/Cargo.lock', 'services/agent/Cargo.toml', 'programs/Cargo.lock', 'programs/Cargo.toml',
         'Makefile', 'platform/Makefile.inc', 'tools/build/sanitizers.mk',
         'rust-toolchain.toml', 'contracts/config/checkpoint-settlement.json',
         'tests/programs/test_call_activity.c', 'tests/programs/test_spend_capability_composition.c',

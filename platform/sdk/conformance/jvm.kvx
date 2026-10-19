@@ -3,7 +3,7 @@
 name = "jvm"
 artifact = "com.sidiora.layerx:layerx-sdk"
 root = "platform/sdk/jvm"
-agent_schema = "agent/schema/agent-api"
+agent_schema = "services/agent/schema/agent-api"
 human_schema = "human/schema/human-api"
 protocol_version = 2
 agent_operations = 54
@@ -25,9 +25,9 @@ receipt_in_batch = "com.sidiora.layerx.sdk.verify.LocalVerifier.verifyReceiptInB
 merkle = "com.sidiora.layerx.sdk.verify.LocalVerifier.verifyMerkleInclusion"
 
 [golden]
-agent_request = "agent/schema/agent-api/golden/version-request.hex"
-agent_response = "agent/schema/agent-api/golden/version-response.hex"
-agent_schema_goldens = "agent/schema/agent-api/golden/*.kvx"
+agent_request = "services/agent/schema/agent-api/golden/version-request.hex"
+agent_response = "services/agent/schema/agent-api/golden/version-response.hex"
+agent_schema_goldens = "services/agent/schema/agent-api/golden/*.kvx"
 human_schema_goldens = "human/schema/human-api/golden/*.json"
 codec_valid = "tests/vectors/codec/valid.lxv"
 codec_adversarial = "tests/vectors/codec/adversarial.lxv"

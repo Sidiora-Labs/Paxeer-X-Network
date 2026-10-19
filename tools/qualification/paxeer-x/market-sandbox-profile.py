@@ -28,9 +28,9 @@ def sha(path):
 
 def sources():
     output = subprocess.run([
-        "git", "ls-files", "-z", "--", "programs", "agent/crates/layerx-client",
-        "agent/crates/layerx-proof", "agent/crates/layerx-wire", "agent/crates/layerx-types",
-        "agent/crates/layerx-crypto",
+        "git", "ls-files", "-z", "--", "programs", "services/agent/crates/layerx-client",
+        "services/agent/crates/layerx-proof", "services/agent/crates/layerx-wire", "services/agent/crates/layerx-types",
+        "services/agent/crates/layerx-crypto",
     ], cwd=ROOT, check=True, capture_output=True).stdout
     names = {os.fsdecode(value) for value in output.split(b"\0") if value} | set(DECLARED)
     return {name: sha(ROOT / name) for name in sorted(names) if Path(name).suffix in {".rs", ".toml", ".lock", ".json", ".py"}}

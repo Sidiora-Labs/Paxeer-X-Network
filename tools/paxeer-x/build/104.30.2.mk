@@ -18,8 +18,8 @@ PX_104_30_2_CMD_LIB = $(PX_104_30_2_CARGO) build --locked --manifest-path progra
 PX_104_30_2_CMD_CC = $(CC) $(CPPFLAGS) -DLXP_TESTING $(CFLAGS) tests/programs/test_monetary_law.c $(TEST_LIBRARY) $(PX_104_30_2_SANDBOX_LIB) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $(PX_104_30_2_MONETARY)
 PX_104_30_2_CMD_TEST = $(PX_104_30_2_CARGO) test --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime --lib --test monetary_law --no-run --message-format=json-render-diagnostics
 PX_104_30_2_CMD_MAKE = make -f Makefile -f tools/paxeer-x/build/104.30.2.mk paxeer-x-build-104.30.2
-PX_104_30_2_RUST_INPUTS := rust-toolchain.toml programs/Cargo.toml programs/Cargo.lock agent/Cargo.toml agent/Cargo.lock \
-	$(filter %.rs %/Cargo.toml,$(shell git ls-files -- programs/crates programs/sdk/rust agent/crates))
+PX_104_30_2_RUST_INPUTS := rust-toolchain.toml programs/Cargo.toml programs/Cargo.lock services/agent/Cargo.toml services/agent/Cargo.lock \
+	$(filter %.rs %/Cargo.toml,$(shell git ls-files -- programs/crates programs/sdk/rust services/agent/crates))
 PX_104_30_2_NATIVE_INPUTS := $(filter %.c %.h %.inc,$(shell git ls-files -- include src)) \
 	tests/programs/test_call_activity.c tests/programs/test_monetary_law.c \
 	contracts/config/checkpoint-settlement.json

@@ -64,14 +64,14 @@ fn repo_fixture(label: &str) -> PathBuf {
     );
     place(
         &root,
-        "agent/tools/sdk-gen/Cargo.toml",
+        "services/agent/tools/sdk-gen/Cargo.toml",
         "[package]\nname = \"layerx-sdk-gen\"\n",
     );
-    place(&root, "agent/tools/sdk-gen/Cargo.lock", "version = 4\n");
-    place(&root, "agent/tools/sdk-gen/src/main.rs", "fn main() {}\n");
+    place(&root, "services/agent/tools/sdk-gen/Cargo.lock", "version = 4\n");
+    place(&root, "services/agent/tools/sdk-gen/src/main.rs", "fn main() {}\n");
     place(
         &root,
-        "agent/tools/sdk-gen/templates/typescript.tpl",
+        "services/agent/tools/sdk-gen/templates/typescript.tpl",
         "// typescript template\n",
     );
     place(
@@ -101,26 +101,26 @@ fn repo_fixture(label: &str) -> PathBuf {
         "platform/sdk/generators/receipt.kvx",
         "[receipt]\nprogram_outcome = \"optional\"\nprograms_module_id = 9\nprogram_outcome_tags = [\"50524731\", \"50524732\", \"50524733\", \"50524734\"]\nrequired_nonzero = [\"global-sequence\", \"module-id\", \"module-version\", \"timestamp\", \"activity-id\", \"resulting-state-root\"]\nfailure_checks = [\"decode\", \"canonical-encoding\", \"receipt-shape\", \"missing-signature\", \"protocol-version\", \"result-code\", \"operation\", \"activity-id\", \"global-sequence\", \"module-id\", \"module-version\", \"timestamp\", \"batch-id\", \"asset\", \"previous-state-root\", \"resulting-state-root\", \"debit-balance\", \"credit-balance\", \"program-outcome\", \"sequencer-signature\"]\n",
     );
-    place(&root, "agent/schema/agent-api/v1.kvx", "[schema]\nincludes = [\"errors.kvx\",\"approval.kvx\",\"stream.kvx\",\"programs.kvx\"]\n\n[scalar.Amount]\nrust = \"u128\"\n");
-    place(&root, "agent/schema/agent-api/errors.kvx", "[operation.agent.register]\nrequest = \"Register\"\nresponse = \"Registered\"\n\n[mutation.agent.register]\nenvelope = \"IdempotentMutation\"\n\n[type.ErrorClass]\nvariants = [\"TransportFailure\"]\n\n[type.Retriability]\nvariants = [\"Terminal\"]\n");
+    place(&root, "services/agent/schema/agent-api/v1.kvx", "[schema]\nincludes = [\"errors.kvx\",\"approval.kvx\",\"stream.kvx\",\"programs.kvx\"]\n\n[scalar.Amount]\nrust = \"u128\"\n");
+    place(&root, "services/agent/schema/agent-api/errors.kvx", "[operation.agent.register]\nrequest = \"Register\"\nresponse = \"Registered\"\n\n[mutation.agent.register]\nenvelope = \"IdempotentMutation\"\n\n[type.ErrorClass]\nvariants = [\"TransportFailure\"]\n\n[type.Retriability]\nvariants = [\"Terminal\"]\n");
     place(
         &root,
-        "agent/schema/agent-api/approval.kvx",
+        "services/agent/schema/agent-api/approval.kvx",
         "[type.ApprovalLifecycleEvent]\nvariants = [\"Created\"]\n\n[type.ApprovalState]\nvariants = [\"Held\"]\n\n[type.ApprovalDecisionOutcome]\nvariants = [\"Granted\"]\n",
     );
     place(
         &root,
-        "agent/schema/agent-api/stream.kvx",
+        "services/agent/schema/agent-api/stream.kvx",
         "[type.Delivery]\nvariants = [\"Event\"]\n",
     );
     place(
         &root,
-        "agent/schema/agent-api/programs.kvx",
+        "services/agent/schema/agent-api/programs.kvx",
         "[operation.program.discover]\nrequest = \"ProgramSelector\"\nresponse = \"VerifiedProgramDiscovery\"\n\n[operation.program.interface]\nrequest = \"ProgramSelector\"\nresponse = \"VerifiedProgramInterface\"\n\n[operation.program.simulate]\nrequest = \"ProgramCallRequest\"\nresponse = \"ProgramSimulation\"\n\n[operation.program.call]\nrequest = \"ProgramCallRequest\"\nrequired = [\"idempotency_key\"]\nresponse = \"ProgramSubmission\"\n\n[operation.program.receipt]\nrequest = \"ProgramReceiptSelector\"\nresponse = \"ProgramSubmission\"\n\n[operation.program.activity]\nrequest = \"ProgramActivitySelector\"\nresponse = \"ProgramSubmission\"\n\n[type.ProgramGuestAbi]\nvariants = [\"ABI_V1_VERSION\",\"ABI_V2_VERSION\",\"ABI_V3_VERSION\",\"ABI_V4_VERSION\",\"ABI_V5_VERSION\"]\nwire_values = [\"1\",\"2\",\"3\",\"4\",\"5\"]\nsource_policy = \"programs/sdk/rust/src/abi_policy.rs\"\ncapability_encoding = [\"V1\",\"V2\",\"V2\",\"V2\",\"V2\"]\n\n[type.ProgramExecutionV4]\nencoding_version = 4\ndomain = \"LXP/program-execution/v4\"\ndomain_terminator_hex = \"00\"\nallowed_guest_abis = [\"ABI_V2_VERSION\"]\n\n[type.ProgramExecutionV5]\nencoding_version = 5\ndomain = \"LXP/program-execution/v5\"\ndomain_terminator_hex = \"00\"\nallowed_guest_abis = [\"ABI_V3_VERSION\",\"ABI_V4_VERSION\",\"ABI_V5_VERSION\"]\n",
     );
     place(
         &root,
-        "agent/schema/agent-api/golden/version-request.hex",
+        "services/agent/schema/agent-api/golden/version-request.hex",
         "00ff\n",
     );
     place(&root, "human/schema/human-api/v1.kvx", "[schema]\nincludes = [\"errors.kvx\",\"journeys.kvx\",\"stream.kvx\"]\n\n[operation.version]\nmethod = \"GET\"\npath = \"/v1/version\"\nrequest = \"Empty\"\nresponse = \"VersionInfo\"\n");
@@ -151,30 +151,30 @@ fn repo_fixture(label: &str) -> PathBuf {
 fn place_generated_fixture(root: &Path) {
     place(
         root,
-        "agent/sdk/typescript/src/generated/client.ts",
+        "services/agent/sdk/typescript/src/generated/client.ts",
         "export const generated = true;\n",
     );
     place(
         root,
-        "agent/sdk/typescript/src/generated/guarantees.md",
+        "services/agent/sdk/typescript/src/generated/guarantees.md",
         "guarantees\n",
     );
     place(
         root,
-        "agent/sdk/python/layerx_sdk/generated/client.py",
+        "services/agent/sdk/python/layerx_sdk/generated/client.py",
         "GENERATED = True\n",
     );
     place(
         root,
-        "agent/sdk/python/layerx_sdk/generated/client.pyi",
+        "services/agent/sdk/python/layerx_sdk/generated/client.pyi",
         "GENERATED: bool\n",
     );
     place(
         root,
-        "agent/sdk/python/layerx_sdk/generated/guarantees.md",
+        "services/agent/sdk/python/layerx_sdk/generated/guarantees.md",
         "guarantees\n",
     );
-    place(root, "agent/sdk/COMPATIBILITY.md", "compatibility\n");
+    place(root, "services/agent/sdk/COMPATIBILITY.md", "compatibility\n");
     place(
         root,
         "human/apps/web/src/api/generated/index.ts",
@@ -182,17 +182,17 @@ fn place_generated_fixture(root: &Path) {
     );
     place(
         root,
-        "agent/crates/layerx-agent-api/src/operation_generated.rs",
+        "services/agent/crates/layerx-agent-api/src/operation_generated.rs",
         "// generated Rust operations\n",
     );
     place(
         root,
-        "agent/crates/layerx-agent-api/src/generated.rs",
+        "services/agent/crates/layerx-agent-api/src/generated.rs",
         "// generated Rust contract\n",
     );
     place(
         root,
-        "agent/crates/layerx-sdk/src/mirror_generated.rs",
+        "services/agent/crates/layerx-sdk/src/mirror_generated.rs",
         "// generated Rust mirror\n",
     );
     place(root, "platform/sdk/go/generated.go", "package layerx\n");
@@ -301,7 +301,7 @@ fn rust_operation_catalogue_is_derived_from_programs_schema() {
     let root = repo_fixture("rust-programs");
     generate(&root);
     let generated =
-        fs::read_to_string(root.join("agent/crates/layerx-agent-api/src/operation_generated.rs"))
+        fs::read_to_string(root.join("services/agent/crates/layerx-agent-api/src/operation_generated.rs"))
             .unwrap_or_else(|error| panic!("read generated Rust operation catalogue: {error}"));
     assert!(generated.contains("ProgramDiscover"));
     assert!(generated.contains("ProgramInterface"));
@@ -342,7 +342,7 @@ fn schema_edit_fails_the_gate_as_stale() {
     generate(&root);
     place(
         &root,
-        "agent/schema/agent-api/v1.kvx",
+        "services/agent/schema/agent-api/v1.kvx",
         "[schema]\nversion = \"2\"\n",
     );
     expect_failure(&root, "stale generated SDKs: schema agent-api");
@@ -368,10 +368,10 @@ fn hand_edited_typescript_output_fails_the_gate() {
     generate(&root);
     place(
         &root,
-        "agent/sdk/typescript/src/generated/client.ts",
+        "services/agent/sdk/typescript/src/generated/client.ts",
         "export const generated = false;\n",
     );
-    expect_failure(&root, "agent/sdk/typescript/src/generated/client.ts");
+    expect_failure(&root, "services/agent/sdk/typescript/src/generated/client.ts");
     cleanup(&root);
 }
 
@@ -381,10 +381,10 @@ fn hand_edited_python_output_fails_the_gate() {
     generate(&root);
     place(
         &root,
-        "agent/sdk/python/layerx_sdk/generated/client.py",
+        "services/agent/sdk/python/layerx_sdk/generated/client.py",
         "GENERATED = False\n",
     );
-    expect_failure(&root, "agent/sdk/python/layerx_sdk/generated/client.py");
+    expect_failure(&root, "services/agent/sdk/python/layerx_sdk/generated/client.py");
     cleanup(&root);
 }
 
@@ -404,7 +404,7 @@ fn untracked_file_in_a_generated_root_fails_the_gate() {
     generate(&root);
     place(
         &root,
-        "agent/sdk/typescript/src/generated/extra.ts",
+        "services/agent/sdk/typescript/src/generated/extra.ts",
         "export const extra = true;\n",
     );
     expect_failure(&root, "untracked file in generated typescript root");
@@ -556,22 +556,22 @@ fn receipt_contracts_admit_the_fifth_guest_abi_in_every_language() {
     generate(&root);
     for (relative, declaration, mentions) in [
         (
-            "agent/crates/layerx-sdk/src/receipt_generated.rs",
+            "services/agent/crates/layerx-sdk/src/receipt_generated.rs",
             "pub const PROGRAM_ABI_V5: u16 = 5;",
             2,
         ),
         (
-            "agent/sdk/typescript/src/generated/receipt.ts",
+            "services/agent/sdk/typescript/src/generated/receipt.ts",
             "export const PROGRAM_ABI_V5 = 5;",
             2,
         ),
         (
-            "agent/sdk/python/layerx_sdk/generated/receipt.py",
+            "services/agent/sdk/python/layerx_sdk/generated/receipt.py",
             "PROGRAM_ABI_V5 = 5",
             2,
         ),
         (
-            "agent/sdk/python/layerx_sdk/generated/receipt.pyi",
+            "services/agent/sdk/python/layerx_sdk/generated/receipt.pyi",
             "PROGRAM_ABI_V5: int",
             1,
         ),
@@ -618,7 +618,7 @@ fn receipt_contracts_admit_the_fifth_guest_abi_in_every_language() {
 #[test]
 fn programs_schema_without_the_fifth_guest_abi_is_refused() {
     let root = repo_fixture("guest-abi-four");
-    let path = root.join("agent/schema/agent-api/programs.kvx");
+    let path = root.join("services/agent/schema/agent-api/programs.kvx");
     let schema = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read schema: {error}"));
     let four = schema
         .replace(",\"ABI_V5_VERSION\"]", "]")
@@ -639,7 +639,7 @@ fn programs_schema_without_the_fifth_guest_abi_is_refused() {
 #[test]
 fn programs_schema_value_differing_from_the_canonical_policy_is_refused() {
     let root = repo_fixture("guest-abi-value");
-    let path = root.join("agent/schema/agent-api/programs.kvx");
+    let path = root.join("services/agent/schema/agent-api/programs.kvx");
     let schema = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read schema: {error}"));
     let changed = schema.replace("\"4\",\"5\"]", "\"4\",\"6\"]");
     assert_ne!(changed, schema, "fixture schema must carry wire value 5");
@@ -673,7 +673,7 @@ fn execution_v5_profile_must_admit_exactly_the_third_to_fifth_guest_abis() {
         ),
     ] {
         let root = repo_fixture(label);
-        let path = root.join("agent/schema/agent-api/programs.kvx");
+        let path = root.join("services/agent/schema/agent-api/programs.kvx");
         let schema =
             fs::read_to_string(&path).unwrap_or_else(|error| panic!("read schema: {error}"));
         assert_eq!(
@@ -699,7 +699,7 @@ fn rust_operation_catalogue_matches_the_repository_schema() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let generated = generate_rust_operation_catalog(&root)
         .unwrap_or_else(|error| panic!("generate Rust operation catalogue: {error}"));
-    let committed_path = root.join("agent/crates/layerx-agent-api/src/operation_generated.rs");
+    let committed_path = root.join("services/agent/crates/layerx-agent-api/src/operation_generated.rs");
     let committed = fs::read_to_string(&committed_path)
         .unwrap_or_else(|error| panic!("read {}: {error}", committed_path.display()));
     assert_eq!(
@@ -723,7 +723,7 @@ fn rust_operation_catalogue_matches_the_repository_schema() {
         "mutating() must list Self::McpInvoke"
     );
 
-    let sections = schema_sections(&root.join("agent/schema/agent-api"))
+    let sections = schema_sections(&root.join("services/agent/schema/agent-api"))
         .unwrap_or_else(|error| panic!("read agent schema: {error}"));
     let transport = sections
         .keys()

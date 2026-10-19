@@ -18,17 +18,17 @@ ed25519-dalek.workspace = true
 getrandom.workspace = true
 keyring.workspace = true
 keyring-core.workspace = true
-layerx-client = { path = "../../agent/crates/layerx-client" }
-layerx-mcp = { path = "../../agent/crates/layerx-mcp" }
+layerx-client = { path = "../../services/agent/crates/layerx-client" }
+layerx-mcp = { path = "../../services/agent/crates/layerx-mcp" }
 layerx-platform-emulator = { path = "../emulator" }
 layerx-programs-runtime = { path = "../../programs/crates/layerx-programs-runtime" }
-layerx-sdk = { path = "../../agent/crates/layerx-sdk" }
-layerx-crypto = { path = "../../agent/crates/layerx-crypto" }
+layerx-sdk = { path = "../../services/agent/crates/layerx-sdk" }
+layerx-crypto = { path = "../../services/agent/crates/layerx-crypto" }
 layerx-programs = { package = "layerx-programs-registry", path = "../../programs/crates/layerx-programs-registry" }
 layerx-program-sdk = { path = "../../programs/sdk/rust" }
-layerx-proof = { path = "../../agent/crates/layerx-proof" }
-layerx-types = { path = "../../agent/crates/layerx-types" }
-layerx-wire = { path = "../../agent/crates/layerx-wire" }
+layerx-proof = { path = "../../services/agent/crates/layerx-proof" }
+layerx-types = { path = "../../services/agent/crates/layerx-types" }
+layerx-wire = { path = "../../services/agent/crates/layerx-wire" }
 ring.workspace = true
 tempfile = "=3.27.0"
 rustix.workspace = true
@@ -43,7 +43,7 @@ tungstenite = { version = "=0.29.0", features = ["native-tls"] }
 zeroize.workspace = true
 
 [dev-dependencies]
-layerx-agentd = { path = "../../agent/crates/layerx-agentd" }
+layerx-agentd = { path = "../../services/agent/crates/layerx-agentd" }
 
 [lints]
 workspace = true

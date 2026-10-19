@@ -35,7 +35,7 @@ Canonical receipt bounds on export: empty or longer than
 
 `AuthorizedBatch` is five 32-byte facts: `batch_id`, `asset`,
 `previous_state_root`, `resulting_state_root`, `sequencer_public_key`
-(`agent/crates/layerx-proof/src/receipt.rs:44-50, 52-69`). Those facts
+(`services/agent/crates/layerx-proof/src/receipt.rs:44-50, 52-69`). Those facts
 must come from a snapshot, certificate, or vector manifest the verifier
 already trusts (`interop/crates/layerx-portable/FORMAT.md:20-22`;
 `interop/crates/layerx-portable/src/receipt.rs:18-21`). Repeating them
@@ -72,39 +72,39 @@ on the decoded canonical bytes, then requires the recomputed digest to
 equal `receiptDigest`
 (`interop/crates/layerx-portable/src/receipt.rs:124-146`).
 
-`verify_outcome` (`agent/crates/layerx-proof/src/receipt.rs:246-310`):
+`verify_outcome` (`services/agent/crates/layerx-proof/src/receipt.rs:246-310`):
 
 1. Decode the canonical receipt; re-encode; refuse a byte difference
-   (`agent/crates/layerx-proof/src/receipt.rs:250-256`).
+   (`services/agent/crates/layerx-proof/src/receipt.rs:250-256`).
 2. Require a full protocol receipt
-   (`agent/crates/layerx-proof/src/receipt.rs:257-259`).
+   (`services/agent/crates/layerx-proof/src/receipt.rs:257-259`).
 3. Require an occupancy protocol version (2 or 3)
-   (`agent/crates/layerx-proof/src/receipt.rs:15-16, 260-261`;
-   `agent/crates/layerx-wire/src/limits.rs:29-33`).
+   (`services/agent/crates/layerx-proof/src/receipt.rs:15-16, 260-261`;
+   `services/agent/crates/layerx-wire/src/limits.rs:29-33`).
 4. Require a non-zero operation and a non-zero activity id
-   (`agent/crates/layerx-proof/src/receipt.rs:263-268`).
+   (`services/agent/crates/layerx-proof/src/receipt.rs:263-268`).
 5. Require receipt `batch_id`, `asset` (and asset non-zero),
    `previous_state_root`, and `resulting_state_root` to equal the
-   authorised batch (`agent/crates/layerx-proof/src/receipt.rs:269-280`).
+   authorised batch (`services/agent/crates/layerx-proof/src/receipt.rs:269-280`).
 6. When `result_code == 0`, require
    `debit_balance_before - amount == debit_balance_after` and
    `credit_balance_before + amount == credit_balance_after` with checked
-   unsigned arithmetic (`agent/crates/layerx-proof/src/receipt.rs:281-296`).
+   unsigned arithmetic (`services/agent/crates/layerx-proof/src/receipt.rs:281-296`).
 7. Require a sequencer signature; encode the unsigned receipt; recompute
-   `receipt_digest` (`agent/crates/layerx-proof/src/receipt.rs:297-303`).
+   `receipt_digest` (`services/agent/crates/layerx-proof/src/receipt.rs:297-303`).
 
 The digest is SHA-256 of domain tag `LXP/v1/receipt\0` concatenated with
 the unsigned canonical receipt
-(`agent/crates/layerx-wire/src/hash.rs:69, 126, 282-287`;
+(`services/agent/crates/layerx-wire/src/hash.rs:69, 126, 282-287`;
 `interop/crates/layerx-portable/FORMAT.md:32-35`). The signature scheme
 is Ed25519 `verify_strict` over that 32-byte digest with
-`sequencer_public_key` (`agent/crates/layerx-crypto/src/ed25519.rs:54-70`;
-`agent/crates/layerx-proof/src/receipt.rs:304-305`;
+`sequencer_public_key` (`services/agent/crates/layerx-crypto/src/ed25519.rs:54-70`;
+`services/agent/crates/layerx-proof/src/receipt.rs:304-305`;
 `interop/crates/layerx-portable/FORMAT.md:35`).
 
 `verify_outcome` always stores that digest on
-`Evidence::sequencer` (`agent/crates/layerx-proof/src/receipt.rs:309`;
-`agent/crates/layerx-proof/src/evidence.rs:19-22`). Portable `verify`
+`Evidence::sequencer` (`services/agent/crates/layerx-proof/src/receipt.rs:309`;
+`services/agent/crates/layerx-proof/src/evidence.rs:19-22`). Portable `verify`
 then compares it to the object's `receiptDigest`
 (`interop/crates/layerx-portable/src/receipt.rs:135-141`).
 
@@ -127,13 +127,13 @@ does not rewrite a rejected protocol result into success
 - Refuse a rejected protocol `result_code`. The portable path calls
   `verify_outcome`, not `verify`. `verify` additionally refuses
   `result_code != 0` as `ReceiptCheck::ResultCode`
-  (`agent/crates/layerx-proof/src/receipt.rs:224-236, 246-248`;
+  (`services/agent/crates/layerx-proof/src/receipt.rs:224-236, 246-248`;
   `interop/crates/layerx-portable/FORMAT.md:37`).
 - Impose 402LXP transfer-root or program-terminal reconstruction. That
   is the SDK terminal decoder in
   [SDK terminal verification](../agents/sdk-verification.md).
 - Run `verify_program_outcome` / `verify_program_state`
-  (`agent/crates/layerx-proof/src/receipt.rs:356-488`). Those entry
+  (`services/agent/crates/layerx-proof/src/receipt.rs:356-488`). Those entry
   points are not the portable receipt verifier.
 
 `verify_external_evidence` is a separate adapter-binding path for
@@ -180,7 +180,7 @@ Each base64 field (`interop/crates/layerx-portable/src/receipt.rs:288-306`):
    ProtocolVersion, Operation, ActivityId, BatchId, Asset,
    PreviousStateRoot, ResultingStateRoot, DebitBalance, CreditBalance,
    MissingSignature, CanonicalEncoding (unsigned encode / digest),
-   SequencerSignature (`agent/crates/layerx-proof/src/receipt.rs:250-305`).
+   SequencerSignature (`services/agent/crates/layerx-proof/src/receipt.rs:250-305`).
 3. `MissingReceiptDigest` if `evidence().receipt_digest()` is `None`.
 4. `ReceiptDigestMismatch` if that digest differs from the object's
    `receiptDigest`.
@@ -223,7 +223,7 @@ before batch mismatch.
 | `ReceiptDigestMismatch` | Recomputed digest ≠ object `receiptDigest` (`receipt.rs:139-141`) |
 
 `ReceiptCheck` values `verify_outcome` can return
-(`agent/crates/layerx-proof/src/receipt.rs:99-132, 250-305`):
+(`services/agent/crates/layerx-proof/src/receipt.rs:99-132, 250-305`):
 
 | `check` | Condition |
 | --- | --- |
@@ -243,12 +243,12 @@ before batch mismatch.
 | `SequencerSignature` | Ed25519 `verify_strict` failed under the authorised key |
 
 `ReceiptCheck::ResultCode` is raised only by `verify`, not by
-`verify_outcome` (`agent/crates/layerx-proof/src/receipt.rs:224-236`).
+`verify_outcome` (`services/agent/crates/layerx-proof/src/receipt.rs:224-236`).
 `ReceiptCheck::Module` is raised only by `verify_program_state` /
-`verify_program_outcome` (`agent/crates/layerx-proof/src/receipt.rs:380-388, 446-454`).
+`verify_program_outcome` (`services/agent/crates/layerx-proof/src/receipt.rs:380-388, 446-454`).
 
 `Evidence::sequencer` always sets `receipt_digest: Some(...)`
-(`agent/crates/layerx-proof/src/evidence.rs:19-22`). Portable code still
+(`services/agent/crates/layerx-proof/src/evidence.rs:19-22`). Portable code still
 maps `None` to `MissingReceiptDigest`
 (`interop/crates/layerx-portable/src/receipt.rs:54-57, 135-138`).
 
@@ -310,7 +310,7 @@ before decoding `terminal_payload`
 (`docs/wiki/SdkTerminalVerification.md:17-19, 50-62`). Both surfaces
 recompute the sequencer digest over domain `LXP/v1/receipt\0`
 (`docs/wiki/SdkTerminalVerification.md:57-58`;
-`agent/crates/layerx-wire/src/hash.rs:69`;
+`services/agent/crates/layerx-wire/src/hash.rs:69`;
 `interop/crates/layerx-portable/FORMAT.md:32-35`).
 
 The portable verifier stops at sequencer-signed receipt authenticity
@@ -326,8 +326,8 @@ plus independently supplied batch facts. It does not unwrap
 1. `FORMAT.md` step 2 requires protocol version 1
    (`interop/crates/layerx-portable/FORMAT.md:26-27`).
    `verify_outcome` refuses unless `protocol_version_uses_occupancy`
-   (versions 2 and 3) (`agent/crates/layerx-proof/src/receipt.rs:15-16, 260-261`;
-   `agent/crates/layerx-wire/src/limits.rs:29-33`).
+   (versions 2 and 3) (`services/agent/crates/layerx-proof/src/receipt.rs:15-16, 260-261`;
+   `services/agent/crates/layerx-wire/src/limits.rs:29-33`).
 2. `FORMAT.md` decodes and re-encodes the receipt, then compares batch
    fields (`interop/crates/layerx-portable/FORMAT.md:24-29`).
    `PortableReceipt::verify` compares object batch fields to
@@ -342,7 +342,7 @@ plus independently supplied batch facts. It does not unwrap
    inline JSON, not `platform/sdk/conformance/fixtures/`.
 4. `FORMAT.md` step 6 requires `receiptDigest` equality, then Ed25519
    (`interop/crates/layerx-portable/FORMAT.md:34-35`). `verify_outcome`
-   verifies Ed25519 first (`agent/crates/layerx-proof/src/receipt.rs:304-305`);
+   verifies Ed25519 first (`services/agent/crates/layerx-proof/src/receipt.rs:304-305`);
    portable `verify` compares `receiptDigest` only after that returns
    (`interop/crates/layerx-portable/src/receipt.rs:133-141`).
 
@@ -353,11 +353,11 @@ Sources:
 - `interop/crates/layerx-portable/FORMAT.md:3-39, 72-74`
 - `interop/crates/layerx-portable/tests/receipt_vectors.rs:11-225`
 - `interop/crates/layerx-portable/tests/independent_verifier.rs:14-195`
-- `agent/crates/layerx-proof/src/receipt.rs:15-16, 44-69, 99-132, 224-236, 246-310`
-- `agent/crates/layerx-proof/src/evidence.rs:19-22, 82-83`
-- `agent/crates/layerx-wire/src/hash.rs:69, 126, 282-287`
-- `agent/crates/layerx-wire/src/limits.rs:29-33`
-- `agent/crates/layerx-crypto/src/ed25519.rs:54-70`
+- `services/agent/crates/layerx-proof/src/receipt.rs:15-16, 44-69, 99-132, 224-236, 246-310`
+- `services/agent/crates/layerx-proof/src/evidence.rs:19-22, 82-83`
+- `services/agent/crates/layerx-wire/src/hash.rs:69, 126, 282-287`
+- `services/agent/crates/layerx-wire/src/limits.rs:29-33`
+- `services/agent/crates/layerx-crypto/src/ed25519.rs:54-70`
 - `docs/wiki/SdkTerminalVerification.md`
 
 [Home](../index.md)

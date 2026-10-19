@@ -211,7 +211,7 @@ def build(arguments, gate, evidence):
         "test",
         "--locked",
         "--manifest-path",
-        "agent/Cargo.toml",
+        "services/agent/Cargo.toml",
         "-p",
         "layerx-client",
         "--test",

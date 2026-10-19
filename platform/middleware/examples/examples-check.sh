@@ -8,7 +8,7 @@ usage: examples-check.sh
 Builds the seller middleware the public RPC examples import and runs both
 examples as real programs. The Node example is driven through
 platform/middleware/seller/dist and the Python example through
-agent/sdk/python; each reads its endpoint from the environment and refuses the
+services/agent/sdk/python; each reads its endpoint from the environment and refuses the
 persistent host chain by name.
 
 The live gate examples-live-check.sh is then parsed and its whole input
@@ -44,7 +44,7 @@ fi
 
 npm run build --workspace @sidiora/layerx-sdk
 npm run build --workspace @sidiora/layerx-seller-middleware
-for built in agent/sdk/typescript/dist/src/index.js platform/middleware/seller/dist/index.js; do
+for built in services/agent/sdk/typescript/dist/src/index.js platform/middleware/seller/dist/index.js; do
     [ -s "$built" ] || { printf 'examples-check.sh: %s was not produced by the workspace build\n' "$built" >&2; exit 1; }
 done
 

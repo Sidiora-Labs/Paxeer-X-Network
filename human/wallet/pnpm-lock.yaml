@@ -113,8 +113,8 @@ importers:
         specifier: ^1.8.0
         version: 1.8.0
       '@sidiora/layerx-sdk':
-        specifier: link:../../../agent/sdk/typescript
-        version: link:../../../agent/sdk/typescript
+        specifier: link:../../../services/agent/sdk/typescript
+        version: link:../../../services/agent/sdk/typescript
       '@supabase/supabase-js':
         specifier: ^2.45.4
         version: 2.117.2

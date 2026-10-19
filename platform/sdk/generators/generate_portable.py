@@ -54,7 +54,7 @@ def parse_document(path: Path) -> dict[str, dict[str, str]]:
 def operations(repo: Path) -> list[Operation]:
     found: dict[tuple[str, str], Operation] = {}
     for plane, relative in (
-        ("agent", "agent/schema/agent-api"),
+        ("agent", "services/agent/schema/agent-api"),
         ("human", "human/schema/human-api"),
     ):
         root = repo / relative

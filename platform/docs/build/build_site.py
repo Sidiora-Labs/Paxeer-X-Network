@@ -472,9 +472,9 @@ def reference_page(root: Path, plane: str, relative: str, title: str, transport:
 
 def errors_page(root: Path) -> str:
     human = parse_document(root / "human/schema/human-api/errors.kvx")
-    agent = parse_document(root / "agent/schema/agent-api/errors.kvx")
+    agent = parse_document(root / "services/agent/schema/agent-api/errors.kvx")
     lines = [
-        "<!-- Generated from human/schema/human-api/errors.kvx and agent/schema/agent-api/errors.kvx"
+        "<!-- Generated from human/schema/human-api/errors.kvx and services/agent/schema/agent-api/errors.kvx"
         " by platform/docs/build/build_site.py. Do not hand-edit. -->",
         "",
         "# Error reference",
@@ -961,7 +961,7 @@ def generated_documents(root: Path, repository: Path, capabilities: dict[str, Ca
         / "agent-api.md": reference_page(
             repository,
             "agent",
-            "agent/schema/agent-api",
+            "services/agent/schema/agent-api",
             "Agent API reference",
             "The agent contract is spoken by `layerx-agentd` and by direct-node SDK deployments. Requests and"
             " responses are canonical maps carrying the contract major and minor version; consensus integers"

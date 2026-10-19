@@ -8,11 +8,11 @@ and the daemon-bound tool catalogue reachable over stdio. The MCP path
 holds no gateway key and no signing seed: every tool call is authorized
 by the daemon the binding names
 (`platform/cli/src/mcp.rs:6-16`;
-`agent/crates/layerx-mcp/src/binding.rs:339`). Enrolment itself is a
+`services/agent/crates/layerx-mcp/src/binding.rs:339`). Enrolment itself is a
 library call, protocol budget objects, Human-plane approvals and
 session revocation likewise. Those steps name the function or opcode
 and the absence of a `layerx` subcommand
-(`agent/crates/layerx-agentd/src/enrolment.rs:397-403`;
+(`services/agent/crates/layerx-agentd/src/enrolment.rs:397-403`;
 `platform/cli/src/main.rs:43-83`).
 
 This is the second developer path after the quickstart. It
@@ -31,8 +31,8 @@ in process:
 
 | Entry point | Process | Tools | Authority |
 | --- | --- | --- | --- |
-| CLI install / `layerx mcp serve` | `layerx` stdio MCP over one binding document (`platform/cli/src/mcp.rs:11-22`; `platform/cli/src/main.rs:452-460, 559-565`) | The daemon catalogue the binding's mode admits (`platform/cli/src/toolset.rs:146-153`; `agent/crates/layerx-mcp/src/catalogue.rs:385-391`) | One daemon session and one capability, restored from the binding (`agent/crates/layerx-mcp/src/binding.rs:339`) |
-| `layerx-mcp` crate | `Server::bind` / `ReadOnly::bind` (`agent/crates/layerx-mcp/src/server.rs:421-436`; `agent/crates/layerx-mcp/src/readonly.rs:25-41`) | Twenty-one tools in `TOOL_CATALOGUE` (`agent/crates/layerx-mcp/src/server.rs:60-203`) | One daemon session and one capability (`agent/crates/layerx-mcp/README.md:3-6`) |
+| CLI install / `layerx mcp serve` | `layerx` stdio MCP over one binding document (`platform/cli/src/mcp.rs:11-22`; `platform/cli/src/main.rs:452-460, 559-565`) | The daemon catalogue the binding's mode admits (`platform/cli/src/toolset.rs:146-153`; `services/agent/crates/layerx-mcp/src/catalogue.rs:385-391`) | One daemon session and one capability, restored from the binding (`services/agent/crates/layerx-mcp/src/binding.rs:339`) |
+| `layerx-mcp` crate | `Server::bind` / `ReadOnly::bind` (`services/agent/crates/layerx-mcp/src/server.rs:421-436`; `services/agent/crates/layerx-mcp/src/readonly.rs:25-41`) | Twenty-one tools in `TOOL_CATALOGUE` (`services/agent/crates/layerx-mcp/src/server.rs:60-203`) | One daemon session and one capability (`services/agent/crates/layerx-mcp/README.md:3-6`) |
 
 The gateway-bound, locally signing surface is no longer an MCP
 surface: `receipt.get`, `activity.submit` and `faucet.request` over
@@ -40,17 +40,17 @@ surface: `receipt.get`, `activity.submit` and `faucet.request` over
 `layerx a2a serve` (`platform/cli/src/toolset.rs:24-40, 42-108`;
 `platform/cli/src/a2a.rs:89-176`).
 
-`layerx-mcp` has no binary (`agent/crates/layerx-mcp/Cargo.toml:1-19`).
+`layerx-mcp` has no binary (`services/agent/crates/layerx-mcp/Cargo.toml:1-19`).
 Every tool call routes through `layerx-agentd`; there is no MCP-only
-write path (`agent/crates/layerx-mcp/README.md:5-6`;
-`agent/README.md:12-13`). The CLI server opens that crate's bound
+write path (`services/agent/crates/layerx-mcp/README.md:5-6`;
+`services/agent/README.md:12-13`). The CLI server opens that crate's bound
 session: it reads the binding document named on its launch line,
 applies `--read-only`, and serves the session on standard input and
 output (`platform/cli/src/mcp.rs:11-22`).
 
 `layerx-agentd` is a library plus a binary
-(`agent/crates/layerx-agentd/src/lib.rs:1`;
-`agent/crates/layerx-agentd/src/main.rs:782-787`). The binary does
+(`services/agent/crates/layerx-agentd/src/lib.rs:1`;
+`services/agent/crates/layerx-agentd/src/main.rs:782-787`). The binary does
 not load `StartupConfig` and does not run `Gate::new`. See
 [Agentd](Agentd.md) for the library evidence, budget, and approval
 paths. See [CLI](Cli.md) for credential storage and command
@@ -92,11 +92,11 @@ There is no `layerx` subcommand that starts `layerx-agentd`
 (`platform/cli/src/main.rs:43-83`). The binary reads
 `LAYERX_AGENT_*` environment keys and binds a loopback
 program-balance listener plus a Human Unix owner
-(`agent/crates/layerx-agentd/src/main.rs:61-67, 514-549, 720-787`).
+(`services/agent/crates/layerx-agentd/src/main.rs:61-67, 514-549, 720-787`).
 Library handshake configuration uses `node_endpoint` as an absolute
 normalised path, not an `https://` URL
-(`agent/crates/layerx-agentd/src/config.rs:35-36, 69-70, 303, 474-488`;
-`agent/crates/layerx-agentd/src/boot.rs:76-93`).
+(`services/agent/crates/layerx-agentd/src/config.rs:35-36, 69-70, 303, 474-488`;
+`services/agent/crates/layerx-agentd/src/boot.rs:76-93`).
 
 ---
 
@@ -155,15 +155,15 @@ turns that enrolment on; every other `LAYERX_AGENT_MCP_*` key is then
 required, and before the daemon accepts a request it resolves the
 configured agent DID through the human authority, registers it against
 the store, and enrols one session
-(`agent/crates/layerx-agentd/src/main.rs:219-253, 265-339, 443-450,
+(`services/agent/crates/layerx-agentd/src/main.rs:219-253, 265-339, 443-450,
 720-724`). A restart that names the session it already enrolled keeps
 the document it published; a session that is open without its document
 is a boot refusal rather than a second enrolment
-(`agent/crates/layerx-agentd/src/main.rs:318-329`;
-`agent/crates/layerx-agentd/src/enrolment.rs:444-469`). The
+(`services/agent/crates/layerx-agentd/src/main.rs:318-329`;
+`services/agent/crates/layerx-agentd/src/enrolment.rs:444-469`). The
 human-owner-only mode refuses the key outright, because the document
 names the program endpoint and probe program only the full agent mode
-serves (`agent/crates/layerx-agentd/src/human_owner_mode.rs:77-82`).
+serves (`services/agent/crates/layerx-agentd/src/human_owner_mode.rs:77-82`).
 
 `enrolment::enrol` is the library call underneath, and it is also the
 call a hosted deployment reaches directly. It restores the
@@ -172,19 +172,19 @@ token from operating-system randomness, calls `session::open`, and
 publishes the binding through a `BindingPublisher`; a session whose
 binding cannot be published is closed again, and
 `OrphanedSession` names a session that stayed open because that close
-also failed (`agent/crates/layerx-agentd/src/enrolment.rs:397-442`).
+also failed (`services/agent/crates/layerx-agentd/src/enrolment.rs:397-442`).
 
 `session::open` records `OpenRequest` with `tenant`, `agent`,
 `authority`, `permitted_activity_types`, `scopes`, `expiry_sequence`
-(`agent/crates/layerx-agentd/src/session.rs:110-123, 515-539`).
+(`services/agent/crates/layerx-agentd/src/session.rs:110-123, 515-539`).
 `Capability::new` refuses any missing dimension
-(`agent/crates/layerx-agentd/src/capability/mod.rs:47-94`).
+(`services/agent/crates/layerx-agentd/src/capability/mod.rs:47-94`).
 `Server::bind` authenticates the bearer, restores that capability,
 and keeps only catalogue scopes the session actually carries
-(`agent/crates/layerx-mcp/src/server.rs:421-436, 463-472`).
+(`services/agent/crates/layerx-mcp/src/server.rs:421-436, 463-472`).
 
 `BindingPublisher::publish` writes three files into one binding
-directory (`agent/crates/layerx-agentd/src/enrolment.rs:27-31,
+directory (`services/agent/crates/layerx-agentd/src/enrolment.rs:27-31,
 283-343`):
 
 | File | Contents |
@@ -197,7 +197,7 @@ The directory is created or narrowed to `0o700` and each file is
 created `0o600` with `create_new`, so a pre-existing secret file is a
 refusal rather than an overwrite; a partial write removes every file
 it already created
-(`agent/crates/layerx-agentd/src/enrolment.rs:317-335, 500-512,
+(`services/agent/crates/layerx-agentd/src/enrolment.rs:317-335, 500-512,
 542-549`).
 
 The document names `mode`, `tenant`, `store`, `audit_root`,
@@ -205,25 +205,25 @@ The document names `mode`, `tenant`, `store`, `audit_root`,
 `capability_id`, `core_sequence`, `deadline_ms`, `agent`
 (`endpoint`, `bearer_file`, `probe_program`) and `limit` (`id`,
 `name`, `scope`, `scope_id`, `ceiling`, `consumed`)
-(`agent/crates/layerx-agentd/src/enrolment.rs:347-383`). The parser
+(`services/agent/crates/layerx-agentd/src/enrolment.rs:347-383`). The parser
 accepts exactly those keys plus an optional `listener` object of
 `socket`, `owner_uid`, `owner_gid`, `mode`, `admitted_uids`, and
 refuses any other key
-(`agent/crates/layerx-mcp/src/binding.rs:28-45, 227-229`). No token or
+(`services/agent/crates/layerx-mcp/src/binding.rs:28-45, 227-229`). No token or
 bearer byte is written into the document: it names the protected
 files that hold them.
 
 Publishing the identical document again leaves it in place and
 reports `created: false`; a different document at the same path is
 refused as `AlreadyPublished` rather than replaced
-(`agent/crates/layerx-agentd/src/enrolment.rs:58-69, 294-307`).
+(`services/agent/crates/layerx-agentd/src/enrolment.rs:58-69, 294-307`).
 `DaemonSurface::new` refuses an endpoint outside `127.0.0.1:` and a
 bearer shorter than 32 bytes
-(`agent/crates/layerx-agentd/src/enrolment.rs:133-159`).
+(`services/agent/crates/layerx-agentd/src/enrolment.rs:133-159`).
 
 The Human Unix owner can install that pair as opcode `OWNER_INSTALL`
 (`23`) with `HumanOwnerInstall.scopes` and
-`permitted_activity_types` (`agent/crates/layerx-agentd/src/human.rs:23, 124-144, 273`).
+`permitted_activity_types` (`services/agent/crates/layerx-agentd/src/human.rs:23, 124-144, 273`).
 There is no `layerx` subcommand that speaks that socket
 (`platform/cli/src/main.rs:43-83`).
 
@@ -324,7 +324,7 @@ declares, so `--read-only` shows as a narrowing of a `full` binding
 (`platform/cli/src/toolset.rs:132-137`;
 `platform/cli/src/install/mcp.rs:49-53, 83-91`). The remaining
 `daemon_binding` fields are read straight off the parsed document
-(`agent/crates/layerx-mcp/src/binding.rs:295-317`). `server.name` is
+(`services/agent/crates/layerx-mcp/src/binding.rs:295-317`). `server.name` is
 `SERVER_NAME` `"layerx"` (`platform/cli/src/install/mod.rs:20`).
 `command` is `env::current_exe` canonicalized
 (`platform/cli/src/install/mod.rs:782-790`). `server.env` is empty:
@@ -400,12 +400,12 @@ version, `instructions`, and `_meta` carrying
 `layerx/deployment_mode`, `layerx/binding` `agent-daemon`,
 `layerx/read_tools`, `layerx/write_tools` and
 `layerx/mutations_reachable`
-(`agent/crates/layerx-mcp/src/stdio.rs:14-16, 156-174`).
+(`services/agent/crates/layerx-mcp/src/stdio.rs:14-16, 156-174`).
 `tools/list` entries carry `name`, `description`, `inputSchema`,
 `annotations.readOnlyHint`, `destructiveHint` `false`,
 `idempotentHint`, `openWorldHint` `true`, `_meta.layerx/scope`,
 `_meta.layerx/mutation`, `_meta.layerx/evidence`
-(`agent/crates/layerx-mcp/src/catalogue.rs:393-413`).
+(`services/agent/crates/layerx-mcp/src/catalogue.rs:393-413`).
 
 `layerx install a2a` writes a different `data` object (`component`
 `a2a`, `transport` `JSONRPC`) and is not the MCP host JSON
@@ -415,9 +415,9 @@ version, `instructions`, and `_meta` carrying
 server from a binding document; in process the same server is bound
 with `Server::bind` or `ReadOnly::bind`
 (`platform/cli/src/mcp.rs:11-22`;
-`agent/crates/layerx-mcp/src/binding.rs:339`;
-`agent/crates/layerx-mcp/src/server.rs:421-436`;
-`agent/crates/layerx-mcp/src/readonly.rs:25-41`).
+`services/agent/crates/layerx-mcp/src/binding.rs:339`;
+`services/agent/crates/layerx-mcp/src/server.rs:421-436`;
+`services/agent/crates/layerx-mcp/src/readonly.rs:25-41`).
 
 ---
 
@@ -428,27 +428,27 @@ There is no `layerx budget` command (`platform/cli/src/main.rs:43-83`).
 `LocalLimit::new` constructs a daemon-only limit labelled
 `daemon-enforced` with bypass statement `daemon-enforced only;
 bypassing layerx-agentd bypasses this limit`
-(`agent/crates/layerx-agentd/src/budget/create.rs:7-8, 95-106`).
+(`services/agent/crates/layerx-agentd/src/budget/create.rs:7-8, 95-106`).
 `BudgetLimiter::new` takes `LimitConfig` values with scopes tenant,
 agent, session, capability, counterparty
-(`agent/crates/layerx-agentd/src/budget/reserve.rs:13-20, 23-29, 60-82`).
+(`services/agent/crates/layerx-agentd/src/budget/reserve.rs:13-20, 23-29, 60-82`).
 The binary installs one such `LimitConfig` from
-`LAYERX_AGENT_HUMAN_LIMIT_*` (`agent/crates/layerx-agentd/src/main.rs:114-135, 476-482`).
+`LAYERX_AGENT_HUMAN_LIMIT_*` (`services/agent/crates/layerx-agentd/src/main.rs:114-135, 476-482`).
 
 `create_protocol_budget` submits a verifier-bound activity, verifies
 the receipt, and returns `ProtocolObjectEffectUnavailable` on
 success. It never returns `Ok`
-(`agent/crates/layerx-agentd/src/budget/create.rs:122-162`).
+(`services/agent/crates/layerx-agentd/src/budget/create.rs:122-162`).
 
 The TypeScript and Python SDK examples call `client.call("budget.create",
 request)` with `enforcement` `"ProtocolBudget"` or `"DaemonLimit"`
-(`agent/sdk/typescript/examples/budget-constrained-spending.ts:3-10`;
-`agent/sdk/python/examples/budget_constrained_spending.py:8-16`).
+(`services/agent/sdk/typescript/examples/budget-constrained-spending.ts:3-10`;
+`services/agent/sdk/python/examples/budget_constrained_spending.py:8-16`).
 Those examples are not a CLI.
 
 Human opcode `AGENT_LIMIT` (`27`) carries `agent_id`,
 `monthly_limit`, `currency`, `replacement_budget_id`, `evidence`
-(`agent/crates/layerx-agentd/src/human.rs:31, 1437-1443`). There is
+(`services/agent/crates/layerx-agentd/src/human.rs:31, 1437-1443`). There is
 no `layerx` subcommand for it.
 
 ---
@@ -465,27 +465,27 @@ every other catalogue entry (`platform/cli/src/mcp.rs:11-22`).
 (`platform/cli/src/main.rs:197-198, 956-964`).
 
 Those eight read tools are catalogue entries authorized through the
-daemon (`agent/crates/layerx-mcp/src/server.rs:60-203`;
-`agent/crates/layerx-mcp/src/catalogue.rs:385-391`). Helpers
+daemon (`services/agent/crates/layerx-mcp/src/server.rs:60-203`;
+`services/agent/crates/layerx-mcp/src/catalogue.rs:385-391`). Helpers
 `balance`, `history`, `receipt`, `checkpoint`, `proof`, and
 `availability` return `VerifiedToolResult` with `value`,
 `verification_level`, `freshness`, `page`
-(`agent/crates/layerx-mcp/src/tools/read.rs:103-108`). Read-only
+(`services/agent/crates/layerx-mcp/src/tools/read.rs:103-108`). Read-only
 deployment omits write tools, whether the narrowing came from the
 binding document's own `mode` or from `--read-only`
-(`agent/crates/layerx-mcp/src/server.rs:463-472`;
-`agent/crates/layerx-mcp/src/binding.rs:319-321`;
+(`services/agent/crates/layerx-mcp/src/server.rs:463-472`;
+`services/agent/crates/layerx-mcp/src/binding.rs:319-321`;
 `platform/cli/src/mcp.rs:13-15`;
-`agent/crates/layerx-mcp/README.md:43`).
+`services/agent/crates/layerx-mcp/README.md:43`).
 
 The TypeScript and Python payment examples call `client.call("submit",
 request)` and require `VerificationLevel.SequencerSigned` /
 `VerificationLevel.SEQUENCER_SIGNED`
-(`agent/sdk/typescript/examples/payment-with-verification.ts:12-19`;
-`agent/sdk/python/examples/payment_with_verification.py:12-22`).
+(`services/agent/sdk/typescript/examples/payment-with-verification.ts:12-19`;
+`services/agent/sdk/python/examples/payment_with_verification.py:12-22`).
 Offline receipt verification is `verifyReceipt` /
-`verify_receipt` (`agent/sdk/typescript/examples/offline-receipt-verification.ts:8-11`;
-`agent/sdk/python/examples/offline_receipt_verification.py:9-14`).
+`verify_receipt` (`services/agent/sdk/typescript/examples/offline-receipt-verification.ts:8-11`;
+`services/agent/sdk/python/examples/offline_receipt_verification.py:9-14`).
 
 ---
 
@@ -494,8 +494,8 @@ Offline receipt verification is `verifyReceipt` /
 `layerx mcp serve` has no locally signing write path. `activity.submit`
 over stdio is the daemon catalogue entry, validated against the
 catalogue argument schema and then executed through the bound daemon
-session (`agent/crates/layerx-mcp/src/stdio.rs:185-212`;
-`agent/crates/layerx-mcp/src/server.rs:60-203`).
+session (`services/agent/crates/layerx-mcp/src/stdio.rs:185-212`;
+`services/agent/crates/layerx-mcp/src/server.rs:60-203`).
 
 stdio wraps a success as `structuredContent`
 `{ "tool": <name>, "result": <value> }` with `content[0].type` `text`
@@ -503,7 +503,7 @@ and `isError` `false`; a refusal is the same envelope with `isError`
 `true` and a `refusal` object naming `tool`, `stage`
 (`arguments`, `freshness` or `daemon`) and, for a daemon refusal,
 `state` `"refused"` or `"unknown"`
-(`agent/crates/layerx-mcp/src/stdio.rs:197-211, 257-263, 296-305`).
+(`services/agent/crates/layerx-mcp/src/stdio.rs:197-211, 257-263, 296-305`).
 
 The locally signing, gateway-posting `activity.submit` with
 `destination`, `amount`, `account_sequence`, `not_before_ms`,
@@ -514,23 +514,23 @@ The locally signing, gateway-posting `activity.submit` with
 
 Daemon writes follow `ORDINARY_WRITE_STAGES`: Prepare, Disclose,
 Policy, Sign, Submit, Track
-(`agent/crates/layerx-mcp/src/tools/write.rs:10-28`).
+(`services/agent/crates/layerx-mcp/src/tools/write.rs:10-28`).
 `tools::write::execute` invokes tool name `activity.submit`
-(`agent/crates/layerx-mcp/src/tools/write.rs:138-156`).
+(`services/agent/crates/layerx-mcp/src/tools/write.rs:138-156`).
 `execute_payment` uses the same stages for `wallet.send`,
 `token.create`, `token.mint`, and `token.transfer`
-(`agent/crates/layerx-mcp/src/tools/write.rs:89-131`).
+(`services/agent/crates/layerx-mcp/src/tools/write.rs:89-131`).
 `wait` uses the track stages under `activity.wait`
-(`agent/crates/layerx-mcp/src/tools/write.rs:209-227`). Non-error
+(`services/agent/crates/layerx-mcp/src/tools/write.rs:209-227`). Non-error
 outcomes: `Executed` (`submission_ref`, `receipt`), `Unknown`
 (`submission_ref`, `age_ms`), `Pending` (`submission_ref`, `state`)
-(`agent/crates/layerx-mcp/src/tools/write.rs:64-78`).
+(`services/agent/crates/layerx-mcp/src/tools/write.rs:64-78`).
 `activity.prepare` / `disclose` / `sign` / `submit` / `track` and the
 wallet, token, and wait tools are separate catalogue entries
-(`agent/crates/layerx-mcp/src/server.rs:94-177`).
+(`services/agent/crates/layerx-mcp/src/server.rs:94-177`).
 
 Human opcodes `PREPARE` `1`, `SUBMIT` `2`, `TRACK` `3`
-(`agent/crates/layerx-agentd/src/human.rs:13-15`). There is no
+(`services/agent/crates/layerx-agentd/src/human.rs:13-15`). There is no
 `layerx` subcommand for them.
 
 ---
@@ -539,7 +539,7 @@ Human opcodes `PREPARE` `1`, `SUBMIT` `2`, `TRACK` `3`
 
 No served path calls the approval hold. `layerx mcp serve` invokes the
 daemon write tools directly through the bound session
-(`agent/crates/layerx-mcp/src/stdio.rs:215-253`), and
+(`services/agent/crates/layerx-mcp/src/stdio.rs:215-253`), and
 `layerx-mcp::approval::require` is reached only by a caller that binds
 it itself; no module of `layerx-mcp` outside `approval.rs` calls it.
 There is no `layerx approval` command
@@ -547,19 +547,19 @@ There is no `layerx approval` command
 
 `layerx-mcp::approval::require` holds the prepared disclosure when
 the summed amount exceeds `ApprovalPolicy.amount_threshold`
-(`agent/crates/layerx-mcp/src/approval.rs:9-12, 36-68`).
+(`services/agent/crates/layerx-mcp/src/approval.rs:9-12, 36-68`).
 `approve` / `reject` decide only the disclosure on the held ticket
-(`agent/crates/layerx-mcp/src/approval.rs:71-113`).
+(`services/agent/crates/layerx-mcp/src/approval.rs:71-113`).
 `ApprovalService::approve` releases that preparation into
 `ApprovalSubmissionQueue`
-(`agent/crates/layerx-agentd/src/approval/mod.rs:379-486`).
+(`services/agent/crates/layerx-agentd/src/approval/mod.rs:379-486`).
 Approvals are `DaemonOnly` and confer no protocol authority
-(`agent/crates/layerx-agentd/src/approval/mod.rs:24-30`).
+(`services/agent/crates/layerx-agentd/src/approval/mod.rs:24-30`).
 
 Human opcodes `APPROVAL_LIST` `9`, `APPROVAL_GET` `10`,
 `APPROVAL_APPROVE` `11`, `APPROVAL_REJECT` `12`. Approve/reject
 fields: `approval_id`, `held_digest`, `idempotency_key`,
-`current_sequence` (`agent/crates/layerx-agentd/src/human.rs:18-21, 247-258, 1359-1378`).
+`current_sequence` (`services/agent/crates/layerx-agentd/src/human.rs:18-21, 247-258, 1359-1378`).
 
 ---
 
@@ -575,17 +575,17 @@ It reports `verified: true` only after `verify_outcome` succeeds
 
 Daemon MCP `receipt.get` returns `ReceiptValue` with
 `canonical_receipt` and non-empty `evidence_ids`
-(`agent/crates/layerx-mcp/src/tools/read.rs:32-40, 144-178`).
+(`services/agent/crates/layerx-mcp/src/tools/read.rs:32-40, 144-178`).
 `WriteOutcome::Executed.receipt` carries `receipt_ref`,
 `canonical_receipt`, `verification_level`, `evidence_ids`
-(`agent/crates/layerx-mcp/src/tools/write.rs:46-53, 66-69`).
+(`services/agent/crates/layerx-mcp/src/tools/write.rs:46-53, 66-69`).
 Executed without that verified receipt is
 `WriteToolError::SuccessWithoutVerifiedReceipt`
-(`agent/crates/layerx-mcp/src/tools/write.rs:291-301`;
-`agent/crates/layerx-mcp/tests/write.rs:269-272`).
+(`services/agent/crates/layerx-mcp/src/tools/write.rs:291-301`;
+`services/agent/crates/layerx-mcp/tests/write.rs:269-272`).
 
 Human opcode `RECEIPT_LOOKUP` `4` carries `idempotency_key` and
-`expected_activity_id` (`agent/crates/layerx-agentd/src/human.rs:16, 233-236`).
+`expected_activity_id` (`services/agent/crates/layerx-agentd/src/human.rs:16, 233-236`).
 
 ---
 
@@ -595,24 +595,24 @@ There is no `layerx` command that revokes a session or prints a
 revocation report (`platform/cli/src/main.rs:43-83`).
 
 `session::close` advances generation and sets `open: false`
-(`agent/crates/layerx-agentd/src/session.rs:549-569`).
+(`services/agent/crates/layerx-agentd/src/session.rs:549-569`).
 `apply_revocation` closes matching open sessions from a core
 `RevocationEvent` (`IdentityFrozen`, `PrimaryKeyRotated`,
 `SessionKeyRevoked`, `CapabilityGrantRevoked`, `AccountRecovered`)
 and reports `invalidated_sessions`, `invalidated_generations`,
 `cancelled_preparations`, `unresolved_left_for_resolution`,
 `executed_untouched`
-(`agent/crates/layerx-agentd/src/session_revocation.rs:10-58, 61-131`).
+(`services/agent/crates/layerx-agentd/src/session_revocation.rs:10-58, 61-131`).
 Prepared and signed work is cancelled; queued/unknown work continues
 resolution; executed/failed work is left untouched
-(`agent/crates/layerx-agentd/src/session_revocation.rs:109-121`).
+(`services/agent/crates/layerx-agentd/src/session_revocation.rs:109-121`).
 
 After close, MCP write tools including `activity.submit`,
 `wallet.send`, `token.create`, `token.mint`, `token.transfer`,
 `activity.track`, and `activity.wait` return
 `WriteToolError::Server(ServerError::RevokedSession)` before any
-write transcript (`agent/crates/layerx-mcp/src/server.rs:729-745`;
-`agent/crates/layerx-mcp/tests/write.rs:276-325`).
+write transcript (`services/agent/crates/layerx-mcp/src/server.rs:729-745`;
+`services/agent/crates/layerx-mcp/tests/write.rs:276-325`).
 
 Hosted gateway key revocation response fields: `ok`, `id`, `state`
 `"revoked"` (`platform/hosted/gateway/src/main.rs:1144`). That is a
@@ -620,9 +620,9 @@ gateway key, not an agentd session.
 
 Daemon event delivery to a local consumer is Unix frames `LXOW` /
 `LXOA`, not an HTTP webhook
-(`agent/crates/layerx-agentd/src/events/outbound.rs:1, 21-23`).
+(`services/agent/crates/layerx-agentd/src/events/outbound.rs:1, 21-23`).
 `CONSUMER_DEDUPLICATION_OBLIGATION` requires deduplication by
-`deduplication_id` (`agent/crates/layerx-agentd/src/events/deliver.rs:26-28`).
+`deduplication_id` (`services/agent/crates/layerx-agentd/src/events/deliver.rs:26-28`).
 There is no CLI command that registers that endpoint.
 
 ---
@@ -658,19 +658,19 @@ and thirteen write:
 | `activity.wait` | `write:activity:wait` | write |
 | `faucet.request` | `write:faucet:claim` | write |
 
-(`agent/crates/layerx-mcp/src/server.rs:52-203`;
-`agent/crates/layerx-mcp/README.md:20-41`). Read-only mode keeps the
+(`services/agent/crates/layerx-mcp/src/server.rs:52-203`;
+`services/agent/crates/layerx-mcp/README.md:20-41`). Read-only mode keeps the
 read rows only, and a mode that would serve nothing is refused before
-installation (`agent/crates/layerx-mcp/src/catalogue.rs:385-391`;
+installation (`services/agent/crates/layerx-mcp/src/catalogue.rs:385-391`;
 `platform/cli/src/toolset.rs:146-153`). `Server::bind` narrows the
 result again to the scopes the bound session actually carries and
 refuses an empty result with `NoScope`
-(`agent/crates/layerx-mcp/src/server.rs:463-472`). Mapped daemon
+(`services/agent/crates/layerx-mcp/src/server.rs:463-472`). Mapped daemon
 operations: `ReadBalance`, `ReadAccount`, `ReadHistory`,
 `ProgramReceipt`, `ReadCheckpoint`, `ReadProofBundle`,
 `AvailabilityFetch`, `Prepare`, `Sign`, `Submit`, `Track`,
 `FaucetClaim`, `Wait`
-(`agent/crates/layerx-mcp/src/server.rs:697-715`).
+(`services/agent/crates/layerx-mcp/src/server.rs:697-715`).
 Wallet, token, and grant writes alias `Submit`; `activity.wait` uses `Wait`.
 
 ### `layerx a2a serve`
@@ -688,7 +688,7 @@ refused (`platform/cli/src/toolset.rs:24-40, 110-122`).
 Library startup is one UTF-8 `key=value` file. Exact `LAYERX_*`
 environment values override the file. No security-relevant value has
 a default. Unknown `LAYERX_*` names are refused
-(`agent/crates/layerx-agentd/src/config.rs:1-6, 64-65, 171-173`).
+(`services/agent/crates/layerx-agentd/src/config.rs:1-6, 64-65, 171-173`).
 
 | File key | Environment key | Role |
 | --- | --- | --- |
@@ -701,10 +701,10 @@ a default. Unknown `LAYERX_*` names are refused
 | `verification_defaults` | `LAYERX_VERIFICATION_DEFAULTS` | Per-tenant `sequencer-signed`, `batch-included`, `state-proven`, `checkpoint-finalised`, or `settlement-anchored` |
 | `sequencer_authority_source` | `LAYERX_SEQUENCER_AUTHORITY_SOURCE` | Protected `layerx-sequencer-authority-v1` file |
 
-(`agent/crates/layerx-agentd/src/config.rs:29-62, 295-320, 438-471`).
+(`services/agent/crates/layerx-agentd/src/config.rs:29-62, 295-320, 438-471`).
 
 The binary reads a disjoint `LAYERX_AGENT_*` set
-(`agent/crates/layerx-agentd/src/main.rs:46-59, 514-549`):
+(`services/agent/crates/layerx-agentd/src/main.rs:46-59, 514-549`):
 
 | Key | Role |
 | --- | --- |
@@ -740,7 +740,7 @@ The binary reads a disjoint `LAYERX_AGENT_*` set
 The model context protocol enrolment is one further group, read only
 when `LAYERX_AGENT_MCP_BINDING_ROOT` is set; setting it makes every
 other key in this group required
-(`agent/crates/layerx-agentd/src/main.rs:168-253`):
+(`services/agent/crates/layerx-agentd/src/main.rs:168-253`):
 
 | Key | Role |
 | --- | --- |
@@ -763,21 +763,21 @@ other key in this group required
 The daemon endpoint and probe program the document names are the ones
 this binary already serves: `LAYERX_AGENT_PROGRAM_LISTEN`,
 `LAYERX_AGENT_PROGRAM_BEARER_TOKEN` and `LAYERX_AGENT_PROGRAM_PROBE_ID`
-(`agent/crates/layerx-agentd/src/main.rs:255-263`). `install mcp` then
+(`services/agent/crates/layerx-agentd/src/main.rs:255-263`). `install mcp` then
 reads that document, and neither it nor `mcp serve` needs any further
 key (`platform/cli/src/install/mcp.rs:38-48`).
 
 Missing required values print `{name} is required`
-(`agent/crates/layerx-agentd/src/main.rs:61-67`). Boot failure prints
+(`services/agent/crates/layerx-agentd/src/main.rs:61-67`). Boot failure prints
 `layerx-agentd: ` plus a redacted diagnostic and exits `2`
-(`agent/crates/layerx-agentd/src/main.rs:782-787`).
+(`services/agent/crates/layerx-agentd/src/main.rs:782-787`).
 
 `RejectionReason` for the library file: `Missing`, `Empty`,
 `Duplicate`, `Unknown`, `InvalidInteger`, `UnsupportedProtocol`,
 `InvalidTenant`, `InvalidPath`, `IncompleteTenantMap`,
 `InvalidVerificationLevel`, `TooLarge`, `InvalidEncoding`,
 `Unavailable`, `Unprotected`
-(`agent/crates/layerx-agentd/src/config.rs:80-94`).
+(`services/agent/crates/layerx-agentd/src/config.rs:80-94`).
 
 ---
 
@@ -789,7 +789,7 @@ Missing required values print `{name} is required`
 | --- | --- |
 | `agent runtime {value} is not supported; use layerx, claude-code, claude-desktop, cursor, or vscode` | `--host` naming an undocumented runtime, checked before the binding document is read (`platform/cli/src/install/mod.rs:60-62`; `platform/cli/src/install/mcp.rs:34-41`) |
 | `no agent runtime was selected for installation` | No `--host` given and no runtime detected (`platform/cli/src/install/mcp.rs:35-37`) |
-| `the daemon binding document at {path} could not be used: {detail}; agent-daemon enrolment writes it before the MCP server is installed` | The document is absent, unreadable, malformed, or refused by the daemon (`platform/cli/src/install/mcp.rs:42-48`; `agent/crates/layerx-mcp/src/binding.rs:57-63`) |
+| `the daemon binding document at {path} could not be used: {detail}; agent-daemon enrolment writes it before the MCP server is installed` | The document is absent, unreadable, malformed, or refused by the daemon (`platform/cli/src/install/mcp.rs:42-48`; `services/agent/crates/layerx-mcp/src/binding.rs:57-63`) |
 | `--daemon-binding requires a path` | Empty explicit path (`platform/cli/src/install/mcp.rs:159-162`) |
 | `tool {name} carries no catalogue description` / `argument schema` | A served catalogue entry without a description or schema (`platform/cli/src/toolset.rs:156-161`) |
 
@@ -800,55 +800,55 @@ the daemon serves anything.
 
 | Refusal | When |
 | --- | --- |
-| `{name} must be an absolute path` | `LAYERX_AGENT_MCP_BINDING_ROOT` or `LAYERX_AGENT_MCP_AUDIT_ROOT` given as a relative path (`agent/crates/layerx-agentd/src/main.rs:69-76`) |
-| `LAYERX_AGENT_MCP_MODE is invalid` | A mode other than `full` or `read-only` (`agent/crates/layerx-agentd/src/main.rs:226-230`) |
-| `LAYERX_AGENT_MCP_ACTIVITY_TYPES lists an invalid activity type` / `repeats an activity type` | A non-numeric or duplicated activity type (`agent/crates/layerx-agentd/src/main.rs:168-180`) |
-| `LAYERX_AGENT_MCP_SCOPES lists an empty scope` / `repeats a scope` | An empty or duplicated scope (`agent/crates/layerx-agentd/src/main.rs:182-194`) |
-| `LAYERX_AGENT_MCP_PEER_UID names no configured human peer` | A UID outside `LAYERX_AGENT_HUMAN_PEERS` (`agent/crates/layerx-agentd/src/main.rs:282-284`) |
-| `the MCP daemon surface is invalid: {detail}` | The program listener or bearer the document would name is not loopback or is under 32 bytes (`agent/crates/layerx-agentd/src/main.rs:255-263`; `agent/crates/layerx-agentd/src/enrolment.rs:133-159`) |
-| `the MCP agent identity is unverified: {detail}` | The human authority does not bind that DID for that tenant and principal (`agent/crates/layerx-agentd/src/main.rs:292-294`) |
-| `LAYERX_AGENT_MCP_SESSION_ID names an open session without its binding document` | A restart whose session is open while the published document names a different session or none (`agent/crates/layerx-agentd/src/main.rs:318-329`) |
-| `MCP enrolment failed: {detail}` | `enrolment::enrol` refused: an unrestorable capability, a pre-existing binding file, or a close after a failed publication (`agent/crates/layerx-agentd/src/main.rs:330-337`; `agent/crates/layerx-agentd/src/enrolment.rs:397-442`) |
-| `LAYERX_AGENT_MCP_BINDING_ROOT requires the full agent mode, which serves the program endpoint and probe program the binding names` | The key set in the human-owner-only mode (`agent/crates/layerx-agentd/src/human_owner_mode.rs:77-82`) |
+| `{name} must be an absolute path` | `LAYERX_AGENT_MCP_BINDING_ROOT` or `LAYERX_AGENT_MCP_AUDIT_ROOT` given as a relative path (`services/agent/crates/layerx-agentd/src/main.rs:69-76`) |
+| `LAYERX_AGENT_MCP_MODE is invalid` | A mode other than `full` or `read-only` (`services/agent/crates/layerx-agentd/src/main.rs:226-230`) |
+| `LAYERX_AGENT_MCP_ACTIVITY_TYPES lists an invalid activity type` / `repeats an activity type` | A non-numeric or duplicated activity type (`services/agent/crates/layerx-agentd/src/main.rs:168-180`) |
+| `LAYERX_AGENT_MCP_SCOPES lists an empty scope` / `repeats a scope` | An empty or duplicated scope (`services/agent/crates/layerx-agentd/src/main.rs:182-194`) |
+| `LAYERX_AGENT_MCP_PEER_UID names no configured human peer` | A UID outside `LAYERX_AGENT_HUMAN_PEERS` (`services/agent/crates/layerx-agentd/src/main.rs:282-284`) |
+| `the MCP daemon surface is invalid: {detail}` | The program listener or bearer the document would name is not loopback or is under 32 bytes (`services/agent/crates/layerx-agentd/src/main.rs:255-263`; `services/agent/crates/layerx-agentd/src/enrolment.rs:133-159`) |
+| `the MCP agent identity is unverified: {detail}` | The human authority does not bind that DID for that tenant and principal (`services/agent/crates/layerx-agentd/src/main.rs:292-294`) |
+| `LAYERX_AGENT_MCP_SESSION_ID names an open session without its binding document` | A restart whose session is open while the published document names a different session or none (`services/agent/crates/layerx-agentd/src/main.rs:318-329`) |
+| `MCP enrolment failed: {detail}` | `enrolment::enrol` refused: an unrestorable capability, a pre-existing binding file, or a close after a failed publication (`services/agent/crates/layerx-agentd/src/main.rs:330-337`; `services/agent/crates/layerx-agentd/src/enrolment.rs:397-442`) |
+| `LAYERX_AGENT_MCP_BINDING_ROOT requires the full agent mode, which serves the program endpoint and probe program the binding names` | The key set in the human-owner-only mode (`services/agent/crates/layerx-agentd/src/human_owner_mode.rs:77-82`) |
 
 ### `layerx mcp serve` stdio
 
 | Refusal | When |
 | --- | --- |
-| JSON-RPC `-32700` `the message is not valid JSON` | Non-JSON stdin line (`agent/crates/layerx-mcp/src/stdio.rs:124-130`) |
-| `-32600` `the message did not name a method` | Missing `method` (`agent/crates/layerx-mcp/src/stdio.rs:132-138`) |
-| `-32601` `method {method} is not implemented` | Unknown method (`agent/crates/layerx-mcp/src/stdio.rs:148-152`) |
-| `-32602` `the call did not name a tool` | `tools/call` without `name` (`agent/crates/layerx-mcp/src/stdio.rs:186-188`) |
-| `-32602` `tool {name} is not served by this deployment` | Name outside the bound surface (`agent/crates/layerx-mcp/src/stdio.rs:189-195`) |
-| `structuredContent.refusal` plus `tool` and `stage` `arguments`, `isError` true | Arguments outside the catalogue schema (`agent/crates/layerx-mcp/src/stdio.rs:197-205`) |
-| `structuredContent.refusal` plus `stage` `freshness` or `daemon` and `state` `"refused"` / `"unknown"`, `isError` true | The daemon refused the invocation (`agent/crates/layerx-mcp/src/stdio.rs:215-220, 257-263`) |
-| `structuredContent.refusal` plus `stage` `authority`, `isError` true | The bound session or capability is absent, closed, revoked, expired, cross-tenant, scope-empty or otherwise unusable (`agent/crates/layerx-mcp/src/stdio.rs:247-252, 266-285`) |
-| `the binding document is unreadable` / `is malformed` / `the daemon refused the binding` | `Binding::open` before the server ever starts (`agent/crates/layerx-mcp/src/binding.rs:57-63`; `platform/cli/src/mcp.rs:12`) |
+| JSON-RPC `-32700` `the message is not valid JSON` | Non-JSON stdin line (`services/agent/crates/layerx-mcp/src/stdio.rs:124-130`) |
+| `-32600` `the message did not name a method` | Missing `method` (`services/agent/crates/layerx-mcp/src/stdio.rs:132-138`) |
+| `-32601` `method {method} is not implemented` | Unknown method (`services/agent/crates/layerx-mcp/src/stdio.rs:148-152`) |
+| `-32602` `the call did not name a tool` | `tools/call` without `name` (`services/agent/crates/layerx-mcp/src/stdio.rs:186-188`) |
+| `-32602` `tool {name} is not served by this deployment` | Name outside the bound surface (`services/agent/crates/layerx-mcp/src/stdio.rs:189-195`) |
+| `structuredContent.refusal` plus `tool` and `stage` `arguments`, `isError` true | Arguments outside the catalogue schema (`services/agent/crates/layerx-mcp/src/stdio.rs:197-205`) |
+| `structuredContent.refusal` plus `stage` `freshness` or `daemon` and `state` `"refused"` / `"unknown"`, `isError` true | The daemon refused the invocation (`services/agent/crates/layerx-mcp/src/stdio.rs:215-220, 257-263`) |
+| `structuredContent.refusal` plus `stage` `authority`, `isError` true | The bound session or capability is absent, closed, revoked, expired, cross-tenant, scope-empty or otherwise unusable (`services/agent/crates/layerx-mcp/src/stdio.rs:247-252, 266-285`) |
+| `the binding document is unreadable` / `is malformed` / `the daemon refused the binding` | `Binding::open` before the server ever starts (`services/agent/crates/layerx-mcp/src/binding.rs:57-63`; `platform/cli/src/mcp.rs:12`) |
 
 ### `layerx-mcp` crate
 
 | Type | Meaning |
 | --- | --- |
-| `ServerError::MissingSession` / `MissingCapability` | Bind-time records absent (`agent/crates/layerx-mcp/src/server.rs:422-438, 652-669`) |
-| `ClosedSession` / `RevokedSession` | Session closed or generation advanced (`agent/crates/layerx-mcp/src/server.rs:217-218, 729-745`) |
-| `TenantMismatch` / `CapabilityMismatch` | Session and capability disagree (`agent/crates/layerx-mcp/src/server.rs:220-224`) |
-| `ExpiredAuthority` | `core_sequence` at or past session or capability expiry (`agent/crates/layerx-mcp/src/server.rs:226-229`) |
-| `NoScope` | No catalogue scope remains after filtering (`agent/crates/layerx-mcp/src/server.rs:231-250, 448-449`) |
-| `ToolAbsent` | Unknown, out-of-scope, or non-matching read/write tool (`agent/crates/layerx-mcp/src/server.rs:532, 600-604, 632-636`; `agent/crates/layerx-mcp/src/readonly.rs:74-79`) |
-| `InvalidInvocation` | Empty/oversized/NUL tool name or arguments > `1_048_576` (`agent/crates/layerx-mcp/src/server.rs:19-20, 506-511`) |
-| `ValidationError::ScopeDenied` / `CounterpartyDenied` / `AuthorityOverride` | Untrusted arguments cannot change tenant, scope, or counterparty (`agent/crates/layerx-mcp/src/untrusted.rs:64-71, 81-125`) |
-| `ReadToolError::Unverified` / `InvalidBounds` / `CursorMismatch` / `ResultTooLarge` / `MissingReceiptEvidence` | Read envelope refusals (`agent/crates/layerx-mcp/src/tools/read.rs:110-119`) |
-| `WriteToolError::Stage(StageFailure)` | Named `WriteStage` with `FailureClass` `Refused` / `Unavailable` / `InvalidEvidence` / `Protocol` (`agent/crates/layerx-mcp/src/tools/write.rs:30-44, 80-87`) |
-| `WriteToolError::SuccessWithoutVerifiedReceipt` | `Executed` without verified receipt evidence (`agent/crates/layerx-mcp/src/tools/write.rs:291-301`) |
-| `LimitRefusal::Exceeded` | Names `limit`, `name`, `ceiling`, `consumed`, `held`, `requested` (`agent/crates/layerx-agentd/src/budget/reserve.rs:161-169, 203-211`) |
-| `ApprovalError::DisclosureChanged` | Presented disclosure ≠ held ticket (`agent/crates/layerx-mcp/src/approval.rs:25-28, 139-140`) |
+| `ServerError::MissingSession` / `MissingCapability` | Bind-time records absent (`services/agent/crates/layerx-mcp/src/server.rs:422-438, 652-669`) |
+| `ClosedSession` / `RevokedSession` | Session closed or generation advanced (`services/agent/crates/layerx-mcp/src/server.rs:217-218, 729-745`) |
+| `TenantMismatch` / `CapabilityMismatch` | Session and capability disagree (`services/agent/crates/layerx-mcp/src/server.rs:220-224`) |
+| `ExpiredAuthority` | `core_sequence` at or past session or capability expiry (`services/agent/crates/layerx-mcp/src/server.rs:226-229`) |
+| `NoScope` | No catalogue scope remains after filtering (`services/agent/crates/layerx-mcp/src/server.rs:231-250, 448-449`) |
+| `ToolAbsent` | Unknown, out-of-scope, or non-matching read/write tool (`services/agent/crates/layerx-mcp/src/server.rs:532, 600-604, 632-636`; `services/agent/crates/layerx-mcp/src/readonly.rs:74-79`) |
+| `InvalidInvocation` | Empty/oversized/NUL tool name or arguments > `1_048_576` (`services/agent/crates/layerx-mcp/src/server.rs:19-20, 506-511`) |
+| `ValidationError::ScopeDenied` / `CounterpartyDenied` / `AuthorityOverride` | Untrusted arguments cannot change tenant, scope, or counterparty (`services/agent/crates/layerx-mcp/src/untrusted.rs:64-71, 81-125`) |
+| `ReadToolError::Unverified` / `InvalidBounds` / `CursorMismatch` / `ResultTooLarge` / `MissingReceiptEvidence` | Read envelope refusals (`services/agent/crates/layerx-mcp/src/tools/read.rs:110-119`) |
+| `WriteToolError::Stage(StageFailure)` | Named `WriteStage` with `FailureClass` `Refused` / `Unavailable` / `InvalidEvidence` / `Protocol` (`services/agent/crates/layerx-mcp/src/tools/write.rs:30-44, 80-87`) |
+| `WriteToolError::SuccessWithoutVerifiedReceipt` | `Executed` without verified receipt evidence (`services/agent/crates/layerx-mcp/src/tools/write.rs:291-301`) |
+| `LimitRefusal::Exceeded` | Names `limit`, `name`, `ceiling`, `consumed`, `held`, `requested` (`services/agent/crates/layerx-agentd/src/budget/reserve.rs:161-169, 203-211`) |
+| `ApprovalError::DisclosureChanged` | Presented disclosure ≠ held ticket (`services/agent/crates/layerx-mcp/src/approval.rs:25-28, 139-140`) |
 
 Sources: `docs/wiki/Agentd.md`, `docs/wiki/Cli.md`,
-`agent/README.md`, `agent/crates/layerx-mcp/README.md`,
-`agent/crates/layerx-mcp/src/` (`binding.rs`, `catalogue.rs`,
-`stdio.rs`, `server.rs`), `agent/crates/layerx-agentd/src/`
+`services/agent/README.md`, `services/agent/crates/layerx-mcp/README.md`,
+`services/agent/crates/layerx-mcp/src/` (`binding.rs`, `catalogue.rs`,
+`stdio.rs`, `server.rs`), `services/agent/crates/layerx-agentd/src/`
 (`enrolment.rs`, `session.rs`, `main.rs`), `platform/cli/src/install/`,
 `platform/cli/src/toolset.rs`, `platform/cli/src/mcp.rs`,
-`agent/sdk/typescript/examples/`, `agent/sdk/python/examples/`.
+`services/agent/sdk/typescript/examples/`, `services/agent/sdk/python/examples/`.
 
 [Home](Home.md)

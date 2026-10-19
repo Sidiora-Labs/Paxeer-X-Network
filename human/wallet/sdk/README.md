@@ -9,7 +9,7 @@ The package is a member of the `human/wallet` pnpm workspace and is not publishe
 ```sh
 cd human/wallet
 pnpm install
-pnpm --filter @paxeer/wallet build       # also builds agent/sdk/typescript first
+pnpm --filter @paxeer/wallet build       # also builds services/agent/sdk/typescript first
 pnpm --filter @paxeer/wallet test        # vitest
 pnpm --filter @paxeer/wallet typecheck
 ```

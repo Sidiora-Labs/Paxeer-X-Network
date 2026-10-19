@@ -268,8 +268,8 @@
         "lni_"
       ],
       "deleted_trees": [
-        "agent/crates/layerx-client/src/lni",
-        "agent/include/layerx_lni_abi.h",
+        "services/agent/crates/layerx-client/src/lni",
+        "services/agent/include/layerx_lni_abi.h",
         "cmd/layerxd/lxp_daemon_lni.c"
       ],
       "replacement": "writes are eth_sendRawTransaction through the unified router and reads are eth_call on the precompile views or gRPC queries at a height"
@@ -282,7 +282,7 @@
         "layerx_paxeer_verifier"
       ],
       "deleted_trees": [
-        "agent/crates/layerx-paxeer-verifier"
+        "services/agent/crates/layerx-paxeer-verifier"
       ],
       "replacement": "verify the CometBFT commit and header at the height and read native per-key proofs; the bridge relayer keeps only a raw JSON-RPC call moved into its own crate"
     },
@@ -299,7 +299,7 @@
         "crate::handover"
       ],
       "deleted_trees": [
-        "agent/crates/layerx-client/src/handover.rs"
+        "services/agent/crates/layerx-client/src/handover.rs"
       ],
       "replacement": "read the sequencer receipt key from chain state at the receipt height (governed parameter)"
     },
@@ -314,7 +314,7 @@
         "settlement-domain"
       ],
       "deleted_trees": [
-        "agent/crates/layerx-proof/src/settlement.rs"
+        "services/agent/crates/layerx-proof/src/settlement.rs"
       ],
       "replacement": "offline exports carry chain id 125 and the validator set at the height instead of a settlement domain"
     },
@@ -382,8 +382,8 @@
         "wire-differential"
       ],
       "deleted_trees": [
-        "agent/tools/wire-differential",
-        "agent/crates/layerx-wire"
+        "services/agent/tools/wire-differential",
+        "services/agent/crates/layerx-wire"
       ],
       "replacement": "encode the operation as an EIP-1559 transaction with the existing RLP encoder; the differential runs against go-ethereum types"
     },

@@ -1,6 +1,6 @@
 // Package verify checks LayerX signed objects and proofs against caller
 // supplied trust anchors with the refusal semantics of the Rust verifier
-// (agent/crates/layerx-proof, layerx-crypto, layerx-client). It is pure: no
+// (services/agent/crates/layerx-proof, layerx-crypto, layerx-client). It is pure: no
 // clock, network, database or chain state. Every failure is an error.
 package verify
 

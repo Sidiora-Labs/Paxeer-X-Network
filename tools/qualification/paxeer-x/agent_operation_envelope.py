@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tests/daemon'))
-sys.path.insert(0, str(ROOT / 'agent/sdk/python'))
+sys.path.insert(0, str(ROOT / 'services/agent/sdk/python'))
 sys.path.insert(0, str(ROOT / 'tools/qualification/paxeer-x/fixtures'))
 from event_source_fixture import NativeProofFaultRelay
 import paxeer_x_runtime_fixture as fixture
@@ -114,14 +114,14 @@ CLASSES = {'TransportFailure', 'Deadline', 'ProtocolIncompatibility', 'Unavailab
            'VerificationFailure', 'PolicyRefusal', 'CapabilityRefusal', 'BudgetRefusal', 'RateLimit',
            'IdempotencyConflict', 'InternalFault'}
 LEVELS = ('Unverified', 'SequencerSigned', 'BatchIncluded', 'StateProven', 'CheckpointFinalised', 'SettlementAnchored')
-SOURCES = ('agent/crates', 'agent/Cargo.toml', 'agent/Cargo.lock', 'agent/schema/agent-api', 'agent/sdk/typescript/src',
-           'agent/sdk/typescript/test', 'agent/sdk/typescript/package.json', 'agent/sdk/typescript/package-lock.json',
-           'agent/sdk/typescript/tsconfig.json', 'agent/sdk/python', 'platform/hosted/gateway', 'platform/Cargo.toml',
+SOURCES = ('services/agent/crates', 'services/agent/Cargo.toml', 'services/agent/Cargo.lock', 'services/agent/schema/agent-api', 'services/agent/sdk/typescript/src',
+           'services/agent/sdk/typescript/test', 'services/agent/sdk/typescript/package.json', 'services/agent/sdk/typescript/package-lock.json',
+           'services/agent/sdk/typescript/tsconfig.json', 'services/agent/sdk/python', 'platform/hosted/gateway', 'platform/Cargo.toml',
            'platform/Cargo.lock', 'platform/sdk/go', 'platform/sdk/jvm', 'platform/sdk/swift', 'platform/sdk/dotnet',
            'tools/paxeer-x/route-catalogue.json', 'tools/qualification/paxeer-x/agent_operation_envelope.py',
            'tools/qualification/paxeer-x/fixtures/event_source_fixture.py',
            'tests/daemon/lxp_test_runtime_fixture.c', 'tests/storage/lxp_test_maintenance_publication.c',
-           'tests/programs/test_call_activity.c', 'agent/schema/lni/v1.kvx')
+           'tests/programs/test_call_activity.c', 'services/agent/schema/lni/v1.kvx')
 CASE_LINE = re.compile(r'^PAXEER_X_AGENT_ENVELOPE_CASE ([a-z0-9_.\-]+) passed$', re.M)
 COUNT_LINE = re.compile(r'^PAXEER_X_AGENT_ENVELOPE_CASES=(\d+)$', re.M)
 
@@ -171,7 +171,7 @@ def write_private(path, value):
 
 
 def operations():
-    text = (ROOT / 'agent/crates/layerx-agent-api/src/operation_generated.rs').read_text()
+    text = (ROOT / 'services/agent/crates/layerx-agent-api/src/operation_generated.rs').read_text()
     body = text[text.index('pub const fn name(self)'):]
     body = body[:body.index('\n    }\n')]
     names = re.findall(r'=> "([a-z_.\-]+)"', body)
@@ -182,7 +182,7 @@ def operations():
 
 
 def mutating_operations():
-    text = (ROOT / 'agent/crates/layerx-agent-api/src/operation_generated.rs').read_text()
+    text = (ROOT / 'services/agent/crates/layerx-agent-api/src/operation_generated.rs').read_text()
     names = dict(re.findall(r'Self::([A-Za-z]+) => "([a-z_.\-]+)"', text[text.index('pub const fn name(self)'):]))
     body = text[text.index('pub const fn mutating(self) -> bool'):]
     body = body[body.index('matches!('):body.index('\n        )\n')]
@@ -239,13 +239,13 @@ def build(manifest):
         return result.stdout
 
     artifacts = {}
-    agent = step(['cargo', 'build', '--locked', '--release', '--manifest-path', 'agent/Cargo.toml', '-p', 'layerx-agentd',
+    agent = step(['cargo', 'build', '--locked', '--release', '--manifest-path', 'services/agent/Cargo.toml', '-p', 'layerx-agentd',
                   '--bins', '--message-format=json'])
     artifacts.update(cargo_executables(agent, {('layerx-agentd', 'bin'): 'agentd'}))
-    probe = step(['cargo', 'test', '--locked', '--release', '--manifest-path', 'agent/Cargo.toml', '-p', 'layerx-sdk',
+    probe = step(['cargo', 'test', '--locked', '--release', '--manifest-path', 'services/agent/Cargo.toml', '-p', 'layerx-sdk',
                   '--test', 'agent_operation_envelope', '--no-run', '--message-format=json'])
     artifacts.update(cargo_executables(probe, {('agent_operation_envelope', 'test'): 'rust_probe'}))
-    prestate = step(['cargo', 'test', '--locked', '--release', '--manifest-path', 'agent/Cargo.toml', '-p', 'layerx-client',
+    prestate = step(['cargo', 'test', '--locked', '--release', '--manifest-path', 'services/agent/Cargo.toml', '-p', 'layerx-client',
                      '--test', 'caps_discovery', '--no-run', '--message-format=json'])
     artifacts.update(cargo_executables(prestate, {('caps_discovery', 'test'): 'prestate_probe'}))
     native_build = bundle / 'native-prestate'
@@ -255,7 +255,7 @@ def build(manifest):
     gateway = step(['cargo', 'build', '--locked', '--release', '--manifest-path', 'platform/hosted/gateway/Cargo.toml',
                     '--bin', 'layerx-gateway', '--message-format=json'])
     artifacts.update(cargo_executables(gateway, {('layerx-gateway', 'bin'): 'gateway'}))
-    ts = ROOT / 'agent/sdk/typescript'
+    ts = ROOT / 'services/agent/sdk/typescript'
     step(['npm', 'ci', '--offline', '--ignore-scripts'], cwd=ts)
     step(['npm', 'run', 'build'], cwd=ts)
     artifacts['typescript_probe'] = str(ts / 'dist/test/agent-operation-envelope.test.js')
@@ -281,7 +281,7 @@ def build(manifest):
     dlls = sorted(dotnet.glob('bin/Release/*/LayerX.Sdk.Tests.dll'))
     require(len(dlls) == 1, 'dotnet test assembly not unique')
     artifacts['csharp_probe'] = str(dlls[0])
-    for name in ('agent/sdk/python/layerx_sdk/agent_http.py', 'tests/agent/sdk/python/test_agent_operation_envelope.py',
+    for name in ('services/agent/sdk/python/layerx_sdk/agent_http.py', 'tests/agent/sdk/python/test_agent_operation_envelope.py',
                  'tools/qualification/paxeer-x/agent_operation_envelope.py'):
         step([sys.executable, '-m', 'py_compile', name])
     artifacts['python_probe'] = str(ROOT / 'tests/agent/sdk/python/test_agent_operation_envelope.py')

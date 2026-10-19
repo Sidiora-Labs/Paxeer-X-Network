@@ -10,7 +10,7 @@ root = Path(__file__).resolve().parents[2]
 for kind in ('capability', 'budget'):
     encoded = subprocess.run([str(args.encoder.resolve()), '--encode-' + kind],
                              check=True, capture_output=True).stdout
-    target = root / 'agent/crates/layerx-crypto/tests/fixtures' / ('authority-grant-' + kind + '.bin')
+    target = root / 'services/agent/crates/layerx-crypto/tests/fixtures' / ('authority-grant-' + kind + '.bin')
     if args.check:
         assert target.read_bytes() == encoded, str(target) + ': canonical grant fixture drift'
     else:

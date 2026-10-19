@@ -50,7 +50,7 @@ not add a LayerX activity type for multisig authority.
 Account names today are the canonical strings hashed under `LX:ACCOUNT:v1`
 ([Assets](Assets.md)). There is no protocol name-service module, no
 `0x000xxxxx` naming activity, and no LNI `name_read` capability in
-`agent/schema/lni/v1.kvx`. Platform requirement 2 is the simplicity
+`services/agent/schema/lni/v1.kvx`. Platform requirement 2 is the simplicity
 contract (banned vocabulary), not a human-readable name registry.
 
 ---

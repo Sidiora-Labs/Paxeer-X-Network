@@ -749,11 +749,11 @@ fn monetary_payloads() -> Result<Vec<layerx_types::payload::Payload>> {
     ))?];
     for bytes in [
         include_bytes!(
-            "../../../../agent/crates/layerx-crypto/tests/fixtures/authority-grant-capability.bin"
+            "../../../../services/agent/crates/layerx-crypto/tests/fixtures/authority-grant-capability.bin"
         )
         .as_slice(),
         include_bytes!(
-            "../../../../agent/crates/layerx-crypto/tests/fixtures/authority-grant-budget.bin"
+            "../../../../services/agent/crates/layerx-crypto/tests/fixtures/authority-grant-budget.bin"
         )
         .as_slice(),
     ] {

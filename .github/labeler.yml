@@ -9,7 +9,7 @@ area:protocol:
 
 area:agent:
   - changed-files:
-      - any-glob-to-any-file: agent/**
+      - any-glob-to-any-file: services/agent/**
 
 area:platform:
   - changed-files:

@@ -324,7 +324,7 @@ const CONTRACTS_TEST: &[Step] = &[Step::command(
 const AGENT_INSTALL: &[Step] = &[Step::command(
     "Fetch the locked agent workspace crates",
     "cargo",
-    &["fetch", "--manifest-path", "agent/Cargo.toml", "--locked"],
+    &["fetch", "--manifest-path", "services/agent/Cargo.toml", "--locked"],
     ".",
     &["cargo"],
 )];
@@ -491,7 +491,7 @@ const PLATFORM_BUILD: &[Step] = &[
             "-m",
             "compileall",
             "-q",
-            "agent/sdk/python",
+            "services/agent/sdk/python",
             "platform/integrations/fastapi",
         ],
         ".",
@@ -1119,7 +1119,7 @@ fn repo_root() -> Result<PathBuf, String> {
 fn is_repo_root(path: &Path) -> bool {
     path.join("Makefile").is_file()
         && path.join("platform/Cargo.toml").is_file()
-        && path.join("agent/Cargo.toml").is_file()
+        && path.join("services/agent/Cargo.toml").is_file()
 }
 
 fn command_exists(tool: &str) -> bool {
@@ -1477,7 +1477,7 @@ mod tests {
 
     #[test]
     fn display_quotes_only_unsafe_arguments() {
-        assert_eq!(display_argument("agent/Cargo.toml"), "agent/Cargo.toml");
+        assert_eq!(display_argument("services/agent/Cargo.toml"), "services/agent/Cargo.toml");
         assert_eq!(display_argument("two words"), "\"two words\"");
     }
 }

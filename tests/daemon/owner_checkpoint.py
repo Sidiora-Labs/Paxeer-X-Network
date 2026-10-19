@@ -406,7 +406,7 @@ def hosted(work, config, environment, launch, service):
 
 def module_reads(work, public, last_batch):
     repo = Path(__file__).resolve().parents[2]
-    target = Path(os.environ.get('CARGO_TARGET_DIR', repo / 'agent/target'))
+    target = Path(os.environ.get('CARGO_TARGET_DIR', repo / 'services/agent/target'))
     binary = target / 'debug/examples/module_state'
     command = ['setpriv', '--reuid=4021', '--regid=4021', '--groups=' + str(repo.stat().st_gid),
         str(binary), str(work / 'run/layerxd.lni.sock'), '77',

@@ -9,7 +9,7 @@ import {
   type GasQuoteRequest,
   type GasStationConfig,
   type SponsoredBatch,
-} from "../../../../../agent/sdk/typescript/src/gas-station.ts";
+} from "../../../../../services/agent/sdk/typescript/src/gas-station.ts";
 import type { PrecompileSendOutcome } from "./wallet.ts";
 
 export interface SidioraGasQuote {

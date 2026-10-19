@@ -62,8 +62,8 @@ def supplementary(path):
     tree = fixture.run(['git', 'rev-parse', revision + '^{tree}'], capture_output=True).stdout.decode().strip()
     require(value.get('source_tree') == tree, 'kernel artifact source tree')
     required_paths = {
-        'layerx-runtime-clock': ['platform/hosted/runtime-clock', 'agent/crates/layerx-types'],
-        'layerxctl': ['cmd/layerxctl', 'agent/crates'],
+        'layerx-runtime-clock': ['platform/hosted/runtime-clock', 'services/agent/crates/layerx-types'],
+        'layerxctl': ['cmd/layerxctl', 'services/agent/crates'],
         'layerx-handover': ['cmd/layerx-handover', 'src', 'include'],
         'layerx-archive-codec': ['cmd/layerx-archive-codec', 'src', 'include'],
         'layerx-guarantor': ['cmd/layerx-guarantor', 'src', 'include'],

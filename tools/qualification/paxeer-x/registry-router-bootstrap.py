@@ -1087,7 +1087,7 @@ def chain_receipt_facts(receipt, chain_rest_url, chain_curl_config, state):
         and not url.fragment,
         "chain parameter query requires an HTTPS base URL",
     )
-    sdk_path = str(ROOT / "agent/sdk/python")
+    sdk_path = str(ROOT / "services/agent/sdk/python")
     sys.path.insert(0, sdk_path)
     try:
         from layerx_sdk.production import PlatformSdkError

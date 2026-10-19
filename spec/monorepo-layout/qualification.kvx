@@ -63,3 +63,10 @@ command = "scripts/ci/layout-check.sh fuzz integration_test example occ_tests te
 exit_code = 0
 log_path = "fleet/logs/layout-3.6.log"
 observed_and_assumption = "The first run exited 1 on five lines whose paths resolve from another directory (the programs fuzz corpus after cd programs, the unanchored example/ ignore pattern, the $example shell variable); resolved by passing $(CURDIR)/programs/fuzz/corpus in the Makefile, anchoring /tests/fixtures/example/ in .cgignore and writing ${example} in the fixture script, after which the rerun exits 0 and specgen leaves AGENTS.md and CLAUDE.md unchanged."
+
+[finding.4.1-layerx-mcp-verification-level]
+revision = "b2cc11a4e with the task 4.1 move applied"
+command = "make agent-build"
+exit_code = 0
+log_path = "fleet/logs/layout-4.1.log"
+observed_and_assumption = "The first run on e96594254 with the move applied exited 2 on E0609 in crates/layerx-mcp/src/tools/write.rs, where TrackedSubmission no longer had a verification_level field, in files the move left byte-identical; resolved by the layerx-mcp write tool fix on main b2cc11a4e, which the rebase carried onto services/agent, after which the rerun exits 0."

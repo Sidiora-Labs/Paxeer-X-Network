@@ -503,7 +503,7 @@ def self_test(catalogue):
         "literal punctuation",
     )
     check_equal(
-        is_test_file("agent/crates/layerx-client/examples/go_verifier_vectors.rs"),
+        is_test_file("services/agent/crates/layerx-client/examples/go_verifier_vectors.rs"),
         False,
         "examples remain live",
     )
@@ -723,20 +723,20 @@ def self_test(catalogue):
         write_tracked(
             root,
             {
-                "agent/Cargo.toml": (
+                "services/agent/Cargo.toml": (
                     "[workspace]\nmembers = [\n"
                     '    "crates/layerx-agentd",\n'
                     '    "crates/layerx-paxeer-verifier",\n]\n'
                 ),
-                "agent/crates/layerx-agentd/src/main.rs": (
+                "services/agent/crates/layerx-agentd/src/main.rs": (
                     "fn main() {\n    layerx_paxeer_verifier::verify();\n}\n"
                 ),
             },
         )
         callers = [
-            ("agent/Cargo.toml", 4, "paxeer-verifier", "layerx-paxeer-verifier"),
+            ("services/agent/Cargo.toml", 4, "paxeer-verifier", "layerx-paxeer-verifier"),
             (
-                "agent/crates/layerx-agentd/src/main.rs",
+                "services/agent/crates/layerx-agentd/src/main.rs",
                 2,
                 "paxeer-verifier",
                 "layerx_paxeer_verifier",
@@ -788,9 +788,9 @@ def self_test(catalogue):
         for path, expected_exit, expected_output in (
             ("spec/layerx-merge/spec.kvx", 0, ""),
             (
-                "agent/Cargo.toml",
+                "services/agent/Cargo.toml",
                 1,
-                "agent/Cargo.toml:4: paxeer-verifier: layerx-paxeer-verifier\n",
+                "services/agent/Cargo.toml:4: paxeer-verifier: layerx-paxeer-verifier\n",
             ),
         ):
             output = io.StringIO()
@@ -816,16 +816,16 @@ def self_test(catalogue):
         )
     for path, reason, message in (
         (
-            "agent/crates/layerx-paxeer-verifier",
+            "services/agent/crates/layerx-paxeer-verifier",
             "reviewed retirement notes",
             "documentation path overlaps deleted tree: "
-            "agent/crates/layerx-paxeer-verifier",
+            "services/agent/crates/layerx-paxeer-verifier",
         ),
         (
-            "agent/crates/layerx-paxeer-verifier/README.md",
+            "services/agent/crates/layerx-paxeer-verifier/README.md",
             "reviewed retirement notes",
             "documentation path overlaps deleted tree: "
-            "agent/crates/layerx-paxeer-verifier/README.md",
+            "services/agent/crates/layerx-paxeer-verifier/README.md",
         ),
         (
             "agent",

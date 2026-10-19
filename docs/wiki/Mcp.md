@@ -1,16 +1,16 @@
 # MCP tools
 
 `layerx-mcp` exposes 21 tools in `TOOL_CATALOGUE`
-(`agent/crates/layerx-mcp/src/server.rs`). Every call is a
+(`services/agent/crates/layerx-mcp/src/server.rs`). Every call is a
 `DaemonInvocation` through `layerx-agentd` with gates Policy, Capability,
 Budget, RateLimit, and Audit. There is no MCP-only write path.
 
 Read-only deployment omits write tools. Encoded JSON arguments are bounded
 (catalogue validation 65_536 bytes; route 1_048_576 bytes).
 
-Sources: `agent/crates/layerx-mcp/src/server.rs`,
-`agent/crates/layerx-mcp/src/catalogue.rs`,
-`agent/crates/layerx-mcp/README.md`,
+Sources: `services/agent/crates/layerx-mcp/src/server.rs`,
+`services/agent/crates/layerx-mcp/src/catalogue.rs`,
+`services/agent/crates/layerx-mcp/README.md`,
 `spec/.beta/layerx-agent-interface/spec.kvx` requirement 17.
 
 Operator walkthrough: [Running an agent](RunningAnAgent.md). Write

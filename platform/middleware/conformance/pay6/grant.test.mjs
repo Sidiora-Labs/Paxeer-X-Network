@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { validateGrantDraw } from "../../../../agent/sdk/typescript/dist/src/x402/grant.js";
-import { decodeReceive } from "../../../../agent/sdk/typescript/dist/src/x402/receive.js";
+import { validateGrantDraw } from "../../../../services/agent/sdk/typescript/dist/src/x402/grant.js";
+import { decodeReceive } from "../../../../services/agent/sdk/typescript/dist/src/x402/receive.js";
 import { encodePaymentRequiredHeader } from "../../seller/dist/index.js";
 const wire = Uint8Array.from(Buffer.from(readFileSync(new URL("receive.hex", import.meta.url), "utf8").split("\n")[0], "hex"));
 const r = decodeReceive(wire);

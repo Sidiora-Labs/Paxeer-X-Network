@@ -25,7 +25,7 @@ Two numbers bound the integration surface, and they are not the same kind of cla
 
 Every SDK is generated from the same two schemas in the same build. The idiom differs; the wire behaviour, the error taxonomy and the receipt verification do not.
 
-Those package names are the beta artifact set declared in the canonical beta contract. This checkout does not provide a published artifact manifest that verifies their availability; build the SDK you need from its source directory under `agent/sdk`, `agent/crates` or `platform/sdk` until a release publishes the coordinate.
+Those package names are the beta artifact set declared in the canonical beta contract. This checkout does not provide a published artifact manifest that verifies their availability; build the SDK you need from its source directory under `services/agent/sdk`, `services/agent/crates` or `platform/sdk` until a release publishes the coordinate.
 
 ## Or start in your framework
 

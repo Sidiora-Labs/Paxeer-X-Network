@@ -458,7 +458,7 @@ jobs:
             "CARGO_TARGET_DIR=$PWD/.lane-target" \
             "CARGO_PROFILE_DEV_DEBUG=$CARGO_PROFILE_DEV_DEBUG" \
             "CARGO_PROFILE_TEST_DEBUG=$CARGO_PROFILE_TEST_DEBUG" \
-            sh agent/tools/run-real-node-tests.sh prepare
+            sh services/agent/tools/run-real-node-tests.sh prepare
           sudo env "PATH=$PATH" "CARGO_HOME=$HOME/.cargo" "RUSTUP_HOME=$HOME/.rustup" \
             "CARGO_TARGET_DIR=$PWD/.lane-target" \
             "CARGO_PROFILE_DEV_DEBUG=$CARGO_PROFILE_DEV_DEBUG" \
@@ -633,9 +633,9 @@ jobs:
         run: |
           cargo package --locked --no-verify --manifest-path programs/Cargo.toml -p layerx-programs-runtime
           cargo package --locked --no-verify --manifest-path interop/Cargo.toml -p layerx-mirror
-          cargo package --locked --no-verify --manifest-path agent/Cargo.toml --workspace --exclude layerx-agentd --exclude layerx-mcp
+          cargo package --locked --no-verify --manifest-path services/agent/Cargo.toml --workspace --exclude layerx-agentd --exclude layerx-mcp
           for package in $LAYERX_RELEASE_PACKAGES; do
-            found=$(find programs/target/package interop/target/package agent/target/package -maxdepth 1 -name "$package-$LAYERX_RELEASE_VERSION.crate" | head -n 1)
+            found=$(find programs/target/package interop/target/package services/agent/target/package -maxdepth 1 -name "$package-$LAYERX_RELEASE_VERSION.crate" | head -n 1)
             test -n "$found"
             cp "$found" "$LAYERX_RELEASE_OUTPUT/"
           done
@@ -666,7 +666,7 @@ jobs:
           done
       - name: Generate the SBOM of every published workspace
         run: |
-          syft scan dir:agent -o spdx-json="$LAYERX_RELEASE_OUTPUT/agent.sbom.spdx.json"
+          syft scan dir:services/agent -o spdx-json="$LAYERX_RELEASE_OUTPUT/agent.sbom.spdx.json"
           syft scan dir:interop/crates/layerx-mirror -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-mirror.sbom.spdx.json"
           syft scan dir:programs/crates/layerx-programs-runtime -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-programs-runtime.sbom.spdx.json"
       - name: Sign every crate with sigstore keyless signing
@@ -699,7 +699,7 @@ jobs:
           test -n "$CARGO_REGISTRY_TOKEN"
           cargo publish --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime $LAYERX_RELEASE_REGISTRY_FLAG
           cargo publish --locked --manifest-path interop/Cargo.toml -p layerx-mirror $LAYERX_RELEASE_REGISTRY_FLAG
-          cargo publish --locked --manifest-path agent/Cargo.toml --workspace --exclude layerx-agentd --exclude layerx-mcp $LAYERX_RELEASE_REGISTRY_FLAG
+          cargo publish --locked --manifest-path services/agent/Cargo.toml --workspace --exclude layerx-agentd --exclude layerx-mcp $LAYERX_RELEASE_REGISTRY_FLAG
           echo published=true >> "$LAYERX_RELEASE_OUTPUT/publication.txt"
       - name: Install every crate from the registry and verify its digest
         if: startsWith(github.ref, 'refs/tags/sdk-v')
@@ -902,7 +902,7 @@ jobs:
           echo "LAYERX_RELEASE_TARGET=${LAYERX_RELEASE_PYPI_INDEX_URL:-$LAYERX_RELEASE_DISTRIBUTION/simple}" >> "$GITHUB_ENV"
       - name: Build the wheels from the locked sources
         run: |
-          python -m build --wheel --outdir "$LAYERX_RELEASE_OUTPUT/dist" agent/sdk/python
+          python -m build --wheel --outdir "$LAYERX_RELEASE_OUTPUT/dist" services/agent/sdk/python
           python -m build --wheel --outdir "$LAYERX_RELEASE_OUTPUT/dist" platform/integrations/fastapi
       - name: Record the immutable digest of every wheel, its artifact record and the publication
         run: |
@@ -927,7 +927,7 @@ jobs:
           done
       - name: Generate the SBOM of every published package
         run: |
-          syft scan dir:agent/sdk/python -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-sdk.sbom.spdx.json"
+          syft scan dir:services/agent/sdk/python -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-sdk.sbom.spdx.json"
           syft scan dir:platform/integrations/fastapi -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-fastapi.sbom.spdx.json"
       - name: Sign every wheel with sigstore keyless signing
         if: startsWith(github.ref, 'refs/tags/sdk-v')

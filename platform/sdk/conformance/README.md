@@ -1,7 +1,7 @@
 # SDK conformance suite
 
 Shared vectors and tests that the Paxeer X Network SDKs for the LayerX kernel
-domain must pass: TypeScript, Python and Rust under [`agent/`](../../../agent),
+domain must pass: TypeScript, Python and Rust under [`services/agent/`](../../../services/agent),
 and Go, JVM, Swift and .NET under [`platform/sdk`](..).
 
 ## Contents
@@ -34,7 +34,7 @@ and `dotnet` on the PATH.
 Individual pieces, from the repository root:
 
 ```bash
-PYTHONPATH=agent/sdk/python python3 -m pytest --import-mode=importlib \
+PYTHONPATH=services/agent/sdk/python python3 -m pytest --import-mode=importlib \
   platform/sdk/conformance/secret-hygiene.test.py \
   platform/sdk/conformance/streaming-resumability.test.py
 sh platform/sdk/conformance/run-go.sh "$PWD"

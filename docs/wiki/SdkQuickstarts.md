@@ -17,7 +17,7 @@ self-service principal flow.
 
 | Language | Package | Register | Faucet | Send | Verify receipt |
 | --- | --- | --- | --- | --- | --- |
-| [Rust](SdkQuickstartRust.md) | `layerx-sdk` (`agent/crates/layerx-sdk`) | `RpcClient::register` | `RpcClient::request_funds` (see auth note) | `RpcClient::send_activity` | `production::verify_receipt` |
+| [Rust](SdkQuickstartRust.md) | `layerx-sdk` (`services/agent/crates/layerx-sdk`) | `RpcClient::register` | `RpcClient::request_funds` (see auth note) | `RpcClient::send_activity` | `production::verify_receipt` |
 | [TypeScript](SdkQuickstartTypeScript.md) | `@sidiora/layerx-sdk` | not on `JsonRpcClient` | not on `JsonRpcClient` | `JsonRpcClient.sendActivity` or `ProductionClient.human` | `verifyReceipt` |
 | [Python](SdkQuickstartPython.md) | `layerx-sdk` | `PaymentRpc.call("lx_register", …)` | `PaymentRpc.call("lx_requestFunds", …)` | `PaymentRpc.send` or `ProductionClient.human` | `verify_receipt` |
 | [Go](SdkQuickstartGo.md) | `platform/sdk/go` | catalog only | catalog only | `Client.Human` `move.quote` / `move.commit` | `VerifyReceipt` |

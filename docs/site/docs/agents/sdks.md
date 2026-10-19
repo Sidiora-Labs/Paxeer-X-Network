@@ -16,9 +16,9 @@ The platform specification extends that family with Go, JVM, Swift, and C#.
 
 | Language | Path |
 | --- | --- |
-| Rust | `agent/crates/layerx-sdk` |
-| Python | `agent/sdk/python` |
-| TypeScript | `agent/sdk/typescript` |
+| Rust | `services/agent/crates/layerx-sdk` |
+| Python | `services/agent/sdk/python` |
+| TypeScript | `services/agent/sdk/typescript` |
 | Go | `platform/sdk/go` |
 | JVM | `platform/sdk/jvm` |
 | .NET | `platform/sdk/dotnet` |

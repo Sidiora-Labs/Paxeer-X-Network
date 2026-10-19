@@ -1,7 +1,7 @@
 FROM node:24.11.0-bookworm-slim AS build
 WORKDIR /src/human/apps/web
 COPY package.json package-lock.json /src/
-COPY agent/sdk/typescript /src/agent/sdk/typescript
+COPY services/agent/sdk/typescript /src/agent/sdk/typescript
 RUN npm --prefix /src/agent/sdk/typescript ci --ignore-scripts --no-audit --no-fund
 COPY human/apps/web /src/human/apps/web
 RUN npm ci --ignore-scripts --no-audit --no-fund

@@ -31,30 +31,30 @@ Read this first. It is derived from the code graph: purpose lines are the code's
 Build and test:
 
 - make (`Makefile`): `make` (default: `all`), `make check`, `make mirror-live`, `make mirror-verify-live`, `make build`, `make clean`, `make reproducible`, `make test-result`, `make test-protocol`, `make test-arena`, `make test-harness`, `make list-tests`, `make test`, `make test-kernel`, `make test-kernel-symbol-isolation`, `make test-module-ctx`, `make test-dispatch`, `make test-receipts`, `make test-state-root`, `make test-replay-golden-local`, `make test-replay-golden`, `make test-ledger-accounts`, `make test-ledger-transfer`, `make test-ledger-set`, `make test-ledger-send`, `make test-ledger-receive`, `make test-ledger-send-allowance`, `make test-ledger-receipt`, `make test-state-commitment-transition`, `make test-asset-registry`, `make test-asset-account-grant`, `make test-asset-balance`, `make test-asset-transfer`, `make test-asset-deposit`, `make test-asset-withdraw`, `make test-asset-reserve`, `make test-escrow-open`, `make test-escrow-capture`, `make test-escrow-timeout`, `make test-escrow-dispute`, `make test-escrow-invariants`, `make test-budget-create`, `make test-budget-period`, `make test-budget-spend`, `make test-budget-delegate`, `make test-budget-revoke`, `make test-stream-open`, `make test-stream-accrual`, `make test-stream-meter`, `make test-stream-settle`, `make test-stream-lifecycle`, `make test-service-offer`, `make test-service-commit`, `make test-service-attest`, `make test-service-deliver`, `make test-service-acceptance`, `make test-service-dispute`, `make test-oracle-adapter`, `make test-oracle-intake`, `make test-oracle-bounds`, `make test-oracle-root`, `make test-oracle-failclosed`, `make test-web-adapter`, `make test-web-intake`
-- cargo (`agent/Cargo.toml`, run in `agent/`): `cargo build`, `cargo test`
-- cargo (`agent/crates/layerx-agent-api/Cargo.toml`, run in `agent/crates/layerx-agent-api/`): `cargo build`, `cargo test`
-- cargo (`agent/crates/layerx-agentd-host/Cargo.toml`, run in `agent/crates/layerx-agentd-host/`): `cargo build`, `cargo test`
-- cargo (`agent/crates/layerx-agentd/Cargo.toml`, run in `agent/crates/layerx-agentd/`): `cargo build`, `cargo test`
-- cargo (`agent/crates/layerx-client/Cargo.toml`, run in `agent/crates/layerx-client/`): `cargo build`, `cargo test`
-- cargo (`agent/crates/layerx-crypto/Cargo.toml`, run in `agent/crates/layerx-crypto/`): `cargo build`, `cargo test`
-- cargo (`agent/crates/layerx-identity-binding/Cargo.toml`, run in `agent/crates/layerx-identity-binding/`): `cargo build`, `cargo test`
-- cargo (`agent/crates/layerx-mcp/Cargo.toml`, run in `agent/crates/layerx-mcp/`): `cargo build`, `cargo test`
-- cargo (`agent/crates/layerx-paxeer-verifier/Cargo.toml`, run in `agent/crates/layerx-paxeer-verifier/`): `cargo build`, `cargo test`
-- cargo (`agent/crates/layerx-proof/Cargo.toml`, run in `agent/crates/layerx-proof/`): `cargo build`, `cargo test`
-- cargo (`agent/crates/layerx-sdk/Cargo.toml`, run in `agent/crates/layerx-sdk/`): `cargo build`, `cargo test`
-- cargo (`agent/crates/layerx-types/Cargo.toml`, run in `agent/crates/layerx-types/`): `cargo build`, `cargo test`
-- cargo (`agent/crates/layerx-wire/Cargo.toml`, run in `agent/crates/layerx-wire/`): `cargo build`, `cargo test`
-- cargo (`agent/fuzz/Cargo.toml`, run in `agent/fuzz/`): `cargo build`, `cargo test`
-- cargo (`agent/qualification/pay2/Cargo.toml`, run in `agent/qualification/pay2/`): `cargo build`, `cargo test`
-- python (`agent/sdk/python/pyproject.toml`, run in `agent/sdk/python/`): `python -m pip install -e .`, `python -m pytest`
-- npm (`agent/sdk/typescript/package.json`, run in `agent/sdk/typescript/`): `npm run build`, `npm test`
-- cargo (`agent/tools/audit-verify/Cargo.toml`, run in `agent/tools/audit-verify/`): `cargo build`, `cargo test`
-- cargo (`agent/tools/boundary-check/Cargo.toml`, run in `agent/tools/boundary-check/`): `cargo build`, `cargo test`
-- cargo (`agent/tools/doc-check/Cargo.toml`, run in `agent/tools/doc-check/`): `cargo build`, `cargo test`
-- cargo (`agent/tools/policy-harness/Cargo.toml`, run in `agent/tools/policy-harness/`): `cargo build`, `cargo test`
-- cargo (`agent/tools/sdk-gen/Cargo.toml`, run in `agent/tools/sdk-gen/`): `cargo build`, `cargo test`
-- cargo (`agent/tools/secret-check/Cargo.toml`, run in `agent/tools/secret-check/`): `cargo build`, `cargo test`
-- cargo (`agent/tools/wire-differential/Cargo.toml`, run in `agent/tools/wire-differential/`): `cargo build`, `cargo test`
+- cargo (`services/agent/Cargo.toml`, run in `services/agent/`): `cargo build`, `cargo test`
+- cargo (`services/agent/crates/layerx-agent-api/Cargo.toml`, run in `services/agent/crates/layerx-agent-api/`): `cargo build`, `cargo test`
+- cargo (`services/agent/crates/layerx-agentd-host/Cargo.toml`, run in `services/agent/crates/layerx-agentd-host/`): `cargo build`, `cargo test`
+- cargo (`services/agent/crates/layerx-agentd/Cargo.toml`, run in `services/agent/crates/layerx-agentd/`): `cargo build`, `cargo test`
+- cargo (`services/agent/crates/layerx-client/Cargo.toml`, run in `services/agent/crates/layerx-client/`): `cargo build`, `cargo test`
+- cargo (`services/agent/crates/layerx-crypto/Cargo.toml`, run in `services/agent/crates/layerx-crypto/`): `cargo build`, `cargo test`
+- cargo (`services/agent/crates/layerx-identity-binding/Cargo.toml`, run in `services/agent/crates/layerx-identity-binding/`): `cargo build`, `cargo test`
+- cargo (`services/agent/crates/layerx-mcp/Cargo.toml`, run in `services/agent/crates/layerx-mcp/`): `cargo build`, `cargo test`
+- cargo (`services/agent/crates/layerx-paxeer-verifier/Cargo.toml`, run in `services/agent/crates/layerx-paxeer-verifier/`): `cargo build`, `cargo test`
+- cargo (`services/agent/crates/layerx-proof/Cargo.toml`, run in `services/agent/crates/layerx-proof/`): `cargo build`, `cargo test`
+- cargo (`services/agent/crates/layerx-sdk/Cargo.toml`, run in `services/agent/crates/layerx-sdk/`): `cargo build`, `cargo test`
+- cargo (`services/agent/crates/layerx-types/Cargo.toml`, run in `services/agent/crates/layerx-types/`): `cargo build`, `cargo test`
+- cargo (`services/agent/crates/layerx-wire/Cargo.toml`, run in `services/agent/crates/layerx-wire/`): `cargo build`, `cargo test`
+- cargo (`services/agent/fuzz/Cargo.toml`, run in `services/agent/fuzz/`): `cargo build`, `cargo test`
+- cargo (`services/agent/qualification/pay2/Cargo.toml`, run in `services/agent/qualification/pay2/`): `cargo build`, `cargo test`
+- python (`services/agent/sdk/python/pyproject.toml`, run in `services/agent/sdk/python/`): `python -m pip install -e .`, `python -m pytest`
+- npm (`services/agent/sdk/typescript/package.json`, run in `services/agent/sdk/typescript/`): `npm run build`, `npm test`
+- cargo (`services/agent/tools/audit-verify/Cargo.toml`, run in `services/agent/tools/audit-verify/`): `cargo build`, `cargo test`
+- cargo (`services/agent/tools/boundary-check/Cargo.toml`, run in `services/agent/tools/boundary-check/`): `cargo build`, `cargo test`
+- cargo (`services/agent/tools/doc-check/Cargo.toml`, run in `services/agent/tools/doc-check/`): `cargo build`, `cargo test`
+- cargo (`services/agent/tools/policy-harness/Cargo.toml`, run in `services/agent/tools/policy-harness/`): `cargo build`, `cargo test`
+- cargo (`services/agent/tools/sdk-gen/Cargo.toml`, run in `services/agent/tools/sdk-gen/`): `cargo build`, `cargo test`
+- cargo (`services/agent/tools/secret-check/Cargo.toml`, run in `services/agent/tools/secret-check/`): `cargo build`, `cargo test`
+- cargo (`services/agent/tools/wire-differential/Cargo.toml`, run in `services/agent/tools/wire-differential/`): `cargo build`, `cargo test`
 - cargo (`bridge/solana/Cargo.toml`, run in `bridge/solana/`): `cargo build`, `cargo test`
 - cargo (`bridge/solana/admin/Cargo.toml`, run in `bridge/solana/admin/`): `cargo build`, `cargo test`
 - go (`chainflow/go/go.mod`, run in `chainflow/go/`): `go build ./...`, `go test ./...`
@@ -245,15 +245,15 @@ Build and test:
 
 - `admin/` — 7 files, 2,620 lines, mostly go
   - `admin/types/` — 1 file, 1,769 lines, mostly go
-- `agent/` — 821 files, 309,628 lines, mostly rust. The agent workspace is the interaction layer between autonomous agents and the LayerX kernel (`layerxd`, C17) of Paxeer X Network.
-  - `agent/crates/` — 562 files, 253,964 lines, mostly rust
-  - `agent/fuzz/` — 25 files, 517 lines, mostly rust
-  - `agent/include/` — 1 file, 27 lines, mostly c
-  - `agent/qualification/` — 5 files, 1,135 lines, mostly rust
-  - `agent/schema/` — 20 files
-  - `agent/sdk/` — 139 files, 44,336 lines, mostly typescript
-  - `agent/tests/` — 33 files, 6,617 lines, mostly rust (tests)
-  - `agent/tools/` — 28 files, 3,032 lines, mostly rust
+- `services/agent/` — 821 files, 309,628 lines, mostly rust. The agent workspace is the interaction layer between autonomous agents and the LayerX kernel (`layerxd`, C17) of Paxeer X Network.
+  - `services/agent/crates/` — 562 files, 253,964 lines, mostly rust
+  - `services/agent/fuzz/` — 25 files, 517 lines, mostly rust
+  - `services/agent/include/` — 1 file, 27 lines, mostly c
+  - `services/agent/qualification/` — 5 files, 1,135 lines, mostly rust
+  - `services/agent/schema/` — 20 files
+  - `services/agent/sdk/` — 139 files, 44,336 lines, mostly typescript
+  - `services/agent/tests/` — 33 files, 6,617 lines, mostly rust (tests)
+  - `services/agent/tools/` — 28 files, 3,032 lines, mostly rust
 - `api/` — 55 files, 29 lines, mostly yaml. This directory holds the protobuf definitions for the Go modules of the Paxeer X chain (`paxd`): `epoch`, `eth`, `evm`, `launchpad`, `layerxanchor` …
   - 18 subdirectories: `epoch/`, `eth/`, `evm/`, `launchpad/`, `layerxagent/`, `layerxanchor/`, `layerxauth/`, `layerxbridge/`, `layerxcustody/`, `layerxexchange/`, `layerxgov/`, `layerxledger/`, `layerxprograms/`, `mint/`, `oracle/`, `pax/`, `tokenfactory/`, `xweb/`
 - `bridge/` — 119 files, 17,357 lines, mostly json (tests). The Paxeer X Network bridge is lock and release in both directions: a foreign chain locks a deposit in the bridge's vault and Paxeer X Network releases the …
@@ -388,30 +388,30 @@ _Not shown: 7 directories._
 
 ## Entry points
 
-- `main` — `agent/crates/layerx-agent-api/build.rs:431` `fn main()`
-- `main` — `agent/crates/layerx-agentd/examples/native_handover_programs.rs:536` `fn main() -> Result<()>`
-- `main` — `agent/crates/layerx-agentd/examples/native_handover_reads.rs:388` `fn main() -> Result<()>`
-- `main` — `agent/crates/layerx-agentd/examples/review_audit_export.rs:24` `fn main()`
-- `main` — `agent/crates/layerx-agentd/src/main.rs:2202` `fn main()`
-- `main` — `agent/crates/layerx-client/examples/go_verifier_vectors.rs:1565` `fn main() -> Result<(), Failure>`
-- `main` — `agent/crates/layerx-client/examples/module_state.rs:49` `fn main() -> Result<(), Box<dyn Error>>`
-- `main` — `agent/crates/layerx-client/examples/native_handover_history.rs:340` `fn main() -> Result<()>`
-- `main` — `agent/crates/layerx-client/examples/paxeer_bind_vectors.rs:44` `fn main() -> Result<(), Failure>`
-- `main` — `agent/crates/layerx-mcp/src/bin/layerx-mcp.rs:89` `fn main() -> ExitCode`
-- `main` — `agent/crates/layerx-proof/examples/offline_export.rs:27` `fn main()`
-- `main` — `agent/crates/layerx-proof/examples/offline_verify.rs:68` `fn main() -> ExitCode`
-- `main` — `agent/crates/layerx-sdk/src/bin/layerx-wallet-rpc.rs:200` `fn main()`
-- `main` — `agent/crates/layerx-types/build.rs:489` `fn main()`
-- `main` — `agent/qualification/pay2/build.rs:102` `fn main()`
-- `main` — `agent/tools/audit-verify/src/main.rs:18` `fn main() -> ExitCode`
-- `main` — `agent/tools/boundary-check/src/main.rs:205` `fn main()`
-- `main` — `agent/tools/doc-check/src/main.rs:187` `fn main() -> ExitCode`
-- `main` — `agent/tools/generate-operation.py:50` `def main()`
-- `main` — `agent/tools/policy-harness/src/main.rs:73` `fn main()`
-- `main` — `agent/tools/sdk-gen/src/main.rs:953` `fn main()`
-- `main` — `agent/tools/secret-check/src/main.rs:290` `fn main()`
-- `main` — `agent/tools/wire-differential/reference.c:112` `int main(void)`
-- `main` — `agent/tools/wire-differential/src/main.rs:355` `fn main()`
+- `main` — `services/agent/crates/layerx-agent-api/build.rs:431` `fn main()`
+- `main` — `services/agent/crates/layerx-agentd/examples/native_handover_programs.rs:536` `fn main() -> Result<()>`
+- `main` — `services/agent/crates/layerx-agentd/examples/native_handover_reads.rs:388` `fn main() -> Result<()>`
+- `main` — `services/agent/crates/layerx-agentd/examples/review_audit_export.rs:24` `fn main()`
+- `main` — `services/agent/crates/layerx-agentd/src/main.rs:2202` `fn main()`
+- `main` — `services/agent/crates/layerx-client/examples/go_verifier_vectors.rs:1565` `fn main() -> Result<(), Failure>`
+- `main` — `services/agent/crates/layerx-client/examples/module_state.rs:49` `fn main() -> Result<(), Box<dyn Error>>`
+- `main` — `services/agent/crates/layerx-client/examples/native_handover_history.rs:340` `fn main() -> Result<()>`
+- `main` — `services/agent/crates/layerx-client/examples/paxeer_bind_vectors.rs:44` `fn main() -> Result<(), Failure>`
+- `main` — `services/agent/crates/layerx-mcp/src/bin/layerx-mcp.rs:89` `fn main() -> ExitCode`
+- `main` — `services/agent/crates/layerx-proof/examples/offline_export.rs:27` `fn main()`
+- `main` — `services/agent/crates/layerx-proof/examples/offline_verify.rs:68` `fn main() -> ExitCode`
+- `main` — `services/agent/crates/layerx-sdk/src/bin/layerx-wallet-rpc.rs:200` `fn main()`
+- `main` — `services/agent/crates/layerx-types/build.rs:489` `fn main()`
+- `main` — `services/agent/qualification/pay2/build.rs:102` `fn main()`
+- `main` — `services/agent/tools/audit-verify/src/main.rs:18` `fn main() -> ExitCode`
+- `main` — `services/agent/tools/boundary-check/src/main.rs:205` `fn main()`
+- `main` — `services/agent/tools/doc-check/src/main.rs:187` `fn main() -> ExitCode`
+- `main` — `services/agent/tools/generate-operation.py:50` `def main()`
+- `main` — `services/agent/tools/policy-harness/src/main.rs:73` `fn main()`
+- `main` — `services/agent/tools/sdk-gen/src/main.rs:953` `fn main()`
+- `main` — `services/agent/tools/secret-check/src/main.rs:290` `fn main()`
+- `main` — `services/agent/tools/wire-differential/reference.c:112` `int main(void)`
+- `main` — `services/agent/tools/wire-differential/src/main.rs:355` `fn main()`
 - `main` — `bridge/deploy/proposals/cmd/paxeer-bridge-proposals/main.go:19` `func main()`
 - `main` — `bridge/solana/admin/src/main.rs:1557` `fn main() -> ExitCode`
 - `main` — `chainflow/rust/examples/byo_transport_hyper.rs:90` `async fn main() -> Result<(), Box<dyn std::error::Error>>`
@@ -708,7 +708,7 @@ _Not shown: 7 directories._
 - `main` — `tools/railway/fly-files-to-table.py:22` `def main()`
 - `main` — `tools/rollout/rollout.py:214` `def main(argv)`
 - `main` — `tools/specgen/main.go:23` `func main()`
-- Commands dispatched in `agent/tools/wire-differential/reference.c`: `primitive`, `activity`
+- Commands dispatched in `services/agent/tools/wire-differential/reference.c`: `primitive`, `activity`
 - `chainflow/typescript/package.json`: main `./dist/cjs/index.js`
 - `contracts/package.json`: main `index.js`
 - `explorer/frontend/deploy/tools/affected-tests/package.json`: main `index.js`
@@ -748,15 +748,15 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
 
 - `admin/` — 3 test files
   - _+3 more_
-- `agent/crates/` — 202 test files
+- `services/agent/crates/` — 202 test files
   - _+202 more_
-- `agent/qualification/` — 1 test file
+- `services/agent/qualification/` — 1 test file
   - _+1 more_
-- `agent/sdk/` — 26 test files
+- `services/agent/sdk/` — 26 test files
   - _+26 more_
-- `agent/tests/` — 31 test files
+- `services/agent/tests/` — 31 test files
   - _+31 more_
-- `agent/tools/` — 4 test files
+- `services/agent/tools/` — 4 test files
   - _+4 more_
 - `bridge/deploy/` — 8 test files
   - _+8 more_
@@ -1164,7 +1164,7 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
   - _+1 more_
 - `wasm/x/` — 54 test files
   - _+54 more_
-- `agent/crates/layerx-crypto/tests/fixtures/` — 16 fixture files: `payments/`
+- `services/agent/crates/layerx-crypto/tests/fixtures/` — 16 fixture files: `payments/`
 - `bridge/deploy/proposals/testdata/` — 35 fixture files: `refuse/`
 - `bridge/deploy/tests/fixtures/` — 16 fixture files: `chains/`, `records/`, `rpc/`, `solana-deploy/`
 - `consensus/internal/p2p/conn/testdata/` — 1 fixture file

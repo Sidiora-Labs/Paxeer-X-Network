@@ -26,7 +26,7 @@ CASES = ('web.search', 'web.fetch', 'web.content', 'wrong_tenant', 'wrong_sessio
          'budget_insufficient', 'payment_mismatch', 'content_unverifiable',
          'unknown_submission_restart', 'idempotent_charge_restart', 'wrong_resource',
          'search_quote_mismatch', 'missing_pax_metadata', 'paused_pax_metadata', 'wrong_pax_metadata')
-SOURCE_PATHS = ('agent/Cargo.toml', 'agent/Cargo.lock', 'agent/crates',
+SOURCE_PATHS = ('services/agent/Cargo.toml', 'services/agent/Cargo.lock', 'services/agent/crates',
     'platform/Cargo.toml', 'platform/Cargo.lock', 'platform/cli',
     'human/crates/layerx-human-kms', 'human/wallet/attestor',
     'interop/Cargo.toml', 'interop/Cargo.lock', 'interop/crates/x-websearch',
@@ -112,7 +112,7 @@ def source():
         not any(part.startswith('.env') for part in Path(os.fsdecode(path)).parts)]
     files = [name for name in selected if Path(name).suffix in
              ('.rs', '.py', '.toml', '.lock', '.go', '.mod', '.sum', '.kvx')]
-    needed('agent/crates/layerx-agentd-host/src/payer.rs' in files,
+    needed('services/agent/crates/layerx-agentd-host/src/payer.rs' in files,
            'actual retained daemon ProductionWebPayer producer source missing')
     needed('tools/qualification/paxeer-x/mcp_web_payer.py' in files, 'published harness source missing')
     for name in files:
@@ -155,7 +155,7 @@ def build(directory):
     require(target != platform and ROOT not in target.parents and ROOT not in platform.parents,
             'distinct external compilation targets required')
     cargo = os.environ.get(PREFIX + 'CARGO', '/root/.cargo/bin/cargo')
-    commands = [(['flock', '/root/lx-cargo/agent-build.lock', cargo, 'build', '--locked', '--manifest-path', 'agent/Cargo.toml',
+    commands = [(['flock', '/root/lx-cargo/agent-build.lock', cargo, 'build', '--locked', '--manifest-path', 'services/agent/Cargo.toml',
         '-p', 'layerx-agentd-host', '--bin', 'layerx-agentd', '-p', 'layerx-mcp',
         '--bin', 'layerx-mcp', '--message-format=json'], target),
         (['flock', '/root/lx-cargo/platform-build.lock', cargo, 'build', '--locked', '--manifest-path', 'platform/Cargo.toml',

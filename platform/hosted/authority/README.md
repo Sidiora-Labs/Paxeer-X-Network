@@ -8,7 +8,7 @@ independent receipt-authority replica. The gateway, registry and webhooks
 services call it with their own bearer tokens. An optional, separately
 configured group of `/v1/agent/*` routes answers the human agent contract used
 by `RemoteHumanAuthority` in
-[`agent/crates/layerx-agentd/src/human_runtime.rs`](../../../agent/crates/layerx-agentd/src/human_runtime.rs).
+[`services/agent/crates/layerx-agentd/src/human_runtime.rs`](../../../services/agent/crates/layerx-agentd/src/human_runtime.rs).
 
 Sources: [`src/main.rs`](src/main.rs) (service, routes, environment),
 [`src/human.rs`](src/human.rs) (human agent routes and principal policy),
@@ -101,10 +101,10 @@ All paths have the prefix `/v1/agent/`.
 | `key-policy` | `did`; `recovery`: `true` or `false` | `policy_revision`, `required_delay_seconds`, `maximum_delay_seconds`, `effective_sequence`, `observed_head_sequence`, `age_sequences`, `maximum_age_sequences`: U64; `verification`: U8; `evidence_digest`, `checkpoint_digest`: H32 |
 
 Registry module IDs are the closed set in
-[`agent/crates/layerx-types/src/payload.rs`](../../../agent/crates/layerx-types/src/payload.rs)
+[`services/agent/crates/layerx-types/src/payload.rs`](../../../services/agent/crates/layerx-types/src/payload.rs)
 (`Asset` = 1 through `Web` = 11); each module lists at most 64 activity
 types (`MAX_MODULE_ACTIVITY_TYPES` in
-[`limits.rs`](../../../agent/crates/layerx-types/src/limits.rs)).
+[`limits.rs`](../../../services/agent/crates/layerx-types/src/limits.rs)).
 
 Capability installation in the client checks `evidence_digest` against SHA-256
 of six length-prefixed parts (four-byte big-endian length each): ASCII

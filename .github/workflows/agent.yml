@@ -57,9 +57,9 @@ jobs:
           sudo env "PATH=$PATH" "CARGO_HOME=$HOME/.cargo" "RUSTUP_HOME=$HOME/.rustup" \
             "GOMODCACHE=$(go env GOMODCACHE)" "GOPATH=$(go env GOPATH)" \
             "CARGO_TARGET_DIR=$PWD/.lane-target" \
-            sh agent/tools/run-real-node-tests.sh test
+            sh services/agent/tools/run-real-node-tests.sh test
       - name: Audit advisories, licenses, sources, and bans
-        run: cargo install cargo-deny --locked --version 0.19.0 && cargo deny --manifest-path agent/Cargo.toml check
+        run: cargo install cargo-deny --locked --version 0.19.0 && cargo deny --manifest-path services/agent/Cargo.toml check
 
   fuzz-smoke:
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
@@ -118,6 +118,6 @@ jobs:
             "CARGO_TARGET_DIR=$PWD/.lane-target" \
             "CARGO_PROFILE_DEV_DEBUG=$CARGO_PROFILE_DEV_DEBUG" \
             "CARGO_PROFILE_TEST_DEBUG=$CARGO_PROFILE_TEST_DEBUG" \
-            sh agent/tools/run-real-node-tests.sh sanitizers
+            sh services/agent/tools/run-real-node-tests.sh sanitizers
       - name: Run committed fuzz corpus
         run: make agent-fuzz-long

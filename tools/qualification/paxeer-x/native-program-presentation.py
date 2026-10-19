@@ -11,13 +11,13 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
 TEST = "real_program_call_presentation_preserves_limits_and_owned_verified_budget"
 SOURCES = (
-    "agent/crates/layerx-agentd/src/approval/native_program.rs",
-    "agent/crates/layerx-agentd/src/approval/native_program_presentation.rs",
-    "agent/crates/layerx-agentd/src/approval/mod.rs",
-    "agent/crates/layerx-agentd/src/budget/program_settlement.rs",
-    "agent/crates/layerx-agentd/src/budget/program_sources.rs",
-    "agent/crates/layerx-agentd/src/budget/budget_proof.rs",
-    "agent/crates/layerx-agentd/tests/native_program_presentation.rs",
+    "services/agent/crates/layerx-agentd/src/approval/native_program.rs",
+    "services/agent/crates/layerx-agentd/src/approval/native_program_presentation.rs",
+    "services/agent/crates/layerx-agentd/src/approval/mod.rs",
+    "services/agent/crates/layerx-agentd/src/budget/program_settlement.rs",
+    "services/agent/crates/layerx-agentd/src/budget/program_sources.rs",
+    "services/agent/crates/layerx-agentd/src/budget/budget_proof.rs",
+    "services/agent/crates/layerx-agentd/tests/native_program_presentation.rs",
     "tools/qualification/paxeer-x/native-program-presentation.py",
 )
 

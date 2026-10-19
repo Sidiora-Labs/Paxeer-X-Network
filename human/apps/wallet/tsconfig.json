@@ -30,10 +30,10 @@
         "../../wallet/sdk/src/index.ts"
       ],
       "@sidiora/layerx-sdk/browser": [
-        "../../../agent/sdk/typescript/src/browser.ts"
+        "../../../services/agent/sdk/typescript/src/browser.ts"
       ],
       "@sidiora/layerx-sdk": [
-        "../../../agent/sdk/typescript/src/index.ts"
+        "../../../services/agent/sdk/typescript/src/index.ts"
       ],
       "viem": [
         "./node_modules/viem"

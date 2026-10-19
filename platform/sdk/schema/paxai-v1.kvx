@@ -8,8 +8,8 @@ program_crate = "programs/crates/layerx-programs-ai-market"
 selector_table = "programs/crates/layerx-programs-ai-market/src/dispatch.rs"
 envelope_codec = "programs/crates/layerx-programs-ai-market/src/codec.rs"
 view_codec = "programs/crates/layerx-programs-ai-market/src/queries.rs"
-rust_client = "agent/crates/layerx-client/src/ai_market.rs"
-consumers = ["agent/sdk/typescript","agent/sdk/python"]
+rust_client = "services/agent/crates/layerx-client/src/ai_market.rs"
+consumers = ["services/agent/sdk/typescript","services/agent/sdk/python"]
 
 [limits]
 finalized_rank = 4

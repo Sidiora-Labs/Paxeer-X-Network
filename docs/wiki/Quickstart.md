@@ -171,7 +171,7 @@ origin explicitly:
 
 ```sh
 node platform/middleware/examples/public-rpc.mjs --help
-PYTHONPATH=agent/sdk/python python3 platform/middleware/examples/public_rpc.py --help
+PYTHONPATH=services/agent/sdk/python python3 platform/middleware/examples/public_rpc.py --help
 ```
 
 The payment sequence is challenge, payer grant, settlement receipt, then

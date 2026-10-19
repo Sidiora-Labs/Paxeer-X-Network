@@ -324,7 +324,7 @@ Always consult the specific verification level and proof scope.
 - **API Documentation**: `interop/crates/layerx-portable/src/lib.rs`
 - **Golden Vectors**: `interop/crates/layerx-portable/tests/`
 - **x402 Compatibility**: `interop/crates/layerx-x402/COMPATIBILITY.md`
-- **Proof Library**: `agent/crates/layerx-proof/`
+- **Proof Library**: `services/agent/crates/layerx-proof/`
 
 ## Version History
 

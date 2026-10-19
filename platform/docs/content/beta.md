@@ -94,8 +94,8 @@ no public faucet or control surface on the mainnet-beta.
 | indexer | decoded history of the kernel domain and Paxeer blocks | hosted | deployment_proven | source_present | platform/hosted/indexer |
 | human | Human API, custody, intents, approvals and the wallet | hosted | deployment_proven | source_present | human/, platform/hosted/human |
 | interop | x402, AP2, UCP, Visa TAP, bridge relayer, gas station and web search | functional | runtime_proven | source_present | interop/crates |
-| agent | layerx-agentd, MCP surface | functional | runtime_proven | source_present | agent/crates |
-| sdks | TypeScript, Python, Rust, Go, JVM, Swift and .NET SDKs | functional | runtime_proven | source_present | agent/sdk, agent/crates/layerx-sdk, platform/sdk |
+| agent | layerx-agentd, MCP surface | functional | runtime_proven | source_present | services/agent/crates |
+| sdks | TypeScript, Python, Rust, Go, JVM, Swift and .NET SDKs | functional | runtime_proven | source_present | services/agent/sdk, services/agent/crates/layerx-sdk, platform/sdk |
 | platform-cli | CLI and local emulator | functional | runtime_proven | source_present | platform/cli, platform/emulator |
 | programs | Programs runtime: deploy, paid call, restart | functional | runtime_proven | source_present | programs/crates |
 | docs-site | documentation site and executable samples | functional | runtime_proven | source_present | platform/docs |

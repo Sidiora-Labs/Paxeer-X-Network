@@ -22,7 +22,7 @@ def inventory():
     roots = (ROOT / 'human', ROOT / 'agent', ROOT / 'crates', ROOT / 'platform')
     paths = {ROOT / 'tools/qualification/paxeer-x/native_send_purpose.py',
              ROOT / 'human/apps/web/e2e/software-authenticator.ts'}
-    paths.add(ROOT / 'agent/schema/agent-api/v1.kvx')
+    paths.add(ROOT / 'services/agent/schema/agent-api/v1.kvx')
     for root in roots:
         for directory, children, files in os.walk(root):
             children[:] = [name for name in children if name not in ('target', 'node_modules', '.git', '.next')]

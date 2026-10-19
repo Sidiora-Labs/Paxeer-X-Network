@@ -1,8 +1,8 @@
 {
   "name": "receipt-refusals-v3",
   "provenance": {
-    "generator": "agent/crates/layerx-proof/tests/receipt.rs",
-    "command": "cargo test --manifest-path agent/Cargo.toml -p layerx-proof --test receipt",
+    "generator": "services/agent/crates/layerx-proof/tests/receipt.rs",
+    "command": "cargo test --manifest-path services/agent/Cargo.toml -p layerx-proof --test receipt",
     "description": "Refusal vectors for an explicitly selected protocol 3: the proof-crate protocol-3 SEND fields re-encoded as protocol 2 and protocol 1 (refused as protocol-version under selection 3), the protocol-3 vector with its last signature byte flipped, and the proof crate's debit and credit conservation refusals re-signed under protocol 3 with the [3; 32] test key."
   },
   "authorized_batch": {

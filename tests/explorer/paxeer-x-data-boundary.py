@@ -1143,7 +1143,7 @@ def history_readiness():
         redis_config.chmod(0o600)
         reservations[2].close()
         redis = relay.start("history-redis", ["redis-server", redis_config])
-        protocol_source = (repo / "agent/crates/layerx-wire/src/limits.rs").read_text()
+        protocol_source = (repo / "services/agent/crates/layerx-wire/src/limits.rs").read_text()
         protocol = re.search(r"STATE_COMMITMENT_PROTOCOL_VERSION: u16 = (\d+);", protocol_source)
         require(protocol is not None, "current wire protocol is missing")
         gateway_env = dict(env, LAYERX_GATEWAY_LISTEN=f"127.0.0.1:{gateway_port}",

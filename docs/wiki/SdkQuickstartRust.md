@@ -1,12 +1,12 @@
 # Rust SDK quickstart
 
-Package: `layerx-sdk` at `agent/crates/layerx-sdk`. There is no
+Package: `layerx-sdk` at `services/agent/crates/layerx-sdk`. There is no
 `platform/sdk/rust`.
 
 This crate is the only shipped SDK with typed public JSON-RPC
 wrappers for `lx_register`, `lx_requestFunds`, and
-`lx_sendActivity` (`agent/crates/layerx-sdk/src/rpc.rs`,
-`agent/crates/layerx-sdk/src/register.rs`).
+`lx_sendActivity` (`services/agent/crates/layerx-sdk/src/rpc.rs`,
+`services/agent/crates/layerx-sdk/src/register.rs`).
 
 ---
 

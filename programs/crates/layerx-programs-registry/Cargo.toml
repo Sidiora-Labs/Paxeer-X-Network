@@ -10,10 +10,10 @@ name = "layerx_programs"
 
 [dependencies]
 layerx-program-sdk = { path = "../../sdk/rust" }
-layerx-proof = { path = "../../../agent/crates/layerx-proof" }
+layerx-proof = { path = "../../../services/agent/crates/layerx-proof" }
 layerx-programs-runtime = { path = "../layerx-programs-runtime" }
-layerx-types = { path = "../../../agent/crates/layerx-types" }
-layerx-wire = { path = "../../../agent/crates/layerx-wire" }
+layerx-types = { path = "../../../services/agent/crates/layerx-types" }
+layerx-wire = { path = "../../../services/agent/crates/layerx-wire" }
 
 [dev-dependencies]
 ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["digest"] }

@@ -213,7 +213,7 @@ def main():
     environment['PATH'] = str(NODE.parent) + ':' + environment.get('PATH', '')
     if sys.argv[1:] == ['--build']:
         before = sources()
-        require((ROOT / 'agent/sdk/typescript/dist/src/index.js').is_file(), 'prebuilt actual Agent SDK prerequisite required')
+        require((ROOT / 'services/agent/sdk/typescript/dist/src/index.js').is_file(), 'prebuilt actual Agent SDK prerequisite required')
         require((SDK / 'node_modules/typescript/bin/tsc').is_file(), 'locked SDK TypeScript dependency required')
         require((DEMO / 'node_modules/next/dist/bin/next').is_file(), 'locked demo Next dependency required')
         code = run([str(NODE), str(SDK / 'node_modules/typescript/bin/tsc'), '-p', str(SDK / 'tsconfig.json')],

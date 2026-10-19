@@ -14,9 +14,9 @@ host-ffi = ["layerx-programs-runtime/host-ffi"]
 [dependencies]
 layerx-programs-runtime = { path = "../layerx-programs-runtime" }
 layerx-programs = { path = "../layerx-programs-registry", package = "layerx-programs-registry" }
-layerx-proof = { path = "../../../agent/crates/layerx-proof" }
-layerx-types = { path = "../../../agent/crates/layerx-types" }
-layerx-wire = { path = "../../../agent/crates/layerx-wire" }
+layerx-proof = { path = "../../../services/agent/crates/layerx-proof" }
+layerx-types = { path = "../../../services/agent/crates/layerx-types" }
+layerx-wire = { path = "../../../services/agent/crates/layerx-wire" }
 [dev-dependencies]
 ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["digest"] }
 sha2.workspace = true

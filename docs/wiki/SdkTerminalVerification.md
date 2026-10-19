@@ -2,7 +2,7 @@
 
 A Programs CALL receipt carries one terminal: the `terminal_payload` bytes
 whose SHA-256 is `terminal_payload_root` on the program outcome
-(`agent/sdk/python/layerx_sdk/program_wire.py:173-174`,
+(`services/agent/sdk/python/layerx_sdk/program_wire.py:173-174`,
 `include/layerx/lxp_receipt.h:69-70`). Kernel terminal kinds are
 `LXP_PROGRAM_TERMINAL_SUCCESS = 1`, `FAILURE = 2`, `RESOURCE = 3`
 (`include/layerx/lxp_receipt.h:34-38`). The outcome fields describe that
@@ -12,9 +12,9 @@ one runtime terminal; they are not a second receipt
 Python returns `DecodedProgramTerminal` with `outcome`, `usage`, and
 `transfer_verification` of `"reconstructed"` or
 `"recorded_terminal_root_not_locally_reconstructable"`
-(`agent/sdk/python/layerx_sdk/program_wire.py:54-57, 285-286`). The
+(`services/agent/sdk/python/layerx_sdk/program_wire.py:54-57, 285-286`). The
 reference entry point is `decode_and_verify_program_terminal`
-(`agent/sdk/python/layerx_sdk/program_wire.py:164-170`). Shared vectors
+(`services/agent/sdk/python/layerx_sdk/program_wire.py:164-170`). Shared vectors
 are verified after `verify_receipt_outcome` on protocol 3
 (`platform/sdk/conformance/terminal-v4.test.py:25-33`).
 
@@ -52,7 +52,7 @@ Shared tests bind the signed receipt before the terminal decoder
 
 - Shared tests pass `protocol_version=3`. The verifier refuses unless
   that argument is 2 or 3 and equals `receipt.protocol_version`
-  (`agent/sdk/python/layerx_sdk/verifier.py:889-890`;
+  (`services/agent/sdk/python/layerx_sdk/verifier.py:889-890`;
   `terminal-v4.test.py:25`).
 - The sequencer signs SHA-256 of domain `LXP/v1/receipt\0` plus the
   unsigned receipt (`verifier.py:22, 66-71, 930-936`).
@@ -69,7 +69,7 @@ nonzero `applied_legs_digest`; encodings 1–3 require it all-zero
 hashed for the sequencer signature (`verifier.py:857, 930-936`).
 
 Encoding tags 1–3 are `PROGRAM_OUTCOME_TAGS`
-(`agent/sdk/python/layerx_sdk/generated/receipt.py:6`;
+(`services/agent/sdk/python/layerx_sdk/generated/receipt.py:6`;
 `verifier.py:32, 610-619`). Protocol 1 admits encodings 1 and 3;
 protocols 2 and 3 admit encodings 2 and 3; protocol 3 also admits
 encoding 4 (`verifier.py:665-668`).
@@ -152,8 +152,8 @@ successful terminal, unless the historical recorded path applies
 (`program_wire.py:272-276`). The Python and TypeScript decoders
 branch require encoding-4 authority bytes to start directly with
 `LayerX/programs/402LXP/transfer-set/v2\0`
-(`agent/sdk/python/layerx_sdk/program_wire.py:24-25, 278-281`;
-`agent/sdk/typescript/src/program-wire.ts:18-19, 240-247`).
+(`services/agent/sdk/python/layerx_sdk/program_wire.py:24-25, 278-281`;
+`services/agent/sdk/typescript/src/program-wire.ts:18-19, 240-247`).
 `protocol_version` must be 1, 2, or 3 (`program_wire.py:283-284`).
 
 The runtime and the Go, JVM, Swift, and .NET SDKs are documented as also
@@ -248,7 +248,7 @@ Go unwrap reports `"Programs applied transfer root mismatch"`
 `InvalidDataException("applied transfer root")`
 (`platform/sdk/dotnet/Programs.cs:975`). TypeScript rejects with
 `/applied transfer root/`
-(`agent/sdk/typescript/test/program-executed-v3.test.ts:51`).
+(`services/agent/sdk/typescript/test/program-executed-v3.test.ts:51`).
 
 ---
 
@@ -309,8 +309,8 @@ tree. Each V4 file carries
 
 | SDK | Function | Test |
 | --- | --- | --- |
-| Python | `decode_and_verify_program_terminal` (`agent/sdk/python/layerx_sdk/program_wire.py:164`) | `platform/sdk/conformance/terminal-v4.test.py` (`TerminalV4.test_signed_shared_vectors` at `:17`) |
-| TypeScript | `decodeAndVerifyProgramTerminal` (`agent/sdk/typescript/src/program-wire.ts:135`) | `agent/sdk/typescript/test/program-executed-v3.test.ts` (four-vector loop at `:36-56`) |
+| Python | `decode_and_verify_program_terminal` (`services/agent/sdk/python/layerx_sdk/program_wire.py:164`) | `platform/sdk/conformance/terminal-v4.test.py` (`TerminalV4.test_signed_shared_vectors` at `:17`) |
+| TypeScript | `decodeAndVerifyProgramTerminal` (`services/agent/sdk/typescript/src/program-wire.ts:135`) | `services/agent/sdk/typescript/test/program-executed-v3.test.ts` (four-vector loop at `:36-56`) |
 | Go | `verifyProgramTerminal` (`platform/sdk/go/programs.go:479`) | `platform/sdk/go/terminal_v4_test.go` (`TestSignedTerminalV4Vectors` at `:12`) |
 | JVM | `ProgramsClient.verifyTerminal` (`platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/ProgramsClient.java:652`) | `platform/sdk/jvm/src/test/java/com/sidiora/layerx/sdk/TerminalV4Test.java` (`signedSharedVectors` at `:19`) |
 | Swift | `verifyTerminal` (`platform/sdk/swift/Sources/LayerXSDK/Programs.swift:556`) | `platform/sdk/swift/Tests/LayerXSDKTests/ReceiptFixtureTests.swift` (`testSignedTerminalV4Vectors` at `:7`) |
@@ -352,10 +352,10 @@ Status strings match Go `ProgramTransfersReconstructed` /
 Sources:
 
 - `include/layerx/lxp_receipt.h:34-72`
-- `agent/sdk/python/layerx_sdk/program_wire.py:12-19, 54-57, 164-298, 484-486, 743-749, 772-773, 804-805`
-- `agent/sdk/python/layerx_sdk/verifier.py:22, 32, 66-71, 279-302, 610-716, 857, 877-942`
-- `agent/sdk/python/layerx_sdk/generated/receipt.py:6`
-- `agent/sdk/typescript/src/program-wire.ts:135-155, 178-219`
+- `services/agent/sdk/python/layerx_sdk/program_wire.py:12-19, 54-57, 164-298, 484-486, 743-749, 772-773, 804-805`
+- `services/agent/sdk/python/layerx_sdk/verifier.py:22, 32, 66-71, 279-302, 610-716, 857, 877-942`
+- `services/agent/sdk/python/layerx_sdk/generated/receipt.py:6`
+- `services/agent/sdk/typescript/src/program-wire.ts:135-155, 178-219`
 - `platform/sdk/go/programs.go:287-288, 479-536, 2124-2163`
 - `platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/ProgramsClient.java:652-657, 785-789, 1405-1423`
 - `platform/sdk/swift/Sources/LayerXSDK/Programs.swift:556-649, 962-972`

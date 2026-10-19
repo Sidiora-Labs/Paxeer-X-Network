@@ -9,7 +9,7 @@ use layerx_wire::hash::{batch_header_digest, program_execution_batch_id, receipt
 use layerx_wire::receipt::{decode, decode_batch_header, encode_unsigned};
 use std::fmt::Debug;
 
-#[path = "../../../../agent/crates/layerx-wire/tests/support/maintenance.rs"]
+#[path = "../../../../services/agent/crates/layerx-wire/tests/support/maintenance.rs"]
 mod maintenance;
 
 fn must<T, E: Debug>(value: Result<T, E>) -> T {

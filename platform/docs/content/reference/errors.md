@@ -1,4 +1,4 @@
-<!-- Generated from human/schema/human-api/errors.kvx and agent/schema/agent-api/errors.kvx by platform/docs/build/build_site.py. Do not hand-edit. -->
+<!-- Generated from human/schema/human-api/errors.kvx and services/agent/schema/agent-api/errors.kvx by platform/docs/build/build_site.py. Do not hand-edit. -->
 
 # Error reference
 

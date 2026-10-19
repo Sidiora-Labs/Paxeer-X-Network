@@ -1,6 +1,6 @@
 # Agent API
 
-The Agent API is the daemon contract in `agent/schema/agent-api/`
+The Agent API is the daemon contract in `services/agent/schema/agent-api/`
 (contract major 1, minor 2). It includes identity, write, read, stream,
 errors, approval, and programs. The daemon is non-authoritative: it consumes
 protocol receipts and never mints balances or protocol budget objects from
@@ -16,7 +16,7 @@ contract_major:u16be || contract_minor:u16be || request_id:u64be
 Amounts, sequences, budget limits, and timestamps travel as decimal strings.
 Settlement domain has one variant: `Paxeer` (1.1+).
 
-Sources: `agent/schema/agent-api/*.kvx`,
+Sources: `services/agent/schema/agent-api/*.kvx`,
 `spec/.beta/layerx-agent-interface/spec.kvx` requirements 1 and 6.
 
 ---

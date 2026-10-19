@@ -10,14 +10,14 @@ import sys
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
 SOURCES = (
-    'agent/crates/layerx-agentd/src/approval/mod.rs',
-    'agent/crates/layerx-agentd/src/approval/events.rs',
-    'agent/crates/layerx-agentd/src/policy/approval.rs',
-    'agent/crates/layerx-agentd/src/human_runtime.rs',
-    'agent/crates/layerx-agentd/src/human.rs',
-    'agent/crates/layerx-agentd/src/managed_agent.rs',
-    'agent/crates/layerx-agentd/src/budget/reserve.rs',
-    'agent/crates/layerx-agentd/tests/human_projection_facts.rs',
+    'services/agent/crates/layerx-agentd/src/approval/mod.rs',
+    'services/agent/crates/layerx-agentd/src/approval/events.rs',
+    'services/agent/crates/layerx-agentd/src/policy/approval.rs',
+    'services/agent/crates/layerx-agentd/src/human_runtime.rs',
+    'services/agent/crates/layerx-agentd/src/human.rs',
+    'services/agent/crates/layerx-agentd/src/managed_agent.rs',
+    'services/agent/crates/layerx-agentd/src/budget/reserve.rs',
+    'services/agent/crates/layerx-agentd/tests/human_projection_facts.rs',
     'tools/qualification/paxeer-x/human-projection-facts.py',
 )
 

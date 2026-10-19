@@ -18,7 +18,7 @@ OUT = Path(os.environ.get('PAXEER_X_INSTALL_ARTIFACTS',
 CARGO = os.environ.get('PAXEER_X_CARGO', '/root/.cargo/bin/cargo')
 TARGET = Path(os.environ.get('CARGO_TARGET_DIR', '/root/lx-target/platform-cli-install'))
 PACKAGE = 'layerx-platform-cli'
-SOURCES = (b'platform/', b'agent/crates/', b'programs/', b'tools/paxeer-x/gates/104.17.6.sh')
+SOURCES = (b'platform/', b'services/agent/crates/', b'programs/', b'tools/paxeer-x/gates/104.17.6.sh')
 JOURNEY = ROOT / 'platform/cli/tests/install-journey.sh'
 BOOTSTRAP = ROOT / 'platform/cli/tests/clean-bootstrap.sh'
 

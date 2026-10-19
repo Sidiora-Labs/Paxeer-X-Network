@@ -1,6 +1,6 @@
 # TypeScript SDK quickstart
 
-Package: `@sidiora/layerx-sdk` at `agent/sdk/typescript`.
+Package: `@sidiora/layerx-sdk` at `services/agent/sdk/typescript`.
 `JsonRpcClient` is exported from `src/rpc.ts`. Offline verification
 is `verifyReceipt` in `src/verifier.ts`. The hosted human plane is
 `ProductionClient` in `src/production.ts`.

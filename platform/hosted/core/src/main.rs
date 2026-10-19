@@ -3084,41 +3084,41 @@ mod admission_tests {
     const ASSET_FIXTURES: [(u16, &str); 7] = [
         (
             1,
-            include_str!("../../../../agent/crates/layerx-crypto/tests/fixtures/payments/1-1.hex"),
+            include_str!("../../../../services/agent/crates/layerx-crypto/tests/fixtures/payments/1-1.hex"),
         ),
         (
             4,
-            include_str!("../../../../agent/crates/layerx-crypto/tests/fixtures/payments/1-4.hex"),
+            include_str!("../../../../services/agent/crates/layerx-crypto/tests/fixtures/payments/1-4.hex"),
         ),
         (
             6,
-            include_str!("../../../../agent/crates/layerx-crypto/tests/fixtures/payments/1-6.hex"),
+            include_str!("../../../../services/agent/crates/layerx-crypto/tests/fixtures/payments/1-6.hex"),
         ),
         (
             7,
-            include_str!("../../../../agent/crates/layerx-crypto/tests/fixtures/payments/1-7.hex"),
+            include_str!("../../../../services/agent/crates/layerx-crypto/tests/fixtures/payments/1-7.hex"),
         ),
         (
             8,
-            include_str!("../../../../agent/crates/layerx-crypto/tests/fixtures/payments/1-8.hex"),
+            include_str!("../../../../services/agent/crates/layerx-crypto/tests/fixtures/payments/1-8.hex"),
         ),
         (
             10,
-            include_str!("../../../../agent/crates/layerx-crypto/tests/fixtures/payments/1-10.hex"),
+            include_str!("../../../../services/agent/crates/layerx-crypto/tests/fixtures/payments/1-10.hex"),
         ),
         (
             11,
-            include_str!("../../../../agent/crates/layerx-crypto/tests/fixtures/payments/1-11.hex"),
+            include_str!("../../../../services/agent/crates/layerx-crypto/tests/fixtures/payments/1-11.hex"),
         ),
     ];
     const PROGRAM_PAYMENT_FIXTURES: [(u16, &str); 2] = [
         (
             5,
-            include_str!("../../../../agent/crates/layerx-crypto/tests/fixtures/payments/9-5.hex"),
+            include_str!("../../../../services/agent/crates/layerx-crypto/tests/fixtures/payments/9-5.hex"),
         ),
         (
             6,
-            include_str!("../../../../agent/crates/layerx-crypto/tests/fixtures/payments/9-6.hex"),
+            include_str!("../../../../services/agent/crates/layerx-crypto/tests/fixtures/payments/9-6.hex"),
         ),
     ];
 

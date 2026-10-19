@@ -105,7 +105,7 @@ platform-build-all: platform-build platform-sample-dependencies-ready
 	mvn -o -q -f platform/integrations/spring/example/pom.xml -DskipTests package
 	dotnet build platform/sdk/dotnet/LayerX.Sdk.csproj --no-restore --configuration Release --nologo
 	swift build --disable-automatic-resolution --package-path platform/sdk/swift
-	$(PLATFORM_PYTHON_ENV)/bin/python -m compileall -q agent/sdk/python platform/integrations/fastapi
+	$(PLATFORM_PYTHON_ENV)/bin/python -m compileall -q services/agent/sdk/python platform/integrations/fastapi
 
 platform-lint:
 	$(PLATFORM_CARGO) clippy --offline --manifest-path $(PLATFORM_MANIFEST) --locked --workspace --all-targets -- -D warnings
@@ -234,7 +234,7 @@ platform-sdk-check:
 	$(PLATFORM_CARGO) run --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-sdkgen -- --check-paxai
 
 platform-sdk-generate:
-	cargo run --manifest-path agent/tools/sdk-gen/Cargo.toml --locked -- --write
+	cargo run --manifest-path services/agent/tools/sdk-gen/Cargo.toml --locked -- --write
 	cargo run --manifest-path human/tools/api-gen/Cargo.toml --locked -- human/schema/human-api human/apps/web/src/api/generated
 	python3 platform/sdk/generators/generate_portable.py $(CURDIR)
 	python3 platform/sdk/generators/generate_jvm.py $(CURDIR)
@@ -273,7 +273,7 @@ platform-verify-sdks: programs-check-native-lifecycle-fixtures programs-check-ca
 	node --import ./platform/sdk/conformance-runner/register.mjs --test \
 		build/platform-sdk-conformance/platform/sdk/conformance/secret-hygiene.test.js \
 		build/platform-sdk-conformance/platform/sdk/conformance/streaming-resumability.test.js
-	PYTHONPATH=agent/sdk/python python3 -m pytest --import-mode=importlib \
+	PYTHONPATH=services/agent/sdk/python python3 -m pytest --import-mode=importlib \
 		platform/sdk/conformance/secret-hygiene.test.py \
 		platform/sdk/conformance/streaming-resumability.test.py
 	sh platform/sdk/conformance/run-go.sh $(CURDIR)
@@ -346,7 +346,7 @@ platform-test-middleware: platform-sample-dependencies-ready
 	npm run build --workspace @sidiora/layerx-next
 	npm run build --workspace @sidiora/layerx-example-next
 	npm run scan --workspace @sidiora/layerx-example-next
-	PYTHONPATH=agent/sdk/python:platform/integrations/fastapi python3 -m compileall -q \
+	PYTHONPATH=services/agent/sdk/python:platform/integrations/fastapi python3 -m compileall -q \
 		platform/integrations/fastapi/layerx_fastapi platform/integrations/fastapi/examples
 	npm run build --workspace @sidiora/layerx-agent-integrations
 	mvn -o -q -f platform/integrations/android/pom.xml -DskipTests verify

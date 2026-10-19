@@ -8301,3 +8301,8 @@ fix = "write each such line so it says what it means: a root-anchored $(CURDIR)/
 area = "api alignment"
 symptom = "a crate downstream of an API type change kept reading a removed field (layerx-mcp read TrackedSubmission.verification_level after it became rung) and nothing in the per-task gate built it, so make agent-build failed on main"
 fix = "the workspace build is the gate for API type changes: build every crate that depends on the changed type, not only the crate that owns it"
+
+[gotcha.1746]
+area = "layout moves"
+symptom = "relative paths in a moved tree resolve from different bases (the file directory for include_str! and #[path], the crate for CARGO_MANIFEST_DIR joins, dist/test for compiled TypeScript tests, src/ for include_str! text a build.rs generates), so a depth rewrite keyed on the file's own directory misjudges some"
+fix = "resolve each ../ chain against every plausible base in the pre-move tree and review by hand any that disagree"

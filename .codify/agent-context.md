@@ -25,7 +25,7 @@ _Generated graph context owned by `cg agentmd`. Regenerate with `cg agentmd --wr
 ## Directory map
 
 - `admin/` — 7 files, 2620 lines (mostly go)
-- `agent/` — 699 files, 309337 lines (mostly rust)
+- `services/agent/` — 699 files, 309337 lines (mostly rust)
 - `bridge/` — 30 files, 14496 lines (mostly rust)
 - `cmd/` — 68 files, 39981 lines (mostly c)
 - `(root)` — 4 files, 302 lines (mostly go)
@@ -76,21 +76,21 @@ _Generated graph context owned by `cg agentmd`. Regenerate with `cg agentmd --wr
 
 ## Entry points
 
-- function `main` — `agent/crates/layerx-agent-api/build.rs:431`
-- function `main` — `agent/crates/layerx-agentd/examples/native_handover_programs.rs:536`
-- function `main` — `agent/crates/layerx-agentd/examples/native_handover_reads.rs:388`
-- function `main` — `agent/crates/layerx-agentd/examples/review_audit_export.rs:24`
-- function `main` — `agent/crates/layerx-agentd/src/main.rs:2202`
-- function `main` — `agent/crates/layerx-client/examples/go_verifier_vectors.rs:1565`
-- function `main` — `agent/crates/layerx-client/examples/module_state.rs:49`
-- function `main` — `agent/crates/layerx-client/examples/native_handover_history.rs:340`
-- function `main` — `agent/crates/layerx-client/examples/paxeer_bind_vectors.rs:44`
-- function `main` — `agent/crates/layerx-crypto/tests/native_payment_vectors.c:37`
-- function `main` — `agent/crates/layerx-crypto/tests/native_receive.c:6`
-- function `main` — `agent/crates/layerx-mcp/src/bin/layerx-mcp.rs:89`
-- function `main` — `agent/crates/layerx-proof/examples/offline_export.rs:27`
-- function `main` — `agent/crates/layerx-proof/examples/offline_verify.rs:68`
-- function `main` — `agent/crates/layerx-sdk/src/bin/layerx-wallet-rpc.rs:200`
+- function `main` — `services/agent/crates/layerx-agent-api/build.rs:431`
+- function `main` — `services/agent/crates/layerx-agentd/examples/native_handover_programs.rs:536`
+- function `main` — `services/agent/crates/layerx-agentd/examples/native_handover_reads.rs:388`
+- function `main` — `services/agent/crates/layerx-agentd/examples/review_audit_export.rs:24`
+- function `main` — `services/agent/crates/layerx-agentd/src/main.rs:2202`
+- function `main` — `services/agent/crates/layerx-client/examples/go_verifier_vectors.rs:1565`
+- function `main` — `services/agent/crates/layerx-client/examples/module_state.rs:49`
+- function `main` — `services/agent/crates/layerx-client/examples/native_handover_history.rs:340`
+- function `main` — `services/agent/crates/layerx-client/examples/paxeer_bind_vectors.rs:44`
+- function `main` — `services/agent/crates/layerx-crypto/tests/native_payment_vectors.c:37`
+- function `main` — `services/agent/crates/layerx-crypto/tests/native_receive.c:6`
+- function `main` — `services/agent/crates/layerx-mcp/src/bin/layerx-mcp.rs:89`
+- function `main` — `services/agent/crates/layerx-proof/examples/offline_export.rs:27`
+- function `main` — `services/agent/crates/layerx-proof/examples/offline_verify.rs:68`
+- function `main` — `services/agent/crates/layerx-sdk/src/bin/layerx-wallet-rpc.rs:200`
 
 ## HTTP routes
 
@@ -159,20 +159,20 @@ _Generated graph context owned by `cg agentmd`. Regenerate with `cg agentmd --wr
 
 ## Load-bearing symbols (most referenced)
 
-- `len` (function, 33297 refs) — `agent/crates/layerx-agentd/src/capability/mod.rs:440`
+- `len` (function, 33297 refs) — `services/agent/crates/layerx-agentd/src/capability/mod.rs:440`
 - `Err` (method, 24694 refs) — `consensus/abci/types/types.go:24`
-- `new` (function, 21362 refs) — `agent/crates/layerx-agent-api/src/error.rs:20`
+- `new` (function, 21362 refs) — `services/agent/crates/layerx-agent-api/src/error.rs:20`
 - `Some` (function, 16634 refs) — `consensus/libs/utils/option.go:15`
 - `Equal` (function, 15486 refs) — `consensus/internal/protoutils/msg.go:45`
 - `uint64` (function, 12822 refs) — `human/crates/layerx-intents/src/precompile.rs:387`
-- `get` (function, 10553 refs) — `agent/crates/layerx-agent-api/src/generated.rs:86`
-- `expect` (function, 9743 refs) — `agent/crates/layerx-types/src/json.rs:97`
-- `byte` (function, 9135 refs) — `agent/crates/layerx-agentd/src/audit/record.rs:554`
-- `clone` (function, 8780 refs) — `agent/crates/layerx-agentd/src/human_runtime.rs:2072`
+- `get` (function, 10553 refs) — `services/agent/crates/layerx-agent-api/src/generated.rs:86`
+- `expect` (function, 9743 refs) — `services/agent/crates/layerx-types/src/json.rs:97`
+- `byte` (function, 9135 refs) — `services/agent/crates/layerx-agentd/src/audit/record.rs:554`
+- `clone` (function, 8780 refs) — `services/agent/crates/layerx-agentd/src/human_runtime.rs:2072`
 - `and` (method, 8631 refs) — `consensus/libs/bits/bit_array.go:165`
-- `require` (function, 8099 refs) — `agent/crates/layerx-agentd/src/budget/budget_proof.rs:190`
-- `from` (function, 7636 refs) — `agent/crates/layerx-agentd/src/budget/hold.rs:75`
-- `append` (function, 7618 refs) — `agent/crates/layerx-sdk/src/native_capabilities.rs:117`
+- `require` (function, 8099 refs) — `services/agent/crates/layerx-agentd/src/budget/budget_proof.rs:190`
+- `from` (function, 7636 refs) — `services/agent/crates/layerx-agentd/src/budget/hold.rs:75`
+- `append` (function, 7618 refs) — `services/agent/crates/layerx-sdk/src/native_capabilities.rs:117`
 - `CHECK` (macro, 7118 refs) — `sdk/crypto/keys/secp256k1/internal/secp256k1/libsecp256k1/src/util.h:46`
 
 ## Querying this codebase

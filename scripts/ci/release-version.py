@@ -24,17 +24,17 @@ ROOT = Path(__file__).resolve().parents[2]
 TAG_PREFIX = "sdk-v"
 BETA = re.compile(r"^(\d+)\.(\d+)\.(\d+)-beta\.(\d+)$")
 
-CARGO_WORKSPACES = ["agent/Cargo.toml", "interop/Cargo.toml", "programs/Cargo.toml"]
+CARGO_WORKSPACES = ["services/agent/Cargo.toml", "interop/Cargo.toml", "programs/Cargo.toml"]
 CRATES = {
-    "layerx-agent-api": "agent/crates/layerx-agent-api/Cargo.toml",
-    "layerx-client": "agent/crates/layerx-client/Cargo.toml",
-    "layerx-crypto": "agent/crates/layerx-crypto/Cargo.toml",
+    "layerx-agent-api": "services/agent/crates/layerx-agent-api/Cargo.toml",
+    "layerx-client": "services/agent/crates/layerx-client/Cargo.toml",
+    "layerx-crypto": "services/agent/crates/layerx-crypto/Cargo.toml",
     "layerx-mirror": "interop/crates/layerx-mirror/Cargo.toml",
     "layerx-programs-runtime": "programs/crates/layerx-programs-runtime/Cargo.toml",
-    "layerx-proof": "agent/crates/layerx-proof/Cargo.toml",
-    "layerx-sdk": "agent/crates/layerx-sdk/Cargo.toml",
-    "layerx-types": "agent/crates/layerx-types/Cargo.toml",
-    "layerx-wire": "agent/crates/layerx-wire/Cargo.toml",
+    "layerx-proof": "services/agent/crates/layerx-proof/Cargo.toml",
+    "layerx-sdk": "services/agent/crates/layerx-sdk/Cargo.toml",
+    "layerx-types": "services/agent/crates/layerx-types/Cargo.toml",
+    "layerx-wire": "services/agent/crates/layerx-wire/Cargo.toml",
 }
 NPM_PACKAGES = {
     "@sidiora/layerx-agent-integrations": "platform/integrations/agents/package.json",
@@ -43,12 +43,12 @@ NPM_PACKAGES = {
     "@sidiora/layerx-express": "platform/integrations/express/package.json",
     "@sidiora/layerx-merchant-middleware": "platform/middleware/merchant/package.json",
     "@sidiora/layerx-next": "platform/integrations/next/package.json",
-    "@sidiora/layerx-sdk": "agent/sdk/typescript/package.json",
+    "@sidiora/layerx-sdk": "services/agent/sdk/typescript/package.json",
     "@sidiora/layerx-seller-middleware": "platform/middleware/seller/package.json",
 }
 PYPROJECTS = {
     "layerx-fastapi": "platform/integrations/fastapi/pyproject.toml",
-    "layerx-sdk": "agent/sdk/python/pyproject.toml",
+    "layerx-sdk": "services/agent/sdk/python/pyproject.toml",
 }
 POMS = {
     "com.sidiora.layerx:layerx-android": "platform/integrations/android/pom.xml",

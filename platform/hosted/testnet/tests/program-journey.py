@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "agent/sdk/python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "services/agent/sdk/python"))
 from layerx_sdk.programs import ProgramTrustContext, verify_program_receipt
 from layerx_sdk.verifier import AuthorizedReceiptBatch
 

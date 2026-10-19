@@ -134,7 +134,7 @@ Sources:
 - `src/protocol/lxp_genesis.c:594-598`
 - `src/modules/programs/call.c` (`lxp_programs_call_decode`, `lxp_programs_call_validate`, `lxp_programs_call_execute`)
 - `cmd/layerxd/lxp_daemon_lni.c` (`lxp_daemon_lni_simulate`, `send_simulate`)
-- `agent/schema/lni/README.md` (LNI 1.4 `simulate`)
+- `services/agent/schema/lni/README.md` (LNI 1.4 `simulate`)
 
 ---
 

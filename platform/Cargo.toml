@@ -47,13 +47,13 @@ keyring-core = "=1.0.0"
 native-tls = "=0.2.18"
 rustix = { version = "=1.1.4", features = ["fs", "process"] }
 layerx-fiat = { path = "../interop/crates/layerx-fiat" }
-layerx-proof = { path = "../agent/crates/layerx-proof" }
-layerx-sdk = { path = "../agent/crates/layerx-sdk" }
-layerx-client = { path = "../agent/crates/layerx-client" }
-layerx-identity-binding = { path = "../agent/crates/layerx-identity-binding" }
-layerx-crypto = { path = "../agent/crates/layerx-crypto" }
-layerx-types = { path = "../agent/crates/layerx-types" }
-layerx-wire = { path = "../agent/crates/layerx-wire" }
+layerx-proof = { path = "../services/agent/crates/layerx-proof" }
+layerx-sdk = { path = "../services/agent/crates/layerx-sdk" }
+layerx-client = { path = "../services/agent/crates/layerx-client" }
+layerx-identity-binding = { path = "../services/agent/crates/layerx-identity-binding" }
+layerx-crypto = { path = "../services/agent/crates/layerx-crypto" }
+layerx-types = { path = "../services/agent/crates/layerx-types" }
+layerx-wire = { path = "../services/agent/crates/layerx-wire" }
 layerx-intents = { path = "../human/crates/layerx-intents" }
 layerx-paxeer-client = { path = "../human/crates/layerx-paxeer-client" }
 layerx-platform-kvx = { path = "tools/kvx", version = "=0.1.0" }

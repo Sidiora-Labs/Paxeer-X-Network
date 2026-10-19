@@ -6,7 +6,7 @@
     "build": "node tools/build/npm-workspace-build.mjs"
   },
   "workspaces": [
-    "agent/sdk/typescript",
+    "services/agent/sdk/typescript",
     "platform/middleware/seller",
     "platform/middleware/buyer",
     "platform/middleware/merchant",

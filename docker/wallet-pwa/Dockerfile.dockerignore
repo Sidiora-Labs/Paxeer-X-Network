@@ -1,5 +1,5 @@
 *
-!agent/sdk/typescript
+!services/agent/sdk/typescript
 !human/apps/wallet
 !human/wallet
 **/.git

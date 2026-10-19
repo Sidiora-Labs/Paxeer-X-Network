@@ -1,5 +1,5 @@
 // Package testvectors loads the cross-implementation fixture emitted by
-// agent/crates/layerx-client/examples/go_verifier_vectors.rs. Every verdict in
+// services/agent/crates/layerx-client/examples/go_verifier_vectors.rs. Every verdict in
 // the fixture is the answer of the Rust verifier, never of this repository's
 // Go code.
 package testvectors

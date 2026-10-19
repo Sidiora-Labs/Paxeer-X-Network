@@ -1,5 +1,5 @@
 {
-  "generator": "agent/crates/layerx-client/examples/paxeer_bind_vectors.rs",
+  "generator": "services/agent/crates/layerx-client/examples/paxeer_bind_vectors.rs",
   "public_key": "af06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
   "did": "did:layerx:af06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
   "main_account_name": "agent:did:layerx:af06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d:main",

@@ -18,7 +18,7 @@ DOCKERFILE = "docker/layerx/Dockerfile"
 IGNORE = DOCKERFILE + ".dockerignore"
 EXTRA = {
     "include/layerx/lxp_result.h", "include/layerx/programs.h",
-    "agent/deny.toml", "agent/unsafe-allowlist.toml",
+    "services/agent/deny.toml", "services/agent/unsafe-allowlist.toml",
     "contracts/config/checkpoint-settlement.json",
     "interop/specs/vendor/x402/x402-specification-v2.md",
     "interop/Cargo.lock", "rust-toolchain.toml",
@@ -200,7 +200,7 @@ def negatives(required, available, policy):
     forbidden = [".env", ".env.production", "interop/.env", "agent/secret.env",
                  "interop/crates/x-websearch/.env.local", ".chat/owner.kvx",
                  ".logs/raw.log", "private-evidence/candidate.json", "secrets/token",
-                 "agent/crates/layerx-types/private.key", "interop/key.pem",
+                 "services/agent/crates/layerx-types/private.key", "interop/key.pem",
                  "interop/target/release/x-websearch", ".git/config",
                  "interop/.x-websearch-target/release/x-websearch",
                  "human/node_modules/huge", "agent/.cache/build"]

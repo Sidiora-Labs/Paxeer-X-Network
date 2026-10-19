@@ -26,7 +26,7 @@ class NativeEffectTest(unittest.TestCase):
         cls.request = json.loads(cls.raw)
         cls.payload = (
             Path(__file__).resolve().parents[4]
-            / "agent/crates/layerx-crypto/tests/fixtures/payments/native-1-5.hex"
+            / "services/agent/crates/layerx-crypto/tests/fixtures/payments/native-1-5.hex"
         ).read_text().strip()
 
     def reject(self, path, value):

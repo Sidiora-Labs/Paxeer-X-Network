@@ -12,11 +12,11 @@ fn native_capability_and_budget_grants_compile_and_disclose_exactly() {
         ModuleRegistry::new(&[module]).unwrap_or_else(|error| panic!("registry: {error:?}"));
     for body in [
         include_bytes!(
-            "../../../../agent/crates/layerx-crypto/tests/fixtures/authority-grant-capability.bin"
+            "../../../../services/agent/crates/layerx-crypto/tests/fixtures/authority-grant-capability.bin"
         )
         .as_slice(),
         include_bytes!(
-            "../../../../agent/crates/layerx-crypto/tests/fixtures/authority-grant-budget.bin"
+            "../../../../services/agent/crates/layerx-crypto/tests/fixtures/authority-grant-budget.bin"
         )
         .as_slice(),
         include_bytes!(

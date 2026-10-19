@@ -17,13 +17,13 @@ export {
   type PrecompileCall,
   type PrecompileEventSpec,
   type PrecompileLog,
-} from "../../../../../agent/sdk/typescript/src/exchange.ts";
+} from "../../../../../services/agent/sdk/typescript/src/exchange.ts";
 export {
   BRIDGE_EVENTS,
   LAYERX_BRIDGE_PRECOMPILE,
   bridgeOutCall,
   decodeBridgeEvent,
-} from "../../../../../agent/sdk/typescript/src/bridge.ts";
+} from "../../../../../services/agent/sdk/typescript/src/bridge.ts";
 export {
   LAUNCHPAD_EVENTS,
   LAUNCHPAD_PRECOMPILE,
@@ -32,7 +32,7 @@ export {
   launchpadCreateMarketCall,
   launchpadSellCall,
   type LaunchpadSwapOrder,
-} from "../../../../../agent/sdk/typescript/src/launchpad.ts";
+} from "../../../../../services/agent/sdk/typescript/src/launchpad.ts";
 export {
   SIDIORA_TOKEN,
   SIDIORA_DECIMALS,
@@ -45,7 +45,7 @@ export {
   type GasQuoteRequest,
   type GasStationConfig,
   type SponsoredBatch,
-} from "../../../../../agent/sdk/typescript/src/gas-station.ts";
+} from "../../../../../services/agent/sdk/typescript/src/gas-station.ts";
 export {
   requestSidioraGasQuote,
   sendSponsoredBatch,

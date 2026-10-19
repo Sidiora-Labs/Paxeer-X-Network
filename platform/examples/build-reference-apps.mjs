@@ -55,7 +55,7 @@ async function compiledFiles(directory) {
   return files;
 }
 const node = [];
-for (const path of ["agent/sdk/typescript/dist", "platform/middleware/seller/dist", "platform/middleware/buyer/dist", "platform/middleware/merchant/dist"]) {
+for (const path of ["services/agent/sdk/typescript/dist", "platform/middleware/seller/dist", "platform/middleware/buyer/dist", "platform/middleware/merchant/dist"]) {
   const files = await compiledFiles(resolve(root, path));
   if (files.length === 0) throw new Error("missing_compiled_reference_node_workspace");
   node.push({ directory: path, files });

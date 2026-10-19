@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { deriveNativeAssetId, encodeAccountOpen, encodeAssetRegister, encodeGrantRevoke, encodeAssetSupply } from "../../../../agent/sdk/typescript/dist/src/x402/receive.js";
+import { deriveNativeAssetId, encodeAccountOpen, encodeAssetRegister, encodeGrantRevoke, encodeAssetSupply } from "../../../../services/agent/sdk/typescript/dist/src/x402/receive.js";
 const hex = (bytes) => Buffer.from(bytes).toString("hex");
 const issuer = "1eff10b60dad92693680cd2a6ebf032e48aa1ef8f019e2f51a0362df67755d18";
 const salt = "02".repeat(32);

@@ -30,9 +30,9 @@ CLOCK_SOURCES = (
     'platform/hosted/runtime-clock/src/server.rs',
     'platform/hosted/runtime-clock/Cargo.toml',
     'platform/Cargo.toml', 'platform/Cargo.lock',
-    'agent/crates/layerx-types/src/clock.rs',
-    'agent/crates/layerx-types/src/clock_protocol.rs',
-    'agent/crates/layerx-client/src/runtime_clock.rs',
+    'services/agent/crates/layerx-types/src/clock.rs',
+    'services/agent/crates/layerx-types/src/clock_protocol.rs',
+    'services/agent/crates/layerx-client/src/runtime_clock.rs',
     'tools/runtime/run-with-clock.sh',
 )
 

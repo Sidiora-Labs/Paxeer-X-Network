@@ -31,7 +31,7 @@ INPUTS = sorted({"tests/programs/test_monetary_law.c", "programs/Cargo.lock", "r
                  "programs/crates/layerx-programs-runtime/tests/monetary_law.rs",
                  "tools/paxeer-x/build/104.30.2.mk", "tools/paxeer-x/gates/104.30.2.sh",
                  "tools/qualification/paxeer-x/program_transfer_authority.py",
-                 "tests/programs/test_call_activity.c", "agent/Cargo.toml", "agent/Cargo.lock",
+                 "tests/programs/test_call_activity.c", "services/agent/Cargo.toml", "services/agent/Cargo.lock",
                  "programs/Cargo.toml", "contracts/config/checkpoint-settlement.json", "Makefile"})
 BINARIES = ("native_monetary_law", "runtime_unit", "monetary_law", "sandbox_staticlib")
 UNIT = [
@@ -110,7 +110,7 @@ def load_manifest():
     required_inputs = set(INPUTS)
     required_inputs.update(p for p in git("ls-files", "--", "include", "src").splitlines()
                            if p.endswith((".c", ".h", ".inc")))
-    required_inputs.update(p for p in git("ls-files", "--", "programs/crates", "programs/sdk/rust", "agent/crates").splitlines()
+    required_inputs.update(p for p in git("ls-files", "--", "programs/crates", "programs/sdk/rust", "services/agent/crates").splitlines()
                            if p.endswith(".rs") or p.endswith("/Cargo.toml"))
     for rel in required_inputs:
         if rel not in inputs:

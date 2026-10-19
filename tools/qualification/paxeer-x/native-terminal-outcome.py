@@ -8,8 +8,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = (
-    "agent/crates/layerx-proof/src/receipt.rs",
-    "agent/crates/layerx-proof/tests/native_terminal_outcome.rs",
+    "services/agent/crates/layerx-proof/src/receipt.rs",
+    "services/agent/crates/layerx-proof/tests/native_terminal_outcome.rs",
     "tools/qualification/paxeer-x/native-terminal-outcome.py",
 )
 REQUIRED = {"serial-empty-0", "scheduled-0", "scheduled-1", "terminal-0"}
@@ -58,7 +58,7 @@ def main():
     records.chmod(0o600)
     environment = dict(os.environ, LAYERX_NATIVE_TERMINAL_RECORDS=str(records),
                        CARGO_TARGET_DIR="/root/lx-target/agent", CARGO_BUILD_JOBS="4")
-    command = ["/root/.cargo/bin/cargo", "test", "--locked", "--manifest-path", "agent/Cargo.toml",
+    command = ["/root/.cargo/bin/cargo", "test", "--locked", "--manifest-path", "services/agent/Cargo.toml",
                "-p", "layerx-proof", "--test", "native_terminal_outcome", "--", "--test-threads=1"]
     log = evidence / "verify-rust.log"
     with log.open("w") as stream:

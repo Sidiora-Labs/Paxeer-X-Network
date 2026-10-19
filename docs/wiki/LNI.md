@@ -2,7 +2,7 @@
 
 LNI is the stable node boundary. Protocol bytes stay opaque: LNI does not
 invent an activity, receipt, or checkpoint layout
-(`agent/schema/lni/v1.kvx`, `spec/.beta/layerx-agent-interface/spec.kvx`
+(`services/agent/schema/lni/v1.kvx`, `spec/.beta/layerx-agent-interface/spec.kvx`
 requirement 2).
 
 Schema: major 1, minor 7. Frame:
@@ -20,7 +20,7 @@ NodeInfo is the first exchange. It carries LNI version, protocol version,
 network id, role, chain head, latest sealed batch, latest finalised
 checkpoint, authorised sequencer key, and capabilities.
 
-Sources: `agent/schema/lni/v1.kvx`, `agent/schema/lni/README.md`.
+Sources: `services/agent/schema/lni/v1.kvx`, `services/agent/schema/lni/README.md`.
 
 ---
 
@@ -121,7 +121,7 @@ The hosted program registry publishes that signature as
 | 41 | ProgramHeadAttestResponse | response | `program_head_attest` |
 
 Payload semantics for each tag are the `[message.N]` blocks in
-`agent/schema/lni/v1.kvx`.
+`services/agent/schema/lni/v1.kvx`.
 
 ---
 

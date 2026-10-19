@@ -55,7 +55,7 @@ def sources():
     output = subprocess.check_output(['git', 'ls-files', '-z', '--',
         'Makefile', 'src', 'include', 'cmd/layerxd', 'cmd/layerx-genesis',
         'programs/crates', 'programs/sdk/rust', 'programs/Cargo.toml',
-        'programs/Cargo.lock', 'agent/crates', 'agent/Cargo.toml', 'agent/Cargo.lock',
+        'programs/Cargo.lock', 'services/agent/crates', 'services/agent/Cargo.toml', 'services/agent/Cargo.lock',
         'platform/hosted/agent-boundary', 'platform/Cargo.toml', 'platform/Cargo.lock',
         'contracts/config', 'rust-toolchain.toml'], cwd=ROOT)
     names = {os.fsdecode(name) for name in output.split(b'\0') if name}
@@ -220,7 +220,7 @@ ACCOUNTS_GUEST = 'programs/sdk/rust/examples/escrow/target/wasm32-unknown-unknow
 ACCOUNTS_SOURCE_PATHS = ('Makefile', 'src', 'include', 'cmd/layerxd',
     'cmd/layerx-genesis', 'programs/crates', 'programs/sdk/rust',
     'programs/Cargo.toml', 'programs/Cargo.lock', 'programs/.cargo',
-    'agent/crates', 'agent/Cargo.toml', 'agent/Cargo.lock',
+    'services/agent/crates', 'services/agent/Cargo.toml', 'services/agent/Cargo.lock',
     'platform/hosted/agent-boundary', 'platform/Cargo.toml', 'platform/Cargo.lock',
     'contracts', 'foundry.toml', 'tests/bridge', 'platform/hosted/paxeer/evm.py',
     'rust-toolchain.toml',

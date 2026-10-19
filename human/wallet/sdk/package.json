@@ -26,7 +26,7 @@
   ],
   "scripts": {
     "build": "pnpm run build:agent-sdk && tsc -p tsconfig.json",
-    "build:agent-sdk": "npm --prefix ../../../agent/sdk/typescript ci --no-audit --no-fund && npm --prefix ../../../agent/sdk/typescript run build",
+    "build:agent-sdk": "npm --prefix ../../../services/agent/sdk/typescript ci --no-audit --no-fund && npm --prefix ../../../services/agent/sdk/typescript run build",
     "dev": "tsc -p tsconfig.json --watch",
     "test": "pnpm run build:agent-sdk && vitest run",
     "typecheck": "pnpm run build:agent-sdk && tsc -p tsconfig.json --noEmit",
@@ -43,7 +43,7 @@
   "dependencies": {
     "@noble/curves": "^1.9.1",
     "@noble/hashes": "^1.8.0",
-    "@sidiora/layerx-sdk": "link:../../../agent/sdk/typescript",
+    "@sidiora/layerx-sdk": "link:../../../services/agent/sdk/typescript",
     "@supabase/supabase-js": "^2.45.4",
     "viem": "^2.56.9"
   },

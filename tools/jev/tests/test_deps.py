@@ -143,7 +143,7 @@ class ParseDiagnosticsTests(unittest.TestCase):
         self.assertEqual(interop.crate, "rustls")
         self.assertEqual(interop.version, "0.23.43")
         self.assertEqual(interop.anchor, "interop/Cargo.lock:128")
-        self.assertEqual(agent.anchor, "agent/Cargo.lock:119")
+        self.assertEqual(agent.anchor, "services/agent/Cargo.lock:119")
         self.assertEqual(agent.graph_path[0], "rustls 0.23.43")
 
     def test_blank_summary_and_malformed_lines_are_skipped(self) -> None:
@@ -195,8 +195,8 @@ class GroupingTests(unittest.TestCase):
         self.assertEqual(paste.crate, "paste")
         self.assertEqual(paste.workspaces, ("agent", "interop"))
         self.assertEqual(paste.versions, ("1.0.15",))
-        self.assertEqual(paste.anchors, ("agent/Cargo.lock:101", "interop/Cargo.lock:109"))
-        self.assertEqual(paste.anchor, "agent/Cargo.lock:101")
+        self.assertEqual(paste.anchors, ("services/agent/Cargo.lock:101", "interop/Cargo.lock:109"))
+        self.assertEqual(paste.anchor, "services/agent/Cargo.lock:101")
         self.assertEqual(paste.dev_by_workspace, {"agent": UNKNOWN, "interop": UNKNOWN})
         self.assertEqual(paste.dev_flag, UNKNOWN)
 
@@ -272,7 +272,7 @@ class FindingTests(unittest.TestCase):
         findings = findings_for(advisory, self.evaluation())
         self.assertEqual([finding.question for finding in findings], ["priority", "urgency"])
         self.assertTrue(all(finding.check == CHECK_NAME for finding in findings))
-        self.assertTrue(all(finding.anchor == "agent/Cargo.lock:119" for finding in findings))
+        self.assertTrue(all(finding.anchor == "services/agent/Cargo.lock:119" for finding in findings))
         self.assertTrue(
             all(finding.subject == f"{RUSTLS_ADVISORY} rustls" for finding in findings)
         )
@@ -302,7 +302,7 @@ class FindingTests(unittest.TestCase):
         self.assertEqual(document["check"], CHECK_NAME)
         self.assertEqual(len(document["findings"]), 2)
         self.assertEqual(
-            {item["anchor"] for item in document["findings"]}, {"agent/Cargo.lock:101"}
+            {item["anchor"] for item in document["findings"]}, {"services/agent/Cargo.lock:101"}
         )
         self.assertIn(PASTE_ADVISORY, report.to_markdown())
 

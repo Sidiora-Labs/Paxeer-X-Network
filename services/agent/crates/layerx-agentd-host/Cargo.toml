@@ -1,0 +1,45 @@
+[package]
+name = "layerx-agentd-host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "layerx-agentd"
+path = "../layerx-agentd/src/main.rs"
+
+[[test]]
+name = "runtime_mode"
+path = "../layerx-agentd/host-tests/runtime_mode.rs"
+
+[dependencies]
+layerx-agentd = { path = "../layerx-agentd" }
+layerx-mcp = { path = "../layerx-mcp" }
+layerx-sdk = { path = "../layerx-sdk" }
+layerx-human-kms = { path = "../../../../human/crates/layerx-human-kms" }
+layerx-types = { path = "../layerx-types" }
+layerx-client = { path = "../layerx-client" }
+layerx-identity-binding = { path = "../layerx-identity-binding" }
+layerx-paxeer-verifier = { path = "../layerx-paxeer-verifier" }
+layerx-agent-api = { path = "../layerx-agent-api" }
+layerx-crypto = { path = "../layerx-crypto" }
+layerx-proof = { path = "../layerx-proof" }
+layerx-wire = { path = "../layerx-wire" }
+layerx-intents = { path = "../../../../human/crates/layerx-intents" }
+layerx-programs = { package = "layerx-programs-registry", path = "../../../../programs/crates/layerx-programs-registry" }
+layerx-programs-runtime = { path = "../../../../programs/crates/layerx-programs-runtime" }
+layerx-programs-protocol-adapter = { path = "../../../../programs/crates/layerx-programs-protocol-adapter" }
+sha2 = "=0.10.9"
+serde_json = "=1.0.151"
+serde = { version = "=1.0.229", features = ["derive"] }
+ureq = { version = "=3.4.0", default-features = false, features = ["json", "rustls-no-provider", "_ring"] }
+rustls-native-certs = "=0.8.4"
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-webpki = { version = "=0.103.15", default-features = false, features = ["std"] }
+rustix = { version = "=1.1.4", features = ["net"] }
+zeroize = "=1.9.0"
+getrandom = "=0.3.4"
+
+[lints]
+workspace = true

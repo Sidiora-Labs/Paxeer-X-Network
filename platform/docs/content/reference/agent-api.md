@@ -1,8 +1,8 @@
-<!-- Generated from agent/schema/agent-api by platform/docs/build/build_site.py. Do not hand-edit. -->
+<!-- Generated from services/agent/schema/agent-api by platform/docs/build/build_site.py. Do not hand-edit. -->
 
 # Agent API reference
 
-Schema `LayerX Agent API`, contract major `1`, minor `2`, generated from `agent/schema/agent-api`.
+Schema `LayerX Agent API`, contract major `1`, minor `2`, generated from `services/agent/schema/agent-api`.
 
 The agent contract is spoken by `layerx-agentd` and by direct-node SDK deployments. Requests and responses are canonical maps carrying the contract major and minor version; consensus integers are fixed-width in Rust and decimal strings in the dynamic-language SDKs.
 

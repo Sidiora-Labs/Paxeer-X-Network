@@ -10,14 +10,14 @@ import sys
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
 TEST = 'real_programs_authenticated_peer_preserves_material_budget_and_owner_decisions'
-SOURCES = ('agent/crates/layerx-agentd/src/human.rs',
-           'agent/crates/layerx-agentd/src/human_runtime.rs',
-           'agent/crates/layerx-agentd/src/approval/native_program.rs',
-           'agent/crates/layerx-agentd/src/approval/native_program_presentation.rs',
-           'agent/crates/layerx-agentd/src/budget/budget_proof.rs',
-           'agent/crates/layerx-agentd/src/budget/program_settlement.rs',
-           'agent/crates/layerx-agentd/src/budget/program_sources.rs',
-           'agent/crates/layerx-agentd/tests/native_program_human_peer.rs',
+SOURCES = ('services/agent/crates/layerx-agentd/src/human.rs',
+           'services/agent/crates/layerx-agentd/src/human_runtime.rs',
+           'services/agent/crates/layerx-agentd/src/approval/native_program.rs',
+           'services/agent/crates/layerx-agentd/src/approval/native_program_presentation.rs',
+           'services/agent/crates/layerx-agentd/src/budget/budget_proof.rs',
+           'services/agent/crates/layerx-agentd/src/budget/program_settlement.rs',
+           'services/agent/crates/layerx-agentd/src/budget/program_sources.rs',
+           'services/agent/crates/layerx-agentd/tests/native_program_human_peer.rs',
            'tools/qualification/paxeer-x/native-program-human-peer.py')
 
 
@@ -30,7 +30,7 @@ def main():
     target = Path(os.environ.get('CARGO_TARGET_DIR', '/root/lx-target/agent'))
     if sys.argv[1:] == ['--build']:
         result = subprocess.run(['/root/.cargo/bin/cargo', 'test', '--locked', '--manifest-path',
-                                 str(ROOT / 'agent/Cargo.toml'), '-p', 'layerx-agentd', '--test',
+                                 str(ROOT / 'services/agent/Cargo.toml'), '-p', 'layerx-agentd', '--test',
                                  'native_program_human_peer', '--no-run'], cwd=ROOT,
                                 env={**os.environ, 'CARGO_TARGET_DIR': str(target)}, timeout=1140,
                                 check=False)

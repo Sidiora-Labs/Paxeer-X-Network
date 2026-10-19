@@ -11,5 +11,5 @@ name = "layerx-doc-verify-receipt"
 path = "src/main.rs"
 
 [dependencies]
-layerx-proof = { path = "../../../../agent/crates/layerx-proof" }
-layerx-sdk = { path = "../../../../agent/crates/layerx-sdk" }
+layerx-proof = { path = "../../../../services/agent/crates/layerx-proof" }
+layerx-sdk = { path = "../../../../services/agent/crates/layerx-sdk" }

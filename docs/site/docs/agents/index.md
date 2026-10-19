@@ -16,6 +16,6 @@ receipt or proof that this layer verified for itself.
 | MCP tools | [MCP](mcp.md) |
 | Program CALL terminals | [SDK terminal verification](sdk-verification.md) |
 
-`layerx-agentd` is `agent/crates/layerx-agentd`. The MCP server is
-`agent/crates/layerx-mcp`. The developer CLI installs those transports with
+`layerx-agentd` is `services/agent/crates/layerx-agentd`. The MCP server is
+`services/agent/crates/layerx-mcp`. The developer CLI installs those transports with
 `layerx install mcp` and `layerx install a2a`.

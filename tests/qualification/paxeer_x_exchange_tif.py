@@ -17,7 +17,7 @@ COMPONENTS = ['go-precompile', 'go-keeper', 'rust-payload', 'rust-router', 'nati
 SOURCES = ['tests/qualification/paxeer_x_exchange_tif.py', 'tests/daemon/lxp_test_exchange_tif_client.c',
            'tests/daemon/lxp_test_oracle_transport_client.c', 'tests/daemon/paxeer_x_runtime_fixture.py',
            'tests/modules/test_perps_book.c', 'modules/layerxexchange/keeper/keeper_test.go',
-           'agent/crates/layerx-types/tests/trading_payload.rs', 'human/crates/layerx-intents/tests/precompile_router.rs',
+           'services/agent/crates/layerx-types/tests/trading_payload.rs', 'human/crates/layerx-intents/tests/precompile_router.rs',
            'precompiles/layerxexchange/layerxexchange_test.go', 'precompiles/layerxexchange/abi.json',
            'api/layerxexchange/params.proto', 'modules/layerxexchange/types/params.go',
            'modules/layerxexchange/types/params.pb.go', 'modules/layerxexchange/types/state.go',
@@ -820,7 +820,7 @@ def qualify():
         require(digest(genesis_copy) == fixture_manifest['genesis_sha256'], 'signed native genesis copy mismatch')
         result['native_genesis_sha256'] = digest(genesis_copy)
         working = {'go-precompile': 'precompiles/layerxexchange', 'go-keeper': 'modules/layerxexchange/keeper',
-                   'rust-payload': 'agent/crates/layerx-types', 'rust-router': 'human/crates/layerx-intents', 'native-matcher': '.', 'genesis-module-table': '.'}
+                   'rust-payload': 'services/agent/crates/layerx-types', 'rust-router': 'human/crates/layerx-intents', 'native-matcher': '.', 'genesis-module-table': '.'}
         for name in COMPONENTS:
             argv = [built['binaries'][name]['path']]
             if name == 'go-precompile':

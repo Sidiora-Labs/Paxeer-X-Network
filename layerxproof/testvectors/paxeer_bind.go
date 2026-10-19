@@ -10,7 +10,7 @@ import (
 )
 
 // PaxeerBind is one account-binding case emitted by
-// agent/crates/layerx-client/examples/paxeer_bind_vectors.rs. Valid is the
+// services/agent/crates/layerx-client/examples/paxeer_bind_vectors.rs. Valid is the
 // verdict of the Rust strict verifier for Signature over Message.
 type PaxeerBind struct {
 	Name       string

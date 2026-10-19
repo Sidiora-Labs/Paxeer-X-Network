@@ -8,7 +8,7 @@ cd "$repo_root"
     exit 1
 }
 cargo_command=${AGENT_CARGO:-cargo}
-"$cargo_command" test --offline --manifest-path agent/Cargo.toml --locked \
+"$cargo_command" test --offline --manifest-path services/agent/Cargo.toml --locked \
     -p layerx-agentd --test protocol2_restart \
     protocol2_recovers_identical_signed_program_call_evidence \
     -- --exact --nocapture --test-threads=1

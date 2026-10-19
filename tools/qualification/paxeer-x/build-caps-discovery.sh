@@ -18,7 +18,7 @@ if (out/'manifest.json').exists():raise SystemExit('refuse reusing task artifact
 PREPARE
 make -j5 BUILD_DIR="$CAPS_DISCOVERY_BUILD_DIR/native" PROGRAMS_CARGO="$CAPS_RUST_TOOLCHAIN/bin/cargo" LXP_REVISION="$(git rev-parse HEAD)" layerxd > "$CAPS_DISCOVERY_BUILD_DIR/native-build.log" 2>&1
 cc -std=c17 -pedantic -Werror -Wall -Wextra -Wconversion -Wshadow -Wvla -fno-strict-aliasing -ffp-contract=off -O2 -ffunction-sections -fdata-sections -Iinclude -I"$CAPS_DISCOVERY_BUILD_DIR/native/generated" tests/qualification/lxp_wallet_caps_discovery.c "$CAPS_DISCOVERY_BUILD_DIR/native/liblayerx.a" programs/target/debug/liblayerx_programs_sandbox.a "$CAPS_DISCOVERY_BUILD_DIR/native/liblayerx.a" -Wl,--gc-sections -lcrypto -lsqlite3 -pthread -ldl -lm -o "$CAPS_DISCOVERY_BUILD_DIR/lxp_wallet_caps_discovery" > "$CAPS_DISCOVERY_BUILD_DIR/fixture-build.log" 2>&1
-"$CAPS_RUST_TOOLCHAIN/bin/cargo" test --locked --manifest-path agent/Cargo.toml -p layerx-client --test caps_discovery --no-run --message-format=json > "$CAPS_DISCOVERY_BUILD_DIR/client-build.jsonl" 2> "$CAPS_DISCOVERY_BUILD_DIR/client-build.log"
+"$CAPS_RUST_TOOLCHAIN/bin/cargo" test --locked --manifest-path services/agent/Cargo.toml -p layerx-client --test caps_discovery --no-run --message-format=json > "$CAPS_DISCOVERY_BUILD_DIR/client-build.jsonl" 2> "$CAPS_DISCOVERY_BUILD_DIR/client-build.log"
 python3 - <<'MANIFEST'
 import hashlib,json,os,pathlib,subprocess
 out=pathlib.Path(os.environ['CAPS_DISCOVERY_BUILD_DIR'])

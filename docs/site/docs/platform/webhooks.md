@@ -274,7 +274,7 @@ network-id strings differ. `LAYERX_WEBHOOKS_LXP_WIRE_VERSION` is `"3"`
 and must equal `STATE_COMMITMENT_PROTOCOL_VERSION` (`3`)
 (`platform/hosted/webhooks/deployment.yaml:17`;
 `platform/hosted/webhooks/src/trusted.rs:157-161`;
-`agent/crates/layerx-wire/src/limits.rs:16`).
+`services/agent/crates/layerx-wire/src/limits.rs:16`).
 
 ---
 

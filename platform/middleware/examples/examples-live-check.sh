@@ -136,7 +136,7 @@ python3 -c 'import cryptography' 2>/dev/null || {
 
 npm run build --workspace @sidiora/layerx-sdk
 npm run build --workspace @sidiora/layerx-seller-middleware
-for built in agent/sdk/typescript/dist/src/index.js platform/middleware/seller/dist/index.js; do
+for built in services/agent/sdk/typescript/dist/src/index.js platform/middleware/seller/dist/index.js; do
     [ -s "$built" ] || { printf 'examples-live-check.sh: %s was not produced by the workspace build\n' "$built" >&2; exit 1; }
 done
 
@@ -190,7 +190,7 @@ run_example node env NODE_EXTRA_CA_CERTS="$LAYERX_TEST_CA_FILE" \
     --activity "$LAYERX_EXAMPLE_NODE_ACTIVITY_FILE" --offer "$LAYERX_EXAMPLE_OFFER_FILE" \
     --authority "$LAYERX_EXAMPLE_NODE_AUTHORITY_FILE" --payer "$LAYERX_EXAMPLE_PAYER"
 
-run_example python env SSL_CERT_FILE="$LAYERX_TEST_CA_FILE" PYTHONPATH=agent/sdk/python \
+run_example python env SSL_CERT_FILE="$LAYERX_TEST_CA_FILE" PYTHONPATH=services/agent/sdk/python \
     python3 platform/middleware/examples/public_rpc.py \
     --rpc "$rpc_url" --did "$LAYERX_TEST_SOURCE_DID" \
     --faucet "$faucet_url" --public-key "$LAYERX_TEST_SOURCE_PUBLIC_KEY" \

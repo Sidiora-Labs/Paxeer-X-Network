@@ -1,5 +1,5 @@
 {
-  "generator": "agent/crates/layerx-wire/tests/wallet_vectors.rs",
+  "generator": "services/agent/crates/layerx-wire/tests/wallet_vectors.rs",
   "activities": [
     {
       "name": "native-send",

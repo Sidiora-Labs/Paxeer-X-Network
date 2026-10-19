@@ -645,7 +645,7 @@ def main():
         )
         encoded = bytes.fromhex(raw[2:])
         require(encoded[0] == 2, "custody-signed EIP-1559 transaction required")
-        sys.path.insert(0, str(ROOT / "agent/sdk/python"))
+        sys.path.insert(0, str(ROOT / "services/agent/sdk/python"))
         from layerx_sdk.account_derivation import keccak256
 
         tx_hash = "0x" + keccak256(encoded).hex()

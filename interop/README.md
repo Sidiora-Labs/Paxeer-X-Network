@@ -26,10 +26,10 @@ There is no standalone `layerx-a2a` crate. A2A is a transport on the gateway and
 
 | Surface | Role |
 | --- | --- |
-| `agent/crates/layerx-mcp` | Tenant- and scope-bound MCP server that routes every call through `layerx-agentd` |
+| `services/agent/crates/layerx-mcp` | Tenant- and scope-bound MCP server that routes every call through `layerx-agentd` |
 | This workspace + `platform/cli/` | MCP as an interop ingress; `layerx install mcp` / `layerx mcp serve` from the developer CLI |
 
-MCP tool inventory: [`agent/crates/layerx-mcp/README.md`](../agent/crates/layerx-mcp/README.md). CLI install copy: [`platform/docs/content/install.md`](../platform/docs/content/install.md) and [`platform/docs/content/guide/interop.md`](../platform/docs/content/guide/interop.md).
+MCP tool inventory: [`services/agent/crates/layerx-mcp/README.md`](../services/agent/crates/layerx-mcp/README.md). CLI install copy: [`platform/docs/content/install.md`](../platform/docs/content/install.md) and [`platform/docs/content/guide/interop.md`](../platform/docs/content/guide/interop.md).
 
 Interop service deployment inputs, including the required protocol network,
 authoritative module registry, server-owned TAP clock skew, explicit trusted

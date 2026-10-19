@@ -90,8 +90,8 @@ Thumbs.db
 tmp/*
 .claude/worktrees/
 /.worktrees/
-agent/target/
-agent/tools/*/target/
+services/agent/target/
+services/agent/tools/*/target/
 platform/sdk/dotnet/bin/
 platform/sdk/dotnet/obj/
 platform/sdk/dotnet/tests/*/bin/

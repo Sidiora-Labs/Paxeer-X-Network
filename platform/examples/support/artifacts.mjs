@@ -11,7 +11,7 @@ export async function referenceArtifacts(path, root) {
   const value = JSON.parse(await readFile(path, "utf8"));
   const revision = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   if (value.schema !== "layerx.reference-app-artifacts.v1" || value.source_revision !== revision) throw new Error("reference_artifacts_source_mismatch");
-  const directories = ["agent/sdk/typescript/dist", "platform/middleware/seller/dist", "platform/middleware/buyer/dist", "platform/middleware/merchant/dist"];
+  const directories = ["services/agent/sdk/typescript/dist", "platform/middleware/seller/dist", "platform/middleware/buyer/dist", "platform/middleware/merchant/dist"];
   if (!Array.isArray(value.node) || value.node.length !== directories.length) throw new Error("missing_reference_node_outputs");
   for (let index = 0; index < directories.length; index += 1) {
     const workspace = value.node[index];

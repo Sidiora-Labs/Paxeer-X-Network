@@ -196,7 +196,7 @@ def rpc(url, method, params, headers=None):
 
 
 def abi_view(url, target, name, types, values, headers=None):
-    sys.path.insert(0, str(ROOT / "agent/sdk/python"))
+    sys.path.insert(0, str(ROOT / "services/agent/sdk/python"))
     from layerx_sdk.exchange import encode_abi_call
 
     data = encode_abi_call(name, types, values)
@@ -804,7 +804,7 @@ class Harness:
             canonical_receipt.hex() == payment["receipt"],
             "response receipt differs from verified persistence",
         )
-        sys.path.insert(0, str(ROOT / "agent/sdk/python"))
+        sys.path.insert(0, str(ROOT / "services/agent/sdk/python"))
         from layerx_sdk.verifier import _decode_protocol_receipt
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         from cryptography.exceptions import InvalidSignature
@@ -1806,7 +1806,7 @@ class KernelHarness:
         return b"\0\3\20\1\14" + fields + b"\14" + blob(signature)
 
     def receipt(self, activity, refused=False):
-        sys.path.insert(0, str(ROOT / "agent/sdk/python"))
+        sys.path.insert(0, str(ROOT / "services/agent/sdk/python"))
         from layerx_sdk.verifier import _decode_protocol_receipt
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
@@ -3640,7 +3640,7 @@ class OperationalHarness(Harness):
         }
 
     def observed(self):
-        sys.path.insert(0, str(ROOT / "agent/sdk/python"))
+        sys.path.insert(0, str(ROOT / "services/agent/sdk/python"))
         from layerx_sdk.verifier import _decode_protocol_receipt
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         from cryptography.exceptions import InvalidSignature

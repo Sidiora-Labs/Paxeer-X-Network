@@ -24,7 +24,7 @@ as the JSON-RPC method `lx_requestFunds`
 (`platform/hosted/gateway/src/rpc_faucet.rs`), and that method backs the
 `layerx faucet` command (`platform/cli/src/main.rs:66`;
 `platform/cli/src/faucet.rs`), the SDK call `RpcClient::request_funds`
-(`agent/crates/layerx-sdk/src/rpc.rs`), and the served MCP tool
+(`services/agent/crates/layerx-sdk/src/rpc.rs`), and the served MCP tool
 `faucet.request` (`platform/cli/src/toolset.rs:38-44`). See
 [Public JSON-RPC](gateway-rpc.md) and [CLI](cli.md).
 

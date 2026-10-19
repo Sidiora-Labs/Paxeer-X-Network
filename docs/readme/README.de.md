@@ -110,15 +110,15 @@ make paxeer-ci
 
 | Sprache | Pfad |
 | --- | --- |
-| Rust | `agent/crates/layerx-sdk` |
-| Python | `agent/sdk/python` |
-| TypeScript | `agent/sdk/typescript` |
+| Rust | `services/agent/crates/layerx-sdk` |
+| Python | `services/agent/sdk/python` |
+| TypeScript | `services/agent/sdk/typescript` |
 | Go | `platform/sdk/go` |
 | JVM | `platform/sdk/jvm` |
 | .NET | `platform/sdk/dotnet` |
 | Swift | `platform/sdk/swift` |
 
-`layerx-agentd` liegt in `agent/crates/layerx-agentd`. Der MCP-Server liegt in `agent/crates/layerx-mcp`. Die Entwickler-CLI in `platform/cli` installiert diese Transporte mit `layerx install mcp` und `layerx install a2a`.
+`layerx-agentd` liegt in `services/agent/crates/layerx-agentd`. Der MCP-Server liegt in `services/agent/crates/layerx-mcp`. Die Entwickler-CLI in `platform/cli` installiert diese Transporte mit `layerx install mcp` und `layerx install a2a`.
 
 ## Architektur
 

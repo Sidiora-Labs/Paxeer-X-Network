@@ -59,8 +59,8 @@ REUSE
 exit 0
 fi
 cc -std=c17 -pedantic -Werror -Wall -Wextra -Wconversion -Wshadow -Wvla -fno-strict-aliasing -ffp-contract=off -O2 -ffunction-sections -fdata-sections -Iinclude -I"$CAPS_NATIVE_SOURCE/build/generated" tests/qualification/lxp_wallet_caps_vectors.c "$CAPS_NATIVE_SOURCE/build/liblayerx.a" "$CAPS_NATIVE_SOURCE/programs/target/debug/liblayerx_programs_sandbox.a" "$CAPS_NATIVE_SOURCE/build/liblayerx.a" -Wl,--gc-sections -lcrypto -pthread -ldl -lm -o "$CAPS_BUILD_DIR/lxp_wallet_caps_vectors"
-"$CAPS_RUST_TOOLCHAIN/bin/cargo" test --manifest-path agent/Cargo.toml --offline --locked -p layerx-client --test committed_caps --no-run --message-format=json > "$CAPS_BUILD_DIR/client-build.jsonl"
-"$CAPS_RUST_TOOLCHAIN/bin/cargo" test --manifest-path agent/Cargo.toml --offline --locked -p layerx-agentd --test budget_schema --no-run --message-format=json > "$CAPS_BUILD_DIR/agentd-build.jsonl"
+"$CAPS_RUST_TOOLCHAIN/bin/cargo" test --manifest-path services/agent/Cargo.toml --offline --locked -p layerx-client --test committed_caps --no-run --message-format=json > "$CAPS_BUILD_DIR/client-build.jsonl"
+"$CAPS_RUST_TOOLCHAIN/bin/cargo" test --manifest-path services/agent/Cargo.toml --offline --locked -p layerx-agentd --test budget_schema --no-run --message-format=json > "$CAPS_BUILD_DIR/agentd-build.jsonl"
 python3 - <<'PY'
 import os,pathlib,json,hashlib,subprocess
 out=pathlib.Path(os.environ['CAPS_BUILD_DIR'])

@@ -197,7 +197,7 @@ is absent).
 
 ## MCP payment surface
 
-The MCP catalogue (`agent/crates/layerx-mcp`) exposes `wallet.send`,
+The MCP catalogue (`services/agent/crates/layerx-mcp`) exposes `wallet.send`,
 `token.create`, `token.mint` and `token.transfer` through the daemon's ordinary
 submission path. MCP does not expose the CLI's burn, open-account, token info or
 token list operations. `layerx install mcp` installs the daemon-bound MCP

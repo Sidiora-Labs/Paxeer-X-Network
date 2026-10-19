@@ -10,17 +10,17 @@ use sha2::{Digest, Sha256};
 
 const LOCK_PATH: &str = "platform/sdk/pipeline.kvx";
 const RUST_OPERATION_GENERATED_PATH: &str =
-    "agent/crates/layerx-agent-api/src/operation_generated.rs";
+    "services/agent/crates/layerx-agent-api/src/operation_generated.rs";
 const GO_GENERATED_PATH: &str = "platform/sdk/go/generated.go";
 const JVM_GENERATED_PATH: &str =
     "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/GeneratedContract.java";
 const JVM_CONFORMANCE_PATH: &str = "platform/sdk/conformance/jvm.kvx";
 const RECEIPT_CONTRACT_PATH: &str = "platform/sdk/generators/receipt.kvx";
-const RUST_RECEIPT_GENERATED_PATH: &str = "agent/crates/layerx-sdk/src/receipt_generated.rs";
-const TYPESCRIPT_RECEIPT_GENERATED_PATH: &str = "agent/sdk/typescript/src/generated/receipt.ts";
-const PYTHON_RECEIPT_GENERATED_PATH: &str = "agent/sdk/python/layerx_sdk/generated/receipt.py";
+const RUST_RECEIPT_GENERATED_PATH: &str = "services/agent/crates/layerx-sdk/src/receipt_generated.rs";
+const TYPESCRIPT_RECEIPT_GENERATED_PATH: &str = "services/agent/sdk/typescript/src/generated/receipt.ts";
+const PYTHON_RECEIPT_GENERATED_PATH: &str = "services/agent/sdk/python/layerx_sdk/generated/receipt.py";
 const PYTHON_RECEIPT_STUB_GENERATED_PATH: &str =
-    "agent/sdk/python/layerx_sdk/generated/receipt.pyi";
+    "services/agent/sdk/python/layerx_sdk/generated/receipt.pyi";
 const GO_RECEIPT_GENERATED_PATH: &str = "platform/sdk/go/receipt_generated.go";
 const JVM_RECEIPT_GENERATED_PATH: &str =
     "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/verify/GeneratedReceiptContract.java";
@@ -29,7 +29,7 @@ const SWIFT_RECEIPT_GENERATED_PATH: &str =
 const DOTNET_RECEIPT_GENERATED_PATH: &str = "platform/sdk/dotnet/Generated/ReceiptContract.cs";
 
 const SOURCES: [(&str, &str); 3] = [
-    ("agent-api", "agent/schema/agent-api"),
+    ("agent-api", "services/agent/schema/agent-api"),
     ("human-api", "human/schema/human-api"),
     ("mirror-v2", "platform/sdk/schema"),
 ];
@@ -49,7 +49,7 @@ const GENERATORS: [(&str, &str, &[&str]); 3] = [
     ),
     (
         "agent-sdk-gen",
-        "agent/tools/sdk-gen",
+        "services/agent/tools/sdk-gen",
         &["Cargo.lock", "Cargo.toml", "src", "templates"],
     ),
     (
@@ -90,31 +90,31 @@ const OUTPUTS: [(&str, &str, &str, Option<&[&str]>); 12] = [
     (
         "agent-api-rust",
         "rust",
-        "agent/crates/layerx-agent-api/src",
+        "services/agent/crates/layerx-agent-api/src",
         Some(&["operation_generated.rs", "generated.rs"]),
     ),
     (
         "agent-rust",
         "rust",
-        "agent/crates/layerx-sdk/src",
+        "services/agent/crates/layerx-sdk/src",
         Some(&["mirror_generated.rs", "receipt_generated.rs"]),
     ),
     (
         "agent-typescript",
         "typescript",
-        "agent/sdk/typescript/src/generated",
+        "services/agent/sdk/typescript/src/generated",
         None,
     ),
     (
         "agent-python",
         "python",
-        "agent/sdk/python/layerx_sdk/generated",
+        "services/agent/sdk/python/layerx_sdk/generated",
         None,
     ),
     (
         "agent-compatibility",
         "markdown",
-        "agent/sdk",
+        "services/agent/sdk",
         Some(&["COMPATIBILITY.md"]),
     ),
     (
@@ -483,7 +483,7 @@ fn receipt_contract(repo_root: &Path) -> Result<ReceiptContract, String> {
             ));
         }
     }
-    let program_source = fs::read_to_string(repo_root.join("agent/schema/agent-api/programs.kvx"))
+    let program_source = fs::read_to_string(repo_root.join("services/agent/schema/agent-api/programs.kvx"))
         .map_err(|error| format!("read Programs schema: {error}"))?;
     let programs = layerx_platform_kvx::parse(&program_source)?;
     let names =
@@ -1791,7 +1791,7 @@ fn generate_jvm_conformance(repo_root: &Path) -> Result<String, String> {
 name = \"jvm\"\n\
 artifact = \"com.sidiora.layerx:layerx-sdk\"\n\
 root = \"platform/sdk/jvm\"\n\
-agent_schema = \"agent/schema/agent-api\"\n\
+agent_schema = \"services/agent/schema/agent-api\"\n\
 human_schema = \"human/schema/human-api\"\n\
 protocol_version = 2\n\
 agent_operations = {agent_operations}\n\
@@ -1813,9 +1813,9 @@ receipt_in_batch = \"com.sidiora.layerx.sdk.verify.LocalVerifier.verifyReceiptIn
 merkle = \"com.sidiora.layerx.sdk.verify.LocalVerifier.verifyMerkleInclusion\"\n\
 \n\
 [golden]\n\
-agent_request = \"agent/schema/agent-api/golden/version-request.hex\"\n\
-agent_response = \"agent/schema/agent-api/golden/version-response.hex\"\n\
-agent_schema_goldens = \"agent/schema/agent-api/golden/*.kvx\"\n\
+agent_request = \"services/agent/schema/agent-api/golden/version-request.hex\"\n\
+agent_response = \"services/agent/schema/agent-api/golden/version-response.hex\"\n\
+agent_schema_goldens = \"services/agent/schema/agent-api/golden/*.kvx\"\n\
 human_schema_goldens = \"human/schema/human-api/golden/*.json\"\n\
 codec_valid = \"tests/vectors/codec/valid.lxv\"\n\
 codec_adversarial = \"tests/vectors/codec/adversarial.lxv\"\n"
@@ -2281,8 +2281,8 @@ fn lifecycle_sources(repo_root: &Path, check: bool) -> Result<(), String> {
 }
 
 fn programs_contracts(repo_root: &Path, lock_path: &Path, write: bool) -> Result<(), String> {
-    let source_path = repo_root.join("agent/schema/agent-api/programs.kvx");
-    let golden_path = repo_root.join("agent/schema/agent-api/golden/programs.kvx");
+    let source_path = repo_root.join("services/agent/schema/agent-api/programs.kvx");
+    let golden_path = repo_root.join("services/agent/schema/agent-api/golden/programs.kvx");
     let source = fs::read(&source_path).map_err(|error| error.to_string())?;
     if write {
         write_receipt_contracts(repo_root)?;

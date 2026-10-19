@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = 'paxeer-x.movement-executor-readiness.v1'
 MANIFEST = Path(os.environ.get('PAXEER_X_MOVEMENT_READINESS_MANIFEST',
                                ROOT / 'human/target/paxeer-x/movement-executor-readiness.json'))
-SOURCES = ['human/Cargo.toml', 'human/Cargo.lock', 'human/crates', 'agent/crates',
+SOURCES = ['human/Cargo.toml', 'human/Cargo.lock', 'human/crates', 'services/agent/crates',
            'platform/Cargo.toml', 'platform/Cargo.lock', 'platform/hosted/runtime-clock',
            'tools/runtime/run-with-clock.sh']
 CASES = [

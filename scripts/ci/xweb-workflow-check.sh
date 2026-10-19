@@ -81,11 +81,11 @@ FILTERS = [
     "tests/test_web_program_path.c",
     "programs/crates/layerx-programs-runtime/**",
     "programs/sdk/rust/**",
-    "agent/sdk/typescript/src/web-search.ts",
-    "agent/sdk/typescript/test/**",
-    "agent/sdk/python/layerx_sdk/web_search.py",
+    "services/agent/sdk/typescript/src/web-search.ts",
+    "services/agent/sdk/typescript/test/**",
+    "services/agent/sdk/python/layerx_sdk/web_search.py",
     "tests/agent/sdk/python/**",
-    "agent/crates/**",
+    "services/agent/crates/**",
     "scripts/ci/xweb-forge-libs.sh",
     WORKFLOW_PATH,
 ]
@@ -639,7 +639,7 @@ def check_commands_run_from_the_root(root, spec, declared, document, jobs):
 def check_installers(root, jobs):
     rust = re.search(r'channel\s*=\s*"([^"]+)"', read(os.path.join(root, "rust-toolchain.toml")))
     go_directive = re.search(r"^go (\S+)", read(os.path.join(root, "go.mod")), re.M)
-    engines = json.loads(read(os.path.join(root, "agent/sdk/typescript/package.json"))).get("engines") or {}
+    engines = json.loads(read(os.path.join(root, "services/agent/sdk/typescript/package.json"))).get("engines") or {}
     node_floor = re.match(r">=\s*(\d+)", str(engines.get("node", "")))
     foundry_pins = action_versions(root, "foundry-rs/foundry-toolchain@")
     for job_id, job in jobs.items():
@@ -906,8 +906,8 @@ MUTATIONS = {
         2,
     ),
     "narrowed-crates": (
-        "      - 'agent/crates/**'\n",
-        "      - 'agent/crates/layerx-mcp/**'\n",
+        "      - 'services/agent/crates/**'\n",
+        "      - 'services/agent/crates/layerx-mcp/**'\n",
         2,
     ),
     "dropped-kernel-tree": (
@@ -944,8 +944,8 @@ MUTATIONS = {
         1,
     ),
     "bare-cd": (
-        "        run: (cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py)\n",
-        "        run: cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py\n",
+        "        run: (cd services/agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py)\n",
+        "        run: cd services/agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py\n",
         1,
     ),
     "missing-installer": (
@@ -1006,7 +1006,7 @@ for entry in \
     "shared-group|one group per ref" \
     "extra-filter|docs/**" \
     "missing-directory|modules/xweb-absent/**" \
-    "narrowed-crates|agent/crates/layerx-mcp/**" \
+    "narrowed-crates|services/agent/crates/layerx-mcp/**" \
     "dropped-kernel-tree|path filters are" \
     "undeclared-file|tests/test_web_program_absent.c names no file" \
     "dropped-command|go test" \

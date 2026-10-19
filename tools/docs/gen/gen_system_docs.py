@@ -307,11 +307,11 @@ def rust_exports(lib):
 def gen_sdk():
     out = [HEADER, "# SDK surfaces\n\n",
            "Public API of the TypeScript, Python and Rust SDKs, read from their package entry points.\n"]
-    ts = ROOT / "agent/sdk/typescript/src/index.ts"
+    ts = ROOT / "services/agent/sdk/typescript/src/index.ts"
     out.append(f"\n## TypeScript (`{rel(ts.parent.parent)}`)\n\nEntry point `{rel(ts)}`.\n\n")
     exports = sorted(set(ts_exports(ts, set())), key=lambda e: (e[2], e[1], e[0]))
     out.append(table(["Export", "Kind", "Defined in"], [[f"`{n}`", k, f"`{s}`"] for k, n, s in exports]))
-    py = ROOT / "agent/sdk/python/layerx_sdk/__init__.py"
+    py = ROOT / "services/agent/sdk/python/layerx_sdk/__init__.py"
     out.append(f"\n## Python (`{rel(py.parent.parent)}`)\n\nPackage `layerx_sdk`, entry point `{rel(py)}`.\n\n")
     out += [f"- `{n}`\n" for n in python_exports(py)]
     rs = ROOT / "programs/sdk/rust/src/lib.rs"

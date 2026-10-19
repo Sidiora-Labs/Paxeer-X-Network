@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { lstatSync, readFileSync } from "node:fs";
 import { ProgramTrustContext, parseProgramExecutionDocumentV5, parseProgramExecutionDocument,
-  verifyProgramReceiptV5, verifyProgramReceipt } from "../../../agent/sdk/typescript/dist/src/programs.js";
-import { supportedProgramGuestAbi, verifyNativeProgramReceiptOutcomeV5 } from "../../../agent/sdk/typescript/dist/src/verifier.js";
-import { bindRetainedProgramCall, decodeAndVerifyProgramTerminal } from "../../../agent/sdk/typescript/dist/src/program-wire.js";
+  verifyProgramReceiptV5, verifyProgramReceipt } from "../../../services/agent/sdk/typescript/dist/src/programs.js";
+import { supportedProgramGuestAbi, verifyNativeProgramReceiptOutcomeV5 } from "../../../services/agent/sdk/typescript/dist/src/verifier.js";
+import { bindRetainedProgramCall, decodeAndVerifyProgramTerminal } from "../../../services/agent/sdk/typescript/dist/src/program-wire.js";
 
 const path = process.env.PAXEER_X_PROGRAM_TERMINAL_V5_CORPUS;
 if (!path) {

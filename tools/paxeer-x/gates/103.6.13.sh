@@ -89,7 +89,7 @@ def identity():
             Path(path).suffix
             in {".rs", ".toml", ".lock", ".go", ".mod", ".sum", ".s", ".c", ".h"}
             or path == GATE
-            or path.startswith("agent/crates/layerx-proof/tests/fixtures/")
+            or path.startswith("services/agent/crates/layerx-proof/tests/fixtures/")
             or path.startswith("tests/fixtures/custody/")
         )
         and (ROOT / path).is_file()
@@ -197,7 +197,7 @@ def build(directory):
                 "test",
                 "--locked",
                 "--manifest-path",
-                "agent/Cargo.toml",
+                "services/agent/Cargo.toml",
                 "-p",
                 "layerx-proof",
                 "--test",
@@ -219,7 +219,7 @@ def build(directory):
             and row.get("executable")
             and row["target"]["name"] == "export_complete"
             and row["manifest_path"]
-            == str(ROOT / "agent/crates/layerx-proof/Cargo.toml")
+            == str(ROOT / "services/agent/crates/layerx-proof/Cargo.toml")
         ):
             artifacts.append(row)
     require(

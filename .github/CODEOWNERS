@@ -3,7 +3,7 @@
 src/ @Sidiora-Labs/core
 include/ @Sidiora-Labs/core
 cmd/ @Sidiora-Labs/core
-agent/ @Sidiora-Labs/core
+services/agent/ @Sidiora-Labs/core
 platform/ @Sidiora-Labs/core
 programs/ @Sidiora-Labs/core
 human/ @Sidiora-Labs/core

@@ -359,7 +359,7 @@ class Corpus:
 
     def operator_cases(self):
         from urllib.parse import urlsplit, urlunsplit
-        sys.path.insert(0, str(ROOT / 'agent/sdk/python'))
+        sys.path.insert(0, str(ROOT / 'services/agent/sdk/python'))
         from layerx_sdk.agent_http import AgentEnvelopeTransport, AgentSessionCredential, LayerXKeyCredential
         from layerx_sdk.production import SecretBytes, PlatformSdkError
         url = urlsplit(self.probe['rpc_url'])

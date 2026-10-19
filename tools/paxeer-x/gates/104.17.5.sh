@@ -16,7 +16,7 @@ def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def git(*args):return subprocess.check_output(['git','--no-optional-locks',*args],cwd=ROOT,text=True).strip()
 def sources():
  paths=subprocess.check_output(['git','ls-files','-z'],cwd=ROOT).split(b'\0')
- return {os.fsdecode(path):sha(ROOT/os.fsdecode(path)) for path in paths if path and not any(part.startswith(b'.env') for part in path.split(b'/')) and (path.startswith((b'platform/',b'agent/crates/')) or path==b'tools/paxeer-x/gates/104.17.5.sh')}
+ return {os.fsdecode(path):sha(ROOT/os.fsdecode(path)) for path in paths if path and not any(part.startswith(b'.env') for part in path.split(b'/')) and (path.startswith((b'platform/',b'services/agent/crates/')) or path==b'tools/paxeer-x/gates/104.17.5.sh')}
 def run(argv,label,timeout=600,env=None):
  with (OUT/(label+'.log')).open('w') as log:
   result=subprocess.run(argv,cwd=ROOT,stdout=log,stderr=subprocess.STDOUT,timeout=timeout,env=env)

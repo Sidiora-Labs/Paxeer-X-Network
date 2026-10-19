@@ -18,8 +18,8 @@ ROOT = Path(__file__).resolve().parents[3]
 TASK = "104.35.7"
 SCHEMA = "paxeer-x.market-attestation-artifacts.v1"
 SOURCE_PATHS = (
-    "Makefile", "rust-toolchain.toml", "programs", "agent/Cargo.toml",
-    "agent/Cargo.lock", "agent/unsafe-allowlist.toml", "agent/deny.toml", "agent/crates", "src", "include", "tests/programs",
+    "Makefile", "rust-toolchain.toml", "programs", "services/agent/Cargo.toml",
+    "services/agent/Cargo.lock", "services/agent/unsafe-allowlist.toml", "services/agent/deny.toml", "services/agent/crates", "src", "include", "tests/programs",
     "tests/support", "contracts/config/checkpoint-settlement.json",
     "tools/qualification/paxeer-x/program_market_attestation.py",
     "tools/paxeer-x/build/104.35.7.mk", "tools/paxeer-x/gates/104.35.7.sh",

@@ -13,7 +13,7 @@ build-repro-b
 **/node_modules
 **/target
 **/.next
-agent
+services/agent
 docker
 explorer
 human

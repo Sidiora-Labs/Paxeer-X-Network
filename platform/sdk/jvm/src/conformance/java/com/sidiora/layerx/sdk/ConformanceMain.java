@@ -26,7 +26,7 @@ public final class ConformanceMain {
         for (Map.Entry<String, OperationCatalog.Route> operation : OperationCatalog.HUMAN_ROUTES.entrySet()) {
             verifyTriplet(golden, operation.getKey(), operation.getValue());
         }
-        int agentGoldenValues = verifyAgentGoldens(root.resolve("agent/schema/agent-api/golden"));
+        int agentGoldenValues = verifyAgentGoldens(root.resolve("services/agent/schema/agent-api/golden"));
         verifySchemaParity();
         verifyProtocolIntegers();
         verifyStreamAndSecrets();
