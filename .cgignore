@@ -165,3 +165,9 @@ platform/examples/
 platform/tools/
 human/apps/wallet/public/
 human/tools/
+core/deps/
+sdk/js/
+tools/loadtest/
+tools/paxctl/
+tools/uci/
+tools/wasm-tools/

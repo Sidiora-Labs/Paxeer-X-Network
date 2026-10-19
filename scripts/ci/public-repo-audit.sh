@@ -149,6 +149,7 @@ secret_scan_allowlist="$secret_scan_allowlist"'|^rpc/tests/mock_data/transaction
 secret_scan_allowlist="$secret_scan_allowlist"'|^platform/integrations/ios/Sources/LayerXMobile/EmbeddedSecretDetector\.swift$'
 secret_scan_allowlist="$secret_scan_allowlist"'|^platform/integrations/android/src/main/java/com/sidiora/layerx/android/EmbeddedSecretDetector\.java$'
 secret_scan_allowlist="$secret_scan_allowlist"'|^programs/vendor/'
+secret_scan_allowlist="$secret_scan_allowlist"'|^core/deps/db-backend/remotedb/test\.key$'
 secret_shapes='(-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|xox[baprs]-[A-Za-z0-9-]{20,}|sk_live_[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})'
 if audit_rg "$secret_scan_allowlist" -i "$secret_shapes"; then
     echo "secret-shaped material found in publication set" >&2
