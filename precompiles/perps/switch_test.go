@@ -25,6 +25,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
 	custodytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
 	exchangetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types"
+	perpstypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
 	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxexchange"
@@ -323,14 +324,65 @@ func TestVersionSwitchHeightSelection(t *testing.T) {
 		require.Equal(t, methodSigs(want.ABI), methodSigs(p.ABI), "height %d tracing %v", c.BlockHeight(), c.IsTracing())
 	}
 
+	// call runs input against whatever 0x1015 serves at the height of c.
+	holder := common.HexToAddress("0x00000000000000000000000000000000000a11ce")
+	call := func(c sdk.Context, input []byte) ([]byte, error) {
+		t.Helper()
+		contract, ok := testApp.EvmKeeper.CustomPrecompiles(c)[exchange]
+		require.True(t, ok, "height %d tracing %v", c.BlockHeight(), c.IsTracing())
+		db := state.NewDBImpl(c.WithEventManager(sdk.NewEventManager()), &testApp.EvmKeeper, true)
+		evm := &vm.EVM{StateDB: db, TxContext: vm.TxContext{Origin: holder}}
+		return contract.Run(evm, holder, holder, input, new(big.Int), true, false, nil)
+	}
+	nonceInput, err := legacy.ABI.Pack("intentNonce", holder)
+	require.NoError(t, err)
+	_, err = next.ABI.MethodById(nonceInput[:4])
+	require.Error(t, err, "the perps ABI declares intentNonce")
+	totalInput, err := next.ABI.Pack("totalMarkets")
+	require.NoError(t, err)
+	_, err = legacy.ABI.MethodById(totalInput[:4])
+	require.Error(t, err, "the v6.9 ABI declares totalMarkets")
+	// The v6.9 exchange answers intentNonce from its keeper and refuses the
+	// perpetuals selector.
+	legacyAnswers := func(c sdk.Context) {
+		t.Helper()
+		want, err := legacy.ABI.Methods["intentNonce"].Outputs.Pack(testApp.LayerXExchangeKeeper.GetOwnerNonce(c, holder))
+		require.NoError(t, err)
+		got, err := call(c, nonceInput)
+		require.NoError(t, err, "height %d tracing %v", c.BlockHeight(), c.IsTracing())
+		require.Equal(t, want, got, "height %d tracing %v", c.BlockHeight(), c.IsTracing())
+		_, err = call(c, totalInput)
+		require.ErrorIs(t, err, vm.ErrExecutionReverted, "height %d tracing %v", c.BlockHeight(), c.IsTracing())
+	}
+	// The perpetuals executor answers totalMarkets from its keeper and refuses
+	// the v6.9 selector with empty data.
+	perpsAnswers := func(c sdk.Context) {
+		t.Helper()
+		markets := int64(0)
+		require.NoError(t, testApp.PerpsKeeper.IterateMarkets(c, func(perpstypes.Market) bool {
+			markets++
+			return false
+		}))
+		want, err := next.ABI.Methods["totalMarkets"].Outputs.Pack(big.NewInt(markets))
+		require.NoError(t, err)
+		got, err := call(c, totalInput)
+		require.NoError(t, err, "height %d tracing %v", c.BlockHeight(), c.IsTracing())
+		require.Equal(t, want, got, "height %d tracing %v", c.BlockHeight(), c.IsTracing())
+		refused, err := call(c, nonceInput)
+		require.ErrorIs(t, err, vm.ErrExecutionReverted, "height %d tracing %v", c.BlockHeight(), c.IsTracing())
+		require.Empty(t, refused, "height %d tracing %v", c.BlockHeight(), c.IsTracing())
+	}
+
 	// With the live flag false, a call at H resolves to the v6.9 exchange.
 	below := ctx.WithBlockHeight(doneHeight - 1)
 	served(below, legacy)
+	legacyAnswers(below)
 	require.Equal(t, app.ActivationUpgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(below)[exchange])
 	for _, height := range []int64{doneHeight, doneHeight + 1} {
 		for _, tracing := range []bool{false, true} {
 			inactive := ctx.WithBlockHeight(height).WithIsTracing(tracing)
 			served(inactive, legacy)
+			legacyAnswers(inactive)
 			require.Equal(t, app.ActivationUpgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(inactive)[exchange])
 		}
 	}
@@ -344,7 +396,9 @@ func TestVersionSwitchHeightSelection(t *testing.T) {
 
 	// From H+1 the address serves the perpetuals executor.
 	served(at, next)
+	perpsAnswers(at)
 	served(at.WithIsTracing(true), next)
+	perpsAnswers(at.WithIsTracing(true))
 	require.Equal(t, app.V6120Upgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(at)[exchange])
 	served(ctx.WithBlockHeight(doneHeight+1), next)
 	require.Equal(t, app.V6120Upgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(ctx.WithBlockHeight(doneHeight + 1))[exchange])
@@ -353,6 +407,7 @@ func TestVersionSwitchHeightSelection(t *testing.T) {
 	traced := ctx.WithBlockHeight(doneHeight - 1).WithIsTracing(true)
 	require.Equal(t, app.ActivationUpgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(traced)[exchange])
 	served(traced, legacy)
+	legacyAnswers(traced)
 }
 
 func loadVersionSwitchVectors(t *testing.T) v69Vectors {

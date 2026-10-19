@@ -11422,7 +11422,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.13]
 title = "Select the v6.9 exchange below activation through the baseline version switch"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["3.0.8", "3.2.1", "1.2.1"]
