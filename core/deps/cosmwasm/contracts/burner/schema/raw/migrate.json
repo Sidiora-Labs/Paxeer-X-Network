@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MigrateMsg",
+  "type": "object",
+  "required": [
+    "denoms",
+    "payout"
+  ],
+  "properties": {
+    "delete": {
+      "description": "Optional amount of items to delete in this call. If it is not provided, nothing will be deleted. You can delete further items in a subsequent execute call.",
+      "default": 0,
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0.0
+    },
+    "denoms": {
+      "description": "The denoms of the final payout. Balances of tokens not listed here will remain in the account untouched.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "payout": {
+      "description": "The address we send all remaining balance to. See denoms below for the denoms to consider.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

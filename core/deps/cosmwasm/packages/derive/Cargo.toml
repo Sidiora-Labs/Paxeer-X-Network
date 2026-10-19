@@ -1,0 +1,20 @@
+[package]
+name = "cosmwasm-derive"
+version = { workspace = true }
+authors = ["Simon Warta <webmaster128@users.noreply.github.com>"]
+edition = "2021"
+description = "A package for auto-generated code used for CosmWasm contract development. This is shipped as part of cosmwasm-std. Do not use directly."
+repository = "https://github.com/CosmWasm/cosmwasm/tree/main/packages/derive"
+license = "Apache-2.0"
+readme = "README.md"
+
+[lib]
+proc-macro = true
+
+[features]
+default = []
+
+[dependencies]
+proc-macro2 = "1.0.79"
+quote = "1.0.35"
+syn = { version = "2", features = ["full"] }

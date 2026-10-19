@@ -1,0 +1,31 @@
+[package]
+name = "cyberpunk"
+version = "0.0.0"
+authors = ["Tomasz Kurcz <uint@users.noreply.github.com>"]
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = 3
+debug = false
+rpath = false
+lto = true
+debug-assertions = false
+codegen-units = 1
+panic = 'abort'
+incremental = false
+overflow-checks = true
+
+[dependencies]
+cosmwasm-schema = { path = "../../packages/schema" }
+cosmwasm-std = { path = "../../packages/std", default-features = false, features = ["cosmwasm_1_3", "exports", "std"] }
+rust-argon2 = "2.1"
+thiserror = "1.0.26"
+
+[dev-dependencies]
+cosmwasm-vm = { path = "../../packages/vm", default-features = false }
+tempfile = "3.1.0"

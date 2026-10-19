@@ -1,0 +1,191 @@
+{
+  "contract_name": "ibc-reflect",
+  "contract_version": "0.0.0",
+  "idl_version": "1.0.0",
+  "instantiate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "InstantiateMsg",
+    "description": "Just needs to know the code_id of a reflect contract to spawn sub-accounts",
+    "type": "object",
+    "required": [
+      "reflect_code_id"
+    ],
+    "properties": {
+      "reflect_code_id": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "additionalProperties": false
+  },
+  "execute": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExecuteMsg",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "async_ack"
+        ],
+        "properties": {
+          "async_ack": {
+            "type": "object",
+            "required": [
+              "ack",
+              "channel_id",
+              "packet_sequence"
+            ],
+            "properties": {
+              "ack": {
+                "description": "The acknowledgement to send back",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/IbcAcknowledgement"
+                  }
+                ]
+              },
+              "channel_id": {
+                "description": "Existing channel where the packet was received",
+                "type": "string"
+              },
+              "packet_sequence": {
+                "description": "Sequence number of the packet that was received",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/Uint64"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    ],
+    "definitions": {
+      "Binary": {
+        "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+        "type": "string"
+      },
+      "IbcAcknowledgement": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/definitions/Binary"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Uint64": {
+        "description": "A thin wrapper around u64 that is using strings for JSON encoding/decoding, such that the full u64 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u64` to get the value out:\n\n``` # use cosmwasm_std::Uint64; let a = Uint64::from(42u64); assert_eq!(a.u64(), 42);\n\nlet b = Uint64::from(70u32); assert_eq!(b.u64(), 70); ```",
+        "type": "string"
+      }
+    }
+  },
+  "query": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "QueryMsg",
+    "oneOf": [
+      {
+        "description": "Returns (reflect) account that is attached to this channel, or none.",
+        "type": "object",
+        "required": [
+          "account"
+        ],
+        "properties": {
+          "account": {
+            "type": "object",
+            "required": [
+              "channel_id"
+            ],
+            "properties": {
+              "channel_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Returns all (channel, reflect_account) pairs. No pagination - this is a test contract",
+        "type": "object",
+        "required": [
+          "list_accounts"
+        ],
+        "properties": {
+          "list_accounts": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    ]
+  },
+  "migrate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "MigrateMsg",
+    "description": "An empty struct that serves as a placeholder in different places, such as contracts that don't set a custom message.\n\nIt is designed to be expressible in correct JSON and JSON Schema but contains no meaningful data. Previously we used enums without cases, but those cannot represented as valid JSON Schema (https://github.com/CosmWasm/cosmwasm/issues/451)",
+    "type": "object",
+    "additionalProperties": false
+  },
+  "sudo": null,
+  "responses": {
+    "account": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "AccountResponse",
+      "type": "object",
+      "properties": {
+        "account": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "list_accounts": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ListAccountsResponse",
+      "type": "object",
+      "required": [
+        "accounts"
+      ],
+      "properties": {
+        "accounts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AccountInfo"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "AccountInfo": {
+          "type": "object",
+          "required": [
+            "account",
+            "channel_id"
+          ],
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "channel_id": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,17 @@
+[package]
+name = "go-gen"
+authors = ["Christoph Otter <chris@confio.gmbh>"]
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[package.metadata.release]
+release = false
+
+[dependencies]
+cosmwasm-std = { workspace = true, default-features = true, features = ["cosmwasm_3_0", "staking", "stargate"] }
+cosmwasm-schema = { workspace = true }
+anyhow = "1"
+indenter = "0.3.3"
+schemars = { workspace = true }
+heck = "0.5.0"

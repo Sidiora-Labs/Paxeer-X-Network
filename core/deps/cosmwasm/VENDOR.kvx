@@ -1,0 +1,4 @@
+[vendor]
+url = "https://github.com/Paxeer-Network/pax-cosmwasm"
+ref = "main"
+sha = "a91fa4cd4cffd561df214dd28bd345e7ef5de7bc"
