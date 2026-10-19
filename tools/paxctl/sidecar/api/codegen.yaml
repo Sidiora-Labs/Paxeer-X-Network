@@ -1,0 +1,7 @@
+package: client
+output: ../client/sidecar.gen.go
+generate:
+  models: true
+  client: true
+output-options:
+  skip-prune: true

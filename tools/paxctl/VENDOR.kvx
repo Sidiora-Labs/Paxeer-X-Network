@@ -1,0 +1,4 @@
+[vendor]
+url = "https://github.com/Paxeer-Network/paxctl"
+ref = "main"
+sha = "70e06f96687a810a71803b3bca6c80582313ea34"

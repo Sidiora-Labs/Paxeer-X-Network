@@ -1,0 +1,25 @@
+name: Releaser
+
+on:
+  push:
+    paths: [ 'version.json' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    uses: sei-protocol/uci/.github/workflows/release-publish.yml@v0.0.11
+
+  goreleaser:
+    needs: publish
+    if: needs.publish.outputs.release_created == 'true'
+    uses: sei-protocol/uci/.github/workflows/goreleaser-release.yml@v0.0.11
+    with:
+      go-version-file: go.mod
+      ref: ${{ needs.publish.outputs.version }}

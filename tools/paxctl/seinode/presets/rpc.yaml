@@ -1,0 +1,6 @@
+apiVersion: sei.io/v1alpha1
+kind: SeiNode
+spec:
+  fullNode: {}
+  overrides:
+    network.rpc.pprof_listen_address: "0.0.0.0:6060"

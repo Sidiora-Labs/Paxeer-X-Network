@@ -1,0 +1,145 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: seictl
+    main: .
+    binary: seictl
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy=goreleaser
+    flags:
+      - -trimpath
+
+archives:
+  - id: seictl
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - README.md
+      - LICENSE.md
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - '^style:'
+      - 'typo'
+      - Merge pull request
+      - Merge remote-tracking branch
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug Fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Performance Improvements'
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: 'Refactors'
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: sei-protocol
+    name: seictl
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## ⚙️ seictl {{ .Tag }}
+
+    Welcome to the {{ .Tag }} release of seictl!
+
+    ### Installation
+
+    Download the appropriate binary for your platform from the assets below.
+
+    #### Quick Install (Linux/macOS)
+
+    ```bash
+    # Linux (x86_64)
+    curl -LO https://github.com/sei-protocol/seictl/releases/download/{{ .Tag }}/seictl_Linux_x86_64.tar.gz
+    tar -xzf seictl_Linux_x86_64.tar.gz
+    sudo mv seictl /usr/local/bin/
+    
+    # macOS (Apple Silicon)
+    curl -LO https://github.com/sei-protocol/seictl/releases/download/{{ .Tag }}/seictl_Darwin_arm64.tar.gz
+    tar -xzf seictl_Darwin_arm64.tar.gz
+    sudo mv seictl /usr/local/bin/
+    
+    # macOS (Intel)
+    curl -LO https://github.com/sei-protocol/seictl/releases/download/{{ .Tag }}/seictl_Darwin_x86_64.tar.gz
+    tar -xzf seictl_Darwin_x86_64.tar.gz
+    sudo mv seictl /usr/local/bin/
+    ```
+
+    ### Verify Installation
+
+    ```bash
+    seictl --version
+    ```
+
+  footer: |
+    ## What's Changed
+
+    **Full Changelog**: https://github.com/sei-protocol/seictl/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ---
+
+    ### Checksums
+
+    Verify your download with the checksums in `checksums.txt`.
+
+    ### Support
+
+    - 🐛 [Report Issues](https://github.com/sei-protocol/seictl/issues)
+
+# Announce the release
+announce:
+  skip: '{{gt .Patch 0}}'
+
+source:
+  enabled: true
+  name_template: '{{ .ProjectName }}-{{ .Version }}-source'
+  format: tar.gz
+

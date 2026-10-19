@@ -1,0 +1,18 @@
+[base]
+mode = "full"
+
+[p2p]
+persistent-peers = ""
+laddr = "tcp://0.0.0.0:26656"
+
+[statesync]
+enable = false
+trust-height = 0
+trust-hash = ""
+rpc-servers = ""
+
+[consensus]
+timeout-commit = "5s"
+
+[mempool]
+size = 5000

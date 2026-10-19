@@ -1,0 +1,270 @@
+openapi: 3.1.0
+info:
+  title: sei-sidecar API
+  description: |
+    HTTP API for the sei-sidecar task executor.
+
+    ## Authentication
+
+    Controlled by the `SEI_SIDECAR_AUTHN_MODE` environment variable:
+
+    - **Unset (default):** API is unauthenticated. The sidecar binds
+      all interfaces. Any actor with network reach to the listen port
+      can submit txs as the validator's operator account. Acceptable
+      only on validator-only pod networks.
+    - **`trusted-header`:** A `kube-rbac-proxy` container fronts this
+      API on TLS `:8443` and performs TokenReview + a single coarse
+      `create seinodetasks.sei.io` SAR against the K8s API. The
+      sidecar binds loopback only and requires `X-Remote-User` on
+      every request, except for four paths that bypass auth so
+      probes and scrapes — none of which carry auth headers — keep
+      working:
+
+      - `/v0/healthz` — kubelet readiness probe
+      - `/v0/startupz` — kubelet startup probe
+      - `/v0/livez` — kubelet liveness probe
+      - `/v0/metrics` — Prometheus scrape
+
+      `kube-rbac-proxy` must include all four in its `--allow-paths`.
+  version: 0.8.0
+  license:
+    name: Apache-2.0
+
+servers:
+  - url: http://localhost:7777
+
+paths:
+  /v0/healthz:
+    get:
+      operationId: healthz
+      summary: Readiness probe
+      description: Returns 200 after mark-ready has completed; 503 otherwise.
+      responses:
+        "200":
+          description: Sidecar is ready.
+        "503":
+          description: Sidecar is not yet ready.
+
+  /v0/status:
+    get:
+      operationId: getStatus
+      summary: Status snapshot
+      responses:
+        "200":
+          description: Current status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+
+  /v0/tasks:
+    post:
+      operationId: submitTask
+      summary: Submit a task
+      description: |
+        Submit a task for one-time execution (201). The task type is
+        carried in the body (`type` field); `params` is task-type-
+        specific and validated server-side. The endpoint authorizes a
+        single coarse SAR (`create seinodetasks.sei.io`) regardless of
+        task type — per-task narrowing is additive via `resourceNames`
+        on the ClusterRole.
+      security:
+        - remoteUserHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskRequest"
+      responses:
+        "201":
+          description: Task created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSubmitResponse"
+        "202":
+          description: Task accepted (completed synchronously or deduplicated).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSubmitResponse"
+        "400":
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      operationId: listTasks
+      summary: List recent task results
+      description: Returns the most recent task results.
+      security:
+        - remoteUserHeader: []
+      responses:
+        "200":
+          description: Task results.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskResult"
+
+  /v0/tasks/{id}:
+    get:
+      operationId: getTask
+      summary: Get a task result
+      security:
+        - remoteUserHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Task result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResult"
+        "404":
+          description: Task not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteTask
+      summary: Remove a task
+      description: Removes a task result or cancels an active task.
+      security:
+        - remoteUserHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Task deleted.
+        "404":
+          description: Task not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: >-
+            Transient store failure; the task is left recoverable and the
+            DELETE is safe to retry. A Retry-After header advises the delay.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    remoteUserHeader:
+      type: apiKey
+      in: header
+      name: X-Remote-User
+      description: |
+        Trusted-header model: the sidecar trusts the value of
+        `X-Remote-User` because it binds loopback and a co-located
+        `kube-rbac-proxy` is the sole reachable client. The proxy
+        performs TokenReview + SAR against the K8s API and forwards
+        the authenticated identity in this header. Tooling MUST NOT
+        send this header directly — it is set by the proxy.
+
+        Only applies when `SEI_SIDECAR_AUTHN_MODE=trusted-header`. With
+        the env var unset the API is unauthenticated and this scheme
+        is not enforced.
+
+  schemas:
+    TaskRequest:
+      type: object
+      required: [type]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: |
+            Caller-provided task identifier. When set, the engine uses
+            this as the canonical ID (enabling deterministic IDs from
+            the controller); if a task with this ID exists, the request
+            is idempotent and returns the existing ID. When omitted, a
+            random UUID is generated.
+        type:
+          type: string
+          description: Task type identifier.
+        params:
+          type: object
+          additionalProperties: true
+          description: Task-type-specific parameters; validated server-side.
+
+    StatusResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [Initializing, Ready]
+
+    TaskSubmitResponse:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The assigned task UUID.
+
+    TaskResult:
+      type: object
+      required: [id, type, status, submittedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          description: Task type that was executed.
+        status:
+          type: string
+          enum: [running, completed, failed]
+          description: Current task lifecycle state.
+        params:
+          type: object
+          additionalProperties: true
+        result:
+          type: object
+          additionalProperties: true
+          x-go-type: json.RawMessage
+          description: |
+            Handler's structured result, present on any task that emits one —
+            on both success and failure (e.g. assemble-and-upload-genesis
+            returns {"genesisHash":"<bare-hex>"} on success; a gov submit stamps
+            txHash/inclusionStatus even when the task fails). Delivered over this
+            trusted channel rather than via shared storage.
+        error:
+          type: string
+          description: Error message if the task failed.
+        submittedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

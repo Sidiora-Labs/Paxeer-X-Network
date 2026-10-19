@@ -1,0 +1,8 @@
+apiVersion: sei.io/v1alpha1
+kind: SeiNodeTaskWorkflow
+spec:
+  kind: StateSync
+  target:
+    nodeRef:
+      name: ""
+  stateSync: {}

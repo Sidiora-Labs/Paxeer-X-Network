@@ -1,0 +1,19 @@
+name: Go Linter
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-lint:
+    uses: sei-protocol/uci/.github/workflows/go-lint.yml@v0.0.3

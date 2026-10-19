@@ -1,0 +1,7 @@
+apiVersion: sei.io/v1alpha1
+kind: SeiNetwork
+spec:
+  replicas: 4
+  genesis: {}
+  configOverrides:
+    network.rpc.pprof_listen_address: "0.0.0.0:6060"
