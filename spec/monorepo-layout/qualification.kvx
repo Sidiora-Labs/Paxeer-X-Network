@@ -7,3 +7,10 @@ command = "git check-ignore -q .pytest_cache && git check-ignore -q core"
 exit_code = 1
 log_path = "scratch done-0.1.log"
 observed_and_assumption = "Both checks test paths that only pass by accident of the checkout: a directory-only pattern never matches a missing .pytest_cache, and once core/ holds tracked files the negation !/core/ makes git check-ignore core report not ignored, contradicting req.6 ac_5 which wants the directory tracked and a root core dump ignored. Spec 1.0.1 rewrites the gate to .pytest_cache/CACHEDIR.TAG and core.1, which test the same two rules against the intended state; the ignore rules themselves are unchanged."
+
+[finding.wave1-done-record-tool-hang]
+revision = "e8df8dca9"
+command = "cg spec done -f monorepo-layout 1.1"
+exit_code = 124
+log_path = "scratch layout-wave1-verify.log"
+observed_and_assumption = "The spec tool's done command produced no output for 1500 s on two attempts while its background trace subprocesses spun at full CPU, so the eleven wave 1 statuses were set by hand after each task's declared verify_cmd was run once at this revision and exited 0 (all eleven vendor directories equal their pinned upstream sha); the tool defect is assumed independent of the spec content."
