@@ -393,6 +393,36 @@ func TestPriceFeedLivePathCheckTx(t *testing.T) {
 	require.Equal(t, committed+2, last)
 }
 
+func TestCheckTxWritesAnteStateOnlyOnSuccess(t *testing.T) {
+	c := newPriceFeedLiveChain(t)
+	f1, f2 := c.validators[0], c.validators[1]
+	committed := c.app.LastBlockHeight()
+	sequence := func(addr sdk.AccAddress) uint64 {
+		return c.app.AccountKeeper.GetAccount(c.checkCtx(), addr).GetSequence()
+	}
+
+	first := c.checkTx(c.signedSubmission(f1, 0, 1, committed+1, priceFeedLiveMarkets))
+	require.Equal(t, uint32(0), first.Code, first.Log)
+	require.Equal(t, uint64(1), sequence(f1.feeder))
+
+	// The rate-limited tx passes UpdateSigners before MarkSubmission refuses
+	// it, so its sequence increment must not reach the check state.
+	refused := c.checkTx(c.signedSubmission(f1, 1, 2, committed+1, priceFeedLiveMarkets))
+	require.Equal(t, pricefeedtypes.ErrRateLimited.ABCICode(), refused.Code, refused.Log)
+	require.Equal(t, uint64(1), sequence(f1.feeder))
+
+	other := c.checkTx(c.signedSubmission(f2, 0, 1, committed+1, priceFeedLiveMarkets))
+	require.Equal(t, uint32(0), other.Code, other.Log)
+	require.Equal(t, uint64(1), sequence(f2.feeder))
+	for _, v := range []priceFeedLiveValidator{f1, f2} {
+		last, ok := c.app.PricefeedKeeper.GetLastSubmissionHeight(c.checkCtx(), v.operator)
+		require.True(t, ok)
+		require.Equal(t, committed+1, last)
+	}
+	_, ok := c.app.PricefeedKeeper.GetLastSubmissionHeight(c.checkCtx(), c.validators[2].operator)
+	require.False(t, ok)
+}
+
 func TestPriceFeedLivePathAlone(t *testing.T) {
 	c := newPriceFeedLiveChain(t)
 	f1 := c.validators[0]

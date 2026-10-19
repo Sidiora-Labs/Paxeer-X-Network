@@ -100,7 +100,7 @@ func CheckTx(
 	// trace AnteHandler
 	_, anteSpan = tracingInfo.StartWithContext("AnteHandler", ctx.TraceSpanContext())
 	defer anteSpan.End()
-	anteCtx, _ := contextCacher(ctx)
+	anteCtx, msCache := contextCacher(ctx)
 	anteCtx = anteCtx.WithEventManager(sdk.NewEventManager())
 	var newCtx sdk.Context
 	if isEVM, evmerr := evmante.IsEVMMessage(tx); evmerr != nil {
@@ -120,6 +120,8 @@ func CheckTx(
 	// GasMeter expected to be set in AnteHandler
 	gasWanted = ctx.GasMeter().Limit()
 	gasEstimate = ctx.GasEstimate()
+
+	msCache.Write()
 	anteSpan.End()
 
 	return gInfo, &sdk.Result{Events: []abci.Event{}}, ctx, err

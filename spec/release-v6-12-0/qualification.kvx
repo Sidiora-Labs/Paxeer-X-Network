@@ -1965,11 +1965,11 @@ exit = 1
 log = fleet/logs/node-nine-failures.log
 observed_and_assumption = GovernanceGrant on the FeeAccumulator refuses with "is not a role surface" and createMarket refuses LXP_LAUNCHPAD_TRANSFER_FAILED because only tests call launchpad.InstallRoleSurfaces (task 2.2.2 do_2); no genesis, v6.12.0 handler or MigrateV6120 path installs the generation 2 role surfaces, and a fresh chain serves the v6.10 launchpad at 0x1017. Assumption: the task that binds the launchpad hook of the v6.12.0 handler installs the role surfaces, and both tests stay as written until then.
 [finding.pricefeed-checktx-mark-dropped]
-revision = 67c13bac4
-command = go test ./node/ -run 'TestPriceFeedLivePathCheckTx|TestPriceFeedLivePathMetricsError' -count=1
-exit = 1
-log = fleet/logs/node-nine-failures.log
-observed_and_assumption = CheckTx reaches pricefeed.MarkSubmission through CosmosCheckTxAnte, but legacyabci.CheckTx runs the ante handler on a branch of the check state that it never writes back, so the mark of contracts/pricefeed.md item 7 (and the oracle counter it cites as the model) is dropped and acceptance 5.19.1 and the rate-limited half of 5.19.4 cannot hold. Assumption: writing the CheckTx ante branch changes check-state handling for every Cosmos tx and needs a spec decision, so the tests stay as written.
+revision = f93020889
+command = go test ./node/ -run 'TestPriceFeedLivePath|TestCheckTx|TestAnte' -count=1
+exit = 0
+log = /root/lx-ops/fleet-6120/logs/pricefeed-checktx-mark.log
+observed_and_assumption = Resolved: legacyabci.CheckTx now writes the ante branch back into the check state on ante success, as runTx does in sdk/baseapp/baseapp.go:958, so the 0x06 mark that req 5004 ac_4 and ac_8 place in the check state persists until the next Commit; TestPriceFeedLivePathCheckTx, TestPriceFeedLivePathMetricsError and the new TestCheckTxWritesAnteStateOnlyOnSuccess pass. Assumption: none; the discarded branch was inherited unchanged from the integrated Paxeer tree and no spec entry asks CheckTx to drop ante state.
 [finding.feetoken-giga-coinbase-credit]
 revision = 67c13bac4
 command = go test ./node/ -run 'TestFeeTokenGigaBlockDebitsAndRefundsInFeeDenom' -count=1
