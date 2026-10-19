@@ -1,4 +1,4 @@
-// Code generated from platform/sdk/generators/receipt.kvx. DO NOT EDIT.
+// Code generated from sdk/platform/generators/receipt.kvx. DO NOT EDIT.
 
 export const PROGRAMS_MODULE_ID = 9;
 export const PROGRAM_OUTCOME_TAGS = [0x50524731, 0x50524732, 0x50524733, 0x50524734] as const;

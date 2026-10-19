@@ -27,7 +27,7 @@ from layerx_sdk import (
 )
 
 FIXTURE = json.loads(
-    (Path(__file__).resolve().parents[4] / "platform/sdk/conformance/fixtures/intent-plan-v1.json").read_text()
+    (Path(__file__).resolve().parents[4] / "sdk/platform/conformance/fixtures/intent-plan-v1.json").read_text()
 )
 REFUSED_ASSET = "ee" * 32
 SUBMIT_KEY = "b1946ac92492d2347c6235b4d2611184"

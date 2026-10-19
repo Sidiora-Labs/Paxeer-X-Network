@@ -17,7 +17,7 @@ Two numbers bound the integration surface, and they are not the same kind of cla
 |---|---|---|
 | [TypeScript](quickstart-typescript.html) | `@sidiora/layerx-sdk` | 8 lines |
 | [Python](quickstart-python.html) | `layerx-sdk` | 7 lines |
-| [Go](quickstart-go.html) | `platform/sdk/go` | 9 lines |
+| [Go](quickstart-go.html) | `sdk/platform/go` | 9 lines |
 | [Java and Kotlin](quickstart-jvm.html) | `com.sidiora.layerx:layerx-sdk` | 6 lines |
 | [Swift](quickstart-swift.html) | `LayerXSDK` | 5 lines |
 | [C#](quickstart-csharp.html) | `LayerX.Sdk` | 4 lines |
@@ -25,7 +25,7 @@ Two numbers bound the integration surface, and they are not the same kind of cla
 
 Every SDK is generated from the same two schemas in the same build. The idiom differs; the wire behaviour, the error taxonomy and the receipt verification do not.
 
-Those package names are the beta artifact set declared in the canonical beta contract. This checkout does not provide a published artifact manifest that verifies their availability; build the SDK you need from its source directory under `services/agent/sdk`, `services/agent/crates` or `platform/sdk` until a release publishes the coordinate.
+Those package names are the beta artifact set declared in the canonical beta contract. This checkout does not provide a published artifact manifest that verifies their availability; build the SDK you need from its source directory under `services/agent/sdk`, `services/agent/crates` or `sdk/platform` until a release publishes the coordinate.
 
 ## Or start in your framework
 

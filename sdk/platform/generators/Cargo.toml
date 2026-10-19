@@ -1,0 +1,38 @@
+[package]
+name = "layerx-platform-sdkgen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+layerx-platform-kvx.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true
+
+[workspace]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.91.1"
+version = "0.1.0"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+layerx-platform-kvx = { path = "../../../platform/tools/kvx", version = "=0.1.0" }
+sha2 = "=0.10.9"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+float_arithmetic = "deny"
+lossy_float_literal = "deny"

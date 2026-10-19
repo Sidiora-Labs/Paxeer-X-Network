@@ -24,12 +24,12 @@ if hashlib.sha256(binary.read_bytes()).hexdigest() != expected:
 actual = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
 if actual != revision:
     raise SystemExit('Go Programs candidate revision mismatch')
-subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', 'platform/sdk/go', 'platform/sdk/conformance/fixtures', 'programs/fixtures/pay5', 'scripts/paxeer-x/verify-sdk-program-go.sh'], cwd=root, check=True)
+subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', 'sdk/platform/go', 'sdk/platform/conformance/fixtures', 'programs/fixtures/pay5', 'scripts/paxeer-x/verify-sdk-program-go.sh'], cwd=root, check=True)
 log = Path(os.environ['LAYERX_GO_PROGRAMS_LOG'])
 if not log.is_absolute() or not log.parent.is_dir() or log.parent.stat().st_mode & 0o077:
     raise SystemExit('private focused behavior log required')
 PYTHON
-cd "$repo_root/platform/sdk/go"
+cd "$repo_root/sdk/platform/go"
 "$LAYERX_GO_PROGRAMS_TEST" -test.v -test.count=1 -test.run='^(TestProgram|TestPrograms|TestSignedProgram|TestNativeProgram|TestNativeLifecycle|TestSignedTerminalV4Vectors|TestAppliedEmptyLegsRequireZeroRoot|TestNativeAccountAuthorizationVectors|TestLayerXKey)' | tee "$LAYERX_GO_PROGRAMS_LOG"
 for required in TestProgramSDKDiscoveryCanonicalProof TestProgramSDKNativeABIPolicy TestProgramSDKInterfaceNativeBindingAndBound TestProgramTerminalV5NativeCorpus TestSignedTerminalV4Vectors; do
     if ! grep -q "^--- PASS: $required " "$LAYERX_GO_PROGRAMS_LOG"; then
@@ -44,5 +44,5 @@ from pathlib import Path
 import subprocess
 if hashlib.sha256(Path(os.environ['LAYERX_GO_PROGRAMS_TEST']).read_bytes()).hexdigest() != os.environ['LAYERX_GO_PROGRAMS_TEST_SHA256']:
     raise SystemExit('Go Programs executable changed during focused verification')
-subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', 'platform/sdk/go', 'platform/sdk/conformance/fixtures', 'programs/fixtures/pay5', 'scripts/paxeer-x/verify-sdk-program-go.sh'], cwd=os.environ['LAYERX_GO_PROGRAMS_ROOT'], check=True)
+subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', 'sdk/platform/go', 'sdk/platform/conformance/fixtures', 'programs/fixtures/pay5', 'scripts/paxeer-x/verify-sdk-program-go.sh'], cwd=os.environ['LAYERX_GO_PROGRAMS_ROOT'], check=True)
 PYTHON

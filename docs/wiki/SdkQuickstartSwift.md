@@ -1,6 +1,6 @@
 # Swift SDK quickstart
 
-SwiftPM product: `LayerXSDK` at `platform/sdk/swift`. There is no
+SwiftPM product: `LayerXSDK` at `sdk/platform/swift`. There is no
 public JSON-RPC client in this package.
 
 ---

@@ -19,7 +19,7 @@ import {
 } from "../src/verifier.js";
 
 const read = (path: string): Buffer => readFileSync(new URL(`../../../../../../${path}`, import.meta.url));
-const fixture = <T>(name: string): T => JSON.parse(read(`platform/sdk/conformance/fixtures/${name}.json`).toString("utf8")) as T;
+const fixture = <T>(name: string): T => JSON.parse(read(`sdk/platform/conformance/fixtures/${name}.json`).toString("utf8")) as T;
 const failsAt = (code: ReceiptFailureCode) => (error: unknown): boolean => error instanceof ReceiptVerificationError && error.check === code;
 
 assert.equal(PROGRAM_ABI_V5, 5);

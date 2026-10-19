@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { verifyRpcPayment, verifyPaymentReceipt, rpcBatchEvidence, PaymentRpc } from "../../seller/dist/index.js";
-const f = JSON.parse(readFileSync(new URL("../../../sdk/conformance/fixtures/receipt-positive-v2.json", import.meta.url)));
+const f = JSON.parse(readFileSync(new URL("../../../../sdk/platform/conformance/fixtures/receipt-positive-v2.json", import.meta.url)));
 const b = v => Uint8Array.from(Buffer.from(v, "hex"));
 const a = f.authorized_batch;
 const authorized = { batchId: b(a.batch_id_hex), asset: b(a.asset_hex), previousStateRoot: b(a.previous_state_root_hex), resultingStateRoot: b(a.resulting_state_root_hex), sequencerPublicKey: b(a.sequencer_public_key_hex) };

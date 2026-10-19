@@ -19,10 +19,10 @@ from layerx_sdk.production import PlatformSdkError
 
 ROOT = Path(__file__).resolve().parents[4]
 FIXTURE = json.loads(
-    (ROOT / "platform/sdk/conformance/fixtures/receipt-positive-v2.json").read_text()
+    (ROOT / "sdk/platform/conformance/fixtures/receipt-positive-v2.json").read_text()
 )
 SPEC = importlib.util.spec_from_file_location(
-    "signatures", ROOT / "platform/integrations/fastapi/layerx_fastapi/signatures.py"
+    "signatures", ROOT / "sdk/integrations/fastapi/layerx_fastapi/signatures.py"
 )
 SIGNATURES = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SIGNATURES)

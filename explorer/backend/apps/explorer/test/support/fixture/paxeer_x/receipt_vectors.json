@@ -75,7 +75,7 @@
     }
   ],
   "sequencer": {
-    "source": "platform/sdk/conformance/fixtures/sequencer-receipt-v1.json",
+    "source": "sdk/platform/conformance/fixtures/sequencer-receipt-v1.json",
     "name": "sequencer-receipt-v1",
     "provenance": {
       "generator": "rpc/sequencer_receipt_vectors_test.go",

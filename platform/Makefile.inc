@@ -1,6 +1,7 @@
 PLATFORM_CARGO ?= cargo
 PLATFORM_MANIFEST := platform/Cargo.toml
 PLATFORM_TOOLS_MANIFEST := tools/platform/Cargo.toml
+PLATFORM_SDKGEN_MANIFEST := sdk/platform/generators/Cargo.toml
 PLATFORM_BETA_CLUSTER_ENV ?= build/beta-cluster/env
 
 .PHONY: platform-js-install platform-build platform-build-all platform-lint platform-test platform-sdk-check \
@@ -37,21 +38,21 @@ platform-sample-preflight:
 platform-sample-install: platform-sample-preflight
 	python3 -m venv $(PLATFORM_PYTHON_ENV)
 	$(PLATFORM_PYTHON_ENV)/bin/python -m pip install --no-index --no-deps --no-build-isolation \
-		$(CURDIR)/agent/sdk/python $(CURDIR)/platform/integrations/fastapi
-	cd platform/sdk/go && go mod download
+		$(CURDIR)/agent/sdk/python $(CURDIR)/sdk/integrations/fastapi
+	cd sdk/platform/go && go mod download
 	cd platform/docs/samples/first-payment-go && go mod download
 	cargo fetch --manifest-path platform/docs/samples/verify-receipt-rust/Cargo.toml --locked
 	cargo fetch --manifest-path platform/examples/marketplace/program/Cargo.toml --locked
 	$(MAKE) platform-jvm-dependencies-install
 	@set -eu; \
-		sdk_lock=$$(sha256sum platform/sdk/swift/Package.resolved | awk '{print $$1}'); \
-		ios_lock=$$(sha256sum platform/integrations/ios/Package.resolved | awk '{print $$1}'); \
-		swift package --package-path platform/sdk/swift --force-resolved-versions resolve; \
-		swift package --package-path platform/integrations/ios --force-resolved-versions resolve; \
-		test "$$(sha256sum platform/sdk/swift/Package.resolved | awk '{print $$1}')" = "$$sdk_lock"; \
-		test "$$(sha256sum platform/integrations/ios/Package.resolved | awk '{print $$1}')" = "$$ios_lock"
-	dotnet restore platform/sdk/dotnet/LayerX.Sdk.csproj --nologo
-	dotnet restore platform/sdk/dotnet/tests/LayerX.Sdk.Tests/LayerX.Sdk.Tests.csproj --nologo
+		sdk_lock=$$(sha256sum sdk/platform/swift/Package.resolved | awk '{print $$1}'); \
+		ios_lock=$$(sha256sum sdk/integrations/ios/Package.resolved | awk '{print $$1}'); \
+		swift package --package-path sdk/platform/swift --force-resolved-versions resolve; \
+		swift package --package-path sdk/integrations/ios --force-resolved-versions resolve; \
+		test "$$(sha256sum sdk/platform/swift/Package.resolved | awk '{print $$1}')" = "$$sdk_lock"; \
+		test "$$(sha256sum sdk/integrations/ios/Package.resolved | awk '{print $$1}')" = "$$ios_lock"
+	dotnet restore sdk/platform/dotnet/LayerX.Sdk.csproj --nologo
+	dotnet restore sdk/platform/dotnet/tests/LayerX.Sdk.Tests/LayerX.Sdk.Tests.csproj --nologo
 	dotnet restore platform/docs/samples/first-payment-csharp/FirstPayment.csproj --nologo
 
 platform-sample-dependencies-ready:
@@ -66,14 +67,14 @@ platform-sample-dependencies-ready:
 	@test -s $(PLATFORM_MAVEN_REPOSITORY)/com/sidiora/layerx/layerx-android/0.1.0/layerx-android-0.1.0.jar || { echo "run make platform-dependencies-install to install the local Android integration" >&2; exit 1; }
 
 platform-install-local-artifacts:
-	mvn $(PLATFORM_MAVEN_OFFLINE) -q -Dmaven.repo.local="$(PLATFORM_MAVEN_REPOSITORY)" -f platform/sdk/jvm/pom.xml install
-	mvn $(PLATFORM_MAVEN_OFFLINE) -q -Dmaven.repo.local="$(PLATFORM_MAVEN_REPOSITORY)" -f platform/integrations/spring/pom.xml install
-	mvn $(PLATFORM_MAVEN_OFFLINE) -q -Dmaven.repo.local="$(PLATFORM_MAVEN_REPOSITORY)" -f platform/integrations/android/pom.xml install
+	mvn $(PLATFORM_MAVEN_OFFLINE) -q -Dmaven.repo.local="$(PLATFORM_MAVEN_REPOSITORY)" -f sdk/platform/jvm/pom.xml install
+	mvn $(PLATFORM_MAVEN_OFFLINE) -q -Dmaven.repo.local="$(PLATFORM_MAVEN_REPOSITORY)" -f sdk/integrations/spring/pom.xml install
+	mvn $(PLATFORM_MAVEN_OFFLINE) -q -Dmaven.repo.local="$(PLATFORM_MAVEN_REPOSITORY)" -f sdk/integrations/android/pom.xml install
 
 platform-jvm-dependencies-install:
 	$(MAKE) platform-install-local-artifacts PLATFORM_MAVEN_OFFLINE=
-	@set -eu; for pom in platform/sdk/jvm/pom.xml platform/integrations/spring/pom.xml platform/integrations/android/pom.xml \
-		platform/integrations/spring/example/pom.xml \
+	@set -eu; for pom in sdk/platform/jvm/pom.xml sdk/integrations/spring/pom.xml sdk/integrations/android/pom.xml \
+		sdk/integrations/spring/example/pom.xml \
 		platform/docs/samples/first-payment-jvm/pom.xml platform/docs/samples/paid-endpoint-spring/pom.xml \
 		platform/docs/samples/mobile-payment-android/pom.xml; do \
 		mvn -q -Dmaven.repo.local="$(PLATFORM_MAVEN_REPOSITORY)" -f "$$pom" -Pconformance verify dependency:go-offline; \
@@ -86,9 +87,9 @@ platform-dependencies-install: platform-sample-preflight
 	$(MAKE) platform-install-local-artifacts
 
 platform-gradle-qualification:
-	@grep -q '^distributionSha256Sum=' platform/integrations/android/sample-app/gradle/wrapper/gradle-wrapper.properties || { echo "Android Gradle wrapper distribution is not checksum-pinned" >&2; exit 1; }
-	@test -s platform/integrations/android/sample-app/gradle/wrapper/gradle-wrapper.jar || { echo "Android Gradle wrapper jar is missing" >&2; exit 1; }
-	@test -s platform/integrations/android/sample-app/gradle/verification-metadata.xml || { echo "Android Gradle dependency verification metadata is missing" >&2; exit 1; }
+	@grep -q '^distributionSha256Sum=' sdk/integrations/android/sample-app/gradle/wrapper/gradle-wrapper.properties || { echo "Android Gradle wrapper distribution is not checksum-pinned" >&2; exit 1; }
+	@test -s sdk/integrations/android/sample-app/gradle/wrapper/gradle-wrapper.jar || { echo "Android Gradle wrapper jar is missing" >&2; exit 1; }
+	@test -s sdk/integrations/android/sample-app/gradle/verification-metadata.xml || { echo "Android Gradle dependency verification metadata is missing" >&2; exit 1; }
 
 platform-js-install:
 	npm ci --workspaces --include-workspace-root --ignore-scripts --no-audit --no-fund
@@ -96,31 +97,35 @@ platform-js-install:
 platform-build:
 	$(PLATFORM_CARGO) build --offline --manifest-path $(PLATFORM_MANIFEST) --locked --workspace
 	$(PLATFORM_CARGO) build --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked --workspace
+	$(PLATFORM_CARGO) build --offline --manifest-path $(PLATFORM_SDKGEN_MANIFEST) --locked --workspace
 	$(MAKE) platform-sdk-check
 	$(PLATFORM_CARGO) run --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked -p layerx-platform-release -- --check tools/platform/release/registries.kvx
 
 platform-build-all: platform-build platform-sample-dependencies-ready
 	npm run build
-	cd platform/sdk/go && GOPROXY=off go build ./...
+	cd sdk/platform/go && GOPROXY=off go build ./...
 	cargo build --offline --locked --manifest-path platform/examples/marketplace/program/Cargo.toml --target wasm32-unknown-unknown --release
-	mvn -o -q -f platform/sdk/jvm/pom.xml -DskipTests package
-	mvn -o -q -f platform/integrations/spring/example/pom.xml -DskipTests package
-	dotnet build platform/sdk/dotnet/LayerX.Sdk.csproj --no-restore --configuration Release --nologo
-	swift build --disable-automatic-resolution --package-path platform/sdk/swift
-	$(PLATFORM_PYTHON_ENV)/bin/python -m compileall -q services/agent/sdk/python platform/integrations/fastapi
+	mvn -o -q -f sdk/platform/jvm/pom.xml -DskipTests package
+	mvn -o -q -f sdk/integrations/spring/example/pom.xml -DskipTests package
+	dotnet build sdk/platform/dotnet/LayerX.Sdk.csproj --no-restore --configuration Release --nologo
+	swift build --disable-automatic-resolution --package-path sdk/platform/swift
+	$(PLATFORM_PYTHON_ENV)/bin/python -m compileall -q services/agent/sdk/python sdk/integrations/fastapi
 
 platform-lint:
 	$(PLATFORM_CARGO) clippy --offline --manifest-path $(PLATFORM_MANIFEST) --locked --workspace --all-targets -- -D warnings
 	$(PLATFORM_CARGO) clippy --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked --workspace --all-targets -- -D warnings
+	$(PLATFORM_CARGO) clippy --offline --manifest-path $(PLATFORM_SDKGEN_MANIFEST) --locked --workspace --all-targets -- -D warnings
 	$(PLATFORM_CARGO) run --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-workspace-gate -- platform/workspace.kvx .
 	cargo clippy --offline --locked --manifest-path platform/examples/marketplace/program/Cargo.toml --target wasm32-unknown-unknown --lib -- -D warnings
 	sh platform/tools/dependency-policy.sh
 	cargo deny --manifest-path $(PLATFORM_MANIFEST) check --disable-fetch advisories bans sources
 	cargo deny --manifest-path $(PLATFORM_TOOLS_MANIFEST) check --disable-fetch advisories bans sources
+	cargo deny --manifest-path $(PLATFORM_SDKGEN_MANIFEST) check --disable-fetch advisories bans sources
 
 platform-test: public-tls-test-prerequisites
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked --workspace
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked --workspace --features layerx-platform-cli/test-credential-store
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_SDKGEN_MANIFEST) --locked --workspace
 
 platform-test-tooling: platform-test-cli-production-credential-refusal public-tls-test-prerequisites
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked -p layerx-platform-cli --features test-credential-store
@@ -233,20 +238,20 @@ platform-emulator-conformance:
 		"$$LAYERX_TESTNET_URL" "$${LAYERX_CONFORMANCE_ACTIVITIES}"
 
 platform-sdk-check:
-	python3 platform/sdk/generators/generate_portable.py --check $(CURDIR)
-	python3 platform/sdk/generators/generate_jvm.py --check $(CURDIR)
-	$(PLATFORM_CARGO) run --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-sdkgen -- --check
-	$(PLATFORM_CARGO) run --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-sdkgen -- --check-paxai
+	python3 sdk/platform/generators/generate_portable.py --check $(CURDIR)
+	python3 sdk/platform/generators/generate_jvm.py --check $(CURDIR)
+	$(PLATFORM_CARGO) run --offline --manifest-path $(PLATFORM_SDKGEN_MANIFEST) --locked -p layerx-platform-sdkgen -- --check
+	$(PLATFORM_CARGO) run --offline --manifest-path $(PLATFORM_SDKGEN_MANIFEST) --locked -p layerx-platform-sdkgen -- --check-paxai
 
 platform-sdk-generate:
 	cargo run --manifest-path services/agent/tools/sdk-gen/Cargo.toml --locked -- --write
 	cargo run --manifest-path human/tools/api-gen/Cargo.toml --locked -- human/schema/human-api human/apps/web/src/api/generated
-	python3 platform/sdk/generators/generate_portable.py $(CURDIR)
-	python3 platform/sdk/generators/generate_jvm.py $(CURDIR)
-	$(PLATFORM_CARGO) run --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-sdkgen -- --write
+	python3 sdk/platform/generators/generate_portable.py $(CURDIR)
+	python3 sdk/platform/generators/generate_jvm.py $(CURDIR)
+	$(PLATFORM_CARGO) run --manifest-path $(PLATFORM_SDKGEN_MANIFEST) --locked -p layerx-platform-sdkgen -- --write
 
 $(BUILD_DIR)/tools/generate_receipt_fixture: \
-		platform/sdk/conformance/fixtures/generate_receipt_fixture.c \
+		sdk/platform/conformance/fixtures/generate_receipt_fixture.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< -Wl,--start-group \
@@ -254,7 +259,7 @@ $(BUILD_DIR)/tools/generate_receipt_fixture: \
 		$(EXTRA_LDFLAGS) -lcrypto -pthread -o $@
 
 $(BUILD_DIR)/tools/generate_program_receipt_fixture: \
-		platform/sdk/conformance/fixtures/generate_program_receipt_fixture.c \
+		sdk/platform/conformance/fixtures/generate_program_receipt_fixture.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< -Wl,--start-group \
@@ -264,31 +269,31 @@ $(BUILD_DIR)/tools/generate_program_receipt_fixture: \
 platform-receipt-fixture: $(BUILD_DIR)/tools/generate_receipt_fixture \
 		$(BUILD_DIR)/tools/generate_program_receipt_fixture
 	$(RUN_PREFIX) $(BUILD_DIR)/tools/generate_receipt_fixture \
-		platform/sdk/conformance/fixtures/receipt-positive-v2.json
+		sdk/platform/conformance/fixtures/receipt-positive-v2.json
 	$(RUN_PREFIX) $(BUILD_DIR)/tools/generate_program_receipt_fixture \
-		platform/sdk/conformance/fixtures/receipt-programs-positive-v2.json \
-		platform/sdk/conformance/fixtures/receipt-refusals-v2.json
+		sdk/platform/conformance/fixtures/receipt-programs-positive-v2.json \
+		sdk/platform/conformance/fixtures/receipt-refusals-v2.json
 
 platform-verify-sdks: programs-check-native-lifecycle-fixtures programs-check-capability-fixture programs-check-executed-fixture platform-sdk-check platform-sample-dependencies-ready platform-js-install
 	@python3 -c 'import pytest' || { echo "pytest is required for Python SDK conformance" >&2; exit 1; }
 	npm run build --workspace @sidiora/layerx-sdk
 	$(AGENT_CARGO) test --manifest-path $(AGENT_MANIFEST) --locked -p layerx-sdk --tests
-	./node_modules/.bin/tsc -p platform/sdk/conformance-runner/tsconfig.json
-	cp platform/sdk/conformance-runner/package.json build/platform-sdk-conformance/package.json
-	node --import ./platform/sdk/conformance-runner/register.mjs --test \
-		build/platform-sdk-conformance/platform/sdk/conformance/secret-hygiene.test.js \
-		build/platform-sdk-conformance/platform/sdk/conformance/streaming-resumability.test.js
+	./node_modules/.bin/tsc -p sdk/platform/conformance-runner/tsconfig.json
+	cp sdk/platform/conformance-runner/package.json build/platform-sdk-conformance/package.json
+	node --import ./sdk/platform/conformance-runner/register.mjs --test \
+		build/platform-sdk-conformance/sdk/platform/conformance/secret-hygiene.test.js \
+		build/platform-sdk-conformance/sdk/platform/conformance/streaming-resumability.test.js
 	PYTHONPATH=services/agent/sdk/python python3 -m pytest --import-mode=importlib \
-		platform/sdk/conformance/secret-hygiene.test.py \
-		platform/sdk/conformance/streaming-resumability.test.py
-	sh platform/sdk/conformance/run-go.sh $(CURDIR)
-	sh platform/sdk/conformance/run-jvm.sh $(CURDIR)
+		sdk/platform/conformance/secret-hygiene.test.py \
+		sdk/platform/conformance/streaming-resumability.test.py
+	sh sdk/platform/conformance/run-go.sh $(CURDIR)
+	sh sdk/platform/conformance/run-jvm.sh $(CURDIR)
 	command -v swift >/dev/null
-	swift build --disable-automatic-resolution --package-path platform/sdk/swift
-	swift test --disable-automatic-resolution --package-path platform/sdk/swift
+	swift build --disable-automatic-resolution --package-path sdk/platform/swift
+	swift test --disable-automatic-resolution --package-path sdk/platform/swift
 	command -v dotnet >/dev/null
-	dotnet build platform/sdk/dotnet/LayerX.Sdk.csproj --no-restore --configuration Release --nologo
-	dotnet test platform/sdk/dotnet/tests/LayerX.Sdk.Tests/LayerX.Sdk.Tests.csproj --no-restore --nologo
+	dotnet build sdk/platform/dotnet/LayerX.Sdk.csproj --no-restore --configuration Release --nologo
+	dotnet test sdk/platform/dotnet/tests/LayerX.Sdk.Tests/LayerX.Sdk.Tests.csproj --no-restore --nologo
 
 platform-test-sdks: platform-verify-sdks
 
@@ -318,9 +323,9 @@ platform-test-connected-middleware:
 
 .PHONY: platform-build-jvm-conformance platform-test-jvm-sdk
 platform-build-jvm-conformance:
-	mvn -o -q -f platform/sdk/jvm/pom.xml -Pconformance -DskipTests test-compile
+	mvn -o -q -f sdk/platform/jvm/pom.xml -Pconformance -DskipTests test-compile
 	@test -n "$${PAXEER_X_JVM_BUILD_PROVENANCE:-}"
-	python3 platform/sdk/jvm/qualification.py seal "$${PAXEER_X_JVM_BUILD_PROVENANCE}"
+	python3 sdk/platform/jvm/qualification.py seal "$${PAXEER_X_JVM_BUILD_PROVENANCE}"
 
 platform-test-jvm-sdk:
 	tools/paxeer-x/gates/104.15.4.sh
@@ -351,11 +356,11 @@ platform-test-middleware: platform-sample-dependencies-ready
 	npm run build --workspace @sidiora/layerx-next
 	npm run build --workspace @sidiora/layerx-example-next
 	npm run scan --workspace @sidiora/layerx-example-next
-	PYTHONPATH=services/agent/sdk/python:platform/integrations/fastapi python3 -m compileall -q \
-		platform/integrations/fastapi/layerx_fastapi platform/integrations/fastapi/examples
+	PYTHONPATH=services/agent/sdk/python:sdk/integrations/fastapi python3 -m compileall -q \
+		sdk/integrations/fastapi/layerx_fastapi sdk/integrations/fastapi/examples
 	npm run build --workspace @sidiora/layerx-agent-integrations
-	mvn -o -q -f platform/integrations/android/pom.xml -DskipTests verify
-	swift build --disable-automatic-resolution --package-path platform/integrations/ios
+	mvn -o -q -f sdk/integrations/android/pom.xml -DskipTests verify
+	swift build --disable-automatic-resolution --package-path sdk/integrations/ios
 	$(MAKE) platform-test-ten-line
 
 platform-test-reference-apps:
@@ -370,14 +375,14 @@ platform-qualify-reference-apps:
 platform-test-mobile-artifacts: platform-test-android-artifact platform-test-ios-artifact
 
 platform-prime-android-dependencies: platform-gradle-qualification
-	gradle --no-daemon -p platform/integrations/android/sample-app layerxSecretScanRelease \
+	gradle --no-daemon -p sdk/integrations/android/sample-app layerxSecretScanRelease \
 		-Playerx.serviceUrl=https://platform.example.com \
 		-Playerx.sessionBrokerUrl=https://app-backend.example.com/layerx/session \
 		-Playerx.eventKeyId=relay-2026 \
 		-Playerx.eventPublicKey=d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a
 
 platform-test-android-artifact: platform-sample-dependencies-ready platform-gradle-qualification
-	gradle --offline --no-daemon -p platform/integrations/android/sample-app layerxSecretScanRelease \
+	gradle --offline --no-daemon -p sdk/integrations/android/sample-app layerxSecretScanRelease \
 		-Playerx.serviceUrl=https://platform.example.com \
 		-Playerx.sessionBrokerUrl=https://app-backend.example.com/layerx/session \
 		-Playerx.eventKeyId=relay-2026 \
@@ -386,25 +391,25 @@ platform-test-android-artifact: platform-sample-dependencies-ready platform-grad
 platform-test-ios-artifact: platform-sample-dependencies-ready
 	command -v xcodegen >/dev/null || { echo "xcodegen is required for the iOS artifact" >&2; exit 1; }
 	command -v xcodebuild >/dev/null || { echo "Xcode is required for the iOS artifact" >&2; exit 1; }
-	cd platform/integrations/ios/sample-app && xcodegen generate
-	xcodebuild -project platform/integrations/ios/sample-app/LayerXWallet.xcodeproj \
+	cd sdk/integrations/ios/sample-app && xcodegen generate
+	xcodebuild -project sdk/integrations/ios/sample-app/LayerXWallet.xcodeproj \
 		-scheme LayerXWallet -configuration Release -sdk iphonesimulator \
-		-derivedDataPath platform/integrations/ios/.derived CODE_SIGNING_ALLOWED=NO build
-	swift run --disable-automatic-resolution --package-path platform/integrations/ios layerx-ios-secret-scan \
-		platform/integrations/ios/.derived/Build/Products/Release-iphonesimulator/LayerXWallet.app
+		-derivedDataPath sdk/integrations/ios/.derived CODE_SIGNING_ALLOWED=NO build
+	swift run --disable-automatic-resolution --package-path sdk/integrations/ios layerx-ios-secret-scan \
+		sdk/integrations/ios/.derived/Build/Products/Release-iphonesimulator/LayerXWallet.app
 
 platform-real-agent-integration:
 	@test -n "$${LAYERX_AGENT_FRAMEWORK:-}"
 	@test -s "$${LAYERX_WEBHOOK_DELIVERY_PATH:-}"
-	cd platform/integrations/agents && npm run integration:real
+	cd sdk/integrations/agents && npm run integration:real
 
 platform-real-ios-integration: platform-sample-dependencies-ready
 	@test -s "$${LAYERX_SAMPLE_WEBHOOK_DELIVERY_PATH:-}"
-	swift run --disable-automatic-resolution --package-path platform/integrations/ios layerx-ios-sample
+	swift run --disable-automatic-resolution --package-path sdk/integrations/ios layerx-ios-sample
 
 platform-real-android-integration: platform-sample-dependencies-ready
 	@test -s "$${LAYERX_SAMPLE_WEBHOOK_DELIVERY_PATH:-}"
-	mvn -o -q -f platform/integrations/android/pom.xml -Psample test-compile exec:java
+	mvn -o -q -f sdk/integrations/android/pom.xml -Psample test-compile exec:java
 
 platform-test-docs: platform-test-reference-apps platform-sample-dependencies-ready
 	sh platform/tools/docs-gate $(CURDIR)

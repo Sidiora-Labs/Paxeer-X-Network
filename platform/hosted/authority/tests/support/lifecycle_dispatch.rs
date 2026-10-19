@@ -170,7 +170,7 @@ fn verify_historical_documents(
 
 fn call_fixture() -> (Vec<u8>, AuthorizedBatch) {
     let document: serde_json::Value = must(serde_json::from_str(include_str!(
-        "../../../../sdk/conformance/fixtures/receipt-programs-positive-v3.json"
+        "../../../../../sdk/platform/conformance/fixtures/receipt-programs-positive-v3.json"
     )));
     let bytes = must(hex::decode(
         document["canonical_receipt_hex"]

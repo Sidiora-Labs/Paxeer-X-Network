@@ -63,7 +63,7 @@ class ProgramHttp(unittest.TestCase):
         for relative in ("platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/src/native_call.rs"):
             if manifest["sources"][relative] != sha256((ROOT / relative).read_bytes()).hexdigest():
                 raise ValueError("gateway process source differs from actual candidate")
-        spec = importlib.util.spec_from_file_location("program_http_signatures", ROOT / "platform/integrations/fastapi/layerx_fastapi/signatures.py")
+        spec = importlib.util.spec_from_file_location("program_http_signatures", ROOT / "sdk/integrations/fastapi/layerx_fastapi/signatures.py")
         if spec is None or spec.loader is None:
             raise ValueError("actual signature verifier unavailable")
         module = importlib.util.module_from_spec(spec)

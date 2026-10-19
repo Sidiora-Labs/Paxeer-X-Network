@@ -852,7 +852,7 @@ mod terminal_binding_tests {
 
     fn bytes(field: &str) -> Vec<u8> {
         let document = include_str!(
-            "../../../../../platform/sdk/conformance/fixtures/receipt-programs-executed-v4.json"
+            "../../../../../sdk/platform/conformance/fixtures/receipt-programs-executed-v4.json"
         );
         let marker = format!("\"{field}\": \"");
         let (_, rest) = document

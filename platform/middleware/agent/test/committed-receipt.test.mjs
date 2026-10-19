@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { verifyCommittedAgentPayment } from "../dist/index.js";
-const fixture = JSON.parse(await readFile(new URL("../../../sdk/conformance/fixtures/receipt-positive-v2.json", import.meta.url)));
+const fixture = JSON.parse(await readFile(new URL("../../../../sdk/platform/conformance/fixtures/receipt-positive-v2.json", import.meta.url)));
 const bytes = (hex) => Uint8Array.from(Buffer.from(hex, "hex"));
 const batch = fixture.authorized_batch;
 const evidence = {

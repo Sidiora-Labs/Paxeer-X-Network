@@ -3327,7 +3327,7 @@ int main(int argc, char **argv)
     if (argc == 3 && strcmp(argv[1], "--stored-historical-v3") == 0)
         return stored_historical_receipt(argv[2], 3U);
     if ((argc == 1 || (argc == 2 && strcmp(argv[1], "--post-upgrade-batch") == 0)) &&
-        stored_historical_receipt("platform/sdk/conformance/fixtures/receipt-programs-executed-v3.json", 3U) != 0)
+        stored_historical_receipt("sdk/platform/conformance/fixtures/receipt-programs-executed-v3.json", 3U) != 0)
         return 1;
     if (argc == 2 && strcmp(argv[1], "--dump-asset-account-v4") == 0) {
         per_asset_call = true;

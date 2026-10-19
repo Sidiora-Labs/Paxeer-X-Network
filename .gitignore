@@ -93,10 +93,10 @@ tmp/*
 /.worktrees/
 services/agent/target/
 services/agent/tools/*/target/
-platform/sdk/dotnet/bin/
-platform/sdk/dotnet/obj/
-platform/sdk/dotnet/tests/*/bin/
-platform/sdk/dotnet/tests/*/obj/
+sdk/platform/dotnet/bin/
+sdk/platform/dotnet/obj/
+sdk/platform/dotnet/tests/*/bin/
+sdk/platform/dotnet/tests/*/obj/
 platform/docs/samples/*/first-payment-go
 tools/specgen/specgen
 

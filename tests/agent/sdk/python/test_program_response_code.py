@@ -28,7 +28,7 @@ class ProgramResponseCodeTest(unittest.TestCase):
         cls.authority = AuthorizedReceiptBatch(receipt.batch_id, receipt.asset,
             receipt.previous_state_root, receipt.resulting_state_root, cls.pin)
         spec = importlib.util.spec_from_file_location(
-            "response_code_signatures", root / "platform/integrations/fastapi/layerx_fastapi/signatures.py")
+            "response_code_signatures", root / "sdk/integrations/fastapi/layerx_fastapi/signatures.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         cls.signatures = module.LayerXSignatureVerifier()

@@ -325,7 +325,7 @@ await test("network_finality_from_commit", () => {
 const receiptFixture = JSON.parse(
   readFileSync(
     new URL(
-      "../../../../../../platform/sdk/conformance/fixtures/receipt-positive-v2.json",
+      "../../../../../../sdk/platform/conformance/fixtures/receipt-positive-v2.json",
       import.meta.url,
     ),
     "utf8",

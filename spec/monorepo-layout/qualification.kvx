@@ -84,3 +84,24 @@ command = "git grep -n -E '(CURDIR\\)|/src)/agent/' -- platform/Makefile.inc doc
 exit_code = 0
 log_path = "fleet/logs/layout-4.3.log"
 observed_and_assumption = "platform-sample-install still installs $(CURDIR)/agent/sdk/python and docker/human-service and docker/kernel still copy /src/agent/target/release binaries after the task 4.1 move to services/agent; read only, outside task 4.3, left for the wave 4 check."
+
+[finding.4.4-workspace-gate-sdk-dirs]
+revision = "b1c7ccf18 with the task 4.4 move applied"
+command = "cargo run --offline --manifest-path platform/Cargo.toml --locked -p layerx-platform-workspace-gate -- platform/workspace.kvx ."
+exit_code = "NOT_RUN"
+log_path = "fleet/logs/layout-4.4.log"
+observed_and_assumption = "platform/workspace.kvx still declares dir.sdk-generators and dir.integrations under the workspace root platform, the same conflict as finding.4.3-workspace-gate-mandates-platform-root, so it is left unchanged as written for the task that decides where moved directories are declared."
+
+[finding.4.4-go-module-path-directory]
+revision = "b1c7ccf18 with the task 4.4 move applied"
+command = "git grep -n LayerX-Network/platform/sdk/go"
+exit_code = 0
+log_path = "fleet/logs/layout-4.4.log"
+observed_and_assumption = "The Go SDK keeps its module path github.com/Sidiora-Labs/LayerX-Network/platform/sdk/go and its platform/sdk/go/v tag prefix as req.10 ac_4 requires, while its directory is now sdk/platform/go, so the Go proxy cannot resolve the published module until a task rules on the module path or the tag layout."
+
+[finding.4.4-npm-ls-empty-tree]
+revision = "b1c7ccf18 with the task 4.4 changes applied"
+command = "npm ls --workspaces"
+exit_code = 0
+log_path = "fleet/logs/layout-4.4.log"
+observed_and_assumption = "The qualification checkout has no node_modules and npm ci --offline stops at ENOTCACHED for ai-7.0.77, so npm ls --workspaces exits 0 on an empty tree; every workspace entry of package.json names a directory with its package.json and a package-lock.json key of the same package name, and an installed-tree check is left for the wave 4 gate."

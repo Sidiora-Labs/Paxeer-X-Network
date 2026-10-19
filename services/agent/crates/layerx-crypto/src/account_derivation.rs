@@ -590,7 +590,7 @@ mod tests {
     type Outcome = Result<(), Box<dyn Error>>;
 
     const FIXTURE: &str =
-        include_str!("../../../../../platform/sdk/conformance/fixtures/account-derivation-v1.json");
+        include_str!("../../../../../sdk/platform/conformance/fixtures/account-derivation-v1.json");
 
     fn bytes(text: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         let text = text.strip_prefix("0x").unwrap_or(text);

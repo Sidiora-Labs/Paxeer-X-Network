@@ -1,4 +1,4 @@
-# Code generated from platform/sdk/generators/receipt.kvx. DO NOT EDIT.
+# Code generated from sdk/platform/generators/receipt.kvx. DO NOT EDIT.
 
 from enum import Enum
 

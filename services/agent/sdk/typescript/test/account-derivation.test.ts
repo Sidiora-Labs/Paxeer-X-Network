@@ -37,7 +37,7 @@ import {
 
 const fixture = JSON.parse(
   readFileSync(
-    new URL("../../../../../../platform/sdk/conformance/fixtures/account-derivation-v1.json", import.meta.url),
+    new URL("../../../../../../sdk/platform/conformance/fixtures/account-derivation-v1.json", import.meta.url),
     "utf8",
   ),
 );

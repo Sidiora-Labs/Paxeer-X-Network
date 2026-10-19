@@ -2,7 +2,7 @@ use super::{artifacts, validate_program_lifecycle};
 
 fn fixture(name: &str) -> Vec<u8> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../platform/sdk/conformance/fixtures")
+        .join("../../../sdk/platform/conformance/fixtures")
         .join(format!("native-program-{name}-v3.json"));
     let source = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
@@ -62,7 +62,7 @@ fn lifecycle_code_hash_substitution_refuses_before_submit() {
 #[test]
 fn idempotency_receipts_require_signed_activity_and_sequencer_bindings() {
     let document: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../sdk/conformance/fixtures/receipt-programs-positive-v3.json"
+        "../../../../sdk/platform/conformance/fixtures/receipt-programs-positive-v3.json"
     ))
     .unwrap_or_else(|error| panic!("receipt fixture JSON: {error}"));
     let receipt = document["canonical_receipt_hex"]

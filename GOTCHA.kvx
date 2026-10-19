@@ -8316,3 +8316,8 @@ fix = "after the lexical rewrite, search for variable-prefixed and segment-joine
 area = "layout moves"
 symptom = "moving crates out of a Cargo workspace into their own leaves every caller that selects them by package name against the old manifest (-p layerx-platform-cli, --features layerx-platform-cli/test-credential-store, a manifest variable built from segments) and every default binary path under the old workspace target (platform/target/release/layerx) pointing at the old workspace, and none of them names the moved directory, so neither a path search nor layout-check.sh finds them"
 fix = "after the path rewrite, search for the moved package names and for the old workspace target paths of their binaries, point each at the new manifest and target, and fetch and lint the new workspace wherever the old one is fetched and linted"
+
+[gotcha.1749]
+area = "layout moves"
+symptom = "moving a subdirectory out of a parent tree leaves the sibling files of that parent reaching it by a relative climb that stops inside the parent (../../../sdk/conformance from platform/middleware/agent/test), so the climb names neither the old nor the new root-anchored path and a lexical rewrite misses it, and the parent ignore file (/**/target/ in platform/.gitignore) stops covering the build output of the moved tree"
+fix = "after the lexical rewrite, resolve every ../ chain in the old parent against each base that lands on the parent directory and point it at the new home, and give the moved tree the ignore rules its old parent supplied"

@@ -401,7 +401,7 @@ const ownerBinding: Eip1193Requester = {
 const fixture = JSON.parse(
   await readFile(
     new URL(
-      "../../../../../../platform/sdk/conformance/fixtures/native-program-call-v3.json",
+      "../../../../../../sdk/platform/conformance/fixtures/native-program-call-v3.json",
       import.meta.url,
     ),
     "utf8",

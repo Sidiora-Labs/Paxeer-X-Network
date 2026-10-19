@@ -15,7 +15,7 @@ shows one account.
 | TypeScript | `@sidiora/layerx-sdk`, `src/account-derivation.ts` |
 | Python | `layerx_sdk.account_derivation` (install the `derivation` extra) |
 | CLI | `layerx wallet derive` |
-| Shared vectors | `platform/sdk/conformance/fixtures/account-derivation-v1.json` |
+| Shared vectors | `sdk/platform/conformance/fixtures/account-derivation-v1.json` |
 
 All of them load the same fixture in their tests. The fixture was produced by
 an independent implementation (ethers, `ed25519-hd-key` and the Node HKDF), and

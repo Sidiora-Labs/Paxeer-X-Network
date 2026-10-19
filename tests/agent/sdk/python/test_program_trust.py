@@ -18,7 +18,7 @@ from layerx_sdk.programs import ProgramCall, ProgramOperations, ProgramTrustCont
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _SIGNATURES_PATH = (
-    _REPO_ROOT / "platform" / "integrations" / "fastapi" / "layerx_fastapi" / "signatures.py"
+    _REPO_ROOT / "sdk" / "integrations" / "fastapi" / "layerx_fastapi" / "signatures.py"
 )
 
 

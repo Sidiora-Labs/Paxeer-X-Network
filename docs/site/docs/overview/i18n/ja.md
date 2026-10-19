@@ -122,10 +122,10 @@ make paxeer-ci
 | Rust | `services/agent/crates/layerx-sdk` |
 | Python | `services/agent/sdk/python` |
 | TypeScript | `services/agent/sdk/typescript` |
-| Go | `platform/sdk/go` |
-| JVM | `platform/sdk/jvm` |
-| .NET | `platform/sdk/dotnet` |
-| Swift | `platform/sdk/swift` |
+| Go | `sdk/platform/go` |
+| JVM | `sdk/platform/jvm` |
+| .NET | `sdk/platform/dotnet` |
+| Swift | `sdk/platform/swift` |
 
 `layerx-agentd` は `services/agent/crates/layerx-agentd` です。MCP サーバは `services/agent/crates/layerx-mcp` です。`tools/platform/cli` の開発者 CLI は `layerx install mcp` および `layerx install a2a` でこれらのトランスポートをインストールします。
 

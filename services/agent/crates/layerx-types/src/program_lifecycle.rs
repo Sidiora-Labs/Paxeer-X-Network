@@ -494,7 +494,7 @@ mod tests {
             ("wind-down-exit", 7),
         ] {
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../../platform/sdk/conformance/fixtures")
+                .join("../../../../sdk/platform/conformance/fixtures")
                 .join(format!("native-program-{name}-v3.json"));
             let source = std::fs::read_to_string(&path)
                 .map_err(|error| format!("{}: {error}", path.display()))?;

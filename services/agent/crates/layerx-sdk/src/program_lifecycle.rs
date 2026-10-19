@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn call_receipt_is_not_lifecycle_evidence() -> Result<(), String> {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../../platform/sdk/conformance/fixtures/receipt-programs-positive-v3.json"
+            "../../../../../sdk/platform/conformance/fixtures/receipt-programs-positive-v3.json"
         ))
         .map_err(|error| error.to_string())?;
         let receipt = bytes(&fixture, "canonical_receipt_hex")?;
@@ -216,7 +216,7 @@ mod tests {
             ("wind-down-exit", 7),
         ] {
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../../platform/sdk/conformance/fixtures")
+                .join("../../../../sdk/platform/conformance/fixtures")
                 .join(format!("native-program-{name}-v3.json"));
             let fixture: serde_json::Value =
                 serde_json::from_slice(&std::fs::read(path).map_err(|error| error.to_string())?)

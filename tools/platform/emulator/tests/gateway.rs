@@ -517,7 +517,7 @@ fn lifecycle_operations(
     };
     use sha2::{Digest, Sha256};
     let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../platform/sdk/conformance/fixtures/native-program-deploy-v3.json");
+        .join("../../../sdk/platform/conformance/fixtures/native-program-deploy-v3.json");
     let fixture: serde_json::Value =
         serde_json::from_slice(&std::fs::read(fixture_path).map_err(|error| error.to_string())?)
             .map_err(|error| error.to_string())?;
@@ -1199,7 +1199,7 @@ fn native_and_legacy_profiles_keep_snapshot_and_module_versions_separate() -> Re
         );
     }
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../platform/sdk/conformance/fixtures/native-program-deploy-v3.json");
+        .join("../../../sdk/platform/conformance/fixtures/native-program-deploy-v3.json");
     let fixture: serde_json::Value =
         serde_json::from_slice(&std::fs::read(path).map_err(|error| error.to_string())?)
             .map_err(|error| error.to_string())?;

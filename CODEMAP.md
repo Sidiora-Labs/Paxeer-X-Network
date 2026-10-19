@@ -178,16 +178,16 @@ Build and test:
 - cargo (`platform/hosted/runtime-clock/Cargo.toml`, run in `platform/hosted/runtime-clock/`): `cargo build`, `cargo test`
 - cargo (`platform/hosted/testnet/Cargo.toml`, run in `platform/hosted/testnet/`): `cargo build`, `cargo test`
 - cargo (`platform/hosted/webhooks/Cargo.toml`, run in `platform/hosted/webhooks/`): `cargo build`, `cargo test`
-- npm (`platform/integrations/agents/examples/agent-runtime/package.json`, run in `platform/integrations/agents/examples/agent-runtime/`): `npm start`, `npm run webhook:conformance`
-- npm (`platform/integrations/agents/examples/mcp-server/package.json`, run in `platform/integrations/agents/examples/mcp-server/`): `npm start`
-- npm (`platform/integrations/agents/package.json`, run in `platform/integrations/agents/`): `npm run build`, `npm test`, `npm run integration:real`, `npm run integration:webhooks`, `npm run postinstall`
-- maven (`platform/integrations/android/pom.xml`, run in `platform/integrations/android/`): `mvn package`, `mvn test`
-- gradle (`platform/integrations/android/sample-app/app/build.gradle.kts`, run in `platform/integrations/android/sample-app/app/`): `./gradlew build`, `./gradlew test`
-- gradle (`platform/integrations/android/sample-app/build.gradle.kts`, run in `platform/integrations/android/sample-app/`): `./gradlew build`, `./gradlew test`
-- npm (`platform/integrations/express/package.json`, run in `platform/integrations/express/`): `npm run build`
-- python (`platform/integrations/fastapi/pyproject.toml`, run in `platform/integrations/fastapi/`): `python -m pip install -e .`, `python -m pytest`
-- npm (`platform/integrations/next/package.json`, run in `platform/integrations/next/`): `npm run build`
-- maven (`platform/integrations/spring/pom.xml`, run in `platform/integrations/spring/`): `mvn package`, `mvn test`
+- npm (`sdk/integrations/agents/examples/agent-runtime/package.json`, run in `sdk/integrations/agents/examples/agent-runtime/`): `npm start`, `npm run webhook:conformance`
+- npm (`sdk/integrations/agents/examples/mcp-server/package.json`, run in `sdk/integrations/agents/examples/mcp-server/`): `npm start`
+- npm (`sdk/integrations/agents/package.json`, run in `sdk/integrations/agents/`): `npm run build`, `npm test`, `npm run integration:real`, `npm run integration:webhooks`, `npm run postinstall`
+- maven (`sdk/integrations/android/pom.xml`, run in `sdk/integrations/android/`): `mvn package`, `mvn test`
+- gradle (`sdk/integrations/android/sample-app/app/build.gradle.kts`, run in `sdk/integrations/android/sample-app/app/`): `./gradlew build`, `./gradlew test`
+- gradle (`sdk/integrations/android/sample-app/build.gradle.kts`, run in `sdk/integrations/android/sample-app/`): `./gradlew build`, `./gradlew test`
+- npm (`sdk/integrations/express/package.json`, run in `sdk/integrations/express/`): `npm run build`
+- python (`sdk/integrations/fastapi/pyproject.toml`, run in `sdk/integrations/fastapi/`): `python -m pip install -e .`, `python -m pytest`
+- npm (`sdk/integrations/next/package.json`, run in `sdk/integrations/next/`): `npm run build`
+- maven (`sdk/integrations/spring/pom.xml`, run in `sdk/integrations/spring/`): `mvn package`, `mvn test`
 - npm (`platform/middleware/agent/package.json`, run in `platform/middleware/agent/`): `npm run build`, `npm test`
 - npm (`platform/middleware/buyer/package.json`, run in `platform/middleware/buyer/`): `npm run build`, `npm test`
 - npm (`platform/middleware/conformance/package.json`, run in `platform/middleware/conformance/`): `npm run build`, `npm run conformance`, `npm run conformance:connected`, `npm test`, `npm run test:payments`
@@ -196,10 +196,10 @@ Build and test:
 - cargo (`platform/ramps/reference/Cargo.toml`, run in `platform/ramps/reference/`): `cargo build`, `cargo test`
 - cargo (`platform/ramps/toolkit/Cargo.toml`, run in `platform/ramps/toolkit/`): `cargo build`, `cargo test`
 - cargo (`tools/platform/release/Cargo.toml`, run in `tools/platform/release/`): `cargo build`, `cargo test`
-- npm (`platform/sdk/conformance-runner/package.json`, run in `platform/sdk/conformance-runner/`): `npm install`
-- cargo (`platform/sdk/generators/Cargo.toml`, run in `platform/sdk/generators/`): `cargo build`, `cargo test`
-- go (`platform/sdk/go/go.mod`, run in `platform/sdk/go/`): `go build ./...`, `go test ./...`
-- maven (`platform/sdk/jvm/pom.xml`, run in `platform/sdk/jvm/`): `mvn package`, `mvn test`
+- npm (`sdk/platform/conformance-runner/package.json`, run in `sdk/platform/conformance-runner/`): `npm install`
+- cargo (`sdk/platform/generators/Cargo.toml`, run in `sdk/platform/generators/`): `cargo build`, `cargo test`
+- go (`sdk/platform/go/go.mod`, run in `sdk/platform/go/`): `go build ./...`, `go test ./...`
+- maven (`sdk/platform/jvm/pom.xml`, run in `sdk/platform/jvm/`): `mvn package`, `mvn test`
 - cargo (`programs/Cargo.toml`, run in `programs/`): `cargo build`, `cargo test`
 - cargo (`programs/benches/compiled-equivalent/Cargo.toml`, run in `programs/benches/compiled-equivalent/`): `cargo build`, `cargo test`
 - cargo (`programs/crates/layerx-programs-ai-market/Cargo.toml`, run in `programs/crates/layerx-programs-ai-market/`): `cargo build`, `cargo test`
@@ -523,10 +523,10 @@ _Not shown: 7 directories._
 - `main` — `platform/hosted/testnet/src/main.rs:1402` `fn main()`
 - `main` — `platform/hosted/webhooks/src/bin/verify_delivery.rs:72` `fn main()`
 - `main` — `platform/hosted/webhooks/src/main.rs:759` `fn main()`
-- `main` — `platform/integrations/agents/src/mcp-server.ts:24` `async function main(): Promise<void>`
-- `main` — `platform/integrations/android/src/main/java/com/sidiora/layerx/android/EmbeddedSecretScan.java:12` `public static void main(String[] arguments)`
-- `main` — `platform/integrations/android/src/sample/java/com/sidiora/layerx/android/sample/ConsoleSampleMain.java:27` `public static void main(String[] arguments)`
-- `main` — `platform/integrations/android/src/sample/java/com/sidiora/layerx/android/sample/WebhookConformanceMain.java:24` `public static void main(String[] arguments)`
+- `main` — `sdk/integrations/agents/src/mcp-server.ts:24` `async function main(): Promise<void>`
+- `main` — `sdk/integrations/android/src/main/java/com/sidiora/layerx/android/EmbeddedSecretScan.java:12` `public static void main(String[] arguments)`
+- `main` — `sdk/integrations/android/src/sample/java/com/sidiora/layerx/android/sample/ConsoleSampleMain.java:27` `public static void main(String[] arguments)`
+- `main` — `sdk/integrations/android/src/sample/java/com/sidiora/layerx/android/sample/WebhookConformanceMain.java:24` `public static void main(String[] arguments)`
 - `main` — `platform/middleware/conformance/connected.mjs:81` `async function main()`
 - `main` — `platform/middleware/conformance/pay6/batch_fixture.c:38` `int main(int argc, char **argv)`
 - `main` — `platform/middleware/conformance/pay6/draw_fixture.c:7` `int main(int argc, char **argv)`
@@ -538,16 +538,16 @@ _Not shown: 7 directories._
 - `main` — `platform/ramps/toolkit/src/bin/ramp-verify-receipt.rs:117` `fn main()`
 - `main` — `platform/relay_archive/runtime.py:1325` `def main(argv: list[str] | None = None) -> int`
 - `main` — `tools/platform/release/src/main.rs:2438` `fn main()`
-- `main` — `platform/sdk/generators/generate_jvm.py:344` `def main() -> int`
-- `main` — `platform/sdk/generators/generate_lifecycle.py:50` `def main()`
-- `main` — `platform/sdk/generators/generate_portable.py:307` `def main() -> int`
-- `main` — `platform/sdk/generators/src/main.rs:2581` `fn main()`
-- `main` — `platform/sdk/go/cmd/conformance/main.go:34` `func main()`
-- `main` — `platform/sdk/jvm/examples/FirstPaymentExample.java:15` `public static void main(String[] args) throws Exception`
-- `main` — `platform/sdk/jvm/examples/OfflineVerificationExample.java:15` `public static void main(String[] args)`
-- `main` — `platform/sdk/jvm/examples/ServiceLifecycleExample.kt:12` `fun main()`
-- `main` — `platform/sdk/jvm/qualification.py:63` `def main()`
-- `main` — `platform/sdk/jvm/src/conformance/java/com/sidiora/layerx/sdk/ConformanceMain.java:23` `public static void main(String[] arguments) throws Exception`
+- `main` — `sdk/platform/generators/generate_jvm.py:344` `def main() -> int`
+- `main` — `sdk/platform/generators/generate_lifecycle.py:50` `def main()`
+- `main` — `sdk/platform/generators/generate_portable.py:307` `def main() -> int`
+- `main` — `sdk/platform/generators/src/main.rs:2581` `fn main()`
+- `main` — `sdk/platform/go/cmd/conformance/main.go:34` `func main()`
+- `main` — `sdk/platform/jvm/examples/FirstPaymentExample.java:15` `public static void main(String[] args) throws Exception`
+- `main` — `sdk/platform/jvm/examples/OfflineVerificationExample.java:15` `public static void main(String[] args)`
+- `main` — `sdk/platform/jvm/examples/ServiceLifecycleExample.kt:12` `fun main()`
+- `main` — `sdk/platform/jvm/qualification.py:63` `def main()`
+- `main` — `sdk/platform/jvm/src/conformance/java/com/sidiora/layerx/sdk/ConformanceMain.java:23` `public static void main(String[] arguments) throws Exception`
 - `main` — `programs/benches/interpreter.rs:304` `fn main()`
 - `main` — `programs/crates/layerx-programs-arbiter/examples/market_sandbox_capture.rs:486` `fn main() -> Result<()>`
 - `main` — `programs/crates/layerx-programs-interpreter/build.rs:1` `fn main()`
@@ -722,8 +722,8 @@ _Not shown: 7 directories._
 - `human/wallet/gateway/package.json`: main `dist/index.js`
 - `human/wallet/sdk/package.json`: main `./dist/index.js`
 - `tests/integration/dapp_tests/package.json`: main `index.js`
-- `platform/integrations/agents/package.json`: bin `layerx-mcp-server` → `./dist/mcp-server.js`
-- `platform/integrations/next/package.json`: bin `layerx-scan-bundle` → `bin/layerx-scan-bundle.mjs`
+- `sdk/integrations/agents/package.json`: bin `layerx-mcp-server` → `./dist/mcp-server.js`
+- `sdk/integrations/next/package.json`: bin `layerx-scan-bundle` → `bin/layerx-scan-bundle.mjs`
 - `programs/sdk/assemblyscript/package.json`: bin `layerx-determinism-lint` → `tools/determinism-lint.mjs`
 
 _Not shown: 684 routes._
@@ -928,7 +928,7 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
   - _+3 more_
 - `platform/hosted/` — 134 test files
   - _+134 more_
-- `platform/integrations/` — 2 test files
+- `sdk/integrations/` — 2 test files
   - _+2 more_
 - `platform/middleware/` — 24 test files
   - _+24 more_
@@ -936,7 +936,7 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
   - _+4 more_
 - `tools/platform/release/` — 2 test files
   - _+2 more_
-- `platform/sdk/` — 35 test files
+- `sdk/platform/` — 35 test files
   - _+35 more_
 - `platform/tests/` — 1 test file
   - _+1 more_
@@ -1199,7 +1199,7 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
 - `platform/hosted/indexer/tests/fixtures/` — 1 fixture file
 - `platform/hosted/node/tests/fixtures/` — 1 fixture file
 - `platform/hosted/paxeer/tests/fixtures/` — 8 fixture files: `gov/`
-- `platform/sdk/conformance/fixtures/` — 41 fixture files
+- `sdk/platform/conformance/fixtures/` — 41 fixture files
 - `programs/crates/layerx-programs-registry/tests/fixtures/` — 2 fixture files: `maintained-head/`
 - `programs/fixtures/` — 10 fixture files: `pay5/`
 - `programs/sdk/rust/tests/fixtures/` — 1 fixture file

@@ -808,7 +808,7 @@ fn local_manifest(cluster: &Cluster, fee_limit: u128) -> PathBuf {
     let fixture: serde_json::Value = serde_json::from_slice(
         &fs::read(
             repository_root()
-                .join("platform/sdk/conformance/fixtures/native-program-deploy-v3.json"),
+                .join("sdk/platform/conformance/fixtures/native-program-deploy-v3.json"),
         )
         .required("C fixture"),
     )

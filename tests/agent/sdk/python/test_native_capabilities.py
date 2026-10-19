@@ -36,7 +36,7 @@ def logical(entries):
 
 class NativeCapabilitiesTest(unittest.TestCase):
     def test_runtime_logical_grants_bytes_and_refusals(self):
-        path = Path(__file__).resolve().parents[4] / "platform/sdk/conformance/fixtures/native-program-capabilities-v2.json"
+        path = Path(__file__).resolve().parents[4] / "sdk/platform/conformance/fixtures/native-program-capabilities-v2.json"
         fixture = json.loads(path.read_text())
         parent, narrowed = logical(fixture["capabilities"]), logical(fixture["narrowed_capabilities"])
         self.assertEqual([entry["tag"] for entry in fixture["capabilities"]], [1,2,3,4,5,9,6,10,7,8])

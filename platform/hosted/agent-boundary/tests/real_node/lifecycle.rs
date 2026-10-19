@@ -44,7 +44,7 @@ fn native_c_lifecycle_fixtures_bind_payload_signature_and_idempotency() {
         ("wind-down-exit", 7),
     ] {
         let path = repository_root()
-            .join("platform/sdk/conformance/fixtures")
+            .join("sdk/platform/conformance/fixtures")
             .join(format!("native-program-{name}-v3.json"));
         let fixture: serde_json::Value = must(
             serde_json::from_slice(&must(fs::read(&path), "parent-generated C fixture")),

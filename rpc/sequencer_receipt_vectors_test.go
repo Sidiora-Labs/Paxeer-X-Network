@@ -34,11 +34,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var updateSequencerReceiptVectors = flag.Bool("update", false, "rewrite platform/sdk/conformance/fixtures/sequencer-receipt-v1.json")
+var updateSequencerReceiptVectors = flag.Bool("update", false, "rewrite sdk/platform/conformance/fixtures/sequencer-receipt-v1.json")
 
 const (
 	seqVecName         = "sequencer-receipt-v1"
-	seqVecFixture      = "../platform/sdk/conformance/fixtures/sequencer-receipt-v1.json"
+	seqVecFixture      = "../sdk/platform/conformance/fixtures/sequencer-receipt-v1.json"
 	seqVecGenerator    = "rpc/sequencer_receipt_vectors_test.go"
 	seqVecCommand      = "go test -count=1 ./rpc/ -run TestSequencerReceiptVectors -update"
 	seqVecChainID      = 125

@@ -21,7 +21,7 @@ function logical(grants: readonly LogicalGrant[]): readonly NativeCapability[] {
     }
   });
 }
-const fixture = JSON.parse(readFileSync(new URL("../../../../../../platform/sdk/conformance/fixtures/native-program-capabilities-v2.json", import.meta.url), "utf8")) as {
+const fixture = JSON.parse(readFileSync(new URL("../../../../../../sdk/platform/conformance/fixtures/native-program-capabilities-v2.json", import.meta.url), "utf8")) as {
   capabilities: LogicalGrant[]; canonical_hex: string; narrowed_capabilities: LogicalGrant[]; narrowed_hex: string; equal_narrowing_accepted: boolean;
   escalation_cases: { parent: string; capabilities: LogicalGrant[]; canonical_hex: string; accepted: boolean }[];
 };

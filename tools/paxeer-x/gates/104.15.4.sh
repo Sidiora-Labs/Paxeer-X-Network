@@ -7,4 +7,4 @@ fi
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 : "${PAXEER_X_JVM_BUILD_PROVENANCE:?set private build-input and compiled-artifact record}"
 : "${PAXEER_X_SDKGEN_BIN:?set genuine prebuilt platform SDK generator}"
-sh platform/sdk/conformance/run-jvm.sh "$PWD" --prebuilt
+sh sdk/platform/conformance/run-jvm.sh "$PWD" --prebuilt

@@ -210,7 +210,7 @@ class DurableDeliveryStore:
 def serve(root, address, port, certificate, key):
     root = pathlib.Path(root)
     state = root / 'received'
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[4] / 'platform/integrations/fastapi'))
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[4] / 'sdk/integrations/fastapi'))
     from layerx_fastapi.webhooks import VerifiedWebhookConsumer, WebhookRequestHeaders
     from layerx_fastapi.protocol import MiddlewareError
     keys = {name: base64.b64decode(value, validate=True) for name, value in json.loads((root / 'public-keys.json').read_text()).items()}

@@ -48,7 +48,7 @@ _SIGNATURES_PATH = (
     / "layerx_fastapi"
     / "signatures.py"
 )
-_FIXTURES = _REPO_ROOT / "platform" / "sdk" / "conformance" / "fixtures"
+_FIXTURES = _REPO_ROOT / "sdk" / "platform" / "conformance" / "fixtures"
 
 
 def _signature_verifier_class() -> type:

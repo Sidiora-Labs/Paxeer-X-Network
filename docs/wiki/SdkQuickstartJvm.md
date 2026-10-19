@@ -1,10 +1,10 @@
 # JVM SDK quickstart
 
 Maven coordinates: `com.sidiora.layerx:layerx-sdk` at
-`platform/sdk/jvm`. There is no public JSON-RPC client in this
+`sdk/platform/jvm`. There is no public JSON-RPC client in this
 package.
 
-The in-repo `platform/sdk/jvm/examples/FirstPaymentExample.java`
+The in-repo `sdk/platform/jvm/examples/FirstPaymentExample.java`
 calls `client.agent("prepare", …)` against placeholder URIs. This
 page uses the human-plane sample that actually ships a complete
 quote/commit path:

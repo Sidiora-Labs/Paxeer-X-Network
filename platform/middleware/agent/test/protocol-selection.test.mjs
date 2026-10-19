@@ -8,7 +8,7 @@ import { AgentMiddleware, verifyCommittedAgentPayment } from "../dist/index.js";
 const bytes = (hex) => Uint8Array.from(Buffer.from(hex, "hex"));
 
 async function loadFixture(name) {
-  const fixture = JSON.parse(await readFile(new URL(`../../../sdk/conformance/fixtures/${name}`, import.meta.url), "utf8"));
+  const fixture = JSON.parse(await readFile(new URL(`../../../../sdk/platform/conformance/fixtures/${name}`, import.meta.url), "utf8"));
   const batch = fixture.authorized_batch;
   const request = {
     amount: fixture.expected.amount,

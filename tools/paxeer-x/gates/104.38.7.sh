@@ -15,12 +15,12 @@ import sys
 import tempfile
 
 TESTS = 0
-SDKGEN = ['cargo', 'run', '--offline', '--locked', '--quiet', '--manifest-path', 'platform/Cargo.toml',
+SDKGEN = ['cargo', 'run', '--offline', '--locked', '--quiet', '--manifest-path', 'sdk/platform/generators/Cargo.toml',
           '-p', 'layerx-platform-sdkgen', '--']
-JVM = 'platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/'
+JVM = 'sdk/platform/jvm/src/main/java/com/sidiora/layerx/sdk/'
 LOCKED_JVM = [JVM + 'verify/LocalVerifier.java',
-              'platform/sdk/jvm/src/conformance/java/com/sidiora/layerx/sdk/ConformanceMain.java',
-              'platform/sdk/conformance/run-jvm.sh']
+              'sdk/platform/jvm/src/conformance/java/com/sidiora/layerx/sdk/ConformanceMain.java',
+              'sdk/platform/conformance/run-jvm.sh']
 
 
 def require(value, reason):
@@ -58,10 +58,10 @@ def credit(label, count):
 
 
 def archived_tree(destination):
-    lock = open('platform/sdk/pipeline.kvx', encoding='utf-8').read()
+    lock = open('sdk/platform/pipeline.kvx', encoding='utf-8').read()
     roots = sorted(set(re.findall(r'^root = "([^"]+)"$', lock, re.M)))
     require(len(roots) >= 12, 'pipeline lock declares too few roots')
-    paths = roots + ['platform/sdk/pipeline.kvx', 'programs/sdk/rust/src/abi_policy.rs',
+    paths = roots + ['sdk/platform/pipeline.kvx', 'programs/sdk/rust/src/abi_policy.rs',
                      'programs/crates/layerx-programs-runtime/src/terminal.rs']
     archive = subprocess.run(['git', 'archive', '--format=tar', 'HEAD', '--', *paths],
                              stdin=subprocess.DEVNULL, capture_output=True, timeout=300, check=True)
@@ -76,7 +76,7 @@ try:
     credit('candidate lock', 1)
 
     out = run('generation lock drift model',
-              ['cargo', 'test', '--offline', '--locked', '--manifest-path', 'platform/Cargo.toml',
+              ['cargo', 'test', '--offline', '--locked', '--manifest-path', 'sdk/platform/generators/Cargo.toml',
                '-p', 'layerx-platform-sdkgen', '--test', 'drift'])
     summary = re.findall(r'test result: ok\. (\d+) passed; 0 failed; 0 ignored', out)
     require(len(summary) == 1, 'generator drift summary missing')
@@ -94,7 +94,7 @@ try:
         refuse('undeclared file in an explicit output root', check,
                'untracked file in generated jvm root: ' + unlisted)
 
-        lock = os.path.join(copy, 'platform/sdk/pipeline.kvx')
+        lock = os.path.join(copy, 'sdk/platform/pipeline.kvx')
         with open(lock, encoding='utf-8') as stream:
             text = stream.read()
         require('\n[handwritten.platform-jvm]\n' in text, 'JVM handwritten declarations missing')

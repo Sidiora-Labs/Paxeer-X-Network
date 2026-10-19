@@ -3299,6 +3299,7 @@ workspace-install:
 	cargo fetch --manifest-path human/Cargo.toml --locked
 	cargo fetch --manifest-path platform/Cargo.toml --locked
 	cargo fetch --manifest-path tools/platform/Cargo.toml --locked
+	cargo fetch --manifest-path sdk/platform/generators/Cargo.toml --locked
 	cd programs && cargo fetch --locked
 	cargo fetch --manifest-path services/interop/Cargo.toml --locked
 	$(MAKE) platform-js-install programs-js-install
@@ -3466,12 +3467,12 @@ programs-abi-drift:
 programs-generate-capability-fixture:
 	@temporary=$$(mktemp); trap 'rm -f "$$temporary"' EXIT; \
 		(cd programs && $(PROGRAMS_CARGO) run --locked -p layerx-programs-runtime --example capability_fixture) > "$$temporary" && \
-		cp "$$temporary" platform/sdk/conformance/fixtures/native-program-capabilities-v2.json
+		cp "$$temporary" sdk/platform/conformance/fixtures/native-program-capabilities-v2.json
 
 programs-check-capability-fixture:
 	@temporary=$$(mktemp); trap 'rm -f "$$temporary"' EXIT; \
 		(cd programs && $(PROGRAMS_CARGO) run --locked -p layerx-programs-runtime --example capability_fixture) > "$$temporary" && \
-		cmp "$$temporary" platform/sdk/conformance/fixtures/native-program-capabilities-v2.json
+		cmp "$$temporary" sdk/platform/conformance/fixtures/native-program-capabilities-v2.json
 
 $(BUILD_DIR)/tests/programs_registration: tests/programs/test_registration.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -3549,26 +3550,26 @@ test-web-program-path: $(BUILD_DIR)/tests/test_web_program_path programs-referen
 
 .PHONY: programs-native-lifecycle-fixtures programs-check-native-lifecycle-fixtures
 programs-native-lifecycle-fixtures: $(BUILD_DIR)/tests/programs_call_activity
-	python3 platform/sdk/conformance/fixtures/generate_native_lifecycle_fixtures.py --encoder $<
+	python3 sdk/platform/conformance/fixtures/generate_native_lifecycle_fixtures.py --encoder $<
 
 programs-check-native-lifecycle-fixtures: $(BUILD_DIR)/tests/programs_call_activity
-	python3 platform/sdk/conformance/fixtures/generate_native_lifecycle_fixtures.py --encoder $< --check
+	python3 sdk/platform/conformance/fixtures/generate_native_lifecycle_fixtures.py --encoder $< --check
 
 .PHONY: programs-executed-v4-fixture programs-check-executed-v4-fixture
 programs-executed-v4-fixture: programs-build
 	$(MAKE) $(BUILD_DIR)/tests/programs_call_activity
-	python3 platform/sdk/conformance/fixtures/generate_executed_program_v4_fixture.py --encoder $(BUILD_DIR)/tests/programs_call_activity
+	python3 sdk/platform/conformance/fixtures/generate_executed_program_v4_fixture.py --encoder $(BUILD_DIR)/tests/programs_call_activity
 
 programs-check-executed-v4-fixture: programs-build
 	$(MAKE) $(BUILD_DIR)/tests/programs_call_activity
-	python3 platform/sdk/conformance/fixtures/generate_executed_program_v4_fixture.py --encoder $(BUILD_DIR)/tests/programs_call_activity --check
+	python3 sdk/platform/conformance/fixtures/generate_executed_program_v4_fixture.py --encoder $(BUILD_DIR)/tests/programs_call_activity --check
 
 .PHONY: programs-executed-fixture programs-check-executed-fixture
 programs-executed-fixture: $(BUILD_DIR)/tests/programs_call_activity
-	python3 platform/sdk/conformance/fixtures/generate_executed_program_fixture.py --encoder $<
+	python3 sdk/platform/conformance/fixtures/generate_executed_program_fixture.py --encoder $<
 
 programs-check-executed-fixture: $(BUILD_DIR)/tests/programs_call_activity
-	python3 platform/sdk/conformance/fixtures/generate_executed_program_fixture.py --encoder $< --check
+	python3 sdk/platform/conformance/fixtures/generate_executed_program_fixture.py --encoder $< --check
 
 $(BUILD_DIR)/tests/programs_occupancy_batch: tests/programs/test_occupancy_batch.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build

@@ -1,4 +1,4 @@
-//! Code generated from platform/sdk/generators/receipt.kvx. DO NOT EDIT.
+//! Code generated from sdk/platform/generators/receipt.kvx. DO NOT EDIT.
 
 pub const PROGRAMS_MODULE_ID: u16 = 9;
 pub const PROGRAM_OUTCOME_TAGS: [u32; 4] = [0x5052_4731, 0x5052_4732, 0x5052_4733, 0x5052_4734];

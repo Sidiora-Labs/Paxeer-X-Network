@@ -61,7 +61,7 @@ def identity():
 
 def inputs():
     paths = git("ls-files", "-z", "Makefile", "src", "include", "programs",
-                "tests/programs", "tests/vectors", "platform/sdk/conformance/fixtures",
+                "tests/programs", "tests/vectors", "sdk/platform/conformance/fixtures",
                 "contracts", "tools/specgen",
                 "tools/paxeer-x/gates/104.19.4.sh").split("\0")
     result = {}

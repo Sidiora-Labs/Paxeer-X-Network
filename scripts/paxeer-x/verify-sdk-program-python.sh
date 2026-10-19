@@ -17,7 +17,7 @@ if not os.environ.get('LAYERX_PYTHON_PROGRAM_HTTP_FIXTURE') or not os.environ.ge
                       'reason': 'protected real gateway/native cluster HTTP fixture and genuine signed native v5 corpus required'}))
     sys.exit(78)
 suite = unittest.TestSuite()
-paths = ['platform/sdk/conformance/terminal-v4.test.py',
+paths = ['sdk/platform/conformance/terminal-v4.test.py',
          'tests/agent/sdk/python/test_native_program_call.py',
          'tests/agent/sdk/python/test_native_program_binding.py',
          'tests/agent/sdk/python/test_program_lifecycle.py',

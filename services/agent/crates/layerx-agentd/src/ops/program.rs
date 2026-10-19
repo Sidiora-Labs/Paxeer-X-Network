@@ -767,7 +767,7 @@ mod node_simulation_transport_contract {
     #[test]
     fn node_simulation_preserves_the_signed_evidence_contract() -> Result<(), String> {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../../../platform/sdk/conformance/fixtures/receipt-programs-executed-v4.json"
+            "../../../../../../sdk/platform/conformance/fixtures/receipt-programs-executed-v4.json"
         ))
         .map_err(|error| error.to_string())?;
         let public: [u8; 32] =
@@ -1443,7 +1443,7 @@ mod native_call_tests {
             ("wind-down-exit", 7),
         ] {
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../../platform/sdk/conformance/fixtures")
+                .join("../../../../sdk/platform/conformance/fixtures")
                 .join(format!("native-program-{name}-v3.json"));
             let fixture: serde_json::Value =
                 serde_json::from_slice(&std::fs::read(path).map_err(|error| error.to_string())?)
@@ -1496,7 +1496,7 @@ mod native_call_tests {
     #[test]
     fn native_binding_preserves_fee_and_payload() -> Result<(), Box<dyn std::error::Error>> {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../../../platform/sdk/conformance/fixtures/native-program-call-v3.json"
+            "../../../../../../sdk/platform/conformance/fixtures/native-program-call-v3.json"
         ))?;
         let signed = decode_hex_json(&fixture, "signed_activity_hex")
             .map_err(|_| "signed fixture missing")?;

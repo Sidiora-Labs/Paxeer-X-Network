@@ -301,7 +301,7 @@ await rejectsTerminal(authorityWrapper(authorityTerminal, transferAuthorization,
 await rejectsTerminal(occupancyWrapper(occupancyTerminal, occupancyEvidence), graph, programId, occupancyReceipt, 2,
   "duplicate occupancy attachment was accepted");
 
-const payerFixture = JSON.parse(readFileSync(new URL("../../../../../../platform/sdk/conformance/fixtures/occupancy-payment-accounts-v3.json", import.meta.url), "utf8")) as {
+const payerFixture = JSON.parse(readFileSync(new URL("../../../../../../sdk/platform/conformance/fixtures/occupancy-payment-accounts-v3.json", import.meta.url), "utf8")) as {
   asset_hex: string;
   stranger: { did: string; main_account_hex: string };
   vectors: readonly {

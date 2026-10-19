@@ -20,14 +20,14 @@ self-service principal flow.
 | [Rust](SdkQuickstartRust.md) | `layerx-sdk` (`services/agent/crates/layerx-sdk`) | `RpcClient::register` | `RpcClient::request_funds` (see auth note) | `RpcClient::send_activity` | `production::verify_receipt` |
 | [TypeScript](SdkQuickstartTypeScript.md) | `@sidiora/layerx-sdk` | not on `JsonRpcClient` | not on `JsonRpcClient` | `JsonRpcClient.sendActivity` or `ProductionClient.human` | `verifyReceipt` |
 | [Python](SdkQuickstartPython.md) | `layerx-sdk` | `PaymentRpc.call("lx_register", …)` | `PaymentRpc.call("lx_requestFunds", …)` | `PaymentRpc.send` or `ProductionClient.human` | `verify_receipt` |
-| [Go](SdkQuickstartGo.md) | `platform/sdk/go` | catalog only | catalog only | `Client.Human` `move.quote` / `move.commit` | `VerifyReceipt` |
+| [Go](SdkQuickstartGo.md) | `sdk/platform/go` | catalog only | catalog only | `Client.Human` `move.quote` / `move.commit` | `VerifyReceipt` |
 | [JVM](SdkQuickstartJvm.md) | `com.sidiora.layerx:layerx-sdk` | catalog only | catalog only | `ProductionClient.human` | `LocalVerifier.verifyReceipt` |
 | [Swift](SdkQuickstartSwift.md) | `LayerXSDK` | catalog only | catalog only | `humanMoveQuote` / `humanMoveCommit` | `LocalVerifier.verifyReceipt` |
 | [.NET](SdkQuickstartDotNet.md) | `LayerX.Sdk` | catalog only | catalog only | `HumanMoveQuoteAsync` / `HumanMoveCommitAsync` | `LocalVerifier.VerifyReceiptAsync` |
 
-There is no Rust tree under `platform/sdk`. There is no TypeScript or
-Python tree under `platform/sdk`. Go, JVM, Swift, and .NET ship only
-under `platform/sdk`.
+There is no Rust tree under `sdk/platform`. There is no TypeScript or
+Python tree under `sdk/platform`. Go, JVM, Swift, and .NET ship only
+under `sdk/platform`.
 
 `AgentHttpTransport` in TypeScript, Python, and Swift is
 **programs-only**. Calling `agent.register`, `faucet.claim`,

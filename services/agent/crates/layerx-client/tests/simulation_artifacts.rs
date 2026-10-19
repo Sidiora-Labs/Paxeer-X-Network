@@ -7,7 +7,7 @@ use layerx_wire::hash::receipt_digest;
 use layerx_wire::receipt::{decode, encode_unsigned};
 
 const DOCUMENT: &str =
-    include_str!("../../../../../platform/sdk/conformance/fixtures/receipt-programs-executed-v4.json");
+    include_str!("../../../../../sdk/platform/conformance/fixtures/receipt-programs-executed-v4.json");
 
 fn bytes(field: &str) -> Vec<u8> {
     let marker = format!("\"{field}\": \"");

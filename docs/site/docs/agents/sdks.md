@@ -19,12 +19,12 @@ The platform specification extends that family with Go, JVM, Swift, and C#.
 | Rust | `services/agent/crates/layerx-sdk` |
 | Python | `services/agent/sdk/python` |
 | TypeScript | `services/agent/sdk/typescript` |
-| Go | `platform/sdk/go` |
-| JVM | `platform/sdk/jvm` |
-| .NET | `platform/sdk/dotnet` |
-| Swift | `platform/sdk/swift` |
+| Go | `sdk/platform/go` |
+| JVM | `sdk/platform/jvm` |
+| .NET | `sdk/platform/dotnet` |
+| Swift | `sdk/platform/swift` |
 
-The root README lists that table. Client SDKs under `platform/sdk/` also
+The root README lists that table. Client SDKs under `sdk/platform/` also
 appear in [Programs](../programs/index.md) for CALL receipt terminals.
 
 ## What an SDK may do

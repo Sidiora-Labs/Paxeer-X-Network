@@ -1,4 +1,4 @@
-//! Generated from platform/sdk/schema/mirror-v2.kvx.
+//! Generated from sdk/platform/schema/mirror-v2.kvx.
 
 pub const MIRROR_SCHEMA_VERSION: u16 = 2;
 pub const MIRROR_ARCHIVE_MAGIC: [u8; 8] = *b"LXMIRROR";

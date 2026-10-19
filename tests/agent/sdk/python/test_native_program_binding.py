@@ -13,7 +13,7 @@ from layerx_sdk.programs import NativeProgramRequest, _wire
 
 class NativeProgramBindingTest(unittest.TestCase):
     def test_real_signed_native_binding_and_mismatches(self):
-        fixture = json.loads((Path(__file__).resolve().parents[4] / "platform/sdk/conformance/fixtures/native-program-call-v3.json").read_text())
+        fixture = json.loads((Path(__file__).resolve().parents[4] / "sdk/platform/conformance/fixtures/native-program-call-v3.json").read_text())
         native = decode_native_program_call(bytes.fromhex(fixture["payload_hex"]))
         request = NativeProgramRequest(native, 1000, bytes.fromhex(fixture["signed_activity_hex"]))
         self.assertEqual(decode_signed_program_call(request).activity_id, fixture["activity_id_hex"])

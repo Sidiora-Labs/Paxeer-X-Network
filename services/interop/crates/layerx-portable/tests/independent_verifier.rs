@@ -199,7 +199,7 @@ fn independent_verifier_accepts_real_native_send_and_refuses_substitutions() -> 
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use base64::Engine as _;
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../../platform/sdk/conformance/fixtures/receipt-positive-v2.json"
+        "../../../../../sdk/platform/conformance/fixtures/receipt-positive-v2.json"
     ))
     .map_err(|error| format!("native fixture: {error}"))?;
     let decode = |value: &str| -> Result<Vec<u8>, String> {
@@ -292,7 +292,7 @@ fn verify_python_export(bytes: &[u8], fixture: &serde_json::Value) -> Result<(),
             .arg(directory.join("tests/python_portable_verifier.py"))
             .arg(
                 directory
-                    .join("../../../../platform/sdk/conformance/fixtures/receipt-positive-v2.json"),
+                    .join("../../../../sdk/platform/conformance/fixtures/receipt-positive-v2.json"),
             )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

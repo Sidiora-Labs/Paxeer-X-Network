@@ -61,7 +61,7 @@ jobs:
           distribution: temurin
           java-version: "21"
       - name: Fetch locked platform workspace crates
-        run: cargo fetch --locked --manifest-path platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml
+        run: cargo fetch --locked --manifest-path platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml && cargo fetch --locked --manifest-path sdk/platform/generators/Cargo.toml
       - name: Install platform sample and policy dependencies
         run: make platform-dependencies-install
       - name: Install private Secret Service dependencies for CLI tests
@@ -76,8 +76,8 @@ jobs:
         run: make platform-verify-sdks
       - name: Compile the Android sample against the installed JVM SDK
         run: >-
-          mvn -B -f platform/sdk/jvm/pom.xml -DskipTests install &&
-          mvn -B -f platform/integrations/android/pom.xml -Psample test-compile
+          mvn -B -f sdk/platform/jvm/pom.xml -DskipTests install &&
+          mvn -B -f sdk/integrations/android/pom.xml -Psample test-compile
       - name: Exercise the developer CLI end to end against the emulator
         run: make platform-test-tooling
       - name: Build the source-bound published quickstart benchmark
@@ -159,14 +159,14 @@ jobs:
         run: brew install xcodegen
       - name: Build the iOS application and scan the app bundle for embedded secrets
         run: |
-          cd platform/integrations/ios/sample-app
+          cd sdk/integrations/ios/sample-app
           xcodegen generate
           cd "$GITHUB_WORKSPACE"
-          xcodebuild -project platform/integrations/ios/sample-app/LayerXWallet.xcodeproj \
+          xcodebuild -project sdk/integrations/ios/sample-app/LayerXWallet.xcodeproj \
             -scheme LayerXWallet -configuration Release -sdk iphonesimulator \
-            -derivedDataPath platform/integrations/ios/.derived CODE_SIGNING_ALLOWED=NO build
-          swift run --package-path platform/integrations/ios layerx-ios-secret-scan \
-            platform/integrations/ios/.derived/Build/Products/Release-iphonesimulator/LayerXWallet.app
+            -derivedDataPath sdk/integrations/ios/.derived CODE_SIGNING_ALLOWED=NO build
+          swift run --package-path sdk/integrations/ios layerx-ios-secret-scan \
+            sdk/integrations/ios/.derived/Build/Products/Release-iphonesimulator/LayerXWallet.app
 
   connected-middleware:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -301,8 +301,8 @@ jobs:
           mkdir -m 700 -p "$(dirname "$LAYERX_WEBHOOK_DELIVERY_STORE_PATH")"
           make platform-real-agent-integration
           export LAYERX_WEBHOOK_DELIVERY_STORE_PATH="$RUNNER_TEMP/layerx-framework-${LAYERX_AGENT_FRAMEWORK}/restart-deliveries.json"
-          LAYERX_WEBHOOK_EXPECT=processed node platform/integrations/agents/examples/agent-runtime/webhook-conformance.mjs
-          LAYERX_WEBHOOK_EXPECT=duplicate node platform/integrations/agents/examples/agent-runtime/webhook-conformance.mjs
+          LAYERX_WEBHOOK_EXPECT=processed node sdk/integrations/agents/examples/agent-runtime/webhook-conformance.mjs
+          LAYERX_WEBHOOK_EXPECT=duplicate node sdk/integrations/agents/examples/agent-runtime/webhook-conformance.mjs
 
   real-ios-journey:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -556,7 +556,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Fetch locked platform workspace crates
-        run: cargo fetch --locked --manifest-path platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml
+        run: cargo fetch --locked --manifest-path platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml && cargo fetch --locked --manifest-path sdk/platform/generators/Cargo.toml
       - name: Verify the release manifest and the release workflow agree
         run: make platform-release-check
       - name: Verify the generated SDKs against the schemas
@@ -903,7 +903,7 @@ jobs:
       - name: Build the wheels from the locked sources
         run: |
           python -m build --wheel --outdir "$LAYERX_RELEASE_OUTPUT/dist" services/agent/sdk/python
-          python -m build --wheel --outdir "$LAYERX_RELEASE_OUTPUT/dist" platform/integrations/fastapi
+          python -m build --wheel --outdir "$LAYERX_RELEASE_OUTPUT/dist" sdk/integrations/fastapi
       - name: Record the immutable digest of every wheel, its artifact record and the publication
         run: |
           cd "$LAYERX_RELEASE_OUTPUT/dist"
@@ -928,7 +928,7 @@ jobs:
       - name: Generate the SBOM of every published package
         run: |
           syft scan dir:services/agent/sdk/python -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-sdk.sbom.spdx.json"
-          syft scan dir:platform/integrations/fastapi -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-fastapi.sbom.spdx.json"
+          syft scan dir:sdk/integrations/fastapi -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-fastapi.sbom.spdx.json"
       - name: Sign every wheel with sigstore keyless signing
         if: startsWith(github.ref, 'refs/tags/sdk-v')
         run: |
@@ -1001,7 +1001,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version-file: platform/sdk/go/go.mod
+          go-version-file: sdk/platform/go/go.mod
       - name: Install syft
         uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
       - name: Configure the target module proxy
@@ -1011,10 +1011,10 @@ jobs:
           mkdir -p "$LAYERX_RELEASE_OUTPUT"
           echo "LAYERX_RELEASE_TARGET=${LAYERX_RELEASE_GO_PROXY:-$LAYERX_RELEASE_DISTRIBUTION}" >> "$GITHUB_ENV"
       - name: Build and vet the module from the locked sources
-        run: cd platform/sdk/go && go build ./... && go vet ./...
+        run: cd sdk/platform/go && go build ./... && go vet ./...
       - name: Record the source digest of the module, its artifact record and the publication
         run: |
-          git archive --format=tar --output="$LAYERX_RELEASE_OUTPUT/layerx-go-$LAYERX_RELEASE_VERSION.tar" "HEAD:platform/sdk/go"
+          git archive --format=tar --output="$LAYERX_RELEASE_OUTPUT/layerx-go-$LAYERX_RELEASE_VERSION.tar" "HEAD:sdk/platform/go"
           sha256sum "$LAYERX_RELEASE_OUTPUT/layerx-go-$LAYERX_RELEASE_VERSION.tar" | cut -d ' ' -f 1 | tee "$LAYERX_RELEASE_OUTPUT/source-digest.txt"
           {
             echo "registry=$LAYERX_RELEASE_REGISTRY"
@@ -1029,7 +1029,7 @@ jobs:
           rm -f artifacts.kvx
           $GITHUB_WORKSPACE/scripts/ci/release-artifact-record.sh "$LAYERX_RELEASE_PACKAGES" "layerx-go-$LAYERX_RELEASE_VERSION.tar" source-archive tag-signature.txt layerx-go.sbom.spdx.json go-checksum-database:sum.golang.org "${LAYERX_RELEASE_TARGET%/}/$escaped/@v/v$LAYERX_RELEASE_VERSION.zip"
       - name: Generate the SBOM of the module
-        run: syft scan dir:platform/sdk/go -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-go.sbom.spdx.json"
+        run: syft scan dir:sdk/platform/go -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-go.sbom.spdx.json"
       - name: Import the release signing key
         if: startsWith(github.ref, 'refs/tags/sdk-v')
         env:
@@ -1049,7 +1049,7 @@ jobs:
           LAYERX_RELEASE_GPG_PASSPHRASE: ${{ secrets.LAYERX_RELEASE_GPG_PASSPHRASE }}
         run: |
           test -n "$LAYERX_RELEASE_GO_TAG_TOKEN"
-          tag=platform/sdk/go/v$LAYERX_RELEASE_VERSION
+          tag=${LAYERX_RELEASE_PACKAGES#github.com/Sidiora-Labs/LayerX-Network/}/v$LAYERX_RELEASE_VERSION
           git config user.name "LayerX release pipeline"
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
           git config gpg.program "$RUNNER_TEMP/gpg-loopback"
@@ -1080,7 +1080,7 @@ jobs:
           go mod download -json "$module@v$LAYERX_RELEASE_VERSION" > download.json
           directory=$(python3 -c 'import json, sys; print(json.load(sys.stdin)["Dir"])' < download.json)
           zip=$(python3 -c 'import json, sys; print(json.load(sys.stdin)["Zip"])' < download.json)
-          diff -r "$directory" "$GITHUB_WORKSPACE/platform/sdk/go"
+          diff -r "$directory" "$GITHUB_WORKSPACE/sdk/platform/go"
           output=$GITHUB_WORKSPACE/$LAYERX_RELEASE_OUTPUT
           sha256sum "$zip" | tee "$output/registry-digest.txt"
           checksum=$(grep " $module v$LAYERX_RELEASE_VERSION h1:" go.sum | tee -a "$output/registry-digest.txt")
@@ -1138,7 +1138,7 @@ jobs:
       - name: Build, package and deploy every declared artifact into the local staging repository
         run: |
           staging=$PWD/$LAYERX_RELEASE_OUTPUT/staging
-          for pom in platform/sdk/jvm/pom.xml platform/integrations/spring/pom.xml platform/integrations/android/pom.xml; do
+          for pom in sdk/platform/jvm/pom.xml sdk/integrations/spring/pom.xml sdk/integrations/android/pom.xml; do
             mvn deploy -B -DskipTests -f "$pom" -DaltDeploymentRepository="staging::file://$staging"
           done
           find "$staging" -name 'maven-metadata*' -delete
@@ -1168,9 +1168,9 @@ jobs:
           done
       - name: Generate the SBOM of every published module
         run: |
-          syft scan dir:platform/sdk/jvm -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-sdk.sbom.spdx.json"
-          syft scan dir:platform/integrations/spring -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-spring-boot-starter.sbom.spdx.json"
-          syft scan dir:platform/integrations/android -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-android.sbom.spdx.json"
+          syft scan dir:sdk/platform/jvm -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-sdk.sbom.spdx.json"
+          syft scan dir:sdk/integrations/spring -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-spring-boot-starter.sbom.spdx.json"
+          syft scan dir:sdk/integrations/android -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-android.sbom.spdx.json"
       - name: Import the release signing key
         if: startsWith(github.ref, 'refs/tags/sdk-v')
         env:
@@ -1281,10 +1281,10 @@ jobs:
           mkdir -p "$LAYERX_RELEASE_OUTPUT"
           echo "LAYERX_RELEASE_TARGET=$LAYERX_RELEASE_SWIFTPM_URL" >> "$GITHUB_ENV"
       - name: Build the package from the locked sources
-        run: swift build --disable-automatic-resolution --package-path platform/sdk/swift
+        run: swift build --disable-automatic-resolution --package-path sdk/platform/swift
       - name: Split the package tree, archive it and record its digest, its artifact record and the publication
         run: |
-          commit=$(git subtree split --prefix=platform/sdk/swift)
+          commit=$(git subtree split --prefix=sdk/platform/swift)
           git archive --format=tar --output="$LAYERX_RELEASE_OUTPUT/LayerXSDK-$LAYERX_RELEASE_VERSION.tar" "$commit"
           cd "$LAYERX_RELEASE_OUTPUT"
           sha256sum "LayerXSDK-$LAYERX_RELEASE_VERSION.tar" | tee digests.txt
@@ -1301,7 +1301,7 @@ jobs:
           rm -f artifacts.kvx
           $GITHUB_WORKSPACE/scripts/ci/release-artifact-record.sh LayerXSDK "LayerXSDK-$LAYERX_RELEASE_VERSION.tar" built-bytes tag-signature.txt LayerXSDK.sbom.spdx.json provenance.sigstore.json "${LAYERX_RELEASE_TARGET:+git+${LAYERX_RELEASE_TARGET%/}#$LAYERX_RELEASE_VERSION}"
       - name: Generate the SBOM of the package
-        run: syft scan dir:platform/sdk/swift -o spdx-json="$LAYERX_RELEASE_OUTPUT/LayerXSDK.sbom.spdx.json"
+        run: syft scan dir:sdk/platform/swift -o spdx-json="$LAYERX_RELEASE_OUTPUT/LayerXSDK.sbom.spdx.json"
       - name: Import the release signing key
         if: startsWith(github.ref, 'refs/tags/sdk-v')
         env:
@@ -1424,7 +1424,7 @@ jobs:
           echo "LAYERX_RELEASE_TARGET=$target" >> "$GITHUB_ENV"
           echo "LAYERX_RELEASE_NUGET_BASE=${base%/}/" >> "$GITHUB_ENV"
       - name: Pack the package from the locked sources
-        run: dotnet pack platform/sdk/dotnet/LayerX.Sdk.csproj --configuration Release --nologo --output "$LAYERX_RELEASE_OUTPUT/dist" -p:ContinuousIntegrationBuild=true
+        run: dotnet pack sdk/platform/dotnet/LayerX.Sdk.csproj --configuration Release --nologo --output "$LAYERX_RELEASE_OUTPUT/dist" -p:ContinuousIntegrationBuild=true
       - name: Record the immutable digest of the package, its artifact record and the publication
         run: |
           cd "$LAYERX_RELEASE_OUTPUT/dist"
@@ -1442,7 +1442,7 @@ jobs:
           rm -f artifacts.kvx
           $GITHUB_WORKSPACE/scripts/ci/release-artifact-record.sh LayerX.Sdk "dist/LayerX.Sdk.$LAYERX_RELEASE_VERSION.nupkg" built-bytes "LayerX.Sdk.$LAYERX_RELEASE_VERSION.nupkg.sigstore.json" LayerX.Sdk.sbom.spdx.json provenance.sigstore.json "${LAYERX_RELEASE_NUGET_BASE}layerx.sdk/$lower/layerx.sdk.$lower.nupkg"
       - name: Generate the SBOM of the package
-        run: syft scan dir:platform/sdk/dotnet -o spdx-json="$LAYERX_RELEASE_OUTPUT/LayerX.Sdk.sbom.spdx.json"
+        run: syft scan dir:sdk/platform/dotnet -o spdx-json="$LAYERX_RELEASE_OUTPUT/LayerX.Sdk.sbom.spdx.json"
       - name: Sign the package with sigstore keyless signing
         if: startsWith(github.ref, 'refs/tags/sdk-v')
         run: |
@@ -1533,7 +1533,7 @@ jobs:
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.91.1 --profile minimal && rustup default 1.91.1
       - name: Fetch locked platform workspace crates
-        run: cargo fetch --locked --manifest-path platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml
+        run: cargo fetch --locked --manifest-path platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml && cargo fetch --locked --manifest-path sdk/platform/generators/Cargo.toml
       - name: Install Node.js for actual published quickstart imports
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:

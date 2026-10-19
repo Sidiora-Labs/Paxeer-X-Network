@@ -12,8 +12,8 @@ from layerx_sdk.verifier import AuthorizedReceiptBatch, verify_receipt_outcome
 class ProgramExecutedV3Test(unittest.TestCase):
     def test_actual_kernel_runtime_receipt_and_module_binding(self):
         root = Path(__file__).resolve().parents[4]
-        fixture = json.loads((root / "platform/sdk/conformance/fixtures/receipt-programs-executed-v3.json").read_text())
-        spec = importlib.util.spec_from_file_location("executed_v3_signatures", root / "platform/integrations/fastapi/layerx_fastapi/signatures.py")
+        fixture = json.loads((root / "sdk/platform/conformance/fixtures/receipt-programs-executed-v3.json").read_text())
+        spec = importlib.util.spec_from_file_location("executed_v3_signatures", root / "sdk/integrations/fastapi/layerx_fastapi/signatures.py")
         self.assertIsNotNone(spec)
         self.assertIsNotNone(spec.loader)
         module = importlib.util.module_from_spec(spec)

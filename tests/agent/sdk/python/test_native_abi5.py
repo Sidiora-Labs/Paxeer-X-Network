@@ -33,14 +33,14 @@ from layerx_sdk.verifier import (  # noqa: E402
 )
 
 SIGNATURES_SPEC = importlib.util.spec_from_file_location(
-    "native_abi5_signatures", ROOT / "platform/integrations/fastapi/layerx_fastapi/signatures.py")
+    "native_abi5_signatures", ROOT / "sdk/integrations/fastapi/layerx_fastapi/signatures.py")
 if SIGNATURES_SPEC is None or SIGNATURES_SPEC.loader is None:
     raise RuntimeError("real signature verifier is unavailable")
 SIGNATURES = importlib.util.module_from_spec(SIGNATURES_SPEC)
 SIGNATURES_SPEC.loader.exec_module(SIGNATURES)
 VERIFIER = SIGNATURES.LayerXSignatureVerifier()
 
-FIXTURES = ROOT / "platform/sdk/conformance/fixtures"
+FIXTURES = ROOT / "sdk/platform/conformance/fixtures"
 CALL = json.loads((FIXTURES / "native-program-call-v4.json").read_text())
 EXECUTED = json.loads((FIXTURES / "receipt-programs-executed-v4.json").read_text())
 BATCH = EXECUTED["authorized_batch"]

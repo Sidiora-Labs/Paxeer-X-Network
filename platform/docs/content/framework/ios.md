@@ -15,7 +15,7 @@ A phone is not a server. Anything you ship in the binary is public, so the iOS b
 ## Before you start
 
 ```text
-.package(path: "platform/integrations/ios")
+.package(path: "sdk/integrations/ios")
 ```
 
 | Variable | What it is |

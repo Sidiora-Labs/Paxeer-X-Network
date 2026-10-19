@@ -1339,7 +1339,7 @@ fn a09_reused_seat_never_inherits_the_previous_identity() -> Checked {
 type Sections = BTreeMap<String, Vec<(String, String)>>;
 
 fn schema() -> Checked<Sections> {
-    let text = fs::read_to_string(repo_root().join("platform/sdk/schema/paxai-v1.kvx"))
+    let text = fs::read_to_string(repo_root().join("sdk/platform/schema/paxai-v1.kvx"))
         .map_err(setup("schema"))?;
     let mut sections = Sections::new();
     let mut current = String::new();

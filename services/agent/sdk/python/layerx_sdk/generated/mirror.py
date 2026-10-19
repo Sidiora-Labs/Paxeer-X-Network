@@ -1,4 +1,4 @@
-"""Generated from platform/sdk/schema/mirror-v2.kvx."""
+"""Generated from sdk/platform/schema/mirror-v2.kvx."""
 
 from enum import Enum
 

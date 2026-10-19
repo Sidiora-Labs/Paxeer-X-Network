@@ -23,7 +23,7 @@ async function receiptLeafDigest(canonicalReceipt) {
 }
 
 async function loadFixture(name) {
-  const fixture = JSON.parse(await readFile(new URL(`../../../sdk/conformance/fixtures/${name}`, import.meta.url), "utf8"));
+  const fixture = JSON.parse(await readFile(new URL(`../../../../sdk/platform/conformance/fixtures/${name}`, import.meta.url), "utf8"));
   const batch = fixture.authorized_batch;
   const canonicalReceipt = bytes(fixture.canonical_receipt_hex);
   return {

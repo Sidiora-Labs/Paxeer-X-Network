@@ -9,7 +9,7 @@ import { decodeNativeProgramDeploy, decodeNativeProgramUpgrade, decodeNativeProg
   encodeNativeProgramDeploy, encodeNativeProgramUpgrade, encodeNativeProgramWindDown, NativeProgramLifecycleRequest } from "../src/program-lifecycle.js";
 
 for (const name of ["deploy", "upgrade", "wind-down-route", "wind-down-deprecate", "wind-down-tombstone", "wind-down-exit"]) {
-  const fixture = JSON.parse(readFileSync(new URL(`../../../../../../platform/sdk/conformance/fixtures/native-program-${name}-v3.json`, import.meta.url), "utf8")) as Record<string, string>;
+  const fixture = JSON.parse(readFileSync(new URL(`../../../../../../sdk/platform/conformance/fixtures/native-program-${name}-v3.json`, import.meta.url), "utf8")) as Record<string, string>;
   const payload = Buffer.from(fixture.payload_hex!, "hex"), signed = Buffer.from(fixture.signed_activity_hex!, "hex");
   assert.deepEqual(encodeProgramMutationBody(fixture.signed_activity_hex), signed);
   assert.throws(() => encodeProgramMutationBody({ activity: fixture.signed_activity_hex }));
@@ -29,7 +29,7 @@ for (const name of ["deploy", "upgrade", "wind-down-route", "wind-down-deprecate
   const ordinal = name === "deploy" ? 1 : name === "upgrade" ? 2 : 7;
   const binding = await request.bind();
   const expectedUnknown = { state: "unknown", activity_id: fixture.activity_id_hex, idempotency_key: fixture.idempotency_key_hex, retained_signed_activity: fixture.signed_activity_hex };
-  const receiptFixture = JSON.parse(readFileSync(new URL("../../../../../../platform/sdk/conformance/fixtures/receipt-programs-positive-v3.json", import.meta.url), "utf8"));
+  const receiptFixture = JSON.parse(readFileSync(new URL("../../../../../../sdk/platform/conformance/fixtures/receipt-programs-positive-v3.json", import.meta.url), "utf8"));
   const damagedReceipt = Buffer.from(receiptFixture.canonical_receipt_hex, "hex");
   damagedReceipt[damagedReceipt.length - 1] = damagedReceipt[damagedReceipt.length - 1]! ^ 1;
   for (const response of [
@@ -94,7 +94,7 @@ assert.equal(decodeProgramBoundaryError(503, { code: "node_unavailable", retry: 
 assert.throws(() => decodeProgramBoundaryError(200, { code: "invalid_program_payload", retry: "never" }));
 assert.throws(() => decodeProgramBoundaryError(400, { code: "invalid_program_payload", retry: "never", extra: 0 }));
 assert.throws(() => decodeProgramBoundaryError(503, { code: "node_unavailable", retry: "after", retry_after_seconds: true }));
-const callReceipt = JSON.parse(readFileSync(new URL("../../../../../../platform/sdk/conformance/fixtures/receipt-programs-positive-v3.json", import.meta.url), "utf8")) as { canonical_receipt_hex: string; authorized_batch: { sequencer_public_key_hex: string } };
+const callReceipt = JSON.parse(readFileSync(new URL("../../../../../../sdk/platform/conformance/fixtures/receipt-programs-positive-v3.json", import.meta.url), "utf8")) as { canonical_receipt_hex: string; authorized_batch: { sequencer_public_key_hex: string } };
 await assert.rejects(verifyProgramLifecycleReceipt(Buffer.from(callReceipt.canonical_receipt_hex, "hex"), Buffer.alloc(32, 0x41), Buffer.from(callReceipt.authorized_batch.sequencer_public_key_hex, "hex")));
 const recovery = { activity_id: "41".repeat(32), receipt: callReceipt.canonical_receipt_hex };
 const sequencer = Buffer.from(callReceipt.authorized_batch.sequencer_public_key_hex, "hex");
@@ -108,7 +108,7 @@ assert.throws(() => encodeNativeProgramWindDown({ programId, operation: "route",
 
 const nativeCodec = await import("../src/native-program-call.js");
 for (const name of ["native-program-call-v3", "native-program-call-v4"]) {
-  const fixture = JSON.parse(readFileSync(new URL(`../../../../../../platform/sdk/conformance/fixtures/${name}.json`, import.meta.url), "utf8"));
+  const fixture = JSON.parse(readFileSync(new URL(`../../../../../../sdk/platform/conformance/fixtures/${name}.json`, import.meta.url), "utf8"));
   const payload = Buffer.from(fixture.payload_hex, "hex");
   const decoded = nativeCodec.decodeNativeProgramCallV1(payload);
   assert.deepEqual(Buffer.from(nativeCodec.encodeNativeProgramCallV1(decoded)), payload);

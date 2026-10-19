@@ -7,7 +7,7 @@ results=${LAYERX_DOTNET_PROGRAMS_RESULTS_DIR:-$(mktemp -d /tmp/layerx-dotnet-pro
 mkdir -p "$results"
 chmod 700 "$results"
 [[ ! -e $results/programs-contract.trx ]] || { echo 'refusing to reuse Dotnet test results' >&2; exit 1; }
-"${DOTNET:-dotnet}" test platform/sdk/dotnet/tests/LayerX.Sdk.Tests/LayerX.Sdk.Tests.csproj \
+"${DOTNET:-dotnet}" test sdk/platform/dotnet/tests/LayerX.Sdk.Tests/LayerX.Sdk.Tests.csproj \
     --no-build --no-restore --configuration Release --nologo \
     --filter 'FullyQualifiedName~LayerX.Sdk.Tests.ProgramsContractTests' \
     --logger 'trx;LogFileName=programs-contract.trx' --results-directory "$results"

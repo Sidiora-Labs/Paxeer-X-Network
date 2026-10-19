@@ -26,7 +26,7 @@ from layerx_sdk.verifier import (
 )
 
 ROOT = Path(__file__).resolve().parents[4]
-SIGNATURES_PATH = ROOT / "platform/integrations/fastapi/layerx_fastapi/signatures.py"
+SIGNATURES_PATH = ROOT / "sdk/integrations/fastapi/layerx_fastapi/signatures.py"
 SPEC = importlib.util.spec_from_file_location("native_header_signatures", SIGNATURES_PATH)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError("real signature verifier is unavailable")

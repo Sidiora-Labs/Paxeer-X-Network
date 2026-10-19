@@ -40,15 +40,15 @@ def credit(label, count):
 
 try:
     run('Programs refusal fixture derivation',
-        ['python3', 'platform/sdk/conformance/fixtures/generate_program_receipt_refusals.py', '--check'])
+        ['python3', 'sdk/platform/conformance/fixtures/generate_program_receipt_refusals.py', '--check'])
     credit('fixture derivation', 1)
 
     run('seven-language receipt contract drift',
-        ['cargo', 'run', '--offline', '--locked', '--manifest-path', 'platform/Cargo.toml',
+        ['cargo', 'run', '--offline', '--locked', '--manifest-path', 'sdk/platform/generators/Cargo.toml',
          '-p', 'layerx-platform-sdkgen', '--', '--check-program-contracts', os.getcwd()])
     credit('contract drift', 1)
     out = run('receipt generator model',
-              ['cargo', 'test', '--offline', '--locked', '--manifest-path', 'platform/Cargo.toml',
+              ['cargo', 'test', '--offline', '--locked', '--manifest-path', 'sdk/platform/generators/Cargo.toml',
                '-p', 'layerx-platform-sdkgen', '--test', 'drift'])
     summary = re.findall(r'test result: ok\. (\d+) passed; 0 failed; 0 ignored', out)
     require(summary, 'generator drift summary missing')
@@ -64,7 +64,7 @@ try:
     env = dict(os.environ, GOPROXY='off')
     out = run('Go SDK receipts',
               ['go', 'test', '-count=1', '-v', '-run', 'Receipt|ExplicitProtocolThree', '.'],
-              cwd='platform/sdk/go', env=env)
+              cwd='sdk/platform/go', env=env)
     require('--- SKIP' not in out, 'Go receipt test skipped')
     credit('Go', len(re.findall(r'^--- PASS: \S+', out, re.M)))
 
@@ -83,21 +83,21 @@ try:
     credit('Python', int(ran[0]))
 
     out = run('JVM SDK receipts',
-              ['mvn', '-o', '-B', '-f', 'platform/sdk/jvm/pom.xml', '-Dtest=ReceiptFixtureTest',
+              ['mvn', '-o', '-B', '-f', 'sdk/platform/jvm/pom.xml', '-Dtest=ReceiptFixtureTest',
                '-Dsurefire.failIfNoSpecifiedTests=true', 'test'])
     summary = re.findall(r'Tests run: (\d+), Failures: 0, Errors: 0, Skipped: 0$', out, re.M)
     require(summary, 'JVM receipt suite summary missing')
     credit('JVM', int(summary[-1]))
 
     out = run('Swift SDK receipts',
-              ['swift', 'test', '--disable-automatic-resolution', '--package-path', 'platform/sdk/swift',
+              ['swift', 'test', '--disable-automatic-resolution', '--package-path', 'sdk/platform/swift',
                '--filter', 'ReceiptFixtureTests'])
     passed = re.findall(r"Test Case '.*ReceiptFixtureTests.*' passed", out)
     require('skipped' not in out.lower(), 'Swift receipt test skipped')
     credit('Swift', len(passed))
 
     out = run('.NET SDK receipts',
-              ['dotnet', 'test', 'platform/sdk/dotnet/tests/LayerX.Sdk.Tests/LayerX.Sdk.Tests.csproj',
+              ['dotnet', 'test', 'sdk/platform/dotnet/tests/LayerX.Sdk.Tests/LayerX.Sdk.Tests.csproj',
                '--no-restore', '--nologo', '--filter', 'FullyQualifiedName~ReceiptFixtureTests'])
     summary = re.findall(r'Passed!\s+-\s+Failed:\s+0, Passed:\s+(\d+), Skipped:\s+0', out)
     require(len(summary) == 1, '.NET receipt suite summary missing')

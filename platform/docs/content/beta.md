@@ -95,7 +95,7 @@ no public faucet or control surface on the mainnet-beta.
 | human | Human API, custody, intents, approvals and the wallet | hosted | deployment_proven | source_present | human/, platform/hosted/human |
 | interop | x402, AP2, UCP, Visa TAP, bridge relayer, gas station and web search | functional | runtime_proven | source_present | services/interop/crates |
 | agent | layerx-agentd, MCP surface | functional | runtime_proven | source_present | services/agent/crates |
-| sdks | TypeScript, Python, Rust, Go, JVM, Swift and .NET SDKs | functional | runtime_proven | source_present | services/agent/sdk, services/agent/crates/layerx-sdk, platform/sdk |
+| sdks | TypeScript, Python, Rust, Go, JVM, Swift and .NET SDKs | functional | runtime_proven | source_present | services/agent/sdk, services/agent/crates/layerx-sdk, sdk/platform |
 | platform-cli | CLI and local emulator | functional | runtime_proven | source_present | tools/platform/cli, tools/platform/emulator |
 | programs | Programs runtime: deploy, paid call, restart | functional | runtime_proven | source_present | programs/crates |
 | docs-site | documentation site and executable samples | functional | runtime_proven | source_present | platform/docs |
@@ -135,6 +135,6 @@ governance proposal changes it during the beta.
 
 | Key | Canonical value | Divergent source | Divergent value |
 | --- | --- | --- | --- |
-| go_sdk_module | github.com/Sidiora-Labs/Paxeer-X-Network/platform/sdk/go | platform/sdk/go/go.mod | github.com/Sidiora-Labs/LayerX-Network/platform/sdk/go |
+| go_sdk_module | github.com/Sidiora-Labs/Paxeer-X-Network/platform/sdk/go | sdk/platform/go/go.mod | github.com/Sidiora-Labs/LayerX-Network/platform/sdk/go |
 
 The readiness claim cannot become `true` while any row remains.

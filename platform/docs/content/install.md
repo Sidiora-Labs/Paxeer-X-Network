@@ -111,7 +111,7 @@ The A2A installation JSON contains only the executable arguments, the configurat
 | C# | `dotnet add package LayerX.Sdk` |
 | Rust | `cargo add layerx-sdk` |
 
-Those coordinates are the beta artifact set declared in the canonical beta contract. This checkout does not provide a published artifact manifest that verifies their availability, so the install commands above are not qualified installation instructions. Build from `platform/sdk/*`, `services/agent/sdk/*` and `services/agent/crates/*` until a release publishes the coordinate.
+Those coordinates are the beta artifact set declared in the canonical beta contract. This checkout does not provide a published artifact manifest that verifies their availability, so the install commands above are not qualified installation instructions. Build from `sdk/platform/*`, `services/agent/sdk/*` and `services/agent/crates/*` until a release publishes the coordinate.
 
 ## What your application reads from the environment
 

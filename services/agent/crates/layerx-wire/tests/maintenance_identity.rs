@@ -93,7 +93,7 @@ fn historical_and_maintained_identity_select_distinct_committed_ranges() {
 #[test]
 fn call_selection_keeps_activity_root_equality_and_excludes_maintenance_sequence() {
     let call_document = include_str!(
-        "../../../../../platform/sdk/conformance/fixtures/receipt-programs-positive-v3.json"
+        "../../../../../sdk/platform/conformance/fixtures/receipt-programs-positive-v3.json"
     );
     let receipt = must(decode(&fixture_field(
         call_document,
@@ -194,7 +194,7 @@ fn the_committed_range_excludes_only_a_published_maintenance_sequence() {
 #[test]
 fn a_bound_activity_root_selects_the_committed_identity_outside_programs_deploy() {
     let document =
-        include_str!("../../../../../platform/sdk/conformance/fixtures/receipt-positive-v3.json");
+        include_str!("../../../../../sdk/platform/conformance/fixtures/receipt-positive-v3.json");
     let receipt = must(decode(&fixture_field(document, "canonical_receipt_hex")));
     let protocol = receipt.protocol().unwrap_or_else(|| panic!("protocol"));
     assert_ne!(protocol.activity_root(), [0_u8; 32]);

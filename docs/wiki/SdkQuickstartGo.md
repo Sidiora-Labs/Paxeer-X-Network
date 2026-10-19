@@ -1,7 +1,7 @@
 # Go SDK quickstart
 
 Module: `github.com/Sidiora-Labs/LayerX-Network/platform/sdk/go`
-at `platform/sdk/go`. There is no public JSON-RPC client in this
+at `sdk/platform/go`. There is no public JSON-RPC client in this
 module.
 
 ---
@@ -12,7 +12,7 @@ No `lx_register` wrapper. The agent catalog constant
 `AgentOperationAgentRegister` (`"agent.register"`) can be sent
 with `Client.Agent` **if** you supply a `Transport` that implements
 the agent plane. This module ships `NewHumanHTTPTransport` only
-(`platform/sdk/go/http.go`). There is no shipped agent-plane HTTP
+(`sdk/platform/go/http.go`). There is no shipped agent-plane HTTP
 transport. Calling `agent.register` through the human transport will
 not reach the public gateway method.
 

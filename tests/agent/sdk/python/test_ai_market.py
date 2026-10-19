@@ -111,7 +111,7 @@ from layerx_sdk.verifier import (  # noqa: E402
 )
 
 SIGNATURES_SPEC = importlib.util.spec_from_file_location(
-    "ai_market_signatures", ROOT / "platform/integrations/fastapi/layerx_fastapi/signatures.py")
+    "ai_market_signatures", ROOT / "sdk/integrations/fastapi/layerx_fastapi/signatures.py")
 if SIGNATURES_SPEC is None or SIGNATURES_SPEC.loader is None:
     raise RuntimeError("real signature verifier is unavailable")
 SIGNATURES = importlib.util.module_from_spec(SIGNATURES_SPEC)
@@ -165,7 +165,7 @@ def fund_envelope(**changes: object) -> PaxaiEnvelope:
 def schema() -> dict[str, dict[str, object]]:
     sections: dict[str, dict[str, object]] = {}
     current: dict[str, object] = {}
-    for line in (ROOT / "platform/sdk/schema/paxai-v1.kvx").read_text().splitlines():
+    for line in (ROOT / "sdk/platform/schema/paxai-v1.kvx").read_text().splitlines():
         if not line or line.startswith("#"):
             continue
         if line.startswith("["):

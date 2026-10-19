@@ -432,7 +432,7 @@ fn lifecycle_routes_submit_real_signed_activities_and_verify_state_receipts() {
         serde_json::from_slice(&must(
             fs::read(
                 repository_root()
-                    .join("platform/sdk/conformance/fixtures/native-program-deploy-v3.json"),
+                    .join("sdk/platform/conformance/fixtures/native-program-deploy-v3.json"),
             ),
             "C lifecycle fixture",
         )),

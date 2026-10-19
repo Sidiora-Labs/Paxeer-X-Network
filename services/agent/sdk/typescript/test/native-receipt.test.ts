@@ -132,7 +132,7 @@ for (const [operation, before, after, amount] of [
 await assert.rejects(verify(supplyChange(10, 2n, 3n)), failsAt(ReceiptFailureCode.SequencerSignature));
 await assert.rejects(verify(supplyChange(11, 2n, 1n)), failsAt(ReceiptFailureCode.SequencerSignature));
 
-const legacy = JSON.parse(read("platform/sdk/conformance/fixtures/receipt-positive-v2.json").toString("utf8")) as {
+const legacy = JSON.parse(read("sdk/platform/conformance/fixtures/receipt-positive-v2.json").toString("utf8")) as {
   canonical_receipt_hex: string;
   authorized_batch: { sequencer_public_key_hex: string };
 };

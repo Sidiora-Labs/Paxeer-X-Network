@@ -703,7 +703,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.4]
 title = "Move platform/sdk to sdk/platform and platform/integrations to sdk/integrations"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 4

@@ -8,13 +8,13 @@ use layerx_types::verify::VerificationLevel;
 
 fn fixture_json() -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../../platform/sdk/conformance/fixtures/receipt-positive-v2.json");
+        .join("../../../../sdk/platform/conformance/fixtures/receipt-positive-v2.json");
     fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
 }
 
 fn shared_fixture(name: &str) -> serde_json::Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../../platform/sdk/conformance/fixtures")
+        .join("../../../../sdk/platform/conformance/fixtures")
         .join(name);
     let source = fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));

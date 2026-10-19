@@ -22,7 +22,7 @@ if sh "$script" "$work/extra-root.txt" >/dev/null 2>&1; then
     exit 1
 fi
 
-sed 's#^npm|platform/sdk/conformance-runner/package.json|compile-only-manifest$#npm|platform/sdk/conformance-runner/package.json|locked-npm-independent#' "$inventory" > "$work/unlocked-npm.txt"
+sed 's#^npm|platform/middleware/agent/package.json|covered-by-root-npm$#npm|platform/middleware/agent/package.json|locked-npm-independent#' "$inventory" > "$work/unlocked-npm.txt"
 if sh "$script" "$work/unlocked-npm.txt" >/dev/null 2>&1; then
     echo "check-platform-dependencies accepted a locked npm root without package-lock.json" >&2
     exit 1

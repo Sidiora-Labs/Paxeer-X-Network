@@ -39,8 +39,8 @@ class ProgramLifecycleTest(unittest.TestCase):
                 _decode_program_boundary_error(status, value)
 
     def test_c_signed_fixtures_and_refusals(self):
-        fixtures = Path(__file__).resolve().parents[4] / "platform/sdk/conformance/fixtures"
-        source = Path(__file__).resolve().parents[4] / "platform/integrations/fastapi/layerx_fastapi/signatures.py"
+        fixtures = Path(__file__).resolve().parents[4] / "sdk/platform/conformance/fixtures"
+        source = Path(__file__).resolve().parents[4] / "sdk/integrations/fastapi/layerx_fastapi/signatures.py"
         spec = importlib.util.spec_from_file_location("lifecycle_signatures", source)
         if spec is None or spec.loader is None:
             self.fail("signature verifier unavailable")

@@ -79,7 +79,7 @@ function hexEqual(actual: Uint8Array, expectedHex: string, field: string): void 
 function loadFixture(name = "receipt-positive-v2.json"): ReceiptFixture {
   const path = fileURLToPath(
     new URL(
-      `../../../../../../platform/sdk/conformance/fixtures/${name}`,
+      `../../../../../../sdk/platform/conformance/fixtures/${name}`,
       import.meta.url,
     ),
   );
@@ -206,7 +206,7 @@ for (let length = 0; length < native.length; length++) {
   assert(rejected, "truncated native call accepted");
 }
 
-const nativeFixture = JSON.parse(readFileSync(fileURLToPath(new URL("../../../../../../platform/sdk/conformance/fixtures/native-program-call-v3.json", import.meta.url)), "utf8")) as { payload_hex: string; signed_activity_hex: string; activity_id_hex: string };
+const nativeFixture = JSON.parse(readFileSync(fileURLToPath(new URL("../../../../../../sdk/platform/conformance/fixtures/native-program-call-v3.json", import.meta.url)), "utf8")) as { payload_hex: string; signed_activity_hex: string; activity_id_hex: string };
 const { NativeProgramRequest } = await import("../src/programs.js");
 const { decodeSignedProgramCall } = await import("../src/program-wire.js");
 const nativeModel = decodeNativeProgramCall(hexBytes(nativeFixture.payload_hex));

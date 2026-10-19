@@ -6,7 +6,7 @@ use common::{envelope, error_envelope, Cli};
 use serde_json::Value;
 
 const FIXTURE: &str =
-    include_str!("../../../../platform/sdk/conformance/fixtures/account-derivation-v1.json");
+    include_str!("../../../../sdk/platform/conformance/fixtures/account-derivation-v1.json");
 
 fn fixture() -> Value {
     serde_json::from_str(FIXTURE).expect("the shared derivation fixture is JSON")

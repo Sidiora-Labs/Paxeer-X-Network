@@ -1,6 +1,6 @@
 # .NET SDK quickstart
 
-NuGet: `LayerX.Sdk` at `platform/sdk/dotnet`. There is no public
+NuGet: `LayerX.Sdk` at `sdk/platform/dotnet`. There is no public
 JSON-RPC client in this package.
 
 ---

@@ -337,7 +337,7 @@ class PythonSdkIntegration(unittest.TestCase):
             decode_and_verify_program_terminal(occupancy_wrapper(occupancy_terminal, evidence), graph, program_id, occupancy_receipt, 2)
 
     def test_state_commitment_occupancy_pays_from_the_proven_payer_account(self) -> None:
-        fixture = json.loads((ROOT.parents[2] / "platform/sdk/conformance/fixtures/occupancy-payment-accounts-v3.json").read_text())
+        fixture = json.loads((ROOT.parents[2] / "sdk/platform/conformance/fixtures/occupancy-payment-accounts-v3.json").read_text())
         asset = bytes.fromhex(fixture["asset_hex"])
         stranger = fixture["stranger"]
         program_id = "11" * 32

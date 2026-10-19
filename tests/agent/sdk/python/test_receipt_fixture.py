@@ -17,10 +17,10 @@ _PROGRAM_OUTCOME_V3 = "505247330100000000000100010000000700000001000000000000000
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _SIGNATURES_PATH = (
-    _REPO_ROOT / "platform" / "integrations" / "fastapi" / "layerx_fastapi" / "signatures.py"
+    _REPO_ROOT / "sdk" / "integrations" / "fastapi" / "layerx_fastapi" / "signatures.py"
 )
 _FIXTURE_PATH = (
-    _REPO_ROOT / "platform" / "sdk" / "conformance" / "fixtures" / "receipt-positive-v2.json"
+    _REPO_ROOT / "sdk" / "platform" / "conformance" / "fixtures" / "receipt-positive-v2.json"
 )
 
 

@@ -5,8 +5,8 @@ let package = Package(
     name: "LayerXMobilePayment",
     platforms: [.iOS(.v15), .macOS(.v12)],
     dependencies: [
-        .package(path: "../../../integrations/ios"),
-        .package(path: "../../../sdk/swift")
+        .package(path: "../../../../sdk/integrations/ios"),
+        .package(path: "../../../../sdk/platform/swift")
     ],
     targets: [
         .executableTarget(

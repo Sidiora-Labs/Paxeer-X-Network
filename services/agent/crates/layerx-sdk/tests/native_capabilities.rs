@@ -78,7 +78,7 @@ fn logical(value: &serde_json::Value) -> Result<NativeCapabilitySet, String> {
 
 fn fixture() -> Result<serde_json::Value, String> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../../platform/sdk/conformance/fixtures/native-program-capabilities-v2.json");
+        .join("../../../../sdk/platform/conformance/fixtures/native-program-capabilities-v2.json");
     serde_json::from_slice(&std::fs::read(path).map_err(|error| error.to_string())?)
         .map_err(|error| error.to_string())
 }

@@ -2807,7 +2807,7 @@ mod call_tests {
             ("wind-down-exit", 7),
         ] {
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../platform/sdk/conformance/fixtures")
+                .join("../../../sdk/platform/conformance/fixtures")
                 .join(format!("native-program-{name}-v3.json"));
             let fixture: serde_json::Value =
                 serde_json::from_slice(&super::read_program_file(&path)?)
@@ -3082,10 +3082,10 @@ mod call_tests {
     }
 
     const EXECUTED_V4_FIXTURE: &str = include_str!(
-        "../../../../platform/sdk/conformance/fixtures/receipt-programs-executed-v4.json"
+        "../../../../sdk/platform/conformance/fixtures/receipt-programs-executed-v4.json"
     );
     const POSITIVE_V2_FIXTURE: &str = include_str!(
-        "../../../../platform/sdk/conformance/fixtures/receipt-programs-positive-v2.json"
+        "../../../../sdk/platform/conformance/fixtures/receipt-programs-positive-v2.json"
     );
     const BATCH_AUTHORITY_MISMATCH: &str = "program response batch authority disagrees with the configured trust anchor or the discovered state boundary";
     const RECEIPT_AUTHORITY_MISMATCH: &str =

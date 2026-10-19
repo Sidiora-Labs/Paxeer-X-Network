@@ -37,25 +37,25 @@ CRATES = {
     "layerx-wire": "services/agent/crates/layerx-wire/Cargo.toml",
 }
 NPM_PACKAGES = {
-    "@sidiora/layerx-agent-integrations": "platform/integrations/agents/package.json",
+    "@sidiora/layerx-agent-integrations": "sdk/integrations/agents/package.json",
     "@sidiora/layerx-agent-middleware": "platform/middleware/agent/package.json",
     "@sidiora/layerx-buyer-middleware": "platform/middleware/buyer/package.json",
-    "@sidiora/layerx-express": "platform/integrations/express/package.json",
+    "@sidiora/layerx-express": "sdk/integrations/express/package.json",
     "@sidiora/layerx-merchant-middleware": "platform/middleware/merchant/package.json",
-    "@sidiora/layerx-next": "platform/integrations/next/package.json",
+    "@sidiora/layerx-next": "sdk/integrations/next/package.json",
     "@sidiora/layerx-sdk": "services/agent/sdk/typescript/package.json",
     "@sidiora/layerx-seller-middleware": "platform/middleware/seller/package.json",
 }
 PYPROJECTS = {
-    "layerx-fastapi": "platform/integrations/fastapi/pyproject.toml",
+    "layerx-fastapi": "sdk/integrations/fastapi/pyproject.toml",
     "layerx-sdk": "services/agent/sdk/python/pyproject.toml",
 }
 POMS = {
-    "com.sidiora.layerx:layerx-android": "platform/integrations/android/pom.xml",
-    "com.sidiora.layerx:layerx-sdk": "platform/sdk/jvm/pom.xml",
-    "com.sidiora.layerx:layerx-spring-boot-starter": "platform/integrations/spring/pom.xml",
+    "com.sidiora.layerx:layerx-android": "sdk/integrations/android/pom.xml",
+    "com.sidiora.layerx:layerx-sdk": "sdk/platform/jvm/pom.xml",
+    "com.sidiora.layerx:layerx-spring-boot-starter": "sdk/integrations/spring/pom.xml",
 }
-CSPROJ = {"LayerX.Sdk": "platform/sdk/dotnet/LayerX.Sdk.csproj"}
+CSPROJ = {"LayerX.Sdk": "sdk/platform/dotnet/LayerX.Sdk.csproj"}
 POM_NS = "{http://maven.apache.org/POM/4.0.0}"
 
 problems = []

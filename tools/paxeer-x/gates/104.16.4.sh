@@ -3,9 +3,9 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 if [[ ${1:-} == build && $# == 1 ]]; then
   npm run build --workspace @sidiora/layerx-sdk --workspace @sidiora/layerx-buyer-middleware --workspace @sidiora/layerx-seller-middleware --workspace @sidiora/layerx-agent-middleware --workspace @sidiora/layerx-next --workspace @sidiora/layerx-agent-integrations
-  swift build --disable-automatic-resolution --package-path platform/integrations/ios
-  mvn -o -q -f platform/sdk/jvm/pom.xml -DskipTests install
-  mvn -o -q -f platform/integrations/android/pom.xml -Psample -DskipTests package
+  swift build --disable-automatic-resolution --package-path sdk/integrations/ios
+  mvn -o -q -f sdk/platform/jvm/pom.xml -DskipTests install
+  mvn -o -q -f sdk/integrations/android/pom.xml -Psample -DskipTests package
   exit 0
 fi
 if (($#)); then
@@ -131,8 +131,8 @@ def last_json(output):
 def source_binding(fixture):
     require(fixture['source_revision'] == REVISION, 'fixture source revision mismatch')
     manifest = private_json(fixture['source_manifest'])
-    prefixes = ('platform/integrations/ios/', 'platform/integrations/android/', 'platform/integrations/agents/',
-                'platform/integrations/next/', 'platform/sdk/swift/', 'platform/sdk/jvm/',
+    prefixes = ('sdk/integrations/ios/', 'sdk/integrations/android/', 'sdk/integrations/agents/',
+                'sdk/integrations/next/', 'sdk/platform/swift/', 'sdk/platform/jvm/',
                 'platform/middleware/agent/', 'platform/middleware/buyer/', 'platform/middleware/seller/',
                 'services/agent/sdk/typescript/')
     tracked = subprocess.check_output(['git', 'ls-files', '-z', '--', *prefixes,
@@ -174,7 +174,7 @@ def main():
     compiled = private_json(fixture['typescript_artifacts'])
     dist_roots = ('services/agent/sdk/typescript/dist', 'platform/middleware/buyer/dist',
                   'platform/middleware/seller/dist', 'platform/middleware/agent/dist',
-                  'platform/integrations/next/dist', 'platform/integrations/agents/dist')
+                  'sdk/integrations/next/dist', 'sdk/integrations/agents/dist')
     expected = set()
     for root in dist_roots:
         directory = ROOT / root
@@ -227,7 +227,7 @@ def main():
     for framework in FRAMEWORKS:
         env = dict(agent_env, LAYERX_AGENT_FRAMEWORK=framework,
                    LAYERX_WEBHOOK_DELIVERY_STORE_PATH=str(STATE / (framework + '-journey-deliveries.json')))
-        report = last_json(run([node, 'platform/integrations/agents/examples/agent-runtime/index.mjs'],
+        report = last_json(run([node, 'sdk/integrations/agents/examples/agent-runtime/index.mjs'],
                               env, framework + '-real-journey'))
         spend = report.get('spend', {})
         result = spend.get('result', {})
@@ -244,7 +244,7 @@ def main():
         env['LAYERX_WEBHOOK_DELIVERY_STORE_PATH'] = str(STATE / (framework + '-durable-deliveries.json'))
         for expect in ('processed', 'duplicate'):
             env['LAYERX_WEBHOOK_EXPECT'] = expect
-            report = last_json(run([node, 'platform/integrations/agents/examples/agent-runtime/webhook-conformance.mjs'],
+            report = last_json(run([node, 'sdk/integrations/agents/examples/agent-runtime/webhook-conformance.mjs'],
                                   env, framework + '-webhook-' + expect))
             require(report.get('framework') == framework and report.get('expected') == expect
                     and report.get('handled') == (1 if expect == 'processed' else 0)
@@ -267,7 +267,7 @@ def main():
     browser_artifacts = [directory_artifact(entry) if 'files' in entry else artifact(entry)
                          for entry in fixture['browser_artifacts']]
     require(browser_artifacts, 'source-bound compiled browser artifacts required')
-    run([node, 'platform/integrations/next/bin/layerx-scan-bundle.mjs', *browser_artifacts],
+    run([node, 'sdk/integrations/next/bin/layerx-scan-bundle.mjs', *browser_artifacts],
         agent_env, 'client-bundle-secret-scan')
     print(json.dumps({'status': 'passed', 'revision': REVISION, 'cases': COUNT, 'evidence': str(STATE)}))
 

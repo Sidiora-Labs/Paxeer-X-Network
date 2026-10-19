@@ -5,7 +5,7 @@ let package = Package(
     name: "LayerXFirstPayment",
     platforms: [.iOS(.v15), .macOS(.v12)],
     dependencies: [
-        .package(path: "../../../sdk/swift")
+        .package(path: "../../../../sdk/platform/swift")
     ],
     targets: [
         .executableTarget(

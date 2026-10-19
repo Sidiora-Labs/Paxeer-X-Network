@@ -7,7 +7,7 @@ Add a payment to a Swift application. Five lines, no protocol vocabulary, no key
 Add the package to your `Package.swift`:
 
 ```text
-.package(path: "platform/sdk/swift")
+.package(path: "sdk/platform/swift")
 ```
 
 | Variable | What it is |

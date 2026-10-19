@@ -16,6 +16,8 @@ area:platform:
       - any-glob-to-any-file:
           - platform/**
           - tools/platform/**
+          - sdk/platform/**
+          - sdk/integrations/**
 
 area:programs:
   - changed-files:

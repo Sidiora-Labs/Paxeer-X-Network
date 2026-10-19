@@ -113,10 +113,10 @@ make paxeer-ci
 | Rust | `services/agent/crates/layerx-sdk` |
 | Python | `services/agent/sdk/python` |
 | TypeScript | `services/agent/sdk/typescript` |
-| Go | `platform/sdk/go` |
-| JVM | `platform/sdk/jvm` |
-| .NET | `platform/sdk/dotnet` |
-| Swift | `platform/sdk/swift` |
+| Go | `sdk/platform/go` |
+| JVM | `sdk/platform/jvm` |
+| .NET | `sdk/platform/dotnet` |
+| Swift | `sdk/platform/swift` |
 
 `layerx-agentd` se trouve dans `services/agent/crates/layerx-agentd`. Le serveur MCP se trouve dans `services/agent/crates/layerx-mcp`. La CLI développeur de `tools/platform/cli` installe ces transports avec `layerx install mcp` et `layerx install a2a`.
 

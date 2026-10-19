@@ -258,7 +258,7 @@ maps `None` to `MissingReceiptDigest`
 
 `services/interop/crates/layerx-portable/tests/receipt_vectors.rs` and
 `services/interop/crates/layerx-portable/tests/independent_verifier.rs` do not
-load files under `platform/sdk/conformance/fixtures/`. Their vectors are
+load files under `sdk/platform/conformance/fixtures/`. Their vectors are
 inline JSON constants. SDK terminal tests do load those fixtures; see
 [SDK terminal verification](../agents/sdk-verification.md).
 
@@ -297,7 +297,7 @@ not `[8;32]`.
 | `independent_implementation_can_enumerate_vectors` | `tests/independent_verifier.rs:179-195` | Two non-empty vectors contain the format id | length 2; each contains `layerx-receipt-proof-v1` |
 
 No portable test returns `Ok(PortableVerifiedReceipt)`. No portable test
-loads `platform/sdk/conformance/fixtures/`.
+loads `sdk/platform/conformance/fixtures/`.
 
 ---
 
@@ -339,7 +339,7 @@ plus independently supplied batch facts. It does not unwrap
 3. `FORMAT.md` names golden vectors in `tests/receipt_vectors.rs` and
    `tests/independent_verifier.rs` as the portability proof
    (`services/interop/crates/layerx-portable/FORMAT.md:72-74`). Those tests use
-   inline JSON, not `platform/sdk/conformance/fixtures/`.
+   inline JSON, not `sdk/platform/conformance/fixtures/`.
 4. `FORMAT.md` step 6 requires `receiptDigest` equality, then Ed25519
    (`services/interop/crates/layerx-portable/FORMAT.md:34-35`). `verify_outcome`
    verifies Ed25519 first (`services/agent/crates/layerx-proof/src/receipt.rs:304-305`);

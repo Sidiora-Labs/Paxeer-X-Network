@@ -28,7 +28,7 @@ class ProgramAccountBoundTest(unittest.TestCase):
             ("batch_id", "asset", "previous_state_root", "resulting_state_root", "sequencer_public_key")
         })
         spec = importlib.util.spec_from_file_location(
-            "account_bound_signatures", root / "platform/integrations/fastapi/layerx_fastapi/signatures.py")
+            "account_bound_signatures", root / "sdk/integrations/fastapi/layerx_fastapi/signatures.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         cls.signatures = module.LayerXSignatureVerifier()

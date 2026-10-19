@@ -21,7 +21,6 @@ members = [
     "hosted/feeder",
     "hosted/perps-keeper",
     "hosted/ai-evaluator",
-    "sdk/generators",
     "tools/kvx",
     "tools/workspace-gate",
     "tools/benchmark",

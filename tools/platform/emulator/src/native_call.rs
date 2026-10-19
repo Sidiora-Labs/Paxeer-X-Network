@@ -134,7 +134,7 @@ mod tests {
 
     fn fixture() -> Result<(serde_json::Value, ModuleRegistry), Box<dyn std::error::Error>> {
         let vector: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../platform/sdk/conformance/fixtures/native-program-call-v3.json"
+            "../../../../sdk/platform/conformance/fixtures/native-program-call-v3.json"
         ))?;
         let registry = ModuleRegistry::new(&[ModuleRegistration::new(
             ModuleId::Programs,

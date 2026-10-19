@@ -1791,7 +1791,7 @@ mod source_contract {
         };
         use layerx_types::program_lifecycle::NativeProgramDeploy;
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../../platform/sdk/conformance/fixtures/native-program-deploy-v3.json"
+            "../../../../../sdk/platform/conformance/fixtures/native-program-deploy-v3.json"
         ))
         .map_err(|error| error.to_string())?;
         let fields = object(&fixture).map_err(|error| format!("{error:?}"))?;
@@ -1807,7 +1807,7 @@ mod source_contract {
         )
         .map_err(|error| format!("{error:?}"))?;
         let receipt_fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../../platform/sdk/conformance/fixtures/receipt-programs-positive-v3.json"
+            "../../../../../sdk/platform/conformance/fixtures/receipt-programs-positive-v3.json"
         ))
         .map_err(|error| error.to_string())?;
         let mut receipt = super::bounded_hex(
@@ -2166,7 +2166,7 @@ mod source_contract {
     #[test]
     fn versioned_interface_requires_identical_signed_head() -> Result<(), ProgramOperationError> {
         let fixture: Value = serde_json::from_str(include_str!(
-            "../../../../../platform/sdk/conformance/fixtures/native-program-deploy-v3.json"
+            "../../../../../sdk/platform/conformance/fixtures/native-program-deploy-v3.json"
         ))
         .map_err(|_| ProgramOperationError::Decode)?;
         let payload = bounded_hex(
@@ -2215,7 +2215,7 @@ mod source_contract {
     fn native_call_wire_preserves_real_signed_fixture_and_all_limits()
     -> Result<(), ProgramOperationError> {
         let fixture: Value = serde_json::from_str(include_str!(
-            "../../../../../platform/sdk/conformance/fixtures/native-program-call-v3.json"
+            "../../../../../sdk/platform/conformance/fixtures/native-program-call-v3.json"
         ))
         .map_err(|_| ProgramOperationError::Decode)?;
         let document = object(&fixture)?;
@@ -2302,7 +2302,7 @@ mod source_contract {
     fn native_execution_preserves_captured_receipt_authority_and_unknown_identity()
     -> Result<(), ProgramOperationError> {
         let fixture: Value = serde_json::from_str(include_str!(
-            "../../../../../platform/sdk/conformance/fixtures/receipt-programs-executed-v4.json"
+            "../../../../../sdk/platform/conformance/fixtures/receipt-programs-executed-v4.json"
         ))
         .map_err(|_| ProgramOperationError::Decode)?;
         let source = object(&fixture)?;
@@ -2471,7 +2471,7 @@ mod source_contract {
             .ok_or(ProgramOperationError::Decode)?;
         assert_eq!(cases.len(), 10);
         let anchor: Value = serde_json::from_str(include_str!(
-            "../../../../../platform/sdk/conformance/fixtures/receipt-programs-executed-v4.json"
+            "../../../../../sdk/platform/conformance/fixtures/receipt-programs-executed-v4.json"
         ))
         .map_err(|_| ProgramOperationError::Decode)?;
         let pinned_key = fixed(

@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-const fixture = JSON.parse(readFileSync(new URL("../../../sdk/conformance/fixtures/receipt-positive-v2.json", import.meta.url), "utf8"));
+const fixture = JSON.parse(readFileSync(new URL("../../../../sdk/platform/conformance/fixtures/receipt-positive-v2.json", import.meta.url), "utf8"));
 const bytes = (value) => Buffer.from(value, "hex");
 const hash = (...parts) => createHash("sha256").update(Buffer.concat(parts)).digest();
 const root = fileURLToPath(new URL("../../../../", import.meta.url));

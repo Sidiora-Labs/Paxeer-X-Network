@@ -10,5 +10,5 @@ if [[ -z "${PAXEER_X_PROGRAM_TERMINAL_V5_CORPUS:-}" || ! -r "$PAXEER_X_PROGRAM_T
   exit 78
 fi
 exec swift test --skip-build --disable-automatic-resolution \
-  --package-path "$root/platform/sdk/swift" \
+  --package-path "$root/sdk/platform/swift" \
   --filter 'ProgramsContractTests|ReceiptFixtureTests.testNativeSignedBinding|ReceiptFixtureTests.testNativeLifecycleCFixtures|ReceiptFixtureTests.testSignedTerminalV4Vectors'

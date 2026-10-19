@@ -16,7 +16,7 @@ fn bytes(value: &str) -> Result<Vec<u8>, std::num::ParseIntError> {
 #[test]
 fn native_request_binds_real_signed_fixture() -> Result<(), Box<dyn std::error::Error>> {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../../platform/sdk/conformance/fixtures/native-program-call-v3.json"
+        "../../../../../sdk/platform/conformance/fixtures/native-program-call-v3.json"
     ))?;
     let signed = bytes(
         fixture["signed_activity_hex"]

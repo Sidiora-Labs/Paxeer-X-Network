@@ -59,7 +59,7 @@ from layerx_sdk.x402_rpc import (
 FIXTURE = json.loads(
     (
         Path(__file__).resolve().parents[4]
-        / "platform/sdk/conformance/fixtures/account-derivation-v1.json"
+        / "sdk/platform/conformance/fixtures/account-derivation-v1.json"
     ).read_text()
 )
 ABANDON = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"

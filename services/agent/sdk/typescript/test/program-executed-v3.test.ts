@@ -4,7 +4,7 @@ import { parseProgramExecutionDocument, ProgramTrustContext, verifyProgramReceip
 import { decodeAndVerifyProgramTerminal } from "../src/program-wire.js";
 import { verifyReceiptOutcome } from "../src/verifier.js";
 
-const fixture = JSON.parse(readFileSync(new URL("../../../../../../platform/sdk/conformance/fixtures/receipt-programs-executed-v3.json", import.meta.url), "utf8")) as {
+const fixture = JSON.parse(readFileSync(new URL("../../../../../../sdk/platform/conformance/fixtures/receipt-programs-executed-v3.json", import.meta.url), "utf8")) as {
   canonical_receipt_hex: string; program_id_hex: string; receipt_digest_hex: string; terminal_payload_hex: string; call_graph_hex: string;
   execution_document: Readonly<Record<string, unknown>>;
   authorized_batch: { batch_id_hex: string; asset_hex: string; previous_state_root_hex: string; resulting_state_root_hex: string; sequencer_public_key_hex: string };
@@ -34,7 +34,7 @@ const corrupted = Buffer.from(fixture.canonical_receipt_hex, "hex"); corrupted[c
 await assert.rejects(verifyProgramReceipt(parseProgramExecutionDocument({ ...document, receipt: corrupted.toString("hex") }), authority, trust));
 
 for (const name of ["executed-v4", "principal-v4", "mutated-leg-v4", "executed-v3"]) {
-  const vector = JSON.parse(readFileSync(new URL(`../../../../../../platform/sdk/conformance/fixtures/receipt-programs-${name}.json`, import.meta.url), "utf8")) as typeof fixture & { signed_activity_hex: string };
+  const vector = JSON.parse(readFileSync(new URL(`../../../../../../sdk/platform/conformance/fixtures/receipt-programs-${name}.json`, import.meta.url), "utf8")) as typeof fixture & { signed_activity_hex: string };
   const batch = vector.authorized_batch;
   const authenticated = await verifyReceiptOutcome(Buffer.from(vector.canonical_receipt_hex, "hex"), {
     batchId: Buffer.from(batch.batch_id_hex, "hex"), asset: Buffer.from(batch.asset_hex, "hex"),

@@ -40,7 +40,7 @@ check_refuses() {
 	local tmp out code
 	tmp=$(mktemp -d) || return 1
 	git clone -q --shared --no-checkout . "$tmp/repo" &&
-		git -C "$tmp/repo" checkout -q HEAD -- docs platform/docs README.md platform/sdk spec tools/bringup/docs-names.sh || {
+		git -C "$tmp/repo" checkout -q HEAD -- docs platform/docs README.md sdk/platform spec tools/bringup/docs-names.sh || {
 		rm -rf "$tmp"
 		return 1
 	}
@@ -82,7 +82,7 @@ for page in \
 	check "private-network-only:$page" private_network_only "$page"
 done
 
-check package-info-docs-location no_docs_host platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/package-info.java
+check package-info-docs-location no_docs_host sdk/platform/jvm/src/main/java/com/sidiora/layerx/sdk/package-info.java
 
 echo "PAXEER_X_GATE tests=${tests} skipped=0"
 exit "$failed"

@@ -15,7 +15,7 @@ use sha2::{Digest as _, Sha256};
 
 type TestResult = Result<(), String>;
 
-const FIXTURE: &str = "../../../../platform/sdk/conformance/fixtures/receipt-sequencer-v1.json";
+const FIXTURE: &str = "../../../../sdk/platform/conformance/fixtures/receipt-sequencer-v1.json";
 const UPDATE_ENV: &str = "LAYERX_UPDATE_FIXTURES";
 const NAME: &str = "receipt-sequencer-v1";
 const STRUCTURE_TAG: u16 = 0x5201;

@@ -1,2 +1,2 @@
-include!("../../../../../platform/sdk/conformance/secret-hygiene.test.rs");
-include!("../../../../../platform/sdk/conformance/streaming-resumability.test.rs");
+include!("../../../../../sdk/platform/conformance/secret-hygiene.test.rs");
+include!("../../../../../sdk/platform/conformance/streaming-resumability.test.rs");

@@ -1,0 +1,77 @@
+{
+  "name": "@sidiora/layerx-agent-integrations",
+  "version": "0.1.0",
+  "description": "One-dependency LayerX integrations for MCP, A2A, OpenAI, Anthropic, LangChain and the Vercel AI SDK",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sidiora-Labs/Paxeer-X-Network.git",
+    "directory": "sdk/integrations/agents"
+  },
+  "type": "module",
+  "private": false,
+  "license": "Apache-2.0",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp.d.ts",
+      "import": "./dist/mcp.js"
+    },
+    "./a2a": {
+      "types": "./dist/a2a.d.ts",
+      "import": "./dist/a2a.js"
+    },
+    "./openai": {
+      "types": "./dist/openai.d.ts",
+      "import": "./dist/openai.js"
+    },
+    "./anthropic": {
+      "types": "./dist/anthropic.d.ts",
+      "import": "./dist/anthropic.js"
+    },
+    "./langchain": {
+      "types": "./dist/langchain.d.ts",
+      "import": "./dist/langchain.js"
+    },
+    "./vercel-ai": {
+      "types": "./dist/vercel-ai.d.ts",
+      "import": "./dist/vercel-ai.js"
+    }
+  },
+  "files": [
+    "dist",
+    "scripts"
+  ],
+  "bin": {
+    "layerx-mcp-server": "./dist/mcp-server.js"
+  },
+  "scripts": {
+    "build": "node scripts/patch-dependencies.mjs && tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/dependency-contracts.test.mjs && node test/a2a-store.test.mjs",
+    "integration:real": "node examples/agent-runtime/index.mjs",
+    "integration:webhooks": "node examples/agent-runtime/webhook-conformance.mjs",
+    "postinstall": "node scripts/patch-dependencies.mjs"
+  },
+  "dependencies": {
+    "@a2a-js/sdk": "1.0.1",
+    "@anthropic-ai/sdk": "0.120.0",
+    "@langchain/core": "1.2.4",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@sidiora/layerx-agent-middleware": "0.1.0",
+    "@sidiora/layerx-sdk": "0.1.0",
+    "@sidiora/layerx-seller-middleware": "0.1.0",
+    "ai": "7.0.77",
+    "openai": "7.5.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/json-schema": "7.0.15",
+    "@types/node": "22.18.1",
+    "typescript": "5.9.2"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}

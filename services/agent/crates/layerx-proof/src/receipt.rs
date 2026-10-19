@@ -1070,13 +1070,13 @@ mod programs_version_contract {
     use layerx_wire::limits::{LEGACY_PROTOCOL_VERSION, STATE_COMMITMENT_PROTOCOL_VERSION};
 
     const POSITIVE_V1: &str = include_str!(
-        "../../../../../platform/sdk/conformance/fixtures/receipt-programs-positive-v1.json"
+        "../../../../../sdk/platform/conformance/fixtures/receipt-programs-positive-v1.json"
     );
     const POSITIVE_V2: &str = include_str!(
-        "../../../../../platform/sdk/conformance/fixtures/receipt-programs-positive-v2.json"
+        "../../../../../sdk/platform/conformance/fixtures/receipt-programs-positive-v2.json"
     );
     const POSITIVE_V3: &str = include_str!(
-        "../../../../../platform/sdk/conformance/fixtures/receipt-programs-positive-v3.json"
+        "../../../../../sdk/platform/conformance/fixtures/receipt-programs-positive-v3.json"
     );
 
     fn expected_block<'a>(document: &'a str, name: &str) -> &'a str {

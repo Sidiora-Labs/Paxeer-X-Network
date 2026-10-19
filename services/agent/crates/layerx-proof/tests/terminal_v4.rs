@@ -35,7 +35,7 @@ fn load(name: &str) -> String {
     let directory = std::env::var_os("LAYERX_TERMINAL_FIXTURE_DIR").map_or_else(
         || {
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../../platform/sdk/conformance/fixtures")
+                .join("../../../../sdk/platform/conformance/fixtures")
         },
         PathBuf::from,
     );
@@ -131,7 +131,7 @@ fn real_executed_v4_and_signed_mutated_leg_refusal() {
 #[test]
 fn stored_historical_protocol_v1_receipt_still_verifies_byte_exactly() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../../platform/sdk/conformance/fixtures/receipt-programs-positive-v1.json");
+        .join("../../../../sdk/platform/conformance/fixtures/receipt-programs-positive-v1.json");
     let document = std::fs::read_to_string(path).unwrap_or_else(|error| panic!("{error}"));
     let canonical = bytes(&document, "canonical_receipt_hex");
     let authority = AuthorizedBatch::new(
@@ -205,7 +205,7 @@ fn terminal_v4_envelope_refuses_bounds_truncation_and_trailing_bytes() {
 #[test]
 fn stored_historical_v3_receipt_replays_without_v4_fields() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../../platform/sdk/conformance/fixtures/receipt-programs-executed-v3.json");
+        .join("../../../../sdk/platform/conformance/fixtures/receipt-programs-executed-v3.json");
     let document = std::fs::read_to_string(path).unwrap_or_else(|error| panic!("{error}"));
     let canonical = bytes(&document, "canonical_receipt_hex");
     let authority = AuthorizedBatch::new(

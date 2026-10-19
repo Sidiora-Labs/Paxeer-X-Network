@@ -16,7 +16,7 @@ const EVENT_KIND: u8 = 3;
 
 fn fixture() -> JsonValue {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../../platform/sdk/conformance/fixtures/sequencer-receipt-v1.json");
+        .join("../../../../sdk/platform/conformance/fixtures/sequencer-receipt-v1.json");
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
     parse(&text).unwrap_or_else(|error| panic!("{}: {error}", path.display()))

@@ -20,7 +20,7 @@ test("native signed envelope binds receive payload, identity network and idempot
 test("persistent draw registrations preserve signed bytes and reject changed request ownership", async () => {
   const directory = mkdtempSync(join(tmpdir(), "layerx-pay6-draw-"));
   const rpc = new PaymentRpc("http://127.0.0.1:1/rpc");
-  const f = JSON.parse(readFileSync(new URL("../../../sdk/conformance/fixtures/receipt-positive-v2.json", import.meta.url))).authorized_batch;
+  const f = JSON.parse(readFileSync(new URL("../../../../sdk/platform/conformance/fixtures/receipt-positive-v2.json", import.meta.url))).authorized_batch;
   const b = v => Uint8Array.from(Buffer.from(v, "hex"));
   const authority = async () => ({ batchId: b(f.batch_id_hex), asset: b(f.asset_hex), previousStateRoot: b(f.previous_state_root_hex), resultingStateRoot: b(f.resulting_state_root_hex), sequencerPublicKey: b(f.sequencer_public_key_hex) });
   const store = new PreparedGrantDraws(join(directory, "draws.sqlite"), "did:lxp:pay6-receiver", 7, rpc, authority);
@@ -63,7 +63,7 @@ test("draw execution maps only typed protocol pending and surfaces HTTP, parse, 
   await new Promise((resolve, reject) => server.listen(0, "127.0.0.1", (error) => error ? reject(error) : resolve()));
   const address = server.address();
   assert.ok(address !== null && typeof address === "object");
-  const receiptFixture = JSON.parse(readFileSync(new URL("../../../sdk/conformance/fixtures/receipt-positive-v2.json", import.meta.url))).authorized_batch;
+  const receiptFixture = JSON.parse(readFileSync(new URL("../../../../sdk/platform/conformance/fixtures/receipt-positive-v2.json", import.meta.url))).authorized_batch;
   const bytes = value => Uint8Array.from(Buffer.from(value, "hex"));
   const authority = async () => ({ batchId: bytes(receiptFixture.batch_id_hex), asset: bytes(receiptFixture.asset_hex),
     previousStateRoot: bytes(receiptFixture.previous_state_root_hex), resultingStateRoot: bytes(receiptFixture.resulting_state_root_hex),

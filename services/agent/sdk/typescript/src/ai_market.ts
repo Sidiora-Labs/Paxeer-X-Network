@@ -32,7 +32,7 @@ import type {
   SequencerAuthorization,
 } from "./verifier.js";
 
-/** Values of platform/sdk/schema/paxai-v1.kvx [limits]. */
+/** Values of sdk/platform/schema/paxai-v1.kvx [limits]. */
 export const PAXAI_LIMITS = Object.freeze({
   finalizedRank: 4,
   settlementRank: 5,

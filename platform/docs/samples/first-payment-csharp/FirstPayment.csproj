@@ -8,6 +8,6 @@
     <AssemblyName>layerx-doc-first-payment</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../../sdk/dotnet/LayerX.Sdk.csproj" />
+    <ProjectReference Include="../../../../sdk/platform/dotnet/LayerX.Sdk.csproj" />
   </ItemGroup>
 </Project>

@@ -27,7 +27,7 @@ interface IntentPlanFixture {
 }
 
 const fixture = JSON.parse(readFileSync(
-  new URL("../../../../../../platform/sdk/conformance/fixtures/intent-plan-v1.json", import.meta.url),
+  new URL("../../../../../../sdk/platform/conformance/fixtures/intent-plan-v1.json", import.meta.url),
   "utf8",
 )) as IntentPlanFixture;
 assert.equal(fixture.name, "intent-plan-v1");

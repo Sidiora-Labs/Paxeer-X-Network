@@ -231,7 +231,7 @@ mod tests {
     type Outcome = Result<(), Box<dyn Error>>;
 
     const FIXTURE: &str =
-        include_str!("../../../../../platform/sdk/conformance/fixtures/account-derivation-v1.json");
+        include_str!("../../../../../sdk/platform/conformance/fixtures/account-derivation-v1.json");
 
     fn hex(bytes: &[u8]) -> String {
         use std::fmt::Write as _;

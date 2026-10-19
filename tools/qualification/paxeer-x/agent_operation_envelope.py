@@ -117,7 +117,7 @@ LEVELS = ('Unverified', 'SequencerSigned', 'BatchIncluded', 'StateProven', 'Chec
 SOURCES = ('services/agent/crates', 'services/agent/Cargo.toml', 'services/agent/Cargo.lock', 'services/agent/schema/agent-api', 'services/agent/sdk/typescript/src',
            'services/agent/sdk/typescript/test', 'services/agent/sdk/typescript/package.json', 'services/agent/sdk/typescript/package-lock.json',
            'services/agent/sdk/typescript/tsconfig.json', 'services/agent/sdk/python', 'platform/hosted/gateway', 'platform/Cargo.toml',
-           'platform/Cargo.lock', 'platform/sdk/go', 'platform/sdk/jvm', 'platform/sdk/swift', 'platform/sdk/dotnet',
+           'platform/Cargo.lock', 'sdk/platform/go', 'sdk/platform/jvm', 'sdk/platform/swift', 'sdk/platform/dotnet',
            'tools/paxeer-x/route-catalogue.json', 'tools/qualification/paxeer-x/agent_operation_envelope.py',
            'tools/qualification/paxeer-x/fixtures/event_source_fixture.py',
            'tests/daemon/lxp_test_runtime_fixture.c', 'tests/storage/lxp_test_maintenance_publication.c',
@@ -260,9 +260,9 @@ def build(manifest):
     step(['npm', 'run', 'build'], cwd=ts)
     artifacts['typescript_probe'] = str(ts / 'dist/test/agent-operation-envelope.test.js')
     go_probe = bundle / 'go-agent-envelope.test'
-    step(['go', 'test', '-c', '-o', go_probe, '.'], cwd=ROOT / 'platform/sdk/go')
+    step(['go', 'test', '-c', '-o', go_probe, '.'], cwd=ROOT / 'sdk/platform/go')
     artifacts['go_probe'] = str(go_probe)
-    jvm = ROOT / 'platform/sdk/jvm'
+    jvm = ROOT / 'sdk/platform/jvm'
     classpath_file = bundle / 'jvm-classpath.txt'
     step(['mvn', '-q', '-o', '-B', 'test-compile', 'dependency:build-classpath',
           '-Dmdep.outputFile=' + str(classpath_file), '-Dmdep.includeScope=test'], cwd=jvm)
@@ -270,13 +270,13 @@ def build(manifest):
     artifacts['kotlin_probe'] = str(jvm / 'target/test-classes/com/sidiora/layerx/sdk/AgentOperationEnvelopeProbeKt.class')
     artifacts['jvm_main_classes'] = str(jvm / 'target/classes/com/sidiora/layerx/sdk/HttpProductionTransport.class')
     artifacts['jvm_classpath'] = str(classpath_file)
-    swift = ROOT / 'platform/sdk/swift'
+    swift = ROOT / 'sdk/platform/swift'
     step(['swift', 'build', '--build-tests', '-c', 'debug'], cwd=swift)
     swift_bin = Path(step(['swift', 'build', '--show-bin-path', '-c', 'debug'], cwd=swift).strip().splitlines()[-1])
     tests = sorted(swift_bin.glob('*PackageTests.xctest'))
     require(len(tests) == 1, 'swift test bundle not unique')
     artifacts['swift_probe'] = str(tests[0] / 'Contents/MacOS' / tests[0].stem) if (tests[0] / 'Contents').exists() else str(tests[0])
-    dotnet = ROOT / 'platform/sdk/dotnet/tests/LayerX.Sdk.Tests'
+    dotnet = ROOT / 'sdk/platform/dotnet/tests/LayerX.Sdk.Tests'
     step(['dotnet', 'build', '-c', 'Release', '--no-restore', 'LayerX.Sdk.Tests.csproj'], cwd=dotnet)
     dlls = sorted(dotnet.glob('bin/Release/*/LayerX.Sdk.Tests.dll'))
     require(len(dlls) == 1, 'dotnet test assembly not unique')
@@ -1358,7 +1358,7 @@ class Qualification:
             'go': [art['go_probe']['path'], '-test.run', '^TestAgentOperationEnvelopeProcessCases$', '-test.v', '-test.count=1'],
             'java': ['java', '-cp', jvm_classpath, 'com.sidiora.layerx.sdk.AgentOperationEnvelopeProbe'],
             'kotlin': ['java', '-cp', jvm_classpath, 'com.sidiora.layerx.sdk.AgentOperationEnvelopeProbeKt'],
-            'swift': ['swift', 'test', '--skip-build', '--package-path', str(ROOT / 'platform/sdk/swift'),
+            'swift': ['swift', 'test', '--skip-build', '--package-path', str(ROOT / 'sdk/platform/swift'),
                       '--filter', 'AgentOperationEnvelopeTests'],
             'csharp': ['dotnet', 'test', art['csharp_probe']['path'], '--no-build', '--filter',
                        'FullyQualifiedName~' + csharp_class, '--logger', 'console;verbosity=detailed'],
