@@ -284,7 +284,9 @@ func TestSpotDecoders(t *testing.T) {
 		}
 	})
 
-	// The order events resolve their token on the node of PERPS_DATA_TEST_RPC.
+	// The order events resolve their token on the node of PERPS_DATA_TEST_RPC,
+	// against the orders seedSpotRestingOrders rests there from the feed book.
+	seedSpotRestingOrders(t)
 	type orderCase struct {
 		name  string
 		ev    abi.Event

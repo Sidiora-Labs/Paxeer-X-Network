@@ -8396,3 +8396,8 @@ fix = "run the seeded branch under the mainnet chain id hyperpax_125-1 so block.
 area = "surface parity tests"
 symptom = "a trace comparison that uses require stops the whole test at the first divergent trace, so every later trace of that contract goes unchecked and a verify log says nothing about them"
 fix = "compare traces with assert-style checks that record every divergence and fail once at the end"
+
+[gotcha.1765]
+area = "perps-data gates"
+symptom = "the public order book feed answers 401 authentication_required without a bearer key, and a loopback test node that keeps only 100 blocks of state at 200 ms blocks prunes the heights a 20 second replay test still reads"
+fix = "serve a recorded order set on loopback and say so in the evidence, and keep at least 100000 blocks of state on a throwaway gate chain"

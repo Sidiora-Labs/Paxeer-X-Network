@@ -2084,3 +2084,35 @@ exit = 0
 log = fleet/logs/release-2.2.6-requal-226440a4b.log
 observed = The done task refused accountingInitialized, accountingMigrationCursor, getProtocolFeesPending, getLpRewardsBalance, legacyAirdropUnallocated, claim, burn and sendLpRewards with InvalidConfiguration against req ac lines 1799-1825 that say served; the precompile and keeper now serve them with a pool-keyed LP rewards ledger and router entry points, the test asserts the served values and the named reverts, and its gate was rerun once at this revision.
 assumption = The genesis field AccountingInitialized stays false while the getter returns true as ac_7 requires; no other done task asserts the refusal.
+
+[finding.7.1.9-verified]
+revision = c6fbfb960ac5975e29918c245d63802ccea46871
+command = go test ./services/platform/perps-data/internal/markets/ -count=1
+exit = 0
+log = fleet/logs/release-7.1.9.log
+observed = Resolved against a throwaway single-validator v6.12.0 chain on loopback (halt export as genesis, plan applied by the swap tool, giga executor off) with the market seed, startup refresh and fee configuration read from the live perps precompile; no code change.
+assumption = The gate needs PERPS_DATA_TEST_DATABASE_URL and PERPS_DATA_TEST_RPC; the local-chain procedure is the reusable harness for every perps-data gate.
+
+[finding.7.1.3-verified]
+revision = c6fbfb960ac5975e29918c245d63802ccea46871
+command = go test ./services/platform/perps-data/internal/decode/ -count=1
+exit = 0
+log = fleet/logs/release-7.1.3.log
+observed = Resolved on the same loopback chain with a running price sidecar and three real signed spot orders (limit sell, stop-limit sell, stop-loss) placed by the new seed test; the public feed origin answers 401 authentication_required without a bearer key, so the order book came from a recorded order set served on loopback, never live feed data.
+assumption = The gate needs FEED_ORIGIN, PERPS_DATA_TEST_SEED_KEY_FILE and PERPS_DATA_TEST_RPC; a feed key would let the seed read the live book.
+
+[finding.7.1.7-verified]
+revision = c6fbfb960ac5975e29918c245d63802ccea46871
+command = go test ./services/platform/perps-data/internal/replay/ -count=1
+exit = 0
+log = fleet/logs/release-7.1.7.log
+observed = Resolved on the second run; the first run failed no_duplicate_messages and holds_lease with "block 1691 consensus block parameters are unavailable" because the sandbox node kept 100 blocks of state at 200 ms blocks, shorter than the 22 second test, and passed unchanged once retention was raised; prunedRefusal in internal/source/rpc.go matches only "requested height N has been pruned" and misses the node's "evm module does not exist on height N" and "consensus block parameters are unavailable" wordings, and eth_getBlockByNumber and debug_traceTransaction report the latter instead of a pruned height.
+assumption = The gate needs PERPS_DATA_TEST_DATABASE_URL, PERPS_DATA_TEST_RPC and PERPS_DATA_TEST_COMET; the two unmatched pruned wordings are a source-side gap for a follow-up task, not a gate failure.
+
+[finding.node-giga-late-height-every-chain]
+revision = c6fbfb960ac5975e29918c245d63802ccea46871
+command = tools/release/swap.sh --service-manager foreground
+exit = 0
+log = fleet/logs/release-7.1-chain.log
+observed = gigaLatePrecompileHeight 26300000 in node/app.go applies on every chain id, so on any chain below that height calls to 0x1020 through 0x1025 succeed silently as empty accounts unless the giga executor is disabled, and paxd tx evm call-contract panics in getNonce because the node refuses the pending block tag as served by the sequencer.
+assumption = Mainnet is above the gate so the release is unaffected; both are follow-up items for local-chain tooling.
