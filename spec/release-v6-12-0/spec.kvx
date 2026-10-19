@@ -7327,7 +7327,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.18]
 title = "Test MigrateV6120 against the golden fixture"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["2.2.17", "2.2.15"]

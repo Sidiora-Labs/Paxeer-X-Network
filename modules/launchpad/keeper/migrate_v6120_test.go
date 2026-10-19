@@ -31,6 +31,7 @@ import (
 const (
 	v6120GoldenFile     = "golden.json"
 	v6120HaltExportPath = "../../../node/testdata/v6120-halt-export.json"
+	v6120MainnetChainID = "hyperpax_125-1"
 	v6120SurfaceRuntime = "0x363d3d373360601b36523d3d601436013d3d6110175af13d600060003e6024573d6000fd5b3d6000f3"
 )
 
@@ -38,7 +39,7 @@ var (
 	v6120Generation2Factory        = common.HexToAddress("0x3993D004166738d1069B5C4e0a923f7B9D5D8830")
 	v6120Generation2FeeAccumulator = common.HexToAddress("0x7b14808b72f61664cDb79D25E6d1587655571a66")
 	v6120Generation2ProtocolConfig = common.HexToAddress("0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6")
-	v6120Generation2EventEmitter   = common.HexToAddress("0x622E61E4E4dA55E7d2D7D6E2E2B1c64a0C7c3EF6")
+	v6120Generation2EventEmitter   = common.HexToAddress("0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6")
 	v6120Generation2Collection     = common.HexToAddress("0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B")
 	v6120Generation1Pool           = common.HexToAddress("0xEeA16aC55AaE47c484EBef02eb1186aD606e1BF9")
 	v6120Generation2Pool           = common.HexToAddress("0xCE20Da50F92D21d8BeE497910c782E9Aa25b6263")
@@ -208,6 +209,17 @@ func (g *v6120Golden) accumulators(t *testing.T) []common.Address {
 		g.generation(t, 2).Roles[types.RoleFeeAccumulator]}
 }
 
+// requireIntEqual compares two amounts by value: a zero sdk.Int decoded from
+// the store and one built from golden bytes differ in their big.Int form.
+func requireIntEqual(t *testing.T, want, got sdk.Int, msgAndArgs ...any) {
+	t.Helper()
+	require.Equal(t, want.String(), got.String(), msgAndArgs...)
+}
+
+func bookHeldDeltaString(d types.BookHeldDelta) string {
+	return strings.Join([]string{d.Pool, d.Asset, d.Book.String(), d.Held.String(), d.Delta.String()}, " ")
+}
+
 func uintArg(n uint64) []byte { return word(new(big.Int).SetUint64(n)) }
 
 // v6120Run is a test application branch seeded from the halt-height export,
@@ -229,6 +241,25 @@ type v6120HaltExport struct {
 	AppState      map[string]json.RawMessage `json:"app_state"`
 }
 
+// loadV6120HaltEVM reads the EVM state of the halt-height export and requires
+// it to be the export of golden height h.
+func loadV6120HaltEVM(t *testing.T, h uint64) (int64, evmgenesis.GenesisState) {
+	t.Helper()
+	raw, err := os.ReadFile(v6120HaltExportPath)
+	require.NoError(t, err, "halt-height export %s", v6120HaltExportPath)
+	var export v6120HaltExport
+	require.NoError(t, json.Unmarshal(raw, &export))
+	initial, err := export.InitialHeight.Int64()
+	require.NoError(t, err)
+	require.Equal(t, int64(h)+1, initial,
+		"halt-height export %s is not the export of golden height %d", v6120HaltExportPath, h)
+	evmState, ok := export.AppState["evm"]
+	require.True(t, ok, "halt-height export %s has no evm state", v6120HaltExportPath)
+	var genesis evmgenesis.GenesisState
+	require.NoError(t, testkeeper.EVMTestApp.AppCodec().UnmarshalAsJSON(evmState, &genesis))
+	return initial, genesis
+}
+
 // seedV6120 loads golden.json and the halt-height export, requires the export
 // to carry the Launch-x contracts of both generations, and writes its EVM
 // code, storage and nonces into a branch of the test application at H+1.
@@ -241,18 +272,7 @@ func seedV6120(t *testing.T) *v6120Run {
 	decodeV6120Fixture(t, "holders.json", &r.holders)
 	decodeV6120Fixture(t, "pools.json", &r.pools)
 
-	raw, err := os.ReadFile(v6120HaltExportPath)
-	require.NoError(t, err, "halt-height export %s", v6120HaltExportPath)
-	var export v6120HaltExport
-	require.NoError(t, json.Unmarshal(raw, &export))
-	initial, err := export.InitialHeight.Int64()
-	require.NoError(t, err)
-	require.Equal(t, int64(r.golden.Height)+1, initial,
-		"halt-height export %s is not the export of golden height %d", v6120HaltExportPath, r.golden.Height)
-	evmState, ok := export.AppState["evm"]
-	require.True(t, ok, "halt-height export %s has no evm state", v6120HaltExportPath)
-	var genesis evmgenesis.GenesisState
-	require.NoError(t, app.AppCodec().UnmarshalAsJSON(evmState, &genesis))
+	initial, genesis := loadV6120HaltEVM(t, r.golden.Height)
 	codes := map[common.Address]bool{}
 	for _, code := range genesis.Codes {
 		codes[common.HexToAddress(code.Address)] = len(code.Code) > 0
@@ -274,6 +294,9 @@ func seedV6120(t *testing.T) *v6120Run {
 
 	ctx := app.GetContextForDeliverTx([]byte{})
 	ctx, _ = ctx.CacheContext()
+	// golden.json is read by eth_call on mainnet, so chain-bound getters such
+	// as the EIP-712 DOMAIN_SEPARATOR need block.chainid 125 at H+1.
+	ctx = ctx.WithChainID(v6120MainnetChainID)
 	ctx = ctx.WithBlockHeight(initial).WithBlockTime(time.Unix(int64(r.golden.Timestamp)+1, 0).UTC())
 	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
 	for _, code := range genesis.Codes {
@@ -413,16 +436,16 @@ func TestPoolFieldsMatchGolden(t *testing.T) {
 		require.Equal(t, g.token(t, pool).Hex(), market.TokenAddress, pool.Hex())
 		require.Equal(t, g.address(t, pool, "opticalAddress()").Hex(), market.Optical, pool.Hex())
 		require.Equal(t, r.account(g.address(t, pool, "guardian()")), market.Guardian, pool.Hex())
-		require.Equal(t, g.uint(t, pool, "virtualUsdlReserve()"), market.VirtualQuoteReserve, pool.Hex())
+		requireIntEqual(t, g.uint(t, pool, "virtualUsdlReserve()"), market.VirtualQuoteReserve, pool.Hex())
 		require.Equal(t, g.uint(t, pool, "creationTimestamp()").Int64(), market.CreationTime, pool.Hex())
-		require.Equal(t, g.uint(t, pool, "cumulativeVolume()"), market.CumulativeVolume, pool.Hex())
+		requireIntEqual(t, g.uint(t, pool, "cumulativeVolume()"), market.CumulativeVolume, pool.Hex())
 		require.Equal(t, g.uint64(t, pool, "snapshotIndex()"), market.SnapshotIndex, pool.Hex())
 		require.Equal(t, g.uint64(t, pool, "snapshotCount()"), market.SnapshotCount, pool.Hex())
-		require.Equal(t, g.uint(t, pool, "accumulatedUsdlFees()"), market.AccumulatedQuoteFees, pool.Hex())
-		require.Equal(t, g.uint(t, pool, "accumulatedTokenFees()"), market.AccumulatedTokenFees, pool.Hex())
+		requireIntEqual(t, g.uint(t, pool, "accumulatedUsdlFees()"), market.AccumulatedQuoteFees, pool.Hex())
+		requireIntEqual(t, g.uint(t, pool, "accumulatedTokenFees()"), market.AccumulatedTokenFees, pool.Hex())
 		require.Len(t, market.PriceSnapshots, types.SnapshotSlots)
 		for i := range market.PriceSnapshots {
-			require.Equal(t, g.uint(t, pool, "priceSnapshots(uint256)", uintArg(uint64(i))), market.PriceSnapshots[i],
+			requireIntEqual(t, g.uint(t, pool, "priceSnapshots(uint256)", uintArg(uint64(i))), market.PriceSnapshots[i],
 				"%s snapshot %d", pool.Hex(), i)
 		}
 		// Slots 24 to 28 are absent from the generation 1 implementation;
@@ -440,7 +463,7 @@ func TestPoolFieldsMatchGolden(t *testing.T) {
 				require.True(t, f.got.IsZero(), "%s %s", pool.Hex(), f.signature)
 				continue
 			}
-			require.Equal(t, g.uint(t, pool, f.signature), f.got, "%s %s", pool.Hex(), f.signature)
+			requireIntEqual(t, g.uint(t, pool, f.signature), f.got, "%s %s", pool.Hex(), f.signature)
 		}
 		if c := g.call(t, pool, "pendingGuardian()"); c.Reverted {
 			require.Empty(t, market.PendingGuardian, pool.Hex())
@@ -464,11 +487,18 @@ func TestPoolTokensStayContracts(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, found, "token %s became a surface", token.Hex())
 		supply := r.golden.uint(t, token, "totalSupply()")
-		require.Equal(t, supply, r.viewInt(token, "totalSupply()"))
-		require.Equal(t, supply, r.market(pool).TotalSupply)
+		requireIntEqual(t, supply, r.viewInt(token, "totalSupply()"))
+		requireIntEqual(t, supply, r.market(pool).TotalSupply)
 		require.Equal(t, r.golden.output(t, token, "name()"), r.view(token, "name()"))
 		require.Equal(t, r.golden.output(t, token, "symbol()"), r.view(token, "symbol()"))
-		require.Equal(t, pool, r.golden.address(t, token, "pool()"))
+		// The generation 1 SidioraERC20 has no pool() getter; it reverts with
+		// empty data there.
+		if c := r.golden.call(t, token, "pool()"); c.Reverted {
+			require.Equal(t, 1, recorded.Generation, token.Hex())
+			require.Empty(t, c.Output, token.Hex())
+		} else {
+			require.Equal(t, pool, r.golden.address(t, token, "pool()"))
+		}
 	}
 }
 
@@ -493,30 +523,30 @@ func TestPoolTokenBalancesMatchGolden(t *testing.T) {
 		for _, h := range holders {
 			holder := common.HexToAddress(h)
 			balance := r.viewInt(token, "balanceOf(address)", addressWord(holder))
-			require.Equal(t, r.golden.uint(t, token, "balanceOf(address)", addressWord(holder)), balance,
+			requireIntEqual(t, r.golden.uint(t, token, "balanceOf(address)", addressWord(holder)), balance,
 				"%s balance of %s", token.Hex(), h)
 			sum = sum.Add(balance)
 		}
-		require.Equal(t, sdk.NewIntFromBigInt(supply.TotalSupply.ToInt()), sum, token.Hex())
-		require.Equal(t, sdk.NewIntFromBigInt(supply.HolderSum.ToInt()), sum, token.Hex())
+		requireIntEqual(t, sdk.NewIntFromBigInt(supply.TotalSupply.ToInt()), sum, token.Hex())
+		requireIntEqual(t, sdk.NewIntFromBigInt(supply.HolderSum.ToInt()), sum, token.Hex())
 	}
 }
 
 func TestReservesAreMinOfBookAndHeld(t *testing.T) {
 	r := migratedV6120(t)
 	quote := common.HexToAddress(r.usdl.Address)
-	var want []types.BookHeldDelta
+	var want []string
 	for _, pool := range r.golden.pools(t) {
 		market := r.market(pool)
 		token := r.golden.token(t, pool)
 		bookQuote, heldQuote := r.golden.uint(t, pool, "realUsdlBalance()"), r.usdlBalance(pool)
 		bookToken := r.golden.uint(t, pool, "tokenReserve()")
 		heldToken := r.golden.uint(t, token, "balanceOf(address)", addressWord(pool))
-		require.Equal(t, sdk.MinInt(bookQuote, heldQuote), market.RealQuoteBalance, pool.Hex())
-		require.Equal(t, sdk.MinInt(bookToken, heldToken), market.TokenReserve, pool.Hex())
+		requireIntEqual(t, sdk.MinInt(bookQuote, heldQuote), market.RealQuoteBalance, pool.Hex())
+		requireIntEqual(t, sdk.MinInt(bookToken, heldToken), market.TokenReserve, pool.Hex())
 		ledger, err := r.k.GetQuoteLedger(r.ctx, keeper.HeldQuoteLedger(pool))
 		require.NoError(t, err)
-		require.Equal(t, heldQuote, ledger, pool.Hex())
+		requireIntEqual(t, heldQuote, ledger, pool.Hex())
 		require.True(t, ledger.GTE(market.RealQuoteBalance))
 		require.True(t, r.viewInt(token, "balanceOf(address)", addressWord(pool)).GTE(market.TokenReserve))
 		for _, pair := range []struct {
@@ -532,13 +562,17 @@ func TestReservesAreMinOfBookAndHeld(t *testing.T) {
 			d := types.BookHeldDelta{Pool: pool.Hex(), Asset: pair.asset.Hex(), Book: pair.book, Held: pair.held,
 				Delta: pair.held.Sub(pair.book)}
 			require.True(t, found, "%s %s", pool.Hex(), pair.asset.Hex())
-			require.Equal(t, d, got)
-			want = append(want, d)
+			require.Equal(t, bookHeldDeltaString(d), bookHeldDeltaString(got))
+			want = append(want, bookHeldDeltaString(d))
 		}
 	}
 	deltas, err := r.k.BookHeldDeltas(r.ctx)
 	require.NoError(t, err)
-	require.ElementsMatch(t, want, deltas)
+	var stored []string
+	for _, d := range deltas {
+		stored = append(stored, bookHeldDeltaString(d))
+	}
+	require.ElementsMatch(t, want, stored)
 	for _, known := range r.pools.Deltas {
 		got, found, err := r.k.GetBookHeldDelta(r.ctx, common.HexToAddress(known.Pool),
 			common.HexToAddress(known.AssetAddress))
@@ -759,15 +793,15 @@ func TestAccountingMatchesGolden(t *testing.T) {
 			require.True(t, r.golden.uint(t, a, "getLpRewardsBalance(address)", addressWord(pool)).IsZero())
 		}
 		market := r.market(pool)
-		require.Equal(t, fees, market.AccumulatedFees, pool.Hex())
-		require.Equal(t, airdrop, market.AirdropBalance, pool.Hex())
+		requireIntEqual(t, fees, market.AccumulatedFees, pool.Hex())
+		requireIntEqual(t, airdrop, market.AirdropBalance, pool.Hex())
 		got, err := r.k.OpticalSurplus(r.ctx, pool)
 		require.NoError(t, err)
-		require.Equal(t, surplus, got, pool.Hex())
+		requireIntEqual(t, surplus, got, pool.Hex())
 	}
 	got, err := r.k.TotalLiabilities(r.ctx)
 	require.NoError(t, err)
-	require.Equal(t, liabilities, got)
+	requireIntEqual(t, liabilities, got)
 	require.Equal(t, []map[string]string{{keeper.AttributeKeyAddress: accumulators[0].Hex(),
 		keeper.AttributeKeyTreasury: r.golden.generation(t, 1).Roles[types.RoleTreasury].Hex(),
 		types.AttributeKeyAmount:    r.golden.uint(t, accumulators[0], "getProtocolFeesPending()").String()}},
@@ -778,10 +812,18 @@ func TestAccountingMatchesGolden(t *testing.T) {
 	}
 	feeHeld, err := r.k.GetQuoteLedger(r.ctx, keeper.FeeHeldLedger(v6120Generation2FeeAccumulator))
 	require.NoError(t, err)
-	require.Equal(t, held, feeHeld)
+	requireIntEqual(t, held, feeHeld)
 	legacy, err := r.k.GetQuoteLedger(r.ctx, keeper.FeeHeldLedger(accumulators[0]))
 	require.NoError(t, err)
 	require.True(t, legacy.IsZero())
+	require.False(t, r.ctx.KVStore(r.key).Has(types.FeeHeldKey(accumulators[0])),
+		"generation 1 FeeHeld key survives the migration")
+	keys := sdk.KVStorePrefixIterator(r.ctx.KVStore(r.key), types.FeeHeldPrefix)
+	for ; keys.Valid(); keys.Next() {
+		require.Equal(t, types.FeeHeldKey(v6120Generation2FeeAccumulator), keys.Key())
+	}
+	require.NoError(t, keys.Close())
+	require.NotPanics(t, func() { r.k.ExportGenesis(r.ctx) })
 }
 
 func TestOpenAirdropEpochsMigrate(t *testing.T) {
@@ -802,13 +844,13 @@ func TestOpenAirdropEpochsMigrate(t *testing.T) {
 				args := [][]byte{addressWord(pool), uintArg(e)}
 				require.Equal(t, r.golden.uint64(t, a, "airdropSnapshotBlock(address,uint256)", args...),
 					record.SnapshotBlock)
-				require.Equal(t, r.golden.uint(t, a, "airdropEligibleSupply(address,uint256)", args...),
+				requireIntEqual(t, r.golden.uint(t, a, "airdropEligibleSupply(address,uint256)", args...),
 					record.EligibleSupply)
-				require.Equal(t, r.golden.uint(t, a, "airdropEpochRemaining(address,uint256)", args...),
+				requireIntEqual(t, r.golden.uint(t, a, "airdropEpochRemaining(address,uint256)", args...),
 					record.Remaining)
-				require.Equal(t, r.golden.uint(t, a, "airdropClaimedSupply(address,uint256)", args...),
+				requireIntEqual(t, r.golden.uint(t, a, "airdropClaimedSupply(address,uint256)", args...),
 					record.ClaimedSupply)
-				require.Equal(t, r.golden.uint(t, a, "legacyAirdropRemaining(address,uint256)", args...),
+				requireIntEqual(t, r.golden.uint(t, a, "legacyAirdropRemaining(address,uint256)", args...),
 					record.LegacyRemaining)
 				root := common.BytesToHash(r.golden.output(t, a, "legacyAirdropRoot(address,uint256)", args...))
 				if root == (common.Hash{}) {
@@ -891,10 +933,10 @@ func TestMigrationIsAtomic(t *testing.T) {
 	require.Equal(t, before, storeEntries(r.ctx, r.key))
 	require.Zero(t, r.k.GetMarketCount(r.ctx))
 	quote := common.HexToAddress(r.usdl.Address)
-	require.Equal(t, custody, r.viewInt(quote, "balanceOf(address)", addressWord(r.k.ModuleEVMAddress(r.ctx))))
+	requireIntEqual(t, custody, r.viewInt(quote, "balanceOf(address)", addressWord(r.k.ModuleEVMAddress(r.ctx))))
 	for _, b := range r.usdl.Balances {
 		holder := common.HexToAddress(b.Address)
-		require.Equal(t, sdk.NewIntFromBigInt(requireAmount(t, b.Balance, false)),
+		requireIntEqual(t, sdk.NewIntFromBigInt(requireAmount(t, b.Balance, false)),
 			r.viewInt(quote, "balanceOf(address)", addressWord(holder)), b.Address)
 	}
 	for _, pool := range r.golden.pools(t) {
@@ -925,7 +967,7 @@ func TestQuoteTokenIsUsdl(t *testing.T) {
 	require.Equal(t, r.usdl.Address, r.k.GetParams(r.ctx).QuoteToken)
 	quote := common.HexToAddress(r.usdl.Address)
 	require.Equal(t, common.HexToHash(r.usdl.CodeHash), testkeeper.EVMTestApp.EvmKeeper.GetCodeHash(r.ctx, quote))
-	require.Equal(t, sdk.NewIntFromBigInt(requireAmount(t, r.usdl.TotalSupply, false)), r.viewInt(quote, "totalSupply()"))
+	requireIntEqual(t, sdk.NewIntFromBigInt(requireAmount(t, r.usdl.TotalSupply, false)), r.viewInt(quote, "totalSupply()"))
 	require.Equal(t, word(big.NewInt(6)), r.view(quote, "decimals()"))
 	_, found := testkeeper.EVMTestApp.BankKeeper.GetDenomMetaData(r.ctx, "uusdl")
 	require.False(t, found, "a uusdl bank denom exists")
@@ -1000,7 +1042,17 @@ func TestFixturesAreConsistent(t *testing.T) {
 			require.Equal(t, quote, g.address(t, c.Address, "usdlAddress()"))
 		}
 	}
-	require.Equal(t, common.HexToHash(usdl.CodeHash), g.contract(t, quote).CodeHash)
+	// golden.json records the launchpad role, pool and pool-token contracts
+	// only; the USDL code at H comes from the halt-height export.
+	_, genesis := loadV6120HaltEVM(t, g.Height)
+	var usdlCode []byte
+	for _, code := range genesis.Codes {
+		if common.HexToAddress(code.Address) == quote {
+			usdlCode = code.Code
+		}
+	}
+	require.NotEmpty(t, usdlCode, "halt-height export carries no code at USDL %s", quote.Hex())
+	require.Equal(t, common.HexToHash(usdl.CodeHash), crypto.Keccak256Hash(usdlCode))
 }
 
 func TestInvariantsHoldAfterMigration(t *testing.T) {
@@ -1015,7 +1067,7 @@ func TestInvariantsHoldAfterMigration(t *testing.T) {
 		}
 	}
 	require.NoError(t, r.migrate())
-	require.Equal(t, before.Add(moved), r.viewInt(quote, "balanceOf(address)", addressWord(custody)))
+	requireIntEqual(t, before.Add(moved), r.viewInt(quote, "balanceOf(address)", addressWord(custody)))
 	for name, invariant := range map[string]sdk.Invariant{"custody": keeper.CustodyInvariant(r.k),
 		"solvency": keeper.SolvencyInvariant(r.k), "liabilities": keeper.LiabilitiesInvariant(r.k)} {
 		message, broken := invariant(r.ctx)
@@ -1045,7 +1097,7 @@ func TestTreasuryLedgerMigrates(t *testing.T) {
 		}
 		got, err := r.k.TreasuryGetBalance(r.ctx, token)
 		require.NoError(t, err)
-		require.Equal(t, ledger, got, token.Hex())
+		requireIntEqual(t, ledger, got, token.Hex())
 		held, err := r.k.TreasuryHeld(r.ctx, token)
 		require.NoError(t, err)
 		require.True(t, held.GTE(got), token.Hex())
@@ -1056,7 +1108,7 @@ func TestTreasuryLedgerMigrates(t *testing.T) {
 	}
 	held, err := r.k.TreasuryHeld(r.ctx, quote)
 	require.NoError(t, err)
-	require.Equal(t, usdlHeld, held)
+	requireIntEqual(t, usdlHeld, held)
 	members := 0
 	for _, treasury := range treasuries {
 		for _, c := range r.golden.calls(t, treasury, "hasRole(bytes32,address)") {
@@ -1101,7 +1153,13 @@ func TestPauseStateMigrates(t *testing.T) {
 		market := r.market(pool)
 		paused := r.golden.flag(t, pool, "paused()")
 		require.Equal(t, paused, market.Paused, pool.Hex())
-		require.Equal(t, paused, r.golden.flag(t, pool, "emergencyPaused()"), pool.Hex())
+		// The generation 1 implementation has no emergencyPaused(); its
+		// getter reverts there and paused() is the halt-height value.
+		if c := r.golden.call(t, pool, "emergencyPaused()"); c.Reverted {
+			require.Equal(t, 1, r.golden.contract(t, pool).Generation, pool.Hex())
+		} else {
+			require.Equal(t, paused, r.golden.flag(t, pool, "emergencyPaused()"), pool.Hex())
+		}
 		require.Equal(t, r.account(r.golden.address(t, pool, "guardian()")), market.Guardian, pool.Hex())
 		if !paused {
 			continue

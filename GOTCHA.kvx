@@ -8386,3 +8386,8 @@ fix = "enable gRPC on a loopback port in the test home"
 area = "Hyperfide fixtures"
 symptom = "the identity fixture gives all its migrations one 30 second budget and is fsync-bound, so under host load it times out at an arbitrary migration regardless of the tree, and a release-layout copy without the migrations directory fails the epoch import as database unavailable"
 fix = "host the disposable PostgreSQL under /dev/shm with fsync, synchronous commit and full page writes off, and include the migrations directory in release copies"
+
+[gotcha.1763]
+area = "v6.12.0 migration tests"
+symptom = "a seeded halt-height test context under the test app chain id makes every chain-bound getter such as the EIP-712 DOMAIN_SEPARATOR differ from golden eth_call records, which looks like a missing storage slot"
+fix = "run the seeded branch under the mainnet chain id hyperpax_125-1 so block.chainid matches the recorded calls"

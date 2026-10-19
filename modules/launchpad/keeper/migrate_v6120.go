@@ -361,6 +361,9 @@ func writeAccounting(ctx sdk.Context, k *Keeper, pools []v6120Pool, accounting m
 			return err
 		}
 	}
+	// FeeHeld exists only for the generation 2 FeeAccumulator; the drained
+	// generation 1 ledger leaves no entry behind.
+	k.store(ctx).Delete(types.FeeHeldKey(generation1Roles.FeeAccumulator))
 	feeHeld, err := k.GetQuoteLedger(ctx, k.feeHeld())
 	if err != nil {
 		return err

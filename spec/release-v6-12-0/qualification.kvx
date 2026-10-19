@@ -2060,3 +2060,11 @@ exit = 0
 log = fleet/logs/release-1.3.103-verify.log
 observed = The end block already calls the perps and spot end-blockers behind the live flag as wired by the baseline task, and the node builds; the layerx-merge task that also edits the end block is still pending and rebases on this.
 assumption = The pay epoch hooks task lands after this wiring.
+
+[finding.2.2.18-seeded-chain-id]
+revision = e7982e604c1ebf1e65b0b3d8f85416e193510ad7
+command = go test ./modules/launchpad/keeper/ -run 'TestPoolTokenExtrasKept|TestMigrateV6120' -count=1
+exit = 0
+log = fleet/logs/release-2.2.18-verify-4.log
+observed = Resolved: the seeded halt-height branch ran under the test app chain id, so block.chainid was the default and every EIP-712 DOMAIN_SEPARATOR differed from the golden eth_call records; under the mainnet chain id every replayed token call matches, including allowances, nonces and the past-balance, past-supply and past-votes getters.
+assumption = The 71 differing calls recorded under finding.1.2.3-export-token-storage are the same chain-id effect and no missing slot; 2.2.19 confirms per getter.
