@@ -14,6 +14,7 @@ import (
 	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	paramproposal "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types/proposal"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/occ/utils"
 	"github.com/ethereum/go-ethereum/common"
@@ -151,7 +152,14 @@ func TestFeeTokenGigaBlockDebitsAndRefundsInFeeDenom(t *testing.T) {
 	// the converted fee of the gas the transfer used.
 	require.Equal(t, feeTokenConverted, feeTokenPreCharged-feeTokenRefunded)
 	require.Equal(t, sdk.NewInt(feeTokenFunded-feeTokenConverted), b.balance(b.payer.AccountAddress, b.denom))
-	require.Equal(t, sdk.NewInt(feeTokenConverted), b.balance(gigaevmstate.GetCoinbaseAddress(0), b.denom))
+	// EndBlock sweeps the coinbase to the fee collector and ProcessBlock routes
+	// the collector to the fee-token holding account.
+	holding := b.wrapper.App.AccountKeeper.GetModuleAddress(evmtypes.FeeTokenHoldingAccount)
+	require.Equal(t, sdk.NewInt(feeTokenConverted), b.balance(holding, b.denom))
+	for i := 0; i < 3; i++ {
+		require.True(t, b.balance(gigaevmstate.GetCoinbaseAddress(i), b.denom).IsZero())
+	}
+	require.True(t, b.balance(b.wrapper.App.AccountKeeper.GetModuleAddress(authtypes.FeeCollectorName), b.denom).IsZero())
 	// The network coin pays none of the gas.
 	require.Equal(t, uhpxBefore, b.balance(b.payer.AccountAddress, "uhpx"))
 	require.Equal(t, weiBefore, b.wrapper.App.BankKeeper.GetWeiBalance(b.ctx, b.payer.AccountAddress))

@@ -1977,11 +1977,11 @@ exit = 0
 log_path = "scratch pricefeed-checktx-mark.log"
 observed_and_assumption = Resolved: legacyabci.CheckTx now writes the ante branch back into the check state on ante success, as runTx does in sdk/baseapp/baseapp.go:958, so the 0x06 mark that req 5004 ac_4 and ac_8 place in the check state persists until the next Commit; TestPriceFeedLivePathCheckTx, TestPriceFeedLivePathMetricsError and the new TestCheckTxWritesAnteStateOnlyOnSuccess pass. Assumption: none; the discarded branch was inherited unchanged from the integrated Paxeer tree and no spec entry asks CheckTx to drop ante state.
 [finding.feetoken-giga-coinbase-credit]
-revision = 67c13bac4
-command = go test ./node/ -run 'TestFeeTokenGigaBlockDebitsAndRefundsInFeeDenom' -count=1
-exit = 1
-log = fleet/logs/node-nine-failures.log
-observed_and_assumption = After the giga block the payer holds the funded amount less the converted fee, but neither coinbase(0) nor the fee collector holds the converted fee of 32697, so the credit made by gigaFeeTokenStateDB to the coinbase of the tx index is not found where the test or the end-block sweep expects it. Assumption: the giga fee-token coinbase credit needs its own investigation, and the test assertion stays as written.
+revision = f93020889
+command = go test ./node/ -run 'TestFeeToken' -count=1
+exit = 0
+log = fleet/logs/feetoken-giga-coinbase.log
+observed_and_assumption = Resolved: the converted fee of 32697 is credited to coinbase(0), swept by EndBlock to the fee collector and routed by RouteCollectedFeeTokens to the fee-token holding account, and the denom supply is conserved; the test now asserts the holding account per layerx-merge decision 85 and task 0.143, with every coinbase and the fee collector at zero. Assumption: none.
 [finding.spec-lint-tool-hang]
 revision = "c78681cb6"
 command = "cg spec lint"
