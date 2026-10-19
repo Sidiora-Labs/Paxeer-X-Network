@@ -475,11 +475,11 @@ func requireSameConstructor(t *testing.T, want, selected *pcommon.Precompile) {
 }
 
 func TestVersionSwitchConstructors(t *testing.T) {
-	const doneHeight = int64(1000)
 	vectors := loadVersionSwitchVectors(t)
-	a := app.Setup(t, false, true, false)
-	ctx := a.GetContextForDeliverTx(nil).WithBlockTime(time.Unix(vectors.Harness.BlockTimeUnix, 0).UTC())
-	a.UpgradeKeeper.SetDone(ctx.WithBlockHeight(vectors.Harness.BlockHeight-1), app.ActivationUpgrade)
+	// The v6.12.0 handler applies to the halt export at H+1.
+	a, seeded := seedFromHaltExport(t)
+	doneHeight := seeded.BlockHeight() + 1
+	ctx := seeded.WithBlockTime(time.Unix(vectors.Harness.BlockTimeUnix, 0).UTC())
 	keepers := a.GetPrecompileKeepers()
 	legacy, err := layerxexchange.NewPrecompile(keepers)
 	require.NoError(t, err)
@@ -501,6 +501,17 @@ func TestVersionSwitchConstructors(t *testing.T) {
 			requireLegacyConstructor(t, legacy, selected)
 			require.Equal(t, legacyABI, selected.GetABI())
 		}
+	})
+	t.Run("no_legacy_copy", func(t *testing.T) {
+		entries, err := os.ReadDir("../layerxexchange")
+		require.NoError(t, err)
+		require.NotEmpty(t, entries)
+		for _, entry := range entries {
+			require.False(t, entry.IsDir(), "precompiles/layerxexchange/%s", entry.Name())
+		}
+		copies, err := filepath.Glob("../common/legacy/*/layerxexchange")
+		require.NoError(t, err)
+		require.Empty(t, copies)
 	})
 	t.Run("keeper_wiring", func(t *testing.T) {
 		provider, ok := interface{}(keepers).(perps.PerpsKeepers)
@@ -642,10 +653,8 @@ func TestVersionSwitchV69Vectors(t *testing.T) {
 	}
 
 	t.Run("live_rejects_legacy_selectors", func(t *testing.T) {
-		a := app.Setup(t, false, true, false)
-		ctx := a.GetContextForDeliverTx(nil).WithBlockHeight(vectors.Harness.BlockHeight).
-			WithBlockTime(time.Unix(vectors.Harness.BlockTimeUnix, 0).UTC())
-		a.UpgradeKeeper.SetDone(ctx.WithBlockHeight(ctx.BlockHeight()-1), app.ActivationUpgrade)
+		a, seeded := seedFromHaltExport(t)
+		ctx := seeded.WithBlockTime(time.Unix(vectors.Harness.BlockTimeUnix, 0).UTC())
 		legacy, err := layerxexchange.NewPrecompile(a.GetPrecompileKeepers())
 		require.NoError(t, err)
 		ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)

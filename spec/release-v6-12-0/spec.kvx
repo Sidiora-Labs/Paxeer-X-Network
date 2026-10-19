@@ -11550,7 +11550,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.3.4]
 title = "Replay the recorded v6.9 vectors through the version switch"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["3.2.13"]
