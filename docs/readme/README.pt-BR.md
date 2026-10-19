@@ -80,7 +80,7 @@ make paxeer-ci
 | `cmd/` | Daemons e ferramentas do kernel (`layerxd`, `layerxctl`, `layerx-guarantor`, gênese, verificação) |
 | `agent/` | Interface de agentes em Rust, SDK, daemon, servidor MCP, codificação, criptografia e verificação de provas |
 | `human/` | Plano de controle humano, compilador de intenções tipadas, KMS, índice do explorador e os aplicativos web e de carteira |
-| `platform/` | Plataforma para desenvolvedores, serviços hospedados, middleware, SDKs, emulador, CLI e ferramentas de release |
+| `services/platform/` | Plataforma para desenvolvedores, serviços hospedados, middleware, SDKs, emulador, CLI e ferramentas de release |
 | `programs/` | Runtime de Programs, registro, interpretador, sandbox, mercado e SDKs de programas para o kernel LayerX |
 | `interop/` | Superfícies de comércio entre agentes e de interoperabilidade entre redes, incluindo o relayer da ponte |
 | `contracts/` | Contratos Solidity na cadeia Paxeer X para custódia, checkpoints, cauções de garantidores, reivindicações, disputas e saídas |

@@ -37,7 +37,7 @@ PREPARE
 import hashlib,json,os,stat,subprocess,time
 from pathlib import Path
 root=Path.cwd()
-paths=['platform/hosted/node/'+name for name in ('generation_transport.py','generation_client.py','supervisor.sh','bootstrap.sh','deployment.yaml','tests/test_generation_transport.py','tests/reset_recovery.py')]
+paths=['services/platform/hosted/node/'+name for name in ('generation_transport.py','generation_client.py','supervisor.sh','bootstrap.sh','deployment.yaml','tests/test_generation_transport.py','tests/reset_recovery.py')]
 paths += ['docker/kernel/init.sh','tools/paxeer-x/gates/24.20.sh']
 paths += ['docker/platform-'+role+'/'+name for role in ('core','authority') for name in ('Dockerfile','Dockerfile.dockerignore')]
 def git(*args): return subprocess.check_output(['git',*args]).decode().strip()
@@ -45,9 +45,9 @@ def digest(p):
  with p.open('rb') as f: return hashlib.file_digest(f,'sha256').hexdigest()
 assert not git('status','--porcelain','--untracked-files=all'), 'source changed during build'
 for name in ('generation_transport.py','generation_client.py','reset_state.py','data_directory.py','tests/test_generation_transport.py','tests/reset_recovery.py'):
- p=root/'platform/hosted/node'/name;compile(p.read_bytes(),str(p),'exec')
+ p=root/'services/platform/hosted/node'/name;compile(p.read_bytes(),str(p),'exec')
 for name in ('supervisor.sh','bootstrap.sh'):
- subprocess.run(['bash','-n',str(root/'platform/hosted/node'/name)],check=True)
+ subprocess.run(['bash','-n',str(root/'services/platform/hosted/node'/name)],check=True)
 subprocess.run(['bash','-n',str(root/'docker/kernel/init.sh')],check=True)
 executables={}
 for name in ('layerxd','layerx-genesis-build'):
@@ -87,7 +87,7 @@ for name,row in value['executables'].items():
  target=root/'build/bin'/name
  assert row['path']==str(target) and digest(target)==row['sha256'] and target.stat().st_mtime_ns==row['mtime_ns']<=value['recorded_ns']
 sys.dont_write_bytecode=True
-path=root/'platform/hosted/node/tests/test_generation_transport.py'
+path=root/'services/platform/hosted/node/tests/test_generation_transport.py'
 spec=importlib.util.spec_from_file_location('generation_transport_tests',path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 suite=unittest.defaultTestLoader.loadTestsFromModule(module);count=suite.countTestCases()
 assert count>0,'missing actual broker tests'
@@ -100,8 +100,8 @@ assert fixture and Path(fixture).is_file(),'genuine matching custody artifact ma
 native=os.environ.get('LAYERX_RESET_NATIVE_ARTIFACT_MANIFEST')
 assert native,'explicit private native artifact manifest required with genuine custody fixture'
 if not Path(native).exists():
- subprocess.run([sys.executable,str(root/'platform/hosted/node/tests/reset_recovery.py'),'--record-native',native],check=True,timeout=30)
-subprocess.run([sys.executable,str(root/'platform/hosted/node/tests/reset_recovery.py'),'--generation-transport'],check=True,timeout=750)
+ subprocess.run([sys.executable,str(root/'services/platform/hosted/node/tests/reset_recovery.py'),'--record-native',native],check=True,timeout=30)
+subprocess.run([sys.executable,str(root/'services/platform/hosted/node/tests/reset_recovery.py'),'--generation-transport'],check=True,timeout=750)
 VERIFY
     ;;
 *) echo 'usage: 24.20.sh build|verify' >&2; exit 2 ;;

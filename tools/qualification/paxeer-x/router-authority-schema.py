@@ -89,7 +89,7 @@ def main():
         )
         count = int(markers[0])
         require(count > 0, "zero cases cannot qualify")
-        schema = json.loads((ROOT / "platform/hosted/gateway/openrpc.json").read_text())
+        schema = json.loads((ROOT / "services/platform/hosted/gateway/openrpc.json").read_text())
         methods = schema["methods"]
         require(isinstance(methods, list), "router method schema is not a list")
         require(

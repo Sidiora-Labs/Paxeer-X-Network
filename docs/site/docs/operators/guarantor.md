@@ -186,7 +186,7 @@ signatures and signing the deposit root with `deposit_authority_key_file`.
 An operator running the guarantor by hand has the same two options:
 
 - point `LAYERX_GUARANTOR_PUBLICATION_AUTHORIZATION_FILE` at their own copy of
-  that policy. `platform/hosted/tests/publication-policy.py authorization` writes
+  that policy. `services/platform/hosted/tests/publication-policy.py authorization` writes
   one; the socket paths, the peer uid and gid and the checkpoint-authority key
   file default to the cluster locations and are overridden with
   `--treasury-socket`, `--human-socket`, `--peer-uid`, `--peer-gid` and

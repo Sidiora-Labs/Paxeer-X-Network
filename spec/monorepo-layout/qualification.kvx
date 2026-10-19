@@ -105,3 +105,31 @@ command = "npm ls --workspaces"
 exit_code = 0
 log_path = "fleet/logs/layout-4.4.log"
 observed_and_assumption = "The qualification checkout has no node_modules and npm ci --offline stops at ENOTCACHED for ai-7.0.77, so npm ls --workspaces exits 0 on an empty tree; every workspace entry of package.json names a directory with its package.json and a package-lock.json key of the same package name, and an installed-tree check is left for the wave 4 gate."
+
+[finding.4.5-platform-build-reserve-namespace]
+revision = "a460c243d with the task 4.5 changes applied"
+command = "make platform-build"
+exit_code = 2
+log_path = "fleet/logs/layout-4.5.log"
+observed_and_assumption = "cargo build of the platform workspace stops at human/crates/layerx-paxeer-client/src/deposit.rs:1709, which names AccountNamespace::SystemPaxeerReserve that services/agent/crates/layerx-types no longer declares; neither file is changed by task 4.5, so the failure is assumed to exist at the base revision and is left for the task that owns the reserve namespace."
+
+[finding.4.5-workspace-gate-root]
+revision = "a460c243d with the task 4.5 changes applied"
+command = "cargo run --offline --manifest-path services/platform/Cargo.toml --locked -p layerx-platform-workspace-gate -- services/platform/workspace.kvx ."
+exit_code = "NOT_RUN"
+log_path = "fleet/logs/layout-4.5.log"
+observed_and_assumption = "The gate now reads services/platform/workspace.kvx, while the manifest keeps root = \"platform\" and the dir entries already stale since tasks 4.3 and 4.4, and the gate tests build their fixture under a platform root; both are left unchanged as written for the task that decides where moved directories are declared."
+
+[finding.4.5-pay2-unlocked-manifest]
+revision = "a460c243d with the task 4.5 changes applied"
+command = "cargo metadata --locked --format-version 1 --manifest-path services/agent/qualification/pay2/Cargo.toml"
+exit_code = 101
+log_path = "fleet/logs/layout-4.5.log"
+observed_and_assumption = "The pay2 qualification manifest has no tracked Cargo.lock and its .gitignore ignores /Cargo.lock, so --locked cannot hold for it at any revision; its path entries into services/platform were rewritten and every other affected workspace passes cargo metadata --locked."
+
+[finding.4.5-stale-segment-paths]
+revision = "a460c243d with the task 4.5 changes applied"
+command = "git grep -n -E '\"platform\"|\\x27agent\\x27|\"agent\"|\"interop\"' -- tests/agent/sdk/python tools/jev/checks/deps.py tests/daemon/custody_chain.py tests/bridge/paxeer_x_multiasset_credit.py scripts/qualification/paxeer-x/program-http-producer.py tools/qualification/paxeer-x"
+exit_code = 0
+log_path = "fleet/logs/layout-4.5.log"
+observed_and_assumption = "Segment-joined paths left by tasks 4.1, 4.2 and 4.4 still name agent, interop and platform/integrations in tests/agent/sdk/python/test_web_search.py, test_x402.py, tools/jev/checks/deps.py, tests/daemon/custody_chain.py, tests/bridge/paxeer_x_multiasset_credit.py, program-http-producer.py, human_native_custody.py and native_send_purpose.py; task 4.5 rewrote only their platform segments and leaves the rest for the wave 4 check."

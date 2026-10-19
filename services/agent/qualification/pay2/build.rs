@@ -1,4 +1,4 @@
-#[path = "../../../../platform/hosted/gateway/tests/local/required.rs"]
+#[path = "../../../../services/platform/hosted/gateway/tests/local/required.rs"]
 mod required;
 
 use required::Required;
@@ -105,9 +105,9 @@ fn main() {
         .join("../../../..")
         .canonicalize()
         .required("repository");
-    let local = repository.join("platform/hosted/gateway/tests/local");
+    let local = repository.join("services/platform/hosted/gateway/tests/local");
     let core = repository
-        .join("platform/hosted/core")
+        .join("services/platform/hosted/core")
         .canonicalize()
         .required("core source");
     let core_source = core.join("tests/boundary.rs");

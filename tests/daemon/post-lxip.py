@@ -8,7 +8,7 @@ import sys
 import time
 
 repo = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(repo / 'platform/hosted/human'))
+sys.path.insert(0, str(repo / 'services/platform/hosted/human'))
 from guardians import generate
 from owner_native import digest, prepare_admission, protected_write, receipt, receipt_fields, span
 from provision import write_json

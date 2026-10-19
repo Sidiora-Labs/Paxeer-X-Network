@@ -23,7 +23,7 @@ version = "0.1.0"
 license = "Apache-2.0"
 
 [workspace.dependencies]
-layerx-platform-kvx = { path = "../../../platform/tools/kvx", version = "=0.1.0" }
+layerx-platform-kvx = { path = "../../../services/platform/tools/kvx", version = "=0.1.0" }
 sha2 = "=0.10.9"
 
 [workspace.lints.rust]

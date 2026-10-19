@@ -198,7 +198,7 @@ fn run(command: &mut Command, what: &str) -> Result<(), String> {
 }
 
 #[cfg(test)]
-#[path = "../../../../platform/tests/support/tls_boundary.rs"]
+#[path = "../../../../services/platform/tests/support/tls_boundary.rs"]
 mod tls_boundary;
 
 #[test]

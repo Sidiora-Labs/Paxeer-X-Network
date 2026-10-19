@@ -10,7 +10,7 @@ Paxeer remains the sole LayerX custody and guaranteed-withdrawal boundary.
 
 ## Market-maker toolkit
 
-`platform/ramps/README.md` describes the shipped toolkit and reference
+`services/platform/ramps/README.md` describes the shipped toolkit and reference
 service. `RampOrder::bind` combines an authenticated identity-plane customer
 with an operator-owned quote. The LayerX legs are ordinary `LxpSend`
 (operator to customer, on-ramp) and `LxpReceive` under the customer's payer
@@ -54,6 +54,6 @@ That repair is specified as a beta fix.
 
 The toolkit, reference binary, and fiat adapter are in this tree. The
 repository does not invent provider, compliance, or Paxeer custody-owner wire
-coordinates (`platform/ramps/README.md`). Qualification against real provider
+coordinates (`services/platform/ramps/README.md`). Qualification against real provider
 sandboxes is an owner-supplied beta input
 (`spec/layerx-beta/spec.kvx`, decision `owner_inputs`).

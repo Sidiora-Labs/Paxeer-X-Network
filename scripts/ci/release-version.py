@@ -38,13 +38,13 @@ CRATES = {
 }
 NPM_PACKAGES = {
     "@sidiora/layerx-agent-integrations": "sdk/integrations/agents/package.json",
-    "@sidiora/layerx-agent-middleware": "platform/middleware/agent/package.json",
-    "@sidiora/layerx-buyer-middleware": "platform/middleware/buyer/package.json",
+    "@sidiora/layerx-agent-middleware": "services/platform/middleware/agent/package.json",
+    "@sidiora/layerx-buyer-middleware": "services/platform/middleware/buyer/package.json",
     "@sidiora/layerx-express": "sdk/integrations/express/package.json",
-    "@sidiora/layerx-merchant-middleware": "platform/middleware/merchant/package.json",
+    "@sidiora/layerx-merchant-middleware": "services/platform/middleware/merchant/package.json",
     "@sidiora/layerx-next": "sdk/integrations/next/package.json",
     "@sidiora/layerx-sdk": "services/agent/sdk/typescript/package.json",
-    "@sidiora/layerx-seller-middleware": "platform/middleware/seller/package.json",
+    "@sidiora/layerx-seller-middleware": "services/platform/middleware/seller/package.json",
 }
 PYPROJECTS = {
     "layerx-fastapi": "sdk/integrations/fastapi/pyproject.toml",

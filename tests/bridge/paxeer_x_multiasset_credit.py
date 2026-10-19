@@ -14,7 +14,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 SYMBOLS = ('PAX', 'SID', 'USDC', 'USDL')
 NATIVE_PATHS = ('Makefile', 'src', 'include', 'cmd', 'programs', 'agent',
-                'platform', 'contracts/config/checkpoint-settlement.json')
+                'services/platform', 'contracts/config/checkpoint-settlement.json')
 NATIVE_ARTIFACTS = {
     'credit': 'tests/bridge/test-credit',
     'admission': 'tests/bridge/test-credit-admission',

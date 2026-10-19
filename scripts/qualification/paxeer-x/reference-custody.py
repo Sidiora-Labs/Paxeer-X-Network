@@ -42,7 +42,7 @@ def source():
         'scripts/qualification/paxeer-x/reference-custody.py',
         'tests/programs/test_reference_custody.c',
         'tools/paxeer-x/gates/104.30.7.sh',
-        'platform/docs/content/guide/programs.md', 'programs/porting']).splitlines()
+        'services/platform/docs/content/guide/programs.md', 'programs/porting']).splitlines()
     for path in paths:
         evidence.require(not any(p.startswith('.env') for p in Path(path).parts),
             'credential input is forbidden')

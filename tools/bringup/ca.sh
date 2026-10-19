@@ -156,7 +156,7 @@ railway_env="${LAYERX_RAILWAY_ENVIRONMENT:-beta}"
 railway_bin="${LAYERX_RAILWAY_BIN:-$HOME/.railway/bin/railway}"
 
 # ca_services: every certificate the bring-up issues, after the issue_cert
-# calls of platform/hosted/tests/beta-cluster.sh: service, target, custody,
+# calls of services/platform/hosted/tests/beta-cluster.sh: service, target, custody,
 # common name, extended key usage, fixed SAN list. The network names of a row
 # (<service>.railway.internal, the box names) come from the names file; a
 # service reached on loopback carries localhost and 127.0.0.1.

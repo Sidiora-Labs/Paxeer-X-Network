@@ -77,7 +77,7 @@ check.
 
 The module runtime is bound alongside perps and service through
 `lxp_daemon_module_runtimes_bind` (`cmd/layerxd/lxp_daemon_modules.h`) and
-is enabled in genesis through `platform/hosted/node/genesis-modules.conf`.
+is enabled in genesis through `services/platform/hosted/node/genesis-modules.conf`.
 
 Spot is a LayerX kernel module executing inside `layerxd`. It is a
 different surface from the Paxeer-side `layerxexchange` precompile and Go

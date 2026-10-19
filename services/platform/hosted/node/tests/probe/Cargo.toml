@@ -1,0 +1,32 @@
+[package]
+name = "layerx-node-probe"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91.1"
+license = "Apache-2.0"
+publish = false
+
+[[bin]]
+name = "layerx-node-probe"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+layerx-client = { path = "../../../../../../services/agent/crates/layerx-client" }
+layerx-proof = { path = "../../../../../../services/agent/crates/layerx-proof" }
+layerx-types = { path = "../../../../../../services/agent/crates/layerx-types" }
+layerx-wire = { path = "../../../../../../services/agent/crates/layerx-wire" }
+layerx-platform-core = { path = "../../../core" }
+
+[workspace]
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+float_arithmetic = "deny"
+lossy_float_literal = "deny"

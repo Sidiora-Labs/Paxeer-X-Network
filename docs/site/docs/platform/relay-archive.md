@@ -5,7 +5,7 @@ LayerX network, retain its complete canonical byte history, serve public
 reads, and forward users' original signed activities. It does not order
 activities, execute state transitions, hold a sequencer key, or participate
 in a consensus or finality quorum
-(`platform/relay_archive/README.md`; `spec/layerx-beta/spec.kvx`,
+(`services/platform/relay_archive/README.md`; `spec/layerx-beta/spec.kvx`,
 requirement 15).
 
 `layerxd --relay-archive CONFIG` replaces the native process with the
@@ -16,7 +16,7 @@ not reimplement or weaken the native codecs.
 The beta task "Deliver public relay/archive nodes end to end" is marked
 done in `spec/layerx-beta/spec.kvx`. The implementation trees are
 `cmd/layerx-archive-codec`, `cmd/layerxd/lxp_daemon_cli.c`,
-`platform/relay_archive`, and `tests/relay-archive`.
+`services/platform/relay_archive`, and `tests/relay-archive`.
 
 ## Trust pins
 
@@ -41,8 +41,8 @@ flags; those placeholders are not LayerX Network product hostnames.
 ## Operator install
 
 The release layout, `manifest.sha256` rule, and
-`platform/relay_archive/install.sh` flags are in
-`platform/relay_archive/README.md`. The installer creates the unprivileged
+`services/platform/relay_archive/install.sh` flags are in
+`services/platform/relay_archive/README.md`. The installer creates the unprivileged
 `layerx-relay-archive` account and enables
 `layerx-relay-archive.service`. Non-loopback listeners require TLS.
 

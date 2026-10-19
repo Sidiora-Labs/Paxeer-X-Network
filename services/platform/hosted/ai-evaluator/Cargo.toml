@@ -1,0 +1,24 @@
+[package]
+name = "layerx-ai-evaluator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "layerx-ai-evaluator"
+path = "src/main.rs"
+
+[dependencies]
+ed25519-dalek.workspace = true
+getrandom.workspace = true
+layerx-oracle-feeder = { path = "../feeder" }
+layerx-platform-internal.workspace = true
+layerx-programs-ai-market = { path = "../../../../programs/crates/layerx-programs-ai-market" }
+serde.workspace = true
+serde_json.workspace = true
+zeroize.workspace = true
+
+[lints]
+workspace = true

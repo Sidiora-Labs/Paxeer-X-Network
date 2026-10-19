@@ -47,7 +47,7 @@ MAKE = ("make", "--no-print-directory")
 FIVE_MINUTES_SECONDS = 300.0
 HTTP_TIMEOUT_SECONDS = 20.0
 TAIL_LINES = 40
-SAMPLES = ROOT / "platform" / "docs" / "samples"
+SAMPLES = ROOT / "services" / "platform" / "docs" / "samples"
 SAMPLE_INPUTS = (
     "LAYERX_API_TOKEN",
     "LAYERX_SOURCE",
@@ -111,7 +111,7 @@ PROGRAMS_DIRECTORY = ROOT / "programs"
 AGENT_MANIFEST = ROOT / "agent" / "Cargo.toml"
 HUMAN_MANIFEST = ROOT / "human" / "Cargo.toml"
 INTEROP_MANIFEST = ROOT / "services" / "interop" / "Cargo.toml"
-PLATFORM_MANIFEST = ROOT / "platform" / "Cargo.toml"
+PLATFORM_MANIFEST = ROOT / "services" / "platform" / "Cargo.toml"
 SCHEMA_CHECK_MANIFEST = ROOT / "human" / "tools" / "schema-check" / "Cargo.toml"
 
 
@@ -862,14 +862,14 @@ def rust_first_payment(ctx: CaseContext) -> None:
 
 @case("platform-qualify-adoption", "middleware/ten-line-integration")
 def middleware_ten_line_integration(ctx: CaseContext) -> None:
-    build_site = ROOT / "platform" / "docs" / "build" / "build_site.py"
+    build_site = ROOT / "services" / "platform" / "docs" / "build" / "build_site.py"
     specification = importlib.util.spec_from_file_location("layerx_build_site", build_site)
     if specification is None or specification.loader is None:
         raise CaseFailure(f"could not load {build_site}")
     module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(module)
     try:
-        samples = module.load_samples(ROOT / "platform" / "docs")
+        samples = module.load_samples(ROOT / "services" / "platform" / "docs")
         measurements = module.measure_samples(samples)
     except module.DocumentationError as error:
         raise CaseFailure(f"documentation line budget failed: {error}") from error
@@ -960,7 +960,7 @@ def programs_five_minute_deploy_and_paid_call(ctx: CaseContext) -> None:
     walkthrough_environment = dict(environment)
     walkthrough_environment["PATH"] = f"{binary.parent}{os.pathsep}{environment.get('PATH', '')}"
     walkthrough = ctx.run(
-        ("bash", str(ROOT / "platform" / "examples" / "agent-program-call" / "walkthrough.sh")),
+        ("bash", str(ROOT / "services" / "platform" / "examples" / "agent-program-call" / "walkthrough.sh")),
         label="walkthrough",
         env=walkthrough_environment,
     )

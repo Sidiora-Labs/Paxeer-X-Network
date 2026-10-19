@@ -102,8 +102,8 @@ if [ "$goos/$goarch" = linux/amd64 ]; then
   done
 fi
 
-cargo build --locked --release --manifest-path platform/Cargo.toml -p layerx-oracle-feeder --bin price-sidecar
-platform_target=$(cargo metadata --locked --format-version 1 --no-deps --manifest-path platform/Cargo.toml | jq -er '.target_directory')
+cargo build --locked --release --manifest-path services/platform/Cargo.toml -p layerx-oracle-feeder --bin price-sidecar
+platform_target=$(cargo metadata --locked --format-version 1 --no-deps --manifest-path services/platform/Cargo.toml | jq -er '.target_directory')
 cp "$platform_target/release/price-sidecar" "$out/price-sidecar-$version-$goos-$goarch"
 
 if [ "${PAXD_RELEASE_LAYERXD:-0}" = 1 ]; then

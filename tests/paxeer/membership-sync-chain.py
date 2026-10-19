@@ -74,7 +74,7 @@ def main():
     artifacts = ROOT / 'build/paxeer-membership-sync-contracts/artifacts'
     reference.run('forge', 'build', 'contracts/GuarantorBond.sol', 'contracts/CheckpointRegistry.sol',
                   'contracts/custody/LayerXVault.sol', 'contracts/custody/AssetRegistry.sol',
-                  'platform/hosted/paxeer/contracts/BetaUsdl.sol', '--out', str(artifacts),
+                  'services/platform/hosted/paxeer/contracts/BetaUsdl.sol', '--out', str(artifacts),
                   '--cache-path', str(ROOT / 'build/paxeer-membership-sync-contracts/cache'))
     token = json.loads((artifacts / 'BetaUsdl.sol/BetaUsdl.json').read_text())
     accounts = [s.Account.create(), s.Account.create()]

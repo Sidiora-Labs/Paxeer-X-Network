@@ -25,8 +25,8 @@ layerx-client = { path = "../../crates/layerx-client" }
 layerx-crypto = { path = "../../crates/layerx-crypto" }
 layerx-intents = { path = "../../../../human/crates/layerx-intents" }
 layerx-mcp = { path = "../../crates/layerx-mcp" }
-layerx-platform-authority = { path = "../../../../platform/hosted/authority" }
-layerx-platform-core = { path = "../../../../platform/hosted/core" }
+layerx-platform-authority = { path = "../../../../services/platform/hosted/authority" }
+layerx-platform-core = { path = "../../../../services/platform/hosted/core" }
 layerx-programs-registry = { path = "../../../../programs/crates/layerx-programs-registry" }
 layerx-proof = { path = "../../crates/layerx-proof" }
 layerx-sdk = { path = "../../crates/layerx-sdk" }
@@ -43,4 +43,4 @@ path = "funded.rs"
 
 [[bin]]
 name = "gateway-lifecycle-receipt-verify"
-path = "../../../../platform/hosted/gateway/tests/local/verifier.rs"
+path = "../../../../services/platform/hosted/gateway/tests/local/verifier.rs"

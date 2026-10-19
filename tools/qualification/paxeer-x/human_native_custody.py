@@ -19,7 +19,7 @@ if os.environ.get('PAXEER_X_TASK_DEADLINE_UNIX'):
 
 
 def inventory():
-    roots = (ROOT / 'human', ROOT / 'agent', ROOT / 'crates', ROOT / 'platform')
+    roots = (ROOT / 'human', ROOT / 'agent', ROOT / 'crates', ROOT / 'services/platform')
     paths = {ROOT / 'tools/qualification/paxeer-x/human_native_custody.py',
              ROOT / 'human/apps/web/e2e/software-authenticator.ts'}
     for root in roots:

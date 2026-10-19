@@ -20,7 +20,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-HUMAN = ROOT / "platform/hosted/human"
+HUMAN = ROOT / "services/platform/hosted/human"
 PROVISION = HUMAN / "provision.py"
 MATERIAL = HUMAN / "material.py"
 INIT = ROOT / "docker/kernel/init.sh"

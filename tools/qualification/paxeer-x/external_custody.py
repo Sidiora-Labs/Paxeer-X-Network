@@ -122,10 +122,10 @@ def verify_receipt_owner():
             'successful genuine ramp build required')
     owner_sources = manifest.get('sourcehashmap', {})
     require(owner_sources and all(digest(ROOT / relative) == expected for relative, expected in owner_sources.items()
-                                 if relative.startswith('platform/ramps/toolkit/')),
+                                 if relative.startswith('services/platform/ramps/toolkit/')),
             'actual receipt owner source differs from its build')
-    for relative in ('platform/ramps/toolkit/src/lib.rs', 'platform/ramps/toolkit/src/journal.rs',
-                     'platform/ramps/toolkit/tests/contracts.rs'):
+    for relative in ('services/platform/ramps/toolkit/src/lib.rs', 'services/platform/ramps/toolkit/src/journal.rs',
+                     'services/platform/ramps/toolkit/tests/contracts.rs'):
         require(relative in owner_sources, 'complete real receipt owner source identity required')
     matches = [row for row in manifest.get('testbinaries', [])
                if row.get('package') == 'layerx-ramp-toolkit' and row.get('target') == 'contracts']

@@ -342,7 +342,7 @@ class Corpus:
     def operator(self, tenant, journey, expected):
         credential = self.evidence / ('probe-credential-' + str(self.next_request) + '-' + journey + '.json')
         private_write(credential, tenant['credential'])
-        command = ['sh', str(ROOT / 'platform/hosted/agentd/probe.sh'), '--url', self.probe['url'],
+        command = ['sh', str(ROOT / 'services/platform/hosted/agentd/probe.sh'), '--url', self.probe['url'],
                    '--ca', self.probe['ca_seed'], '--client-cert', self.probe['client_cert_seed'],
                    '--client-key', self.probe['client_key_seed'], '--bearer-file', self.probe['bearer_seed'],
                    '--journey', journey, '--rpc-url', self.probe['rpc_url'],

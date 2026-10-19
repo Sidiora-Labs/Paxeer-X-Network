@@ -19,7 +19,7 @@ getrandom = "=0.4.3"
 keyring = "=4.1.6"
 keyring-core = "=1.0.0"
 rustix = { version = "=1.1.4", features = ["fs", "process"] }
-layerx-platform-kvx = { path = "../../platform/tools/kvx", version = "=0.1.0" }
+layerx-platform-kvx = { path = "../../services/platform/tools/kvx", version = "=0.1.0" }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 ring = "=0.17.14"

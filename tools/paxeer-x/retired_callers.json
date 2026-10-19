@@ -112,7 +112,7 @@
         "paxeer-relay"
       ],
       "deleted_trees": [
-        "platform/hosted/paxeer"
+        "services/platform/hosted/paxeer"
       ],
       "replacement": "no relay is needed because the sequencer is the chain; the relay process and its configuration are removed"
     },
@@ -145,7 +145,7 @@
       ],
       "deleted_trees": [
         "src/replica",
-        "platform/relay_archive"
+        "services/platform/relay_archive"
       ],
       "replacement": "full and archive paxd nodes serve history; the standby follows the sequencer WAL; the relay archive entries are removed"
     },
@@ -394,7 +394,7 @@
         "crate::layerx::"
       ],
       "deleted_trees": [
-        "platform/hosted/indexer/src/layerx.rs"
+        "services/platform/hosted/indexer/src/layerx.rs"
       ],
       "replacement": "index the chain half only; kernel facts are chain events and PLX logs"
     },
@@ -485,7 +485,7 @@
         "paxai-storage-keeper"
       ],
       "deleted_trees": [
-        "platform/hosted/paxai-storage-keeper"
+        "services/platform/hosted/paxai-storage-keeper"
       ],
       "replacement": "no reservation is needed; historical availability comes from archive nodes"
     },

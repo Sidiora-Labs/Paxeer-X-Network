@@ -32,7 +32,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[3]
 COMMAND = 'timeout 30m python3 tools/qualification/paxeer-x/programs_source_abi.py'
-BUILD_COMMAND = ('cargo build --locked --manifest-path platform/Cargo.toml '
+BUILD_COMMAND = ('cargo build --locked --manifest-path services/platform/Cargo.toml '
                  '-p layerx-platform-registry --bin layerx-program-registry '
                  '--bin layerx-cgroup-exec --message-format=json')
 PREFIX = 'PAXEER_X_SOURCE_ABI_'
@@ -137,7 +137,7 @@ def record(directory, cargo_json):
             require(not event['profile']['test'] and event.get('features') == [],
                     'test binary or unexpected features cannot qualify hosted process')
             require(Path(event['manifest_path']).resolve() ==
-                    ROOT / 'platform/hosted/registry/Cargo.toml',
+                    ROOT / 'services/platform/hosted/registry/Cargo.toml',
                     'Cargo artifact belongs to a different source checkout')
             name = target['name']
             require(name not in binaries, 'duplicate candidate binary')

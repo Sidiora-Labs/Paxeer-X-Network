@@ -154,14 +154,14 @@ same asset ID as the LayerX genesis/fee asset, distinct from the reserved USDL
 asset.
 
 1. Bring up a disposable single-validator Paxeer chain and make the deposit.
-   `platform/hosted/paxeer/custody-genesis.py` writes the `layerxcustody`
+   `services/platform/hosted/paxeer/custody-genesis.py` writes the `layerxcustody`
    genesis for the chosen network id, sequencer identity and `<asset>:uhpx`
-   map, `platform/hosted/paxeer/init-chain.sh` initialises a home from it, and
+   map, `services/platform/hosted/paxeer/init-chain.sh` initialises a home from it, and
    `paxd start --home` runs it. The deposit is an ordinary EVM call to the
    custody precompile, with `--value` the `uhpx` amount times `10^12` wei:
 
    ```sh
-   python3 platform/hosted/paxeer/evm.py send --rpc http://127.0.0.1:48545 \
+   python3 services/platform/hosted/paxeer/evm.py send --rpc http://127.0.0.1:48545 \
      --chain 125 --key-file "$PAYER_KEY" --value "$WEI" \
      0x0000000000000000000000000000000000001013 \
      'deposit(bytes32)' "0x$BENEFICIARY"

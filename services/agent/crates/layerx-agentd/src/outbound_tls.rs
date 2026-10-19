@@ -40,7 +40,7 @@ pub(crate) fn system(endpoint: &str) -> Option<TlsConfig> {
 }
 
 #[cfg(test)]
-#[path = "../../../../../platform/tests/support/tls_boundary.rs"]
+#[path = "../../../../../services/platform/tests/support/tls_boundary.rs"]
 pub(crate) mod tls_boundary;
 
 #[test]

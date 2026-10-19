@@ -133,7 +133,7 @@ def source_binding(fixture):
     manifest = private_json(fixture['source_manifest'])
     prefixes = ('sdk/integrations/ios/', 'sdk/integrations/android/', 'sdk/integrations/agents/',
                 'sdk/integrations/next/', 'sdk/platform/swift/', 'sdk/platform/jvm/',
-                'platform/middleware/agent/', 'platform/middleware/buyer/', 'platform/middleware/seller/',
+                'services/platform/middleware/agent/', 'services/platform/middleware/buyer/', 'services/platform/middleware/seller/',
                 'services/agent/sdk/typescript/')
     tracked = subprocess.check_output(['git', 'ls-files', '-z', '--', *prefixes,
         'package.json', 'package-lock.json', '.github/workflows/platform.yml',
@@ -172,8 +172,8 @@ def main():
                 for entry in fixture['android_classpath']), 'source-bound compiled Android and SDK classpath required')
     classpath = os.pathsep.join(android_classpath)
     compiled = private_json(fixture['typescript_artifacts'])
-    dist_roots = ('services/agent/sdk/typescript/dist', 'platform/middleware/buyer/dist',
-                  'platform/middleware/seller/dist', 'platform/middleware/agent/dist',
+    dist_roots = ('services/agent/sdk/typescript/dist', 'services/platform/middleware/buyer/dist',
+                  'services/platform/middleware/seller/dist', 'services/platform/middleware/agent/dist',
                   'sdk/integrations/next/dist', 'sdk/integrations/agents/dist')
     expected = set()
     for root in dist_roots:

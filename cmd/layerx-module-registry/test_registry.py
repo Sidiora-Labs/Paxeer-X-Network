@@ -26,7 +26,7 @@ expected = {'schema_version': 2, 'assets': [{'asset': asset, 'symbol': 'LXT',
              {'module': 9, 'ordinals': list(range(1, 11))}]}
 assert json.loads(run(base)) == expected
 assert run(base) == run(base)
-configuration = Path(__file__).resolve().parents[2] / 'platform/hosted/node/genesis-modules.conf'
+configuration = Path(__file__).resolve().parents[2] / 'services/platform/hosted/node/genesis-modules.conf'
 modules = configuration.read_text().splitlines()
 assert modules == ['budget', 'escrow', 'perps', 'service', 'spot', 'stream']
 enabled_args = [argument for module in modules for argument in ('--enable-module', module)]

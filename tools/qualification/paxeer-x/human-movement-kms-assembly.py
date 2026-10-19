@@ -6,7 +6,7 @@ once and records them in a private build manifest. Without arguments the gate
 checks its prerequisites and that manifest and never compiles. It then issues
 the exact Human KMS identities through the CA catalog rows and the signer of
 tools/bringup/ca.sh, prepares and projects the KMS material through the kernel
-init functions and platform/hosted/human/material.py, and starts the real KMS
+init functions and services/platform/hosted/human/material.py, and starts the real KMS
 and movement roles through docker/human-service/entrypoint.sh and the runtime
 clock under their kernel uids, mount namespaces and fixed loopback addresses
 inside a private network namespace. Every refusal, loss, restart and recovery
@@ -32,13 +32,13 @@ SCHEMA = 'paxeer-x.human-movement-kms-assembly.v1'
 MANIFEST = Path(os.environ.get('PAXEER_X_MOVEMENT_KMS_ASSEMBLY_MANIFEST',
                                ROOT / 'human/target/paxeer-x/human-movement-kms-assembly.json'))
 SOURCES = ['human/Cargo.toml', 'human/Cargo.lock', 'human/crates', 'services/agent/crates',
-           'platform/Cargo.toml', 'platform/Cargo.lock', 'platform/crates', 'platform/hosted/runtime-clock',
+           'services/platform/Cargo.toml', 'services/platform/Cargo.lock', 'platform/crates', 'services/platform/hosted/runtime-clock',
            'docker/kernel/init.sh', 'docker/human-service/entrypoint.sh', 'tools/bringup/ca.sh',
-           'platform/hosted/human/material.py', 'tests/fixtures/custody/native-credit-receipt/profile',
+           'services/platform/hosted/human/material.py', 'tests/fixtures/custody/native-credit-receipt/profile',
            'tools/qualification/paxeer-x/human-movement-kms-assembly.py']
 TOUCHES = ['docker/kernel/init.sh', 'docker/human-service/entrypoint.sh', 'tools/bringup/ca.sh',
-           'tools/bringup/check-live.test.sh', 'platform/hosted/human/material.py',
-           'platform/hosted/human/material.sh', 'human/crates/layerx-human-movement-provider/src/config.rs']
+           'tools/bringup/check-live.test.sh', 'services/platform/hosted/human/material.py',
+           'services/platform/hosted/human/material.sh', 'human/crates/layerx-human-movement-provider/src/config.rs']
 INIT = ROOT / 'docker/kernel/init.sh'
 CA = ROOT / 'tools/bringup/ca.sh'
 IDENTITIES = ('human-kms', 'human-kms-client', 'human-kms-executor')
@@ -103,7 +103,7 @@ def build():
         ('layerx-human-kms', ('bin',), False): 'kms',
         ('layerx-human-movement-provider', ('bin',), False): 'provider',
     }))
-    built.update(artifacts(['cargo', 'build', '--locked', '--manifest-path', 'platform/Cargo.toml',
+    built.update(artifacts(['cargo', 'build', '--locked', '--manifest-path', 'services/platform/Cargo.toml',
                             '-p', 'layerx-runtime-clock', '--bin', 'layerx-runtime-clock',
                             '--message-format=json'], {
         ('layerx-runtime-clock', ('bin',), False): 'clock',
@@ -180,9 +180,9 @@ class Gate:
             self.evidence = Path(tempfile.mkdtemp(prefix='human-movement-kms-assembly-'))
         self.evidence.chmod(0o700)
         self.logs = self.mkdir('logs', 0, 0, 0o700)
-        spec = importlib.util.spec_from_file_location('human_material', ROOT / 'platform/hosted/human/material.py')
+        spec = importlib.util.spec_from_file_location('human_material', ROOT / 'services/platform/hosted/human/material.py')
         self.material = importlib.util.module_from_spec(spec)
-        sys.path.insert(0, str(ROOT / 'platform/hosted/human'))
+        sys.path.insert(0, str(ROOT / 'services/platform/hosted/human'))
         spec.loader.exec_module(self.material)
         print('PAXEER_X_EVIDENCE dir=%s' % self.evidence, flush=True)
 
@@ -596,7 +596,7 @@ with socket.create_connection((sys.argv[2],int(sys.argv[3])),timeout=3) as tcp:
         self.registry.write_text(json.dumps({'schema_version': 2, 'assets': [{'asset': self.asset}],
                                              'modules': [{'module': 1, 'ordinals': [1, 2]}]}))
         self.libdir = self.mkdir('lib', 0, 0, 0o755)
-        shutil.copytree(ROOT / 'platform/hosted/human', self.libdir / 'layerx-human')
+        shutil.copytree(ROOT / 'services/platform/hosted/human', self.libdir / 'layerx-human')
 
         self.kernel_layout()
         inventory = {'revision': self.revision, 'unmerged_branches': self.unmerged(),

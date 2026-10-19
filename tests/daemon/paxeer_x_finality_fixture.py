@@ -70,7 +70,7 @@ class FinalityProducer:
                                  capture_output=True, check=True).stdout
             public = der[-33:].hex()
             fixture.require(hashlib.sha256(('layerx-beta-guarantor:' + public).encode()).hexdigest() == gid, 'guarantor identity/key mismatch')
-            signer = self.helper('platform/hosted/paxeer/settlement-domain.py', 'signer', public)
+            signer = self.helper('services/platform/hosted/paxeer/settlement-domain.py', 'signer', public)
             state = self.work / ('producer-' + str(index))
             state.mkdir(mode=0o700)
             inputs = self.work / ('inputs-' + str(index))
@@ -89,7 +89,7 @@ class FinalityProducer:
         return result.stdout.decode().strip()
 
     def evm(self, mode, *argv):
-        return self.helper('platform/hosted/paxeer/evm.py', mode, *argv)
+        return self.helper('services/platform/hosted/paxeer/evm.py', mode, *argv)
 
     def call(self, signature, *argv):
         return json.loads(self.evm('call', '--rpc', self.runtime.rpc_url, ANCHOR, signature, *argv))
@@ -123,7 +123,7 @@ class FinalityProducer:
         domain = dict(protocol_version=3, paxeer_chain_id=125, network_id=fixture.NETWORK, settlement_contract=ANCHOR,
                       guarantor_bond=ANCHOR, minimum_bond=self.min_bond, maximum_attestation_delay_ms=self.max_delay,
                       guarantor_set=[dict(guarantor_id=g['id'], signer=g['signer'], public_key=g['public_key']) for g in self.guarantors])
-        result = subprocess.run([sys.executable, str(fixture.ROOT / 'platform/hosted/paxeer/settlement-domain.py'), 'write', str(self.settlement_file), 'beta'],
+        result = subprocess.run([sys.executable, str(fixture.ROOT / 'services/platform/hosted/paxeer/settlement-domain.py'), 'write', str(self.settlement_file), 'beta'],
                                 input=json.dumps(domain).encode(), capture_output=True, timeout=60)
         fixture.require(result.returncode == 0, 'settlement domain refused: ' + result.stderr.decode()[-300:])
 
@@ -135,7 +135,7 @@ class FinalityProducer:
 
     # -- real guarantor processes -----------------------------------------
     def tls(self):
-        script = 'set -euo pipefail; . "$1/platform/hosted/tests/beta-cluster.sh"; WORK_DIR=$2; CA_DIR="$2/ca"; SECRETS_DIR="$2/tls-secrets"; ca_generate'
+        script = 'set -euo pipefail; . "$1/services/platform/hosted/tests/beta-cluster.sh"; WORK_DIR=$2; CA_DIR="$2/ca"; SECRETS_DIR="$2/tls-secrets"; ca_generate'
         with (self.work / 'tls.log').open('ab') as log:
             subprocess.run(['bash', '-c', script, 'finality-tls', str(fixture.ROOT), str(self.work)], check=True, stdout=log, stderr=log, timeout=300)
         self.ports = [s.getsockname()[1] for s in fixture.reserve_ports(2)]

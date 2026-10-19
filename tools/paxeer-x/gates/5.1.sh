@@ -23,8 +23,8 @@ PREPARE
     export LAYERX_MULTI_ASSET_BUILD_REVISION=$(git rev-parse HEAD)
     export LAYERX_MULTI_ASSET_CORE_EVENTS="${LAYERX_MULTI_ASSET_BUILD_MANIFEST}.core.jsonl"
     export LAYERX_MULTI_ASSET_PROBE_EVENTS="${LAYERX_MULTI_ASSET_BUILD_MANIFEST}.probe.jsonl"
-    CARGO_TARGET_DIR="$LAYERX_MULTI_ASSET_CORE_TARGET_DIR" cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core --test custody_asset_send --no-run --message-format=json > "$LAYERX_MULTI_ASSET_CORE_EVENTS"
-    CARGO_TARGET_DIR="$LAYERX_MULTI_ASSET_PROBE_TARGET_DIR" cargo build --locked --release --manifest-path platform/hosted/node/tests/probe/Cargo.toml --message-format=json > "$LAYERX_MULTI_ASSET_PROBE_EVENTS"
+    CARGO_TARGET_DIR="$LAYERX_MULTI_ASSET_CORE_TARGET_DIR" cargo test --locked --manifest-path services/platform/Cargo.toml -p layerx-platform-core --test custody_asset_send --no-run --message-format=json > "$LAYERX_MULTI_ASSET_CORE_EVENTS"
+    CARGO_TARGET_DIR="$LAYERX_MULTI_ASSET_PROBE_TARGET_DIR" cargo build --locked --release --manifest-path services/platform/hosted/node/tests/probe/Cargo.toml --message-format=json > "$LAYERX_MULTI_ASSET_PROBE_EVENTS"
     python3 - <<'RECORD'
 import hashlib,json,os,subprocess
 from pathlib import Path

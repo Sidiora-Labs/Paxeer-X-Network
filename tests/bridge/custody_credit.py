@@ -8,7 +8,7 @@ import sys
 import urllib.parse
 import urllib.request
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "platform/hosted/paxeer"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "services/platform/hosted/paxeer"))
 from evm import keccak
 
 

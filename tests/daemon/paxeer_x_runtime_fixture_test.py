@@ -112,7 +112,7 @@ class Contract(unittest.TestCase):
             fixture.artifacts(path)
 
     def test_04_wrong_network_refused(self):
-        result = subprocess.run(['bash', str(fixture.ROOT / 'platform/hosted/paxeer/init-chain.sh')],
+        result = subprocess.run(['bash', str(fixture.ROOT / 'services/platform/hosted/paxeer/init-chain.sh')],
             env=dict(os.environ, LAYERX_PAXEER_CHAIN_ID='124'), capture_output=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(b'not mapped', result.stderr)

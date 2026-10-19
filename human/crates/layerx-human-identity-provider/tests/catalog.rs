@@ -9,7 +9,7 @@ fn generated_catalog_loads_through_the_service_reader() {
     let script = "import sys; sys.path.insert(0, sys.argv[1]); import test_provision; test_provision.generated_catalog(sys.argv[2], sys.argv[3])";
     let output = Command::new("python3")
         .args(["-c", script])
-        .arg(root.join("platform/hosted/human"))
+        .arg(root.join("services/platform/hosted/human"))
         .arg(directory.path())
         .arg(env!("CARGO_BIN_EXE_layerx-human-identity-provider"))
         .output()

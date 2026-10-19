@@ -1,7 +1,7 @@
 name: Publish beta images
 
 # Every push to main that touches an image input builds each row of the shared image table
-# (platform/hosted/tests/beta-images.sh) and pushes it to GHCR as :<12-hex sha> and :<git describe>.
+# (services/platform/hosted/tests/beta-images.sh) and pushes it to GHCR as :<12-hex sha> and :<git describe>.
 # The signed release path (gate, publish, attest, promote) runs only from a release tag or from the
 # named release candidate: the moving :beta tag is repointed in the promote job after the published
 # digest of every image has been verified against its signature, its SBOM attestation and its build
@@ -12,7 +12,7 @@ on:
     tags: ["sdk-v*"]
     paths:
       - docker/**
-      - platform/**
+      - services/platform/**
       - services/interop/**
       - human/wallet/**
       - explorer/**
@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           fail() { echo "$*" >&2; exit 1; }
-          source platform/hosted/tests/beta-images.sh
+          source services/platform/hosted/tests/beta-images.sh
           REVISION=$(git rev-parse --short=12 HEAD)
           image_ref() { printf 'ghcr.io/sidiora-labs/%s:%s' "$1" "$REVISION"; }
           entries=$(for name in "${IMAGE_NAMES[@]}"; do
@@ -175,7 +175,7 @@ jobs:
       - name: Resolve and bind the published revision
         id: revision
         run: |
-          bash platform/hosted/tests/publish-images.sh --source-policy
+          bash services/platform/hosted/tests/publish-images.sh --source-policy
           revision=$(git rev-parse HEAD)
           test "$revision" = "$LAYERX_PUBLISH_REVISION"
           echo "revision=$revision" >> "$GITHUB_OUTPUT"
@@ -190,7 +190,7 @@ jobs:
       - name: Check the executed-evidence ledger
         run: make beta-ledger-check
       - name: Check the publisher and the shared image table
-        run: bash -n platform/hosted/tests/publish-images.sh platform/hosted/tests/beta-images.sh
+        run: bash -n services/platform/hosted/tests/publish-images.sh services/platform/hosted/tests/beta-images.sh
 
   publish:
     needs: [gate]
@@ -222,7 +222,7 @@ jobs:
       - name: Install syft
         uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
       - name: Build all beta images using the shared cluster image table and contexts
-        run: bash platform/hosted/tests/beta-cluster.sh images
+        run: bash services/platform/hosted/tests/beta-cluster.sh images
       - name: Authenticate to GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -230,7 +230,7 @@ jobs:
         run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_ACTOR" --password-stdin
       - name: Push the immutable revision tag, generate the SBOM and sign every image
         run: |
-          bash platform/hosted/tests/beta-cluster.sh publish-images push \
+          bash services/platform/hosted/tests/beta-cluster.sh publish-images push \
             ${LAYERX_PUBLISH_RELEASE_TAG:+--release-tag "$LAYERX_PUBLISH_RELEASE_TAG"} \
             ${LAYERX_PUBLISH_RELEASE_CANDIDATE:+--release-candidate "$LAYERX_PUBLISH_RELEASE_CANDIDATE"} \
             --output "$LAYERX_PUBLISH_OUTPUT"
@@ -315,7 +315,7 @@ jobs:
         run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_ACTOR" --password-stdin
       - name: Verify every published digest and only then repoint the release and beta tags
         run: |
-          bash platform/hosted/tests/beta-cluster.sh publish-images promote \
+          bash services/platform/hosted/tests/beta-cluster.sh publish-images promote \
             ${LAYERX_PUBLISH_RELEASE_TAG:+--release-tag "$LAYERX_PUBLISH_RELEASE_TAG"} \
             ${LAYERX_PUBLISH_RELEASE_CANDIDATE:+--release-candidate "$LAYERX_PUBLISH_RELEASE_CANDIDATE"} \
             --output "$LAYERX_PUBLISH_OUTPUT"

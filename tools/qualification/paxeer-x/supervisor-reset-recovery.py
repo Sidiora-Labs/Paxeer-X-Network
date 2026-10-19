@@ -68,7 +68,7 @@ def main():
         print('actual reset activation evidence: ' + str(evidence), flush=True)
         deadline = time.monotonic() + 840
         reset, reset_tests, reset_cases = run_case(
-            [sys.executable, str(ROOT / 'platform/hosted/node/tests/reset_recovery.py'), '--staged'],
+            [sys.executable, str(ROOT / 'services/platform/hosted/node/tests/reset_recovery.py'), '--staged'],
             evidence / 'supervisor.log', deadline)
         require(reset_cases == 18, 'all legacy and staged activation cases must execute')
         documents = [json.loads(line) for line in reset.splitlines()
@@ -82,7 +82,7 @@ def main():
         tests += reset_tests
         completed += 1
         _, funded_tests, funded_cases = run_case(
-            [sys.executable, str(ROOT / 'platform/hosted/core/tests/receipt_retention.py')],
+            [sys.executable, str(ROOT / 'services/platform/hosted/core/tests/receipt_retention.py')],
             evidence / 'funded-receipts.log', deadline)
         require(funded_tests == 2 and funded_cases is None, 'both genuine funded SEND cases must execute')
         tests += funded_tests

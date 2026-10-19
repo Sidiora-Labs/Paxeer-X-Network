@@ -26,10 +26,10 @@ SOURCES = (
     'tools/qualification/paxeer-x/human-service-contract.py',
 )
 CLOCK_SOURCES = (
-    'platform/hosted/runtime-clock/src/main.rs',
-    'platform/hosted/runtime-clock/src/server.rs',
-    'platform/hosted/runtime-clock/Cargo.toml',
-    'platform/Cargo.toml', 'platform/Cargo.lock',
+    'services/platform/hosted/runtime-clock/src/main.rs',
+    'services/platform/hosted/runtime-clock/src/server.rs',
+    'services/platform/hosted/runtime-clock/Cargo.toml',
+    'services/platform/Cargo.toml', 'services/platform/Cargo.lock',
     'services/agent/crates/layerx-types/src/clock.rs',
     'services/agent/crates/layerx-types/src/clock_protocol.rs',
     'services/agent/crates/layerx-client/src/runtime_clock.rs',
@@ -136,7 +136,7 @@ def build_clock():
     env.setdefault('CARGO_TARGET_DIR', '/root/lx-target/human')
     env.setdefault('CARGO_BUILD_JOBS', '4')
     command = [os.environ.get('CARGO', '/root/.cargo/bin/cargo'), 'build', '--locked',
-               '--manifest-path', str(ROOT / 'platform/Cargo.toml'),
+               '--manifest-path', str(ROOT / 'services/platform/Cargo.toml'),
                '-p', 'layerx-runtime-clock', '--bin', 'layerx-runtime-clock',
                '--message-format=json-render-diagnostics']
     result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, timeout=540, check=False)

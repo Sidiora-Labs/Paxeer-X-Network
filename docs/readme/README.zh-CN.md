@@ -80,7 +80,7 @@ make paxeer-ci
 | `cmd/` | 内核守护进程和工具（`layerxd`、`layerxctl`、`layerx-guarantor`、创世、验证） |
 | `agent/` | Rust 代理接口、SDK、守护进程、MCP 服务器、编码、密码学和证明验证 |
 | `human/` | 面向人的控制平面、类型化意图编译器、KMS、浏览器索引以及 Web 和钱包应用 |
-| `platform/` | 开发者平台、托管服务、中间件、SDK、模拟器、CLI 和发布工具 |
+| `services/platform/` | 开发者平台、托管服务、中间件、SDK、模拟器、CLI 和发布工具 |
 | `programs/` | 面向 LayerX 内核的 Programs 运行时、注册表、解释器、沙箱、市场和程序 SDK |
 | `interop/` | 代理商务与跨网络互操作接口，包括跨链桥中继器 |
 | `contracts/` | Paxeer X 链上的 Solidity 合约，用于托管、检查点、担保人保证金、索赔、争议和退出 |

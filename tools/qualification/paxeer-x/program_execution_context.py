@@ -37,7 +37,7 @@ RUST_CASES = (
     "host::context::tests::actual_graph_boundary_preserves_context_and_refuses_edge_sixty_five",
 )
 SOURCE_PATHS = (
-    "Makefile", "tools/build/sanitizers.mk", "platform/Makefile.inc",
+    "Makefile", "tools/build/sanitizers.mk", "services/platform/Makefile.inc",
     "src", "include", "contracts/config", "programs/Cargo.toml",
     "programs/Cargo.lock", "programs/crates", "programs/sdk/rust", "programs/.cargo",
     "programs/vendor", "services/agent/Cargo.toml", "services/agent/Cargo.lock", "services/agent/crates",

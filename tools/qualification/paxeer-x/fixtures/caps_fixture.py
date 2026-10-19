@@ -124,7 +124,7 @@ def fund(runtime, native, actor, sequence):
     account = b'agent:did:layerx:' + public.hex().encode() + b':main'
     beneficiary = hashlib.sha256(b'LX:ACCOUNT:v1' + len(account).to_bytes(4, 'big') + account).digest()
     operation = 'credit-bob' if actor == 'bob' else 'credit-owner'
-    runtime.produce(operation + '-deposit', [sys.executable, fixture.ROOT / 'platform/hosted/paxeer/evm.py', 'send',
+    runtime.produce(operation + '-deposit', [sys.executable, fixture.ROOT / 'services/platform/hosted/paxeer/evm.py', 'send',
         '--rpc', runtime.rpc_url, '--chain', '125', '--key-file', d / 'keys/deployer.key', '--value', str(1000000 * 10**12),
         '0x0000000000000000000000000000000000001013', 'deposit(bytes32)', '0x' + beneficiary.hex()])
     deposited = json.loads((d / (operation + '-deposit.log')).read_text())

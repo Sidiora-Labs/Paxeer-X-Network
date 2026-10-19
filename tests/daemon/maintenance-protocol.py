@@ -4,8 +4,8 @@ import struct
 import subprocess
 import sys
 
-maintained = json.loads(Path('platform/hosted/gateway/tests/fixtures/maintained-authority.json').read_text())
-historical = json.loads(Path('platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json').read_text())
+maintained = json.loads(Path('services/platform/hosted/gateway/tests/fixtures/maintained-authority.json').read_text())
+historical = json.loads(Path('services/platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json').read_text())
 for fixture in (historical, maintained):
     if fixture is maintained:
         expected = fixture['authority']['batch_evidence']

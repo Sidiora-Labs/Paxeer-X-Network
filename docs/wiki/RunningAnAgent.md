@@ -80,7 +80,7 @@ already-configured `beta` profile
 Non-loopback endpoints must use `https://`
 (`tools/platform/cli/src/http.rs:27-37`). The hosted gateway Ingress host
 in `layerx-testnet` is `api-mainnet-beta.paxeer.network`
-(`platform/hosted/gateway/deployment.yaml:182, 190-192`). The CLI
+(`services/platform/hosted/gateway/deployment.yaml:182, 190-192`). The CLI
 does not default that URL.
 
 Success envelope kind `environment.selected`. Printed `data` fields:
@@ -615,7 +615,7 @@ write transcript (`services/agent/crates/layerx-mcp/src/server.rs:729-745`;
 `services/agent/crates/layerx-mcp/tests/write.rs:276-325`).
 
 Hosted gateway key revocation response fields: `ok`, `id`, `state`
-`"revoked"` (`platform/hosted/gateway/src/main.rs:1144`). That is a
+`"revoked"` (`services/platform/hosted/gateway/src/main.rs:1144`). That is a
 gateway key, not an agentd session.
 
 Daemon event delivery to a local consumer is Unix frames `LXOW` /

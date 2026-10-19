@@ -8,7 +8,7 @@ Paxeer is a Cosmos-SDK chain with a native EVM. LayerX is a deterministic execut
 
 **Paxeer EVM / Cosmos** is written in Go. The chain binary builds from `node/`, modules live in `modules/`, precompiles in `precompiles/`, and the build rules are in `chain.mk` with the Go module root at `go.mod`. Paxeer provides account management, bank transfers, staking, governance, and an EVM that can call into all of these through precompiled contracts.
 
-**LayerX** has three language domains. The core node, sequencer, and consensus layer are in C under `src/` and `cmd/layerxd`. The agent runtime, platform services, and hosted infrastructure are in Rust under `agent/`, `platform/`, `human/`, and `programs/`. LayerX produces signed receipts, batch headers, state proofs, and checkpoint certificates — the evidence that the Paxeer precompiles verify.
+**LayerX** has three language domains. The core node, sequencer, and consensus layer are in C under `src/` and `cmd/layerxd`. The agent runtime, platform services, and hosted infrastructure are in Rust under `agent/`, `services/platform/`, `human/`, and `programs/`. LayerX produces signed receipts, batch headers, state proofs, and checkpoint certificates — the evidence that the Paxeer precompiles verify.
 
 ## The proof-carrying connector
 
@@ -111,7 +111,7 @@ The `layerxcustody` module (in `modules/layerxcustody/`) holds funds in a module
 
 Nullifiers prevent double-spending. Every claim is bound to a nullifier; a nullifier can be reserved, consumed, or cancelled but never reopened.
 
-Genesis for the custody module is written by `platform/hosted/paxeer/custody-genesis.py`, which outputs a JSON section that `init-chain.sh` merges into the Paxeer genesis. It configures the network ID, sequencer authorization, withdrawal delays, forced-exit delays, liveness bound, and the asset map.
+Genesis for the custody module is written by `services/platform/hosted/paxeer/custody-genesis.py`, which outputs a JSON section that `init-chain.sh` merges into the Paxeer genesis. It configures the network ID, sequencer authorization, withdrawal delays, forced-exit delays, liveness bound, and the asset map.
 
 ## Anchor
 
@@ -121,7 +121,7 @@ A checkpoint starts as submitted when `submitCheckpoint` accepts a valid certifi
 
 Guarantors bond native tokens. They can register, increase their bond, begin unbonding (with a configurable delay during which the bond stays slashable), and complete unbonding. Equivocation — signing two different checkpoints for the same batch — results in a slash. Fraud and data-availability challenges can be opened against a checkpoint; the authority resolves them.
 
-Genesis for the anchor module is written by `platform/hosted/paxeer/anchor-genesis.py`. It configures the authority account, Paxeer chain ID, network ID, certificate threshold, minimum bond, challenge parameters, unbonding delay, sequencer authorization, and optional pre-registered guarantors. The anchor point — the batch the first checkpoint must continue — is set at genesis.
+Genesis for the anchor module is written by `services/platform/hosted/paxeer/anchor-genesis.py`. It configures the authority account, Paxeer chain ID, network ID, certificate threshold, minimum bond, challenge parameters, unbonding delay, sequencer authorization, and optional pre-registered guarantors. The anchor point — the batch the first checkpoint must continue — is set at genesis.
 
 ## The single network endpoint
 

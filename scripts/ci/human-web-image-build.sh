@@ -11,7 +11,7 @@ failure the browser-performance job sees when it brings its cluster up.
 
 The context is a tar of every tracked file of the repository, with the
 environment files, the qualification logs and the two working notes left out,
-exactly as platform/hosted/tests/beta-cluster.sh packs it; the Dockerfile is
+exactly as services/platform/hosted/tests/beta-cluster.sh packs it; the Dockerfile is
 docker/web/Dockerfile, read from inside that context. The build log is
 written to the work directory and its path is printed on failure. When the
 image builds, its entry point is checked: the standalone server the image's

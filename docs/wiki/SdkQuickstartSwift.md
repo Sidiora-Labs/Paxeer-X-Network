@@ -27,7 +27,7 @@ transport limitation. Use [Hosted faucet](HostedFaucet.md) or
 ## Send
 
 Human-plane quote then commit, as in
-`platform/docs/samples/first-payment-swift`:
+`services/platform/docs/samples/first-payment-swift`:
 
 ```swift
 import Foundation

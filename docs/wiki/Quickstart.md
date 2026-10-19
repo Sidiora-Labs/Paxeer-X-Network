@@ -25,11 +25,11 @@ Asset encodings: [Assets](Assets.md). Public `POST /rpc`: [Public JSON-RPC](Publ
 
 ## 1. Bring the beta cluster up
 
-The script is `platform/hosted/tests/beta-cluster.sh`. Its usage names `up`,
-`down`, and `render` (`platform/hosted/tests/beta-cluster.sh:4-7`). `main`
+The script is `services/platform/hosted/tests/beta-cluster.sh`. Its usage names `up`,
+`down`, and `render` (`services/platform/hosted/tests/beta-cluster.sh:4-7`). `main`
 dispatches `up`, `down`, `render`, and `images`; any other first argument
 prints that usage block to stderr and exits `64`
-(`platform/hosted/tests/beta-cluster.sh:1341-1362`). There is no `export`
+(`services/platform/hosted/tests/beta-cluster.sh:1341-1362`). There is no `export`
 subcommand.
 
 Make:
@@ -38,45 +38,45 @@ Make:
 make platform-beta-cluster-up
 ```
 
-That runs `bash platform/hosted/tests/beta-cluster.sh up $(PLATFORM_BETA_CLUSTER_FLAGS)`
-(`platform/Makefile.inc:184-185`). The only `up` flag the script accepts is
-`--boundary-checks` (`platform/hosted/tests/beta-cluster.sh:1351-1358`).
+That runs `bash services/platform/hosted/tests/beta-cluster.sh up $(PLATFORM_BETA_CLUSTER_FLAGS)`
+(`services/platform/Makefile.inc:184-185`). The only `up` flag the script accepts is
+`--boundary-checks` (`services/platform/hosted/tests/beta-cluster.sh:1351-1358`).
 
-`up` calls `beta_cluster_up` (`platform/hosted/tests/beta-cluster.sh:1236-1290,
+`up` calls `beta_cluster_up` (`services/platform/hosted/tests/beta-cluster.sh:1236-1290,
 1358`). After images, cluster, CA, secrets, render, trusted-boundary apply,
 Paxeer contract deploy, identity provisioning, and port-forwards, it writes
 the env file, writes cluster identity, and waits until testnet `GET /readyz`
 has `state == "ready"`, every journey `ready == true`, every dependency
 `ready == true`, four journeys, and the developer-plane deployments are
-ready (`platform/hosted/tests/beta-cluster.sh:1065-1076, 1284-1287`). On
+ready (`services/platform/hosted/tests/beta-cluster.sh:1065-1076, 1284-1287`). On
 success it prints, on stderr via `log`:
 
 - `every journey ready:` followed by the comma-joined `.journeys[].journey`
   values from `build/beta-cluster/readyz.json`
-  (`platform/hosted/tests/beta-cluster.sh:102, 1287`)
+  (`services/platform/hosted/tests/beta-cluster.sh:102, 1287`)
 - `environment exported to` plus `build/beta-cluster/env`
-  (`platform/hosted/tests/beta-cluster.sh:55, 61, 1288`)
+  (`services/platform/hosted/tests/beta-cluster.sh:55, 61, 1288`)
 
 `identity_write` prints `beta-cluster: cluster identity` and then each
 identity line prefixed `beta-cluster:   `
-(`platform/hosted/tests/beta-cluster.sh:1177-1178`). Those lines include
+(`services/platform/hosted/tests/beta-cluster.sh:1177-1178`). Those lines include
 `cluster_mode`, `cluster_name`, `revision`, `sequencer_public_key`,
 `sequencer_id`, `node_network_id`, `node_asset_id`, `paxeer_chain_id`,
 `paxeer_guarantor_bond`, `paxeer_checkpoint_registry`, `test_source_did`,
 `test_destination_did`, `faucet_host`, `developer_host`
-(`platform/hosted/tests/beta-cluster.sh:1149-1172`).
+(`services/platform/hosted/tests/beta-cluster.sh:1149-1172`).
 
 Render without applying:
 
 ```sh
-bash platform/hosted/tests/beta-cluster.sh render
+bash services/platform/hosted/tests/beta-cluster.sh render
 ```
 
 prints `rendered manifests under` `$MANIFESTS_DIR` `and beta CA under`
-`$CA_DIR` `(nothing applied)` (`platform/hosted/tests/beta-cluster.sh:1320-1338`).
+`$CA_DIR` `(nothing applied)` (`services/platform/hosted/tests/beta-cluster.sh:1320-1338`).
 
 Default host ports are testnet `19443`, gateway `19444`, faucet `19445`
-(`platform/hosted/tests/beta-cluster.sh:81-83`). `up` binds
+(`services/platform/hosted/tests/beta-cluster.sh:81-83`). `up` binds
 `TESTNET_URL=https://localhost:$TESTNET_PORT`,
 `GATEWAY_URL=https://localhost:$GATEWAY_PORT`,
 the private-network faucet at `https://localhost:$FAUCET_PORT`,
@@ -87,22 +87,22 @@ the private-network faucet at `https://localhost:$FAUCET_PORT`,
 `PAXEER_OBSERVER_URL=https://localhost:19452`,
 `IDENTITY_URL=https://localhost:19451`,
 `HUMAN_URL=https://localhost:19453`
-(`platform/hosted/tests/beta-cluster.sh:1258-1266`). Port-forwards are
+(`services/platform/hosted/tests/beta-cluster.sh:1258-1266`). Port-forwards are
 Paxeer-boundary `19449`, Paxeer-observer-boundary `19452`, identity
 `19451`, testnet, gateway, faucet, developer `19450`, pending-core
 `19446`, and agent-boundary `19447`
-(`platform/hosted/tests/beta-cluster.sh:1268-1283`). Human is forwarded on `19453` to port `9443`. There is no agentd port-forward.
+(`services/platform/hosted/tests/beta-cluster.sh:1268-1283`). Human is forwarded on `19453` to port `9443`. There is no agentd port-forward.
 
 The kind cluster name defaults to `layerx-beta`
-(`platform/hosted/tests/beta-cluster.sh:11, 73`). Paxeer EVM chain id is
-`125` (`platform/hosted/tests/beta-cluster.sh:96`).
+(`services/platform/hosted/tests/beta-cluster.sh:11, 73`). Paxeer EVM chain id is
+`125` (`services/platform/hosted/tests/beta-cluster.sh:96`).
 
 ---
 
 ## 2. Exported endpoints
 
 `up` writes `build/beta-cluster/env` from `env_write`
-(`platform/hosted/tests/beta-cluster.sh:61, 1110-1142, 1284`). There is no
+(`services/platform/hosted/tests/beta-cluster.sh:61, 1110-1142, 1284`). There is no
 separate export step. Source it:
 
 ```sh
@@ -110,7 +110,7 @@ separate export step. Source it:
 ```
 
 `make platform-hosted-smoke` sources the same file when readable
-(`platform/Makefile.inc:3, 161-173`). The file contains `export` lines for:
+(`services/platform/Makefile.inc:3, 161-173`). The file contains `export` lines for:
 
 | Variable | Value written |
 | --- | --- |
@@ -139,7 +139,7 @@ separate export step. Source it:
 | `LAYERX_QUALIFICATION_HUMAN_URL` | `LAYERX_BETA_QUALIFICATION_HUMAN_URL` when set; otherwise `$HUMAN_URL` (`https://localhost:19453`, Human HTTPS API). |
 | `LAYERX_QUALIFICATION_PAXEER_URL` | `$PAXEER_URL` unless `LAYERX_BETA_QUALIFICATION_PAXEER_URL` is set. Role: qualification Paxeer testnet (`tools/qualification/release_runner.py:27`; `tools/qualification/beta_driver.py:44`). |
 
-`env_write` in `platform/hosted/tests/beta-cluster.sh` exports the node,
+`env_write` in `services/platform/hosted/tests/beta-cluster.sh` exports the node,
 Human and Paxeer qualification origins, using their non-empty overrides
 when provided. It exports the agent boundary separately and unsets the
 agentd qualification variable unless a real agentd override is supplied.
@@ -147,18 +147,18 @@ The missing agentd endpoint is recorded in the bring-up missing-input list.
 `LAYERX_TEST_AMOUNT` defaults to `1`.
 
 HTTP against those origins uses the cluster CA. Hosted smoke passes
-`--cacert "$LAYERX_TEST_CA_FILE"` (`platform/hosted/testnet/tests/hosted-smoke.sh:7,
+`--cacert "$LAYERX_TEST_CA_FILE"` (`services/platform/hosted/testnet/tests/hosted-smoke.sh:7,
 32-33`). The CLI HTTP client builds a ureq agent with a 30s timeout and no CA
 flag (`tools/platform/cli/src/http.rs:41-49`).
 
-Node network id is `402` (`platform/hosted/node/deployment.yaml:5`;
-`platform/hosted/testnet/src/lib.rs:4`). Node asset id is
+Node network id is `402` (`services/platform/hosted/node/deployment.yaml:5`;
+`services/platform/hosted/testnet/src/lib.rs:4`). Node asset id is
 `b5a32b12029f8ddfb905f90f280f664b46390de0fc62770fc197dd87b18cd898`
-(`platform/hosted/node/deployment.yaml:7`). Testnet control
+(`services/platform/hosted/node/deployment.yaml:7`). Testnet control
 `GET /v1/parameters` returns `network` `layerx-testnet`, `network_id`
 `TESTNET_NETWORK_ID` (`402`), `package_semver`, `lxp_wire_protocol_version`,
-and `reset_schedule` (`platform/hosted/testnet/src/main.rs:1155-1163`;
-`platform/hosted/testnet/src/lib.rs:4`).
+and `reset_schedule` (`services/platform/hosted/testnet/src/main.rs:1155-1163`;
+`services/platform/hosted/testnet/src/lib.rs:4`).
 
 ---
 
@@ -170,8 +170,8 @@ the gateway origin and, on a disposable cluster, its private-network faucet
 origin explicitly:
 
 ```sh
-node platform/middleware/examples/public-rpc.mjs --help
-PYTHONPATH=services/agent/sdk/python python3 platform/middleware/examples/public_rpc.py --help
+node services/platform/middleware/examples/public-rpc.mjs --help
+PYTHONPATH=services/agent/sdk/python python3 services/platform/middleware/examples/public_rpc.py --help
 ```
 
 The payment sequence is challenge, payer grant, settlement receipt, then
@@ -260,7 +260,7 @@ operating-system-credential-store}` by default, or
 `kind` is `auth.saved`.
 `--environment` optional; else current (`tools/platform/cli/src/main.rs:1421-1449`).
 Bring-up mints that token as `ses_` plus 32 hex, `.`, 64 hex when the source
-is identity-provisioning (`platform/hosted/tests/beta-cluster.sh:1020-1026`).
+is identity-provisioning (`services/platform/hosted/tests/beta-cluster.sh:1020-1026`).
 
 Bind the hosted profile. `name` must be `emulator`, `beta`, or `production`
 (`tools/platform/cli/src/config.rs:121-126`). `--endpoint`, `--network-id`, and one
@@ -268,7 +268,7 @@ of `--sequencer-trust-anchor` / `--sequencer-trust-anchor-file` must be
 supplied together or omitted together (`tools/platform/cli/src/emulator.rs:751-791`).
 The anchor is 32-byte hex Ed25519 (`tools/platform/cli/src/emulator.rs:821-824`).
 `up` writes `sequencer_public_key` into `build/beta-cluster/identity`
-(`platform/hosted/tests/beta-cluster.sh:1157`). For `beta`, sequencer
+(`services/platform/hosted/tests/beta-cluster.sh:1157`). For `beta`, sequencer
 identity is not probed (`tools/platform/cli/src/main.rs:771-805`).
 
 ```sh
@@ -289,7 +289,7 @@ Hosted account create is a different command: `--email`, `--display-name`,
 `--idempotency-key`; `--initial-amount` must be `0`
 (`tools/platform/cli/src/account.rs:42-54`). It POSTs `/v1/accounts`
 (`tools/platform/cli/src/account.rs:56-63`). Hosted gateway `production_route` does
-not include `/v1/accounts` (`platform/hosted/gateway/src/lib.rs:809-881`).
+not include `/v1/accounts` (`services/platform/hosted/gateway/src/lib.rs:809-881`).
 
 ---
 
@@ -308,16 +308,16 @@ public name; the rest of this section claims from it.
 
 There is no `layerx faucet` command (`tools/platform/cli/src/main.rs:53-99`). The
 faucet claim route is `POST /v1/faucet/claims`
-(`platform/hosted/faucet/src/main.rs:1025`).
+(`services/platform/hosted/faucet/src/main.rs:1025`).
 
 Required headers: `Content-Type: application/json`
-(`platform/hosted/faucet/src/main.rs:924-925`), `Idempotency-Key` 1–128
-alnum/`-`/`_`/`.`/`:` (`platform/hosted/faucet/src/main.rs:946-950, 180-186`),
-`Authorization: Bearer` session (`platform/hosted/faucet/src/main.rs:470-504`).
+(`services/platform/hosted/faucet/src/main.rs:924-925`), `Idempotency-Key` 1–128
+alnum/`-`/`_`/`.`/`:` (`services/platform/hosted/faucet/src/main.rs:946-950, 180-186`),
+`Authorization: Bearer` session (`services/platform/hosted/faucet/src/main.rs:470-504`).
 Body fields are `did` and `public_key` only
-(`platform/hosted/faucet/src/main.rs:100-105`). `did` must start with `did:`
-(`platform/hosted/faucet/src/main.rs:197-199`); `public_key` is 64 hex
-(`platform/hosted/faucet/src/main.rs:201-203, 953-954`).
+(`services/platform/hosted/faucet/src/main.rs:100-105`). `did` must start with `did:`
+(`services/platform/hosted/faucet/src/main.rs:197-199`); `public_key` is 64 hex
+(`services/platform/hosted/faucet/src/main.rs:201-203, 953-954`).
 
 Hosted smoke:
 
@@ -331,16 +331,16 @@ curl --fail --silent --show-error --max-time 30 --cacert "$LAYERX_TEST_CA_FILE" 
   --header 'Content-Type: application/json' --data-binary @faucet-request.json
 ```
 
-(`platform/hosted/testnet/tests/hosted-smoke.sh:101-109`).
+(`services/platform/hosted/testnet/tests/hosted-smoke.sh:101-109`).
 
 A 200 body has `funded` `true`, `funding_id`, optional `transaction_id`,
 `amount` as a decimal string of `LAYERX_FAUCET_CLAIM_AMOUNT` (default
 `1000000`), and `network` `layerx-testnet`
-(`platform/hosted/faucet/src/main.rs:255, 892-898`). Smoke asserts
+(`services/platform/hosted/faucet/src/main.rs:255, 892-898`). Smoke asserts
 `.funded == true and .funding_id != null`
-(`platform/hosted/testnet/tests/hosted-smoke.sh:110`). A 202 body is
+(`services/platform/hosted/testnet/tests/hosted-smoke.sh:110`). A 202 body is
 `state` `still_checking`, `retry` `after`, `retry_after_seconds` `10`
-(`platform/hosted/faucet/src/main.rs:1125-1131`).
+(`services/platform/hosted/faucet/src/main.rs:1125-1131`).
 
 For a complete request and response copied from a real faucet, hosted gateway,
 and native-node run, continue with
@@ -349,9 +349,9 @@ account opening, mint, SEND, balances, asset metadata, and receipt calls without
 shortening canonical bytes.
 
 Testnet control admits the funding journey at `GET /v1/journeys/funding`
-(`platform/hosted/testnet/src/main.rs:229, 1165-1171`). Smoke requires
+(`services/platform/hosted/testnet/src/main.rs:229, 1165-1171`). Smoke requires
 `.admitted == true and .ready == true and (.failing | length) == 0`
-(`platform/hosted/testnet/tests/hosted-smoke.sh:38-49, 101`).
+(`services/platform/hosted/testnet/tests/hosted-smoke.sh:38-49, 101`).
 
 ---
 
@@ -415,13 +415,13 @@ at submit time (`tools/platform/cli/src/programs.rs:952`); clap and
 `validate_idempotency_key` also admit 16–128 alnum/`-`/`_`
 (`tools/platform/cli/src/http.rs:388-399`). Hosted `POST /v1/programs/deploy`
 requires `Idempotency-Key` of 64 lowercase hex
-(`platform/hosted/gateway/src/main.rs:1535-1545, 829-833`). Validity
+(`services/platform/hosted/gateway/src/main.rs:1535-1545, 829-833`). Validity
 `expires_at_ms - not_before_ms` must be in `(0, 300000]`
 (`tools/platform/cli/src/programs.rs:944-950`). There is no CLI command that
 reads the current state root (`tools/platform/cli/src/main.rs:53-99`). Hosted
 `GET /v1/state` is `503` `principal_state_proof_unavailable`
-(`platform/hosted/gateway/src/lib.rs:816`;
-`platform/hosted/gateway/src/main.rs:2275`).
+(`services/platform/hosted/gateway/src/lib.rs:816`;
+`services/platform/hosted/gateway/src/main.rs:2275`).
 
 The command POSTs canonical signed bytes to `/v1/programs/deploy`
 (`tools/platform/cli/src/programs.rs:436-442`). `--json` `kind` is
@@ -433,14 +433,14 @@ receipt the data object has `activity_id`, `receipt` (hex), `result_code`,
 `verification`, and `artifact`
 (`tools/platform/cli/src/programs.rs:519-526, 276-278`). Hosted gateway 200 is
 `{ok: true, result: {activity_id, receipt, state, terminal_payload,
-call_graph}, trace}` (`platform/hosted/gateway/src/main.rs:1883-1911`).
+call_graph}, trace}` (`services/platform/hosted/gateway/src/main.rs:1883-1911`).
 `state` is `completed` when `result_code == 0`, else `refused`.
 
 `active_client` sends the stored session as `Authorization: Bearer`
 (`tools/platform/cli/src/main.rs:1415-1418`; `tools/platform/cli/src/http.rs:240-246`).
 Hosted `POST /v1/programs/deploy` authenticates `LayerX-Key` with scope
-`program:call` (`platform/hosted/gateway/src/lib.rs:813`;
-`platform/hosted/gateway/src/main.rs:1077-1080, 1144-1153, 2413-2415`).
+`program:call` (`services/platform/hosted/gateway/src/lib.rs:813`;
+`services/platform/hosted/gateway/src/main.rs:1077-1080, 1144-1153, 2413-2415`).
 Bearer on that route is `401 api_key_required`. Those sources disagree
 on how deploy reaches the gateway. The CLI command that issues a gateway
 key is `layerx install a2a`
@@ -476,17 +476,17 @@ that Human contract directly (`tools/platform/emulator/src/main.rs:2667-2668`).
 
 The hosted smoke harness also posts the Human-plane `/v1/moves/quote` and
 `/v1/moves` contract with the session Bearer, then reads `.result.quote_id` and
-`.result.receipt_id` (`platform/hosted/testnet/tests/hosted-smoke.sh:113-132`).
+`.result.receipt_id` (`services/platform/hosted/testnet/tests/hosted-smoke.sh:113-132`).
 Those paths are not part of the hosted gateway's production route parser.
 `production_route` accepts `POST /v1/activities`,
 program call/deploy/upgrade/wind-down/simulate, `GET /v1/state`,
 `GET /v1/receipts/{id}`, and program registry/interface/activity/receipt reads
-(`platform/hosted/gateway/src/lib.rs:802-890`). Unknown production routes are
+(`services/platform/hosted/gateway/src/lib.rs:802-890`). Unknown production routes are
 `404 not_found`
-(`platform/hosted/gateway/src/main.rs:1760-1766`). Production routes
-authenticate `LayerX-Key`, not Bearer (`platform/hosted/gateway/src/main.rs:1162-1173,
+(`services/platform/hosted/gateway/src/main.rs:1760-1766`). Production routes
+authenticate `LayerX-Key`, not Bearer (`services/platform/hosted/gateway/src/main.rs:1162-1173,
 1748`). Bearer on those routes is `401 api_key_required`. Bearer is the
-session scheme for `/v1/keys` (`platform/hosted/gateway/src/main.rs:972-981,
+session scheme for `/v1/keys` (`services/platform/hosted/gateway/src/main.rs:972-981,
 1081-1088`). Therefore `layerx payment test` is an emulator/Human-plane client
 path, not a hosted production-gateway payment command. Use the
 `lx_sendActivity` public RPC path for hosted canonical payment activities.
@@ -494,7 +494,7 @@ path, not a hosted production-gateway payment command. Use the
 There is no `layerx activity` command (`tools/platform/cli/src/main.rs:53-99`).
 MCP/A2A `activity.submit` POSTs JSON `{"activity": <hex>}` to
 `/v1/activities` (`tools/platform/cli/src/toolset.rs:341-344`). That route
-requires scope `activity:write` (`platform/hosted/gateway/src/main.rs:1072-1087`).
+requires scope `activity:write` (`services/platform/hosted/gateway/src/main.rs:1072-1087`).
 
 The CLI command that issues a gateway key is `layerx install a2a`,
 which POSTs `/v1/keys` with the stored session
@@ -504,18 +504,18 @@ requires `--source-account` and `--asset` as 64-hex
 neither: it binds to the agent daemon and issues no key
 (`tools/platform/cli/src/install/mcp.rs:33-56`). There is no other CLI
 key-issue command. The HTTP issue body is `{signer_public_key, scopes, quota_requests,
-quota_window_seconds}` (`platform/hosted/gateway/src/main.rs:77-84`). Success
+quota_window_seconds}` (`services/platform/hosted/gateway/src/main.rs:77-84`). Success
 JSON includes `ok`, `key.id`, `key.secret`, `key.authorization_scheme`
-`LayerX-Key`, `key.scopes` (`platform/hosted/gateway/src/main.rs:2354-2367`).
+`LayerX-Key`, `key.scopes` (`services/platform/hosted/gateway/src/main.rs:2354-2367`).
 `signer_public_key` must be in the session allow-list or the gateway returns
-`403 signer_not_owned` (`platform/hosted/gateway/src/main.rs:2308-2313`).
+`403 signer_not_owned` (`services/platform/hosted/gateway/src/main.rs:2308-2313`).
 Bring-up puts `$LAYERX_TEST_SOURCE_PUBLIC_KEY` on the smoke principal
-(`platform/hosted/tests/beta-cluster.sh:1012-1014`).
+(`services/platform/hosted/tests/beta-cluster.sh:1012-1014`).
 
 Hosted activity POST body used by the CLI toolset is `{"activity": <hex>}`
 with `Idempotency-Key` (`tools/platform/cli/src/toolset.rs:341-344`). Gateway
 success for a completed non-program activity is `{ok: true, result, trace}`
-(`platform/hosted/gateway/src/main.rs:3576-3578`).
+(`services/platform/hosted/gateway/src/main.rs:3576-3578`).
 
 ---
 
@@ -531,11 +531,11 @@ layerx --json receipt get <id>
 from {environment}`. `--json` `kind` is `receipt.read`; `data` is the GET body.
 
 Hosted gateway GET `/v1/receipts/{id}` requires `LayerX-Key` and scope
-`receipt:read` (`platform/hosted/gateway/src/lib.rs:870-878`;
-`platform/hosted/gateway/src/main.rs:1072-1087, 1748`). The 200 body is
+`receipt:read` (`services/platform/hosted/gateway/src/lib.rs:870-878`;
+`services/platform/hosted/gateway/src/main.rs:1072-1087, 1748`). The 200 body is
 `{ok: true, result: {activity_id, receipt}, trace}` where `receipt` is hex
-(`platform/hosted/gateway/src/main.rs:2526-2532`). `activity_id` in the path
-must be 64 hex (`platform/hosted/gateway/src/lib.rs:874-875`).
+(`services/platform/hosted/gateway/src/main.rs:2526-2532`). `activity_id` in the path
+must be 64 hex (`services/platform/hosted/gateway/src/lib.rs:874-875`).
 
 Hosted smoke GETs `$LAYERX_GATEWAY_URL/v1/receipts/$receipt_id` with the
 session Bearer, writes `.result.receipt` as hex, and reads
@@ -543,15 +543,15 @@ session Bearer, writes `.result.receipt` as hex, and reads
 `.result.authority.previous_state_root`,
 `.result.authority.resulting_state_root`,
 `.result.authority.sequencer_public_key`
-(`platform/hosted/testnet/tests/hosted-smoke.sh:134-143`). The gateway GET
+(`services/platform/hosted/testnet/tests/hosted-smoke.sh:134-143`). The gateway GET
 body above has no `authority` object. Those two sources disagree.
 
 Authorised-batch facts with those five names plus `activity_id`,
 `network_id`, and `wire_version` are served by receipt-authority
 `GET /v1/authorized-batches/by-activity/{activity_id}`
-(`platform/hosted/authority/src/main.rs:46, 740-749, 656-667`). Routes other
+(`services/platform/hosted/authority/src/main.rs:46, 740-749, 656-667`). Routes other
 than `/livez` and `/readyz` require `Authorization: Bearer`
-(`platform/hosted/authority/src/main.rs:46-49, 747-749`).
+(`services/platform/hosted/authority/src/main.rs:46-49, 747-749`).
 
 ---
 
@@ -580,7 +580,7 @@ On success the data object has `verified` `true`, `verification_level`
 wraps that as `ok` `true`, `kind` `receipt.verified`
 (`tools/platform/cli/src/main.rs:1011-1013`; `tools/platform/cli/src/output.rs:20-25`).
 Smoke asserts `.ok == true and .kind == "receipt.verified" and
-.data.verified == true` (`platform/hosted/testnet/tests/hosted-smoke.sh:144-148`).
+.data.verified == true` (`services/platform/hosted/testnet/tests/hosted-smoke.sh:144-148`).
 
 Failure text is `receipt verification failed at {:?}`
 (`tools/platform/cli/src/receipt.rs:33-34`).
@@ -597,7 +597,7 @@ admin socket. `layerx receipt verify` is local `layerx_proof` against
 caller-supplied batch facts (`tools/platform/cli/src/receipt.rs:4, 25-34`).
 
 The Paxeer boundary is `$LAYERX_PAXEER_BOUNDARY_URL` (default
-`https://localhost:19449`). Routes (`platform/hosted/paxeer/src/main.rs:477-493`):
+`https://localhost:19449`). Routes (`services/platform/hosted/paxeer/src/main.rs:477-493`):
 
 ```sh
 curl --fail --silent --show-error --max-time 10 --cacert "$LAYERX_TEST_CA_FILE" \
@@ -606,9 +606,9 @@ curl --fail --silent --show-error --max-time 10 --cacert "$LAYERX_TEST_CA_FILE" 
 
 When the node `eth_chainId` equals the configured chain id, the 200 body is
 `status` `ready`, `service` `paxeer-boundary`, `chain_id` (decimal)
-(`platform/hosted/paxeer/src/main.rs:466-469`). Bring-up sets that chain id
-to `125` (`platform/hosted/tests/beta-cluster.sh:96`;
-`platform/hosted/paxeer/deployment.yaml:42`).
+(`services/platform/hosted/paxeer/src/main.rs:466-469`). Bring-up sets that chain id
+to `125` (`services/platform/hosted/tests/beta-cluster.sh:96`;
+`services/platform/hosted/paxeer/deployment.yaml:42`).
 
 ```sh
 curl --fail --silent --show-error --max-time 30 --cacert "$LAYERX_TEST_CA_FILE" \
@@ -617,12 +617,12 @@ curl --fail --silent --show-error --max-time 30 --cacert "$LAYERX_TEST_CA_FILE" 
 
 `GET /genesis` is served when `LAYERX_PAXEER_COMET_URL` is set: 200 body is
 the Comet genesis JSON; `X-LayerX-Genesis-SHA256` is the SHA-256 of those
-bytes (`platform/hosted/paxeer/src/main.rs:164-172, 484-488`;
-`platform/hosted/paxeer/src/genesis.rs:241-256`). The genesis JSON must
-carry a non-empty `chain_id` string (`platform/hosted/paxeer/src/genesis.rs:230-237`).
+bytes (`services/platform/hosted/paxeer/src/main.rs:164-172, 484-488`;
+`services/platform/hosted/paxeer/src/genesis.rs:241-256`). The genesis JSON must
+carry a non-empty `chain_id` string (`services/platform/hosted/paxeer/src/genesis.rs:230-237`).
 Bring-up sets Comet chain id `hyperpax_125-1`
-(`platform/hosted/paxeer/init-chain.sh:39-42`). When the Comet URL is unset,
-`GET /genesis` is `404 not_found` (`platform/hosted/paxeer/src/main.rs:164-166,
+(`services/platform/hosted/paxeer/init-chain.sh:39-42`). When the Comet URL is unset,
+`GET /genesis` is `404 not_found` (`services/platform/hosted/paxeer/src/main.rs:164-166,
 484-488`).
 
 ```sh
@@ -634,21 +634,21 @@ curl --fail --silent --show-error --max-time 15 --cacert "$LAYERX_TEST_CA_FILE" 
 
 `POST /` relays JSON-RPC methods that pass `method_allowed`: `eth_*` except
 the denied list, plus `net_version` and `web3_clientVersion`
-(`platform/hosted/paxeer/src/main.rs:28-39, 371-384, 490-491`). Denied
+(`services/platform/hosted/paxeer/src/main.rs:28-39, 371-384, 490-491`). Denied
 methods include `eth_accounts`, `eth_sendTransaction`, `eth_sign`
-(`platform/hosted/paxeer/src/main.rs:30-38`). Readiness itself calls
-`eth_chainId` with `params` `[]` (`platform/hosted/paxeer/src/main.rs:448-449`).
+(`services/platform/hosted/paxeer/src/main.rs:30-38`). Readiness itself calls
+`eth_chainId` with `params` `[]` (`services/platform/hosted/paxeer/src/main.rs:448-449`).
 
 Env also exports `LAYERX_PAXEER_CHECKPOINT_REGISTRY` and
-`LAYERX_PAXEER_SETTLEMENT_CONTRACT` (`platform/hosted/tests/beta-cluster.sh`, `env_write`).
+`LAYERX_PAXEER_SETTLEMENT_CONTRACT` (`services/platform/hosted/tests/beta-cluster.sh`, `env_write`).
 Both carry the layerxAnchor precompile address `0x0000000000000000000000000000000000001014`.
 There is no CLI command that reads the precompile.
 
 Testnet control journey routes are `/v1/journeys/funding`,
 `/v1/journeys/payment`, `/v1/journeys/receipt-inspection`, and
-`/v1/journeys/programs` (`platform/hosted/testnet/src/main.rs:227-234`).
+`/v1/journeys/programs` (`services/platform/hosted/testnet/src/main.rs:227-234`).
 `/v1/journeys/settlement` is not one of them
-(`platform/hosted/testnet/src/main.rs:1498`).
+(`services/platform/hosted/testnet/src/main.rs:1498`).
 
 ---
 
@@ -658,11 +658,11 @@ Testnet control journey routes are `/v1/journeys/funding`,
 make platform-beta-cluster-down
 ```
 
-runs `bash platform/hosted/tests/beta-cluster.sh down`
-(`platform/Makefile.inc:187-188`). `down` stops port-forwards, deletes the
+runs `bash services/platform/hosted/tests/beta-cluster.sh down`
+(`services/platform/Makefile.inc:187-188`). `down` stops port-forwards, deletes the
 kind cluster when mode is kind or absent, removes labeled images, deletes
 `build/beta-cluster`, and unless `LAYERX_BETA_KEEP_TOOLS=1` removes pinned
-kind/kubectl/calico downloads (`platform/hosted/tests/beta-cluster.sh:1292-1317`).
-It prints `teardown complete` (`platform/hosted/tests/beta-cluster.sh:1317`).
+kind/kubectl/calico downloads (`services/platform/hosted/tests/beta-cluster.sh:1292-1317`).
+It prints `teardown complete` (`services/platform/hosted/tests/beta-cluster.sh:1317`).
 
 [Home](Home.md)

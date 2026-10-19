@@ -109,7 +109,7 @@ def artifact_manifest(candidate_digest):
     document = json.loads(Path(path).read_bytes())
     require(document.get('schema') == 'paxeer-x.registry-artifacts.v1', 'registry artifact schema')
     require(document.get('candidate_manifest_sha256') == candidate_digest, 'artifact candidate binding')
-    paths = ['platform/hosted/registry/src/' + name + '.rs'
+    paths = ['services/platform/hosted/registry/src/' + name + '.rs'
              for name in ('main', 'routes', 'verified', 'event_producer', 'lib')]
     paths += ['tools/qualification/paxeer-x/registry-contract.py', 'tools/paxeer-x/gates/16.2.sh']
     require(set(document['source_files']) == set(paths), 'exact artifact source inventory')
@@ -451,17 +451,17 @@ def discovery_artifacts(candidate_digest):
             'clean published discovery source required')
     paths = {
         'programs/crates/layerx-programs-registry/src/protocol_evidence.rs',
-        'platform/hosted/registry/src/routes.rs',
-        'platform/hosted/registry/src/node_state.rs',
-        'platform/hosted/registry/src/head_attestation.rs',
-        'platform/hosted/registry/src/program_state.rs',
+        'services/platform/hosted/registry/src/routes.rs',
+        'services/platform/hosted/registry/src/node_state.rs',
+        'services/platform/hosted/registry/src/head_attestation.rs',
+        'services/platform/hosted/registry/src/program_state.rs',
         'tools/platform/emulator/core/emulator_core.c',
         'tools/platform/emulator/src/main.rs',
-        'platform/hosted/registry/tests/native_deployment.rs',
+        'services/platform/hosted/registry/tests/native_deployment.rs',
         'tools/qualification/paxeer-x/registry-contract.py',
         'cmd/layerxd/lxp_daemon_protocol.c',
-        'platform/hosted/agent-boundary/src/main.rs',
-        'platform/hosted/agent-boundary/tests/real_node/native_interfaces.rs',
+        'services/platform/hosted/agent-boundary/src/main.rs',
+        'services/platform/hosted/agent-boundary/tests/real_node/native_interfaces.rs',
     }
     require(set(document['source_files']) == paths, 'exact discovery source inventory')
     for relative, expected in document['source_files'].items():
@@ -635,12 +635,12 @@ READINESS_BOUNDS = {'builder': 3, 'program-events': 55, 'webhooks-events': 55, '
 READINESS_STARTUP = 120
 READINESS_REFUSAL_WINDOW = 30
 READINESS_SOURCES = {
-    'platform/hosted/registry/src/main.rs',
-    'platform/hosted/registry/src/routes.rs',
-    'platform/hosted/registry/src/event_producer.rs',
+    'services/platform/hosted/registry/src/main.rs',
+    'services/platform/hosted/registry/src/routes.rs',
+    'services/platform/hosted/registry/src/event_producer.rs',
     'docker/platform-registry/registry.env.example',
-    'platform/hosted/registry/deployment.yaml',
-    'platform/hosted/registry/tests/readiness.py',
+    'services/platform/hosted/registry/deployment.yaml',
+    'services/platform/hosted/registry/tests/readiness.py',
     'docker/platform-registry/init.sh',
     'tools/qualification/paxeer-x/registry-contract.py',
 }
@@ -1106,7 +1106,7 @@ def conformance_artifacts(candidate_digest):
     paths = {'tools/platform/emulator/tests/conformance.sh', 'tools/platform/emulator/tests/gateway.rs',
              'tools/platform/emulator/tests/authority.rs', 'tools/qualification/paxeer-x/registry-contract.py',
              'tools/platform/emulator/src/main.rs', 'tools/platform/emulator/core/emulator_core.c',
-             'platform/hosted/agent-boundary/src/main.rs'}
+             'services/platform/hosted/agent-boundary/src/main.rs'}
     require(isinstance(value['source_files'], dict) and set(value['source_files']) == paths, 'exact conformance source inventory')
     for name, digest in value['source_files'].items():
         require(hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest, 'conformance source binding: ' + name)

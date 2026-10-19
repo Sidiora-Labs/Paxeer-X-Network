@@ -19,7 +19,7 @@ from lxgb_metadata import metadata
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-RUNTIME = ROOT / "platform/relay_archive/runtime.py"
+RUNTIME = ROOT / "services/platform/relay_archive/runtime.py"
 
 
 def require(condition, message):
@@ -62,7 +62,7 @@ def genesis(work):
         LAYERX_NODE_CHECKPOINT_REGISTRY="0x0000000000000000000000000000000000001014",
         LAYERX_NODE_PAXEER_RPC_ADDRESS="127.0.0.1",
         LAYERX_NODE_PAXEER_RPC_PORT=str(unused_port()))
-    execute(["bash", ROOT / "platform/hosted/node/bootstrap.sh",
+    execute(["bash", ROOT / "services/platform/hosted/node/bootstrap.sh",
              "--data-dir", data, "--run-dir", work / "run", "--network-id", "77",
              "--genesis-metadata", work / "metadata",
              "--sequencer-key", work / "sequencer", "--treasury-key", work / "treasury",

@@ -83,7 +83,7 @@ def source():
     paths = capture(['git', 'ls-files', '--', 'src', 'include', 'programs/crates',
         'programs/sdk/rust', 'programs/.cargo', 'programs/vendor', 'services/agent/crates',
         'services/agent/Cargo.lock', 'services/agent/Cargo.toml', 'programs/Cargo.lock', 'programs/Cargo.toml',
-        'Makefile', 'platform/Makefile.inc', 'tools/build/sanitizers.mk',
+        'Makefile', 'services/platform/Makefile.inc', 'tools/build/sanitizers.mk',
         'rust-toolchain.toml', 'contracts/config/checkpoint-settlement.json',
         'tests/programs/test_call_activity.c', 'tests/programs/test_spend_capability_composition.c',
         MAKEFILE, 'tools/paxeer-x/gates/104.30.4.sh',

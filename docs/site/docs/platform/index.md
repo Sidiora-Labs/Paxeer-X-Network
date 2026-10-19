@@ -5,7 +5,7 @@ pillars on top of the human control plane: the developer platform, LayerX
 Programs, the interoperability gateway, and the multichain surface.
 
 This section covers hosted developer surfaces that exist in
-`platform/hosted/` and the public JSON-RPC gateway.
+`services/platform/hosted/` and the public JSON-RPC gateway.
 
 ## Hosted surfaces
 

@@ -1,7 +1,7 @@
 
 Beta recovery uses three dedicated, randomly generated Ed25519 guardian keys,
 threshold two, one for each of the roles `guarantor-1`, `guarantor-2` and
-`sequencer`. Each guardian is enrolled by its own `platform/hosted/human/guardians.py
+`sequencer`. Each guardian is enrolled by its own `services/platform/hosted/human/guardians.py
 enroll` process into its own mode-0700 custody directory
 `$SECRETS_DIR/human-guardians/<role>-e<epoch>`, which holds nothing but that
 guardian's mode-0600 32-byte seed. Epochs start at one and are bounded at 64.

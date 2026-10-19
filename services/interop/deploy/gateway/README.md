@@ -46,7 +46,7 @@ authenticated principal and both verified mandate references.
 
 `docker/interop-gateway/Dockerfile` at the repository root builds the `layerx-interop-gateway` binary from the tracked
 repository sources and runs it as the non-root 4020 user, the same identity the
-hosted gateway image uses. `platform/hosted/interop/deployment.yaml` deploys it
+hosted gateway image uses. `services/platform/hosted/interop/deployment.yaml` deploys it
 into the `layerx-testnet` namespace beside the hosted gateway: it mounts its
 server certificate, the internal CA, its outbound client identity, the gateway
 authority client secret (receipt authority token and the sequencer pins), its
@@ -67,7 +67,7 @@ are not authenticated external counterparties, and a deployment that faces real
 ones replaces them with the variables below.
 
 `render.py` produces that document and
-`platform/hosted/tests/beta-cluster.sh` calls it during bring-up. The
+`services/platform/hosted/tests/beta-cluster.sh` calls it during bring-up. The
 deployment supplies variables only: there is no document to author, and
 `render.py --check` refuses the bring-up up front, naming every variable that
 is absent or malformed.
@@ -126,7 +126,7 @@ payment handler.
 The AP2 issuer keys, the AP2 asset binding, the Visa TAP agent and merchant
 target and the fiat provider callback key are counterparty credentials. On a
 private network the counterparties are the cluster's own test clients, so
-`secrets_generate` in `platform/hosted/tests/beta-cluster.sh` generates them —
+`secrets_generate` in `services/platform/hosted/tests/beta-cluster.sh` generates them —
 three uncompressed SEC1 P-256 mandate keys, one ed25519 TAP agent key and one
 ed25519 fiat provider key — and writes their public halves with the cluster
 facts they bind to (the smoke client's principal digest and accounts, the node

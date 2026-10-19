@@ -72,7 +72,7 @@ enum { PLATFORM_EMULATOR_BALANCE_STALENESS_MS = 300000 };
 /* One program's receipt-proven value accounts, captured at the sequence its
  * own activity receipt proves. The hosted registry keeps the same kind of
  * separately verified balance read beside the registry head
- * (platform/hosted/registry/src/routes.rs render_read) and refuses it once it
+ * (services/platform/hosted/registry/src/routes.rs render_read) and refuses it once it
  * falls outside the read freshness window. */
 typedef struct platform_emulator_balance_snapshot {
     uint8_t receipt_digest[32];

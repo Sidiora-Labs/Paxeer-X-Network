@@ -54,7 +54,7 @@ def main():
         state = divergent / 'state'
         state.mkdir(mode=0o700)
         with (divergent / 'replay.log').open('wb') as log:
-            subprocess.run(['bash', '-c', 'source platform/hosted/node/sequencer-env.sh\nlayerx_sequencer_environment "$1"\nset -a\nsource "$7"\nexec "$2" "$3" "$4" "$5" "$6"', 'replay',
+            subprocess.run(['bash', '-c', 'source services/platform/hosted/node/sequencer-env.sh\nlayerx_sequencer_environment "$1"\nset -a\nsource "$7"\nexec "$2" "$3" "$4" "$5" "$6"', 'replay',
                 str(native / 'data/sequencer.env'), str(build / 'tests/lxp_test_guarantor_runtime'),
                 str(native / 'data/sequencer.conf'), str(state), str(native / 'data/checkpoints/da-bodies.log'), str(count), str(native / 'settlement.env')],
                 cwd=ROOT, env=os.environ, stdout=log, stderr=log, check=True, timeout=180)

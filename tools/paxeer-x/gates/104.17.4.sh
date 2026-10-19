@@ -25,7 +25,7 @@ def execute(argv, name, timeout=180):
     return path.read_text()
 
 for name in ('hosted-boundary.sh', 'run-load.sh'):
-    execute(['sh', '-n', str(root / 'platform/hosted/gateway/tests' / name)], 'syntax-' + name)
+    execute(['sh', '-n', str(root / 'services/platform/hosted/gateway/tests' / name)], 'syntax-' + name)
     tests += 1
 
 for name in ('LAYERX_GATEWAY_LIB_TEST_BINARY', 'LAYERX_GATEWAY_TEST_BINARY'):
@@ -43,7 +43,7 @@ for name in ('LAYERX_GATEWAY_LIB_TEST_BINARY', 'LAYERX_GATEWAY_TEST_BINARY'):
         raise RuntimeError('real Rust test corpus omitted a required case: ' + name)
     tests += int(results[0][0])
 
-output = execute(['python3', 'platform/hosted/gateway/tests/key-store.py'], 'key-store')
+output = execute(['python3', 'services/platform/hosted/gateway/tests/key-store.py'], 'key-store')
 records = re.findall(r'^GATEWAY_KEY_STORE_RESULT (.+)$', output, re.M)
 if len(records) != 1:
     raise RuntimeError('real Redis key-store corpus evidence is missing')
@@ -52,8 +52,8 @@ if not isinstance(record.get('tests'), int) or record['tests'] <= 0 or record.ge
     raise RuntimeError('real Redis key-store corpus is empty or skipped')
 tests += record['tests']
 
-boundary = root / 'platform/hosted/gateway/tests/hosted-boundary.sh'
-load = root / 'platform/hosted/gateway/tests/run-load.sh'
+boundary = root / 'services/platform/hosted/gateway/tests/hosted-boundary.sh'
+load = root / 'services/platform/hosted/gateway/tests/run-load.sh'
 required = []
 for script in (boundary, load):
     contract = re.findall(r'^: "\$\{([A-Z0-9_]+):\?', script.read_text(), re.M)

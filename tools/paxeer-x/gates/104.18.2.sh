@@ -7,4 +7,4 @@ fi
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 : "${PAXEER_X_REFERENCE_APP_ARTIFACTS:?set the genuine prebuilt reference artifact manifest}"
 : "${PAXEER_X_EVIDENCE_DIR:?set the private qualification evidence directory}"
-exec node platform/examples/qualify-reference-apps.mjs
+exec node services/platform/examples/qualify-reference-apps.mjs

@@ -2,9 +2,9 @@
 """Disposable Paxeer node for the human withdrawal journey.
 
 Nothing about custody or settlement is simulated here. The chain is a real
-``paxd`` started from genesis produced by ``platform/hosted/paxeer/custody-genesis.py``
-and ``platform/hosted/paxeer/anchor-genesis.py`` and merged by
-``platform/hosted/paxeer/init-chain.sh``, so the custody precompile at
+``paxd`` started from genesis produced by ``services/platform/hosted/paxeer/custody-genesis.py``
+and ``services/platform/hosted/paxeer/anchor-genesis.py`` and merged by
+``services/platform/hosted/paxeer/init-chain.sh``, so the custody precompile at
 ``0x…1013`` is the native ``layerxcustody`` module and the anchor precompile at
 ``0x…1014`` is the native ``layerxanchor`` module.
 
@@ -195,7 +195,7 @@ class Node:
 
         self.deposit_authority_key_file, deposit_authority = deposit_root_authority(self.work)
         custody_genesis = self.work / 'custody-genesis.json'
-        command('python3', ROOT / 'platform/hosted/paxeer/custody-genesis.py',
+        command('python3', ROOT / 'services/platform/hosted/paxeer/custody-genesis.py',
                 '--network-id', request['network_id'],
                 '--sequencer-id', enhex(sequencer_id),
                 '--sequencer-public-key', enhex(sequencer_public),
@@ -205,7 +205,7 @@ class Node:
                 '--authority', self.bech32(self.account.address),
                 '--output', custody_genesis)
         anchor_genesis = self.work / 'anchor-genesis.json'
-        command('python3', ROOT / 'platform/hosted/paxeer/anchor-genesis.py',
+        command('python3', ROOT / 'services/platform/hosted/paxeer/anchor-genesis.py',
                 '--authority-evm', self.account.address,
                 '--paxeer-chain-id', CHAIN_ID,
                 '--network-id', request['network_id'],
@@ -228,14 +228,14 @@ class Node:
             LAYERX_PAXEER_HOME=str(self.home), LAYERX_PAXEER_CHAIN_ID=str(CHAIN_ID),
             LAYERX_PAXEER_COMMIT_TIMEOUT_NANOSECONDS='1000000000',
             LAYERX_PAXEER_DEPLOYER_ADDRESS=self.account.address,
-            LAYERX_PAXEER_USDL_RUNTIME=str(ROOT / 'platform/hosted/paxeer/contracts/BetaUsdl.runtime.hex'),
+            LAYERX_PAXEER_USDL_RUNTIME=str(ROOT / 'services/platform/hosted/paxeer/contracts/BetaUsdl.runtime.hex'),
             LAYERX_PAXEER_CUSTODY_GENESIS_FILE=str(custody_genesis),
             LAYERX_PAXEER_ANCHOR_GENESIS_FILE=str(anchor_genesis),
             GOMAXPROCS=str(min(4, int(os.environ.get('GOMAXPROCS', '4')))))
         for name, port in ports.items():
             environment['LAYERX_PAXEER_' + name + '_PORT'] = str(port)
         with (self.work / 'paxd-init.log').open('w') as log:
-            command('bash', ROOT / 'platform/hosted/paxeer/init-chain.sh',
+            command('bash', ROOT / 'services/platform/hosted/paxeer/init-chain.sh',
                     env=environment, stdout=log, stderr=log)
         self.check_escrow_genesis_bond(int(request['guarantor_bond']))
         binary = environment.get('PAXD', 'paxd')
@@ -305,7 +305,7 @@ class Node:
     @staticmethod
     def bech32(address):
         module = {}
-        source = (ROOT / 'platform/hosted/paxeer/anchor-genesis.py').read_text()
+        source = (ROOT / 'services/platform/hosted/paxeer/anchor-genesis.py').read_text()
         exec(compile(source.split('def main(')[0], 'anchor-genesis', 'exec'), module)
         return module['bech32']('pax', bytes.fromhex(address.removeprefix('0x').lower()))
 

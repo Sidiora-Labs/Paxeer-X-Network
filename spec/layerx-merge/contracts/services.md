@@ -21,7 +21,7 @@ One block per service.
 | package path | new: node/sequencer in daemon/paxd (sequencer mode, follower mode); module modules/sequencer (new) |
 | reads | all committed state L_c plus its own L_N/L_open; pending reads served for others through node RPC on the L_open snapshot (hook node/app.go:2895 RPCContextProvider; today rpc/utils.go:66 maps pending to latest) |
 | writes | the block itself in receipt order (consensus/internal/state/execution.go:101 CreateProposalBlock, Seal() replaces ReapTxs at :126), one per height; modules/sequencer `MsgSequenceBatch{height,fromSeq,toSeq,prevSeqHash,lastSeqHash,txRoot,keyId,sig}` (sequencer.md c2) injected unsigned by the proposer at CreateProposalBlock as tx 0 of every block at height >= H_act, verified in ProcessProposal (sequencer.md c2 Envelope, c3); submission `eth_sendRawTransaction` returning the hash after execution in receipt order, WAL fsync and standby ack, then the signed ProtocolReceipt v2 served by `pax_sequencerReceipt(txHash)` with rung submitted / receipted / committed (sequencer.md a1, b1; today rpc/send.go:76 returns the hash only, :139-159), one per accepted tx |
-| signing key | (1) validator consensus key, privval file loaded by consensus/privval/file.go:233 LoadFilePV, authorised by the pinned-leader list in Leader() consensus/internal/consensus/types/round_state.go:422 (primary round 0, standby round 1; D18). (2) receipt key: one separate ed25519 key per host (primary, standby) per D15, own key file beside, not inside, the validator key file, NEW loader in node/sequencer (sequencer.md a3 Key); each pinned with keyId and height range in the modules/sequencer param ReceiptKeys list (sequencer.md a3 Pin), held as the same list by the authority service and settle endpoint (today one key: platform/hosted/authority/src/main.rs:307 LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY), the x-websearch config (interop/crates/x-websearch/src/config.rs:874), agentd (agent/crates/layerx-agentd/src/main.rs:483) and the seller middleware (platform/middleware/seller/src/commitment.ts:96); verifier agent/crates/layerx-proof/src/receipt.rs:631 verify_sequencer_signature; rotation per sequencer.md a4. (3) MsgSequenceBatch.sig: ed25519 by the proposing host's receipt key over sha256("PAXEER/v1/sequence-batch\0" ‖ chain-id ‖ height ‖ fromSeq ‖ toSeq ‖ prevSeqHash ‖ lastSeqHash ‖ txRoot) (sequencer.md c2) |
+| signing key | (1) validator consensus key, privval file loaded by consensus/privval/file.go:233 LoadFilePV, authorised by the pinned-leader list in Leader() consensus/internal/consensus/types/round_state.go:422 (primary round 0, standby round 1; D18). (2) receipt key: one separate ed25519 key per host (primary, standby) per D15, own key file beside, not inside, the validator key file, NEW loader in node/sequencer (sequencer.md a3 Key); each pinned with keyId and height range in the modules/sequencer param ReceiptKeys list (sequencer.md a3 Pin), held as the same list by the authority service and settle endpoint (today one key: services/platform/hosted/authority/src/main.rs:307 LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY), the x-websearch config (interop/crates/x-websearch/src/config.rs:874), agentd (agent/crates/layerx-agentd/src/main.rs:483) and the seller middleware (services/platform/middleware/seller/src/commitment.ts:96); verifier agent/crates/layerx-proof/src/receipt.rs:631 verify_sequencer_signature; rotation per sequencer.md a4. (3) MsgSequenceBatch.sig: ed25519 by the proposing host's receipt key over sha256("PAXEER/v1/sequence-batch\0" ‖ chain-id ‖ height ‖ fromSeq ‖ toSeq ‖ prevSeqHash ‖ lastSeqHash ‖ txRoot) (sequencer.md c2) |
 | liveness requirement | every write path stops without it: no receipt, no pending read, no block in round 0. Chain tolerance: standby proposes the WAL slice at round 1 (one consensus round of delay); receipts fail closed when the standby ack does not arrive |
 | failure mode and recovery | primary down: standby takes round 1 from the replicated WAL; standby ack absent: sends return an error, never a receipt; WAL tail gone on both: the only receipt-breaking case, excluded by synchronous replication; block out of receipt order: refused in ProcessProposal (node/app.go:1457) and alerted, not retried |
 | on-chain evidence | MsgSequenceBatch per block (store lastSeq, lastSeqHash, ReceiptKeys in modules/sequencer, sequencer.md c2); block header time = L_open open time (D7) |
@@ -46,10 +46,10 @@ One block per service.
 | Field | Value |
 |---|---|
 | service | Unified router (public entry) |
-| package path | platform/hosted/gateway |
-| reads | sequencer pending state via node RPC (sequencer.md b2: `eth_call` rpc/simulate.go:151, `eth_getTransactionCount` pending rpc/tx.go:358, `eth_getTransactionReceipt` committed rpc/tx.go:106); pending-tag calls sent to the sequencer, other nodes answer -32000 (sequencer.md b2); sequencer `pax_sequencerReceipt(txHash)` (sequencer.md b1); addr 0x1004 `getLayerXDid`, `getEvmAddrByLayerX`, `getUnifiedAccount` (precompiles/addr/addr.go:40-43); bank 0x1001 `balance`, `all_balances` (precompiles/bank/bank.go:24-25); asset catalogue for px_listAssets: layerxledger 0x101A `getAsset(bytes32 assetId)` (ledger-auth.md layerxledger B) joined with bank denom metadata; new router px_ routes, added to the px_ dispatch (platform/hosted/gateway/src/paxeer.rs:790-795) and the route catalogue (rpc.rs:1140-1148), none present at 52b672ac4: `px_getReceiptKeys` proxies the modules/sequencer params query and returns the ReceiptKeys list {keyId, publicKey, firstHeight, lastHeight} (sequencer.md a3, c); `px_getCommit(height)` and `px_getValidators(height)` proxy CometBFT `commit` and `validators` (consensus/internal/rpc/core/routes.go:49, :54) from an operator full node, validators stay private; `px_register` forwards to S04 and `px_requestFunds` to S05, replacing `lx_register` and `lx_requestFunds` (rpc.rs:340; rpc_register.rs:399; rpc_faucet.rs:358) when lx_* ingress switches off |
+| package path | services/platform/hosted/gateway |
+| reads | sequencer pending state via node RPC (sequencer.md b2: `eth_call` rpc/simulate.go:151, `eth_getTransactionCount` pending rpc/tx.go:358, `eth_getTransactionReceipt` committed rpc/tx.go:106); pending-tag calls sent to the sequencer, other nodes answer -32000 (sequencer.md b2); sequencer `pax_sequencerReceipt(txHash)` (sequencer.md b1); addr 0x1004 `getLayerXDid`, `getEvmAddrByLayerX`, `getUnifiedAccount` (precompiles/addr/addr.go:40-43); bank 0x1001 `balance`, `all_balances` (precompiles/bank/bank.go:24-25); asset catalogue for px_listAssets: layerxledger 0x101A `getAsset(bytes32 assetId)` (ledger-auth.md layerxledger B) joined with bank denom metadata; new router px_ routes, added to the px_ dispatch (services/platform/hosted/gateway/src/paxeer.rs:790-795) and the route catalogue (rpc.rs:1140-1148), none present at 52b672ac4: `px_getReceiptKeys` proxies the modules/sequencer params query and returns the ReceiptKeys list {keyId, publicKey, firstHeight, lastHeight} (sequencer.md a3, c); `px_getCommit(height)` and `px_getValidators(height)` proxy CometBFT `commit` and `validators` (consensus/internal/rpc/core/routes.go:49, :54) from an operator full node, validators stay private; `px_register` forwards to S04 and `px_requestFunds` to S05, replacing `lx_register` and `lx_requestFunds` (rpc.rs:340; rpc_register.rs:399; rpc_faucet.rs:358) when lx_* ingress switches off |
 | balance and asset reads | `px_getBalances [address|did]` -> {account, height (decimal string), balances:[{denom, amount (decimal uint256 string), name, symbol, decimals, pointer (0x address or null)}], complete}, read from bank 0x1001 and pointerview at one height, sorted by denom, at most 64 rows, complete=false past that, no assetId, custody or kernel field; `px_listAssets [cursor|null]` -> {height, assets:[{denom, name, symbol, decimals, supply, pointer, ledger:{paused, supplyCap}|null}], next_cursor}, rows from the indexer asset table with a denom, ledger from layerxledger 0x101A `getAsset` when the row carries a ledger asset id, no assetId field |
-| writes | none of its own; relays user-signed raw EVM txs to sequencer `eth_sendRawTransaction`, then serves the receipt from `pax_sequencerReceipt` (sequencer.md b1); lx_sendActivity and every lx_* ingress switched off at activation (sequencer.md b1, D17); `eth_subscribe` relay to the sequencer for `logs` and `newPendingTransactions` (sequencer.md b2; today refused, platform/hosted/gateway/src/paxeer.rs:172) |
+| writes | none of its own; relays user-signed raw EVM txs to sequencer `eth_sendRawTransaction`, then serves the receipt from `pax_sequencerReceipt` (sequencer.md b1); lx_sendActivity and every lx_* ingress switched off at activation (sequencer.md b1, D17); `eth_subscribe` relay to the sequencer for `logs` and `newPendingTransactions` (sequencer.md b2; today refused, services/platform/hosted/gateway/src/paxeer.rs:172) |
 | signing key | none; the chain authorises the user's EVM signature |
 | liveness requirement | the public entry: all router-path reads and writes stop. Chain tolerance: unlimited (chain unaffected; direct node RPC still works for operators) |
 | failure mode and recovery | sequencer unreachable: unavailable error, writes refused with -32003, never relayed unsigned; unprobed write target: refused; recover by restart, stateless |
@@ -61,7 +61,7 @@ One block per service.
 | Field | Value |
 |---|---|
 | service | Identity registration (lx_register until activation, then router `px_register` (S03); agent.register) |
-| package path | platform/hosted/identity; router handler platform/hosted/gateway/src/rpc_register.rs:96 binding |
+| package path | services/platform/hosted/identity; router handler services/platform/hosted/gateway/src/rpc_register.rs:96 binding |
 | reads | addr 0x1004 `getLayerXDid`, `getEvmAddrByLayerX`, `layerXBindNonce` |
 | writes | none itself; the user submits addr 0x1004 `bindLayerX` (precompiles/addr/addr.go:38), once per identity; sponsored-bind flow through S11 (wave 5) |
 | signing key | none of its own; bind authorised by the user's ed25519 DID signature over LX:PAXEER-BIND:v1 plus the EVM sender |
@@ -75,9 +75,9 @@ One block per service.
 | Field | Value |
 |---|---|
 | service | Faucet (lx_requestFunds until activation, then router `px_requestFunds` (S03); faucet.claim) |
-| package path | platform/hosted/faucet; router platform/hosted/gateway/src/rpc_faucet.rs |
+| package path | services/platform/hosted/faucet; router services/platform/hosted/gateway/src/rpc_faucet.rs |
 | reads | faucet account balance (bank 0x1001 `balance`) and pending nonce (node RPC `eth_getTransactionCount` pending, rpc/tx.go:358) |
-| writes | one EVM transfer (bank 0x1001 `send`) per admitted claim, bounded by identity, address and network quotas (platform/hosted/faucet/src/main.rs:273-334) |
+| writes | one EVM transfer (bank 0x1001 `send`) per admitted claim, bounded by identity, address and network quotas (services/platform/hosted/faucet/src/main.rs:273-334) |
 | signing key | faucet secp256k1 account key, ordinary EVM signature and balance, loaded by the one shared keystore-or-KMS EVM sender loader selected by env, sender address registered with gas-station sponsorship; today the faucet holds no chain key: it posts to a funding endpoint (main.rs:903 fund, config LAYERX_TESTNET_FUNDING_URL main.rs:310) |
 | liveness requirement | new claims stop (503); no chain effect. Chain tolerance: unlimited |
 | failure mode and recovery | down or empty: 503, no credit; pending or refused claim never reported as funded (rpc_faucet.rs test at :510); idempotency key replays the same funding id |
@@ -89,10 +89,10 @@ One block per service.
 | Field | Value |
 |---|---|
 | service | Receipt authority |
-| package path | platform/hosted/authority |
+| package path | services/platform/hosted/authority |
 | reads | sequencer `pax_sequencerReceipt(txHash)` (sequencer.md b1); node RPC `eth_getTransactionReceipt` committed rung (sequencer.md b1, rpc/tx.go:106) on one full node for inclusion |
 | writes | none |
-| signing key | none; verifies the ed25519 receipt signature against the ReceiptKeys list (keyId, publicKey, firstHeight, lastHeight; two overlapping entries, primary and standby) per sequencer.md a3 Pin and a5; today one key loaded at platform/hosted/authority/src/main.rs:307; records equivocation evidence and alerts (sequencer.md a5 step 8) |
+| signing key | none; verifies the ed25519 receipt signature against the ReceiptKeys list (keyId, publicKey, firstHeight, lastHeight; two overlapping entries, primary and standby) per sequencer.md a3 Pin and a5; today one key loaded at services/platform/hosted/authority/src/main.rs:307; records equivocation evidence and alerts (sequencer.md a5 step 8) |
 | liveness requirement | /v1/settle, /v1/authorized-batches, webhooks and interop verification stop returning verified. Chain tolerance: unlimited |
 | failure mode and recovery | unverified or sequencer down: 202 pending, never a false success; recover by restart, stateless |
 | on-chain evidence | none |
@@ -103,10 +103,10 @@ One block per service.
 | Field | Value |
 |---|---|
 | service | Core boundary: treasury SEND, withdrawal config and caps reads |
-| package path | platform/hosted/core |
+| package path | services/platform/hosted/core |
 | reads | withdrawal config and caps: held in the core boundary service config, no chain read; bank 0x1001 `balance` of the treasury account (precompiles/bank/bank.go:24) |
 | writes | EVM transfer from the treasury account (bank 0x1001 `send`, precompiles/bank/bank.go:22, or a plain value transfer), per operator request, no batching; caps enforced by the service before signing |
-| signing key | secp256k1 treasury key, ordinary EVM signature, loaded by the shared keystore-or-KMS EVM sender loader selected by env. Today: ed25519 treasury signer over a socket (platform/hosted/core/src/custody.rs:28 TreasurySigner, socket at main.rs:306 LAYERX_CORE_TREASURY_SIGNER_SOCKET) |
+| signing key | secp256k1 treasury key, ordinary EVM signature, loaded by the shared keystore-or-KMS EVM sender loader selected by env. Today: ed25519 treasury signer over a socket (services/platform/hosted/core/src/custody.rs:28 TreasurySigner, socket at main.rs:306 LAYERX_CORE_TREASURY_SIGNER_SOCKET) |
 | liveness requirement | treasury sends stop; no chain effect. Chain tolerance: unlimited |
 | failure mode and recovery | down: no send and no partial send; retry by operator |
 | on-chain evidence | EVM transfer receipt from the treasury address |
@@ -117,7 +117,7 @@ One block per service.
 | Field | Value |
 |---|---|
 | service | Indexer (Paxeer half; LayerX half retired) |
-| package path | platform/hosted/indexer |
+| package path | services/platform/hosted/indexer |
 | reads | node RPC committed blocks and receipts (sequencer.md b2: rpc/block.go:207, rpc/tx.go:106), `eth_getLogs` (rpc/filter.go:569); CometBFT `tx_search`: sequencer.md b1 node RPC row; layerxprograms 0x101D logs `ProgramGuestEvent`, `ProgramCallOutcome` and the other programs.md section C logs through eth_getLogs (no Query ProgramEvents); decoded logs of layerxexchange (exchange-launchpad.md C), layerxledger and layerxauth (ledger-auth.md C, incl. PaymentDrawn and PaymentExact), layerxpay (pay.md C), xweb (web.md C), layerxbridge (precompiles/layerxbridge/layerxbridge.go:49-50) |
 | holder route | `/v1/holders/{address}?kind=budget|grant&cursor=&limit=` lists BudgetCreated/Revoked/Closed (0x101B), PayerGrantIssued/Revoked (0x101A) and GrantBody/GrantRevoked (0x101C) records by holder (the transaction sender) with their current state, using the history cursor and freshness (clients.md O14); the gateway serves it as `px_listHolderRecords [address, kind, cursor?, limit?]` -> {items, next_cursor, indexedHeight, chainHeight}; this route is the list-by-holder path of resolution 13.175, and req.6034 ac_2 eth_getLogs wording is served through it |
 | writes | none (own database) |
@@ -132,7 +132,7 @@ One block per service.
 | Field | Value |
 |---|---|
 | service | Webhooks (merchant and AI market notifications) |
-| package path | platform/hosted/webhooks |
+| package path | services/platform/hosted/webhooks |
 | reads | authority routes (S06) and indexer projections (S08); no direct chain read |
 | writes | none |
 | signing key | none (chain); delivery signing is service-side |
@@ -146,7 +146,7 @@ One block per service.
 | Field | Value |
 |---|---|
 | service | Program registry service as read cache (D20 A) |
-| package path | platform/hosted/registry (read path platform/hosted/registry/src/program_state.rs:5, to be re-pointed) |
+| package path | services/platform/hosted/registry (read path services/platform/hosted/registry/src/program_state.rs:5, to be re-pointed) |
 | reads | layerxprograms 0x101D views `getProgram(bytes32)` (0xb1ffb3d4), `getInterface(bytes32)` (0x8efc7240), `getStateHead(bytes32)` (0x0833650b) (programs.md B); no `registryLookup` view and `registryRead` is a write (programs.md A 0xfb28c4b1), so neither is called; ICS23 proofs of those reads: sequencer.md b1 node RPC row `abci_query prove=true` |
 | writes | none |
 | signing key | none |
@@ -203,10 +203,10 @@ One block per service.
 | Field | Value |
 |---|---|
 | service | x402 seller middleware |
-| package path | platform/middleware/seller (rpc.ts, commitment.ts) |
+| package path | services/platform/middleware/seller (rpc.ts, commitment.ts) |
 | reads | sequencer `pax_sequencerReceipt(txHash)` (sequencer.md b1); layerxledger logs `PaymentDrawn` and `PaymentExact` with the ledger-auth.md C fields via node RPC `eth_getLogs` |
 | writes | none |
-| signing key | none; verifies the ed25519 receipt signature over sha256("LXP/v1/receipt\0" + unsigned envelope) (sequencer.md a3) against the ReceiptKeys list {keyId, publicKey, firstHeight, lastHeight} (sequencer.md a4), replacing the single pinned key (platform/middleware/seller/src/commitment.ts:96 sequencerPublicKey) |
+| signing key | none; verifies the ed25519 receipt signature over sha256("LXP/v1/receipt\0" + unsigned envelope) (sequencer.md a3) against the ReceiptKeys list {keyId, publicKey, firstHeight, lastHeight} (sequencer.md a4), replacing the single pinned key (services/platform/middleware/seller/src/commitment.ts:96 sequencerPublicKey) |
 | liveness requirement | merchant requests are not served; chain unaffected. Chain tolerance: unlimited |
 | failure mode and recovery | unverifiable receipt: request not served; payer retries with the same idempotency key |
 | on-chain evidence | none of its own |
@@ -275,10 +275,10 @@ The kernelNetworkId value is set at activation rehearsal.
 | Field | Value |
 |---|---|
 | service | Perps price feeder |
-| package path | platform/hosted/feeder |
+| package path | services/platform/hosted/feeder |
 | reads | layerxexchange 0x1015 `getOracle(bytes32 market)` returns (uint64 sequence, uint256 price, uint64 observedAtMs), `getMarket(bytes32 market)` returns PerpsMarket incl. permittedOracleKeys (exchange-launchpad.md B, E9) |
-| writes | layerxexchange 0x1015 `pushOracle(bytes observation, bytes signature)` (exchange-launchpad.md P3): observation exactly 72 bytes, signature 64-byte ed25519 over "LXP:ORACLE:OBSERVATION:v1" + observation, one per market per round every `cadence_ms` (platform/hosted/feeder/src/lib.rs:88); today submitted over the LNI socket (main.rs:44 LAYERX_FEEDER_LNI_SOCKET), retargeted to an EVM tx through S11; there is no Msg form |
-| signing key | ed25519 oracle key (LAYERX_FEEDER_ORACLE_KEY_FILE, platform/hosted/feeder/src/main.rs:47; load_key lib.rs:479) in the market's permittedOracleKeys (1..8), checked in intake (src/modules/perps/lx_oracle_intake.c:114); EVM sender MUST be the 0x1004-bound address of that oracle key, else LXP_UNAUTHORIZED_ORACLE (exchange-launchpad.md P3, H5); sponsorship through S11 keeps that sender; EVM sender key through the shared loader |
+| writes | layerxexchange 0x1015 `pushOracle(bytes observation, bytes signature)` (exchange-launchpad.md P3): observation exactly 72 bytes, signature 64-byte ed25519 over "LXP:ORACLE:OBSERVATION:v1" + observation, one per market per round every `cadence_ms` (services/platform/hosted/feeder/src/lib.rs:88); today submitted over the LNI socket (main.rs:44 LAYERX_FEEDER_LNI_SOCKET), retargeted to an EVM tx through S11; there is no Msg form |
+| signing key | ed25519 oracle key (LAYERX_FEEDER_ORACLE_KEY_FILE, services/platform/hosted/feeder/src/main.rs:47; load_key lib.rs:479) in the market's permittedOracleKeys (1..8), checked in intake (src/modules/perps/lx_oracle_intake.c:114); EVM sender MUST be the 0x1004-bound address of that oracle key, else LXP_UNAUTHORIZED_ORACLE (exchange-launchpad.md P3, H5); sponsorship through S11 keeps that sender; EVM sender key through the shared loader |
 | liveness requirement | `cadence_ms` must stay below each market's `maximum_oracle_staleness_ms` (include/layerx/lx_perps.h:178). Chain tolerance: maximum_oracle_staleness_ms; beyond it ORACLE_STALE (src/modules/perps/lx_perps_dispatch.c:306-307): place, open, increase, funding, liquidate and ADL refused; cancel and margin add allowed |
 | failure mode and recovery | stops: markets go stale until the next accepted push; fresh observation at block-open timestamp can hit TIMESTAMP_REGRESSION (D7 follow-up) |
 | on-chain evidence | oracle record per market (price, observed_at, sequence) in layerxexchange oracle store |
@@ -289,7 +289,7 @@ The kernelNetworkId value is set at activation rehearsal.
 | Field | Value |
 |---|---|
 | service | Perps keeper: funding ticks, liquidation scanner, ADL ranking |
-| package path | new: platform/hosted/perps-keeper |
+| package path | new: services/platform/hosted/perps-keeper |
 | reads | pending state via sequencer reads (sequencer.md b2): layerxexchange 0x1015 `getMarket(bytes32)` (E9), `getPosition(bytes32 market, bytes32 positionId)` (E11), `getMargin(address,bytes32)` (E12), `getPerpsBook(bytes32 market)`, `getFunding(bytes32)` returns (int256 index, uint64 lastTickMs), `getOracle(bytes32)`, `getDeficit(bytes32)` (exchange-launchpad.md B); open-position enumeration for scanning and ADL ranking by layerxexchange 0x1015 view `getPerpsPositions(bytes32 market)` (0xc0451774) returns Position[] (at most 128, positionId order; exchange-launchpad.md B), a 0x1015 view rather than a gRPC query |
 | writes | layerxexchange 0x1015 `fundingTick(bytes32 market)` (P9) per market every `funding_interval_ms` (include/layerx/lx_perps.h:177); `liquidate(bytes32 market, bytes32 positionId, bytes32 liquidatorAccount)` returns covered (P10) when a position crosses maintenance; `adl(bytes32 market, bytes32[] positionIds)` returns deficit (P11, 1..16 ids strictly ascending) when a deficit remains (exchange-launchpad.md A); no Msg forms; no batching across markets. This keeper is the only driver of fundingTick and adl; there is no EndBlock driver (exchange-launchpad.md H6) |
 | signing key | any EVM key (permissionless; liquidatorAccount == caller DID main, exchange-launchpad.md P10), loaded by the shared keystore-or-KMS loader and registered with S11 sponsorship |
@@ -303,10 +303,10 @@ The kernelNetworkId value is set at activation rehearsal.
 | Field | Value |
 |---|---|
 | service | paxai-worker and runner (inference and embedding) |
-| package path | platform/hosted/paxai-worker |
+| package path | services/platform/hosted/paxai-worker |
 | reads | ai-market program state (roster, tasks) at committed height through layerxprograms 0x101D `getStateHead(bytes32 programId)` 0x0833650b (programs.md B) |
 | writes | layerxprograms 0x101D `call(bytes32 programId, uint16 abiVersion, string entrypoint, bytes calldata, bytes capabilities, bytes accessDeclaration, uint32 responseCapacity, uint64[7] budget, uint128 feeLimit)` 0x54bd2b48 (programs.md A) to ai-market with ACCEPT_TASK, COMMIT_TASK_RESULT, Heartbeat (programs/crates/layerx-programs-ai-market/src/admission.rs:823), SealEvidence, EnrollWorker (workers.rs:827); one tx per op, sponsored by S11 |
-| signing key | admitted delegate ed25519 key (delegate_seed, platform/hosted/paxai-worker/src/main.rs:43, read :73) signs JobResult (src/jobs.rs:226-228); EVM sender key bound to the worker DID via addr 0x1004, loaded by the shared keystore-or-KMS loader and registered with S11 sponsorship |
+| signing key | admitted delegate ed25519 key (delegate_seed, services/platform/hosted/paxai-worker/src/main.rs:43, read :73) signs JobResult (src/jobs.rs:226-228); EVM sender key bound to the worker DID via addr 0x1004, loaded by the shared keystore-or-KMS loader and registered with S11 sponsorship |
 | liveness requirement | task timeout means CANCEL with no reward; absent heartbeats remove admission; AI height windows re-tuned under D7, set at activation rehearsal |
 | failure mode and recovery | runner refuses: no commit; worker exit: fenced re-dispatch; stale metadata: WRONG_ROSTER until next epoch |
 | on-chain evidence | layerxprograms `ProgramCallOutcome` and `ProgramGuestEvent` logs for each op (programs.md C; `ProgramCalled` is never emitted); task and roster records in ai-market state |
@@ -317,7 +317,7 @@ The kernelNetworkId value is set at activation rehearsal.
 | Field | Value |
 |---|---|
 | service | ai-artifacts (encrypted model, dataset and evidence storage) |
-| package path | platform/hosted/ai-artifacts |
+| package path | services/platform/hosted/ai-artifacts |
 | reads | sealed evidence digests and block commit for retention through layerxprograms 0x101D `getStateHead(bytes32)` 0x0833650b (programs.md B) |
 | writes | none (chain holds digests only) |
 | signing key | none |
@@ -331,7 +331,7 @@ The kernelNetworkId value is set at activation rehearsal.
 | Field | Value |
 |---|---|
 | service | AI evaluator service (F03 assessment signer, F04 score commit and reveal, F05 aggregation driver) |
-| package path | new service package in wave 1, proposed platform/hosted/ai-evaluator over agent/sdk/python/layerx_sdk/ai_market.py and agent/sdk/typescript/src/ai_market.ts (today SDK processes only) |
+| package path | new service package in wave 1, proposed services/platform/hosted/ai-evaluator over agent/sdk/python/layerx_sdk/ai_market.py and agent/sdk/typescript/src/ai_market.ts (today SDK processes only) |
 | reads | evaluator grants and epoch state through layerxprograms 0x101D `getStateHead(bytes32)` 0x0833650b (programs.md B) |
 | writes | layerxprograms 0x101D `call(...)` 0x54bd2b48 with trailing uint128 feeLimit (programs.md A) to ai-market: CommitScore (0x0401) and RevealScore (0x0402) (programs/crates/layerx-programs-ai-market/src/commit_reveal.rs:564, :598), aggregation steps; one per epoch per grant |
 | signing key | evaluator ed25519 key granted by operator ScheduleEvaluator 0x0301 (src/evaluators/authority.rs:656), SignedReport bound to grant and key version; SDK signer interface ai_market.py:798; keys through the shared loader; EVM sender bound via 0x1004, sponsored by S11 |

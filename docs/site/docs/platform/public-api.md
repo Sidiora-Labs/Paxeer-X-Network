@@ -32,8 +32,8 @@ hexadecimal. Amounts and balances in read results are decimal strings.
 The embedded OpenRPC document publishes these 18 method
 names. Parameters are positional; the alternatives shown for sequence, proof,
 and subscription are part of the same method contract
-(`platform/hosted/gateway/openrpc.json`;
-`platform/hosted/gateway/src/rpc.rs:11-105`).
+(`services/platform/hosted/gateway/openrpc.json`;
+`services/platform/hosted/gateway/src/rpc.rs:11-105`).
 
 | Method | Exact positional parameters | Result |
 | --- | --- | --- |
@@ -77,10 +77,10 @@ parameters are `-32602`; unknown methods are `-32601`; authentication or scope
 refusals are `-32002`; read/submission unavailability is `-32001`; rate or
 capacity refusal is `-32005`; invalid upstream data is `-32603`. Proxied
 failures also retain the typed upstream body in `error.data`
-(`platform/hosted/gateway/src/rpc.rs:153-186, 242-257`). If the requested
+(`services/platform/hosted/gateway/src/rpc.rs:153-186, 242-257`). If the requested
 commitment is not yet available, `-32001` carries `data.state: "pending"`, the
 `requested_commitment`, and the evidence or upstream pending body
-(`platform/hosted/gateway/src/rpc.rs:219-225, 334-357`). A DID account-listing
+(`services/platform/hosted/gateway/src/rpc.rs:219-225, 334-357`). A DID account-listing
 failure is `-32001` with
 `error.data.error.code: "did_account_listing_unavailable"`; it is not a partial
 account list.
@@ -88,12 +88,12 @@ account list.
 ## Exact real-process transcript
 
 The values below are recorded from one disposable native-node run of the
-gateway local harness (`platform/hosted/gateway/tests/local/lifecycle.rs`),
+gateway local harness (`services/platform/hosted/gateway/tests/local/lifecycle.rs`),
 which starts the real hosted core, identity, authority, Redis, gateway, and
 faucet binaries, submits canonical activities to a real native node, and
 verifies every returned activity ID, receipt signature, and result code. The
 recorded account objects predate the `verification` field that
-`platform/hosted/core/src/public_reads.rs:50` now emits on every account read,
+`services/platform/hosted/core/src/public_reads.rs:50` now emits on every account read,
 so a current response carries one more key than the excerpts below. The Bearer value is the only
 sanitized field; the test never prints the gateway key. Identifiers and
 timestamps are run-specific, so applications must construct fresh canonical

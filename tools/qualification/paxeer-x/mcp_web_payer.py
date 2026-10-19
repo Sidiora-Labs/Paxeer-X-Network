@@ -27,7 +27,7 @@ CASES = ('web.search', 'web.fetch', 'web.content', 'wrong_tenant', 'wrong_sessio
          'unknown_submission_restart', 'idempotent_charge_restart', 'wrong_resource',
          'search_quote_mismatch', 'missing_pax_metadata', 'paused_pax_metadata', 'wrong_pax_metadata')
 SOURCE_PATHS = ('services/agent/Cargo.toml', 'services/agent/Cargo.lock', 'services/agent/crates',
-    'platform/Cargo.toml', 'platform/Cargo.lock', 'tools/platform/Cargo.toml', 'tools/platform/Cargo.lock', 'tools/platform/cli',
+    'services/platform/Cargo.toml', 'services/platform/Cargo.lock', 'tools/platform/Cargo.toml', 'tools/platform/Cargo.lock', 'tools/platform/cli',
     'human/crates/layerx-human-kms', 'human/wallet/attestor',
     'services/interop/Cargo.toml', 'services/interop/Cargo.lock', 'services/interop/crates/x-websearch',
     'services/interop/crates/layerx-x402', 'programs/crates', 'programs/sdk/rust',

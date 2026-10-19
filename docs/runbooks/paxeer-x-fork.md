@@ -123,11 +123,11 @@ print the exact `paxd` commands. `<rpc>` is a synced node's CometBFT RPC, `<oper
 name of a validator operator in the local keyring (never written down here).
 
 ```sh
-platform/hosted/paxeer/gov-upgrade.sh --rpc <rpc> --key <operator> --target-utc "$T_HALT_UTC" \
+services/platform/hosted/paxeer/gov-upgrade.sh --rpc <rpc> --key <operator> --target-utc "$T_HALT_UTC" \
   --upgrade-info '{"binaries":{"linux/amd64":"<release URL>?checksum=sha256:<SHA256>"}}' \
   --voter <operator-1> --voter <operator-2> --voter <operator-n>          # dry run
-platform/hosted/paxeer/gov-upgrade.sh ... --execute                        # submit, vote, wait, confirm
-platform/hosted/paxeer/gov-upgrade.sh ... --proposal-id <id> --execute     # resume after a disconnect
+services/platform/hosted/paxeer/gov-upgrade.sh ... --execute                        # submit, vote, wait, confirm
+services/platform/hosted/paxeer/gov-upgrade.sh ... --proposal-id <id> --execute     # resume after a disconnect
 ```
 
 The script measures the block rate against wall clock (`--measure-seconds`, default 120 s, or
@@ -180,10 +180,10 @@ Pass the values the latency benchmark proved; the other timeout fields are copie
 commit 50 ms, bypass off):
 
 ```sh
-platform/hosted/paxeer/gov-consensus-params.sh --rpc <rpc> --key <operator> \
+services/platform/hosted/paxeer/gov-consensus-params.sh --rpc <rpc> --key <operator> \
   --timeout-commit <benchmarked commit> --bypass-commit-timeout true --timeout-vote <benchmarked vote> \
   --target-utc "$T_HALT_UTC" --seconds-per-block <seconds_per_block>   # dry run: writes the proposal JSON
-platform/hosted/paxeer/gov-consensus-params.sh ... --execute
+services/platform/hosted/paxeer/gov-consensus-params.sh ... --execute
 curl -s <rpc>/consensus_params | jq '(.result // .).consensus_params.timeout'   # confirm
 ```
 
@@ -244,8 +244,8 @@ stopped. The script takes every path from flags or from the env file (`--env-fil
 `fork-rehearsal.sh --help` for the keys); it never contacts a remote host:
 
 ```sh
-platform/hosted/paxeer/fork-rehearsal.sh --check
-platform/hosted/paxeer/fork-rehearsal.sh \
+services/platform/hosted/paxeer/fork-rehearsal.sh --check
+services/platform/hosted/paxeer/fork-rehearsal.sh \
   --source-data <snapshot-dir>/data --source-genesis <snapshot-dir>/config/genesis.json \
   --old-bin "$PAXD_BIN.pre-$UPGRADE_NAME" --new-bin "$PAXD_BIN.$UPGRADE_NAME" \
   --work <rehearsal-dir> --upgrade-height-offset 120 \

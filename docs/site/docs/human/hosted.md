@@ -3,7 +3,7 @@
 Human policy assembly consumes the same generated schema-version-2 asset and
 module registry published to `layerx-core-module-registry`. The native producer
 uses the module interfaces registered by the daemon. Beta asset metadata lives
-next to `ASSET_ID` in `platform/hosted/node/bootstrap.sh`: `LXT`, currency `LXT`,
+next to `ASSET_ID` in `services/platform/hosted/node/bootstrap.sh`: `LXT`, currency `LXT`,
 and 18 protocol decimals. Bootstrap exports these alongside `LAYERX_NODE_ASSET_ID`.
 These metadata do not constitute an on-chain asset registration or asset proof.
 

@@ -8,7 +8,7 @@ cd "$REPO_ROOT"
 errors=0
 fail() { printf 'publish-images.test: %s\n' "$*" >&2; errors=$((errors + 1)); }
 
-source platform/hosted/tests/beta-images.sh
+source services/platform/hosted/tests/beta-images.sh
 
 declare -A table_paths=()
 for name in "${IMAGE_NAMES[@]}"; do
@@ -22,7 +22,7 @@ for name in "${IMAGE_NAMES[@]}"; do
     table_paths[$dockerfile]=1
 done
 
-for dockerfile in docker/*/Dockerfile platform/hosted/feeder/Dockerfile; do
+for dockerfile in docker/*/Dockerfile services/platform/hosted/feeder/Dockerfile; do
     [ -f "$dockerfile" ] || continue
     [ -n "${table_paths[$dockerfile]+present}" ] || fail "no beta-images.sh row for $dockerfile"
 done
@@ -45,7 +45,7 @@ on = doc.get("on", doc.get(True))
 push = on["push"]
 assert "main" in push["branches"], "push to main is not a trigger"
 assert push["tags"], "tag trigger dropped"
-for path in ("docker/**", "platform/**", "services/interop/**", "human/wallet/**", "explorer/**"):
+for path in ("docker/**", "services/platform/**", "services/interop/**", "human/wallet/**", "explorer/**"):
     assert path in push["paths"], f"missing push path {path}"
 assert "workflow_dispatch" in on, "dispatch trigger dropped"
 jobs = doc["jobs"]
@@ -74,7 +74,7 @@ else
     ! grep -q 'CI_LINUX_RUNNER' "$workflow" || fail "Fly runner clause remains"
 fi
 
-bash -n platform/hosted/tests/beta-images.sh platform/hosted/tests/beta-cluster.sh || fail "shell syntax"
+bash -n services/platform/hosted/tests/beta-images.sh services/platform/hosted/tests/beta-cluster.sh || fail "shell syntax"
 
 [ "$errors" -eq 0 ] || { printf 'publish-images.test: %d failure(s)\n' "$errors" >&2; exit 1; }
 printf 'publish-images.test: ok (%d images)\n' "${#IMAGE_NAMES[@]}"

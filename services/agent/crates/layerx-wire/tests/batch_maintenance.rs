@@ -16,7 +16,7 @@ fn must<T, E: core::fmt::Debug>(result: Result<T, E>) -> T {
 
 fn header() -> BatchHeader {
     let document = include_str!(
-        "../../../../../platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json"
+        "../../../../../services/platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json"
     );
     let (_, field) = document
         .split_once("\"header_hex\": \"")

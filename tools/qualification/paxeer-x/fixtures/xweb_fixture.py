@@ -33,7 +33,7 @@ def load(name, path):
 
 
 runtime = load("paxeer_x_runtime_fixture", ROOT / "tests/daemon/paxeer_x_runtime_fixture.py")
-evm = load("paxeer_evm", ROOT / "platform/hosted/paxeer/evm.py")
+evm = load("paxeer_evm", ROOT / "services/platform/hosted/paxeer/evm.py")
 
 
 def require(condition, reason):
@@ -161,7 +161,7 @@ class XWebFixture:
                      "LAYERX_PAXEER_COMMIT_TIMEOUT_NANOSECONDS": "1000000000"}
         for name, port in zip(CHAIN_PORTS, ports):
             chain_env["LAYERX_PAXEER_" + name + "_PORT"] = str(port)
-        self.run("chain-init", ["bash", ROOT / "platform/hosted/paxeer/init-chain.sh"], chain_env)
+        self.run("chain-init", ["bash", ROOT / "services/platform/hosted/paxeer/init-chain.sh"], chain_env)
         genesis_path = self.chain / "config/genesis.json"
         genesis = json.loads(genesis_path.read_text(encoding="utf-8"))
         section = genesis["app_state"].get("xweb")

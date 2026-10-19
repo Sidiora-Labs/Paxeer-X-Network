@@ -15,7 +15,7 @@ SOURCES = ('services/agent/crates/layerx-agentd/src/human_runtime.rs', 'services
            'human/crates/layerx-human-service/src/server/agent_runtime.rs',
            'services/agent/crates/layerx-agentd/tests/budget_proof_intake.rs',
            'tools/qualification/paxeer-x/budget-proof-intake.py',
-           'platform/hosted/authority/src/human/budget_state.rs', 'platform/hosted/authority/src/human/dynamic.rs')
+           'services/platform/hosted/authority/src/human/budget_state.rs', 'services/platform/hosted/authority/src/human/dynamic.rs')
 
 
 def require(value, message):

@@ -23,10 +23,10 @@ SOURCE_FILES = [
     'human/crates/layerx-human-security-provider/src/state.rs',
     'human/crates/layerx-human-security-provider/src/transport.rs',
     'human/crates/layerx-human-security-provider/src/probe.rs',
-    'platform/hosted/runtime-clock/src/main.rs',
-    'platform/hosted/runtime-clock/src/server.rs',
+    'services/platform/hosted/runtime-clock/src/main.rs',
+    'services/platform/hosted/runtime-clock/src/server.rs',
 ]
-SOURCE_FILES += [str(p.relative_to(ROOT)) for p in sorted((ROOT / 'platform/hosted/human').glob('*.py'))]
+SOURCE_FILES += [str(p.relative_to(ROOT)) for p in sorted((ROOT / 'services/platform/hosted/human').glob('*.py'))]
 FUNCTIONS = ('log', 'missing', 'service', 'human_genesis_project', 'human_policy_bundle_install',
              'human_material_generate', 'human_project', 'human_security_waits',
              'human_security_prerequisite', 'human_security_prepare')
@@ -129,7 +129,7 @@ def namespace_setup(work, value):
     run(['mount', '--bind', str(work / 'data'), '/data'])
     Path('/usr/local/bin').mkdir()
     Path('/usr/local/lib/layerx-human').mkdir(parents=True)
-    run(['mount', '--bind', str(ROOT / 'platform/hosted/human'), '/usr/local/lib/layerx-human'])
+    run(['mount', '--bind', str(ROOT / 'services/platform/hosted/human'), '/usr/local/lib/layerx-human'])
     run(['mount', '-o', 'remount,bind,ro', '/usr/local/lib/layerx-human'])
     for name, executable in value['executables'].items():
         shutil.copy2(executable['path'], '/usr/local/bin/layerx-' + ('human-security-provider' if name == 'security-provider' else name))

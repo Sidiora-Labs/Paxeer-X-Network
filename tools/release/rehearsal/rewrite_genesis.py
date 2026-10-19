@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 _CODEC = runpy.run_path(
     str(
-        Path(__file__).resolve().parents[3] / "platform/hosted/paxeer/anchor-genesis.py"
+        Path(__file__).resolve().parents[3] / "services/platform/hosted/paxeer/anchor-genesis.py"
     )
 )
 BECH32 = _CODEC["bech32"]

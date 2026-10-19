@@ -792,18 +792,18 @@ fx_app() {
 	printf 'fx-%s' "${app//./-}"
 }
 for toml in human/wallet/deploy/human.toml human/wallet/deploy/redis.toml human/wallet/deploy/endpoint.toml \
-	platform/hosted/identity/fly.toml platform/hosted/internal/fly.toml platform/hosted/internal/redis.toml \
-	platform/hosted/indexer/fly.toml platform/hosted/interop/fly.toml platform/hosted/webhooks/fly.toml \
-	platform/hosted/dashboard/fly.toml platform/ramps/fly.toml; do
+	services/platform/hosted/identity/fly.toml services/platform/hosted/internal/fly.toml services/platform/hosted/internal/redis.toml \
+	services/platform/hosted/indexer/fly.toml services/platform/hosted/interop/fly.toml services/platform/hosted/webhooks/fly.toml \
+	services/platform/hosted/dashboard/fly.toml services/platform/ramps/fly.toml; do
 	mkdir -p "$fx/$(dirname "$toml")"
 	printf 'app = "%s"\n' "$(fx_app "$toml")" >"$fx/$toml"
 done
 kernel="$(fx_app human/wallet/deploy/human.toml)"
 endpoint="$(fx_app human/wallet/deploy/endpoint.toml)"
-identity="$(fx_app platform/hosted/identity/fly.toml)"
-internal="$(fx_app platform/hosted/internal/fly.toml)"
-interop="$(fx_app platform/hosted/interop/fly.toml)"
-webhooks="$(fx_app platform/hosted/webhooks/fly.toml)"
+identity="$(fx_app services/platform/hosted/identity/fly.toml)"
+internal="$(fx_app services/platform/hosted/internal/fly.toml)"
+interop="$(fx_app services/platform/hosted/interop/fly.toml)"
+webhooks="$(fx_app services/platform/hosted/webhooks/fly.toml)"
 fly="$CHECK_LIVE_TEST_FLY"
 rw="$CHECK_LIVE_TEST_RAILWAY"
 mkdir -p "$CHECK_LIVE_TEST_BOXES" "$fly/$kernel/app"
@@ -967,8 +967,8 @@ else
 fi
 # The indexer fixture app's volume carries the internal CA its readiness
 # probe trusts, as the indexer's INDEXER_TLS_CA variable holds it.
-mkdir -p "$fly/$(fx_app platform/hosted/indexer/fly.toml)/app/data/tls/indexer"
-rv indexer INDEXER_TLS_CA >"$fly/$(fx_app platform/hosted/indexer/fly.toml)/app/data/tls/indexer/ca.pem"
+mkdir -p "$fly/$(fx_app services/platform/hosted/indexer/fly.toml)/app/data/tls/indexer"
+rv indexer INDEXER_TLS_CA >"$fly/$(fx_app services/platform/hosted/indexer/fly.toml)/app/data/tls/indexer/ca.pem"
 
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" LAYERX_ATTESTOR_CA_DIR="$work/attestor-ca" expect check_live_ca_passing "$work/hosts-good.env" 0 ca -- \
 	"pass ca ca expires_in=36" \
@@ -1304,8 +1304,8 @@ fi
 # copy of sleep named layerx-agentd stands in for the running daemon with its
 # program bearer and probe program in its environment, and the curl stand-in
 # answers the machine name as the agentd boundary does.
-mkdir -p "$fx/platform/hosted/agentd" "$work/fly/$kernel/app/data/tls/agentd-client" "$work/agentd"
-cp "$root/platform/hosted/agentd/probe.sh" "$fx/platform/hosted/agentd/"
+mkdir -p "$fx/services/platform/hosted/agentd" "$work/fly/$kernel/app/data/tls/agentd-client" "$work/agentd"
+cp "$root/services/platform/hosted/agentd/probe.sh" "$fx/services/platform/hosted/agentd/"
 for file in ca.pem cert.pem key.pem; do
 	printf 'fixture %s\n' "$file" >"$work/fly/$kernel/app/data/tls/agentd-client/$file"
 done
@@ -1681,7 +1681,7 @@ export CHECK_LIVE_ROUTER_CONNECT="127.0.0.1:$router_port"
 
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_internal_nothing_running "$work/hosts-good.env" 1 internal -- \
 	"pass public-ips app=$internal count=0" \
-	"pass public-ips app=$(fx_app platform/hosted/internal/redis.toml) count=0" \
+	"pass public-ips app=$(fx_app services/platform/hosted/internal/redis.toml) count=0" \
 	"pass router-root host=api-mainnet-beta.paxeer.network root=X1" \
 	"fail upstream-ca group=payments process=none" \
 	"fail upstream-ca group=programs process=none" \
@@ -1724,7 +1724,7 @@ internal_pids="$internal_pids $!"
 export CHECK_LIVE_TEST_IPS='[{"Type":"v6"}]'
 CHECK_LIVE_TEST_DOWN="approvals" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_internal_failing "$work/hosts-good.env" 1 internal -- \
 	"fail public-ips app=$internal count=1" \
-	"fail public-ips app=$(fx_app platform/hosted/internal/redis.toml) count=1" \
+	"fail public-ips app=$(fx_app services/platform/hosted/internal/redis.toml) count=1" \
 	"pass upstream-ca group=payments url=https://api-mainnet-beta.paxeer.network root=X1 verifies=yes" \
 	"fail upstream-ca group=programs url=https://api-mainnet-beta.paxeer.network pin=ISRG-Root-X2 served=X1" \
 	"fail readiness group=approvals url=https://approvals.process.$internal.internal:9443/readyz from=$kernel curl=7" \
@@ -2086,9 +2086,9 @@ unset CHECK_LIVE_TEST_MIRROR_REQUEST
 # returned, for the activity the encoder signed. The encoder stand-in answers
 # the signing request of tools/platform/cli/examples/hosted-send.rs only for the
 # payer's seed and the kernel asset.
-mkdir -p "$work/interop" "$fx/platform/hosted/node"
-cp "$root/platform/hosted/node/bootstrap.sh" "$fx/platform/hosted/node/"
-interop_asset="$(sed -n 's/^ASSET_ID="\([0-9a-f]*\)"$/\1/p' "$root/platform/hosted/node/bootstrap.sh")"
+mkdir -p "$work/interop" "$fx/services/platform/hosted/node"
+cp "$root/services/platform/hosted/node/bootstrap.sh" "$fx/services/platform/hosted/node/"
+interop_asset="$(sed -n 's/^ASSET_ID="\([0-9a-f]*\)"$/\1/p' "$root/services/platform/hosted/node/bootstrap.sh")"
 interop_secret="lxp_live_$(openssl rand -hex 24)"
 printf 'key_fixture:%s\n' "$interop_secret" >"$work/interop/api-key"
 openssl genpkey -algorithm ed25519 -out "$work/interop/payer.pem" 2>/dev/null
@@ -2239,7 +2239,7 @@ unset CHECK_LIVE_INTEROP_ORIGIN CHECK_LIVE_INTEROP_RPC LAYERX_INTEROP_PROTOCOL_N
 # ahead of the others answers the journey's order and operator requests as
 # the ramp does, moving each order through its stages on the operator's work
 # actions, and hands every other request to the curl stand-in above.
-ramp="$(fx_app platform/ramps/fly.toml)"
+ramp="$(fx_app services/platform/ramps/fly.toml)"
 mkdir -p "$work/ramp-bin" "$work/ramp-state"
 cat >"$work/ramp-bin/curl" <<'SH'
 #!/usr/bin/env bash
@@ -2294,13 +2294,13 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ramp_inputs_unset "$work
 export LAYERX_RAMP_CUSTOMER_TOKEN=fixture-customer LAYERX_RAMP_OPERATOR_URL="https://$ramp.fly.dev" LAYERX_RAMP_OPERATOR_TOKEN=fixture-operator
 export LAYERX_RAMP_ON_QUOTE_ID=on-quote LAYERX_RAMP_OFF_QUOTE_ID=off-quote LAYERX_RAMP_OFF_GRANT_JSON='{"grant":1}'
 export LAYERX_RAMP_ON_ACCOUNT_SEQUENCE=4 LAYERX_RAMP_OFF_RECEIVER_SEQUENCE=5
-mv "$fx/platform/ramps/fly.toml" "$work/ramp-fly.toml"
+mv "$fx/services/platform/ramps/fly.toml" "$work/ramp-fly.toml"
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ramp_toml_absent "$work/hosts-good.env" 1 ramp -- \
 	"fail ramp toml=absent" \
 	"check-live: 1 check(s) failed"
-mv "$work/ramp-fly.toml" "$fx/platform/ramps/fly.toml"
+mv "$work/ramp-fly.toml" "$fx/services/platform/ramps/fly.toml"
 
-cp "$root/platform/ramps/sandbox-journey.sh" "$fx/platform/ramps/"
+cp "$root/services/platform/ramps/sandbox-journey.sh" "$fx/services/platform/ramps/"
 export CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[{"volume":"vol_fixture"}]}}]'
 printf '%s\n' "api-mainnet-beta.paxeer.network http paxeer-shared-endpoint 443" "ramp.paxeer.network http $ramp 443" @@sites \
 	"# rendered by tools/bringup/edge.sh; edit the manifest through it, not this file" >"$CHECK_LIVE_TEST_EDGE"
@@ -2338,7 +2338,7 @@ unset LAYERX_RAMP_OFF_QUOTE_ID LAYERX_RAMP_OFF_GRANT_JSON LAYERX_RAMP_ON_ACCOUNT
 # database with the cursor tables; and a curl wrapper ahead on PATH answers
 # the indexer's .internal /healthz to the internal CA the ca cases left on its
 # volume, the /comet location and the router's history methods.
-indexer="$(fx_app platform/hosted/indexer/fly.toml)"
+indexer="$(fx_app services/platform/hosted/indexer/fly.toml)"
 ix="$work/indexer"
 mkdir -p "$ix/bin" "$ix/state"
 sed 's/^RPC_HOSTS=.*/RPC_HOSTS="up-rpc-1 up-rpc-2 up-rpc-3"/; s/^ARCHIVE_HOST=.*/ARCHIVE_HOST=up-rpc-7/' "$work/hosts-good.env" >"$work/hosts-indexer.env"
@@ -2480,10 +2480,10 @@ unset CHECK_LIVE_TEST_IPS CHECK_LIVE_TEST_MACHINES CHECK_LIVE_INDEXER_ACCOUNT CH
 # file in the --config file, registration wants the Idempotency-Key and the
 # receiver URL, and deliveries answers CHECK_LIVE_TEST_DEV_DELIVERIES. Each
 # fixture app lists its machines from its own machines.json.
-mkdir -p "$work/devbin" "$fx/platform/hosted/dashboard/web"
-printf 'app = "%s"\n' "$(fx_app platform/hosted/dashboard/web/fly.toml)" >"$fx/platform/hosted/dashboard/web/fly.toml"
-dashboard="$(fx_app platform/hosted/dashboard/fly.toml)"
-dashboard_web="$(fx_app platform/hosted/dashboard/web/fly.toml)"
+mkdir -p "$work/devbin" "$fx/services/platform/hosted/dashboard/web"
+printf 'app = "%s"\n' "$(fx_app services/platform/hosted/dashboard/web/fly.toml)" >"$fx/services/platform/hosted/dashboard/web/fly.toml"
+dashboard="$(fx_app services/platform/hosted/dashboard/fly.toml)"
+dashboard_web="$(fx_app services/platform/hosted/dashboard/web/fly.toml)"
 cat >"$work/devbin/curl" <<'SH'
 #!/usr/bin/env bash
 set -eu
@@ -2856,7 +2856,7 @@ unset CHECK_LIVE_SEARCH_PAYER_KEY_FILE CHECK_LIVE_SEARCH_PAYER_DID
 # lx_getProgramEvents from $work/registry-rpc/from-<from_sequence>.json and
 # /readyz with CHECK_LIVE_TEST_REGISTRY_READYZ; anything else goes on to the
 # stand-in.
-registry="$(fx_app platform/hosted/registry/fly.toml)"
+registry="$(fx_app services/platform/hosted/registry/fly.toml)"
 mkdir -p "$work/registry-bin" "$work/registry-rpc"
 cat >"$work/registry-bin/curl" <<'SH'
 #!/usr/bin/env bash
@@ -2920,7 +2920,7 @@ PATH="$work/registry-bin:$PATH" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect che
 	"fail registry toml=absent" \
 	"check-live: 1 check(s) failed"
 
-printf 'app = "%s"\n[env]\nLAYERX_REGISTRY_LISTEN = "[::]:9420"\n[[services]]\ninternal_port = 9420\n[[services.ports]]\nport = 443\n' "$registry" >"$fx/platform/hosted/registry/fly.toml"
+printf 'app = "%s"\n[env]\nLAYERX_REGISTRY_LISTEN = "[::]:9420"\n[[services]]\ninternal_port = 9420\n[[services.ports]]\nport = 443\n' "$registry" >"$fx/services/platform/hosted/registry/fly.toml"
 PATH="$work/registry-bin:$PATH" CHECK_LIVE_ROUTER_URL=https://routerfx.example.com CHECK_LIVE_TEST_REGISTRY_ANON=1 \
 	CHECK_LIVE_TEST_REGISTRY_READYZ="$registry_unready" \
 	CHECK_LIVE_TEST_MACHINES='[{"state":"stopped","config":{"mounts":[{"path":"/data","volume":"vol_1"}]}}]' \
@@ -2934,7 +2934,7 @@ PATH="$work/registry-bin:$PATH" CHECK_LIVE_ROUTER_URL=https://routerfx.example.c
 	"fail router-readyz url=https://routerfx.example.com/readyz http=200 program_registry=unavailable" \
 	"check-live: 6 check(s) failed"
 
-printf 'app = "%s"\n[env]\nLAYERX_REGISTRY_LISTEN = "[::]:9420"\n' "$registry" >"$fx/platform/hosted/registry/fly.toml"
+printf 'app = "%s"\n[env]\nLAYERX_REGISTRY_LISTEN = "[::]:9420"\n' "$registry" >"$fx/services/platform/hosted/registry/fly.toml"
 
 PATH="$work/registry-bin:$PATH" CHECK_LIVE_ROUTER_URL=https://routerfx.example.com CHECK_LIVE_REGISTRY_PROGRAM_ID="$(printf 'e%.0s' $(seq 64))" \
 	CHECK_LIVE_TEST_REGISTRY_READYZ="$registry_ready" \
@@ -3012,7 +3012,7 @@ fi
 # The fixture tree's registry toml holds only its app line, so the plan
 # refuses it by path.
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_registry_plan_toml_line_absent - 1 registry-plan -- \
-	"fail registry-plan toml=absent platform/hosted/registry/fly.toml"
+	"fail registry-plan toml=absent services/platform/hosted/registry/fly.toml"
 
 # The interop-adapters cases run the check against a loopback stand-in of the
 # gateway's /v1/adapters (CHECK_LIVE_INTEROP_ORIGIN points at it), which
@@ -3721,8 +3721,8 @@ CHECK_LIVE_HUMAN_BASE="$origin/good" expect check_live_human_no_probe_email "$wo
 # fault: a stale origin, a replica with a wrong genesis pin, a replica two
 # batches behind, or a route that accepts flipped activity bytes. A service
 # without a loopback file stands for a missing replica.
-mkdir -p "$fx/platform/relay_archive" "$fx/deploy" "$work/relay"
-cp "$root/platform/relay_archive/railway.env.example" "$fx/platform/relay_archive/"
+mkdir -p "$fx/services/platform/relay_archive" "$fx/deploy" "$work/relay"
+cp "$root/services/platform/relay_archive/railway.env.example" "$fx/services/platform/relay_archive/"
 cp "$root/deploy/rollout.kvx" "$fx/deploy/"
 export CHECK_LIVE_TEST_RAILWAY_SSH="$work/railway-ssh"
 openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=relay-test-ca \
@@ -3866,11 +3866,11 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_relay_missing_replica - 
 	"check-live: 2 check(s) failed"
 mv "$work/relay/b-loopback" "$CHECK_LIVE_TEST_RAILWAY_SSH/relay-archive-b/loopback"
 
-mv "$fx/platform/relay_archive/railway.env.example" "$work/relay/env.example"
+mv "$fx/services/platform/relay_archive/railway.env.example" "$work/relay/env.example"
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_relay_env_absent - 1 relay -- \
 	"fail relay env=absent services=relay-archive-a,relay-archive-b" \
 	"check-live: 1 check(s) failed"
-mv "$work/relay/env.example" "$fx/platform/relay_archive/railway.env.example"
+mv "$work/relay/env.example" "$fx/services/platform/relay_archive/railway.env.example"
 
 echo wrong-pin >"$work/relay/scenario"
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" \

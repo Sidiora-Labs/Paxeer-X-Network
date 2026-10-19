@@ -27,14 +27,14 @@ MODE = sys.argv[1]
 COUNT = 0
 CHILDREN = []
 SAMPLES = {
-    'seller': 'platform/docs/samples/paid-endpoint-express',
-    'buyer': 'platform/docs/samples/first-payment-typescript',
+    'seller': 'services/platform/docs/samples/paid-endpoint-express',
+    'buyer': 'services/platform/docs/samples/first-payment-typescript',
 }
 SOURCES = (
-    'platform/Cargo.toml', 'platform/Cargo.lock',
-    'platform/tools/benchmark/Cargo.toml', 'platform/tools/benchmark/src/main.rs',
+    'services/platform/Cargo.toml', 'services/platform/Cargo.lock',
+    'services/platform/tools/benchmark/Cargo.toml', 'services/platform/tools/benchmark/src/main.rs',
     'tools/paxeer-x/gates/104.16.5.sh',
-    'platform/Makefile.inc', '.github/workflows/platform.yml',
+    'services/platform/Makefile.inc', '.github/workflows/platform.yml',
     *(directory + '/' + name for directory in SAMPLES.values()
       for name in ('index.mjs', 'package.json')),
 )
@@ -130,7 +130,7 @@ def build(manifest_path):
     environment = os.environ.copy()
     environment['CARGO_TARGET_DIR'] = str(target)
     environment['CARGO_BUILD_JOBS'] = '2'
-    command = ['cargo', 'build', '--locked', '--manifest-path', 'platform/Cargo.toml',
+    command = ['cargo', 'build', '--locked', '--manifest-path', 'services/platform/Cargo.toml',
                '-p', 'layerx-platform-benchmark']
     child = subprocess.Popen(command, cwd=ROOT, env=environment,
                              stdin=subprocess.DEVNULL, start_new_session=True)

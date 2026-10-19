@@ -10,7 +10,7 @@ import time
 from types import SimpleNamespace
 
 root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(root / 'platform/hosted/human'))
+sys.path.insert(0, str(root / 'services/platform/hosted/human'))
 from owner_native import GUARDIAN_ROLES, prepare_admission
 from owner_custody import bootstrap, credit_material_name, deposit
 from provision import write_json
@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='owner-custody-') as directory:
     with socket.socket() as reserved:
         reserved.bind(('127.0.0.1', 0))
         port = reserved.getsockname()[1]
-    command('forge', 'build', 'platform/hosted/paxeer/contracts/BetaUsdl.sol')
+    command('forge', 'build', 'services/platform/hosted/paxeer/contracts/BetaUsdl.sol')
     token = json.loads((root / 'build/forge-artifacts/BetaUsdl.sol/BetaUsdl.json').read_text())
     private = ec.generate_private_key(ec.SECP256K1())
     public = private.public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
@@ -58,7 +58,7 @@ with tempfile.TemporaryDirectory(prefix='owner-custody-') as directory:
             clock_rpc.call('evm_setNextBlockTimestamp', [wall_clock], allow_missing=True)
             clock_rpc.call('evm_mine', [], allow_missing=True)
             assert int(clock_rpc.call('eth_getBlockByNumber', ['latest', False])['timestamp'], 16) == wall_clock
-            guardian_tool = str(root / 'platform/hosted/human/guardians.py')
+            guardian_tool = str(root / 'services/platform/hosted/human/guardians.py')
             for index, role in enumerate(GUARDIAN_ROLES, 1):
                 subprocess.run([sys.executable, guardian_tool, 'enroll', '--work-dir', str(work),
                                 '--secrets-dir', str(work), '--role', role,

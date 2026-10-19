@@ -60,7 +60,7 @@ class ProgramHttp(unittest.TestCase):
         if (executable.name != "layerx-gateway" or not executable.is_file()
                 or manifest["binary_sha256"] != sha256(executable.read_bytes()).hexdigest()):
             raise ValueError("actual prebuilt production gateway process required")
-        for relative in ("platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/src/native_call.rs"):
+        for relative in ("services/platform/hosted/gateway/src/main.rs", "services/platform/hosted/gateway/src/native_call.rs"):
             if manifest["sources"][relative] != sha256((ROOT / relative).read_bytes()).hexdigest():
                 raise ValueError("gateway process source differs from actual candidate")
         spec = importlib.util.spec_from_file_location("program_http_signatures", ROOT / "sdk/integrations/fastapi/layerx_fastapi/signatures.py")

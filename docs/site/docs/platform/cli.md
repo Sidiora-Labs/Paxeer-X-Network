@@ -18,7 +18,7 @@ This page covers that binary: commands, credential storage, how it reaches an
 endpoint, typed refusals, receipt verification, and the test suite. Wallet
 and token operator steps are also in
 [the CLI wallet quickstart](https://github.com/Sidiora-Labs/Paxeer-X-Network/blob/main/tools/platform/cli/README.md#wallet-quickstart).
-It does not document SDK clients; those live under `platform/docs/content/`.
+It does not document SDK clients; those live under `services/platform/docs/content/`.
 It does not document portable receipt JSON; see
 [Portable receipt verifier](../interop/portable-receipts.md).
 
@@ -147,7 +147,7 @@ Lifecycle flags shared by deploy, upgrade, and wind-down
 `layerx program registry list` is not a command
 (`tools/platform/cli/src/main.rs:1628-1630`).
 
-`platform/docs/content/guide/programs.md:75` states there is no dedicated
+`services/platform/docs/content/guide/programs.md:75` states there is no dedicated
 program account-registration CLI command; that activity is submitted as
 canonical bytes to `POST /v1/activities`. The CLI command table above does
 not add one.
@@ -229,7 +229,7 @@ binary accepts explicit `file` or `os` selection. It refuses `mock` with
 (`tools/platform/cli/src/credential.rs:43-45`;
 `tools/platform/cli/tests/production-credential-refusal.sh:8-26`).
 
-`platform/docs/content/install.md:48-49` says emulator key creation never
+`services/platform/docs/content/install.md:48-49` says emulator key creation never
 asks the operator to type key material. `layerx key import` does read a
 32-byte hex seed from stdin (`tools/platform/cli/src/main.rs:136-141`;
 `tools/platform/cli/src/credential.rs:98-111`). Those two sources disagree on
@@ -260,7 +260,7 @@ installed env map and strips `LAYERX_TOKEN`, `LAYERX_API_TOKEN`, and
 
 The CLI does not read `LAYERX_API_TOKEN` (or `LAYERX_TOKEN` /
 `LAYERX_AUTH_TOKEN`) as a substitute for `auth set`.
-`platform/docs/content/install.md:104-111` documents `LAYERX_API_URL` and
+`services/platform/docs/content/install.md:104-111` documents `LAYERX_API_URL` and
 `LAYERX_API_TOKEN` as SDK application inputs, not CLI credential inputs.
 
 Default config when the file is absent: environment `emulator`, endpoint
@@ -284,7 +284,7 @@ commands do not open a node RPC.
 | Emulator | `emulator up` runs `layerx_platform_emulator::run` in-process (`tools/platform/cli/src/main.rs:87-89, 554-565`). Other commands HTTP to the configured emulator endpoint. `environment use emulator` with bound inputs waits for a listener and `GET /v1/sequencer`, then refuses `network_id_mismatch` or `sequencer_trust_anchor_mismatch` (`tools/platform/cli/src/emulator.rs:860-891`; `tools/platform/cli/src/main.rs:772-802`) |
 | Hosted gateway | `environment use beta` or `production` stores `https://…` (non-loopback `http://` is refused; `tools/platform/cli/src/http.rs:29-39`). Account, payment, receipt, and program commands send `Authorization: Bearer` when a token exists (`tools/platform/cli/src/http.rs:240-245`; `tools/platform/cli/src/main.rs:1415-1418`). A2A sends `Authorization: LayerX-Key` (`tools/platform/cli/src/http.rs:54-68, 247-249`; `tools/platform/cli/src/toolset.rs:103-104`). `install a2a` refuses the emulator (`tools/platform/cli/src/install/mod.rs:573-577`) |
 | Agent daemon | The MCP path reaches no gateway. `install mcp` and `mcp serve` both open the binding document agent-daemon enrolment wrote and talk to the loopback daemon endpoint it names (`tools/platform/cli/src/install/mcp.rs:38-53`; `tools/platform/cli/src/mcp.rs:11-22`; `services/agent/crates/layerx-mcp/src/binding.rs:313-317, 339`) |
-| Node | Not a CLI transport. `layerx receipt verify` is local `layerx_proof` against caller-supplied batch facts (`tools/platform/cli/src/receipt.rs:4, 25-34`). `platform/docs/content/concepts/receipts.md:3-4` states the same: verification needs no LayerX node, gateway, or hosted service |
+| Node | Not a CLI transport. `layerx receipt verify` is local `layerx_proof` against caller-supplied batch facts (`tools/platform/cli/src/receipt.rs:4, 25-34`). `services/platform/docs/content/concepts/receipts.md:3-4` states the same: verification needs no LayerX node, gateway, or hosted service |
 
 Emulator account create posts `/__emulator/accounts/prefund`
 (`tools/platform/cli/src/account.rs:25-34`). Hosted account create posts
@@ -366,9 +366,9 @@ which declares `mod credential_environment;`
 
 | Gate | What it drives |
 | --- | --- |
-| `make platform-test` | `cargo test` of the platform workspace with `--features layerx-platform-cli/test-credential-store` (`platform/Makefile.inc:112-113`). CI `build-lint-test` runs this (`.github/workflows/platform.yml:53-54`) |
-| `make platform-test-cli-production-credential-refusal` | `bash tools/platform/cli/tests/production-credential-refusal.sh` (`platform/Makefile.inc:134-135`): builds `--no-default-features`, sets `LAYERX_CREDENTIAL_STORE=mock`, requires refusal and no config file |
-| `make platform-test-tooling` | production-credential-refusal, then `cargo test -p layerx-platform-cli --features test-credential-store`, emulator/faucet/testnet crate tests, script syntax, `cargo build -p layerx-platform-cli`, `clean-bootstrap.sh` (`platform/Makefile.inc:115-132`). CI names this “Exercise the developer CLI end to end against the emulator” (`.github/workflows/platform.yml:57-58`) |
+| `make platform-test` | `cargo test` of the platform workspace with `--features layerx-platform-cli/test-credential-store` (`services/platform/Makefile.inc:112-113`). CI `build-lint-test` runs this (`.github/workflows/platform.yml:53-54`) |
+| `make platform-test-cli-production-credential-refusal` | `bash tools/platform/cli/tests/production-credential-refusal.sh` (`services/platform/Makefile.inc:134-135`): builds `--no-default-features`, sets `LAYERX_CREDENTIAL_STORE=mock`, requires refusal and no config file |
+| `make platform-test-tooling` | production-credential-refusal, then `cargo test -p layerx-platform-cli --features test-credential-store`, emulator/faucet/testnet crate tests, script syntax, `cargo build -p layerx-platform-cli`, `clean-bootstrap.sh` (`services/platform/Makefile.inc:115-132`). CI names this “Exercise the developer CLI end to end against the emulator” (`.github/workflows/platform.yml:57-58`) |
 | `tools/platform/cli/tests/common/mod.rs` | Real `layerx` child process against an isolated `LAYERX_CONFIG` and `LAYERX_REPO_ROOT` (`tools/platform/cli/tests/common/mod.rs:1-6, 64-67`). `Emulator::start` spawns `layerx emulator up` on an ephemeral loopback port and waits for `/healthz` `"status":"ready"` (`tools/platform/cli/tests/common/mod.rs:136-200`) |
 | `tools/platform/cli/tests/common/credential_environment.rs` | A private Secret Service for each fixture: an isolated XDG root, a `dbus-daemon` started from a generated `bus.conf` (`tools/platform/cli/tests/common/credential_environment.rs:36-58`) and a `gnome-keyring-daemon --components=secrets` unlocked on stdin (`tools/platform/cli/tests/common/credential_environment.rs:71-82`) |
 | `tools/platform/cli/tests/file_store.rs` | Encrypted file store: `LAYERX_CREDENTIAL_PASSPHRASE` handling and the 12-16384 byte bound (`tools/platform/cli/src/file_store.rs:36-42`) |
@@ -381,7 +381,7 @@ which declares `mod credential_environment;`
 | `tools/platform/cli/tests/wallet_encoding.rs` | CLI-local native asset register/open/revoke/mint/burn bytes against `wallet-assets-v1.json` (`tools/platform/cli/tests/wallet_encoding.rs:29-77`) |
 | `tools/platform/cli/tests/wallet_send.rs` | CLI-local Send payload and authorization-message bytes versus compiled `lxp_send.c` (`tools/platform/cli/tests/wallet_send.rs:29-66`) |
 | `tools/platform/cli/tests/clean-bootstrap.sh` | Published `install.md` bootstrap sequence in a clean `HOME` against a real binary (`tools/platform/cli/tests/clean-bootstrap.sh:53-115`) |
-| `make platform-test-agent-install` | `install-journey.sh` against a hosted gateway (`platform/Makefile.inc:195-206`); `make platform-test-tooling` also syntax-checks the script (`platform/Makefile.inc:115, 123`). The journey asserts that `install mcp` refuses when no agent-daemon binding document exists, then installs, restarts and stops the A2A runtime across a real scoped payment (`tools/platform/cli/tests/install-journey.sh:31-38, 40-81`). Scheduled/dispatch CI installs `dbus-x11` and `gnome-keyring` and runs that journey under `dbus-run-session` / `gnome-keyring-daemon` (`.github/workflows/platform.yml:1460-1463, 1497-1512`) |
+| `make platform-test-agent-install` | `install-journey.sh` against a hosted gateway (`services/platform/Makefile.inc:195-206`); `make platform-test-tooling` also syntax-checks the script (`services/platform/Makefile.inc:115, 123`). The journey asserts that `install mcp` refuses when no agent-daemon binding document exists, then installs, restarts and stops the A2A runtime across a real scoped payment (`tools/platform/cli/tests/install-journey.sh:31-38, 40-81`). Scheduled/dispatch CI installs `dbus-x11` and `gnome-keyring` and runs that journey under `dbus-run-session` / `gnome-keyring-daemon` (`.github/workflows/platform.yml:1460-1463, 1497-1512`) |
 
 The cargo command suite therefore exercises a **real emulator** and a **real
 Secret Service**: each fixture starts its own `dbus-daemon` and

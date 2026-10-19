@@ -18,8 +18,8 @@ sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location('foundation_artifacts', Path(__file__).with_name('foundation-artifacts.py'))
 ART = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ART)
-SOURCES = ('docker/kernel', 'platform/hosted/node', 'platform/hosted/paxeer',
-           'platform/hosted/tests/publication-policy.py', 'human/wallet/attestor',
+SOURCES = ('docker/kernel', 'services/platform/hosted/node', 'services/platform/hosted/paxeer',
+           'services/platform/hosted/tests/publication-policy.py', 'human/wallet/attestor',
            'tools/bringup/kernel-genesis.sh', 'contracts/config/checkpoint-settlement.json',
            'migrations/0007_history_index.sql')
 NETWORK_ID = 77
@@ -290,20 +290,20 @@ for node in range(1,6):
         seq_id = hashlib.sha256(b'layerx-sequencer:' + public.encode()).hexdigest()
         asset = hashlib.sha256(b'layerx-asset:125:PAX').hexdigest()
         self.shell("printf '0x' > /fixture/keys/recipient.key; openssl rand -hex 32 >> /fixture/keys/recipient.key")
-        address = self.execute(['python3', '/source/platform/hosted/paxeer/evm.py', 'address', '/fixture/keys/recipient.key']).decode().strip().lower()
-        custody = ['python3', '/source/platform/hosted/paxeer/custody-genesis.py', '--network-id', str(NETWORK_ID),
+        address = self.execute(['python3', '/source/services/platform/hosted/paxeer/evm.py', 'address', '/fixture/keys/recipient.key']).decode().strip().lower()
+        custody = ['python3', '/source/services/platform/hosted/paxeer/custody-genesis.py', '--network-id', str(NETWORK_ID),
                    '--sequencer-id', seq_id, '--sequencer-public-key', public, '--deposit-root-authority', deposit,
                    '--asset', asset + ':uhpx', '--output', '/fixture/genesis/custody.json']
         self.execute(custody)
         threshold = json.loads((ROOT / 'contracts/config/checkpoint-settlement.json').read_text())['finality_policy']['certificate_threshold']
-        self.execute(['python3', '/source/platform/hosted/paxeer/anchor-genesis.py', '--network-id', str(NETWORK_ID),
+        self.execute(['python3', '/source/services/platform/hosted/paxeer/anchor-genesis.py', '--network-id', str(NETWORK_ID),
                       '--sequencer-id', seq_id, '--sequencer-public-key', public, '--authority-evm', address,
                       '--paxeer-chain-id', '125', '--threshold', str(threshold), '--output', '/fixture/genesis/anchor.json'])
         init = ['env', 'PAXD=/artifacts/paxd', 'LAYERX_PAXEER_HOME=/fixture/chain', 'LAYERX_PAXEER_CHAIN_ID=125',
                 'LAYERX_PAXEER_DEPLOYER_ADDRESS=' + address, 'LAYERX_PAXEER_CUSTODY_GENESIS_FILE=/fixture/genesis/custody.json',
                 'LAYERX_PAXEER_ANCHOR_GENESIS_FILE=/fixture/genesis/anchor.json', 'LAYERX_PAXEER_DEPOSIT_ROOT_AUTHORITY=0x' + deposit,
-                'LAYERX_PAXEER_USDL_RUNTIME=/source/platform/hosted/paxeer/contracts/BetaUsdl.runtime.hex',
-                'LAYERX_PAXEER_COMMIT_TIMEOUT_NANOSECONDS=1000000000', 'bash', '/source/platform/hosted/paxeer/init-chain.sh']
+                'LAYERX_PAXEER_USDL_RUNTIME=/source/services/platform/hosted/paxeer/contracts/BetaUsdl.runtime.hex',
+                'LAYERX_PAXEER_COMMIT_TIMEOUT_NANOSECONDS=1000000000', 'bash', '/source/services/platform/hosted/paxeer/init-chain.sh']
         self.execute(init)
         self.producer(['docker', 'exec', '-d', self.name, 'bash', '-c', 'exec /artifacts/paxd start --home /fixture/chain > /fixture/chain-process.log 2>&1'])
         self.wait_chain()
@@ -319,26 +319,26 @@ for node in range(1,6):
         treasury_seed = (self.output / 'keys' / 'treasury.key').read_bytes()
         treasury = self.producer(['openssl', 'pkey', '-inform', 'DER', '-pubout', '-outform', 'DER'],
                                 data=bytes.fromhex('302e020100300506032b657004220420') + treasury_seed)[-32:].hex()
-        source = (ROOT / 'platform/hosted/node/bootstrap.sh').read_text()
+        source = (ROOT / 'services/platform/hosted/node/bootstrap.sh').read_text()
         function = source.split('write_genesis_metadata() {', 1)[1].split('\n}\n', 1)[0]
         self.shell('GENESIS_METADATA=/fixture/genesis/metadata.lxgb\nASSET_ID=' + asset + '\nTREASURY_PUBLIC=' + treasury +
                    '\nASSET_SYMBOL=PAX\nASSET_DECIMALS=6\nwrite_genesis_metadata() {' + function + '\n}\nwrite_genesis_metadata')
-        self.execute(['bash', '/source/platform/hosted/node/bootstrap.sh', '--data-dir', '/fixture/node', '--run-dir', '/fixture/run',
+        self.execute(['bash', '/source/services/platform/hosted/node/bootstrap.sh', '--data-dir', '/fixture/node', '--run-dir', '/fixture/run',
                       '--network-id', str(NETWORK_ID), '--sequencer-key', '/fixture/keys/sequencer.key', '--treasury-key', '/fixture/keys/treasury.key',
                       '--asset', asset, '--genesis-metadata', '/fixture/genesis/metadata.lxgb', '--custody-profile', '/fixture/genesis/custody.profile',
                       '--genesis-build', '/artifacts/layerx-genesis-build', '--layerxd', '/artifacts/layerxd',
                       '--migrations', '/source/migrations/0007_history_index.sql'])
         module_args = ['/artifacts/layerx-module-registry', 'generate', '--network-id', str(NETWORK_ID), '--protocol-version', '3',
                        '--asset', asset, '--symbol', 'PAX', '--currency', 'PAX', '--decimals', '6', '--custody-profile', '/fixture/genesis/custody.profile']
-        for module in (ROOT / 'platform/hosted/node/genesis-modules.conf').read_text().splitlines():
+        for module in (ROOT / 'services/platform/hosted/node/genesis-modules.conf').read_text().splitlines():
             if module:
                 module_args += ['--enable-module', module]
         registry = json.loads(self.execute(module_args))
         require(registry.get('schema_version') == 2 and registry.get('assets') == [{'asset': asset, 'symbol': 'PAX', 'currency': 'PAX', 'decimals': 6}], 'canonical registry asset identity mismatch')
         require(len(registry.get('modules', [])) == 7, 'canonical registry must contain all seven genesis modules')
         write(self.output / 'genesis' / 'module-registry.json', registry)
-        self.execute(['python3', '/source/platform/hosted/tests/publication-policy.py', 'treasury', '/fixture/genesis/binding-policy.json', str(NETWORK_ID), asset, address.removeprefix('0x')])
-        self.execute(['python3', '/source/platform/hosted/tests/publication-policy.py', 'authorization', '/fixture/genesis/publication-authorization.json',
+        self.execute(['python3', '/source/services/platform/hosted/tests/publication-policy.py', 'treasury', '/fixture/genesis/binding-policy.json', str(NETWORK_ID), asset, address.removeprefix('0x')])
+        self.execute(['python3', '/source/services/platform/hosted/tests/publication-policy.py', 'authorization', '/fixture/genesis/publication-authorization.json',
                       str(NETWORK_ID), '125', '0x0000000000000000000000000000000000001014', '0x0000000000000000000000000000000000001014',
                       '0x0000000000000000000000000000000000001013', treasury, asset, address.removeprefix('0x'), '--human-socket', 'none',
                       '--deposit-authority-key-file', '/fixture/keys/deposit.pem'])

@@ -1,0 +1,36 @@
+{
+  "name": "@sidiora/layerx-buyer-middleware",
+  "version": "0.1.0",
+  "description": "Receipt-verifying LayerX x402 buyer middleware",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sidiora-Labs/Paxeer-X-Network.git",
+    "directory": "services/platform/middleware/buyer"
+  },
+  "type": "module",
+  "private": false,
+  "license": "Apache-2.0",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@sidiora/layerx-sdk": "0.1.0",
+    "@sidiora/layerx-seller-middleware": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

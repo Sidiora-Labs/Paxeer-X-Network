@@ -8,7 +8,7 @@ The in-repo `sdk/platform/jvm/examples/FirstPaymentExample.java`
 calls `client.agent("prepare", …)` against placeholder URIs. This
 page uses the human-plane sample that actually ships a complete
 quote/commit path:
-`platform/docs/samples/first-payment-jvm`.
+`services/platform/docs/samples/first-payment-jvm`.
 
 ---
 
@@ -36,7 +36,7 @@ catalog and needs an agent-plane URL on
 ## Send
 
 Human-plane quote then commit
-(`platform/docs/samples/first-payment-jvm`):
+(`services/platform/docs/samples/first-payment-jvm`):
 
 ```java
 import com.fasterxml.jackson.databind.JsonNode;

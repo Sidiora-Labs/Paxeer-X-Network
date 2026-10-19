@@ -9,7 +9,7 @@ if (($#)); then
 fi
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.." || exit 1
 logs=${PAXEER_X_EVIDENCE_DIR:-$(mktemp -d)}
-manifest=(--locked --manifest-path platform/Cargo.toml -p layerx-platform-identity --all-targets)
+manifest=(--locked --manifest-path services/platform/Cargo.toml -p layerx-platform-identity --all-targets)
 
 timeout 25m cargo test "${manifest[@]}" >"$logs/103.6.5-test.log" 2>&1
 test_code=$?

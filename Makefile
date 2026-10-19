@@ -2302,7 +2302,7 @@ MOVEMENT_PROOF_TARGET = $(abspath $(or $(CARGO_TARGET_DIR),.lane-target))
 .PHONY: test-owner-movement-proof
 test-owner-movement-proof: build/bin/layerxd build/bin/layerx-genesis-build build/bin/layerx-guarantor build/tests/lxp_test_guarantor_runtime
 	cargo build --locked --manifest-path human/Cargo.toml --target-dir $(MOVEMENT_PROOF_TARGET) -p layerx-human-identity-provider -p layerx-human-movement-provider
-	cargo build --locked --manifest-path platform/Cargo.toml --target-dir $(MOVEMENT_PROOF_TARGET) -p layerx-platform-authority -p layerx-platform-paxeer-boundary -p layerx-runtime-clock
+	cargo build --locked --manifest-path services/platform/Cargo.toml --target-dir $(MOVEMENT_PROOF_TARGET) -p layerx-platform-authority -p layerx-platform-paxeer-boundary -p layerx-runtime-clock
 	cargo build --locked --manifest-path cmd/layerxctl/Cargo.toml --target-dir $(MOVEMENT_PROOF_TARGET)
 	CARGO_TARGET_DIR=$(MOVEMENT_PROOF_TARGET) LAYERX_RUNTIME_CLOCK_BIN=$(MOVEMENT_PROOF_TARGET)/debug/layerx-runtime-clock sh tools/runtime/run-with-clock.sh python3 tests/bridge/owner-custody.py --native --governance --checkpoint --settlement-only --movement-proof
 HUMAN_TEST_PAXD := $(abspath build/paxd)
@@ -2328,7 +2328,7 @@ HUMAN_TEST_WEBHOOKS := $(HUMAN_TARGET_DIR)/debug/layerx-webhooks
 human-test human-test-unit human-test-integration human-test-service: human-test-webhooks
 human-test human-test-unit human-test-integration human-test-service: export LAYERX_TEST_WEBHOOKS_BIN = $(HUMAN_TEST_WEBHOOKS)
 human-test-webhooks:
-	CARGO_BUILD_JOBS=4 cargo build --locked --manifest-path platform/Cargo.toml \
+	CARGO_BUILD_JOBS=4 cargo build --locked --manifest-path services/platform/Cargo.toml \
 		--target-dir $(HUMAN_TARGET_DIR) -p layerx-platform-webhooks --bin layerx-webhooks
 
 .PHONY: human-test-hosted-provisioning
@@ -2339,7 +2339,7 @@ human-test-hosted-provisioning:
 		--target-dir $(HUMAN_TARGET_DIR) -p layerx-human-identity-provider
 	test -x $(HUMAN_IDENTITY_PROVIDER)
 	LAYERX_HUMAN_IDENTITY_PROVIDER_BIN=$(HUMAN_IDENTITY_PROVIDER) \
-		sh $(CURDIR)/tools/runtime/run-with-clock.sh python3 -m pytest platform/hosted/human -q
+		sh $(CURDIR)/tools/runtime/run-with-clock.sh python3 -m pytest services/platform/hosted/human -q
 
 .PHONY: human-test-provider-probe
 human-test-provider-probe:
@@ -2535,13 +2535,13 @@ jev-docs:
 jev-test:
 	python3 -m unittest discover -s tools/jev/tests -t .
 
-PUBLIC_TLS_TEST_TARGET_DIR = $(if $(CARGO_TARGET_DIR),$(abspath $(CARGO_TARGET_DIR)),$(CURDIR)/platform/target)
+PUBLIC_TLS_TEST_TARGET_DIR = $(if $(CARGO_TARGET_DIR),$(abspath $(CARGO_TARGET_DIR)),$(CURDIR)/services/platform/target)
 PUBLIC_TLS_TEST_BOUNDARY = $(PUBLIC_TLS_TEST_TARGET_DIR)/debug/layerx-paxeer-boundary
 PUBLIC_TLS_TEST_CLOCK = $(PUBLIC_TLS_TEST_TARGET_DIR)/debug/layerx-runtime-clock
 
 .PHONY: public-tls-test-prerequisites
 public-tls-test-prerequisites:
-	cargo build --manifest-path platform/Cargo.toml --locked -p layerx-platform-paxeer-boundary -p layerx-runtime-clock --target-dir "$(PUBLIC_TLS_TEST_TARGET_DIR)"
+	cargo build --manifest-path services/platform/Cargo.toml --locked -p layerx-platform-paxeer-boundary -p layerx-runtime-clock --target-dir "$(PUBLIC_TLS_TEST_TARGET_DIR)"
 
 AGENT_TEST_TARGET_DIR := $(abspath $(or $(CARGO_TARGET_DIR),.lane-target))
 
@@ -3244,24 +3244,24 @@ paxeer-manifest-lint: workspace-inventory-check paxeer-npm-static-test
 	sh tools/benchmark/loadtest/contracts/evm/setup.sh
 	forge fmt --check --root tools/benchmark/loadtest/contracts/evm
 	@set -eu; for manifest in $(PAXEER_LOCKED_RUST_MANIFESTS); do cargo clippy --manifest-path "$$manifest" --locked --offline --all-targets -- -D warnings; done
-	@test -z "$$(find . \( -path ./.git -o -path ./platform -o -path ./spec -o -name node_modules \) -prune -o -type f -name '*.go' -print0 | xargs -0 gofmt -l)"
+	@test -z "$$(find . \( -path ./.git -o -path ./services/platform -o -path ./spec -o -name node_modules \) -prune -o -type f -name '*.go' -print0 | xargs -0 gofmt -l)"
 	$(PAXEER_MAKE) GOLANGCI_LINT=$(PAXEER_GOLANGCI_LINT) lint
 	@set -eu; for directory in $(PAXEER_NESTED_GO_DIRS); do (cd "$$directory" && test -z "$$(gofmt -l .)" && GOPROXY=off go vet ./... && go mod verify); done
 
 developer-dashboard-install:
 	node scripts/ci/developer-dashboard-lock.mjs
 	$(MAKE) human-js-install
-	@test ! -e platform/hosted/dashboard/web/node_modules || \
-		test "$$(readlink platform/hosted/dashboard/web/node_modules)" = "../../../../human/apps/web/node_modules"
-	@test -e platform/hosted/dashboard/web/node_modules || \
-		ln -s ../../../../human/apps/web/node_modules platform/hosted/dashboard/web/node_modules
+	@test ! -e services/platform/hosted/dashboard/web/node_modules || \
+		test "$$(readlink services/platform/hosted/dashboard/web/node_modules)" = "../../../../../human/apps/web/node_modules"
+	@test -e services/platform/hosted/dashboard/web/node_modules || \
+		ln -s ../../../../../human/apps/web/node_modules services/platform/hosted/dashboard/web/node_modules
 
 developer-dashboard-build:
 	npm --prefix human/apps/web run build --workspace @layerx/ui
-	npm --prefix platform/hosted/dashboard/web run build
+	npm --prefix services/platform/hosted/dashboard/web run build
 
 developer-dashboard-static-test:
-	npm --prefix platform/hosted/dashboard/web run test:static
+	npm --prefix services/platform/hosted/dashboard/web run test:static
 
 specgen-build:
 	go build -o /dev/null ./tools/specgen
@@ -3297,7 +3297,7 @@ workspace-install:
 	$(MAKE) workspace-node-preflight
 	cargo fetch --manifest-path services/agent/Cargo.toml --locked
 	cargo fetch --manifest-path human/Cargo.toml --locked
-	cargo fetch --manifest-path platform/Cargo.toml --locked
+	cargo fetch --manifest-path services/platform/Cargo.toml --locked
 	cargo fetch --manifest-path tools/platform/Cargo.toml --locked
 	cargo fetch --manifest-path sdk/platform/generators/Cargo.toml --locked
 	cd programs && cargo fetch --locked
@@ -3347,13 +3347,13 @@ monorepo-ci: workspace-ci
 
 include tools/build/sanitizers.mk
 
-include platform/Makefile.inc
+include services/platform/Makefile.inc
 
 .PHONY: interop-test-ramps interop-test-ramps-sandbox interop-build-ramps
 
 interop-test-ramps:
-	cargo test --locked --manifest-path platform/Cargo.toml -p layerx-ramp-toolkit
-	cargo build --locked --manifest-path platform/Cargo.toml -p layerx-reference-ramp
+	cargo test --locked --manifest-path services/platform/Cargo.toml -p layerx-ramp-toolkit
+	cargo build --locked --manifest-path services/platform/Cargo.toml -p layerx-reference-ramp
 
 interop-build-ramps:
 	@set -eu; umask 077; \
@@ -3361,11 +3361,11 @@ interop-build-ramps:
 	binding=$$(PAXEER_X_RAMP_PRODUCER_PHASE=prepare tools/paxeer-x/gates/104.26.1.sh); \
 	export LAYERX_RAMP_BUILD_REVISION=$${binding%% *}; \
 	export LAYERX_RAMP_BUILD_SOURCE_DIGEST=$${binding#* }; \
-	cargo build --locked --manifest-path platform/Cargo.toml -p layerx-ramp-toolkit -p layerx-reference-ramp --all-targets --message-format=json >"$$PAXEER_X_EVIDENCE_DIR/ramp-cargo.jsonl" 2>"$$PAXEER_X_EVIDENCE_DIR/ramp-build.log"; \
+	cargo build --locked --manifest-path services/platform/Cargo.toml -p layerx-ramp-toolkit -p layerx-reference-ramp --all-targets --message-format=json >"$$PAXEER_X_EVIDENCE_DIR/ramp-cargo.jsonl" 2>"$$PAXEER_X_EVIDENCE_DIR/ramp-build.log"; \
 	PAXEER_X_RAMP_PRODUCER_PHASE=record tools/paxeer-x/gates/104.26.1.sh
 
 interop-test-ramps-sandbox:
-	sh platform/ramps/sandbox-journey.sh
+	sh services/platform/ramps/sandbox-journey.sh
 
 INTEROP_CARGO ?= cargo
 INTEROP_MANIFEST := services/interop/Cargo.toml
@@ -3643,9 +3643,9 @@ $(BUILD_DIR)/tests/lxp_test_blob_admission: tests/programs/test_blob_admission.c
 		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 test-paxai-blob-admission: $(BUILD_DIR)/tests/lxp_test_blob_admission
-	cargo build --locked --manifest-path platform/hosted/paxai-storage-keeper/Cargo.toml
+	cargo build --locked --manifest-path services/platform/hosted/paxai-storage-keeper/Cargo.toml
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_blob_admission \
-		platform/hosted/paxai-storage-keeper/target/debug/paxai-storage-keeper
+		services/platform/hosted/paxai-storage-keeper/target/debug/paxai-storage-keeper
 
 PAXAI_FUNDED_SCRIPT ?=
 
@@ -3657,10 +3657,10 @@ $(BUILD_DIR)/tests/lxp_test_paxai_storage_continuity: tests/programs/test_paxai_
 		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 test-paxai-storage-continuity: $(BUILD_DIR)/tests/lxp_test_paxai_storage_continuity paxai-host-boundary-build
-	cargo build --locked --manifest-path platform/hosted/paxai-storage-keeper/Cargo.toml
+	cargo build --locked --manifest-path services/platform/hosted/paxai-storage-keeper/Cargo.toml
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_paxai_storage_continuity \
 		$(PAXAI_HOST_BOUNDARY_DIR)/ai_market.wasm $(PAXAI_CHAIN_DOMAIN) \
-		platform/hosted/paxai-storage-keeper/target/debug/paxai-storage-keeper $(PAXAI_FUNDED_SCRIPT)
+		services/platform/hosted/paxai-storage-keeper/target/debug/paxai-storage-keeper $(PAXAI_FUNDED_SCRIPT)
 
 $(BUILD_DIR)/tests/lxp_test_paxai_native_gaps: tests/programs/test_paxai_native_gaps.c \
 		$(LAYERXD_SOURCES) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -3861,10 +3861,10 @@ test-daemon-guarantor-feedback: $(BUILD_DIR)/tests/lxp_test_guarantor_feedback
 .PHONY: test-daemon-handover-consumers
 test-daemon-handover-consumers: test-guarantor-receipt $(BUILD_DIR)/tests/lxp_test_guarantor_feedback
 	sh programs/sdk/rust/examples/escrow/build.sh
-	cargo build --locked --manifest-path platform/Cargo.toml -p layerx-runtime-clock
+	cargo build --locked --manifest-path services/platform/Cargo.toml -p layerx-runtime-clock
 	cargo build --locked --manifest-path services/agent/Cargo.toml -p layerx-client --example native_handover_history
 	cargo build --locked --manifest-path services/agent/Cargo.toml -p layerx-agentd --example native_handover_reads --example native_handover_programs
-	$(MAKE) test-daemon-handover-peers LAYERX_TEST_GUARANTOR_FEEDBACK_BIN=$(abspath $(BUILD_DIR)/tests/lxp_test_guarantor_feedback) LAYERX_TEST_HANDOVER_CONSUMER_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),services/agent/target)/debug/examples/native_handover_history) LAYERX_TEST_HANDOVER_READ_CONSUMER_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),services/agent/target)/debug/examples/native_handover_reads) LAYERX_TEST_HANDOVER_CLOCK_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),platform/target)/debug/layerx-runtime-clock) LAYERX_TEST_HANDOVER_PROGRAM_CONSUMER_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),services/agent/target)/debug/examples/native_handover_programs) LAYERX_TEST_HANDOVER_ESCROW_WASM=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),programs/sdk/rust/examples/escrow/target)/wasm32-unknown-unknown/release/layerx_reference_escrow.wasm)
+	$(MAKE) test-daemon-handover-peers LAYERX_TEST_GUARANTOR_FEEDBACK_BIN=$(abspath $(BUILD_DIR)/tests/lxp_test_guarantor_feedback) LAYERX_TEST_HANDOVER_CONSUMER_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),services/agent/target)/debug/examples/native_handover_history) LAYERX_TEST_HANDOVER_READ_CONSUMER_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),services/agent/target)/debug/examples/native_handover_reads) LAYERX_TEST_HANDOVER_CLOCK_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),services/platform/target)/debug/layerx-runtime-clock) LAYERX_TEST_HANDOVER_PROGRAM_CONSUMER_BIN=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),services/agent/target)/debug/examples/native_handover_programs) LAYERX_TEST_HANDOVER_ESCROW_WASM=$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),programs/sdk/rust/examples/escrow/target)/wasm32-unknown-unknown/release/layerx_reference_escrow.wasm)
 
 .PHONY: test-program-admission
 test-program-admission: $(BUILD_DIR)/tests/lxp_test_program_admission $(BUILD_DIR)/bin/layerxd $(BUILD_DIR)/bin/layerx-genesis-build
@@ -3901,11 +3901,11 @@ test-program-simulate: $(BUILD_DIR)/tests/lxp_test_program_admission $(BUILD_DIR
 .PHONY: latency-wave-build latency-wave-test
 latency-wave-build: layerxd $(BUILD_DIR)/bin/layerx-genesis-build
 	cargo build --locked --release --target wasm32-unknown-unknown --manifest-path programs/sdk/rust/examples/escrow/Cargo.toml
-	cargo build --locked --manifest-path platform/Cargo.toml -p layerx-platform-core -p layerx-platform-gateway
-	cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-agent-boundary --test real_node --no-run
+	cargo build --locked --manifest-path services/platform/Cargo.toml -p layerx-platform-core -p layerx-platform-gateway
+	cargo test --locked --manifest-path services/platform/Cargo.toml -p layerx-platform-agent-boundary --test real_node --no-run
 
 latency-wave-test:
-	cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-agent-boundary --test real_node lifecycle::latency_wave_reuses_native_sessions_and_returns_verified_read_and_commit_results -- --exact --nocapture
+	cargo test --locked --manifest-path services/platform/Cargo.toml -p layerx-platform-agent-boundary --test real_node lifecycle::latency_wave_reuses_native_sessions_and_returns_verified_read_and_commit_results -- --exact --nocapture
 
 BRIDGE_PYTHON ?= python3
 PAXEER_GO ?= go
@@ -4103,7 +4103,7 @@ test-daemon-guarantor-sanitize:
 		EXTRA_CFLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' \
 		EXTRA_LDFLAGS='-fsanitize=address,undefined' build test-daemon-guarantor-unit
 platform-hosted-guarantor-topology-check:
-	python3 platform/hosted/tests/topology_check.py
+	python3 services/platform/hosted/tests/topology_check.py
 platform-hosted-topology-check: platform-hosted-guarantor-topology-check
 .PHONY: test-daemon-guarantor-settlement
 test-daemon-guarantor-settlement:
@@ -4184,7 +4184,7 @@ $(BUILD_DIR)/bin/layerx-module-registry: cmd/layerx-module-registry/main.c cmd/l
 
 test-module-registry: layerx-module-registry
 	python3 cmd/layerx-module-registry/test_registry.py $(BUILD_DIR)/bin/layerx-module-registry
-	bash platform/hosted/tests/beta-cluster.sh test-retained-material
+	bash services/platform/hosted/tests/beta-cluster.sh test-retained-material
 
 .PHONY: test-paxeer-membership-sync test-paxeer-membership-chain
 $(BUILD_DIR)/tests/test_paxeer_membership_sync: tests/paxeer/test_membership_sync.c $(LIBRARY)

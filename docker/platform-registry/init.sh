@@ -1,6 +1,6 @@
 #!/bin/sh
 # Root init of the registry box (docker/platform-registry/layerx-registry.service).
-# It does in the container what platform/hosted/registry/node-provision-build-boundary.sh
+# It does in the container what services/platform/hosted/registry/node-provision-build-boundary.sh
 # and the pod's init containers do on a Kubernetes node, without systemd:
 # consumes retained request and publication tokens prepared on the volume and
 # takes them from REGISTRY_REQUEST_TOKEN and REGISTRY_PUBLICATION_TOKEN when

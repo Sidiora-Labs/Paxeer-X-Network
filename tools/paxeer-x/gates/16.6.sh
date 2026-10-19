@@ -10,8 +10,8 @@ import subprocess
 import sys
 
 root=Path.cwd()
-source_paths={"platform/hosted/gateway/src/state.rs","tests/platform/gateway_maintenance_head.rs",
-              "tools/paxeer-x/gates/16.6.sh","platform/hosted/gateway/tests/fixtures/maintained-authority.json"}
+source_paths={"services/platform/hosted/gateway/src/state.rs","tests/platform/gateway_maintenance_head.rs",
+              "tools/paxeer-x/gates/16.6.sh","services/platform/hosted/gateway/tests/fixtures/maintained-authority.json"}
 expected={"native-maintenance","ordinary-domain-preserved","domain-confusion-true","domain-confusion-false",
           "tamper-/receipt_hex","tamper-/receipt_digest","tamper-/state_root","tamper-/batch_evidence/header_hex",
           "tamper-/batch_evidence/header_signature","tamper-/batch_evidence/receipt_proof_hex",

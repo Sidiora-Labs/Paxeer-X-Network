@@ -1,0 +1,38 @@
+[package]
+name = "layerx-platform-gateway"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "layerx-gateway"
+path = "src/main.rs"
+
+[dependencies]
+layerx-client.workspace = true
+layerx-identity-binding.workspace = true
+rustix = { workspace = true, features = ["net"] }
+layerx-platform-internal.workspace = true
+ed25519-dalek.workspace = true
+getrandom.workspace = true
+layerx-proof.workspace = true
+layerx-crypto = { path = "../../../../services/agent/crates/layerx-crypto" }
+layerx-indexer = { path = "../indexer" }
+layerx-types = { path = "../../../../services/agent/crates/layerx-types" }
+layerx-wire = { path = "../../../../services/agent/crates/layerx-wire" }
+layerx-programs-runtime = { path = "../../../../programs/crates/layerx-programs-runtime" }
+layerx-programs = { package = "layerx-programs-registry", path = "../../../../programs/crates/layerx-programs-registry" }
+native-tls.workspace = true
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+layerx-indexer = { path = "../indexer" }
+
+[lints]
+workspace = true

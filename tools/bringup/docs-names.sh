@@ -5,7 +5,7 @@ cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 
 spec=spec/paxeer-x/spec.kvx
 host_re='([a-z0-9-]+\.)+paxeer\.network'
-docs=(docs platform/docs README.md ':(glob)sdk/platform/**/package-info.java' ':(glob)sdk/platform/**/README.md')
+docs=(docs services/platform/docs README.md ':(glob)sdk/platform/**/package-info.java' ':(glob)sdk/platform/**/README.md')
 
 section() {
 	awk -v s="[$1]" '$0 == s { on = 1; next } /^\[/ { on = 0 } on' "$spec"

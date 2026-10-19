@@ -16,13 +16,13 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxanchor/types"
 )
 
-// The bring-up writes the anchor section with platform/hosted/paxeer/anchor-genesis.py and paxd
+// The bring-up writes the anchor section with services/platform/hosted/paxeer/anchor-genesis.py and paxd
 // validate-genesis runs AppModuleBasic.ValidateGenesis over it. This runs the same script and
 // the same validation.
 func TestBringUpAnchorGenesisValidates(t *testing.T) {
 	python, err := exec.LookPath("python3")
 	require.NoError(t, err)
-	script, err := filepath.Abs("../../platform/hosted/paxeer/anchor-genesis.py")
+	script, err := filepath.Abs("../../services/platform/hosted/paxeer/anchor-genesis.py")
 	require.NoError(t, err)
 	deployer := "70997970c51812dc3a010c7d01b50e0d17dc79c8"
 	sequencer := "11" + hex.EncodeToString(make([]byte, 31))

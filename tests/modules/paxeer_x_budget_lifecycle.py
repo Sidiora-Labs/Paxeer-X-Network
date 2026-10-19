@@ -217,7 +217,7 @@ def runtime_worker(directory):
             account_name = b'agent:' + did + b':main'
             beneficiary = hashlib.sha256(b'LX:ACCOUNT:v1' + len(account_name).to_bytes(4, 'big') + account_name).digest()
             amount = 1000000
-            runtime.produce(operation + '-deposit', ['python3', fixture.ROOT / 'platform/hosted/paxeer/evm.py', 'send',
+            runtime.produce(operation + '-deposit', ['python3', fixture.ROOT / 'services/platform/hosted/paxeer/evm.py', 'send',
                 '--rpc', runtime.rpc_url, '--chain', '125', '--key-file', directory / 'keys/deployer.key', '--value', str(amount * 10**12),
                 '0x0000000000000000000000000000000000001013', 'deposit(bytes32)', '0x' + beneficiary.hex()])
             deposited = json.loads((directory / (operation + '-deposit.log')).read_text())

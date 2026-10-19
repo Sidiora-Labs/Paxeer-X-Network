@@ -4571,7 +4571,7 @@ fn program_lifecycle_name(lifecycle: u8) -> Option<&'static str> {
 
 /// Reads the program's receipt-proven value accounts out of the core and
 /// renders them in the hosted registry's `value_accounts` shape
-/// (`platform/hosted/registry/src/routes.rs`): the frozen ABI-one programs that
+/// (`services/platform/hosted/registry/src/routes.rs`): the frozen ABI-one programs that
 /// cannot own accounts publish the account-incapable block, and an ABI-two
 /// program publishes its own balances under the account-primary and state proof
 /// the core verified against the current head.

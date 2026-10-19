@@ -622,7 +622,7 @@ mod tests {
     #[test]
     fn positional_requests_match_published_contract() -> Result<(), String> {
         let fixture = include_str!("../tests/fixtures/openrpc.json");
-        let published_source = include_str!("../../../../platform/hosted/gateway/openrpc.json");
+        let published_source = include_str!("../../../../services/platform/hosted/gateway/openrpc.json");
         assert_eq!(fixture, published_source);
         let published: Value = serde_json::from_str(fixture).map_err(|error| error.to_string())?;
         let methods = published["methods"]

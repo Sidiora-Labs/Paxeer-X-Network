@@ -25,7 +25,7 @@ make platform-test-sdks
 ```
 
 `platform-test-sdks` runs `platform-verify-sdks` (see
-[`platform/Makefile.inc`](../../../platform/Makefile.inc)). It first checks the native
+[`services/platform/Makefile.inc`](../../../services/platform/Makefile.inc)). It first checks the native
 lifecycle, capability and executed-program fixtures for drift, then runs the
 Rust `layerx-sdk` tests, the TypeScript and Python conformance tests, the Go and
 JVM runners, and the Swift and .NET builds and tests. It needs `pytest`, `swift`

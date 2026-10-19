@@ -49,7 +49,7 @@ SELECTED[4]=1
 ACTION_INDEX=1
 build_plan
 [[ ${#STEP_MODULE[@]} -eq 3 ]] || fail "platform install should contain three dependency steps"
-[[ "${STEP_COMMAND[0]}" == "cargo fetch --manifest-path platform/Cargo.toml --locked" ]] || fail "platform Rust dependency step drifted"
+[[ "${STEP_COMMAND[0]}" == "cargo fetch --manifest-path services/platform/Cargo.toml --locked" ]] || fail "platform Rust dependency step drifted"
 [[ "${STEP_COMMAND[1]}" == "make platform-js-install" ]] || fail "platform JavaScript install step drifted"
 [[ "${STEP_COMMAND[2]}" == "make platform-dependencies-install" ]] || fail "platform sample dependency step drifted"
 

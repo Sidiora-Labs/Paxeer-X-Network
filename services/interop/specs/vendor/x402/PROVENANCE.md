@@ -28,7 +28,7 @@ declares `x402Version: 2`, so the pinned transport binding revision is `2`.
 | `transports/a2a.md` | https://raw.githubusercontent.com/coinbase/x402/7d5363a6d51750dc246041f2b0ed5819dd46a0d7/specs/transports-v2/a2a.md | `bbf078363a2fc4eeeb8f6e9b66cf36033f5acfc3984c0e8f427143368979d878` |
 
 Each transport document was fetched twice on 2026-09-18 and both fetches
-produced identical bytes. `platform/hosted/tests/beta-cluster.sh` derives the
+produced identical bytes. `services/platform/hosted/tests/beta-cluster.sh` derives the
 `http`, `mcp` and `a2a` transport specification digests from these files at
 render time, so they are not deployment inputs.
 

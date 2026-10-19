@@ -71,7 +71,7 @@ after funding: Asset register, per-Asset account open, mint, then native-Asset
 SEND. Register, open, mint, and SEND are four fresh signed canonical
 activities. Each is submitted through the same exact JSON-RPC method and waits
 for `executed` before the next activity is built
-(`platform/hosted/gateway/tests/local/lifecycle.rs:1614-1647, 1650-1813,
+(`services/platform/hosted/gateway/tests/local/lifecycle.rs:1614-1647, 1650-1813,
 1888-1931`).
 
 Read the identity sequence before constructing each activity. SEND also
@@ -175,7 +175,7 @@ independent. Build a new activity only after reading the sequence it consumes.
 The flow test reads the source-account sequence before SEND, then proves that
 the `lx_getReceipt` and `lx_getActivityStatus` receipt bytes equal the receipt
 returned by the write
-(`platform/hosted/gateway/tests/local/lifecycle.rs:971-988, 1777-1885`).
+(`services/platform/hosted/gateway/tests/local/lifecycle.rs:971-988, 1777-1885`).
 
 `lx_getBalances` fails closed if the native DID-account listing cannot be fully
 decoded or comes back with no entries, because an empty listing carries no proof
@@ -202,12 +202,12 @@ failure envelope is:
 Invalid params are `-32602`; missing/invalid authorization or scope is
 `-32002`; an unavailable read or submission is `-32001`; rate/capacity refusal
 is `-32005`; invalid upstream data is `-32603`. Proxied typed failures are kept
-under `error.data` (`platform/hosted/gateway/src/rpc.rs:153-184, 242-256`).
+under `error.data` (`services/platform/hosted/gateway/src/rpc.rs:153-184, 242-256`).
 
 For a requested `executed`, `batched`, or `finalised` level that is not yet
 available, the response is `-32001` and `error.data` includes
 `state: "pending"`, `requested_commitment`, and either current `evidence` or
-the upstream pending body (`platform/hosted/gateway/src/rpc.rs:219-224,
+the upstream pending body (`services/platform/hosted/gateway/src/rpc.rs:219-224,
 334-357`). Retain the exact signed activity and recover by activity id with
 `lx_getActivityStatus`, `lx_getReceipt`, and the required `lx_getProof` reads.
 Never replace an uncertain payment with a newly signed debit.

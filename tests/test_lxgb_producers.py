@@ -20,7 +20,7 @@ def main():
     args = parser.parse_args()
     work = args.output.resolve()
     work.mkdir(mode=0o700, parents=True, exist_ok=False)
-    spec = importlib.util.spec_from_file_location('prepare_beta', ROOT / 'platform/hosted/paxeer/prepare-beta.py')
+    spec = importlib.util.spec_from_file_location('prepare_beta', ROOT / 'services/platform/hosted/paxeer/prepare-beta.py')
     producer = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(producer)
     seed = os.urandom(32)

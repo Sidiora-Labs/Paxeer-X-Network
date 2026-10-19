@@ -88,7 +88,7 @@ grep -q 'not asset' "$work/unknown.err" || fail "unknown module refusal: $(cat "
 openssl rand -hex 32 | tr -d '\n' >"$work/sequencer.key"
 ! bash "$script" render "$work/genesis.env" "$work/mismatch" 2>"$work/mismatch.err" || fail "render accepted a foreign sequencer key"
 grep -q 'does not hold the key' "$work/mismatch.err" || fail "sequencer refusal: $(cat "$work/mismatch.err")"
-! bash "$root/platform/hosted/node/bootstrap.sh" --module-profile beta --enable-module web 2>"$work/profile.err" ||
+! bash "$root/services/platform/hosted/node/bootstrap.sh" --module-profile beta --enable-module web 2>"$work/profile.err" ||
 	fail "bootstrap accepted --module-profile beside --enable-module"
 grep -q -- '--module-profile excludes --enable-module' "$work/profile.err" || fail "bootstrap profile refusal: $(cat "$work/profile.err")"
 

@@ -1,3 +1,3 @@
 *
-!platform/hosted/paxeer/init-chain.sh
-!platform/hosted/paxeer/contracts/BetaUsdl.runtime.hex
+!services/platform/hosted/paxeer/init-chain.sh
+!services/platform/hosted/paxeer/contracts/BetaUsdl.runtime.hex

@@ -2,7 +2,7 @@
 !human/apps/web/package.json
 !human/apps/web/package-lock.json
 !human/apps/web/packages/layerx-ui
-!platform/hosted/dashboard/web
+!services/platform/hosted/dashboard/web
 !scripts/ci/developer-dashboard-lock.mjs
 **/node_modules
 **/.next

@@ -109,8 +109,8 @@ previous_version=$("$previous" version) || refuse_previous "OLD_BIN does not rep
 
 sidecar=${SIDECAR_BIN:-$root/dist/paxeer-network/v6.12.0/price-sidecar-v6.12.0-linux-amd64}
 if [[ -z "${SIDECAR_BIN:-}" && ! -f "$sidecar" ]]; then
-  cargo build --locked --release --manifest-path platform/Cargo.toml -p layerx-oracle-feeder --bin price-sidecar
-  platform_target=$(cargo metadata --locked --format-version 1 --no-deps --manifest-path platform/Cargo.toml | jq -er '.target_directory')
+  cargo build --locked --release --manifest-path services/platform/Cargo.toml -p layerx-oracle-feeder --bin price-sidecar
+  platform_target=$(cargo metadata --locked --format-version 1 --no-deps --manifest-path services/platform/Cargo.toml | jq -er '.target_directory')
   sidecar=$platform_target/release/price-sidecar
 fi
 [[ -f "$sidecar" && -x "$sidecar" ]] || refuse_previous "price-sidecar binary is missing: $sidecar"

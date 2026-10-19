@@ -1,6 +1,6 @@
 #!/bin/bash
 # Root init of the kernel box (docker/kernel/layerx-kernel.service), the node pod
-# of platform/hosted/node/deployment.yaml in one container. It replays the pod's
+# of services/platform/hosted/node/deployment.yaml in one container. It replays the pod's
 # init containers on the volume, mounts the pod's memory volumes, and runs each
 # container command under its uid through setpriv and the runtime clock,
 # restarting one that exits. A service starts once every file it waits on
@@ -1492,7 +1492,7 @@ service agent-boundary 4021 \
 	/bin/sh -ec 'LAYERX_AGENT_BOUNDARY_NETWORK_ID="$LAYERX_NODE_NETWORK_NAME" exec /usr/local/bin/layerx-agent-boundary'
 
 # The human graph of the pod. human_material_generate runs
-# platform/hosted/human/material.py once, as the pod's provisioning did, with
+# services/platform/hosted/human/material.py once, as the pod's provisioning did, with
 # the network and chain ids above and https://paxportwallet.com as the web
 # origin, so the passkey relying party id is paxportwallet.com. Its policy is
 # the one material.py --assemble writes from the deploy's evidence, placed at
@@ -1807,7 +1807,7 @@ human_identity_prepare() {
 
 # trust_history: the sequencer trust history the security provider and the
 # registry read, in the LayerX/sequencer-trust-history/v1 encoding of
-# encode_trust_history in platform/hosted/tests/beta-cluster.sh: one current
+# encode_trust_history in services/platform/hosted/tests/beta-cluster.sh: one current
 # protocol 3, epoch 1 entry of the network id, the sequencer id layerxd
 # publishes in core.env and the public key receipt_authority_prepare derives
 # from the sequencer seed. Written once; an existing history is never rewritten.

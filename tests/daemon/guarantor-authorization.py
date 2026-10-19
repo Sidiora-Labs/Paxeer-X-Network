@@ -21,9 +21,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / 'tests/fixtures/custody/paxeer-light-v1'
 SIGN = ROOT / 'cmd/layerx-guarantor/publication-sign.py'
-GUARANTOR = ROOT / 'platform/hosted/node/guarantor.sh'
-TREASURY_SIGNER = ROOT / 'platform/hosted/node/signer/signer.py'
-sys.path[:0] = [str(ROOT / 'platform/hosted/node'), str(ROOT / 'platform/hosted/human')]
+GUARANTOR = ROOT / 'services/platform/hosted/node/guarantor.sh'
+TREASURY_SIGNER = ROOT / 'services/platform/hosted/node/signer/signer.py'
+sys.path[:0] = [str(ROOT / 'services/platform/hosted/node'), str(ROOT / 'services/platform/hosted/human')]
 
 
 def load(name, path):

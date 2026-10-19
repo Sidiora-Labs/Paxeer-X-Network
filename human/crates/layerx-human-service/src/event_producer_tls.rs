@@ -304,7 +304,7 @@ fn tenancy() -> crate::store::TenancyMap {
     )
 }
 
-#[path = "../../../../platform/hosted/internal/src/producer_test_support.rs"]
+#[path = "../../../../services/platform/hosted/internal/src/producer_test_support.rs"]
 mod transport;
 
 #[test]

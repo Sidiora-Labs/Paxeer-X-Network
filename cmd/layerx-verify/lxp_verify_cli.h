@@ -24,7 +24,7 @@ enum {
 /*
  * The trust root is the genesis manifest a relying party pins.  Genesis is
  * signed by the key that also authorizes every batch header and every receipt
- * (platform/hosted/node/bootstrap.sh hands the sequencer key to
+ * (services/platform/hosted/node/bootstrap.sh hands the sequencer key to
  * layerx-genesis-build as the genesis signer), so the manifest carries the
  * whole authority key set: the signing authority for headers and receipts,
  * and the guarantor keys that carry checkpoint attestations.

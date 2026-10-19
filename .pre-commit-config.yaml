@@ -22,7 +22,7 @@ repos:
         language: system
         pass_filenames: false
         files: \.rs$
-        entry: bash -c 'status=0; for manifest in services/agent/Cargo.toml programs/Cargo.toml human/Cargo.toml services/interop/Cargo.toml platform/Cargo.toml tools/platform/Cargo.toml sdk/platform/generators/Cargo.toml cmd/layerxctl/Cargo.toml; do cargo fmt --check --manifest-path "$manifest" --all || status=1; done; exit "$status"'
+        entry: bash -c 'status=0; for manifest in services/agent/Cargo.toml programs/Cargo.toml human/Cargo.toml services/interop/Cargo.toml services/platform/Cargo.toml tools/platform/Cargo.toml sdk/platform/generators/Cargo.toml cmd/layerxctl/Cargo.toml; do cargo fmt --check --manifest-path "$manifest" --all || status=1; done; exit "$status"'
       - id: forge-fmt
         name: forge fmt --check
         language: system

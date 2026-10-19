@@ -119,7 +119,7 @@ def build(manifest):
     if actual != set(expected) or len(actual) != len(tests):
         refuse('compiled test inventory differs from complete package targets')
     capture(['cargo', '+1.91.1', 'build', '--frozen', '--manifest-path',
-             'platform/Cargo.toml', '-p', 'layerx-runtime-clock', '--bin', 'layerx-runtime-clock'], env)
+             'services/platform/Cargo.toml', '-p', 'layerx-runtime-clock', '--bin', 'layerx-runtime-clock'], env)
     target = Path(env['CARGO_TARGET_DIR']) / 'debug'
     result = dict(schema=SCHEMA, source=initial, toolchain=version, tests=tests,
                   kms=artifact(target / 'layerx-human-kms'),

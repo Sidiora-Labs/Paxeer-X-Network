@@ -61,7 +61,7 @@ jobs:
           distribution: temurin
           java-version: "21"
       - name: Fetch locked platform workspace crates
-        run: cargo fetch --locked --manifest-path platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml && cargo fetch --locked --manifest-path sdk/platform/generators/Cargo.toml
+        run: cargo fetch --locked --manifest-path services/platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml && cargo fetch --locked --manifest-path sdk/platform/generators/Cargo.toml
       - name: Install platform sample and policy dependencies
         run: make platform-dependencies-install
       - name: Install private Secret Service dependencies for CLI tests
@@ -556,7 +556,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Fetch locked platform workspace crates
-        run: cargo fetch --locked --manifest-path platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml && cargo fetch --locked --manifest-path sdk/platform/generators/Cargo.toml
+        run: cargo fetch --locked --manifest-path services/platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml && cargo fetch --locked --manifest-path sdk/platform/generators/Cargo.toml
       - name: Verify the release manifest and the release workflow agree
         run: make platform-release-check
       - name: Verify the generated SDKs against the schemas
@@ -1533,7 +1533,7 @@ jobs:
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.91.1 --profile minimal && rustup default 1.91.1
       - name: Fetch locked platform workspace crates
-        run: cargo fetch --locked --manifest-path platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml && cargo fetch --locked --manifest-path sdk/platform/generators/Cargo.toml
+        run: cargo fetch --locked --manifest-path services/platform/Cargo.toml && cargo fetch --locked --manifest-path tools/platform/Cargo.toml && cargo fetch --locked --manifest-path sdk/platform/generators/Cargo.toml
       - name: Install Node.js for actual published quickstart imports
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
@@ -1734,7 +1734,7 @@ jobs:
           LAYERX_TESTNET_MARKETPLACE_LISTING_ID: ${{ vars.LAYERX_REFERENCE_MARKETPLACE_LISTING_ID }}
           LAYERX_TESTNET_MARKETPLACE_RECEIPT_DIGEST: ${{ vars.LAYERX_REFERENCE_MARKETPLACE_RECEIPT_DIGEST }}
           LAYERX_TESTNET_MARKETPLACE_KEY: ${{ vars.LAYERX_REFERENCE_MARKETPLACE_KEY }}
-        run: node platform/examples/run-reference-apps.mjs --scenario beta
+        run: node services/platform/examples/run-reference-apps.mjs --scenario beta
       - name: Remove short-lived test credentials
         if: always()
         run: |

@@ -49,7 +49,7 @@ FIRST_SEND = 6
 
 
 def event_id(kind, resource, sequence):
-    """platform/hosted/internal/src/producer.rs event_id."""
+    """services/platform/hosted/internal/src/producer.rs event_id."""
     data = b''
     for part in (kind.encode(), resource.encode(), sequence.to_bytes(8, 'big')):
         data += len(part).to_bytes(8, 'big') + part

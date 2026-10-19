@@ -24,7 +24,7 @@ claim vocabulary.
 | Visa TAP | `services/interop/crates/layerx-visa-tap` | [Visa TAP](visa-tap.md) |
 | Portable receipts | `services/interop/crates/layerx-portable` | [Portable receipts](portable-receipts.md) |
 | Fiat rails | `services/interop/crates/layerx-fiat` | [Ramps and fiat](ramps.md) |
-| Market-maker ramps | `platform/ramps` | [Ramps and fiat](ramps.md) |
+| Market-maker ramps | `services/platform/ramps` | [Ramps and fiat](ramps.md) |
 | Ethereum / Solana mirrors | `services/interop/crates/layerx-mirror` | [Mirrors](mirrors.md) |
 | ETH / Solana migration | `services/interop/crates/layerx-migrate` | See `services/interop/crates/layerx-migrate/OPERATIONS.md` |
 

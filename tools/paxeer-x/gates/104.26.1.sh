@@ -34,7 +34,7 @@ TARGETS = {
     ('layerx-reference-ramp', 'layerx-reference-ramp'),
     ('layerx-reference-ramp', 'plain_listener'),
 }
-SELECTED = ['platform/ramps', 'platform/Cargo.toml', 'platform/Cargo.lock',
+SELECTED = ['services/platform/ramps', 'services/platform/Cargo.toml', 'services/platform/Cargo.lock',
             '.github/workflows/ramp-sandbox.yml', 'tools/paxeer-x/gates/104.26.1.sh', 'Makefile']
 DEADLINE = time.monotonic() + 1740
 
@@ -115,8 +115,8 @@ def producer(phase):
         if event.get('reason') != 'compiler-artifact' or not event.get('executable'): continue
         target = event['target']['name']
         package = 'layerx-ramp-toolkit' if str(event['manifest_path']).endswith('/ramps/toolkit/Cargo.toml') else 'layerx-reference-ramp'
-        require(Path(event['manifest_path']).resolve() in (ROOT / 'platform/ramps/toolkit/Cargo.toml',
-                ROOT / 'platform/ramps/reference/Cargo.toml'), 'artifact from unexpected package')
+        require(Path(event['manifest_path']).resolve() in (ROOT / 'services/platform/ramps/toolkit/Cargo.toml',
+                ROOT / 'services/platform/ramps/reference/Cargo.toml'), 'artifact from unexpected package')
         exe = Path(event['executable']).resolve()
         owned = directory / ('test-' + target if event['profile']['test'] else target)
         import shutil
@@ -199,7 +199,7 @@ try:
     require(digest(verifier) == manifest['receiptverifierbinary']['sha256'], 'verifier artifact changed')
     runtime_output = evidence / 'ramp-sandbox-result.json'
     require(not runtime_output.exists(), 'runtime result must be fresh')
-    execute(['sh', str(ROOT / 'platform/ramps/sandbox-journey.sh')],
+    execute(['sh', str(ROOT / 'services/platform/ramps/sandbox-journey.sh')],
             evidence / 'ramp-sandbox-runtime.log', env)
     report = load_private(runtime_output)
     require(report['schema_version'] == 1 and report['source_revision'] == revision

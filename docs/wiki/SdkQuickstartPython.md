@@ -61,7 +61,7 @@ def send(rpc: PaymentRpc, canonical_hex: str, commitment: str = "executed") -> d
 `lx_sendActivity` attach `LayerX-Key` via `headers`, not Bearer.
 
 Hosted human-plane send, as in
-`platform/docs/samples/first-payment-python`:
+`services/platform/docs/samples/first-payment-python`:
 
 ```python
 from layerx_sdk import IdempotencyKey, ProductionClient

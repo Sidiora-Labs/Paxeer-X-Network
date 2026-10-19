@@ -5,7 +5,7 @@ ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS} MAKEFLAGS=-j${CARGO_BUILD_JOBS}
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential libssl-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 COPY . .
-RUN cargo build --locked --release --manifest-path platform/Cargo.toml -p layerx-runtime-clock
+RUN cargo build --locked --release --manifest-path services/platform/Cargo.toml -p layerx-runtime-clock
 RUN cargo build --locked --release --manifest-path human/Cargo.toml -p layerx-human-service -p layerx-human-kms -p layerx-explorer-index --bins
 RUN cargo build --locked --release --manifest-path services/agent/Cargo.toml -p layerx-agentd-host --bin layerx-agentd
 RUN cargo build --locked --release --manifest-path cmd/layerxctl/Cargo.toml
@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 4020 layerx && useradd -M -u 4020 -g 4020 -s /usr/sbin/nologin layerx \
     && install -d -m 0750 -o 4020 -g 4020 /run/layerx/human
-COPY --from=build /src/platform/target/release/layerx-runtime-clock /usr/local/bin/layerx-runtime-clock
+COPY --from=build /src/services/platform/target/release/layerx-runtime-clock /usr/local/bin/layerx-runtime-clock
 COPY --from=build /src/human/target/release/layerx-human-service /usr/local/bin/layerx-human-service
 COPY --from=build /src/human/target/release/layerx-human-components /usr/local/bin/layerx-human-components
 COPY --from=build /src/human/target/release/layerx-human-onboarding /usr/local/bin/layerx-human-onboarding
@@ -27,8 +27,8 @@ COPY --from=build /src/human/target/release/layerx-human-identity-provider /usr/
 COPY --from=build /src/human/target/release/layerx-human-security-provider /usr/local/bin/layerx-human-security-provider
 COPY --from=build /src/human/target/release/layerx-human-movement-provider /usr/local/bin/layerx-human-movement-provider
 COPY --from=build /src/cmd/layerxctl/target/release/layerxctl /usr/local/bin/layerxctl
-COPY platform/hosted/human/provision.py platform/hosted/human/owner_native.py platform/hosted/human/owner_kms.py platform/hosted/human/onboarding_socket.py platform/hosted/human/onboarding_bootstrap.py platform/hosted/human/onboarding_material.py platform/hosted/human/material.py platform/hosted/human/recipient_binding.py /usr/local/lib/layerx-human/
+COPY services/platform/hosted/human/provision.py services/platform/hosted/human/owner_native.py services/platform/hosted/human/owner_kms.py services/platform/hosted/human/onboarding_socket.py services/platform/hosted/human/onboarding_bootstrap.py services/platform/hosted/human/onboarding_material.py services/platform/hosted/human/material.py services/platform/hosted/human/recipient_binding.py /usr/local/lib/layerx-human/
 COPY --chmod=0555 docker/human-service/entrypoint.sh /usr/local/bin/human-entrypoint
-COPY platform/hosted/human/recipient_check.py /usr/local/lib/layerx-human/recipient_check.py
+COPY services/platform/hosted/human/recipient_check.py /usr/local/lib/layerx-human/recipient_check.py
 USER 4020:4020
 ENTRYPOINT ["/usr/local/bin/human-entrypoint", "service"]

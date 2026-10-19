@@ -387,7 +387,7 @@ const PLATFORM_INSTALL: &[Step] = &[
         &[
             "fetch",
             "--manifest-path",
-            "platform/Cargo.toml",
+            "services/platform/Cargo.toml",
             "--locked",
         ],
         ".",
@@ -1118,7 +1118,7 @@ fn repo_root() -> Result<PathBuf, String> {
 
 fn is_repo_root(path: &Path) -> bool {
     path.join("Makefile").is_file()
-        && path.join("platform/Cargo.toml").is_file()
+        && path.join("services/platform/Cargo.toml").is_file()
         && path.join("services/agent/Cargo.toml").is_file()
 }
 

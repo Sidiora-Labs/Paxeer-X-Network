@@ -191,20 +191,20 @@ class RuntimeFixture:
         for p in [d / 'keys', *d.rglob('*')]:
             os.chown(p, UID, UID)
             p.chmod(0o700 if p.is_dir() or p.parent == d / 'inputs' else 0o600)
-        address = run(['python3', ROOT / 'platform/hosted/paxeer/evm.py', 'address', d / 'keys/deployer.key'], capture_output=True).stdout.decode().strip()
-        authority = run(['python3', ROOT / 'platform/hosted/node/checkpoint-authority.py', d / 'keys/deposit.pem'], capture_output=True).stdout.decode().strip().removeprefix('0x')
+        address = run(['python3', ROOT / 'services/platform/hosted/paxeer/evm.py', 'address', d / 'keys/deployer.key'], capture_output=True).stdout.decode().strip()
+        authority = run(['python3', ROOT / 'services/platform/hosted/node/checkpoint-authority.py', d / 'keys/deposit.pem'], capture_output=True).stdout.decode().strip().removeprefix('0x')
         common = ['--network-id', NETWORK, '--sequencer-id', hashlib.sha256(('layerx-sequencer:' + public['sequencer']).encode()).hexdigest(), '--sequencer-public-key', public['sequencer']]
-        self.produce('custody-genesis', ['python3', ROOT / 'platform/hosted/paxeer/custody-genesis.py', *common, '--deposit-root-authority', authority, '--asset', ASSET + ':uhpx', '--output', d / 'custody.json'])
+        self.produce('custody-genesis', ['python3', ROOT / 'services/platform/hosted/paxeer/custody-genesis.py', *common, '--deposit-root-authority', authority, '--asset', ASSET + ':uhpx', '--output', d / 'custody.json'])
         policy = json.loads((ROOT / 'contracts/config/checkpoint-settlement.json').read_text())
         threshold = policy['finality_policy']['certificate_threshold']
-        self.produce('anchor-genesis', ['python3', ROOT / 'platform/hosted/paxeer/anchor-genesis.py', *common, '--authority-evm', address, '--paxeer-chain-id', '125', '--threshold', threshold, '--output', d / 'anchor.json'])
+        self.produce('anchor-genesis', ['python3', ROOT / 'services/platform/hosted/paxeer/anchor-genesis.py', *common, '--authority-evm', address, '--paxeer-chain-id', '125', '--threshold', threshold, '--output', d / 'anchor.json'])
         self.chain_env = dict(PAXD=self.binary('paxd'), LAYERX_PAXEER_HOME=str(d / 'chain'), LAYERX_PAXEER_CHAIN_ID='125',
             LAYERX_PAXEER_DEPLOYER_ADDRESS=address, LAYERX_PAXEER_CUSTODY_GENESIS_FILE=str(d / 'custody.json'),
             LAYERX_PAXEER_ANCHOR_GENESIS_FILE=str(d / 'anchor.json'), LAYERX_PAXEER_DEPOSIT_ROOT_AUTHORITY=authority,
             LAYERX_PAXEER_COMMIT_TIMEOUT_NANOSECONDS='1000000000')
         for name, port in zip(('EVM', 'EVM_WS', 'RPC', 'P2P', 'GRPC', 'GRPC_WEB', 'API'), self.ports):
             self.chain_env['LAYERX_PAXEER_' + name + '_PORT'] = str(port)
-        self.produce('chain-init', ['bash', ROOT / 'platform/hosted/paxeer/init-chain.sh'], self.chain_env, 180)
+        self.produce('chain-init', ['bash', ROOT / 'services/platform/hosted/paxeer/init-chain.sh'], self.chain_env, 180)
         for s in self.reservations:
             s.close()
         self.reservations.clear()
@@ -212,10 +212,10 @@ class RuntimeFixture:
         self.wait(lambda: int(self.rpc('eth_blockNumber'), 16) >= 3)
         height = int(self.rpc('status', comet=True)['sync_info']['latest_block_height'])
         self.produce('custody-profile', [self.binary('layerx-custody-proof'), 'light-profile', '--rpc', 'http://127.0.0.1:' + str(self.ports[2]), '--asset', '0x' + ASSET, '--network-id', NETWORK, '--trusted-height', height - 1, '--trusting-period-seconds', '1209600', '--output', d / 'custody.profile'])
-        self.produce('bootstrap', ['bash', ROOT / 'platform/hosted/node/bootstrap.sh', '--data-dir', d / 'node', '--run-dir', d / 'run', '--network-id', NETWORK,
+        self.produce('bootstrap', ['bash', ROOT / 'services/platform/hosted/node/bootstrap.sh', '--data-dir', d / 'node', '--run-dir', d / 'run', '--network-id', NETWORK,
             '--sequencer-key', d / 'keys/sequencer.seed', '--treasury-key', d / 'keys/treasury.seed', '--asset', ASSET,
             '--genesis-metadata', d / 'metadata.lxgb', '--custody-profile', d / 'custody.profile', '--withdrawal-fee', '0',
-            '--module-fees', ROOT / 'platform/hosted/node/genesis-module-fees.json', '--program-port', self.ports[7], '--replica-port', self.ports[8],
+            '--module-fees', ROOT / 'services/platform/hosted/node/genesis-module-fees.json', '--program-port', self.ports[7], '--replica-port', self.ports[8],
             '--migrations', ROOT / 'migrations/0007_history_index.sql', '--layerxd', self.binary('layerxd'), '--genesis-build', self.binary('layerx-genesis-build'), '--lni-uid', '0', '--lni-gid', UID],
             {'LAYERX_NODE_PAXEER_CHAIN_ID': '125', 'LAYERX_NODE_PAXEER_RPC_URL': self.rpc_url}, 180)
         bob = 'did:layerx:' + public['bob']
@@ -240,7 +240,7 @@ class RuntimeFixture:
         d = self.directory
         if role == 'sequencer':
             script = 'set -e; source "$1"; layerx_sequencer_environment "$2"; exec "$3" --serve "$4"'
-            argv = ['bash', '-c', script, 'runtime-fixture', ROOT / 'platform/hosted/node/sequencer-env.sh', d / 'node/sequencer.env', self.binary('layerxd'), d / 'node/sequencer.conf']
+            argv = ['bash', '-c', script, 'runtime-fixture', ROOT / 'services/platform/hosted/node/sequencer-env.sh', d / 'node/sequencer.env', self.binary('layerxd'), d / 'node/sequencer.conf']
         else:
             script = 'set -ea; source "$1"; exec "$2" --authority-replica "$3"'
             argv = ['bash', '-c', script, 'runtime-fixture', d / 'node/replica.env', self.binary('layerxd'), d / 'node/replica.conf']

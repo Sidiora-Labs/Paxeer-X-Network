@@ -23,7 +23,7 @@ for log_mode in absent empty; do
         continue
     fi
     LAYERX_TEST_BOOTSTRAP_LOG_MODE=$log_mode "$cargo_command" test \
-        --offline --manifest-path platform/Cargo.toml --locked \
+        --offline --manifest-path services/platform/Cargo.toml --locked \
         -p layerx-platform-authority --test real_node \
         real_node_authority_serves_verified_facts_and_reflects_replica_loss \
         -- --exact --nocapture --test-threads=1

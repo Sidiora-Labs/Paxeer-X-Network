@@ -116,8 +116,8 @@ CLASSES = {'TransportFailure', 'Deadline', 'ProtocolIncompatibility', 'Unavailab
 LEVELS = ('Unverified', 'SequencerSigned', 'BatchIncluded', 'StateProven', 'CheckpointFinalised', 'SettlementAnchored')
 SOURCES = ('services/agent/crates', 'services/agent/Cargo.toml', 'services/agent/Cargo.lock', 'services/agent/schema/agent-api', 'services/agent/sdk/typescript/src',
            'services/agent/sdk/typescript/test', 'services/agent/sdk/typescript/package.json', 'services/agent/sdk/typescript/package-lock.json',
-           'services/agent/sdk/typescript/tsconfig.json', 'services/agent/sdk/python', 'platform/hosted/gateway', 'platform/Cargo.toml',
-           'platform/Cargo.lock', 'sdk/platform/go', 'sdk/platform/jvm', 'sdk/platform/swift', 'sdk/platform/dotnet',
+           'services/agent/sdk/typescript/tsconfig.json', 'services/agent/sdk/python', 'services/platform/hosted/gateway', 'services/platform/Cargo.toml',
+           'services/platform/Cargo.lock', 'sdk/platform/go', 'sdk/platform/jvm', 'sdk/platform/swift', 'sdk/platform/dotnet',
            'tools/paxeer-x/route-catalogue.json', 'tools/qualification/paxeer-x/agent_operation_envelope.py',
            'tools/qualification/paxeer-x/fixtures/event_source_fixture.py',
            'tests/daemon/lxp_test_runtime_fixture.c', 'tests/storage/lxp_test_maintenance_publication.c',
@@ -252,7 +252,7 @@ def build(manifest):
     crash_target = native_build / 'tests/lxp_test_maintenance_publication'
     step(['make', '--no-print-directory', '-j4', 'BUILD_DIR=' + str(native_build), str(crash_target)])
     artifacts['prestate_crash'] = str(crash_target)
-    gateway = step(['cargo', 'build', '--locked', '--release', '--manifest-path', 'platform/hosted/gateway/Cargo.toml',
+    gateway = step(['cargo', 'build', '--locked', '--release', '--manifest-path', 'services/platform/hosted/gateway/Cargo.toml',
                     '--bin', 'layerx-gateway', '--message-format=json'])
     artifacts.update(cargo_executables(gateway, {('layerx-gateway', 'bin'): 'gateway'}))
     ts = ROOT / 'services/agent/sdk/typescript'
@@ -2413,14 +2413,14 @@ def qualify_execution_prestate(parent, built, bundle, client):
         account = ('agent:did:layerx:' + owner + ':main').encode()
         beneficiary = hashlib.sha256(b'LX:ACCOUNT:v1' + len(account).to_bytes(4, 'big') + account).hexdigest()
         amount, custody = 1000000000000, '0x0000000000000000000000000000000000001013'
-        deposit = subprocess.run([sys.executable, str(ROOT / 'platform/hosted/paxeer/evm.py'), 'send', '--rpc', runtime.rpc_url,
+        deposit = subprocess.run([sys.executable, str(ROOT / 'services/platform/hosted/paxeer/evm.py'), 'send', '--rpc', runtime.rpc_url,
             '--chain', '125', '--key-file', str(directory / 'keys/deployer.key'), '--value', str(amount * 10**12),
             custody, 'deposit(bytes32)', '0x' + beneficiary], env=runtime.env, capture_output=True, timeout=150)
         (directory / 'prestate-deposit.log').write_bytes(deposit.stdout + deposit.stderr)
         require(deposit.returncode == 0, 'prestate real custody deposit failed')
         deposits = [json.loads(line) for line in deposit.stdout.decode().splitlines() if line.startswith('{')]
         require(len(deposits) == 1 and deposits[0]['status'] == '0x1', 'prestate custody transaction outcome')
-        module = importlib.util.spec_from_file_location('prestate_fixture_evm', ROOT / 'platform/hosted/paxeer/evm.py')
+        module = importlib.util.spec_from_file_location('prestate_fixture_evm', ROOT / 'services/platform/hosted/paxeer/evm.py')
         evm = importlib.util.module_from_spec(module)
         module.loader.exec_module(evm)
         topic = '0x' + evm.keccak(b'CustodyDeposit(bytes32,bytes32,address,bytes32,uint256,uint64)').hex()

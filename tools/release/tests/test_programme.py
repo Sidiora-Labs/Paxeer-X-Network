@@ -431,7 +431,7 @@ def test_event_decoding():
 def test_cosmos_submission_vector():
     vector = json.loads(
         (
-            ROOT / "platform/hosted/feeder/tests/fixtures/cosmos_tx_vector.json"
+            ROOT / "services/platform/hosted/feeder/tests/fixtures/cosmos_tx_vector.json"
         ).read_text()
     )
     secret = int(vector["secret_key_hex"], 16)

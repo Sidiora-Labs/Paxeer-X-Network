@@ -31,13 +31,13 @@ def native_network_id():
 
 # Custody is the native layerxcustody module behind the precompile at 0x...1013 and nothing
 # custodial is deployed for it: the asset map, the sequencer authorization and the deposit-root
-# authority are chain genesis state written by platform/hosted/paxeer/custody-genesis.py. One
+# authority are chain genesis state written by services/platform/hosted/paxeer/custody-genesis.py. One
 # base unit of the chain's own denomination is 1e12 wei, so deposit(bytes32) carries the LayerX
 # u128 amount scaled by that factor.
 CUSTODY_DENOM = 'uhpx'
 WEI_PER_BASE_UNIT = 10 ** 12
 # Checkpoint settlement and the guarantor bond are the native layerxanchor module behind the
-# precompile at 0x...1014; platform/hosted/node/bootstrap.sh accepts no other settlement contract
+# precompile at 0x...1014; services/platform/hosted/node/bootstrap.sh accepts no other settlement contract
 # or checkpoint registry, which is the address tests/daemon/program-admission.sh already publishes
 # for its own non-custody bring-up.
 ANCHOR_ADDRESS = '0x0000000000000000000000000000000000001014'
@@ -73,7 +73,7 @@ def register(work, url):
     assert request[:5] == b'LXRR\x01' and int.from_bytes(request[5:9], 'big') == network_id
     # Settlement is the native layerxanchor module, so no guarantor bond and no checkpoint
     # registry is deployed for it and the genesis registration this harness used to overwrite is
-    # already the bytes platform/hosted/node/bootstrap.sh derived from the same request.
+    # already the bytes services/platform/hosted/node/bootstrap.sh derived from the same request.
     assert (work / 'data/genesis/genesis.registration').read_bytes() == (
         b'LXGR\x01' + network_id.to_bytes(4, 'big') + bytes(8) + request[41:73] * 2 + b'\x01')
     write_settlement(work, from_environment(url), ANCHOR_ADDRESS, ANCHOR_ADDRESS)
@@ -102,7 +102,7 @@ def custody_genesis(work, network_id=NETWORK_ID, sequencer_seed=SEQUENCER_SEED):
     write_new(work / 'deposit-root-authority.key',
               authority.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()))
     genesis = work / 'custody-genesis.json'
-    run(sys.executable, 'platform/hosted/paxeer/custody-genesis.py',
+    run(sys.executable, 'services/platform/hosted/paxeer/custody-genesis.py',
         '--network-id', str(network_id), '--sequencer-id', '0x' + identifier,
         '--sequencer-public-key', '0x' + sequencer.hex(),
         '--deposit-root-authority',

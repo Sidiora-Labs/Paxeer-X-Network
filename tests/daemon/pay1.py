@@ -109,7 +109,7 @@ def main():
                        LAYERX_NODE_CHECKPOINT_REGISTRY='0x0000000000000000000000000000000000001014',
                        LAYERX_NODE_PAXEER_RPC_ADDRESS='127.0.0.1',
                        LAYERX_NODE_PAXEER_RPC_PORT=str(ports[2]))
-    bootstrap = ['bash', 'platform/hosted/node/bootstrap.sh', '--data-dir', str(work / 'data'),
+    bootstrap = ['bash', 'services/platform/hosted/node/bootstrap.sh', '--data-dir', str(work / 'data'),
                  '--run-dir', str(work / 'run'), '--network-id', '77',
                  '--sequencer-key', str(work / 'sequencer'), '--treasury-key', str(work / 'treasury'),
                  '--genesis-metadata', str(work / 'metadata'), '--lni-uid', '4021', '--lni-gid', '4021',
@@ -131,7 +131,7 @@ def main():
         log = (work / f'{role}.log').open('ab')
         logs.append(log)
         if role == 'sequencer':
-            command = f'source "{ROOT / "platform/hosted/node/sequencer-env.sh"}"; layerx_sequencer_environment "$1"; export LAYERX_PAY_TIMING=1; exec "$2" "$3" "$4"'
+            command = f'source "{ROOT / "services/platform/hosted/node/sequencer-env.sh"}"; layerx_sequencer_environment "$1"; export LAYERX_PAY_TIMING=1; exec "$2" "$3" "$4"'
         else:
             command = 'set -a; source "$1"; export LAYERX_PAY_TIMING=1; exec "$2" "$3" "$4"'
         process = subprocess.Popen(['bash', '-c', command, 'pay1', str(work / f'data/{role}.env'),

@@ -5,9 +5,9 @@
 //! `layerx-agentd`: the withdrawal activity is prepared, signed, submitted and
 //! its receipt proven by the node itself. The Paxeer half runs against a real
 //! disposable `paxd` started from genesis produced by
-//! `platform/hosted/paxeer/custody-genesis.py` and
-//! `platform/hosted/paxeer/anchor-genesis.py` and merged by
-//! `platform/hosted/paxeer/init-chain.sh`, so `layerxCustody` (`0x…1013`) is the
+//! `services/platform/hosted/paxeer/custody-genesis.py` and
+//! `services/platform/hosted/paxeer/anchor-genesis.py` and merged by
+//! `services/platform/hosted/paxeer/init-chain.sh`, so `layerxCustody` (`0x…1013`) is the
 //! native `layerxcustody` module and `layerxAnchor` (`0x…1014`) is the native
 //! `layerxanchor` module. Nothing about the withdrawal is invented: the request
 //! and finalise calldata is the byte-for-byte material the node's own receipt

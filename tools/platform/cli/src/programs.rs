@@ -721,10 +721,10 @@ fn registry_program_document(response: &Value, program_id: &str) -> Result<Value
 /// Reads the program document out of the wrapped agent response every program
 /// read is served in: `{request_id, value, verification_status}`.
 ///
-/// The hosted gateway (`platform/hosted/gateway/src/main.rs:812-853`) and the
+/// The hosted gateway (`services/platform/hosted/gateway/src/main.rs:812-853`) and the
 /// emulator (`tools/platform/emulator/src/main.rs:949-990`) wrap every successful
 /// program read in that envelope and attach the verification status produced by
-/// `program_verification_status` (`platform/hosted/gateway/src/main.rs:708-738`).
+/// `program_verification_status` (`services/platform/hosted/gateway/src/main.rs:708-738`).
 /// `registry_list` already reads the wrapped `value`.
 ///
 /// # Errors

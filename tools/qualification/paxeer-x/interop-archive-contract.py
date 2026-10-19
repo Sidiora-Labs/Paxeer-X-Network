@@ -265,7 +265,7 @@ class Contract:
         for name in ("layerxd", "layerx-genesis-build", "layerx-archive-codec"):
             shutil.copy2(self.build / "bin" / name, self.bin / name)
         self.runtime = self.work / "runtime"
-        shutil.copytree(ROOT / "platform/relay_archive", self.runtime,
+        shutil.copytree(ROOT / "services/platform/relay_archive", self.runtime,
                         ignore=shutil.ignore_patterns("__pycache__"))
         self.execute(["ip", "link", "set", "lo", "up"])
         source = self.work / "source"
@@ -636,10 +636,10 @@ class RouterInterposer:
 
 
 class RelayRailwayContract(Contract):
-    MANIFEST = ROOT / "platform/relay_archive/railway.env.example"
+    MANIFEST = ROOT / "services/platform/relay_archive/railway.env.example"
     DOCKERFILE = ROOT / "docker/relay-archive/Dockerfile"
     FILES = ROOT / "docker/relay-archive/files.tsv"
-    INSTALL = ROOT / "platform/relay_archive/install.sh"
+    INSTALL = ROOT / "services/platform/relay_archive/install.sh"
     ROLLOUT = ROOT / "deploy/rollout.kvx"
     SERVICES = ("relay-archive-a", "relay-archive-b")
 
@@ -681,7 +681,7 @@ class RelayRailwayContract(Contract):
                     '"--railway-start"]' in railway
                 and "COPY --chmod=0555 docker/common/env-files.sh /usr/local/bin/layerx-env-files" in railway
                 and "COPY docker/relay-archive/files.tsv /etc/layerx/files.tsv" in railway
-                and "/src/platform/relay_archive/install.sh /opt/layerx/relay_archive/install.sh" in dockerfile,
+                and "/src/services/platform/relay_archive/install.sh /opt/layerx/relay_archive/install.sh" in dockerfile,
                 "Dockerfile railway target is not the last stage starting install.sh --railway-start through the shim")
         require(not re.search(r"^VOLUME", dockerfile, re.M), "Dockerfile declares a VOLUME Railway refuses")
         install = self.INSTALL.read_text()
@@ -1308,7 +1308,7 @@ class RampJournalContract:
                            LAYERX_RAMP_OPERATOR_TOKEN=self.tokens["operator"],
                            LAYERX_RAMP_REFERENCE_BIN=str(self.binary),
                            LAYERX_RAMP_RECEIPT_VERIFIER_CONFIG=str(verifier))
-        journey = subprocess.run([str(ROOT / "platform/ramps/sandbox-journey.sh")], env=environment,
+        journey = subprocess.run([str(ROOT / "services/platform/ramps/sandbox-journey.sh")], env=environment,
                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600)
         require(journey.returncode == 0, "recovered real provider journey or receipt verification failed")
         self.passed("recovered_journey", ["real sandbox on/off ramp done", "independent LayerX receipt verified",

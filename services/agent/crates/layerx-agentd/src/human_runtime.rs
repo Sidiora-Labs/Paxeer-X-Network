@@ -20082,7 +20082,7 @@ mod terminal_recovery_tests {
     #[test]
     fn terminal_recovery_checks_the_authenticated_signed_receipt_reference() {
         let value: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../../platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json"
+            "../../../../../services/platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json"
         ))
         .unwrap_or_else(|error| panic!("committed receipt: {error}"));
         let field = |name: &str| {

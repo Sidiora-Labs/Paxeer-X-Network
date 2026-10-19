@@ -322,7 +322,7 @@ def hosted(work, config, environment, launch, service):
         maximum_age_seconds=3600, maximum_age_sequences=10000, identities=[identity])])
     registry_path = root / 'module-registry.json'
     repo = Path(__file__).resolve().parents[2]
-    bootstrap = (repo / 'platform/hosted/node/bootstrap.sh').read_text().splitlines()
+    bootstrap = (repo / 'services/platform/hosted/node/bootstrap.sh').read_text().splitlines()
     metadata = dict(line.split('=', 1) for line in bootstrap if line.startswith(('ASSET_SYMBOL=', 'ASSET_CURRENCY=', 'ASSET_DECIMALS=')))
     with registry_path.open('wb') as output:
         subprocess.run([str(repo / 'build/bin/layerx-module-registry'), 'generate', '--network-id', '77', '--protocol-version', '3',

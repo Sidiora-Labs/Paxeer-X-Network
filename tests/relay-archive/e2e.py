@@ -129,7 +129,7 @@ class Scenario:
             shutil.copy2(BUILD / "bin" / name, self.bin / name)
         shutil.copy2(BUILD / "tests/relay-archive-sign", self.bin / "sign")
         self.runtime = self.work / "runtime"
-        shutil.copytree(ROOT / "platform/relay_archive", self.runtime,
+        shutil.copytree(ROOT / "services/platform/relay_archive", self.runtime,
                         ignore=shutil.ignore_patterns("__pycache__"))
         for name, seed in (("sequencer", 0x22), ("treasury", 0x11)):
             path = self.work / name
@@ -148,7 +148,7 @@ class Scenario:
             LAYERX_NODE_CHECKPOINT_REGISTRY="0x" + "22" * 20,
             LAYERX_NODE_PAXEER_RPC_ADDRESS="127.0.0.1",
             LAYERX_NODE_PAXEER_RPC_PORT=str(unused_port()))
-        execute(["bash", ROOT / "platform/hosted/node/bootstrap.sh",
+        execute(["bash", ROOT / "services/platform/hosted/node/bootstrap.sh",
                  "--data-dir", self.data, "--run-dir", self.run, "--network-id", "77",
                  "--genesis-metadata", self.work / "metadata",
                  "--sequencer-key", self.work / "sequencer", "--treasury-key", self.work / "treasury",

@@ -21,7 +21,7 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = 'paxeer-x.python-program-http-artifacts.v1'
 TEST = 'native_interfaces::emit_python_program_http_fixture'
-BUILD = ['cargo', 'build', '--locked', '--manifest-path', 'platform/Cargo.toml',
+BUILD = ['cargo', 'build', '--locked', '--manifest-path', 'services/platform/Cargo.toml',
          '-p', 'layerx-platform-agent-boundary', '-p', 'layerx-platform-gateway',
          '-p', 'layerx-platform-identity', '-p', 'layerx-platform-registry',
          '-p', 'layerx-platform-authority', '--bins', '--tests', '--message-format=json']
@@ -173,7 +173,7 @@ def build(cache_path, output):
                 compiled[role].append(event['executable'])
     require(finished and len(executable) == 1 and all(len(paths) == 1 for paths in compiled.values())
             and identity() == source, 'actual source-bound producer and every production executable required')
-    tracked = subprocess.check_output(['git', 'ls-files', '-z', '--', 'platform', 'agent', 'programs', 'include', 'src', 'cmd'], cwd=ROOT)
+    tracked = subprocess.check_output(['git', 'ls-files', '-z', '--', 'services/platform', 'agent', 'programs', 'include', 'src', 'cmd'], cwd=ROOT)
     sources = {}
     for encoded in tracked.split(b'\0'):
         if not encoded:
@@ -186,8 +186,8 @@ def build(cache_path, output):
             sources[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
     value['source'] = source
     value['artifacts']['real-node-tests'] = {'artifact': artifact(executable[0]), 'source_files': {
-        'platform/hosted/agent-boundary/tests/real_node/native_interfaces.rs':
-        artifact(ROOT / 'platform/hosted/agent-boundary/tests/real_node/native_interfaces.rs')['sha256']}}
+        'services/platform/hosted/agent-boundary/tests/real_node/native_interfaces.rs':
+        artifact(ROOT / 'services/platform/hosted/agent-boundary/tests/real_node/native_interfaces.rs')['sha256']}}
     for role, paths in compiled.items():
         value['artifacts'][role] = {'artifact': artifact(paths[0]), 'source_files': sources}
     if value['registry_configuration'] is not None:
@@ -431,7 +431,7 @@ def produce(manifest_path, output, corpus_path, run_verify):
                    'gateway_source_manifest': write(directory / 'gateway-source.json', {
                        'binary_sha256': value['artifacts']['gateway']['artifact']['sha256'],
                        'sources': {relative: artifact(ROOT / relative)['sha256'] for relative in
-                           ('platform/hosted/gateway/src/main.rs', 'platform/hosted/gateway/src/native_call.rs')}}),
+                           ('services/platform/hosted/gateway/src/main.rs', 'services/platform/hosted/gateway/src/native_call.rs')}}),
                    'programs': [row(record) for record in owner['programs']],
                    'refused_call': row(owner['refused_call']), 'unknown_call': row(owner['unknown_call'])}
         fixture_path = write(directory / 'http-fixture.json', fixture)

@@ -15,10 +15,10 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
 MAXIMUM = 1_048_576
 SOURCES = (
-    'platform/hosted/authority/src/human/budget_state.rs',
-    'platform/hosted/authority/src/human.rs',
-    'platform/hosted/authority/src/human/dynamic.rs',
-    'platform/hosted/authority/tests/budget_proof_exports.rs',
+    'services/platform/hosted/authority/src/human/budget_state.rs',
+    'services/platform/hosted/authority/src/human.rs',
+    'services/platform/hosted/authority/src/human/dynamic.rs',
+    'services/platform/hosted/authority/tests/budget_proof_exports.rs',
     'tools/qualification/paxeer-x/budget-proof-exports.py',
 )
 

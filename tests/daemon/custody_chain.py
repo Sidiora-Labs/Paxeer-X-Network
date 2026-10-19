@@ -28,7 +28,7 @@ FORBIDDEN_PORTS = {18545, 19443, 6379}
 CONTRACTS = ('GuarantorBond', 'CheckpointRegistry', 'BetaUsdl',
              'CheckpointChallengeManager', 'LayerXBetaTimelock', 'AssetRegistry', 'LayerXVault', 'WETH')
 SOURCE_PATHS = ('Makefile', 'chain.mk', 'go.mod', 'go.sum', 'rust-toolchain.toml',
-                'src', 'include', 'cmd', 'programs', 'agent', 'platform', 'contracts',
+                'src', 'include', 'cmd', 'programs', 'agent', 'services/platform', 'contracts',
                 'admin', 'consensus', 'custodyproof', 'daemon', 'engine', 'interchain',
                 'layerxproof', 'modules', 'node', 'precompiles', 'ratelimiter', 'rpc',
                 'sdk', 'storage', 'sync', 'types', 'utils', 'wasm', 'wasm-runtime',
@@ -91,7 +91,7 @@ def record_artifacts(build, output):
     revision = git('rev-parse', 'HEAD').decode().strip()
     contracts = build / 'withdraw-contracts/artifacts'
     binaries = {'paxd': build / 'paxd', 'layerx-custody-proof': build / 'bin/layerx-custody-proof',
-                'layerx-paxeer-boundary': ROOT / 'platform/target/debug/layerx-paxeer-boundary',
+                'layerx-paxeer-boundary': ROOT / 'services/platform/target/debug/layerx-paxeer-boundary',
                 'sign-credit': build / 'tests/bridge/sign-credit'}
     def row(path):
         return {'path': str(path.resolve()), 'sha256': file_digest(path)}
@@ -290,7 +290,7 @@ def owned_chain(work, artifacts, custody_genesis=None):
             assert len(selected) == 1, 'one selected sequencer required'
             policy = json.loads((ROOT / 'contracts/config/checkpoint-settlement.json').read_text())
             anchor_file = private / 'anchor-genesis.json'
-            command(sys.executable, 'platform/hosted/paxeer/anchor-genesis.py',
+            command(sys.executable, 'services/platform/hosted/paxeer/anchor-genesis.py',
                     '--network-id', str(custody['params']['network_id']),
                     '--sequencer-id', selected[0]['sequencer_id'],
                     '--sequencer-public-key', selected[0]['public_key'],
@@ -306,7 +306,7 @@ def owned_chain(work, artifacts, custody_genesis=None):
         for name, port in zip(('EVM', 'EVM_WS', 'RPC', 'P2P', 'GRPC', 'GRPC_WEB', 'API'), ports):
             env[f'LAYERX_PAXEER_{name}_PORT'] = str(port)
         with (work / 'paxd-init.log').open('w') as log:
-            command('bash', 'platform/hosted/paxeer/init-chain.sh', env=env, stdout=log, stderr=log)
+            command('bash', 'services/platform/hosted/paxeer/init-chain.sh', env=env, stdout=log, stderr=log)
         genesis_bytes = (chain_home / 'config/genesis.json').read_bytes()
         document = json.loads(genesis_bytes)
         consensus_timeout = document['consensus_params']['timeout']
@@ -316,10 +316,10 @@ def owned_chain(work, artifacts, custody_genesis=None):
         assert consensus_timeout['commit'] == '1000000000'
         assert consensus_timeout['bypass_commit_timeout'] is False
         with (work / 'paxd-reinit.log').open('w') as log:
-            command('bash', 'platform/hosted/paxeer/init-chain.sh', env=env, stdout=log, stderr=log)
+            command('bash', 'services/platform/hosted/paxeer/init-chain.sh', env=env, stdout=log, stderr=log)
         assert (chain_home / 'config/genesis.json').read_bytes() == genesis_bytes
         with (work / 'paxd-reinit-mismatch.log').open('w') as log:
-            refused = subprocess.run(['bash', 'platform/hosted/paxeer/init-chain.sh'], cwd=ROOT,
+            refused = subprocess.run(['bash', 'services/platform/hosted/paxeer/init-chain.sh'], cwd=ROOT,
                 env=env | {'LAYERX_PAXEER_COMMIT_TIMEOUT_NANOSECONDS': '500000000'},
                 stdout=log, stderr=log, check=False)
         assert refused.returncode != 0
@@ -370,8 +370,8 @@ def owned_chain(work, artifacts, custody_genesis=None):
                 'genesis_sha256': hashlib.sha256(genesis_bytes).hexdigest(),
                 'anchor_number': identity['anchor_number'], 'anchor_hash': identity['anchor_hash'],
                 'token_runtime_sha256': hashlib.sha256(bytes.fromhex(runtime.removeprefix('0x'))).hexdigest(),
-                'token_source_sha256': hashlib.sha256((ROOT / 'platform/hosted/paxeer/contracts/BetaUsdl.sol').read_bytes()).hexdigest(),
-                'initializer_sha256': hashlib.sha256((ROOT / 'platform/hosted/paxeer/init-chain.sh').read_bytes()).hexdigest(),
+                'token_source_sha256': hashlib.sha256((ROOT / 'services/platform/hosted/paxeer/contracts/BetaUsdl.sol').read_bytes()).hexdigest(),
+                'initializer_sha256': hashlib.sha256((ROOT / 'services/platform/hosted/paxeer/init-chain.sh').read_bytes()).hexdigest(),
             }
             (work / 'chain-provenance.json').write_text(json.dumps(provenance, sort_keys=True) + '\n')
             yield chain

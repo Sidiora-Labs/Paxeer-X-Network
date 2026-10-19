@@ -18,7 +18,7 @@ ROOT = Path(sys.argv[1]).resolve()
 TASK = '104.33.5'
 GATE = 'tools/paxeer-x/gates/104.33.5.sh'
 BENCH = 'programs/benches/interpreter.rs'
-GUIDE = 'platform/docs/content/guide/programs.md'
+GUIDE = 'services/platform/docs/content/guide/programs.md'
 WORKLOADS = ('arithmetic-store', 'integer-suite', 'bounded-control', 'storage-control-transfer')
 WASM = {'interpreter': ('layerx-programs-interpreter', 'layerx_programs_interpreter'),
         'compiled': ('layerx-interpreter-compiled-equivalent', 'layerx_interpreter_compiled_equivalent')}

@@ -23,7 +23,7 @@ SCHEMA = 'paxeer-x.movement-executor-readiness.v1'
 MANIFEST = Path(os.environ.get('PAXEER_X_MOVEMENT_READINESS_MANIFEST',
                                ROOT / 'human/target/paxeer-x/movement-executor-readiness.json'))
 SOURCES = ['human/Cargo.toml', 'human/Cargo.lock', 'human/crates', 'services/agent/crates',
-           'platform/Cargo.toml', 'platform/Cargo.lock', 'platform/hosted/runtime-clock',
+           'services/platform/Cargo.toml', 'services/platform/Cargo.lock', 'services/platform/hosted/runtime-clock',
            'tools/runtime/run-with-clock.sh']
 CASES = [
     ('probe', 'probe_refuses_a_missing_socket'),
@@ -92,7 +92,7 @@ def build():
     built.update(artifacts(['cargo', 'build', '-p', 'layerx-human-kms', '--bin', 'layerx-human-kms', *human], {
         ('layerx-human-kms', ('bin',), False): 'kms',
     }))
-    built.update(artifacts(['cargo', 'build', '--locked', '--manifest-path', 'platform/Cargo.toml',
+    built.update(artifacts(['cargo', 'build', '--locked', '--manifest-path', 'services/platform/Cargo.toml',
                             '-p', 'layerx-runtime-clock', '--bin', 'layerx-runtime-clock',
                             '--message-format=json'], {
         ('layerx-runtime-clock', ('bin',), False): 'clock',

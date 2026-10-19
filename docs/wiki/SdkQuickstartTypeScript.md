@@ -65,7 +65,7 @@ export function send(
 `lx_requestFunds`.
 
 Hosted human-plane send (quote then commit), as in
-`platform/docs/samples/first-payment-typescript`:
+`services/platform/docs/samples/first-payment-typescript`:
 
 ```ts
 import { ProductionClient, SecretBytes, idempotencyKey } from "@sidiora/layerx-sdk";

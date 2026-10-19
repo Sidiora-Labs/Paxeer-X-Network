@@ -5,7 +5,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 scratch_root=$(mktemp -d)
 trap 'rm -rf -- "$scratch_root"' EXIT
 
-target_dir="$repo_root/platform/target/production-credential-refusal"
+target_dir="$repo_root/services/platform/target/production-credential-refusal"
 CARGO_TARGET_DIR="$target_dir" cargo build \
   --offline \
   --locked \

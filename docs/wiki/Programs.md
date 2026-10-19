@@ -364,9 +364,9 @@ capability tags `ProgramSpend` (9) and `BalanceView` (10) are documented in
 `LXP_PROTOCOL_VERSION_STATE_COMMITMENT = 3`. Occupancy is used by both 2 and 3
 (`lxp_protocol_version_uses_occupancy`). Header default `LXP_PROTOCOL_VERSION`
 is 2. The hosted deployment pins wire protocol 3
-(`platform/hosted/testnet/deployment.yaml:10`,
+(`services/platform/hosted/testnet/deployment.yaml:10`,
 `lxp-wire-protocol-version: "3"`). Beta-cluster genesis writes
-`protocol_version: 3` (`platform/hosted/tests/beta-cluster.sh:794`). Genesis
+`protocol_version: 3` (`services/platform/hosted/tests/beta-cluster.sh:794`). Genesis
 builder accepts protocol 2 or 3 and registers Asset v1 when protocol is 3
 (`cmd/layerx-genesis/lxp_genesis_builder.c:88,152`). Bridge credit
 `validate_credit` requires `activity->protocol_version != 3U` to fail.
@@ -389,8 +389,8 @@ Sources:
 - `src/modules/programs/call.c:1703-1707, 1029`
 - `programs/abi-frozen.sha256`
 - `programs/sdk/c/include/layerx/program.h:10-21`
-- `platform/hosted/testnet/deployment.yaml:10`
-- `platform/hosted/tests/beta-cluster.sh:794`
+- `services/platform/hosted/testnet/deployment.yaml:10`
+- `services/platform/hosted/tests/beta-cluster.sh:794`
 - `cmd/layerx-genesis/lxp_genesis_builder.c:88,152`
 - `src/protocol/lxp_genesis.c:594-598`
 

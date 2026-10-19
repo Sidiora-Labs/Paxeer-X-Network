@@ -18,9 +18,9 @@ def load(name, path):
     return module
 
 
-FEES = load('genesis_fees', 'platform/hosted/node/genesis_fees.py')
+FEES = load('genesis_fees', 'services/platform/hosted/node/genesis_fees.py')
 METADATA = load('lxgb_metadata', 'tests/support/lxgb_metadata.py')
-PREPARE = load('prepare_beta', 'platform/hosted/paxeer/prepare-beta.py')
+PREPARE = load('prepare_beta', 'services/platform/hosted/paxeer/prepare-beta.py')
 ASSET = bytes.fromhex(PREPARE.BETA_ASSET_ID)
 
 
@@ -56,7 +56,7 @@ class WithdrawalGenesisTest(unittest.TestCase):
                 public = Ed25519PrivateKey.from_private_bytes((work / 'treasury').read_bytes()).public_key().public_bytes_raw()
                 original = METADATA.metadata(ASSET, public, os.urandom(32))
                 (work / 'metadata').write_bytes(original)
-                args = ['bash', str(ROOT / 'platform/hosted/node/bootstrap.sh'),
+                args = ['bash', str(ROOT / 'services/platform/hosted/node/bootstrap.sh'),
                         '--data-dir', str(work / 'data'), '--run-dir', str(work / 'run'),
                         '--network-id', '77', '--genesis-metadata', str(work / 'metadata'),
                         '--withdrawal-fee', str(price), '--sequencer-key', str(work / 'sequencer'),

@@ -61,8 +61,8 @@ the registration binding and returns the principal record; the subject is
 derived from the key, so it is idempotent and cannot name another holder's
 principal. `lx_requestFunds` claims one faucet grant for the authenticated
 principal and requires that the named signer key be one the session authorises
-(`platform/hosted/gateway/src/rpc_register.rs`;
-`platform/hosted/gateway/src/rpc_faucet.rs`). The gateway derives the faucet
+(`services/platform/hosted/gateway/src/rpc_register.rs`;
+`services/platform/hosted/gateway/src/rpc_faucet.rs`). The gateway derives the faucet
 idempotency key from the principal, DID, and signer key, so a repeated request
 returns the same grant rather than a second one, and a claim whose funded
 evidence is incomplete is `-32603` rather than a reported success. Both are
@@ -293,17 +293,17 @@ carrying `x-layerx-principal` or `x-layerx-api-key` is refused with
 
 ## Source contract
 
-- `platform/hosted/gateway/openrpc.json` defines the public method contract.
-- `platform/hosted/gateway/src/rpc.rs` dispatches HTTPS JSON-RPC.
-- `platform/hosted/gateway/src/ws.rs` implements subscriptions.
-- `platform/hosted/gateway/src/main.rs` owns routing (`route`), the scope table
+- `services/platform/hosted/gateway/openrpc.json` defines the public method contract.
+- `services/platform/hosted/gateway/src/rpc.rs` dispatches HTTPS JSON-RPC.
+- `services/platform/hosted/gateway/src/ws.rs` implements subscriptions.
+- `services/platform/hosted/gateway/src/main.rs` owns routing (`route`), the scope table
   (`permits`), key authentication, and the request-size bound.
-- `platform/hosted/gateway/src/lib.rs` owns canonical submission verification
+- `services/platform/hosted/gateway/src/lib.rs` owns canonical submission verification
   (`verify_submission`) and the key-id format bound.
-- `platform/hosted/gateway/src/public_reads.rs` serves the unauthenticated REST
+- `services/platform/hosted/gateway/src/public_reads.rs` serves the unauthenticated REST
   read passthroughs `GET /v1/state`, `GET /v1/accounts/{id}/balance`, and
   `GET /v1/dids/{did}/accounts`, and holds the read limiter.
-- `platform/hosted/core/src/public_reads.rs` implements authenticated native
+- `services/platform/hosted/core/src/public_reads.rs` implements authenticated native
   read translation.
 
 [Home](../index.md)

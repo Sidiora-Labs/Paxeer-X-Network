@@ -33,7 +33,7 @@ def main():
     node = work / 'node'
     node.mkdir()
     for name in ('bootstrap.sh', 'data_directory.py', 'genesis_fees.py', 'genesis-modules.conf', 'sequencer-env.sh'):
-        shutil.copy2(ROOT / 'platform/hosted/node' / name, node / name)
+        shutil.copy2(ROOT / 'services/platform/hosted/node' / name, node / name)
     shutil.copy2(ROOT / 'migrations/0007_history_index.sql', work / 'migrations.sql')
     shutil.copy2(ROOT / 'contracts/config/checkpoint-settlement.json', work / 'settlement.json')
     # The real light-client vector: a 223-byte LXBC3 profile and the LXDC3 credit bound to it,
@@ -59,7 +59,7 @@ def main():
     asset = profile[97:129]
     (work / 'metadata').write_bytes(metadata_withdrawal(asset, owner, os.urandom(32), 7))
     validated = subprocess.run(['bash', str(node / 'bootstrap.sh'), '--check-settlement',
-                                str(ROOT / 'platform/hosted/node/tests/fixtures/settlement-configuration.txt')],
+                                str(ROOT / 'services/platform/hosted/node/tests/fixtures/settlement-configuration.txt')],
                                check=True, capture_output=True).stdout
     (work / 'settlement.env').write_bytes(validated)
     ports = []

@@ -26,10 +26,10 @@ COPY --from=build /src/build/bin/layerx-guarantor /usr/local/bin/layerx-guaranto
 COPY --from=build /src/cmd/layerx-guarantor/settlement.py /opt/layerx/guarantor/settlement.py
 COPY --from=build /src/cmd/layerx-guarantor/publication.py /opt/layerx/guarantor/publication.py
 COPY --from=build /src/cmd/layerx-guarantor/authorization.py /opt/layerx/guarantor/authorization.py
-COPY --from=build /src/platform/hosted/human/recipient_binding.py /opt/layerx/human/recipient_binding.py
-COPY --from=build /src/platform/hosted/human/onboarding_socket.py /opt/layerx/human/onboarding_socket.py
-COPY --from=build /src/platform/hosted/human/provision.py /opt/layerx/human/provision.py
-COPY --from=build /src/platform/hosted/human/material.py /src/platform/hosted/human/provision.py /usr/local/lib/layerx-human/
+COPY --from=build /src/services/platform/hosted/human/recipient_binding.py /opt/layerx/human/recipient_binding.py
+COPY --from=build /src/services/platform/hosted/human/onboarding_socket.py /opt/layerx/human/onboarding_socket.py
+COPY --from=build /src/services/platform/hosted/human/provision.py /opt/layerx/human/provision.py
+COPY --from=build /src/services/platform/hosted/human/material.py /src/services/platform/hosted/human/provision.py /usr/local/lib/layerx-human/
 COPY --from=build /src/cmd/layerx-guarantor/requirements.txt /opt/layerx/guarantor/requirements.txt
 RUN python3 -m venv /opt/layerx/guarantor/venv \
     && /opt/layerx/guarantor/venv/bin/pip install --no-cache-dir -r /opt/layerx/guarantor/requirements.txt
@@ -40,19 +40,19 @@ COPY --from=build /src/build/bin/layerxctl /usr/local/bin/layerxctl
 COPY --from=build /src/build/bin/layerx-module-registry /usr/local/bin/layerx-module-registry
 COPY --from=build /src/migrations/0007_history_index.sql /opt/layerx/migrations/0007_history_index.sql
 COPY --from=build /src/contracts/config/checkpoint-settlement.json /opt/layerx/checkpoint-settlement.json
-COPY --from=build /src/platform/hosted/node/bootstrap.sh /opt/layerx/bootstrap.sh
-COPY --from=build /src/platform/hosted/node/genesis-modules.conf /opt/layerx/genesis-modules.conf
-COPY --from=build /src/platform/hosted/node/genesis_fees.py /opt/layerx/genesis_fees.py
-COPY --from=build /src/platform/hosted/node/genesis-module-fees.json /opt/layerx/genesis-module-fees.json
-COPY --from=build /src/platform/hosted/node/data_directory.py /opt/layerx/data_directory.py
-COPY --from=build /src/platform/hosted/node/supervisor.sh /opt/layerx/supervisor.sh
-COPY --from=build /src/platform/hosted/node/reset_state.py /opt/layerx/reset_state.py
-COPY --from=build /src/platform/hosted/node/guarantor.sh /opt/layerx/guarantor.sh
-COPY --from=build /src/platform/hosted/node/checkpoint-authority.py /opt/layerx/checkpoint-authority.py
+COPY --from=build /src/services/platform/hosted/node/bootstrap.sh /opt/layerx/bootstrap.sh
+COPY --from=build /src/services/platform/hosted/node/genesis-modules.conf /opt/layerx/genesis-modules.conf
+COPY --from=build /src/services/platform/hosted/node/genesis_fees.py /opt/layerx/genesis_fees.py
+COPY --from=build /src/services/platform/hosted/node/genesis-module-fees.json /opt/layerx/genesis-module-fees.json
+COPY --from=build /src/services/platform/hosted/node/data_directory.py /opt/layerx/data_directory.py
+COPY --from=build /src/services/platform/hosted/node/supervisor.sh /opt/layerx/supervisor.sh
+COPY --from=build /src/services/platform/hosted/node/reset_state.py /opt/layerx/reset_state.py
+COPY --from=build /src/services/platform/hosted/node/guarantor.sh /opt/layerx/guarantor.sh
+COPY --from=build /src/services/platform/hosted/node/checkpoint-authority.py /opt/layerx/checkpoint-authority.py
 COPY --from=build /src/precompiles/layerxanchor/abi.json /opt/layerx/precompiles/layerxanchor/abi.json
 COPY --from=build /src/precompiles/layerxcustody/abi.json /opt/layerx/precompiles/layerxcustody/abi.json
 COPY --from=build /src/precompiles/addr/abi.json /opt/layerx/precompiles/addr/abi.json
-COPY --from=build /src/platform/hosted/node/signer /opt/layerx/signer
+COPY --from=build /src/services/platform/hosted/node/signer /opt/layerx/signer
 RUN chmod 0755 /opt/layerx/bootstrap.sh /opt/layerx/supervisor.sh /opt/layerx/guarantor.sh
 USER 4020:4020
 ENTRYPOINT ["/opt/layerx/supervisor.sh"]

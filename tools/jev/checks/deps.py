@@ -15,7 +15,7 @@ from tools.jev.report import Finding, Report, git_revision, route_for
 
 CHECK_NAME = "deps"
 REPO_ROOT = Path(__file__).resolve().parents[3]
-WORKSPACES = ("agent", "human", "platform", "programs", "interop")
+WORKSPACES = ("agent", "human", "services/platform", "programs", "interop")
 MANIFEST = "Cargo.toml"
 LOCK_FILE = "Cargo.lock"
 PRODUCTION = "production"

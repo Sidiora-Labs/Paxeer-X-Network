@@ -81,8 +81,8 @@ def comet_chain(directory, blueprint_code=False):
     genesis["validators"] = [{"power": "7000000000", "pub_key": validator}]
     genesis["app_state"]["staking"]["params"]["max_voting_power_ratio"] = "1.000000000000000000"
     if blueprint_code:
-        runtime = unhex(command("forge", "inspect", "--contracts", "platform/hosted/paxeer/contracts",
-                               "platform/hosted/paxeer/contracts/BetaUsdl.sol:BetaUsdl", "deployedBytecode"))
+        runtime = unhex(command("forge", "inspect", "--contracts", "services/platform/hosted/paxeer/contracts",
+                               "services/platform/hosted/paxeer/contracts/BetaUsdl.sol:BetaUsdl", "deployedBytecode"))
         genesis["app_state"]["evm"]["codes"] = [{"address": PERSISTENT_BLUEPRINT,
                                                   "code": base64.b64encode(runtime).decode()}]
     genesis_path.write_text(json.dumps(genesis))
@@ -206,7 +206,7 @@ class DisposableCustody(unittest.TestCase):
         # Custody is the native layerxcustody module behind the precompile at 0x…1013, so nothing
         # custodial is deployed here: the only contract the disposable chain still needs is the
         # BetaUsdl runtime init-chain.sh writes into genesis.
-        command('forge', 'build', 'platform/hosted/paxeer/contracts/BetaUsdl.sol',
+        command('forge', 'build', 'services/platform/hosted/paxeer/contracts/BetaUsdl.sol',
                 '--threads', str(threads))
         cls.artifacts = ROOT / 'build/forge-artifacts'
 
@@ -304,7 +304,7 @@ class DisposableCustody(unittest.TestCase):
             authority = ed25519.Ed25519PrivateKey.generate().public_key().public_bytes(
                 Encoding.Raw, PublicFormat.Raw)
             custody_genesis = directory / 'custody-genesis.json'
-            command('python3', str(ROOT / 'platform/hosted/paxeer/custody-genesis.py'),
+            command('python3', str(ROOT / 'services/platform/hosted/paxeer/custody-genesis.py'),
                     '--network-id', '402',
                     '--sequencer-id', '0x' + hashlib.sha256(sequencer).hexdigest(),
                     '--sequencer-public-key', '0x' + sequencer.hex(),

@@ -16,7 +16,7 @@ RUN rustup show active-toolchain \
     && test -x build/bin/layerx-guarantor && test -x build/bin/layerxd && test -x build/bin/layerx-genesis-build \
     && test -x build/bin/layerx-handover && test -x build/bin/layerxctl && test -x build/bin/layerx-module-registry \
     && test -f programs/target/release/liblayerx_programs_sandbox.a
-RUN cargo build --locked --release --manifest-path platform/Cargo.toml \
+RUN cargo build --locked --release --manifest-path services/platform/Cargo.toml \
         -p layerx-platform-core -p layerx-platform-authority -p layerx-runtime-clock -p layerx-platform-agent-boundary \
         -p layerx-platform-paxeer-boundary -p layerx-oracle-feeder
 RUN CARGO_TARGET_DIR=/src/.lane-target cargo build --locked --manifest-path services/interop/Cargo.toml --release \
@@ -30,7 +30,7 @@ RUN cargo build --locked --release --manifest-path human/Cargo.toml -p layerx-hu
 RUN make LXP_REVISION="$LXP_REVISION" layerx-archive-codec && test -x build/bin/layerx-archive-codec
 # The value loop of tools/bringup/value-loop.sh (task 1.6): the node probe and the credit signer.
 RUN make LXP_REVISION="$LXP_REVISION" build/tests/bridge/sign-credit && test -x build/tests/bridge/sign-credit
-RUN cargo build --locked --release --manifest-path platform/hosted/node/tests/probe/Cargo.toml
+RUN cargo build --locked --release --manifest-path services/platform/hosted/node/tests/probe/Cargo.toml
 
 # The light credit of tools/bringup/value-loop.sh and the light profile of
 # tools/bringup/kernel-genesis.sh (task 1.6): the Go custody proof tool.
@@ -83,7 +83,7 @@ artifacts = {
 artifacts["layerxctl"] = ("build/bin/layerxctl", [src + "/cmd/layerxctl/target/release/layerxctl.d"], ["Makefile"], None)
 for name in ("layerx-core-boundary", "layerx-receipt-authority", "layerx-runtime-clock",
              "layerx-agent-boundary", "layerx-paxeer-boundary"):
-    artifacts[name] = ("platform/target/release/" + name, [src + "/platform/target/release/" + name + ".d"], [], None)
+    artifacts[name] = ("services/platform/target/release/" + name, [src + "/services/platform/target/release/" + name + ".d"], [], None)
 for name in ("layerx-mirror-signer", "layerx-mirror-publisher", "layerx-mirror-verify"):
     artifacts[name] = (".lane-target/release/" + name, [src + "/.lane-target/release/" + name + ".d"], [], None)
 artifacts["layerx-custody-proof"] = ("build/custody-proof/layerx-custody-proof", [], ["Makefile", "go.mod", "go.sum"],
@@ -348,29 +348,29 @@ for name, record in artifacts.items():
 PY_VERIFY
 COPY cmd/layerx-guarantor/settlement.py cmd/layerx-guarantor/publication.py \
      cmd/layerx-guarantor/authorization.py /opt/layerx/guarantor/
-COPY platform/hosted/human/recipient_binding.py platform/hosted/human/onboarding_socket.py \
-     platform/hosted/human/provision.py /opt/layerx/human/
+COPY services/platform/hosted/human/recipient_binding.py services/platform/hosted/human/onboarding_socket.py \
+     services/platform/hosted/human/provision.py /opt/layerx/human/
 COPY migrations/0007_history_index.sql /opt/layerx/migrations/0007_history_index.sql
 COPY contracts/config/checkpoint-settlement.json /opt/layerx/checkpoint-settlement.json
-COPY platform/hosted/node/bootstrap.sh platform/hosted/node/supervisor.sh \
-     platform/hosted/node/sequencer-env.sh platform/hosted/node/genesis-modules.conf \
-     platform/hosted/node/genesis_fees.py platform/hosted/node/genesis-module-fees.json \
-     platform/hosted/node/data_directory.py platform/hosted/node/guarantor.sh \
-     platform/hosted/node/checkpoint-authority.py /opt/layerx/
-COPY platform/hosted/node/generation_client.py platform/hosted/node/generation_transport.py /opt/layerx/node/
+COPY services/platform/hosted/node/bootstrap.sh services/platform/hosted/node/supervisor.sh \
+     services/platform/hosted/node/sequencer-env.sh services/platform/hosted/node/genesis-modules.conf \
+     services/platform/hosted/node/genesis_fees.py services/platform/hosted/node/genesis-module-fees.json \
+     services/platform/hosted/node/data_directory.py services/platform/hosted/node/guarantor.sh \
+     services/platform/hosted/node/checkpoint-authority.py /opt/layerx/
+COPY services/platform/hosted/node/generation_client.py services/platform/hosted/node/generation_transport.py /opt/layerx/node/
 COPY precompiles/layerxanchor/abi.json /opt/layerx/precompiles/layerxanchor/abi.json
-COPY platform/hosted/node/signer /opt/layerx/signer
-COPY platform/hosted/paxeer/evm.py /opt/layerx/paxeer/evm.py
-COPY platform/hosted/tests/publication-policy.py /opt/layerx/publication-policy.py
-COPY platform/relay_archive/__init__.py platform/relay_archive/runtime.py \
-     platform/relay_archive/store.py platform/relay_archive/protocol.py \
-     platform/relay_archive/forward.py platform/relay_archive/peers.py /opt/layerx/relay_archive/
-COPY --chmod=0555 platform/relay_archive/install.sh /opt/layerx/relay_archive/install.sh
-COPY platform/hosted/human/provision.py platform/hosted/human/owner_native.py platform/hosted/human/owner_kms.py \
-     platform/hosted/human/onboarding_socket.py platform/hosted/human/onboarding_bootstrap.py \
-     platform/hosted/human/onboarding_material.py platform/hosted/human/material.py \
-     platform/hosted/human/recipient_binding.py platform/hosted/human/recipient_check.py /usr/local/lib/layerx-human/
-COPY --from=build --chmod=0555 /src/platform/target/release/layerx-oracle-feeder /usr/local/bin/layerx-oracle-feeder
+COPY services/platform/hosted/node/signer /opt/layerx/signer
+COPY services/platform/hosted/paxeer/evm.py /opt/layerx/paxeer/evm.py
+COPY services/platform/hosted/tests/publication-policy.py /opt/layerx/publication-policy.py
+COPY services/platform/relay_archive/__init__.py services/platform/relay_archive/runtime.py \
+     services/platform/relay_archive/store.py services/platform/relay_archive/protocol.py \
+     services/platform/relay_archive/forward.py services/platform/relay_archive/peers.py /opt/layerx/relay_archive/
+COPY --chmod=0555 services/platform/relay_archive/install.sh /opt/layerx/relay_archive/install.sh
+COPY services/platform/hosted/human/provision.py services/platform/hosted/human/owner_native.py services/platform/hosted/human/owner_kms.py \
+     services/platform/hosted/human/onboarding_socket.py services/platform/hosted/human/onboarding_bootstrap.py \
+     services/platform/hosted/human/onboarding_material.py services/platform/hosted/human/material.py \
+     services/platform/hosted/human/recipient_binding.py services/platform/hosted/human/recipient_check.py /usr/local/lib/layerx-human/
+COPY --from=build --chmod=0555 /src/services/platform/target/release/layerx-oracle-feeder /usr/local/bin/layerx-oracle-feeder
 COPY --chmod=0555 tools/bringup/kernel-genesis.sh /opt/layerx/kernel-genesis.sh
 COPY --chmod=0555 docker/kernel/init.sh /usr/local/bin/kernel-init
 RUN chmod 0555 /opt/layerx/bootstrap.sh /opt/layerx/supervisor.sh /opt/layerx/guarantor.sh
@@ -391,23 +391,23 @@ COPY --from=build /src/build/bin/layerx-guarantor /src/build/bin/layerxd /src/bu
      /src/build/bin/layerx-handover /src/build/bin/layerx-module-registry /usr/local/bin/
 COPY --from=build /src/cmd/layerx-guarantor/settlement.py /src/cmd/layerx-guarantor/publication.py \
      /src/cmd/layerx-guarantor/authorization.py /opt/layerx/guarantor/
-COPY --from=build /src/platform/hosted/human/recipient_binding.py /src/platform/hosted/human/onboarding_socket.py \
-     /src/platform/hosted/human/provision.py /opt/layerx/human/
+COPY --from=build /src/services/platform/hosted/human/recipient_binding.py /src/services/platform/hosted/human/onboarding_socket.py \
+     /src/services/platform/hosted/human/provision.py /opt/layerx/human/
 COPY --from=build /src/migrations/0007_history_index.sql /opt/layerx/migrations/0007_history_index.sql
 COPY --from=build /src/contracts/config/checkpoint-settlement.json /opt/layerx/checkpoint-settlement.json
-COPY --from=build /src/platform/hosted/node/bootstrap.sh /src/platform/hosted/node/genesis-modules.conf \
-     /src/platform/hosted/node/genesis_fees.py /src/platform/hosted/node/genesis-module-fees.json \
-     /src/platform/hosted/node/data_directory.py /src/platform/hosted/node/supervisor.sh \
-     /src/platform/hosted/node/guarantor.sh /src/platform/hosted/node/checkpoint-authority.py /opt/layerx/
-COPY --from=build /src/platform/hosted/node/generation_client.py /src/platform/hosted/node/generation_transport.py /opt/layerx/node/
+COPY --from=build /src/services/platform/hosted/node/bootstrap.sh /src/services/platform/hosted/node/genesis-modules.conf \
+     /src/services/platform/hosted/node/genesis_fees.py /src/services/platform/hosted/node/genesis-module-fees.json \
+     /src/services/platform/hosted/node/data_directory.py /src/services/platform/hosted/node/supervisor.sh \
+     /src/services/platform/hosted/node/guarantor.sh /src/services/platform/hosted/node/checkpoint-authority.py /opt/layerx/
+COPY --from=build /src/services/platform/hosted/node/generation_client.py /src/services/platform/hosted/node/generation_transport.py /opt/layerx/node/
 COPY --from=build /src/precompiles/layerxanchor/abi.json /opt/layerx/precompiles/layerxanchor/abi.json
-COPY --from=build /src/platform/hosted/node/signer /opt/layerx/signer
-COPY --from=build /src/platform/hosted/paxeer/evm.py /opt/layerx/paxeer/evm.py
-COPY --from=build /src/platform/hosted/tests/publication-policy.py /opt/layerx/publication-policy.py
+COPY --from=build /src/services/platform/hosted/node/signer /opt/layerx/signer
+COPY --from=build /src/services/platform/hosted/paxeer/evm.py /opt/layerx/paxeer/evm.py
+COPY --from=build /src/services/platform/hosted/tests/publication-policy.py /opt/layerx/publication-policy.py
 RUN chmod 0755 /opt/layerx/bootstrap.sh /opt/layerx/supervisor.sh /opt/layerx/guarantor.sh
-COPY --from=build /src/platform/target/release/layerx-core-boundary /src/platform/target/release/layerx-receipt-authority \
-     /src/platform/target/release/layerx-runtime-clock /src/platform/target/release/layerx-agent-boundary \
-     /src/platform/target/release/layerx-paxeer-boundary /usr/local/bin/
+COPY --from=build /src/services/platform/target/release/layerx-core-boundary /src/services/platform/target/release/layerx-receipt-authority \
+     /src/services/platform/target/release/layerx-runtime-clock /src/services/platform/target/release/layerx-agent-boundary \
+     /src/services/platform/target/release/layerx-paxeer-boundary /usr/local/bin/
 COPY --from=build /src/.lane-target/release/layerx-mirror-publisher /src/.lane-target/release/layerx-mirror-verify \
      /src/.lane-target/release/layerx-mirror-signer /usr/local/bin/
 COPY --from=build /src/human/target/release/layerx-human-service /src/human/target/release/layerx-human-components \
@@ -416,23 +416,23 @@ COPY --from=build /src/human/target/release/layerx-human-service /src/human/targ
      /src/human/target/release/layerx-human-security-provider /src/human/target/release/layerx-human-movement-provider \
      /src/agent/target/release/layerx-agentd /src/agent/target/release/layerx-mcp /usr/local/bin/
 COPY --from=build /src/cmd/layerxctl/target/release/layerxctl /usr/local/bin/layerxctl
-COPY platform/hosted/human/provision.py platform/hosted/human/owner_native.py platform/hosted/human/owner_kms.py \
-     platform/hosted/human/onboarding_socket.py platform/hosted/human/onboarding_bootstrap.py \
-     platform/hosted/human/onboarding_material.py platform/hosted/human/material.py \
-     platform/hosted/human/recipient_binding.py platform/hosted/human/recipient_check.py /usr/local/lib/layerx-human/
+COPY services/platform/hosted/human/provision.py services/platform/hosted/human/owner_native.py services/platform/hosted/human/owner_kms.py \
+     services/platform/hosted/human/onboarding_socket.py services/platform/hosted/human/onboarding_bootstrap.py \
+     services/platform/hosted/human/onboarding_material.py services/platform/hosted/human/material.py \
+     services/platform/hosted/human/recipient_binding.py services/platform/hosted/human/recipient_check.py /usr/local/lib/layerx-human/
 COPY --chmod=0555 docker/human-service/entrypoint.sh /usr/local/bin/human-entrypoint
 # The relay archive origin of docker/kernel/init.sh (task 4.6): the codec, the
 # runtime modules and install.sh --config-only that renders its config.
 COPY --from=build /src/build/bin/layerx-archive-codec /usr/local/bin/layerx-archive-codec
-COPY --from=build /src/platform/relay_archive/__init__.py /src/platform/relay_archive/runtime.py \
-     /src/platform/relay_archive/store.py /src/platform/relay_archive/protocol.py \
-     /src/platform/relay_archive/forward.py /src/platform/relay_archive/peers.py /opt/layerx/relay_archive/
-COPY --from=build --chmod=0555 /src/platform/relay_archive/install.sh /opt/layerx/relay_archive/install.sh
+COPY --from=build /src/services/platform/relay_archive/__init__.py /src/services/platform/relay_archive/runtime.py \
+     /src/services/platform/relay_archive/store.py /src/services/platform/relay_archive/protocol.py \
+     /src/services/platform/relay_archive/forward.py /src/services/platform/relay_archive/peers.py /opt/layerx/relay_archive/
+COPY --from=build --chmod=0555 /src/services/platform/relay_archive/install.sh /opt/layerx/relay_archive/install.sh
 # The value loop of tools/bringup/value-loop.sh (task 1.6).
-COPY --from=build /src/platform/hosted/node/tests/probe/target/release/layerx-node-probe \
+COPY --from=build /src/services/platform/hosted/node/tests/probe/target/release/layerx-node-probe \
      /src/build/tests/bridge/sign-credit /usr/local/bin/
 COPY --from=custody-proof /src/build/bin/layerx-custody-proof /usr/local/bin/layerx-custody-proof
-COPY --from=build /src/platform/target/release/layerx-oracle-feeder /usr/local/bin/layerx-oracle-feeder
+COPY --from=build /src/services/platform/target/release/layerx-oracle-feeder /usr/local/bin/layerx-oracle-feeder
 COPY --chmod=0555 tools/bringup/kernel-genesis.sh /opt/layerx/kernel-genesis.sh
 COPY --chmod=0555 docker/kernel/init.sh /usr/local/bin/kernel-init
 ENTRYPOINT ["/usr/local/bin/kernel-init"]

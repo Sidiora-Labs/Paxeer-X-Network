@@ -54,7 +54,7 @@ printf 'domain-check: Go domain tests\n'
 go test ./modules/pricefeed/... ./precompiles/pricefeed/...
 
 printf 'domain-check: Rust crate tests (all targets)\n'
-cargo test --locked --manifest-path platform/Cargo.toml -p layerx-oracle-feeder --all-targets
+cargo test --locked --manifest-path services/platform/Cargo.toml -p layerx-oracle-feeder --all-targets
 
 printf 'domain-check: packaging\n'
 bash "$SCRIPT_DIR/packaging-check.sh"

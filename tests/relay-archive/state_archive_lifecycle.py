@@ -18,7 +18,7 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[2]
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "tests/support"))
-sys.path.insert(0, str(ROOT / "platform/relay_archive"))
+sys.path.insert(0, str(ROOT / "services/platform/relay_archive"))
 from lxgb_metadata import metadata
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -216,12 +216,12 @@ class Scenario:
         deployer = keys / "deployer.key"
         deployer.write_text("0x" + os.urandom(32).hex())
         deployer.chmod(0o600)
-        address = execute(["python3", ROOT / "platform/hosted/paxeer/evm.py", "address", deployer]).stdout.decode().strip()
+        address = execute(["python3", ROOT / "services/platform/hosted/paxeer/evm.py", "address", deployer]).stdout.decode().strip()
         public = Ed25519PrivateKey.from_private_bytes(SEQUENCER_SEED).public_key().public_bytes(
             serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
         self.sequencer_id = hashlib.sha256(("layerx-sequencer:" + public).encode()).hexdigest()
         policy = json.loads((ROOT / "contracts/config/checkpoint-settlement.json").read_text())
-        execute(["python3", ROOT / "platform/hosted/paxeer/anchor-genesis.py", "--network-id", NETWORK_ID,
+        execute(["python3", ROOT / "services/platform/hosted/paxeer/anchor-genesis.py", "--network-id", NETWORK_ID,
                  "--sequencer-id", self.sequencer_id, "--sequencer-public-key", public,
                  "--authority-evm", address, "--paxeer-chain-id", PAXEER_CHAIN_ID,
                  "--threshold", policy["finality_policy"]["certificate_threshold"],
@@ -236,7 +236,7 @@ class Scenario:
                          LAYERX_PAXEER_COMMIT_TIMEOUT_NANOSECONDS="1000000000")
         ports = {name: unused_port() for name in ("EVM", "EVM_WS", "RPC", "P2P", "GRPC", "GRPC_WEB", "API")}
         chain_env.update({f"LAYERX_PAXEER_{name}_PORT": str(port) for name, port in ports.items()})
-        execute(["bash", ROOT / "platform/hosted/paxeer/init-chain.sh"], env=chain_env, timeout=180)
+        execute(["bash", ROOT / "services/platform/hosted/paxeer/init-chain.sh"], env=chain_env, timeout=180)
         self.rpc_url = f"http://127.0.0.1:{ports['EVM']}"
         chain = self.start("paxeer-chain", [self.paxd, "start", "--home", self.work / "chain",
                                             "--consensus.create-empty-blocks-interval=1s"], env=chain_env)
@@ -253,7 +253,7 @@ class Scenario:
             shutil.copy2(path, self.bin / name)
             (self.bin / name).chmod(0o755)
         self.runtime = self.work / "runtime"
-        shutil.copytree(ROOT / "platform/relay_archive", self.runtime,
+        shutil.copytree(ROOT / "services/platform/relay_archive", self.runtime,
                         ignore=shutil.ignore_patterns("__pycache__"))
         for name, seed in (("sequencer", SEQUENCER_SEED), ("treasury", bytes([0x11]) * 32)):
             path = self.work / name
@@ -268,7 +268,7 @@ class Scenario:
         environment = dict(os.environ,
                            LAYERX_NODE_PAXEER_CHAIN_ID=str(PAXEER_CHAIN_ID),
                            LAYERX_NODE_PAXEER_RPC_URL=self.rpc_url)
-        execute(["bash", ROOT / "platform/hosted/node/bootstrap.sh",
+        execute(["bash", ROOT / "services/platform/hosted/node/bootstrap.sh",
                  "--data-dir", self.data, "--run-dir", self.run_dir, "--network-id", str(NETWORK_ID),
                  "--genesis-metadata", self.work / "metadata",
                  "--sequencer-key", self.work / "sequencer", "--treasury-key", self.work / "treasury",
@@ -356,7 +356,7 @@ class Scenario:
     def start_sequencer(self):
         script = 'set -e; source "$1"; layerx_sequencer_environment "$2"; exec "$3" --serve "$4"'
         return self.start("native-sequencer", ["bash", "-c", script, "state-archive-lifecycle",
-                                               ROOT / "platform/hosted/node/sequencer-env.sh",
+                                               ROOT / "services/platform/hosted/node/sequencer-env.sh",
                                                self.data / "sequencer.env", self.bin / "layerxd",
                                                self.data / "sequencer.conf"])
 

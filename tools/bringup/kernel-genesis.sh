@@ -335,7 +335,7 @@ PYMETA
 	public_values
 
 	# The treasury signer's recipient-binding policy and the guarantor's
-	# publication authorization, in the shapes platform/hosted/tests/publication-policy.py
+	# publication authorization, in the shapes services/platform/hosted/tests/publication-policy.py
 	# writes for the beta cluster, with the kernel's socket paths and uids.
 	printf '{"asset_id": "%s", "network_id": %s, "recipient": "%s", "version": 1}\n' "$pax" "$network_id" "$recipient" \
 		>"$keys/publication/binding-policy.json"
@@ -501,7 +501,7 @@ def parameter(key, value):
     return u(7, 2) + key.encode().ljust(32, b'\0') + u(value, 32)
 
 
-# The request layout platform/hosted/node/bootstrap.sh writes: the module
+# The request layout services/platform/hosted/node/bootstrap.sh writes: the module
 # enable rows, the fee authority and parameter version rows, the guarantors,
 # the kernel asset and the beta fee and demand constants, then the metadata.
 request = b'LXGB' + b'\x02' + u(3, 2) + u(network, 4) + u(timestamp, 8) + u(2 + len(modules), 2)

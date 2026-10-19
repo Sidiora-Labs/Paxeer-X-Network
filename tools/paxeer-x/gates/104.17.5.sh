@@ -16,7 +16,7 @@ def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def git(*args):return subprocess.check_output(['git','--no-optional-locks',*args],cwd=ROOT,text=True).strip()
 def sources():
  paths=subprocess.check_output(['git','ls-files','-z'],cwd=ROOT).split(b'\0')
- return {os.fsdecode(path):sha(ROOT/os.fsdecode(path)) for path in paths if path and not any(part.startswith(b'.env') for part in path.split(b'/')) and (path.startswith((b'platform/',b'services/agent/crates/')) or path==b'tools/paxeer-x/gates/104.17.5.sh')}
+ return {os.fsdecode(path):sha(ROOT/os.fsdecode(path)) for path in paths if path and not any(part.startswith(b'.env') for part in path.split(b'/')) and (path.startswith((b'services/platform/',b'services/agent/crates/')) or path==b'tools/paxeer-x/gates/104.17.5.sh')}
 def run(argv,label,timeout=600,env=None):
  with (OUT/(label+'.log')).open('w') as log:
   result=subprocess.run(argv,cwd=ROOT,stdout=log,stderr=subprocess.STDOUT,timeout=timeout,env=env)
@@ -36,7 +36,7 @@ def build():
  before=sources();env=dict(os.environ,PATH='/root/lx-toolchains/node24/bin:/root/.cargo/bin:'+os.environ.get('PATH',''),RUSTUP_TOOLCHAIN='1.91.1',CARGO_BUILD_JOBS='2',CARGO_TARGET_DIR=str(TARGET))
  with Path('/root/lx-cargo/platform-tooling.lock').open('a') as lock:
   fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-  raw=run([CARGO,'test','--locked','--manifest-path','platform/Cargo.toml','-p','layerx-platform-webhooks','-p','layerx-platform-dashboard','--test','plain_listener','--no-run','--message-format=json'],'rust-build',env=env)
+  raw=run([CARGO,'test','--locked','--manifest-path','services/platform/Cargo.toml','-p','layerx-platform-webhooks','-p','layerx-platform-dashboard','--test','plain_listener','--no-run','--message-format=json'],'rust-build',env=env)
   artifacts=[]
   for line in raw.splitlines():
    try:row=json.loads(line)
@@ -49,7 +49,7 @@ def build():
      artifacts.append({'original':str(source),'path':str(captured),'sha256':sha(captured),'name':name,'kind':kind})
   require(sum(row['name']=='plain_listener' for row in artifacts)==2,'both genuine listener corpora required')
   require({row['name'] for row in artifacts}>={'layerx-webhooks','layerx-dashboard','verify_delivery'},'actual production executables required')
-  run(['/root/lx-toolchains/node24/bin/npm','--prefix','platform/hosted/dashboard/web','run','build'],'dashboard-build',env=env)
+  run(['/root/lx-toolchains/node24/bin/npm','--prefix','services/platform/hosted/dashboard/web','run','build'],'dashboard-build',env=env)
   require(before==sources(),'source changed during compilation')
   (OUT/'manifest.json').write_text(json.dumps({'revision':git('rev-parse','HEAD'),'sources':before,'artifacts':artifacts},indent=2)+'\n')
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -120,8 +120,8 @@ def verify():
  for row in manifest['artifacts']:
   if row['name']=='plain_listener':
    output=run([row['path'],'--test-threads=1'],Path(row['path']).parent.name+'-listeners',180);match=re.search(r'test result: ok\. (\d+) passed; 0 failed; 0 ignored; 0 measured; 0 filtered out',output);require(match is not None,'complete retained listener corpus required');count+=int(match[1])
- run([NODE,'platform/hosted/dashboard/web/tests/ui-contract.mjs'],'dashboard-ui-contract',30);count+=1
- output=run([NODE,'--experimental-strip-types','platform/hosted/dashboard/web/tests/evidence-decoding.mjs'],'dashboard-evidence',30);match=re.search(r'dashboard evidence refusals: (\d+) passed',output);require(match is not None,'evidence refusal corpus required');count+=int(match[1])
+ run([NODE,'services/platform/hosted/dashboard/web/tests/ui-contract.mjs'],'dashboard-ui-contract',30);count+=1
+ output=run([NODE,'--experimental-strip-types','services/platform/hosted/dashboard/web/tests/evidence-decoding.mjs'],'dashboard-evidence',30);match=re.search(r'dashboard evidence refusals: (\d+) passed',output);require(match is not None,'evidence refusal corpus required');count+=int(match[1])
  runtime();count+=1;print(f'PAXEER_X_GATE tests={count} skipped=0')
 try:
  require(sys.argv[1:] in ([],['--build']),'unknown selector argument')

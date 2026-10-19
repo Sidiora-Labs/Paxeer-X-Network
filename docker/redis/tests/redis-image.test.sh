@@ -12,7 +12,7 @@ fail() {
 	exit 1
 }
 
-for toml in human/wallet/deploy/redis.toml platform/hosted/internal/redis.toml; do
+for toml in human/wallet/deploy/redis.toml services/platform/hosted/internal/redis.toml; do
 	git -C "$root" show "$base:$toml" >"$work/fly.toml" || fail "cannot read $toml at $base"
 	python3 - "$work/fly.toml" "$dir/files.tsv" "$toml" <<'PY' || fail "files.tsv does not cover $toml"
 import sys, tomllib

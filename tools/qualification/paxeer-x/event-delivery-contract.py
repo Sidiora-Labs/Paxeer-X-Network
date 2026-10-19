@@ -723,7 +723,7 @@ def secret_scan(results, work, secrets, responses, exclude):
 
 
 def env_init_enrollment(results):
-    init = (ROOT / 'platform/hosted/internal/env-init.sh').read_text()
+    init = (ROOT / 'services/platform/hosted/internal/env-init.sh').read_text()
     results.check('env init exports the enrollment key of every source group',
                   'LAYERX_EVENTS_ENROLLMENT_KEY_FILE=' in init, 'env-init.sh')
     results.check('env init no longer writes a legacy flat credential map',
@@ -1291,7 +1291,7 @@ def roles_webhook_ingress_roles(manifest, results):
     
     
     def wiring(results):
-        fly = tomllib.loads((ROOT / 'platform/hosted/webhooks/fly.toml').read_text())
+        fly = tomllib.loads((ROOT / 'services/platform/hosted/webhooks/fly.toml').read_text())
         files = {entry['secret_name']: entry.get('processes') for entry in fly.get('files', [])}
         for name in INGRESS_SECRETS:
             results.check(f'fly mounts {name} only into ingress', files.get(name) == ['ingress'], files.get(name))
@@ -1305,7 +1305,7 @@ def roles_webhook_ingress_roles(manifest, results):
         role_variables = [name for name in fly.get('env', {}) if name.endswith(
             ('SOURCE_TRIGGER_TOKEN_FILE', 'OPERATOR_TOKEN_FILE', 'IDENTITY_TOKEN_FILE', 'INGRESS_CLIENT_CA_DER'))]
         results.check('fly shared env carries no role credential path', not role_variables, role_variables)
-        init = (ROOT / 'platform/hosted/webhooks/env-init.sh').read_text()
+        init = (ROOT / 'services/platform/hosted/webhooks/env-init.sh').read_text()
         public, _, ingress = init.partition('\ningress)\n')
         results.check('env init public role is public and reads only the identity token',
                       'LAYERX_WEBHOOKS_ROLE=public' in public and 'IDENTITY_TOKEN_FILE' in public
@@ -1314,7 +1314,7 @@ def roles_webhook_ingress_roles(manifest, results):
                       'LAYERX_WEBHOOKS_ROLE=ingress' in ingress and 'LAYERX_WEBHOOKS_LISTENER=tls' in ingress
                       and 'LAYERX_WEBHOOKS_INGRESS_CLIENT_CA_DER=/run/layerx/ca/internal.der' in ingress
                       and 'IDENTITY_TOKEN_FILE' not in ingress, 'ingress branch')
-        documents = (ROOT / 'platform/hosted/webhooks/deployment.yaml').read_text().split('\n---\n')
+        documents = (ROOT / 'services/platform/hosted/webhooks/deployment.yaml').read_text().split('\n---\n')
         deployments = {}
         for document in documents:
             if 'kind: Deployment' in document and 'role: public' in document:
@@ -2617,7 +2617,7 @@ def event_principal_provisioning(manifest, results):
     work = Path(tempfile.mkdtemp(prefix='event-principal-provisioning-', dir=private_directory(Path(evidence))))
     work.chmod(0o700)
     print('evidence=' + str(work))
-    fly = tomllib.loads((ROOT / 'platform/hosted/internal/fly.toml').read_text())
+    fly = tomllib.loads((ROOT / 'services/platform/hosted/internal/fly.toml').read_text())
     expected = {'kms', *KINDS}
     provisioning_check(results, 'all five internal groups remain private-only', set(fly['processes']) == expected
                        and not fly.get('services') and not fly.get('http_service'))
@@ -2958,7 +2958,7 @@ def producer_readiness(manifest, results):
     work = Path(tempfile.mkdtemp(prefix='producer-readiness-', dir=private_directory(Path(evidence))))
     work.chmod(0o700)
     print('evidence=' + str(work))
-    fly = tomllib.loads((ROOT / 'platform/hosted/internal/fly.toml').read_text())
+    fly = tomllib.loads((ROOT / 'services/platform/hosted/internal/fly.toml').read_text())
     expected = {'kms', *KINDS}
     provisioning_check(results, 'all five internal groups remain private-only', set(fly['processes']) == expected
                        and not fly.get('services') and not fly.get('http_service'))

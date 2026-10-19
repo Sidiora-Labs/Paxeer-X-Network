@@ -64,7 +64,7 @@ required transports are `http`, `mcp`, `a2a`.
 | Visa TAP | [Visa TAP](VisaTap.md) | `layerx-visa-tap` |
 | Portable receipts | [Portable receipt verifier](PortableVerifier.md) | `layerx-portable` |
 | Fiat ramps | [Fiat ramps](FiatRamps.md) | `layerx-fiat` |
-| Market-maker ramps | [Market-maker ramps](MarketMakerRamps.md) | `platform/ramps` (not under `services/interop/crates`) |
+| Market-maker ramps | [Market-maker ramps](MarketMakerRamps.md) | `services/platform/ramps` (not under `services/interop/crates`) |
 | Ethereum and Solana mirrors | [Mirrors](Mirrors.md) | `layerx-mirror` |
 | Ethereum and Solana migration | [Migration](Migration.md) | `layerx-migrate` |
 

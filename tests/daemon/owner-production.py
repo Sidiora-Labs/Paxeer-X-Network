@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 repo = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(repo / 'platform/hosted/human'))
+sys.path.insert(0, str(repo / 'services/platform/hosted/human'))
 from provision import write_json
 from owner_native import produce
 sys.path.insert(0, str(repo / "tests/daemon"))
@@ -50,7 +50,7 @@ def run(work, asset, rpc_port):
     genesis_metadata = work / 'genesis-metadata.lxgb'
     genesis_metadata.write_bytes(metadata(bytes.fromhex(asset), treasury_public, os.urandom(32)))
     env = dict(os.environ)
-    bootstrap = ['bash', str(repo / 'platform/hosted/node/bootstrap.sh'), '--data-dir', str(work / 'node'),
+    bootstrap = ['bash', str(repo / 'services/platform/hosted/node/bootstrap.sh'), '--data-dir', str(work / 'node'),
         '--run-dir', str(work / 'run'), '--network-id', '77', '--asset', asset,
         '--genesis-metadata', str(genesis_metadata),
         '--custody-profile', str(inputs / 'custody.profile'), '--settlement-env', str(work / 'settlement.env'), '--sequencer-key', str(work / 'sequencer.seed'),
@@ -81,7 +81,7 @@ def run(work, asset, rpc_port):
         LAYERX_NODE_CHECKPOINT_REGISTRY=registry, LAYERX_NODE_PAXEER_RPC_ADDRESS='127.0.0.1',
         LAYERX_NODE_PAXEER_RPC_PORT=str(rpc_port))
     (work / 'settlement.env').write_text(''.join(name + '=' + value + '\n' for name, value in settlement.items()))
-    subprocess.run(['bash', str(repo / 'platform/hosted/node/bootstrap.sh'), '--check-settlement', str(work / 'settlement.env')],
+    subprocess.run(['bash', str(repo / 'services/platform/hosted/node/bootstrap.sh'), '--check-settlement', str(work / 'settlement.env')],
                    stdout=subprocess.DEVNULL, check=True)
     env.update(settlement)
     public = {}
@@ -147,7 +147,7 @@ def run(work, asset, rpc_port):
     try:
         for role, option in (('replica', '--authority-replica'), ('sequencer', '--serve')):
             if role == 'sequencer':
-                launcher = f'source "{repo / "platform/hosted/node/sequencer-env.sh"}"; layerx_sequencer_environment "$1"; exec "$2" "$3" "$4"'
+                launcher = f'source "{repo / "services/platform/hosted/node/sequencer-env.sh"}"; layerx_sequencer_environment "$1"; exec "$2" "$3" "$4"'
             else:
                 launcher = 'set -a; source "$1"; exec "$2" "$3" "$4"'
             launched = start(['bash', '-c', launcher, 'owner-production',
@@ -184,7 +184,7 @@ def run(work, asset, rpc_port):
             LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY=config['sequencer_public_key'],
             LAYERX_AUTHORITY_FIRST_BATCH='1', LAYERX_AUTHORITY_LAST_BATCH=str(2 ** 64 - 1))
         peer = ['setpriv', '--reuid=4021', '--regid=4021', '--clear-groups']
-        platform_target = Path(os.environ.get('CARGO_TARGET_DIR', repo / 'platform/target'))
+        platform_target = Path(os.environ.get('CARGO_TARGET_DIR', repo / 'services/platform/target'))
         service = start([*peer, str(platform_target / 'debug/layerx-receipt-authority')], 'authority-service', authority_env)
         for _ in range(100):
             assert service.poll() is None, 'authority startup failed'

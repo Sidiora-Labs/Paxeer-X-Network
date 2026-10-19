@@ -35,7 +35,7 @@ REPLAY_CASES = (
     "mixed_v1_v2_history_selects_each_recorded_abi_and_fee_schedule",
 )
 SOURCE_PATHS = (
-    "Makefile", "tools/build/sanitizers.mk", "platform/Makefile.inc",
+    "Makefile", "tools/build/sanitizers.mk", "services/platform/Makefile.inc",
     "src", "include", "contracts/config", "programs/Cargo.toml", "programs/Cargo.lock",
     "programs/crates", "programs/sdk/rust", "programs/.cargo", "programs/vendor",
     ".cargo", "rust-toolchain.toml", "tests/programs/test_fee_governance.c",

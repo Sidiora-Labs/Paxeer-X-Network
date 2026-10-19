@@ -203,7 +203,7 @@ router    requires protected material and registry-bootstrap records under
           missing=program_registry when the router's program_registry backend
           is absent or not configured.
 
-relay     reads the relay archive of platform/relay_archive/railway.env.example
+relay     reads the relay archive of services/platform/relay_archive/railway.env.example
           (its public URL) and the relay-archive Railway services of
           deploy/rollout.kvx against its origin in the kernel app of
           human/wallet/deploy/human.toml and prints one line per check:
@@ -1289,14 +1289,14 @@ check_validators() {
 	finish "$failures"
 }
 
-# check_identity: the identity app of platform/hosted/identity/fly.toml runs
+# check_identity: the identity app of services/platform/hosted/identity/fly.toml runs
 # one started machine with a volume, holds no public IP, and answers
 # readiness over TLS under the internal CA at its .internal name when asked
 # from a machine of the human app of human/wallet/deploy/human.toml, which
 # gets only the CA certificate on stdin.
 check_identity() {
 	local app from answer url code body attempt n_machines n_started n_mounts failures=0
-	if ! app="$(fly_app platform/hosted/identity/fly.toml)"; then
+	if ! app="$(fly_app services/platform/hosted/identity/fly.toml)"; then
 		echo "fail identity toml=absent"
 		finish 1
 	fi
@@ -1834,7 +1834,7 @@ rm -rf "$d"'
 # name the edge host passes through unchanged to the app's dedicated IPv4.
 # The app holds a dedicated IPv4; inside a machine of the app, the running
 # layerx-agentd's program bearer and probe program are read from its own
-# environment, and platform/hosted/agentd/probe.sh runs against the public
+# environment, and services/platform/hosted/agentd/probe.sh runs against the public
 # name with the agentd-client identity tools/bringup/ca.sh left on the
 # volume and the internal CA root beside it; then one program.discover read
 # envelope posted to /rpc must answer 200 with request_id, value and
@@ -1915,7 +1915,7 @@ check_agent_public() {
 	fi
 	reply="$({
 		printf '%s\n' "$agent_public_head"
-		cat "$repo_root/platform/hosted/agentd/probe.sh"
+		cat "$repo_root/services/platform/hosted/agentd/probe.sh"
 		printf '%s\n' LXPROBE "$agent_public_tail"
 	} | fly_ssh "$app" - "tls=$tls_dir/agentd-client url=$url limit=$timeout sh -s")" || reply=""
 	agentd="$(sed -n 's/^@@agentd //p' <<<"$reply" | head -n 1)"
@@ -2207,8 +2207,8 @@ sys.exit(0 if status == 1 and paid == amount else 1)
 	finish "$failures"
 }
 
-# check_internal: the internal app of platform/hosted/internal/fly.toml and
-# the internal Redis app of platform/hosted/internal/redis.toml hold no public
+# check_internal: the internal app of services/platform/hosted/internal/fly.toml and
+# the internal Redis app of services/platform/hosted/internal/redis.toml hold no public
 # IP; the router's served chain at api-mainnet-beta.paxeer.network ends at
 # ISRG Root X1 or ISRG Root X2, reported as root=X1|X2; inside the payments
 # and programs machines the running layerx-event-source of that kind has the
@@ -2252,7 +2252,7 @@ check_internal() {
 		echo "check-live: flyctl is required" >&2
 		exit 2
 	fi
-	if ! app="$(fly_app platform/hosted/internal/fly.toml)" || ! redis_app="$(fly_app platform/hosted/internal/redis.toml)" ||
+	if ! app="$(fly_app services/platform/hosted/internal/fly.toml)" || ! redis_app="$(fly_app services/platform/hosted/internal/redis.toml)" ||
 		! kernel="$(fly_app human/wallet/deploy/human.toml)"; then
 		echo "fail internal toml=absent"
 		finish 1
@@ -3152,7 +3152,7 @@ else:
 	finish "$failures"
 }
 
-# check_relay: the relay archive of platform/relay_archive/railway.env.example
+# check_relay: the relay archive of services/platform/relay_archive/railway.env.example
 # against its origin, the relay-archive service the kernel app of
 # human/wallet/deploy/human.toml runs beside the sequencer. Reads the origin
 # inside the kernel machine over its internal-CA TLS listener (head, pins,
@@ -3207,7 +3207,7 @@ check_relay() {
 	local origin public_url
 	local ca="${CHECK_LIVE_RELAY_CA:--}"
 	local name kernel records services svcs svc answered probe reply target answer code activity refusal failures=0
-	public_url="$(sed -n 's/^LAYERX_RELAY_ARCHIVE_PUBLIC_URL=\(https:\/\/[a-z0-9.-]*\)$/\1/p' "$repo_root/platform/relay_archive/railway.env.example" 2>/dev/null | head -n 1)"
+	public_url="$(sed -n 's/^LAYERX_RELAY_ARCHIVE_PUBLIC_URL=\(https:\/\/[a-z0-9.-]*\)$/\1/p' "$repo_root/services/platform/relay_archive/railway.env.example" 2>/dev/null | head -n 1)"
 	origin="${CHECK_LIVE_RELAY_ORIGIN:-$public_url}"
 	for name in CHECK_LIVE_RELAY_ACTIVITY CHECK_LIVE_RELAY_KEY_FILE; do
 		if [ -z "${!name:-}" ]; then
@@ -3386,7 +3386,7 @@ PY
 	finish "$failures"
 }
 
-# check_interop: the interop gateway app of platform/hosted/interop/fly.toml
+# check_interop: the interop gateway app of services/platform/hosted/interop/fly.toml
 # runs at least two started machines in at least two regions; /readyz at
 # CHECK_LIVE_INTEROP_ORIGIN (default https://interchain.paxeer.network)
 # answers ready with every component ready; then one x402 exact-scheme round
@@ -3394,7 +3394,7 @@ PY
 # network, a seller offer answered with its PAYMENT-REQUIRED header, the
 # payer's transfer to agent:<CHECK_LIVE_INTEROP_PAYEE_DID>:main of
 # CHECK_LIVE_INTEROP_AMOUNT (default 1) base units of the kernel asset of
-# platform/hosted/node/bootstrap.sh signed by CHECK_LIVE_INTEROP_ENCODER (the
+# services/platform/hosted/node/bootstrap.sh signed by CHECK_LIVE_INTEROP_ENCODER (the
 # built hosted-send example of tools/platform/cli) from the account state the router
 # at CHECK_LIVE_INTEROP_RPC (default https://api-mainnet-beta.paxeer.network/rpc)
 # reports, the buyer's PAYMENT-SIGNATURE and the settlement whose
@@ -3404,7 +3404,7 @@ PY
 # key (PEM or 32 raw bytes); neither is printed or leaves this host except
 # the key as the Authorization header. One line per check.
 check_interop() {
-	local toml=platform/hosted/interop/fly.toml name app answer n_started n_regions regions origin rpc_url amount network_id w status verdict failures=0
+	local toml=services/platform/hosted/interop/fly.toml name app answer n_started n_regions regions origin rpc_url amount network_id w status verdict failures=0
 	for name in CHECK_LIVE_INTEROP_API_KEY_FILE CHECK_LIVE_INTEROP_PAYER_KEY_FILE CHECK_LIVE_INTEROP_PAYEE_DID CHECK_LIVE_INTEROP_ENCODER; do
 		if [ -z "${!name:-}" ]; then
 			echo "check-live: $name is unset" >&2
@@ -3464,7 +3464,7 @@ sys.exit(0 if doc.get("status") == "ready" and components and not waiting else 1
 	fi
 	python3 - "$origin" "$rpc_url" "$CHECK_LIVE_INTEROP_API_KEY_FILE" "$CHECK_LIVE_INTEROP_PAYER_KEY_FILE" \
 		"$CHECK_LIVE_INTEROP_PAYEE_DID" "$CHECK_LIVE_INTEROP_ENCODER" "$amount" "$network_id" "$timeout" \
-		"$repo_root/platform/hosted/node/bootstrap.sh" <<'PY' || failures=$((failures + $?))
+		"$repo_root/services/platform/hosted/node/bootstrap.sh" <<'PY' || failures=$((failures + $?))
 import json, os, re, subprocess, sys, time, urllib.error, urllib.request
 
 origin, rpc_url, key_file, payer_file, payee, encoder, amount, network_id, limit, bootstrap = sys.argv[1:]
@@ -3592,12 +3592,12 @@ PY
 	finish "$failures"
 }
 
-# check_ramp: the reference ramp app of platform/ramps/fly.toml runs one
+# check_ramp: the reference ramp app of services/platform/ramps/fly.toml runs one
 # started machine with one volume; ramp.paxeer.network is registered on the
 # edge host as an http site of that app, resolves to the edge host and
 # answers /readyz 200 under a publicly verified certificate with Fly's
 # request id and the body the app's fly.dev name answers; and
-# platform/ramps/sandbox-journey.sh against the name records done for one
+# services/platform/ramps/sandbox-journey.sh against the name records done for one
 # on-ramp and one off-ramp order. The journey's inputs are its own variables
 # (LAYERX_RAMP_CUSTOMER_TOKEN, LAYERX_RAMP_OPERATOR_URL,
 # LAYERX_RAMP_OPERATOR_TOKEN, LAYERX_RAMP_ON_QUOTE_ID,
@@ -3606,7 +3606,7 @@ PY
 # LAYERX_RAMP_CA_PEM defaults to the system CA file. One line per check,
 # never printing a token or an address.
 check_ramp() {
-	local toml=platform/ramps/fly.toml ramp_name=ramp.paxeer.network name app answer n_machines n_started n_mounts
+	local toml=services/platform/ramps/fly.toml ramp_name=ramp.paxeer.network name app answer n_machines n_started n_mounts
 	local reply status=0 manifest line edge_addrs addrs at out headers body code fly_id app_body v failures=0
 	for name in LAYERX_RAMP_CUSTOMER_TOKEN LAYERX_RAMP_OPERATOR_URL LAYERX_RAMP_OPERATOR_TOKEN LAYERX_RAMP_ON_QUOTE_ID \
 		LAYERX_RAMP_OFF_QUOTE_ID LAYERX_RAMP_OFF_GRANT_JSON LAYERX_RAMP_ON_ACCOUNT_SEQUENCE LAYERX_RAMP_OFF_RECEIVER_SEQUENCE; do
@@ -3691,7 +3691,7 @@ print(len(ms), len(started), len(mounts))
 
 	status=0
 	LAYERX_RAMP_URL="https://$ramp_name" LAYERX_RAMP_CA_PEM="${LAYERX_RAMP_CA_PEM:-/etc/ssl/certs/ca-certificates.crt}" \
-		timeout 10m sh "$repo_root/platform/ramps/sandbox-journey.sh" >/dev/null 2>&1 || status=$?
+		timeout 10m sh "$repo_root/services/platform/ramps/sandbox-journey.sh" >/dev/null 2>&1 || status=$?
 	if [ "$status" -eq 0 ]; then
 		echo "pass journey https://$ramp_name on-ramp=done off-ramp=done"
 	else
@@ -3701,7 +3701,7 @@ print(len(ms), len(started), len(mounts))
 	finish "$failures"
 }
 
-# check_indexer: the indexer app of platform/hosted/indexer/fly.toml has no
+# check_indexer: the indexer app of services/platform/hosted/indexer/fly.toml has no
 # public IP and runs exactly one machine, started, with its volume at /data;
 # inside it the layerx-indexer process answers /healthz over TLS at its
 # .internal name to the internal CA tools/bringup/ca.sh left on the volume;
@@ -3729,7 +3729,7 @@ check_indexer() {
 		echo "check-live: flyctl is required" >&2
 		exit 2
 	fi
-	if ! app="$(fly_app platform/hosted/indexer/fly.toml)"; then
+	if ! app="$(fly_app services/platform/hosted/indexer/fly.toml)"; then
 		echo "fail indexer toml=absent"
 		finish 1
 	fi
@@ -3941,14 +3941,14 @@ check_developers() {
 		exit 2
 	fi
 
-	for toml in platform/hosted/webhooks/fly.toml platform/hosted/dashboard/fly.toml platform/hosted/dashboard/web/fly.toml; do
+	for toml in services/platform/hosted/webhooks/fly.toml services/platform/hosted/dashboard/fly.toml services/platform/hosted/dashboard/web/fly.toml; do
 		if ! app="$(fly_app "$toml")"; then
 			echo "fail machines toml=$toml status=absent"
 			failures=$((failures + 1))
 			continue
 		fi
 		groups=app
-		[ "$toml" != platform/hosted/webhooks/fly.toml ] || groups="public ingress"
+		[ "$toml" != services/platform/hosted/webhooks/fly.toml ] || groups="public ingress"
 		# shellcheck disable=SC2086 # groups is a word list
 		answer="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
 import json, sys
@@ -4215,7 +4215,7 @@ check_search() {
 	finish "$failures"
 }
 
-# check_registry: the app of platform/hosted/registry/fly.toml runs one
+# check_registry: the app of services/platform/hosted/registry/fly.toml runs one
 # started machine with its volume and holds a dedicated IPv4 for the edge's
 # passthrough; from the kernel machine of human/wallet/deploy/human.toml,
 # https://index.paxeer.network/healthz refuses a request without a client
@@ -4226,7 +4226,7 @@ check_search() {
 # program_registry ready. The router is CHECK_LIVE_ROUTER_URL, default
 # https://api-mainnet-beta.paxeer.network. One line per check.
 check_registry() {
-	local toml=platform/hosted/registry/fly.toml url ingress
+	local toml=services/platform/hosted/registry/fly.toml url ingress
 	local router="${CHECK_LIVE_ROUTER_URL:-https://api-mainnet-beta.paxeer.network}"
 	local topic=6c782e7265662e657363726f772e637573746f6479 program="${CHECK_LIVE_REGISTRY_PROGRAM_ID:-}"
 	local app kernel answer reply line status code body anonymous from page failures=0
@@ -4385,7 +4385,7 @@ check_registry_bootstrap() {
 # proof reads a signed registry receipt through the public unified interface.
 # Reads only the repository's tomls; no network, no flyctl.
 check_registry_plan() {
-	local registry=platform/hosted/registry/fly.toml endpoint=human/wallet/deploy/endpoint.toml path
+	local registry=services/platform/hosted/registry/fly.toml endpoint=human/wallet/deploy/endpoint.toml path
 	for path in "$registry" "$endpoint"; do
 		if ! grep -qE '^app = "[a-z0-9-]+"$' "$repo_root/$path" 2>/dev/null; then
 			echo "fail registry-plan toml=absent $path"
@@ -4425,7 +4425,7 @@ router_prerequisite() {
 }
 
 # check_interop_adapters: three conformance legs of the AP2, Visa TAP and fiat
-# adapters of the interop gateway app of platform/hosted/interop/fly.toml,
+# adapters of the interop gateway app of services/platform/hosted/interop/fly.toml,
 # each the make target of the tree followed by the adapter's entry of
 # GET <CHECK_LIVE_INTEROP_ORIGIN>/v1/adapters (default
 # https://interchain.paxeer.network), whose conformance suite, vector count
@@ -4433,13 +4433,13 @@ router_prerequisite() {
 # checkout and whose four readiness fields are ready: mandates
 # (interop-test-mandates, ap2), visa-tap (interop-test-visa-tap, visa-tap) and
 # ramps-sandbox (interop-test-ramps-sandbox, fiat). The sandbox journey reads
-# the LAYERX_RAMP_* inputs of platform/ramps/sandbox-journey.sh from the
+# the LAYERX_RAMP_* inputs of services/platform/ramps/sandbox-journey.sh from the
 # environment and its two bearer tokens from the files named by
 # CHECK_LIVE_INTEROP_ADAPTERS_CUSTOMER_TOKEN_FILE and
 # CHECK_LIVE_INTEROP_ADAPTERS_OPERATOR_TOKEN_FILE; no value is printed. One
 # line per leg.
 check_interop_adapters() {
-	local toml=platform/hosted/interop/fly.toml name app origin w status http target exits=()
+	local toml=services/platform/hosted/interop/fly.toml name app origin w status http target exits=()
 	for name in LAYERX_RAMP_URL LAYERX_RAMP_CA_PEM LAYERX_RAMP_OPERATOR_URL LAYERX_RAMP_ON_QUOTE_ID \
 		LAYERX_RAMP_OFF_QUOTE_ID LAYERX_RAMP_OFF_GRANT_JSON LAYERX_RAMP_ON_ACCOUNT_SEQUENCE \
 		LAYERX_RAMP_OFF_RECEIVER_SEQUENCE CHECK_LIVE_INTEROP_ADAPTERS_CUSTOMER_TOKEN_FILE \
@@ -4886,11 +4886,11 @@ check_kernel_value_loop() {
 
 # check_events_upstream: the kernel app of human/wallet/deploy/human.toml
 # lists the three event-token names its [[files]] entries mount; the journeys
-# and approvals machines of the app of platform/hosted/internal/fly.toml each
+# and approvals machines of the app of services/platform/hosted/internal/fly.toml each
 # hold a non-empty /data/run/producer-token, read as a byte count; the apps of
-# platform/hosted/webhooks/fly.toml and platform/hosted/registry/fly.toml
+# services/platform/hosted/webhooks/fly.toml and services/platform/hosted/registry/fly.toml
 # exist; and each webhooks trigger consumer lists its trigger name
-# (platform/hosted/webhooks/fly.toml, human/wallet/deploy/endpoint.toml,
+# (services/platform/hosted/webhooks/fly.toml, human/wallet/deploy/endpoint.toml,
 # human/wallet/deploy/human.toml, docker/platform-registry/init.sh). Prints
 # secret names and byte counts only, never a value. One line per check.
 check_events_upstream() {
@@ -4900,9 +4900,9 @@ check_events_upstream() {
 		echo "check-live: flyctl is required" >&2
 		exit 2
 	fi
-	if ! kernel="$(fly_app human/wallet/deploy/human.toml)" || ! internal="$(fly_app platform/hosted/internal/fly.toml)" ||
-		! webhooks="$(fly_app platform/hosted/webhooks/fly.toml)" || ! endpoint="$(fly_app human/wallet/deploy/endpoint.toml)" ||
-		! registry="$(fly_app platform/hosted/registry/fly.toml)"; then
+	if ! kernel="$(fly_app human/wallet/deploy/human.toml)" || ! internal="$(fly_app services/platform/hosted/internal/fly.toml)" ||
+		! webhooks="$(fly_app services/platform/hosted/webhooks/fly.toml)" || ! endpoint="$(fly_app human/wallet/deploy/endpoint.toml)" ||
+		! registry="$(fly_app services/platform/hosted/registry/fly.toml)"; then
 		echo "fail events-upstream toml=absent"
 		finish 1
 	fi

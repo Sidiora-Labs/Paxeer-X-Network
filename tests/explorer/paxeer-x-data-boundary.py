@@ -58,7 +58,7 @@ def kernel_relay_fixture(relay_module):
         def setup(self):
             self.work.chmod(0o700)
             self.bin = KERNEL_BUILD / "bin"
-            self.runtime = KERNEL_ROOT / "platform/relay_archive"
+            self.runtime = KERNEL_ROOT / "services/platform/relay_archive"
             names = ("network_id", "genesis_sha256", "sequencer_id", "sequencer_public_key",
                      "sequencer_first_batch", "sequencer_last_batch", "ca_file")
             self.pins = {name: fixture[name] for name in names if name in fixture}
@@ -1042,7 +1042,7 @@ def history_readiness():
     binaries = {}
     for key, name in (("LAYERX_INDEXER_BIN", "layerx-indexer"),
                       ("LAYERX_GATEWAY_BIN", "layerx-gateway")):
-        path = Path(os.environ.get(key, repo / "platform/target/debug" / name)).resolve()
+        path = Path(os.environ.get(key, repo / "services/platform/target/debug" / name)).resolve()
         if not path.is_file() or not os.access(path, os.X_OK):
             raise MissingPrerequisite(f"{key}: prebuilt {name} required")
         binaries[name] = path
@@ -1081,7 +1081,7 @@ def history_readiness():
     try:
         relay.work.chmod(0o700)
         relay.bin = build / "bin"
-        relay.runtime = repo / "platform/relay_archive"
+        relay.runtime = repo / "services/platform/relay_archive"
         relay_port = module.unused_port()
         allowed = ("network_id", "genesis_sha256", "sequencer_id", "sequencer_public_key",
                    "sequencer_first_batch", "sequencer_last_batch", "upstreams", "ca_file")

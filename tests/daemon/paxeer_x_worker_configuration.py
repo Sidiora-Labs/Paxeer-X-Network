@@ -320,7 +320,7 @@ class Contract(unittest.TestCase):
         self.refused(v1(network=17), 'v1-pool-over-old-bound')
 
     def test_08_bootstrap_writes_supported_configuration(self):
-        source = (ROOT / 'platform/hosted/node/bootstrap.sh').read_text()
+        source = (ROOT / 'services/platform/hosted/node/bootstrap.sh').read_text()
         match = re.search(r"write_config\(\) \{\n    printf '([^']*)' \"\$1\" \"\$NETWORK_ID\" > \"\$2\"\n\}", source)
         self.assertIsNotNone(match, 'bootstrap write_config not found')
         self.assertNotRegex(match.group(1), 'network_workers|projection_workers|checkpoint_workers')

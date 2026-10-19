@@ -18,7 +18,7 @@ COMPONENTS = ['test_oracle_adapter', 'test_oracle_intake', 'test_oracle_checks',
 SOURCES = ['include/layerx/lx_oracle.h', 'include/layerx/lx_perps.h', 'include/layerx/lxp_genesis.h',
            'src/network/lx_oracle_adapter.c', 'src/modules/perps/lx_perps_command.c',
            'src/modules/perps/lx_perps_dispatch.c', 'src/protocol/lxp_genesis.c',
-           'platform/hosted/node/bootstrap.sh', 'tests/network/test_oracle_adapter.c',
+           'services/platform/hosted/node/bootstrap.sh', 'tests/network/test_oracle_adapter.c',
            'tests/test_genesis_module_table.c', 'tests/modules/test_oracle_transport.c',
            'tests/daemon/lxp_test_oracle_transport_client.c', 'tests/qualification/paxeer_x_oracle_transport.py']
 
@@ -205,7 +205,7 @@ def worker(base):
                     value[3+n:19+n] = bytes(16)
                     value[52+n:60+n] = bytes(8)
                 require(left == right, label + ': unrelated account field mutation')
-            expected_fee = json.loads((ROOT / 'platform/hosted/node/genesis-module-fees.json').read_text())['perps']
+            expected_fee = json.loads((ROOT / 'services/platform/hosted/node/genesis-module-fees.json').read_text())['perps']
             require(type(expected_fee) is int and 0 < expected_fee < 10000, 'positive bounded production Perps fee')
             def oracle_effect(before, after, receipt, fee, consume=True):
                 require(int(receipt['fee']) == fee, 'receipt fee differs from configured production fee')
@@ -217,11 +217,11 @@ def worker(base):
                 account_effect(before['owner'], after['owner'], -fee, 0, 'oracle actor')
                 account_effect(before['fees'], after['fees'], fee, int(fee > 0), 'fee treasury')
                 require(after['insurance'] == before['insurance'], 'oracle changed insurance account')
-            runtime.produce('custody-event-topic', ['python3', fixture.ROOT / 'platform/hosted/paxeer/evm.py', 'keccak',
+            runtime.produce('custody-event-topic', ['python3', fixture.ROOT / 'services/platform/hosted/paxeer/evm.py', 'keccak',
                 '0x' + b'CustodyDeposit(bytes32,bytes32,address,bytes32,uint256,uint64)'.hex()])
             topic = (d / 'custody-event-topic.log').read_text().strip().removeprefix('0x').lower()
             require(len(topic) == 64, 'custody event topic encoding')
-            runtime.produce('custody-depositor', ['python3', fixture.ROOT / 'platform/hosted/paxeer/evm.py', 'address', d / 'keys/deployer.key'])
+            runtime.produce('custody-depositor', ['python3', fixture.ROOT / 'services/platform/hosted/paxeer/evm.py', 'address', d / 'keys/deployer.key'])
             depositor = (d / 'custody-depositor.log').read_text().strip().removeprefix('0x').lower()
             require(len(depositor) == 40, 'custody depositor address encoding')
             from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -232,7 +232,7 @@ def worker(base):
                 account_name = b'agent:' + did + b':main'
                 beneficiary = hashlib.sha256(b'LX:ACCOUNT:v1' + len(account_name).to_bytes(4, 'big') + account_name).digest()
                 amount = 1000000
-                runtime.produce(operation + '-deposit', ['python3', fixture.ROOT / 'platform/hosted/paxeer/evm.py', 'send',
+                runtime.produce(operation + '-deposit', ['python3', fixture.ROOT / 'services/platform/hosted/paxeer/evm.py', 'send',
                     '--rpc', runtime.rpc_url, '--chain', '125', '--key-file', d / 'keys/deployer.key', '--value', str(amount * 10**12),
                     '0x0000000000000000000000000000000000001013', 'deposit(bytes32)', '0x' + beneficiary.hex()])
                 deposited = json.loads((d / (operation + '-deposit.log')).read_text())
@@ -256,7 +256,7 @@ def worker(base):
             prefix = 'activated-' if activated else 'legacy-'
             record_case(prefix + 'real-custody-funding')
             before = state()
-            stream_fee = json.loads((ROOT / 'platform/hosted/node/genesis-module-fees.json').read_text())['stream']
+            stream_fee = json.loads((ROOT / 'services/platform/hosted/node/genesis-module-fees.json').read_text())['stream']
             require(type(stream_fee) is int and 0 < stream_fee < 10000, 'positive bounded production Stream fee')
             opened, _, _ = invoke('insurance-open')
             funded = state(insurance_stream=True)

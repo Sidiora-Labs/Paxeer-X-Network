@@ -3,7 +3,7 @@
 The relay/archive role lets an independent operator follow an existing
 LayerX network, retain its complete canonical byte history, serve
 public reads, and forward users' original signed activities
-(`platform/relay_archive/README.md`). It does not order activities,
+(`services/platform/relay_archive/README.md`). It does not order activities,
 execute state transitions, hold a sequencer key, or participate in a
 consensus or finality quorum.
 
@@ -12,7 +12,7 @@ installed Python standard-library runtime. The runtime verifies signed
 bootstrap and batch material through `layerx-archive-codec`. Python
 does not reimplement or weaken the native codecs.
 
-This page is operator documentation for `platform/relay_archive`. It
+This page is operator documentation for `services/platform/relay_archive`. It
 is not a hosted beta service. Hosted JSON-RPC access is documented in
 [Public JSON-RPC](PublicRpc.md); the limited beta has not opened yet,
 and that surface becomes available when it does.
@@ -47,7 +47,7 @@ each of the nine payload files. Obtain the manifest digest through an
 independent release channel.
 
 ```sh
-sudo platform/relay_archive/install.sh \
+sudo services/platform/relay_archive/install.sh \
   --bundle /media/layerx-relay-archive \
   --manifest-sha256 MANIFEST_SHA256_FROM_RELEASE_CHANNEL \
   --network-id 402 \
@@ -68,7 +68,7 @@ sudo platform/relay_archive/install.sh \
 
 Hostnames in that example other than
 `https://api-mainnet-beta.paxeer.network/v1/activities` are installer
-placeholders from `platform/relay_archive/README.md`. Replace them
+placeholders from `services/platform/relay_archive/README.md`. Replace them
 with independently pinned origins. The installer never accepts or
 copies a bearer token, API key, TLS private key, or other credential.
 
@@ -86,7 +86,7 @@ Local HTTP requires both a literal loopback endpoint and
 
 ## Configuration
 
-[`platform/relay_archive/config.example.json`](https://github.com/Sidiora-Labs/Paxeer-X-Network/blob/main/platform/relay_archive/config.example.json)
+[`services/platform/relay_archive/config.example.json`](https://github.com/Sidiora-Labs/Paxeer-X-Network/blob/main/platform/relay_archive/config.example.json)
 lists every ordinary operator setting. `REPLACE_...` fields are
 invalid until independently pinned.
 
@@ -167,7 +167,7 @@ decodes and rebuilds, or otherwise changes a user's activity.
 
 `POST /rpc` serves archive reads and forwards `lx_sendActivity`. This
 is **not** the hosted gateway's 18-method contract. The relay methods
-are (`platform/relay_archive/runtime.py`):
+are (`services/platform/relay_archive/runtime.py`):
 
 - `lx_sendActivity`
 - `lx_getNodeInfo`

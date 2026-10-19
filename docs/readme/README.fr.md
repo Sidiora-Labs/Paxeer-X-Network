@@ -80,7 +80,7 @@ make paxeer-ci
 | `cmd/` | Démons et outils du noyau (`layerxd`, `layerxctl`, `layerx-guarantor`, genèse, vérification) |
 | `agent/` | Interface agent en Rust, SDK, démon, serveur MCP, encodage, cryptographie et vérification de preuves |
 | `human/` | Plan de contrôle humain, compilateur d’intentions typées, KMS, index de l’explorateur et applications web et portefeuille |
-| `platform/` | Plateforme développeur, services hébergés, middleware, SDK, émulateur, CLI et outils de publication |
+| `services/platform/` | Plateforme développeur, services hébergés, middleware, SDK, émulateur, CLI et outils de publication |
 | `programs/` | Runtime Programs, registre, interpréteur, bac à sable, marché et SDK de programmes pour le noyau LayerX |
 | `interop/` | Surfaces de commerce entre agents et d’interopérabilité entre réseaux, y compris le relayer du pont |
 | `contracts/` | Contrats Solidity sur la chaîne Paxeer X pour la garde, les checkpoints, les cautions des garants, les réclamations, les litiges et les sorties |

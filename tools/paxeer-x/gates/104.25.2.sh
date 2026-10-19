@@ -107,7 +107,7 @@ def build(directory):
             except BlockingIOError:
                 remaining(1)
                 time.sleep(1)
-        execute(['/root/.cargo/bin/cargo', 'build', '--locked', '--manifest-path', 'platform/Cargo.toml', '-p', 'layerx-platform-gateway', '--bin', 'layerx-gateway'], directory / 'gateway-build.log', 600,
+        execute(['/root/.cargo/bin/cargo', 'build', '--locked', '--manifest-path', 'services/platform/Cargo.toml', '-p', 'layerx-platform-gateway', '--bin', 'layerx-gateway'], directory / 'gateway-build.log', 600,
                 dict(os.environ, CARGO_TARGET_DIR='/root/lx-target/platform'))
     if source_identity() != before:
         refuse('source changed during compilation')

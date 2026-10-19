@@ -1,10 +1,10 @@
 # Market-maker ramps
 
 Independent market-maker ramps are **not** an `services/interop/crates`
-adapter. They live under `platform/ramps/`: toolkit crate
-`layerx-ramp-toolkit` (`platform/ramps/toolkit`) and reference
-material under `platform/ramps/reference/`
-(`platform/ramps/README.md`).
+adapter. They live under `services/platform/ramps/`: toolkit crate
+`layerx-ramp-toolkit` (`services/platform/ramps/toolkit`) and reference
+material under `services/platform/ramps/reference/`
+(`services/platform/ramps/README.md`).
 
 `spec/layerx-platform/spec.kvx` task 26.1 is **implemented**. The
 spec `reality` field records that the reference ramp service is
@@ -24,7 +24,7 @@ journal domain is `LXP/market-maker-ramp/journal/v1`.
 
 ## Toolkit surface
 
-From `platform/ramps/toolkit/src/lib.rs`:
+From `services/platform/ramps/toolkit/src/lib.rs`:
 
 `RampDirection`, `QuoteTerms`, `RampOrder`,
 `compile_payer_grant_draw`, `compile_operator_send`,
@@ -36,7 +36,7 @@ From `platform/ramps/toolkit/src/lib.rs`:
 
 ## Qualification gates
 
-Makefile targets named in the spec and `platform/ramps/README.md`:
+Makefile targets named in the spec and `services/platform/ramps/README.md`:
 
 - `make interop-test-ramps`
 - `make interop-test-ramps-sandbox` (requires `LAYERX_RAMP_URL`)

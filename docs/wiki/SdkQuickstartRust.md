@@ -40,7 +40,7 @@ a grant the faucet confirmed as `funded`.
 
 The OpenRPC contract requires
 `Authorization: Bearer <identity session token>`
-(`platform/hosted/gateway/openrpc.json`). `RpcClient::connect`
+(`services/platform/hosted/gateway/openrpc.json`). `RpcClient::connect`
 accepts only `Option<LayerXKeyCredential>`, which attaches
 `LayerX-Key` (`layerx_sdk::programs::LayerXKeyCredential`). This
 crate has no Bearer session constructor. The method exists; the

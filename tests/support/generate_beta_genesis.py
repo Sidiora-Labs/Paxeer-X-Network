@@ -21,7 +21,7 @@ def main():
     parser.add_argument('--builder', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    spec = importlib.util.spec_from_file_location('prepare_beta', ROOT / 'platform/hosted/paxeer/prepare-beta.py')
+    spec = importlib.util.spec_from_file_location('prepare_beta', ROOT / 'services/platform/hosted/paxeer/prepare-beta.py')
     producer = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(producer)
     work = Path(tempfile.mkdtemp(prefix='layerx-genesis-fixture-', dir='/tmp'))
@@ -41,7 +41,7 @@ def main():
                         'public_key': member.public_bytes(Encoding.X962, PublicFormat.CompressedPoint).hex()})
     for name, modules in (('previous', ()), ('current', producer.genesis_modules())):
         suffix = metadata(asset, issuer, salt) if name == 'previous' else metadata_modules(
-            asset, issuer, salt, 0, producer.module_prices(ROOT / 'platform/hosted/node/genesis-module-fees.json'))
+            asset, issuer, salt, 0, producer.module_prices(ROOT / 'services/platform/hosted/node/genesis-module-fees.json'))
         request = producer.genesis_request(members, 77, asset.hex(), 1700000000000, suffix, modules)
         request_path = work / (name + '.lxgb')
         request_path.write_bytes(request)
@@ -62,7 +62,7 @@ def main():
     expected = {'protocol_version': 3, 'network_id': 77, 'modules': list(producer.genesis_modules()),
                 'native_fee_schedule_version': 4, 'native_fee_authority_version': 2,
                 'module_prices': dict(zip(producer.MODULE_NAMES,
-                    producer.module_prices(ROOT / 'platform/hosted/node/genesis-module-fees.json'))),
+                    producer.module_prices(ROOT / 'services/platform/hosted/node/genesis-module-fees.json'))),
                 'withdrawal_price': 0,
                 'canonical_state_root': roots[9:41].hex(), 'receipt_state_root': roots[41:].hex(),
                 'previous_canonical_state_root': previous[9:41].hex(),

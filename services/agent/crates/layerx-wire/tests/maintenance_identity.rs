@@ -35,7 +35,7 @@ fn fixture_field(document: &str, field: &str) -> Vec<u8> {
 #[test]
 fn handover_sequencer_identity_matches_native_signed_header() {
     let document = include_str!(
-        "../../../../../platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json"
+        "../../../../../services/platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json"
     );
     let public_key = must(fixture_field(document, "sequencer_public_key_hex").try_into());
     let header = must(decode_batch_header(&fixture_field(document, "header_hex")));
@@ -48,7 +48,7 @@ fn handover_sequencer_identity_matches_native_signed_header() {
 #[test]
 fn historical_and_maintained_identity_select_distinct_committed_ranges() {
     let document = include_str!(
-        "../../../../../platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json"
+        "../../../../../services/platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json"
     );
     let receipt = must(decode(&fixture_field(document, "receipt_hex")));
     let protocol = receipt.protocol().unwrap_or_else(|| panic!("protocol"));
@@ -101,7 +101,7 @@ fn call_selection_keeps_activity_root_equality_and_excludes_maintenance_sequence
     )));
     let protocol = receipt.protocol().unwrap_or_else(|| panic!("protocol"));
     let document = include_str!(
-        "../../../../../platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json"
+        "../../../../../services/platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json"
     );
     let mut bytes = fixture_field(document, "header_hex");
     let original = must(decode_batch_header(&bytes));
@@ -200,7 +200,7 @@ fn a_bound_activity_root_selects_the_committed_identity_outside_programs_deploy(
     assert_ne!(protocol.activity_root(), [0_u8; 32]);
     assert_ne!((protocol.module_id(), protocol.operation()), (9, 3));
     let header_document = include_str!(
-        "../../../../../platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json"
+        "../../../../../services/platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json"
     );
     let mut bytes = fixture_field(header_document, "header_hex");
     let original = must(decode_batch_header(&bytes));
@@ -253,7 +253,7 @@ fn a_bound_activity_root_selects_the_committed_identity_outside_programs_deploy(
 #[test]
 fn the_evidence_class_picks_the_selector_the_daemon_used() {
     let document = include_str!(
-        "../../../../../platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json"
+        "../../../../../services/platform/hosted/authority/tests/fixtures/real-program-deploy-receipt.json"
     );
     let receipt = must(decode(&fixture_field(document, "receipt_hex")));
     let protocol = receipt.protocol().unwrap_or_else(|| panic!("protocol"));

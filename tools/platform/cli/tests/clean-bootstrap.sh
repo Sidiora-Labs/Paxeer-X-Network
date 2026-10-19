@@ -53,7 +53,7 @@ http_get() {
 clean_bootstrap() {
   local repo_root document binary sequence endpoint network_id authority home
   repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
-  document="$repo_root/platform/docs/content/install.md"
+  document="$repo_root/services/platform/docs/content/install.md"
   binary=${LAYERX_BIN:-${CARGO_TARGET_DIR:-$repo_root/tools/platform/target}/debug/layerx}
   [ -x "$binary" ] || fail "built layerx binary not found at $binary (set LAYERX_BIN or CARGO_TARGET_DIR)"
   sequence=$(extract_bootstrap_sequence "$document")

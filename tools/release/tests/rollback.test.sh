@@ -134,7 +134,7 @@ PY
     LAYERX_PAXEER_RPC_PORT="$p_rpc" LAYERX_PAXEER_P2P_PORT="$p_p2p" \
     LAYERX_PAXEER_GRPC_PORT="$p_grpc" LAYERX_PAXEER_GRPC_WEB_PORT="$p_web" \
     LAYERX_PAXEER_COMMIT_TIMEOUT_NANOSECONDS=1000000000 \
-    bash "$root/platform/hosted/paxeer/init-chain.sh" >"$work/init.log" 2>&1
+    bash "$root/services/platform/hosted/paxeer/init-chain.sh" >"$work/init.log" 2>&1
   python3 - "$root/node/testdata/v6120-halt-export.json" "$work/validator/config/genesis.json" <<'PY'
 import json
 import sys

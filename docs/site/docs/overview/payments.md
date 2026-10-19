@@ -41,12 +41,12 @@ chain.
 
 ## 2. Create or import a signing key
 
-Build the CLI and put `platform/target/debug` on `PATH`. For a
+Build the CLI and put `services/platform/target/debug` on `PATH`. For a
 public identity, create an ordinary key and select it:
 
 ```sh
 cargo build --manifest-path tools/platform/cli/Cargo.toml
-export PATH="$PWD/platform/target/debug:$PATH"
+export PATH="$PWD/services/platform/target/debug:$PATH"
 layerx key create alice
 layerx key default alice
 layerx wallet list

@@ -3,8 +3,8 @@
 `layerx-dashboard` is the session-authenticated developer read surface
 for keys, quota, the gateway request log, webhook delivery health, and
 receipt-backed test payments
-(`platform/hosted/dashboard/src/main.rs`;
-`platform/hosted/dashboard/src/model.rs`). The crate is
+(`services/platform/hosted/dashboard/src/main.rs`;
+`services/platform/hosted/dashboard/src/model.rs`). The crate is
 `layerx-platform-dashboard`. A companion Next.js process,
 `layerx-dashboard-web`, is the browser UI, served as its own Fly app.
 
@@ -12,7 +12,7 @@ It does not accept writes. Every path except `GET /healthz` requires a
 developer session. Protocol facts that the dashboard renders carry the
 verification level the human plane displays; settlement is claimed only
 where a verified LayerX receipt stands behind the fact
-(`platform/hosted/dashboard/src/model.rs`).
+(`services/platform/hosted/dashboard/src/model.rs`).
 
 Webhook registration and delivery live on
 [Hosted webhooks](HostedWebhooks.md). Gateway keys and JSON-RPC live on
@@ -25,17 +25,17 @@ Webhook registration and delivery live on
 Three Fly apps serve the developer surface, each with at least two
 machines across `ams` and `fra`:
 
-- `paxeer-dashboard-web` (`platform/hosted/dashboard/web/fly.toml`,
+- `paxeer-dashboard-web` (`services/platform/hosted/dashboard/web/fly.toml`,
   image `docker/platform-dashboard-web`) is the browser UI on port
   `3000`. It rewrites `/v1/dashboard/*` to
   `http://paxeer-dashboard.internal:9445`
-  (`platform/hosted/dashboard/web/next.config.ts`).
-- `paxeer-dashboard` (`platform/hosted/dashboard/fly.toml`, image
+  (`services/platform/hosted/dashboard/web/next.config.ts`).
+- `paxeer-dashboard` (`services/platform/hosted/dashboard/fly.toml`, image
   `docker/platform-dashboard`) is the dashboard API. It listens in plain
   HTTP on `[::]:9445` (`LAYERX_DASHBOARD_LISTENER=plain`). It reads
   webhook state from `paxeer-internal-redis` and the gateway request log
   from `paxeer-shared-endpoint-redis`.
-- `paxeer-webhooks` (`platform/hosted/webhooks/fly.toml`) serves
+- `paxeer-webhooks` (`services/platform/hosted/webhooks/fly.toml`) serves
   webhooks; see [Hosted webhooks](HostedWebhooks.md).
 
 The edge proxies each name through the wildcard name with a certbot
@@ -44,7 +44,7 @@ certificate: `dev.paxeer.network` to `paxeer-dashboard-web`,
 `hooks.paxeer.network` to `paxeer-webhooks`.
 
 The API listens on `LAYERX_DASHBOARD_LISTEN`, default
-`0.0.0.0:9445` (`platform/hosted/dashboard/src/main.rs`). At most 256
+`0.0.0.0:9445` (`services/platform/hosted/dashboard/src/main.rs`). At most 256
 connections are live. The `tls` listener uses
 `LAYERX_DASHBOARD_TLS_CERT_DER` and `LAYERX_DASHBOARD_TLS_KEY_DER`.
 
@@ -57,7 +57,7 @@ connections are live. The `tls` listener uses
 
 Every `/v1/dashboard/*` route calls the same developer identity
 introspector as webhooks: `Authorization: Bearer` or cookie
-`__Host-layerx-session` (`platform/hosted/dashboard/src/main.rs`).
+`__Host-layerx-session` (`services/platform/hosted/dashboard/src/main.rs`).
 Failed authentication is `401 session_required`. Mutating cookie
 requests are not served; the dashboard is GET-only.
 
@@ -81,13 +81,13 @@ owned routes are `404 not_found`.
 | `/v1/dashboard/receipts/{activity}` | `ReceiptView` | `activity_id`, `event`, `receipt_digest`, `verification`, `settled` |
 
 `limit` defaults to 50 and is clamped to `1..=200`
-(`platform/hosted/dashboard/src/main.rs`).
+(`services/platform/hosted/dashboard/src/main.rs`).
 `webhook-deliveries` accepts optional `endpoint` as an `EndpointId`.
 
 `RequestOutcome` wire words are `pending`, `completed`,
 `rate-limited`, and `refused`. A request line never presents above
 `unverified` because the gateway audit trail records digests rather
-than receipts (`platform/hosted/dashboard/src/model.rs`).
+than receipts (`services/platform/hosted/dashboard/src/model.rs`).
 
 A payment's `settled` flag is true only when the `state` fact equals
 `settled`, that fact is at least `receipt-verified`, and a receipt
@@ -111,8 +111,8 @@ digest stands behind that exact fact.
 
 ## Source contract
 
-- `platform/hosted/dashboard/src/main.rs` owns TLS, routing, paging, and session checks.
-- `platform/hosted/dashboard/src/model.rs` owns the view models above.
-- `platform/hosted/dashboard/src/service.rs` reads gateway Redis (keys, quota, audit) and the webhooks Redis reader.
+- `services/platform/hosted/dashboard/src/main.rs` owns TLS, routing, paging, and session checks.
+- `services/platform/hosted/dashboard/src/model.rs` owns the view models above.
+- `services/platform/hosted/dashboard/src/service.rs` reads gateway Redis (keys, quota, audit) and the webhooks Redis reader.
 
 [Home](Home.md)

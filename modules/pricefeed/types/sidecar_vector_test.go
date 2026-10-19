@@ -19,7 +19,7 @@ import (
 )
 
 func TestSidecarTxVector(t *testing.T) {
-	data, err := os.ReadFile("../../../platform/hosted/feeder/tests/fixtures/cosmos_tx_vector.json")
+	data, err := os.ReadFile("../../../services/platform/hosted/feeder/tests/fixtures/cosmos_tx_vector.json")
 	require.NoError(t, err)
 	var vector struct {
 		ChainID        string              `json:"chain_id"`

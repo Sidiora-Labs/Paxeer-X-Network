@@ -153,31 +153,31 @@ Build and test:
 - cargo (`services/interop/crates/layerx-x402/Cargo.toml`, run in `services/interop/crates/layerx-x402/`): `cargo build`, `cargo test`
 - cargo (`services/interop/crates/x-websearch/Cargo.toml`, run in `services/interop/crates/x-websearch/`): `cargo build`, `cargo test`
 - npm (`package.json`): `npm run build`
-- cargo (`platform/Cargo.toml`, run in `platform/`): `cargo build`, `cargo test`
+- cargo (`services/platform/Cargo.toml`, run in `services/platform/`): `cargo build`, `cargo test`
 - cargo (`tools/platform/cli/Cargo.toml`, run in `tools/platform/cli/`): `cargo build`, `cargo test`
 - cargo (`tools/platform/emulator/Cargo.toml`, run in `tools/platform/emulator/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/agent-boundary/Cargo.toml`, run in `platform/hosted/agent-boundary/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/ai-artifacts/Cargo.toml`, run in `platform/hosted/ai-artifacts/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/ai-evaluator/Cargo.toml`, run in `platform/hosted/ai-evaluator/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/authority/Cargo.toml`, run in `platform/hosted/authority/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/core/Cargo.toml`, run in `platform/hosted/core/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/dashboard/Cargo.toml`, run in `platform/hosted/dashboard/`): `cargo build`, `cargo test`
-- npm (`platform/hosted/dashboard/web/package.json`, run in `platform/hosted/dashboard/web/`): `npm run build`, `npm run test:static`, `npm start`
-- cargo (`platform/hosted/faucet/Cargo.toml`, run in `platform/hosted/faucet/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/feeder/Cargo.toml`, run in `platform/hosted/feeder/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/gateway/Cargo.toml`, run in `platform/hosted/gateway/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/identity/Cargo.toml`, run in `platform/hosted/identity/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/indexer/Cargo.toml`, run in `platform/hosted/indexer/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/internal/Cargo.toml`, run in `platform/hosted/internal/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/paxai-storage-keeper/Cargo.toml`, run in `platform/hosted/paxai-storage-keeper/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/paxai-worker/Cargo.toml`, run in `platform/hosted/paxai-worker/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/paxeer/Cargo.toml`, run in `platform/hosted/paxeer/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/perps-keeper/Cargo.toml`, run in `platform/hosted/perps-keeper/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/registry/Cargo.toml`, run in `platform/hosted/registry/`): `cargo build`, `cargo test`
-- npm (`platform/hosted/registry/builder-environment/package.json`, run in `platform/hosted/registry/builder-environment/`): `npm install`
-- cargo (`platform/hosted/runtime-clock/Cargo.toml`, run in `platform/hosted/runtime-clock/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/testnet/Cargo.toml`, run in `platform/hosted/testnet/`): `cargo build`, `cargo test`
-- cargo (`platform/hosted/webhooks/Cargo.toml`, run in `platform/hosted/webhooks/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/agent-boundary/Cargo.toml`, run in `services/platform/hosted/agent-boundary/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/ai-artifacts/Cargo.toml`, run in `services/platform/hosted/ai-artifacts/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/ai-evaluator/Cargo.toml`, run in `services/platform/hosted/ai-evaluator/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/authority/Cargo.toml`, run in `services/platform/hosted/authority/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/core/Cargo.toml`, run in `services/platform/hosted/core/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/dashboard/Cargo.toml`, run in `services/platform/hosted/dashboard/`): `cargo build`, `cargo test`
+- npm (`services/platform/hosted/dashboard/web/package.json`, run in `services/platform/hosted/dashboard/web/`): `npm run build`, `npm run test:static`, `npm start`
+- cargo (`services/platform/hosted/faucet/Cargo.toml`, run in `services/platform/hosted/faucet/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/feeder/Cargo.toml`, run in `services/platform/hosted/feeder/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/gateway/Cargo.toml`, run in `services/platform/hosted/gateway/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/identity/Cargo.toml`, run in `services/platform/hosted/identity/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/indexer/Cargo.toml`, run in `services/platform/hosted/indexer/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/internal/Cargo.toml`, run in `services/platform/hosted/internal/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/paxai-storage-keeper/Cargo.toml`, run in `services/platform/hosted/paxai-storage-keeper/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/paxai-worker/Cargo.toml`, run in `services/platform/hosted/paxai-worker/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/paxeer/Cargo.toml`, run in `services/platform/hosted/paxeer/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/perps-keeper/Cargo.toml`, run in `services/platform/hosted/perps-keeper/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/registry/Cargo.toml`, run in `services/platform/hosted/registry/`): `cargo build`, `cargo test`
+- npm (`services/platform/hosted/registry/builder-environment/package.json`, run in `services/platform/hosted/registry/builder-environment/`): `npm install`
+- cargo (`services/platform/hosted/runtime-clock/Cargo.toml`, run in `services/platform/hosted/runtime-clock/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/testnet/Cargo.toml`, run in `services/platform/hosted/testnet/`): `cargo build`, `cargo test`
+- cargo (`services/platform/hosted/webhooks/Cargo.toml`, run in `services/platform/hosted/webhooks/`): `cargo build`, `cargo test`
 - npm (`sdk/integrations/agents/examples/agent-runtime/package.json`, run in `sdk/integrations/agents/examples/agent-runtime/`): `npm start`, `npm run webhook:conformance`
 - npm (`sdk/integrations/agents/examples/mcp-server/package.json`, run in `sdk/integrations/agents/examples/mcp-server/`): `npm start`
 - npm (`sdk/integrations/agents/package.json`, run in `sdk/integrations/agents/`): `npm run build`, `npm test`, `npm run integration:real`, `npm run integration:webhooks`, `npm run postinstall`
@@ -188,13 +188,13 @@ Build and test:
 - python (`sdk/integrations/fastapi/pyproject.toml`, run in `sdk/integrations/fastapi/`): `python -m pip install -e .`, `python -m pytest`
 - npm (`sdk/integrations/next/package.json`, run in `sdk/integrations/next/`): `npm run build`
 - maven (`sdk/integrations/spring/pom.xml`, run in `sdk/integrations/spring/`): `mvn package`, `mvn test`
-- npm (`platform/middleware/agent/package.json`, run in `platform/middleware/agent/`): `npm run build`, `npm test`
-- npm (`platform/middleware/buyer/package.json`, run in `platform/middleware/buyer/`): `npm run build`, `npm test`
-- npm (`platform/middleware/conformance/package.json`, run in `platform/middleware/conformance/`): `npm run build`, `npm run conformance`, `npm run conformance:connected`, `npm test`, `npm run test:payments`
-- npm (`platform/middleware/merchant/package.json`, run in `platform/middleware/merchant/`): `npm run build`, `npm test`
-- npm (`platform/middleware/seller/package.json`, run in `platform/middleware/seller/`): `npm run build`, `npm test`
-- cargo (`platform/ramps/reference/Cargo.toml`, run in `platform/ramps/reference/`): `cargo build`, `cargo test`
-- cargo (`platform/ramps/toolkit/Cargo.toml`, run in `platform/ramps/toolkit/`): `cargo build`, `cargo test`
+- npm (`services/platform/middleware/agent/package.json`, run in `services/platform/middleware/agent/`): `npm run build`, `npm test`
+- npm (`services/platform/middleware/buyer/package.json`, run in `services/platform/middleware/buyer/`): `npm run build`, `npm test`
+- npm (`services/platform/middleware/conformance/package.json`, run in `services/platform/middleware/conformance/`): `npm run build`, `npm run conformance`, `npm run conformance:connected`, `npm test`, `npm run test:payments`
+- npm (`services/platform/middleware/merchant/package.json`, run in `services/platform/middleware/merchant/`): `npm run build`, `npm test`
+- npm (`services/platform/middleware/seller/package.json`, run in `services/platform/middleware/seller/`): `npm run build`, `npm test`
+- cargo (`services/platform/ramps/reference/Cargo.toml`, run in `services/platform/ramps/reference/`): `cargo build`, `cargo test`
+- cargo (`services/platform/ramps/toolkit/Cargo.toml`, run in `services/platform/ramps/toolkit/`): `cargo build`, `cargo test`
 - cargo (`tools/platform/release/Cargo.toml`, run in `tools/platform/release/`): `cargo build`, `cargo test`
 - npm (`sdk/platform/conformance-runner/package.json`, run in `sdk/platform/conformance-runner/`): `npm install`
 - cargo (`sdk/platform/generators/Cargo.toml`, run in `sdk/platform/generators/`): `cargo build`, `cargo test`
@@ -332,7 +332,7 @@ Build and test:
 - `tests/occ/` — 3 files, 898 lines, mostly go (tests)
   - `tests/occ/messages/` — 1 file, 203 lines, mostly go (tests)
   - `tests/occ/utils/` — 1 file, 398 lines, mostly go
-- `platform/` — 952 files, 337,799 lines, mostly rust
+- `services/platform/` — 952 files, 337,799 lines, mostly rust
   - 10 subdirectories: `cli/`, `emulator/`, `hosted/`, `integrations/`, `middleware/`, `ramps/`, `relay_archive/`, `release/`, `sdk/`, `tests/`
 - `precompiles/` — 523 files, 92,886 lines, mostly go
   - 26 subdirectories: `addr/`, `bank/`, `common/`, `distribution/`, `feetoken/`, `gov/`, `ibc/`, `json/`, `launchpad/`, `layerxagent/`, `layerxanchor/`, `layerxbridge/`, `layerxcustody/`, `layerxexchange/`, `layerxpay/`, `layerxprograms/`, `layerxverify/`, `oracle/`, `p256/`, `pointer/`, `pointerview/`, `solo/`, `staking/`, `utils/`, `wasmd/`, `xweb/`
@@ -480,63 +480,63 @@ _Not shown: 7 directories._
 - `main` — `tools/platform/cli/examples/hosted-send.rs:148` `fn main()`
 - `main` — `tools/platform/cli/src/main.rs:1563` `fn main() -> ExitCode`
 - `main` — `tools/platform/emulator/build.rs:12` `fn main()`
-- `main` — `platform/hosted/agent-boundary/src/main.rs:2441` `fn main()`
-- `main` — `platform/hosted/agentd/manifest_check.py:252` `def main()`
-- `main` — `platform/hosted/ai-artifacts/src/main.rs:1711` `fn main()`
-- `main` — `platform/hosted/ai-evaluator/src/main.rs:1309` `pub fn main() -> ExitCode`
-- `main` — `platform/hosted/authority/src/main.rs:1408` `fn main()`
-- `main` — `platform/hosted/core/src/main.rs:3063` `fn main()`
-- `main` — `platform/hosted/dashboard/src/main.rs:259` `fn main()`
-- `main` — `platform/hosted/faucet/src/main.rs:1248` `fn main()`
-- `main` — `platform/hosted/feeder/src/main.rs:75` `fn main()`
-- `main` — `platform/hosted/gateway/src/main.rs:3845` `fn main()`
-- `main` — `platform/hosted/human/guardians.py:130` `def main()`
-- `main` — `platform/hosted/human/material.py:700` `def main()`
-- `main` — `platform/hosted/human/onboarding_bootstrap.py:16` `def main()`
-- `main` — `platform/hosted/human/provision.py:1060` `def main()`
-- `main` — `platform/hosted/human/recipient_binding.py:51` `def main()`
-- `main` — `platform/hosted/human/recipient_check.py:18` `def main()`
-- `main` — `platform/hosted/identity/src/main.rs:1517` `fn main()`
-- `main` — `platform/hosted/indexer/src/main.rs:190` `fn main() -> ExitCode`
-- `main` — `platform/hosted/internal/src/bin/layerx-event-source.rs:102` `fn main() -> ExitCode`
-- `main` — `platform/hosted/internal/src/bin/layerx-kms.rs:31` `fn main() -> ExitCode`
-- `main` — `platform/hosted/node/data_directory.py:324` `def main()`
-- `main` — `platform/hosted/node/generation_client.py:339` `def main()`
-- `main` — `platform/hosted/node/generation_transport.py:289` `def main()`
-- `main` — `platform/hosted/node/genesis_fees.py:80` `def main()`
-- `main` — `platform/hosted/node/reset_state.py:1029` `def main()`
-- `main` — `platform/hosted/node/signer/client.py:134` `def main(argv)`
-- `main` — `platform/hosted/node/signer/signer.py:286` `def main(argv)`
-- `main` — `platform/hosted/paxai-storage-keeper/src/main.rs:469` `fn main() -> ExitCode`
-- `main` — `platform/hosted/paxai-worker/src/bin/paxai-runner.rs:51` `fn main() -> ExitCode`
-- `main` — `platform/hosted/paxai-worker/src/main.rs:237` `fn main() -> ExitCode`
-- `main` — `platform/hosted/paxeer/anchor-genesis.py:98` `def main()`
-- `main` — `platform/hosted/paxeer/custody-genesis.py:52` `def main()`
-- `main` — `platform/hosted/paxeer/evm.py:421` `def main(arguments)`
-- `main` — `platform/hosted/paxeer/prepare-beta.py:86` `def main()`
-- `main` — `platform/hosted/paxeer/settlement-domain.py:130` `def main(argv)`
-- `main` — `platform/hosted/paxeer/src/main.rs:647` `fn main()`
-- `main` — `platform/hosted/perps-keeper/src/main.rs:1403` `pub fn main()`
-- `main` — `platform/hosted/registry/src/bin/layerx-cgroup-exec.rs:284` `fn main() -> ExitCode`
-- `main` — `platform/hosted/registry/src/main.rs:962` `fn main()`
-- `main` — `platform/hosted/runtime-clock/src/main.rs:107` `fn main() -> ExitCode`
-- `main` — `platform/hosted/testnet/src/main.rs:1402` `fn main()`
-- `main` — `platform/hosted/webhooks/src/bin/verify_delivery.rs:72` `fn main()`
-- `main` — `platform/hosted/webhooks/src/main.rs:759` `fn main()`
+- `main` — `services/platform/hosted/agent-boundary/src/main.rs:2441` `fn main()`
+- `main` — `services/platform/hosted/agentd/manifest_check.py:252` `def main()`
+- `main` — `services/platform/hosted/ai-artifacts/src/main.rs:1711` `fn main()`
+- `main` — `services/platform/hosted/ai-evaluator/src/main.rs:1309` `pub fn main() -> ExitCode`
+- `main` — `services/platform/hosted/authority/src/main.rs:1408` `fn main()`
+- `main` — `services/platform/hosted/core/src/main.rs:3063` `fn main()`
+- `main` — `services/platform/hosted/dashboard/src/main.rs:259` `fn main()`
+- `main` — `services/platform/hosted/faucet/src/main.rs:1248` `fn main()`
+- `main` — `services/platform/hosted/feeder/src/main.rs:75` `fn main()`
+- `main` — `services/platform/hosted/gateway/src/main.rs:3845` `fn main()`
+- `main` — `services/platform/hosted/human/guardians.py:130` `def main()`
+- `main` — `services/platform/hosted/human/material.py:700` `def main()`
+- `main` — `services/platform/hosted/human/onboarding_bootstrap.py:16` `def main()`
+- `main` — `services/platform/hosted/human/provision.py:1060` `def main()`
+- `main` — `services/platform/hosted/human/recipient_binding.py:51` `def main()`
+- `main` — `services/platform/hosted/human/recipient_check.py:18` `def main()`
+- `main` — `services/platform/hosted/identity/src/main.rs:1517` `fn main()`
+- `main` — `services/platform/hosted/indexer/src/main.rs:190` `fn main() -> ExitCode`
+- `main` — `services/platform/hosted/internal/src/bin/layerx-event-source.rs:102` `fn main() -> ExitCode`
+- `main` — `services/platform/hosted/internal/src/bin/layerx-kms.rs:31` `fn main() -> ExitCode`
+- `main` — `services/platform/hosted/node/data_directory.py:324` `def main()`
+- `main` — `services/platform/hosted/node/generation_client.py:339` `def main()`
+- `main` — `services/platform/hosted/node/generation_transport.py:289` `def main()`
+- `main` — `services/platform/hosted/node/genesis_fees.py:80` `def main()`
+- `main` — `services/platform/hosted/node/reset_state.py:1029` `def main()`
+- `main` — `services/platform/hosted/node/signer/client.py:134` `def main(argv)`
+- `main` — `services/platform/hosted/node/signer/signer.py:286` `def main(argv)`
+- `main` — `services/platform/hosted/paxai-storage-keeper/src/main.rs:469` `fn main() -> ExitCode`
+- `main` — `services/platform/hosted/paxai-worker/src/bin/paxai-runner.rs:51` `fn main() -> ExitCode`
+- `main` — `services/platform/hosted/paxai-worker/src/main.rs:237` `fn main() -> ExitCode`
+- `main` — `services/platform/hosted/paxeer/anchor-genesis.py:98` `def main()`
+- `main` — `services/platform/hosted/paxeer/custody-genesis.py:52` `def main()`
+- `main` — `services/platform/hosted/paxeer/evm.py:421` `def main(arguments)`
+- `main` — `services/platform/hosted/paxeer/prepare-beta.py:86` `def main()`
+- `main` — `services/platform/hosted/paxeer/settlement-domain.py:130` `def main(argv)`
+- `main` — `services/platform/hosted/paxeer/src/main.rs:647` `fn main()`
+- `main` — `services/platform/hosted/perps-keeper/src/main.rs:1403` `pub fn main()`
+- `main` — `services/platform/hosted/registry/src/bin/layerx-cgroup-exec.rs:284` `fn main() -> ExitCode`
+- `main` — `services/platform/hosted/registry/src/main.rs:962` `fn main()`
+- `main` — `services/platform/hosted/runtime-clock/src/main.rs:107` `fn main() -> ExitCode`
+- `main` — `services/platform/hosted/testnet/src/main.rs:1402` `fn main()`
+- `main` — `services/platform/hosted/webhooks/src/bin/verify_delivery.rs:72` `fn main()`
+- `main` — `services/platform/hosted/webhooks/src/main.rs:759` `fn main()`
 - `main` — `sdk/integrations/agents/src/mcp-server.ts:24` `async function main(): Promise<void>`
 - `main` — `sdk/integrations/android/src/main/java/com/sidiora/layerx/android/EmbeddedSecretScan.java:12` `public static void main(String[] arguments)`
 - `main` — `sdk/integrations/android/src/sample/java/com/sidiora/layerx/android/sample/ConsoleSampleMain.java:27` `public static void main(String[] arguments)`
 - `main` — `sdk/integrations/android/src/sample/java/com/sidiora/layerx/android/sample/WebhookConformanceMain.java:24` `public static void main(String[] arguments)`
-- `main` — `platform/middleware/conformance/connected.mjs:81` `async function main()`
-- `main` — `platform/middleware/conformance/pay6/batch_fixture.c:38` `int main(int argc, char **argv)`
-- `main` — `platform/middleware/conformance/pay6/draw_fixture.c:7` `int main(int argc, char **argv)`
-- `main` — `platform/middleware/conformance/pay6/receive_fixture.c:1` `#define main existing_receive_harness`
-- `main` — `platform/middleware/conformance/pay6/receive_fixture.c:14` `int main(void)`
-- `main` — `platform/middleware/conformance/run.mjs:8` `async function main()`
-- `main` — `platform/middleware/examples/public_rpc.py:85` `def main()`
-- `main` — `platform/ramps/reference/src/main.rs:202` `fn main()`
-- `main` — `platform/ramps/toolkit/src/bin/ramp-verify-receipt.rs:117` `fn main()`
-- `main` — `platform/relay_archive/runtime.py:1325` `def main(argv: list[str] | None = None) -> int`
+- `main` — `services/platform/middleware/conformance/connected.mjs:81` `async function main()`
+- `main` — `services/platform/middleware/conformance/pay6/batch_fixture.c:38` `int main(int argc, char **argv)`
+- `main` — `services/platform/middleware/conformance/pay6/draw_fixture.c:7` `int main(int argc, char **argv)`
+- `main` — `services/platform/middleware/conformance/pay6/receive_fixture.c:1` `#define main existing_receive_harness`
+- `main` — `services/platform/middleware/conformance/pay6/receive_fixture.c:14` `int main(void)`
+- `main` — `services/platform/middleware/conformance/run.mjs:8` `async function main()`
+- `main` — `services/platform/middleware/examples/public_rpc.py:85` `def main()`
+- `main` — `services/platform/ramps/reference/src/main.rs:202` `fn main()`
+- `main` — `services/platform/ramps/toolkit/src/bin/ramp-verify-receipt.rs:117` `fn main()`
+- `main` — `services/platform/relay_archive/runtime.py:1325` `def main(argv: list[str] | None = None) -> int`
 - `main` — `tools/platform/release/src/main.rs:2438` `fn main()`
 - `main` — `sdk/platform/generators/generate_jvm.py:344` `def main() -> int`
 - `main` — `sdk/platform/generators/generate_lifecycle.py:50` `def main()`
@@ -926,19 +926,19 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
   - _+18 more_
 - `tools/platform/emulator/` — 3 test files
   - _+3 more_
-- `platform/hosted/` — 134 test files
+- `services/platform/hosted/` — 134 test files
   - _+134 more_
 - `sdk/integrations/` — 2 test files
   - _+2 more_
-- `platform/middleware/` — 24 test files
+- `services/platform/middleware/` — 24 test files
   - _+24 more_
-- `platform/ramps/` — 4 test files
+- `services/platform/ramps/` — 4 test files
   - _+4 more_
 - `tools/platform/release/` — 2 test files
   - _+2 more_
 - `sdk/platform/` — 35 test files
   - _+35 more_
-- `platform/tests/` — 1 test file
+- `services/platform/tests/` — 1 test file
   - _+1 more_
 - `precompiles/` — 1 test file
   - _+1 more_
@@ -1192,13 +1192,13 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
 - `modules/xweb/types/testdata/` — 3 fixture files
 - `node/testdata/` — 1 fixture file
 - `tools/platform/cli/tests/fixtures/` — 3 fixture files
-- `platform/hosted/authority/tests/fixtures/` — 5 fixture files: `native-sessions/`
-- `platform/hosted/feeder/tests/fixtures/` — 4 fixture files
-- `platform/hosted/gateway/tests/fixtures/` — 3 fixture files
-- `platform/hosted/indexer/fixtures/` — 3 fixture files
-- `platform/hosted/indexer/tests/fixtures/` — 1 fixture file
-- `platform/hosted/node/tests/fixtures/` — 1 fixture file
-- `platform/hosted/paxeer/tests/fixtures/` — 8 fixture files: `gov/`
+- `services/platform/hosted/authority/tests/fixtures/` — 5 fixture files: `native-sessions/`
+- `services/platform/hosted/feeder/tests/fixtures/` — 4 fixture files
+- `services/platform/hosted/gateway/tests/fixtures/` — 3 fixture files
+- `services/platform/hosted/indexer/fixtures/` — 3 fixture files
+- `services/platform/hosted/indexer/tests/fixtures/` — 1 fixture file
+- `services/platform/hosted/node/tests/fixtures/` — 1 fixture file
+- `services/platform/hosted/paxeer/tests/fixtures/` — 8 fixture files: `gov/`
 - `sdk/platform/conformance/fixtures/` — 41 fixture files
 - `programs/crates/layerx-programs-registry/tests/fixtures/` — 2 fixture files: `maintained-head/`
 - `programs/fixtures/` — 10 fixture files: `pay5/`

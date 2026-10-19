@@ -98,7 +98,7 @@ make paxeer-ci
 | `cmd/` | Démons et outils natifs (`layerxd`, `layerxctl`, genesis, verify) |
 | `agent/` | Interface agent Rust, SDK, démon, serveur MCP, encodage, cryptographie et vérification de preuves |
 | `human/` | Plan de contrôle humain, compilateur d'intentions typées, client de frontière de garde, index explorateur et application web |
-| `platform/` | Plateforme développeur, services hébergés, intergiciels, SDK, émulateur, CLI et outillage de publication |
+| `services/platform/` | Plateforme développeur, services hébergés, intergiciels, SDK, émulateur, CLI et outillage de publication |
 | `programs/` | Runtime LayerX programmable et outillage des programmes |
 | `interop/` | Surfaces d'interopérabilité agent-commerce et inter-réseaux |
 | `contracts/` | Contrats Solidity pour la garde Paxeer, les points de contrôle, le cautionnement des garants, les réclamations, les litiges et les sorties |

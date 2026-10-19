@@ -955,7 +955,7 @@ fn lifecycle_routes_execute_and_replay_real_native_state_receipts() -> Result<()
 /// The registry read the CLI's `program registry get` consumes must publish the
 /// hosted registry's `value_accounts` block for the program the emulator itself
 /// holds, with the same statuses, account fields and receipt semantics
-/// (`platform/hosted/registry/src/routes.rs`).
+/// (`services/platform/hosted/registry/src/routes.rs`).
 #[test]
 fn registry_reads_publish_the_program_value_accounts_the_core_proves() -> Result<(), String> {
     let address = boot_protocol(3)?;

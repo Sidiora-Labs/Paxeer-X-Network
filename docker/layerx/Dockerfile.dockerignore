@@ -37,7 +37,7 @@ services/interop
 layerx
 layerx-network.png
 migrations
-platform
+services/platform
 programs
 spec
 src
@@ -47,7 +47,7 @@ tests
 !services/agent/Cargo.toml
 !human/Cargo.toml
 !services/interop/Cargo.toml
-!platform/Cargo.toml
+!services/platform/Cargo.toml
 !programs/Cargo.toml
 !services/interop/Cargo.lock
 !services/agent/crates/layerx-agent-api/**
@@ -75,9 +75,9 @@ tests
 !services/interop/crates/layerx-visa-tap/**
 !services/interop/crates/layerx-x402/**
 !services/interop/crates/x-websearch/**
-!platform/hosted/gateway/**
-!platform/hosted/indexer/**
-!platform/hosted/internal/**
+!services/platform/hosted/gateway/**
+!services/platform/hosted/indexer/**
+!services/platform/hosted/internal/**
 !programs/crates/layerx-programs-protocol-adapter/**
 !programs/crates/layerx-programs-registry/**
 !programs/crates/layerx-programs-runtime/**

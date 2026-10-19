@@ -114,7 +114,7 @@ native_library_sums_recorded() {
 sidecar_artifact_listed() {
   local target listed
   [ -x "$out/$sidecar_name" ] || { echo "$sidecar_name is missing" >&2; return 1; }
-  target=$(cargo metadata --locked --format-version 1 --no-deps --manifest-path platform/Cargo.toml | jq -er '.target_directory')
+  target=$(cargo metadata --locked --format-version 1 --no-deps --manifest-path services/platform/Cargo.toml | jq -er '.target_directory')
   cmp -s "$target/release/price-sidecar" "$out/$sidecar_name" || { echo "$sidecar_name is not the cargo release price-sidecar" >&2; return 1; }
   listed=$(awk -v name="$sidecar_name" '$2 == name { print $1 }' "$out/SHA256SUMS")
   [ "$listed" = "$(sha256sum "$out/$sidecar_name" | cut -d' ' -f1)" ] || { echo "SHA256SUMS does not list $sidecar_name" >&2; return 1; }
@@ -165,7 +165,7 @@ for x in s: x.close()')
     LAYERX_PAXEER_DEPLOYER_ADDRESS=0x7e5f4552091a69125d5dfcb7b8c2659029395bdf \
     LAYERX_PAXEER_EVM_PORT=$p_evm LAYERX_PAXEER_EVM_WS_PORT=$p_ws LAYERX_PAXEER_RPC_PORT=$rpc \
     LAYERX_PAXEER_P2P_PORT=$p_p2p LAYERX_PAXEER_GRPC_PORT=$p_grpc LAYERX_PAXEER_GRPC_WEB_PORT=$p_web \
-    bash platform/hosted/paxeer/init-chain.sh > "$work/init.log" 2>&1 || { cat "$work/init.log" >&2; return 1; }
+    bash services/platform/hosted/paxeer/init-chain.sh > "$work/init.log" 2>&1 || { cat "$work/init.log" >&2; return 1; }
   "$paxd" start --home "$home" > "$work/node.log" 2>&1 &
   node_pid=$!
   version=

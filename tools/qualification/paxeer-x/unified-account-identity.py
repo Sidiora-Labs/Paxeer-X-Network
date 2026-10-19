@@ -154,7 +154,7 @@ def run():
                     'wrong typed refusal: ' + target)
         require(rpc(healthy, 'px_resolveAccount', [did]).get('result') == expected,
                 'healthy lookup failed after refused identity join')
-    declarations = json.loads((ROOT / 'platform/hosted/gateway/openrpc.json').read_text())
+    declarations = json.loads((ROOT / 'services/platform/hosted/gateway/openrpc.json').read_text())
     require({method['name'] for method in declarations['methods']} >= set(methods),
             'OpenRPC is missing an identity lookup method')
     for method in declarations['methods']:

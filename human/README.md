@@ -1,6 +1,6 @@
 # Human interface
 
-`human/` holds the person-facing side of Paxeer X Network: the Rust services that sign principals in, hold custody keys, plan and execute money movement and index public evidence, plus the web applications and wallet packages people use. The Rust services reach the LayerX kernel through the agent-layer crates (path dependencies into `agent/`, `interop/`, `programs/` and `platform/`) and reach the Paxeer X chain through typed JSON-RPC boundaries.
+`human/` holds the person-facing side of Paxeer X Network: the Rust services that sign principals in, hold custody keys, plan and execute money movement and index public evidence, plus the web applications and wallet packages people use. The Rust services reach the LayerX kernel through the agent-layer crates (path dependencies into `agent/`, `interop/`, `programs/` and `services/platform/`) and reach the Paxeer X chain through typed JSON-RPC boundaries.
 
 ## Layout
 

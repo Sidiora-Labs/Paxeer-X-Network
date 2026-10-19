@@ -33,24 +33,24 @@ wallet-attestor|docker/wallet-attestor/Dockerfile|human/wallet/attestor/Dockerfi
 interop-gateway|docker/interop-gateway/Dockerfile|services/interop/deploy/gateway/Dockerfile|.
 interop-mirror|docker/interop-mirror/Dockerfile|services/interop/deploy/mirror/Dockerfile|.
 x-websearch|docker/x-websearch/Dockerfile|services/interop/deploy/x-websearch/Dockerfile|.
-platform-agent-boundary|docker/platform-agent-boundary/Dockerfile|platform/hosted/agent-boundary/Dockerfile|.
-platform-authority|docker/platform-authority/Dockerfile|platform/hosted/authority/Dockerfile|.
-platform-core|docker/platform-core/Dockerfile|platform/hosted/core/Dockerfile|.
-platform-dashboard|docker/platform-dashboard/Dockerfile|platform/hosted/dashboard/Dockerfile|.
-platform-dashboard-web|docker/platform-dashboard-web/Dockerfile|platform/hosted/dashboard/web/Dockerfile|.
-platform-faucet|docker/platform-faucet/Dockerfile|platform/hosted/faucet/Dockerfile|.
-platform-gateway|docker/platform-gateway/Dockerfile|platform/hosted/gateway/Dockerfile|.
-platform-identity|docker/platform-identity/Dockerfile|platform/hosted/identity/Dockerfile|.
-platform-internal|docker/platform-internal/Dockerfile|platform/hosted/internal/Dockerfile|.
-platform-node|docker/platform-node/Dockerfile|platform/hosted/node/Dockerfile|.
-paxeer|docker/paxeer/Dockerfile|platform/hosted/paxeer/Dockerfile|.
-paxeer|docker/paxeer/Dockerfile.paxd|platform/hosted/paxeer/Dockerfile.paxd|.
-paxeer|docker/paxeer/Dockerfile.paxd-node|platform/hosted/paxeer/Dockerfile.paxd-node|.
-platform-registry|docker/platform-registry/Dockerfile|platform/hosted/registry/Dockerfile|.
-platform-registry-builder|docker/platform-registry-builder/Dockerfile|platform/hosted/registry/builder-environment/Dockerfile|@registry-builder
-platform-testnet|docker/platform-testnet/Dockerfile|platform/hosted/testnet/Dockerfile|.
-platform-webhooks|docker/platform-webhooks/Dockerfile|platform/hosted/webhooks/Dockerfile|.
-ramps|docker/ramps/Dockerfile|platform/ramps/Dockerfile|.
+platform-agent-boundary|docker/platform-agent-boundary/Dockerfile|services/platform/hosted/agent-boundary/Dockerfile|.
+platform-authority|docker/platform-authority/Dockerfile|services/platform/hosted/authority/Dockerfile|.
+platform-core|docker/platform-core/Dockerfile|services/platform/hosted/core/Dockerfile|.
+platform-dashboard|docker/platform-dashboard/Dockerfile|services/platform/hosted/dashboard/Dockerfile|.
+platform-dashboard-web|docker/platform-dashboard-web/Dockerfile|services/platform/hosted/dashboard/web/Dockerfile|.
+platform-faucet|docker/platform-faucet/Dockerfile|services/platform/hosted/faucet/Dockerfile|.
+platform-gateway|docker/platform-gateway/Dockerfile|services/platform/hosted/gateway/Dockerfile|.
+platform-identity|docker/platform-identity/Dockerfile|services/platform/hosted/identity/Dockerfile|.
+platform-internal|docker/platform-internal/Dockerfile|services/platform/hosted/internal/Dockerfile|.
+platform-node|docker/platform-node/Dockerfile|services/platform/hosted/node/Dockerfile|.
+paxeer|docker/paxeer/Dockerfile|services/platform/hosted/paxeer/Dockerfile|.
+paxeer|docker/paxeer/Dockerfile.paxd|services/platform/hosted/paxeer/Dockerfile.paxd|.
+paxeer|docker/paxeer/Dockerfile.paxd-node|services/platform/hosted/paxeer/Dockerfile.paxd-node|.
+platform-registry|docker/platform-registry/Dockerfile|services/platform/hosted/registry/Dockerfile|.
+platform-registry-builder|docker/platform-registry-builder/Dockerfile|services/platform/hosted/registry/builder-environment/Dockerfile|@registry-builder
+platform-testnet|docker/platform-testnet/Dockerfile|services/platform/hosted/testnet/Dockerfile|.
+platform-webhooks|docker/platform-webhooks/Dockerfile|services/platform/hosted/webhooks/Dockerfile|.
+ramps|docker/ramps/Dockerfile|services/platform/ramps/Dockerfile|.
 hpx-registry|docker/hpx-registry/Dockerfile|hpx/registry/Dockerfile|.
 flyci-controller|docker/flyci-controller/Dockerfile|tools/flyci/controller/Dockerfile|.
 flyci-runner|docker/flyci-runner/Dockerfile|tools/flyci/runner/Dockerfile|.
@@ -75,7 +75,7 @@ IGNORES='
 layerx|docker/layerx/Dockerfile.dockerignore|Dockerfile.dockerignore
 wallet-pwa|docker/wallet-pwa/Dockerfile.dockerignore|human/apps/wallet/.dockerignore
 web|docker/web/Dockerfile.dockerignore|human/apps/web/Dockerfile.dockerignore
-platform-node|docker/platform-node/Dockerfile.dockerignore|platform/hosted/node/Dockerfile.dockerignore
+platform-node|docker/platform-node/Dockerfile.dockerignore|services/platform/hosted/node/Dockerfile.dockerignore
 explorer-frontend|docker/explorer-frontend/Dockerfile.dockerignore|explorer/frontend/.dockerignore
 explorer-sig-provider|docker/explorer-sig-provider/Dockerfile.dockerignore|explorer/services/sig-provider/.dockerignore
 explorer-smart-contract-verifier|docker/explorer-smart-contract-verifier/Dockerfile.dockerignore|explorer/services/smart-contract-verifier/.dockerignore
@@ -98,8 +98,8 @@ consensus/spec/ivy-proofs/Dockerfile
 consensus/test/docker/Dockerfile
 consensus/test/e2e/docker/Dockerfile
 explorer/backend/.devcontainer/Dockerfile
-platform/hosted/human/Dockerfile
-platform/hosted/human/Dockerfile.dockerignore
+services/platform/hosted/human/Dockerfile
+services/platform/hosted/human/Dockerfile.dockerignore
 sdk/contrib/devtools/dockerfile
 sdk/contrib/images/simd-dlv/Dockerfile
 sdk/contrib/images/simd-env/Dockerfile
@@ -324,7 +324,7 @@ PYTHON
 check_recipe() {
     local recipe=$1 context=$2
     if [ "$recipe" = docker/paxeer/Dockerfile.paxd ]; then
-        source platform/hosted/tests/beta-images.sh
+        source services/platform/hosted/tests/beta-images.sh
         local REVISION
         REVISION=$(git rev-parse HEAD)
         paxd_check_recipe "$LOG_DIR/paxd-check.Dockerfile" || return
@@ -338,7 +338,7 @@ while IFS='|' read -r service new _ context; do
     picked "$service" || continue
     if [ "$context" = @registry-builder ]; then
         context_directory=$(mktemp -d "${TMPDIR:-/tmp}/containers-builder.XXXXXX")
-        if ! bash platform/hosted/registry/builder-environment/build-env.sh --prepare-context "$context_directory/prepared" >"$LOG_DIR/registry-builder-context.log" 2>&1; then
+        if ! bash services/platform/hosted/registry/builder-environment/build-env.sh --prepare-context "$context_directory/prepared" >"$LOG_DIR/registry-builder-context.log" 2>&1; then
             cat "$LOG_DIR/registry-builder-context.log" >&2
             fail "$service: canonical context preparation failed"
             continue

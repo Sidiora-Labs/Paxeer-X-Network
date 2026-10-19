@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>LayerX.Docs.FirstPayment</RootNamespace>
+    <AssemblyName>layerx-doc-first-payment</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../../../sdk/platform/dotnet/LayerX.Sdk.csproj" />
+  </ItemGroup>
+</Project>

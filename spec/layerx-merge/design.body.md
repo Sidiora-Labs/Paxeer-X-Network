@@ -243,15 +243,15 @@ Each retained service class writes to the chain only through user-signed transac
 
 - **Sequencer and standby.** paxd in sequencer and follower mode runs the proposer path above: receipts, pending reads, WAL, and the standby takeover at round 1. Contract: "Sequencer (primary and hot standby)".
 - **Archive node.** A paxd archive deployment serves `eth_getProof`, ICS23 proofs and logs at past heights. It replaces the kernel replica and the relay archive. Contract: "Archive node".
-- **Unified router and onboarding.** platform/hosted/gateway is the public entry point. It relays `eth_*` writes to the sequencer and serves compatibility reads. Today `lx_sendActivity` is routed to the kernel component (platform/hosted/gateway/src/rpc.rs:341); the `lx_*` ingress is switched off at activation. platform/hosted/identity and platform/hosted/faucet handle registration and test funds through ordinary user or faucet transactions. Contracts: "Unified router", "Identity registration service", "Faucet".
-- **Receipt verification and settlement adapters.** platform/hosted/authority verifies sequencer receipts plus inclusion against the pinned receipt key. interop/crates/layerx-interop-service and platform/middleware carry x402 and the other payment protocols, with the user's own transaction as the settlement leg. platform/hosted/core keeps treasury sends. Contracts: "Receipt authority (verifier)", "Interop service and protocol adapters", "x402 seller middleware", "Core boundary (treasury)".
+- **Unified router and onboarding.** services/platform/hosted/gateway is the public entry point. It relays `eth_*` writes to the sequencer and serves compatibility reads. Today `lx_sendActivity` is routed to the kernel component (services/platform/hosted/gateway/src/rpc.rs:341); the `lx_*` ingress is switched off at activation. services/platform/hosted/identity and services/platform/hosted/faucet handle registration and test funds through ordinary user or faucet transactions. Contracts: "Unified router", "Identity registration service", "Faucet".
+- **Receipt verification and settlement adapters.** services/platform/hosted/authority verifies sequencer receipts plus inclusion against the pinned receipt key. interop/crates/layerx-interop-service and services/platform/middleware carry x402 and the other payment protocols, with the user's own transaction as the settlement leg. services/platform/hosted/core keeps treasury sends. Contracts: "Receipt authority (verifier)", "Interop service and protocol adapters", "x402 seller middleware", "Core boundary (treasury)".
 - **Gas station.** interop/crates/layerx-gas-station sponsors 7702 batches under DID-keyed budgets, and its rate publisher keeps the paymaster SID rate fresh (see the fee policy section). Contracts: "Gas station relayer", "Gas station SID rate publisher".
 - **Web search sidecars.** interop/crates/x-websearch runs one sidecar per node. Each crawls and answers queries. Its `RequestWatcher` (interop/crates/x-websearch/src/watch.rs:299) follows requests of both origins and collects attestor signatures. It submits `fulfil` (modules/xweb/keeper/fulfil.go:93) or `fulfilProgram` to 0x1019, settles paid requests by `draw` on 0x101A, and releases results only after the receipt. Contract: "x-websearch sidecar (per node)".
 - **Bridge and mirrors.** interop/crates/layerx-bridge-relayer submits `bridgeIn` under attestor threshold signatures (modules/layerxbridge/keeper/bridge.go:65) and releases on remote vaults. interop/crates/layerx-mirror and layerx-mirror-signer publish the chain's own header and app hash to remote archives. Contracts: "Bridge relayer (EVM and Solana)", "Mirror publisher (conditional)", "Mirror signer".
-- **Trading drivers.** The price feeder (platform/hosted/feeder) pushes ed25519-signed observations to 0x1015 `pushOracle`. A new perps keeper service submits permissionless `fundingTick`, `liquidate` and `adl` calls from pending reads. Validator oracle feeders keep voting on modules/oracle. Contracts: "Price feeder (perps)", "Perps keeper (new)", "Validator oracle price feeders".
+- **Trading drivers.** The price feeder (services/platform/hosted/feeder) pushes ed25519-signed observations to 0x1015 `pushOracle`. A new perps keeper service submits permissionless `fundingTick`, `liquidate` and `adl` calls from pending reads. Validator oracle feeders keep voting on modules/oracle. Contracts: "Price feeder (perps)", "Perps keeper (new)", "Validator oracle price feeders".
 - **AI and program workers.** These services call layerxprograms 0x101D guests with keys bound through 0x1004:
-  - platform/hosted/paxai-worker (workers);
-  - platform/hosted/ai-artifacts (sealed evidence storage);
+  - services/platform/hosted/paxai-worker (workers);
+  - services/platform/hosted/ai-artifacts (sealed evidence storage);
   - AI evaluators;
   - compute-lease providers;
   - stream metering providers.
@@ -266,9 +266,9 @@ Each retained service class writes to the chain only through user-signed transac
 
   The wallet app backends serve metadata only. Contracts: "Embedded wallet gateway", "Wallet attestors (TSS)", "Human service", "Human identity and security providers, KMS", "Wallet app backends".
 - **Read side.** These services serve history, projections, catalogues and notifications from blocks, logs and module queries:
-  - platform/hosted/indexer (the Paxeer half);
-  - platform/hosted/webhooks;
-  - platform/hosted/registry, rebuilt as a read cache over the layerxprograms module;
+  - services/platform/hosted/indexer (the Paxeer half);
+  - services/platform/hosted/webhooks;
+  - services/platform/hosted/registry, rebuilt as a read cache over the layerxprograms module;
   - the explorer fork in explorer/.
 
   Contracts: "Indexer", "Webhooks", "Program registry read cache", "Explorer fork and explorer index".

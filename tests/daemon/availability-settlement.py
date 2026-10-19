@@ -142,7 +142,7 @@ def main():
     anchor_source.parent.mkdir(parents=True, exist_ok=True)
     anchor_source.write_text(ANCHOR_SOURCE)
     run('forge', 'build', 'contracts/GuarantorBond.sol', 'contracts/CheckpointRegistry.sol',
-        'platform/hosted/paxeer/contracts/BetaUsdl.sol', str(anchor_source), '--out', str(artifacts),
+        'services/platform/hosted/paxeer/contracts/BetaUsdl.sol', str(anchor_source), '--out', str(artifacts),
         '--cache-path', str(ROOT / 'build/availability-contracts/cache'))
     token = json.loads((artifacts / 'BetaUsdl.sol/BetaUsdl.json').read_text())
     timestamp = int(time.time())

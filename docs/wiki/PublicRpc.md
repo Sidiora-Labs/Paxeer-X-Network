@@ -3,11 +3,11 @@
 The limited beta has not opened yet; the gateway API becomes available
 when it does. Once available, the JSON-RPC gateway publishes **18** `lx_*` methods in the
 embedded OpenRPC 1.3.2 document
-(`platform/hosted/gateway/openrpc.json`). Those names are self-service
+(`services/platform/hosted/gateway/openrpc.json`). Those names are self-service
 onboarding, authenticated canonical submission, unauthenticated
 committed reads, fee estimation, and scoped live subscriptions. The
 gateway dispatch test asserts the same 18 names
-(`platform/hosted/gateway/src/rpc.rs`).
+(`services/platform/hosted/gateway/src/rpc.rs`).
 
 See [Commitment levels](CommitmentLevels.md), [Assets](Assets.md),
 [Payments developer path](PaymentsQuickstart.md), and the
@@ -62,8 +62,8 @@ the registration binding and returns the principal record; the subject is
 derived from the key, so it is idempotent and cannot name another holder's
 principal. `lx_requestFunds` claims one faucet grant for the authenticated
 principal and requires that the named signer key be one the session authorises
-(`platform/hosted/gateway/src/rpc_register.rs`;
-`platform/hosted/gateway/src/rpc_faucet.rs`). The gateway derives the faucet
+(`services/platform/hosted/gateway/src/rpc_register.rs`;
+`services/platform/hosted/gateway/src/rpc_faucet.rs`). The gateway derives the faucet
 idempotency key from the principal, DID, and signer key, so a repeated request
 returns the same grant rather than a second one, and a claim whose funded
 evidence is incomplete is `-32603` rather than a reported success. Both are
@@ -296,7 +296,7 @@ carrying `x-layerx-principal` or `x-layerx-api-key` is refused with
 
 The examples below are the positional JSON-RPC envelopes. Field lists
 come from the gateway OpenRPC descriptions, public-core read
-translation (`platform/hosted/core/src/public_reads.rs`), register and
+translation (`services/platform/hosted/core/src/public_reads.rs`), register and
 faucet decoders, and the WebSocket notifier. They are not reconstructed
 from memory.
 
@@ -475,17 +475,17 @@ below. `lx_subscribe` returns a one-based string id.
 
 ## Source contract
 
-- `platform/hosted/gateway/openrpc.json` defines the public method contract.
-- `platform/hosted/gateway/src/rpc.rs` dispatches HTTPS JSON-RPC.
-- `platform/hosted/gateway/src/ws.rs` implements subscriptions.
-- `platform/hosted/gateway/src/main.rs` owns routing (`route`), the scope table
+- `services/platform/hosted/gateway/openrpc.json` defines the public method contract.
+- `services/platform/hosted/gateway/src/rpc.rs` dispatches HTTPS JSON-RPC.
+- `services/platform/hosted/gateway/src/ws.rs` implements subscriptions.
+- `services/platform/hosted/gateway/src/main.rs` owns routing (`route`), the scope table
   (`permits`), key authentication, and the request-size bound.
-- `platform/hosted/gateway/src/lib.rs` owns canonical submission verification
+- `services/platform/hosted/gateway/src/lib.rs` owns canonical submission verification
   (`verify_submission`) and the key-id format bound.
-- `platform/hosted/gateway/src/public_reads.rs` serves the unauthenticated REST
+- `services/platform/hosted/gateway/src/public_reads.rs` serves the unauthenticated REST
   read passthroughs `GET /v1/state`, `GET /v1/accounts/{id}/balance`, and
   `GET /v1/dids/{did}/accounts`, and holds the read limiter.
-- `platform/hosted/core/src/public_reads.rs` implements authenticated native
+- `services/platform/hosted/core/src/public_reads.rs` implements authenticated native
   read translation.
 
 [Home](Home.md)

@@ -1381,9 +1381,9 @@ def kms_service_prerequisite():
     import shlex
     os.umask(0o077)
     sys.dont_write_bytecode = True
-    specification = importlib.util.spec_from_file_location('human_material', ROOT / 'platform/hosted/human/material.py')
+    specification = importlib.util.spec_from_file_location('human_material', ROOT / 'services/platform/hosted/human/material.py')
     material = importlib.util.module_from_spec(specification)
-    sys.path.insert(0, str(ROOT / 'platform/hosted/human'))
+    sys.path.insert(0, str(ROOT / 'services/platform/hosted/human'))
     specification.loader.exec_module(material)
     container = None
     evidence = None
@@ -1429,7 +1429,7 @@ def kms_service_prerequisite():
         image_revision = (metadata['Config'].get('Labels') or {}).get('org.opencontainers.image.revision', '')
         require(metadata['Id'] == image and re.fullmatch('[0-9a-f]{40}', image_revision) is not None, 'image source identity refused')
         paths = ['human/Cargo.toml', 'human/Cargo.lock', 'human/crates', 'agent', 'programs', 'services/interop',
-                 'platform/hosted/internal', 'platform/crates', 'platform/Cargo.toml', 'platform/Cargo.lock']
+                 'services/platform/hosted/internal', 'platform/crates', 'services/platform/Cargo.toml', 'services/platform/Cargo.lock']
         def binding(source):
             return command(['git', '-C', str(ROOT), 'ls-tree', '-r', '--full-tree', '-z', source, '--', *paths]).stdout
         require(binding(image_revision) == binding(revision), 'prebuilt Human KMS/runtime clock source differs')
@@ -1441,7 +1441,7 @@ def kms_service_prerequisite():
         command(['openssl', 'req', '-x509', '-new', '-key', str(tls / 'ca.key'), '-days', '1', '-subj', '/CN=Disposable Human KMS CA',
                  '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign', '-out', str(tls / 'ca.crt')])
         command(['openssl', 'x509', '-in', str(tls / 'ca.crt'), '-outform', 'DER', '-out', str(tls / 'ca.der')])
-        producer = (ROOT / 'platform/hosted/tests/beta-cluster.sh').read_text().split('issue_cert() {', 1)[1].split('\n}\n', 1)[0]
+        producer = (ROOT / 'services/platform/hosted/tests/beta-cluster.sh').read_text().split('issue_cert() {', 1)[1].split('\n}\n', 1)[0]
         for name, common, usage, san in [('human-kms', 'layerx-human-kms', 'serverAuth', 'DNS:layerx-human-kms,DNS:localhost,IP:127.0.0.1'),
                                        ('human-kms-client', 'layerx-human-components', 'clientAuth', ''),
                                        ('human-kms-executor', 'layerx-human-movement', 'clientAuth', ''),
@@ -1571,9 +1571,9 @@ def registry_material():
     import stat
     os.umask(0o077)
     sys.dont_write_bytecode = True
-    specification = importlib.util.spec_from_file_location('registry_material', ROOT / 'platform/hosted/human/material.py')
+    specification = importlib.util.spec_from_file_location('registry_material', ROOT / 'services/platform/hosted/human/material.py')
     material = importlib.util.module_from_spec(specification)
-    sys.path.insert(0, str(ROOT / 'platform/hosted/human'))
+    sys.path.insert(0, str(ROOT / 'services/platform/hosted/human'))
     specification.loader.exec_module(material)
     evidence = None
     containers = []
@@ -1629,9 +1629,9 @@ def registry_material():
                 'private authenticated Docker owner socket required')
         images = {}
         for role, environment, files in (
-                ('node', 'PAXEER_X_NODE_IMAGE', {'/usr/local/lib/layerx-human/material.py': 'platform/hosted/human/material.py',
-                                                '/opt/layerx/supervisor.sh': 'platform/hosted/node/supervisor.sh'}),
-                ('registry', 'PAXEER_X_REGISTRY_IMAGE', {'/usr/local/lib/layerx-human/material.py': 'platform/hosted/human/material.py',
+                ('node', 'PAXEER_X_NODE_IMAGE', {'/usr/local/lib/layerx-human/material.py': 'services/platform/hosted/human/material.py',
+                                                '/opt/layerx/supervisor.sh': 'services/platform/hosted/node/supervisor.sh'}),
+                ('registry', 'PAXEER_X_REGISTRY_IMAGE', {'/usr/local/lib/layerx-human/material.py': 'services/platform/hosted/human/material.py',
                                                         '/usr/local/bin/registry-env-init': 'docker/platform-registry/init.sh'})):
             image = os.environ.get(environment, '')
             if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
@@ -1725,11 +1725,11 @@ def registry_material():
         case('foreign-runtime-owner-generation-refused')
         retained = json.loads(execute(registry, '4030:4030', *validator).stdout)
         require(retained['generation'] == generation, 'final generation identity lost after refusals')
-        source = (ROOT / 'platform/hosted/human/provision.sh').read_text()
+        source = (ROOT / 'services/platform/hosted/human/provision.sh').read_text()
         require('before' in source and '[ "$before" = "$after" ]' in source
                 and 'exec layerx-node-0 -c layerxd --' in source and '--export-registry-material' in source,
                 'actual authenticated Kubernetes producer handoff absent')
-        supervisor = (ROOT / 'platform/hosted/node/supervisor.sh').read_text()
+        supervisor = (ROOT / 'services/platform/hosted/node/supervisor.sh').read_text()
         publish = supervisor.split('publish_generation() {', 1)[1].split('\n}', 1)[0]
         require(publish.index('--hosted-registry-material-produce') < publish.index('replica-ready'), 'producer waits on replica or Human readiness')
         case('acyclic-production-order-and-identifiable-retained-generation')
@@ -1760,9 +1760,9 @@ def policy_graph():
     import importlib.util
     os.umask(0o077)
     sys.dont_write_bytecode = True
-    specification = importlib.util.spec_from_file_location('policy_material', ROOT / 'platform/hosted/human/material.py')
+    specification = importlib.util.spec_from_file_location('policy_material', ROOT / 'services/platform/hosted/human/material.py')
     material = importlib.util.module_from_spec(specification)
-    sys.path.insert(0, str(ROOT / 'platform/hosted/human'))
+    sys.path.insert(0, str(ROOT / 'services/platform/hosted/human'))
     specification.loader.exec_module(material)
     evidence = None
     container = None
@@ -1815,7 +1815,7 @@ def policy_graph():
             if producer.startswith('owner-input:'):
                 require(len(producer) > len('owner-input:'), 'unnamed owner input ' + name)
                 continue
-            sources = [ROOT / 'platform/hosted/human/provision.sh', ROOT / 'platform/hosted/tests/beta-cluster.sh']
+            sources = [ROOT / 'services/platform/hosted/human/provision.sh', ROOT / 'services/platform/hosted/tests/beta-cluster.sh']
             require(hasattr(material, producer) or __import__('provision').__dict__.get(producer) is not None
                     or any(re.search('^' + re.escape(producer) + r'\(\) *[({]', path.read_text(), re.M) for path in sources),
                     'declared producer absent from source: ' + producer)
@@ -1864,7 +1864,7 @@ def policy_graph():
                 'node packaged image source identity mismatch')
         packaged = docker('run', '--rm', '--pull=never', '--network=none', '--entrypoint', '/usr/bin/sha256sum', image,
                           '/usr/local/lib/layerx-human/material.py').stdout.split()[0]
-        require(packaged == hashlib.sha256((ROOT / 'platform/hosted/human/material.py').read_bytes()).hexdigest(),
+        require(packaged == hashlib.sha256((ROOT / 'services/platform/hosted/human/material.py').read_bytes()).hexdigest(),
                 'packaged material producer differs')
         state = Path(tempfile.mkdtemp(prefix='policy-graph-', dir=evidence))
         volume = 'paxeer-x-policy-graph-' + uuid.uuid4().hex
@@ -2028,7 +2028,7 @@ def policy_graph():
         body = init.split('human_authority_publish() {', 1)[1].split('\n}\n', 1)[0]
         require('--policy-graph-status' in body and body.index('--policy-graph-status') < body.index('--publish-authority-material')
                 and '$kernel_registry_material' in body and '"$keys/human-authority"' in body, 'kernel authority producer absent')
-        provision = (ROOT / 'platform/hosted/human/provision.sh').read_text()
+        provision = (ROOT / 'services/platform/hosted/human/provision.sh').read_text()
         flow = provision.split('human_evidence_provision() (', 1)[1].split('\n)\n', 1)[0]
         require(flow.index('human_native_owner_prepare') < flow.index('human_journal_deploy') < flow.index('human_policy_graph_inputs')
                 and 'registry_kernel_material' in provision.split('human_native_owner_prepare() (', 1)[1].split('\n)\n', 1)[0],
@@ -2123,11 +2123,11 @@ bind() {
     mount -o remount,bind,ro "$2"
 }
 [ ! -d /usr/local/lib/python3.12 ] || bind /usr/local/lib/python3.12 "$root/usr/local/lib/python3.12"
-bind "$source/platform/hosted/human" "$root/usr/local/lib/layerx-human"
+bind "$source/services/platform/hosted/human" "$root/usr/local/lib/layerx-human"
 bind "$source/docker/kernel/init.sh" "$root/usr/local/bin/kernel-init"
 bind "$source/tools/bringup/kernel-genesis.sh" "$root/usr/local/bin/kernel-genesis.sh"
-bind "$source/platform/hosted/node/checkpoint-authority.py" "$root/opt/layerx/checkpoint-authority.py"
-bind "$source/platform/hosted/paxeer/evm.py" "$root/opt/layerx/paxeer/evm.py"
+bind "$source/services/platform/hosted/node/checkpoint-authority.py" "$root/opt/layerx/checkpoint-authority.py"
+bind "$source/services/platform/hosted/paxeer/evm.py" "$root/opt/layerx/paxeer/evm.py"
 bind /etc/ssl "$root/etc/ssl"
 bind "$fixture" "$root/fixture"
 bind "$source" "$root/source"
@@ -2750,7 +2750,7 @@ print(urllib.request.urlopen(request,timeout=10).read().decode())
             self.registry.write_text(json.dumps({'schema_version': 2, 'assets': [{'asset': self.asset}],
                                                  'modules': [{'module': 1, 'ordinals': [1, 2]}]}))
             self.libdir = self.mkdir('lib', 0, 0, 0o755)
-            shutil.copytree(ROOT / 'platform/hosted/human', self.libdir / 'layerx-human')
+            shutil.copytree(ROOT / 'services/platform/hosted/human', self.libdir / 'layerx-human')
             self.kernel_layout()
             self.kernel_genesis()
             inventory = {'revision': self.revision, 'unmerged_branches': self.unmerged(), 'before': self.inventory('before-rollout')}

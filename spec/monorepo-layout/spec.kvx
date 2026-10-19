@@ -731,7 +731,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.5]
 title = "Move the rest of platform to services/platform"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 phase = "A"
 wave = 4

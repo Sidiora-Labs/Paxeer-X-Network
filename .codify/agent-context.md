@@ -48,7 +48,7 @@ _Generated graph context owned by `cg agentmd`. Regenerate with `cg agentmd --wr
 - `node/` — 124 files, 31465 lines (mostly go)
 - `parallelization/` — 9 files, 194 lines (mostly rust)
 - `tests/occ/` — 3 files, 898 lines (mostly go)
-- `platform/` — 673 files, 316733 lines (mostly rust)
+- `services/platform/` — 673 files, 316733 lines (mostly rust)
 - `paxeer-network/` — 12 files, 1432 lines (mostly typescript)
 - `precompiles/` — 318 files, 90380 lines (mostly go)
 - `programs/` — 324 files, 219795 lines (mostly rust)

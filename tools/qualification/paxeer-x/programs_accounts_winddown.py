@@ -25,7 +25,7 @@ REQUIRED = {'deploy-abi2', 'owner-opt-in-profile2', 'fund-abi2', 'upgrade-abi3',
             'proof-corruption-refused', 'stale-head-refused'}
 DECLARED = ('tools/paxeer-x/build/6.6.mk',
             'tools/qualification/paxeer-x/programs_accounts_winddown.py',
-            'platform/hosted/agent-boundary/tests/real_node/lifecycle/account_upgrades.rs')
+            'services/platform/hosted/agent-boundary/tests/real_node/lifecycle/account_upgrades.rs')
 
 
 def require(condition, message):
@@ -56,7 +56,7 @@ def sources():
         'Makefile', 'src', 'include', 'cmd/layerxd', 'cmd/layerx-genesis',
         'programs/crates', 'programs/sdk/rust', 'programs/Cargo.toml',
         'programs/Cargo.lock', 'services/agent/crates', 'services/agent/Cargo.toml', 'services/agent/Cargo.lock',
-        'platform/hosted/agent-boundary', 'platform/Cargo.toml', 'platform/Cargo.lock',
+        'services/platform/hosted/agent-boundary', 'services/platform/Cargo.toml', 'services/platform/Cargo.lock',
         'contracts/config', 'rust-toolchain.toml'], cwd=ROOT)
     names = {os.fsdecode(name) for name in output.split(b'\0') if name}
     names.update(DECLARED)
@@ -125,7 +125,7 @@ def build(arguments, evidence):
            evidence / ('build-native-' + stamp + '.log'), environment)
     environment['CARGO_TARGET_DIR'] = os.environ.get('PAXEER_X_PROFILE2_PLATFORM_TARGET',
                                                    '/root/lx-target/platform')
-    output = launch([*cargo, 'test', '--locked', '--manifest-path', 'platform/Cargo.toml',
+    output = launch([*cargo, 'test', '--locked', '--manifest-path', 'services/platform/Cargo.toml',
                     '-p', 'layerx-platform-agent-boundary', '--test', 'real_node',
                     '--no-run', '--message-format=json'],
                    evidence / ('build-process-fixture-' + stamp + '.log'), environment)
@@ -221,10 +221,10 @@ ACCOUNTS_SOURCE_PATHS = ('Makefile', 'src', 'include', 'cmd/layerxd',
     'cmd/layerx-genesis', 'programs/crates', 'programs/sdk/rust',
     'programs/Cargo.toml', 'programs/Cargo.lock', 'programs/.cargo',
     'services/agent/crates', 'services/agent/Cargo.toml', 'services/agent/Cargo.lock',
-    'platform/hosted/agent-boundary', 'platform/Cargo.toml', 'platform/Cargo.lock',
-    'contracts', 'foundry.toml', 'tests/bridge', 'platform/hosted/paxeer/evm.py',
+    'services/platform/hosted/agent-boundary', 'services/platform/Cargo.toml', 'services/platform/Cargo.lock',
+    'contracts', 'foundry.toml', 'tests/bridge', 'services/platform/hosted/paxeer/evm.py',
     'rust-toolchain.toml',
-    'tools/paxeer-x/build', 'tools/build', 'platform/Makefile.inc',
+    'tools/paxeer-x/build', 'tools/build', 'services/platform/Makefile.inc',
     'tools/qualification/paxeer-x/programs_accounts_winddown.py')
 
 
@@ -254,10 +254,10 @@ def accounts_sources():
         'src/modules/programs/accounts.c', 'src/modules/programs/winddown.c',
         'src/modules/programs/deploy.c', 'src/modules/programs/call.c',
         'include/layerx/programs.h',
-        'platform/hosted/agent-boundary/tests/real_node/lifecycle/account_upgrades.rs',
+        'services/platform/hosted/agent-boundary/tests/real_node/lifecycle/account_upgrades.rs',
         'tests/bridge/deploy_local_custody.py', 'tests/bridge/custody_credit.py',
         'tests/bridge/sign_credit.c', 'tests/bridge/test_credit.c',
-        'platform/hosted/paxeer/evm.py',
+        'services/platform/hosted/paxeer/evm.py',
         'programs/sdk/rust/examples/escrow/src/lib.rs')),
         'complete native and real process producer sources required')
     native_inputs = {str(path.relative_to(ROOT))
@@ -367,7 +367,7 @@ def accounts_build(arguments, evidence):
             'build/tests/bridge/sign-credit', 'build/tests/bridge/test-credit'],
            evidence / 'native.log', environment)
     environment['CARGO_TARGET_DIR'] = str(platform)
-    output = launch([*cargo, 'test', '--locked', '--manifest-path', 'platform/Cargo.toml',
+    output = launch([*cargo, 'test', '--locked', '--manifest-path', 'services/platform/Cargo.toml',
                     '-p', 'layerx-platform-agent-boundary', '--test', 'real_node',
                     '--no-run', '--message-format=json'],
                    evidence / 'process-fixture.log', environment)

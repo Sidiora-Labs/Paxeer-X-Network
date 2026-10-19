@@ -5,7 +5,7 @@ cd "$root"
 case "${1-}" in
   --code-only)
     [ "$#" -eq 1 ] || exit 2
-    bash platform/hosted/tests/topology-check.sh --yaml-parser pyyaml
+    bash services/platform/hosted/tests/topology-check.sh --yaml-parser pyyaml
     printf 'PAXEER_X_CODE_ONLY deployment=UNRUN runtime=UNRUN\n'
     ;;
   "")

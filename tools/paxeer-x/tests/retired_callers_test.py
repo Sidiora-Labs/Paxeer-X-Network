@@ -590,7 +590,7 @@ def self_test(catalogue):
         root = Path(directory)
         git(root, ["init", "-q"])
         files = {
-            "platform/hosted/indexer/src/abi.rs": 'retained\n("layerxverify", 0x1012),\n',
+            "services/platform/hosted/indexer/src/abi.rs": 'retained\n("layerxverify", 0x1012),\n',
             "live.c": "lxp_guarantor_init();\n",
             "examples/vectors.rs": "layerxverify\n",
             "pkg/keeper_test.go": "layerxverify\n",
@@ -614,21 +614,21 @@ def self_test(catalogue):
             ("embedded.rs", 1, "verify", "layerxverify"),
             ("examples/vectors.rs", 1, "verify", "layerxverify"),
             ("odd:name\nfile.rs", 1, "verify", "layerxverify"),
-            ("platform/hosted/indexer/src/abi.rs", 2, "verify", "layerxverify"),
+            ("services/platform/hosted/indexer/src/abi.rs", 2, "verify", "layerxverify"),
         ]
         check_equal(
             scan(root, catalogue, ["verify"], []),
             expected,
             "real git tracked scan and exclusions",
         )
-        target = "platform/hosted/indexer/src/abi.rs"
+        target = "services/platform/hosted/indexer/src/abi.rs"
         check_equal(
             scan(root, catalogue, ["verify"], [target]),
             [expected[-1]],
             "component and file filters",
         )
         check_equal(
-            scan(root, catalogue, ["verify"], ["platform/hosted/indexer"]),
+            scan(root, catalogue, ["verify"], ["services/platform/hosted/indexer"]),
             [expected[-1]],
             "directory filter",
         )

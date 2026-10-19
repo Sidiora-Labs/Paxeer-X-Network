@@ -6,5 +6,5 @@ if (($#)); then
 fi
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 : "${LAYERX_CONNECTED_MIDDLEWARE_FIXTURE:?set protected genuine-service acceptance input}"
-node platform/middleware/conformance/run.mjs
-node platform/middleware/conformance/connected.mjs
+node services/platform/middleware/conformance/run.mjs
+node services/platform/middleware/conformance/connected.mjs

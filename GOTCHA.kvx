@@ -8321,3 +8321,8 @@ fix = "after the path rewrite, search for the moved package names and for the ol
 area = "layout moves"
 symptom = "moving a subdirectory out of a parent tree leaves the sibling files of that parent reaching it by a relative climb that stops inside the parent (../../../sdk/conformance from platform/middleware/agent/test), so the climb names neither the old nor the new root-anchored path and a lexical rewrite misses it, and the parent ignore file (/**/target/ in platform/.gitignore) stops covering the build output of the moved tree"
 fix = "after the lexical rewrite, resolve every ../ chain in the old parent against each base that lands on the parent directory and point it at the new home, and give the moved tree the ignore rules its old parent supplied"
+
+[gotcha.1750]
+area = "layout moves"
+symptom = "a moved tree also reaches the repository root through index climbs that carry no ../ and no old path, Python Path(__file__).parents[N], HERE.parents[N] and Rust CARGO_MANIFEST_DIR ancestors().nth(N), and through symlink targets written as strings in Makefile and Dockerfile recipes (ln -s and readlink of ../../../../human/apps/web/node_modules), and a Go package of the root module moved with the tree changes its import path, so a lexical and ../ rewrite leaves all three pointing one level short and gofmt reorders the rewritten import blocks"
+fix = "after the ../ rewrite, raise every parents and ancestors index that landed on the root by the added depth, deepen every link target that climbs out of the moved tree, rewrite the import path of the moved packages and run gofmt on the files that carry it"

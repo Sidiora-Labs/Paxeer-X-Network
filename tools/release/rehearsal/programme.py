@@ -660,12 +660,12 @@ def module_address(name):
     return "0x" + hashlib.sha256(name.encode()).digest()[:20].hex()
 
 
-# --- secp256k1 signing (platform/hosted/paxeer/evm.py) -----------------------------------------
+# --- secp256k1 signing (services/platform/hosted/paxeer/evm.py) -----------------------------------------
 
 
 def _load_evm():
     spec = importlib.util.spec_from_file_location(
-        "paxeer_evm", ROOT / "platform/hosted/paxeer/evm.py"
+        "paxeer_evm", ROOT / "services/platform/hosted/paxeer/evm.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

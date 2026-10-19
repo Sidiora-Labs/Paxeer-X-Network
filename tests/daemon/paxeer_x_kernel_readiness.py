@@ -62,7 +62,7 @@ def supplementary(path):
     tree = fixture.run(['git', 'rev-parse', revision + '^{tree}'], capture_output=True).stdout.decode().strip()
     require(value.get('source_tree') == tree, 'kernel artifact source tree')
     required_paths = {
-        'layerx-runtime-clock': ['platform/hosted/runtime-clock', 'services/agent/crates/layerx-types'],
+        'layerx-runtime-clock': ['services/platform/hosted/runtime-clock', 'services/agent/crates/layerx-types'],
         'layerxctl': ['cmd/layerxctl', 'services/agent/crates'],
         'layerx-handover': ['cmd/layerx-handover', 'src', 'include'],
         'layerx-archive-codec': ['cmd/layerx-archive-codec', 'src', 'include'],
@@ -140,7 +140,7 @@ class Kernel(fixture.RuntimeFixture):
 
     def supervisor(self, role):
         name = 'layerxd' if role == 'sequencer' else 'layerxd-authority'
-        command = ['bash', ROOT / 'platform/hosted/node/supervisor.sh', '--role', role,
+        command = ['bash', ROOT / 'services/platform/hosted/node/supervisor.sh', '--role', role,
                    '--data-dir', self.directory / 'node', '--run-dir', self.directory / 'run',
                    '--layerxd', self.binary('layerxd')]
         if role == 'sequencer':
@@ -163,7 +163,7 @@ class Kernel(fixture.RuntimeFixture):
                     subprocess.run(['mount', '-o', 'remount,bind,ro,nosuid,nodev', str(destination)], check=True)
         self.stop_role('sequencer')
         self.stop_role('replica')
-        self.clock_launch('treasury-signer', [sys.executable, ROOT / 'platform/hosted/node/signer/signer.py',
+        self.clock_launch('treasury-signer', [sys.executable, ROOT / 'services/platform/hosted/node/signer/signer.py',
             '--socket', self.directory / 'run/treasury-signer.sock', '--provider', 'file',
             '--key-file', self.directory / 'keys/treasury.seed', '--allowed-uid', str(fixture.UID),
             '--socket-group', str(fixture.UID)])
@@ -270,7 +270,7 @@ class Qualification:
     def restart_archive(self, name):
         _, path = self.archives[name]
         return self.start(name, [self.kernel.binary('layerxd'), '--relay-archive', path],
-                          self.kernel.env | {'LAYERX_RELAY_ARCHIVE_RUNTIME': str(ROOT / 'platform/relay_archive/runtime.py')})
+                          self.kernel.env | {'LAYERX_RELAY_ARCHIVE_RUNTIME': str(ROOT / 'services/platform/relay_archive/runtime.py')})
 
     def collect(self, label, origin=None, data=None, run=None, init=None):
         env = dict(os.environ, CHECK_LIVE_KERNEL_LOCAL='1', CHECK_LIVE_KERNEL_APP=self.app,

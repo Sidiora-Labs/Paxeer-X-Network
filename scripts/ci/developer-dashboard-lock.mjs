@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const dashboard = JSON.parse(readFileSync("platform/hosted/dashboard/web/package.json", "utf8"));
+const dashboard = JSON.parse(readFileSync("services/platform/hosted/dashboard/web/package.json", "utf8"));
 const lock = JSON.parse(readFileSync("human/apps/web/package-lock.json", "utf8"));
 
 for (const dependencies of [dashboard.dependencies, dashboard.devDependencies]) {

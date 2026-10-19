@@ -81,10 +81,10 @@ def sources():
             "whole source must be published clean before qualification")
     paths = git("ls-files", "-z", "Makefile", "src", "include", "cmd/layerxd",
                 "cmd/layerx-genesis", "programs", "services/agent/crates", "services/agent/Cargo.toml",
-                "services/agent/Cargo.lock", "platform/hosted/agent-boundary", "platform/Cargo.toml",
-                "platform/Cargo.lock", "contracts/config", "tests/bridge", "tests/support",
+                "services/agent/Cargo.lock", "services/platform/hosted/agent-boundary", "services/platform/Cargo.toml",
+                "services/platform/Cargo.lock", "contracts/config", "tests/bridge", "tests/support",
                 "tests/fixtures/fee-params-v3.bin", "tests/fixtures/fee-params-v4.bin",
-                "tools/paxeer-x/build/6.6.mk", "tools/build", "platform/Makefile.inc",
+                "tools/paxeer-x/build/6.6.mk", "tools/build", "services/platform/Makefile.inc",
                 "tools/paxeer-x/gates/104.30.5.sh", "rust-toolchain.toml").split("\0")
     result = {}
     for relative in paths:
@@ -171,7 +171,7 @@ def build(evidence, manifest):
     registry = executable(output, "winddown")
     env["CARGO_TARGET_DIR"] = str(platform_target)
     output = run(["flock", "/root/lx-cargo/platform-build.lock"] + cargo + ["test", "--locked",
-        "--manifest-path", "platform/Cargo.toml", "-p", "layerx-platform-agent-boundary",
+        "--manifest-path", "services/platform/Cargo.toml", "-p", "layerx-platform-agent-boundary",
         "--test", "real_node", "--no-run", "--message-format=json"], evidence / "consumer-build.log", env)
     actual = executable(output, "real_node")
     boundary = executable(output, "layerx-agent-boundary")

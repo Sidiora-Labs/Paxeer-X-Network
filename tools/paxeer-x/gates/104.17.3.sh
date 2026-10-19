@@ -25,7 +25,7 @@ def execute(argv, name, timeout=180):
     return path.read_text()
 
 for name in ('run-testnet.sh', 'reset-testnet.sh', 'render-status.sh', 'tests/hosted-smoke.sh'):
-    execute(['sh', '-n', str(root / 'platform/hosted/testnet' / name)], 'syntax-' + name.replace('/', '-'))
+    execute(['sh', '-n', str(root / 'services/platform/hosted/testnet' / name)], 'syntax-' + name.replace('/', '-'))
     tests += 1
 
 for name in ('LAYERX_TESTNET_LIB_TEST_BINARY', 'LAYERX_TESTNET_CONTROL_TEST_BINARY', 'LAYERX_FAUCET_TEST_BINARY'):
@@ -43,7 +43,7 @@ for name in ('LAYERX_TESTNET_LIB_TEST_BINARY', 'LAYERX_TESTNET_CONTROL_TEST_BINA
         raise RuntimeError('real Rust test corpus omitted a required case: ' + name)
     tests += int(results[0][0])
 
-output = execute(['python3', 'platform/hosted/testnet/tests/faucet-quota.py'], 'faucet-quota')
+output = execute(['python3', 'services/platform/hosted/testnet/tests/faucet-quota.py'], 'faucet-quota')
 records = re.findall(r'^FAUCET_QUOTA_RESULT (.+)$', output, re.M)
 if len(records) != 1:
     raise RuntimeError('real Redis quota corpus evidence is missing')
@@ -52,7 +52,7 @@ if not isinstance(record.get('tests'), int) or record['tests'] <= 0 or record.ge
     raise RuntimeError('real Redis quota corpus is empty or skipped')
 tests += record['tests']
 
-smoke = root / 'platform/hosted/testnet/tests/hosted-smoke.sh'
+smoke = root / 'services/platform/hosted/testnet/tests/hosted-smoke.sh'
 required = re.findall(r'^: "\$\{([A-Z0-9_]+):\?', smoke.read_text(), re.M)
 if not required:
     raise RuntimeError('actual hosted smoke prerequisite contract is missing')

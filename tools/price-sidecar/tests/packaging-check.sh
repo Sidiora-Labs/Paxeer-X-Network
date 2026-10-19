@@ -14,7 +14,7 @@ INSTALL_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/../../.." && pwd)
 UNIT="$INSTALL_DIR/price-sidecar.service"
 TEMPLATE="$INSTALL_DIR/config.template.json"
-MANIFEST="$REPO_ROOT/platform/Cargo.toml"
+MANIFEST="$REPO_ROOT/services/platform/Cargo.toml"
 
 fail() { printf 'packaging-check: error: %s\n' "$*" >&2; exit 1; }
 pass() { printf 'packaging-check: ok: %s\n' "$*"; }
@@ -97,7 +97,7 @@ lacks_match "$(cat "$UNIT")" '://[^/]*[0-9]|[0-9]{1,3}(\.[0-9]{1,3}){3}' "unit c
 pass "unit_directives: dedicated user, feed and Chainflow key credentials, %d key paths, restart, state directory 0700, sandbox"
 
 # -------------------------------------------- template_names_only and loader
-: "${CARGO_TARGET_DIR:=$REPO_ROOT/platform/target}"
+: "${CARGO_TARGET_DIR:=$REPO_ROOT/services/platform/target}"
 export CARGO_TARGET_DIR
 cargo build --locked --manifest-path "$MANIFEST" \
     --package layerx-oracle-feeder --bin price-sidecar >&2

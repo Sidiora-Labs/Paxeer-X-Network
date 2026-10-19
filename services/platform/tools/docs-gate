@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+repo_root=${1:-$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)}
+exec python3 "$repo_root/services/platform/docs/build/build_site.py" --check "$repo_root"

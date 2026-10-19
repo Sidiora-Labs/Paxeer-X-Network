@@ -96,7 +96,7 @@ sdk/platform/dotnet/bin/
 sdk/platform/dotnet/obj/
 sdk/platform/dotnet/tests/*/bin/
 sdk/platform/dotnet/tests/*/obj/
-platform/docs/samples/*/first-payment-go
+services/platform/docs/samples/*/first-payment-go
 tools/specgen/specgen
 
 __pycache__/
@@ -160,9 +160,9 @@ docs/
 tools/benchmark/
 programs/vendor/
 programs/porting/
-platform/docs/
-platform/examples/
-platform/tools/
+services/platform/docs/
+services/platform/examples/
+services/platform/tools/
 human/apps/wallet/public/
 human/tools/
 core/deps/

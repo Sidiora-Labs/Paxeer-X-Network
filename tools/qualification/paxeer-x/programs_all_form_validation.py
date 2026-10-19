@@ -371,7 +371,7 @@ def process_worker(directory, manifest_path):
         beneficiary = hashlib.sha256(b"LX:ACCOUNT:v1" + len(account).to_bytes(4, "big") + account).hexdigest()
         amount = 1000000000000
         custody = "0x0000000000000000000000000000000000001013"
-        deposit_command = [sys.executable, str(source / "platform/hosted/paxeer/evm.py"),
+        deposit_command = [sys.executable, str(source / "services/platform/hosted/paxeer/evm.py"),
                            "send", "--rpc", runtime.rpc_url, "--chain", "125", "--key-file",
                            str(runtime_directory / "keys/deployer.key"), "--value", str(amount * 10**12),
                            custody, "deposit(bytes32)", "0x" + beneficiary]
@@ -381,7 +381,7 @@ def process_worker(directory, manifest_path):
                 "real custody deposit failed")
         deposits = [json.loads(line) for line in deposit_log.read_text().splitlines() if line.startswith("{")]
         require(len(deposits) == 1 and deposits[0]["status"] == "0x1", "custody deposit has no successful receipt")
-        evm_spec = importlib.util.spec_from_file_location("program_validation_evm", source / "platform/hosted/paxeer/evm.py")
+        evm_spec = importlib.util.spec_from_file_location("program_validation_evm", source / "services/platform/hosted/paxeer/evm.py")
         evm = importlib.util.module_from_spec(evm_spec)
         evm_spec.loader.exec_module(evm)
         topic = "0x" + evm.keccak(b"CustodyDeposit(bytes32,bytes32,address,bytes32,uint256,uint64)").hex()

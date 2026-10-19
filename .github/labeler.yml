@@ -14,7 +14,7 @@ area:agent:
 area:platform:
   - changed-files:
       - any-glob-to-any-file:
-          - platform/**
+          - services/platform/**
           - tools/platform/**
           - sdk/platform/**
           - sdk/integrations/**

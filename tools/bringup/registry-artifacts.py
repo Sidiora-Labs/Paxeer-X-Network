@@ -19,8 +19,8 @@ VERSION = 1
 QUOTA_BYTES = 5368709120
 QUOTA_INODES = 65536
 CONTROLLERS = ('cpu', 'memory', 'pids', 'io')
-RECIPE = 'platform/hosted/registry/builder-environment'
-PROVISIONER = 'platform/hosted/registry/node-provision-build-boundary.sh'
+RECIPE = 'services/platform/hosted/registry/builder-environment'
+PROVISIONER = 'services/platform/hosted/registry/node-provision-build-boundary.sh'
 
 
 def require(condition, message):
@@ -109,7 +109,7 @@ def build(repo, output):
         write_json(output / f'build-{index}.json', {'command': command, 'exit_code': completed.returncode})
         require(completed.returncode == 0, f'canonical build {index} failed; see {output / f"build-{index}.log"}')
     runtime = image_id((output / 'runtime-image-id').read_text().strip())
-    run(['python3', repo / 'platform/hosted/gateway/tests/local/registry_image.py',
+    run(['python3', repo / 'services/platform/hosted/gateway/tests/local/registry_image.py',
          '--image', runtime, '--output', output / 'runtime-image.json'])
     evidence = json.loads((output / 'runtime-image.json').read_text())
     container = 'layerx-artifacts-extract-' + uuid.uuid4().hex

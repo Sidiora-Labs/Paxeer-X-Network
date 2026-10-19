@@ -98,7 +98,7 @@ make paxeer-ci
 | `cmd/` | 原生守护进程与工具（`layerxd`、`layerxctl`、genesis、verify） |
 | `agent/` | Rust 智能体接口、SDK、守护进程、MCP 服务器、编码、密码学与证明核验 |
 | `human/` | 人工控制面、类型化意图编译器、托管边界客户端、浏览器索引与 Web 应用 |
-| `platform/` | 开发者平台、托管服务、中间件、SDK、模拟器、CLI 与发布工具 |
+| `services/platform/` | 开发者平台、托管服务、中间件、SDK、模拟器、CLI 与发布工具 |
 | `programs/` | 可编程 LayerX 运行时与程序工具 |
 | `interop/` | 智能体商务与跨网络互操作界面 |
 | `contracts/` | 用于 Paxeer 托管、检查点、担保人保证金、索赔、争议和退出的 Solidity 合约 |

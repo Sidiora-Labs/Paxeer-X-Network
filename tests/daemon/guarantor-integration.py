@@ -111,7 +111,7 @@ def main():
     try:
         artifacts = build / "guarantor-contracts/artifacts"
         run("forge", "build", "contracts/GuarantorBond.sol", "contracts/CheckpointRegistry.sol",
-            "platform/hosted/paxeer/contracts/BetaUsdl.sol", "--out", str(artifacts),
+            "services/platform/hosted/paxeer/contracts/BetaUsdl.sol", "--out", str(artifacts),
             "--cache-path", str(build / "guarantor-contracts/cache"))
         token = json.loads((artifacts / "BetaUsdl.sol/BetaUsdl.json").read_text())
         timestamp = int(time.time())
@@ -128,14 +128,14 @@ def main():
             (work / name).chmod(0o600)
         program_port, replica_port = COMMON["free_port"](), COMMON["free_port"]()
         with (work / "bootstrap.log").open("w") as log:
-            subprocess.run(["bash", str(ROOT / "platform/hosted/node/bootstrap.sh"), "--data-dir", str(work / "data"), "--run-dir", str(runtime), "--network-id", "77", "--sequencer-key", str(work / "sequencer"), "--treasury-key", str(work / "treasury"), "--lni-uid", "4021", "--lni-gid", "4021", "--program-port", str(program_port), "--replica-port", str(replica_port), "--layerxd", str(native / "layerxd"), "--genesis-build", str(native / "layerx-genesis-build"), "--settlement-env", str(work / "settlement.env")], cwd=ROOT, stdout=log, stderr=log, check=True)
+            subprocess.run(["bash", str(ROOT / "services/platform/hosted/node/bootstrap.sh"), "--data-dir", str(work / "data"), "--run-dir", str(runtime), "--network-id", "77", "--sequencer-key", str(work / "sequencer"), "--treasury-key", str(work / "treasury"), "--lni-uid", "4021", "--lni-gid", "4021", "--program-port", str(program_port), "--replica-port", str(replica_port), "--layerxd", str(native / "layerxd"), "--genesis-build", str(native / "layerx-genesis-build"), "--settlement-env", str(work / "settlement.env")], cwd=ROOT, stdout=log, stderr=log, check=True)
         node = read_env(work / "data/node.env")
         asset = run("cast", "keccak", "USDL")
         bond = chain.deploy(json.loads((artifacts / "GuarantorBond.sol/GuarantorBond.json").read_text()), "constructor(address,address,address,address,bytes32,uint16,uint32,uint32,uint64,bytes32,uint192)", [ADMIN, ADMIN, USDL, USDL, asset, "3", "77", "1000", "86400", COMMON["word"]("a1"), str(1 << 128)])
         chain.send(USDL, "mint(address,uint256)", ADMIN, "2000")
         chain.send(USDL, "approve(address,uint256)", bond, "2000")
         guarantors = []
-        domain_helper = runpy.run_path(str(ROOT / "platform/hosted/paxeer/settlement-domain.py"))
+        domain_helper = runpy.run_path(str(ROOT / "services/platform/hosted/paxeer/settlement-domain.py"))
         for index, prefix in enumerate(("LAYERX_NODE_GENESIS_GUARANTOR", "LAYERX_NODE_SECOND_GUARANTOR"), 1):
             public_key = node[prefix + "_PUBLIC_KEY"]
             signer = "0x" + domain_helper["signer_of"](bytes.fromhex(public_key)).hex()
@@ -193,7 +193,7 @@ def main():
         await_condition(lambda: chain.rpc("eth_getTransactionReceipt", [funding]), [anvil], "checkpoint submitter funding")
         tls_script = """
 set -euo pipefail
-. "$1/platform/hosted/tests/beta-cluster.sh"
+. "$1/services/platform/hosted/tests/beta-cluster.sh"
 WORK_DIR=$2
 CA_DIR="$WORK_DIR/ca"
 SECRETS_DIR="$WORK_DIR/tls-secrets"
