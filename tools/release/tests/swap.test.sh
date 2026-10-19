@@ -181,11 +181,11 @@ import sys
 import tomllib
 
 home, halt, denom = Path(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
-listeners = [socket.socket() for _ in range(4)]
+listeners = [socket.socket() for _ in range(5)]
 loopback = socket.gethostbyname("localhost")
 for listener in listeners:
     listener.bind((loopback, 0))
-rpc, peer, http, ws = [listener.getsockname()[1] for listener in listeners]
+rpc, peer, http, ws, grpc = [listener.getsockname()[1] for listener in listeners]
 
 
 def edit(path, changes):
@@ -222,7 +222,8 @@ edit(home / "config/app.toml", {
     ("", "halt-height"): str(halt),
     ("", "minimum-gas-prices"): json.dumps("0" + denom),
     ("api", "enable"): "false",
-    ("grpc", "enable"): "false",
+    ("grpc", "enable"): "true",
+    ("grpc", "address"): json.dumps(f"{loopback}:{grpc}"),
     ("grpc-web", "enable"): "false",
     ("evm", "http_enabled"): "true",
     ("evm", "http_address"): json.dumps(loopback),
@@ -576,7 +577,7 @@ request = urllib.request.Request(
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 with opener.open(request, timeout=3) as response:
     reply = json.load(response)
-assert reply == {"jsonrpc": "2.0", "id": 1, "result": hex(9000)}, reply
+assert reply == {"jsonrpc": "2.0", "id": 1, "result": hex(713714)}, reply
 PY
 }
 
