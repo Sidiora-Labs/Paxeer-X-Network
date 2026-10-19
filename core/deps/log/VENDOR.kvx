@@ -1,0 +1,4 @@
+[vendor]
+url = "https://github.com/Paxeer-Network/paxlog"
+ref = "v0.0.3-pax.1"
+sha = "5eeb5730858bbfa0dd4dfa0f41638f66dd0faa3e"
