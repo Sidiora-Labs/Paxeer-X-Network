@@ -464,7 +464,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.1]
 title = "Move fuzz to tests/fuzz"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 3
@@ -490,7 +490,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2]
 title = "Move example to tests/fixtures/example"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 3
@@ -517,7 +517,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.3]
 title = "Move integration_test to tests/integration"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 3
@@ -544,7 +544,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.4]
 title = "Move testutil to tests/testutil"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 3
@@ -571,7 +571,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.5]
 title = "Move occ_tests to tests/occ"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 3
@@ -598,7 +598,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.6]
 title = "Check wave 3: no reference to the old test paths and the test tree builds"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 3
@@ -622,7 +622,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1]
 title = "Move agent whole to services/agent"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 4
@@ -649,7 +649,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2]
 title = "Move interop to services/interop"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 4
@@ -676,7 +676,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.3]
 title = "Move platform cli, emulator and release to tools/platform"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 4
@@ -703,7 +703,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.4]
 title = "Move platform/sdk to sdk/platform and platform/integrations to sdk/integrations"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 4
@@ -731,7 +731,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.5]
 title = "Move the rest of platform to services/platform"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 4
@@ -759,7 +759,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.6]
 title = "Move the human Rust workspace to services/human"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 4
@@ -786,7 +786,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.7]
 title = "Check wave 4: no reference to the old service paths and every moved workspace builds"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 4
@@ -810,7 +810,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1]
 title = "Move human/apps perps, wallet and web to apps"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 5
@@ -836,7 +836,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.2]
 title = "Move the wallet SDK to sdk/wallet"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 5
@@ -862,7 +862,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.3]
 title = "Move human/wallet to services/wallet"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 5
@@ -889,7 +889,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.4]
 title = "Move chainflow to sdk/chainflow"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 5
@@ -914,7 +914,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.5]
 title = "Check wave 5: no reference to human or chainflow and the apps and wallet build"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 5
@@ -938,7 +938,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.1]
 title = "Split explorer: frontend to apps/explorer, backend, services and deploy to services/explorer"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 6
@@ -965,7 +965,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2]
 title = "Flatten the launchpad Go workspace: services to services/launchpad, libraries to sdk/launchpad, deploy and tools to the root groups"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 6
@@ -992,7 +992,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.3]
 title = "Move the launchpad client: apps to apps/launchpad, packages to sdk/launchpad/packages"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 6
@@ -1018,7 +1018,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.4]
 title = "Move the launchpad contracts to contracts/launchpad"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 6
@@ -1043,7 +1043,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5]
 title = "Split bridge: on-chain programs to contracts/bridge, deploy and relayer configuration to services/bridge"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 6
@@ -1070,7 +1070,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.6]
 title = "Move hpx to tools/hpx"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 6
@@ -1096,7 +1096,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.7]
 title = "Check wave 6: no reference to explorer, launchpad, bridge or hpx at the root"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 6
@@ -1120,7 +1120,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.1]
 title = "Refresh the layout docs, labeler, audit allowlist and generated maps for phase A"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "A"
 wave = 7
@@ -1146,7 +1146,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.1]
 title = "Move the kernel C tree src, include, cmd and migrations to core/kernel"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1175,7 +1175,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.1]
 title = "Move the Cosmos SDK fork sdk to core/cosmos-sdk"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1204,7 +1204,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.2]
 title = "Move consensus to core/consensus"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1232,7 +1232,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.3]
 title = "Move interchain to core/interchain"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1260,7 +1260,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.4]
 title = "Move wasm and wasm-runtime to core"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1288,7 +1288,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.5]
 title = "Move storage to core/storage"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1316,7 +1316,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.6]
 title = "Move modules to core/modules"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1344,7 +1344,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.7]
 title = "Move precompiles to core/precompiles"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1372,7 +1372,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.8]
 title = "Move node to core/node"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1400,7 +1400,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.9]
 title = "Move rpc and engine to core"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1428,7 +1428,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.10]
 title = "Move daemon and admin to core"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1456,7 +1456,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.11]
 title = "Move custodyproof, layerxproof and utils to core"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1484,7 +1484,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.12]
 title = "Check wave 9: no root Go package left outside core and the node binary ships"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1509,7 +1509,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.1]
 title = "Move the guest SDK programs/sdk to sdk/programs"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1537,7 +1537,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.2]
 title = "Move programs to core/programs"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1565,7 +1565,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.1]
 title = "Wire the vendored Go deps into go.mod with directory replace lines"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1592,7 +1592,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.2]
 title = "Point the integration rpc tests at sdk/js"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."
@@ -1617,7 +1617,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.3]
 title = "Refresh the layout docs, labeler and generated maps for phase B"
-status = "done"
+status = "pending"
 mode = "BUILD"
 phase = "B"
 hold = "Phase B: runs only after release v6.12.0 is applied on mainnet, because every core move rewrites the import paths, build paths and chain-spec paths the release is built and qualified from."

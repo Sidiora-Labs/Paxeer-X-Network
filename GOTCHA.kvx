@@ -8251,3 +8251,6 @@ fix = "gate scripts read hosts and paths from environment variables and fail wit
 area = "public audit"
 symptom = "rg -i on a secret pattern makes AKIA[0-9A-Z]{16} match any 20 alphanumeric characters of base64, so embedded PNG data and state exports read as AWS keys, and a bare PEM header string used by code to build or recognise keys reads as a private key"
 fix = "scan case-sensitively with non-alphanumeric boundaries around key shapes, decode a JWT header before reporting it, require a base64 body after a PEM header, and keep positive and negative self-test cases beside the scanner"
+
+[gotcha.1736]
+text = "A sed range that ends at a section header which does not exist runs to the end of the file: a status flip addressed to one task flipped every later task. End ranges at the next header pattern, never at a guessed id, and check the diff stat before committing."
