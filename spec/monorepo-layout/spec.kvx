@@ -517,7 +517,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.3]
 title = "Move integration_test to tests/integration"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 3

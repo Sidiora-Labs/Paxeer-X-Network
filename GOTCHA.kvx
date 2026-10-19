@@ -8266,3 +8266,13 @@ fix = "after git mv, grep the moved tree itself for its former path before the f
 area = "layout moves"
 symptom = "rewriting a Go import path from example/... to tests/fixtures/example/... left the import block unsorted, so gofmt -l reported four test files although only the path text changed"
 fix = "run gofmt -w on every Go file whose imports a move rewrites, before the build gate"
+
+[gotcha.1739]
+area = "layout moves"
+symptom = "moving a root-level directory one level deeper left its scripts and modules pointing one level short of the repository root (cd \"$(dirname \"$0\")/../..\", require(\"../../../contracts/test/lib.js\")), although no line named the old directory"
+fix = "after git mv, grep the moved tree for ../ chains that climb to the root and add one ../ per added depth level"
+
+[gotcha.1740]
+area = "layout moves"
+symptom = "a path rewrite bounded by a no-word-or-hyphen lookbehind skipped a reference written as a shell default, ${VAR:-integration_test/...}, because the hyphen of :- counted as part of a name"
+fix = "after a bulk rewrite, grep again for the old path and handle each remaining hit by hand"

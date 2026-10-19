@@ -20,6 +20,6 @@ Some Ethereum JSON-RPC methods are **registered** on Pax’s EVM endpoint but re
 - **`eth_newPendingTransactionFilter`** — Pax has instant finality and does not expose Ethereum-style pending tx filters on this RPC.
 - **`debug_getRaw*`** — Raw RLP block/header/receipt/tx payloads are not served on this surface.
 
-Integration coverage: each unsupported method has a dedicated `not-supported.iox` under `integration_test/evm_module/rpc_io_test/testdata/<method>/`.
+Integration coverage: each unsupported method has a dedicated `not-supported.iox` under `tests/integration/evm_module/rpc_io_test/testdata/<method>/`.
 
 For broader compatibility rules (pending tags, uncles, trie, PoW, etc.), see [`rpc/AGENTS.md`](../rpc/AGENTS.md).

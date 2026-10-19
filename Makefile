@@ -3183,26 +3183,26 @@ paxeer-node-preflight:
 
 paxeer-npm-install: paxeer-node-preflight
 	npm --prefix contracts ci --ignore-scripts --no-audit --no-fund
-	npm --prefix integration_test/dapp_tests ci --ignore-scripts --no-audit --no-fund
-	npm --prefix integration_test/rpc_tests ci --ignore-scripts --no-audit --no-fund
+	npm --prefix tests/integration/dapp_tests ci --ignore-scripts --no-audit --no-fund
+	npm --prefix tests/integration/rpc_tests ci --ignore-scripts --no-audit --no-fund
 
 paxeer-npm-dependencies-ready:
 	@test -d contracts/node_modules
-	@test -d integration_test/dapp_tests/node_modules
-	@test -d integration_test/rpc_tests/node_modules
+	@test -d tests/integration/dapp_tests/node_modules
+	@test -d tests/integration/rpc_tests/node_modules
 
 paxeer-hardhat-compilers-ready: paxeer-npm-dependencies-ready
 	node scripts/workspace/check-hardhat-compilers.mjs
 
 paxeer-npm-build: paxeer-hardhat-compilers-ready
 	npm --prefix contracts exec -- hardhat compile
-	npm --prefix integration_test/dapp_tests exec -- hardhat compile
-	npm --prefix integration_test/rpc_tests run compile
+	npm --prefix tests/integration/dapp_tests exec -- hardhat compile
+	npm --prefix tests/integration/rpc_tests run compile
 
 paxeer-npm-static-test: paxeer-npm-dependencies-ready
 	npm --prefix contracts exec -- tsc --noEmit
-	find integration_test/dapp_tests -type f -name '*.js' -exec node --check {} \;
-	npm --prefix integration_test/rpc_tests exec -- tsc --noEmit
+	find tests/integration/dapp_tests -type f -name '*.js' -exec node --check {} \;
+	npm --prefix tests/integration/rpc_tests exec -- tsc --noEmit
 
 paxeer-tools-install:
 	@set -eu; \

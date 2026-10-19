@@ -362,7 +362,7 @@ func importMemiavlModulesToFlatKV(ctx context.Context, homeDir string, modules [
 // orchestration script can pick a single import height across a multi-validator
 // cluster. Lives in this file (rather than a standalone *_cmd.go) because it
 // shares resolvePaxHome with the import command and exists solely to support
-// that workflow -- see integration_test/contracts/import_flatkv_evm_cluster.sh
+// that workflow -- see tests/integration/contracts/import_flatkv_evm_cluster.sh
 // for the call site, which reads each validator's version after pkill, picks
 // the minimum, and rolls back any node that committed extra blocks before
 // running the offline import.

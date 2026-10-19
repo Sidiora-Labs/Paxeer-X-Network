@@ -34,7 +34,7 @@ jobs:
 
       - name: Run Dapp Tests Script on Devnet
         run: |
-          ./integration_test/dapp_tests/dapp_tests.sh devnet
+          ./tests/integration/dapp_tests/dapp_tests.sh devnet
 
   run-tests-testnet:
     name: Run Tests on Testnet
@@ -57,4 +57,4 @@ jobs:
 
       - name: Run Dapp Tests Script on Testnet
         run: |
-          ./integration_test/dapp_tests/dapp_tests.sh testnet
+          ./tests/integration/dapp_tests/dapp_tests.sh testnet

@@ -31,12 +31,12 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
   - package-ecosystem: npm
-    directory: /integration_test/dapp_tests
+    directory: /tests/integration/dapp_tests
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
   - package-ecosystem: npm
-    directory: /integration_test/rpc_tests
+    directory: /tests/integration/rpc_tests
     schedule:
       interval: weekly
     open-pull-requests-limit: 3

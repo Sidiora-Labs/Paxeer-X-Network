@@ -133,8 +133,8 @@ Build and test:
 - npm (`human/wallet/gateway/package.json`, run in `human/wallet/gateway/`): `npm run dev`, `npm run build`, `npm start`, `npm run backfill:accounts`, `npm test`, `npm run test:watch`, `npm run typecheck`, `npm run lint`
 - npm (`human/wallet/package.json`, run in `human/wallet/`): `npm run build`, `npm run dev`, `npm run lint`, `npm test`, `npm run typecheck`
 - npm (`human/wallet/sdk/package.json`, run in `human/wallet/sdk/`): `npm run build`, `npm run build:agent-sdk`, `npm run dev`, `npm test`, `npm run typecheck`, `npm run lint`
-- npm (`integration_test/dapp_tests/package.json`, run in `integration_test/dapp_tests/`): `npm install`
-- npm (`integration_test/rpc_tests/package.json`, run in `integration_test/rpc_tests/`): `npm run compile`, `npm run rpc:geth`, `npm run rpc:fork`, `npm run rpc:bootstrap`, `npm run rpc:run`, `npm run test:rpc`, `npm run report:merge`, `npm run rpc:ci`
+- npm (`tests/integration/dapp_tests/package.json`, run in `tests/integration/dapp_tests/`): `npm install`
+- npm (`tests/integration/rpc_tests/package.json`, run in `tests/integration/rpc_tests/`): `npm run compile`, `npm run rpc:geth`, `npm run rpc:fork`, `npm run rpc:bootstrap`, `npm run rpc:run`, `npm run test:rpc`, `npm run report:merge`, `npm run rpc:ci`
 - cargo (`interop/Cargo.toml`, run in `interop/`): `cargo build`, `cargo test`
 - cargo (`interop/contracts/solana-mirror/Cargo.toml`, run in `interop/contracts/solana-mirror/`): `cargo build`, `cargo test`
 - cargo (`interop/crates/layerx-ap2/Cargo.toml`, run in `interop/crates/layerx-ap2/`): `cargo build`, `cargo test`
@@ -307,7 +307,7 @@ Build and test:
   - `human/wallet/` — 360 files, 82,662 lines, mostly typescript. One pnpm workspace holding the Paxeer X wallet's TypeScript packages.
 - `include/` — 66 files, 11,369 lines, mostly c
   - `include/layerx/` — 66 files, 11,369 lines, mostly c
-- `integration_test/` — 291 files, 17,376 lines, mostly typescript (test fixtures). YAML-driven integration tests for the Paxeer X chain (`paxd`).
+- `tests/integration/` — 291 files, 17,376 lines, mostly typescript (test fixtures). YAML-driven integration tests for the Paxeer X chain (`paxd`).
   - 21 subdirectories: `authz_module/`, `autobahn/`, `bank_module/`, `chain_operation/`, `contracts/`, `dapp_tests/`, `db/`, `distribution_module/`, `evm_module/`, `gov_module/`, `mint_module/`, `oracle_module/`, `rpc_tests/`, `runner/`, `staking_module/`, `startup/`, `template/`, `tokenfactory_module/`, `upgrade_module/`, `utils/`, `wasm_module/`
 - `interchain/` — 520 files, 126,082 lines, mostly go. This directory is the vendored copy of [ibc-go](https://github.com/cosmos/ibc-go), the Golang implementation of the Inter-Blockchain Communication protocol …
   - `interchain/modules/` — 438 files, 119,694 lines, mostly go
@@ -463,7 +463,7 @@ _Not shown: 7 directories._
 - `main` — `human/wallet/deploy/cutover/rewrite-caddyfile.py:43` `def main()`
 - `main` — `human/wallet/gateway/src/index.ts:128` `async function main(): Promise<void>`
 - `main` — `human/wallet/gateway/src/jobs/backfillAccounts.ts:101` `export async function main(argv: readonly string[]): Promise<number>`
-- `main` — `integration_test/contracts/contract_dep_generator.py:27` `def main()`
+- `main` — `tests/integration/contracts/contract_dep_generator.py:27` `def main()`
 - `main` — `interchain/testing/simapp/simd/main.go:13` `func main()`
 - `main` — `interop/crates/layerx-bridge-relayer/src/bin/cosign.rs:11` `fn main() -> ExitCode`
 - `main` — `interop/crates/layerx-bridge-relayer/src/main.rs:17` `fn main() -> ExitCode`
@@ -721,7 +721,7 @@ _Not shown: 7 directories._
 - `human/wallet/ceremony/legacy-import/package.json`: bin `legacy-import` → `dist/cli.js`
 - `human/wallet/gateway/package.json`: main `dist/index.js`
 - `human/wallet/sdk/package.json`: main `./dist/index.js`
-- `integration_test/dapp_tests/package.json`: main `index.js`
+- `tests/integration/dapp_tests/package.json`: main `index.js`
 - `platform/integrations/agents/package.json`: bin `layerx-mcp-server` → `./dist/mcp-server.js`
 - `platform/integrations/next/package.json`: bin `layerx-scan-bundle` → `bin/layerx-scan-bundle.mjs`
 - `programs/sdk/assemblyscript/package.json`: bin `layerx-determinism-lint` → `tools/determinism-lint.mjs`
@@ -840,15 +840,15 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
   - _+103 more_
 - `human/wallet/` — 82 test files
   - _+82 more_
-- `integration_test/autobahn/` — 1 test file
+- `tests/integration/autobahn/` — 1 test file
   - _+1 more_
-- `integration_test/dapp_tests/` — 3 test files
+- `tests/integration/dapp_tests/` — 3 test files
   - _+3 more_
-- `integration_test/evm_module/` — 3 test files
+- `tests/integration/evm_module/` — 3 test files
   - _+3 more_
-- `integration_test/rpc_tests/` — 32 test files
+- `tests/integration/rpc_tests/` — 32 test files
   - _+32 more_
-- `integration_test/runner/` — 1 test file
+- `tests/integration/runner/` — 1 test file
   - _+1 more_
 - `interchain/modules/` — 128 test files
   - _+128 more_
@@ -1181,7 +1181,7 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
 - `human/wallet/ceremony/testdata/` — 2 fixture files
 - `human/wallet/gateway/test/fixtures/` — 12 fixture files: `attestor/`
 - `human/wallet/sdk/test/fixtures/` — 21 fixture files: `endpoint/`, `gateway/`, `modules/`
-- `integration_test/evm_module/rpc_io_test/testdata/` — 162 fixture files: `cross_check/`, `debug_getRawBlock/`, `debug_getRawHeader/`, `debug_getRawReceipts/`, `debug_getRawTransaction/`, `debug_traceBlockByHash/`, `debug_traceBlockByNumber/`, `debug_traceCall/`, `debug_traceStateAccess/`, `debug_traceTransaction/`, `echo_echo/`, `eth_accounts/`, `eth_blobBaseFee/`, `eth_blockNumber/`, `eth_call/`, `eth_chainId/` and 53 more
+- `tests/integration/evm_module/rpc_io_test/testdata/` — 162 fixture files: `cross_check/`, `debug_getRawBlock/`, `debug_getRawHeader/`, `debug_getRawReceipts/`, `debug_getRawTransaction/`, `debug_traceBlockByHash/`, `debug_traceBlockByNumber/`, `debug_traceCall/`, `debug_traceStateAccess/`, `debug_traceTransaction/`, `echo_echo/`, `eth_accounts/`, `eth_blobBaseFee/`, `eth_blockNumber/`, `eth_call/`, `eth_chainId/` and 53 more
 - `interop/contracts/solana-mirror/tests/fixtures/` — 1 fixture file
 - `interop/crates/layerx-bridge-relayer/tests/fixtures/` — 6 fixture files
 - `interop/crates/layerx-gas-station/tests/fixtures/` — 3 fixture files

@@ -125,7 +125,7 @@ __pycache__/
 *.tfstate.*
 /yarn.lock
 /contracts/yarn.lock
-/integration_test/**/yarn.lock
+/tests/integration/**/yarn.lock
 /tools/benchmark/loadtest/**/yarn.lock
 /c.out
 **/testdata/fuzz/**
@@ -136,7 +136,7 @@ __pycache__/
 /tests/fixtures/example/cosmwasm/parallelization/**/artifacts/
 /tests/fixtures/example/cosmwasm/parallelization/**/target/
 !/tests/fixtures/example/cosmwasm/parallelization/**/Cargo.lock
-/integration_test/**/*.txt
+/tests/integration/**/*.txt
 coverage.html
 coverage.out
 /tests/fixtures/example/cosmwasm/echo/target
@@ -145,7 +145,7 @@ coverage.out
 /tests/fixtures/example/cosmwasm/cw1155/target
 /tests/fixtures/example/cosmwasm/iter/target
 /contracts/artifacts
-/integration_test/dapp_tests/artifacts
+/tests/integration/dapp_tests/artifacts
 /storage/state_db/bench/cryptosim/data/**
 /storage/state_db/bench/cryptosim/bin/
 /storage/state_db/bench/cryptosim/logs/

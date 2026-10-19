@@ -5,8 +5,8 @@ import { pathToFileURL } from "node:url";
 
 const requirements = [
   ["contracts", "0.8.28"],
-  ["integration_test/dapp_tests", "0.8.20"],
-  ["integration_test/rpc_tests", "0.8.28"],
+  ["tests/integration/dapp_tests", "0.8.20"],
+  ["tests/integration/rpc_tests", "0.8.28"],
 ];
 
 for (const [directory, version] of requirements) {

@@ -341,10 +341,10 @@ describe("EVM Precompile Tester", function () {
         let admin;
 
         before(async function () {
-            const counterWasm = '../integration_test/contracts/counter_parallel.wasm';
+            const counterWasm = '../tests/integration/contracts/counter_parallel.wasm';
             wasmCodeID = await storeWasm(counterWasm);
 
-            const counterParallelWasm = '../integration_test/contracts/counter_parallel.wasm'
+            const counterParallelWasm = '../tests/integration/contracts/counter_parallel.wasm'
             wasmContractAddress = await deployWasm(counterParallelWasm, accounts[0].paxAddress, "counter", {count: 0});
             owner = accounts[0].signer;
 

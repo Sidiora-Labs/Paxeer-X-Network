@@ -26,7 +26,7 @@ engine
 !engine/deps/store
 tests/fixtures/example
 hpx
-integration_test
+tests/integration
 interchain
 modules
 !modules/evm/config

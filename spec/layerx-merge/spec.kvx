@@ -1,7 +1,7 @@
 [meta]
 name = "LayerX merge into Paxeer X"
 slug = "layerx-merge"
-version = "1.0.1"
+version = "1.1.0"
 status = "draft"
 goal = "Fold the LayerX kernel into the Paxeer X Network as one execution domain: every kernel capability works on the chain with the same semantics and outcomes, AI, trading and markets are native to the chain, and the proposer is the executor, so a transaction is executed at receipt, answered with a signed receipt and proposed in exactly that order."
 scope = "One execution domain (paxd: Cosmos SDK, EVM, CosmWasm, OCC). Kernel C modules and the Rust program runtime hosted inside chain modules and precompiles; the sequencer node and its consensus rule at one activation height; components that existed only to join two domains retired behind a retired executor; off-chain services and clients re-pointed to the sequencer and chain state."
@@ -8401,7 +8401,7 @@ ac_1 = "platform/hosted/perps-keeper submits fundingTick(bytes32) per market eve
 ac_2 = "the liquidation scanner reads getPerpsPositions(bytes32), getMargin and getOracle from pending state and submits liquidate(market, position, callerMain) for every position below maintenance (src/modules/perps/lx_perps_liquidate.c:23-44, src/modules/perps/lx_perps_state.c:571)"
 ac_3 = "ADL ranking orders profitable positions by PnL descending, takes up to 16 and submits them in ascending positionId order (src/modules/perps/lx_perps_command.c:458, src/modules/perps/lx_perps_insurance.c:95-102)"
 ac_4 = "submissions are EVM transactions with sponsored gas through the gas station, one nonce per keeper sender, and the next call waits for the sequencer receipt of the previous transaction hash (platform/hosted/feeder/src/lib.rs:550, platform/hosted/feeder/src/lib.rs:614)"
-ac_5 = "an integration run on a single-validator chain drives the price below maintenance and asserts a liquidation within one receipt round, a funding accrual and an ADL fill (integration_test/scripts/runner.py:1)"
+ac_5 = "an integration run on a single-validator chain drives the price below maintenance and asserts a liquidation within one receipt round, a funding accrual and an ADL fill (tests/integration/scripts/runner.py:1)"
 
 [req.3027]
 title = "Wallet swap contracts are out of scope for this feature"
@@ -8495,7 +8495,7 @@ title = "Activation of 0x1015 v2 at the activation height"
 ac_1 = "each v2 method is switched on by height as the custody keeper gates governance, refusing a v2 selector below the height (modules/layerxcustody/keeper/keeper.go:40-44)"
 ac_2 = "activation is a bring-up at the activation height; no account-state migration is required (modules/layerxexchange/keeper/genesis.go:13)"
 ac_3 = "the precompile versions table carries the pre-activation implementation for replay below the height (precompiles/setup.go:84)"
-ac_4 = "an end-to-end run creates a perps market, pushes an oracle price, places crossing orders, funds, liquidates, creates a spot market and trades it, and buys on the launchpad, all from EVM transactions (integration_test/scripts/runner.py:1)"
+ac_4 = "an end-to-end run creates a perps market, pushes an oracle price, places crossing orders, funds, liquidates, creates a spot market and trades it, and buys on the launchpad, all from EVM transactions (tests/integration/scripts/runner.py:1)"
 
 [req.3040]
 title = "Parity vectors prove the hosted engine against the kernel"
@@ -9276,12 +9276,12 @@ symbols = ["lx_oracle_root_compute"]
 [capability.3.8.3]
 title = "Perps keeper binary, image and liquidation integration run"
 reqs = ["3026.5"]
-touches = ["platform/hosted/perps-keeper/src/main.rs", "platform/hosted/perps-keeper/Dockerfile", "integration_test/perps_liquidation/perps_liquidation_test.yaml"]
-tests = ["integration_test/perps_liquidation/perps_liquidation_test.yaml"]
-verification_contract = "python3 integration_test/scripts/runner.py integration_test/perps_liquidation/perps_liquidation_test.yaml"
+touches = ["platform/hosted/perps-keeper/src/main.rs", "platform/hosted/perps-keeper/Dockerfile", "tests/integration/perps_liquidation/perps_liquidation_test.yaml"]
+tests = ["tests/integration/perps_liquidation/perps_liquidation_test.yaml"]
+verification_contract = "python3 tests/integration/scripts/runner.py tests/integration/perps_liquidation/perps_liquidation_test.yaml"
 do_1 = "Add platform/hosted/perps-keeper/src/main.rs: one loop per market reading getMarket, getPerpsPositions, getMargin and getOracle with the pending tag and passing due work from plan.rs to the Submitter."
 do_2 = "Add platform/hosted/perps-keeper/Dockerfile in the shape of the feeder image (platform/hosted/feeder/src/main.rs:43)."
-do_3 = "Add integration_test/perps_liquidation/perps_liquidation_test.yaml for integration_test/scripts/runner.py:1: create m1, open a long size 10 with margin 120, push price 60 through the feeder and assert the liquidation receipt, a funding accrual and an ADL fill."
+do_3 = "Add tests/integration/perps_liquidation/perps_liquidation_test.yaml for tests/integration/scripts/runner.py:1: create m1, open a long size 10 with margin 120, push price 60 through the feeder and assert the liquidation receipt, a funding accrual and an ADL fill."
 do_4 = "Liquidations name the keeper DID main as liquidatorAccount (validate_liquidate src/modules/perps/lx_perps_dispatch.c:827)."
 symbols = ["main", "run_market"]
 
@@ -9300,10 +9300,10 @@ symbols = ["ActivationHeight", "TestV2MethodsGatedByHeight"]
 [capability.3.12.3]
 title = "End-to-end exchange v2 scenario"
 reqs = ["3039.2", "3039.4"]
-touches = ["integration_test/exchange_v2/exchange_v2_test.yaml"]
-tests = ["integration_test/exchange_v2/exchange_v2_test.yaml"]
-verification_contract = "python3 integration_test/scripts/runner.py integration_test/exchange_v2/exchange_v2_test.yaml"
-do_1 = "Add integration_test/exchange_v2/exchange_v2_test.yaml for integration_test/scripts/runner.py:1 with a bring_up case: past the activation height markets are created with no migration step (modules/layerxexchange/keeper/genesis.go:13)."
+touches = ["tests/integration/exchange_v2/exchange_v2_test.yaml"]
+tests = ["tests/integration/exchange_v2/exchange_v2_test.yaml"]
+verification_contract = "python3 tests/integration/scripts/runner.py tests/integration/exchange_v2/exchange_v2_test.yaml"
+do_1 = "Add tests/integration/exchange_v2/exchange_v2_test.yaml for tests/integration/scripts/runner.py:1 with a bring_up case: past the activation height markets are created with no migration step (modules/layerxexchange/keeper/genesis.go:13)."
 do_2 = "The exchange_v2 case creates a perps market, pushes an oracle price, places two crossing orders, runs fundingTick, liquidates, creates a spot market and trades it, and buys on the launchpad, all from EVM transactions."
 do_3 = "Each step asserts its receipt succeeded and the final balances equal the scripted values; the launchpad step reads getProtocolFees (precompiles/launchpad/launchpad.go:322)."
 do_4 = "Activation is a bring-up at the activation height; no account-state migration is required."
@@ -10254,7 +10254,7 @@ feature = "3"
 req = "3026.5"
 scenario = "Given a local chain with m1, one long at size 10 and margin 120, when the feeder pushes price 60, then the keeper liquidation receipt appears before the next oracle push and getPosition(m1, p1).open is false"
 contract = "contracts/services.md#S20 Perps keeper (new)"
-test = "integration_test/perps_liquidation/perps_liquidation_test.yaml::perps_liquidation"
+test = "tests/integration/perps_liquidation/perps_liquidation_test.yaml::perps_liquidation"
 qualification = "UNRUN"
 
 [acceptance.3.27.1]
@@ -10678,7 +10678,7 @@ feature = "3"
 req = "3039.2"
 scenario = "Given a chain at height 999 with no perps state, when height 1000 is reached, then markets can be created without a migration step"
 contract = "contracts/exchange-launchpad.md#Exchange and Launchpad precompile contract"
-test = "integration_test/exchange_v2/exchange_v2_test.yaml::bring_up"
+test = "tests/integration/exchange_v2/exchange_v2_test.yaml::bring_up"
 qualification = "UNRUN"
 
 [acceptance.3.39.3]
@@ -10694,7 +10694,7 @@ feature = "3"
 req = "3039.4"
 scenario = "Given a local single-validator chain past the activation height, when the exchange v2 scenario runs, then every step receipt succeeds and the final balances equal the scripted expectation"
 contract = "contracts/exchange-launchpad.md#Exchange and Launchpad precompile contract"
-test = "integration_test/exchange_v2/exchange_v2_test.yaml::exchange_v2"
+test = "tests/integration/exchange_v2/exchange_v2_test.yaml::exchange_v2"
 qualification = "UNRUN"
 
 [acceptance.3.40.1]
@@ -12337,15 +12337,15 @@ reqs = ["2.4", "3026.5"]
 capabilities = ["3.8.3"]
 do_1 = "Add platform/hosted/perps-keeper/src/main.rs: one loop per market reading getMarket, getPerpsPositions, getMargin and getOracle with the pending tag and passing due work from plan.rs to the Submitter."
 do_2 = "Add platform/hosted/perps-keeper/Dockerfile in the shape of the feeder image (platform/hosted/feeder/src/main.rs:43)."
-do_3 = "Add integration_test/perps_liquidation/perps_liquidation_test.yaml for integration_test/scripts/runner.py:1: create m1, open a long size 10 with margin 120, push price 60 through the feeder and assert the liquidation receipt, a funding accrual and an ADL fill."
+do_3 = "Add tests/integration/perps_liquidation/perps_liquidation_test.yaml for tests/integration/scripts/runner.py:1: create m1, open a long size 10 with margin 120, push price 60 through the feeder and assert the liquidation receipt, a funding accrual and an ADL fill."
 do_4 = "Liquidations name the keeper DID main as liquidatorAccount (validate_liquidate src/modules/perps/lx_perps_dispatch.c:827)."
 do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["main", "run_market"]
-touches = ["platform/hosted/perps-keeper/src/main.rs", "platform/hosted/perps-keeper/Dockerfile", "integration_test/perps_liquidation/perps_liquidation_test.yaml"]
+touches = ["platform/hosted/perps-keeper/src/main.rs", "platform/hosted/perps-keeper/Dockerfile", "tests/integration/perps_liquidation/perps_liquidation_test.yaml"]
 build_cmd = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-perps-keeper"
-verify_cmd = "python3 integration_test/scripts/runner.py integration_test/perps_liquidation/perps_liquidation_test.yaml"
+verify_cmd = "python3 tests/integration/scripts/runner.py tests/integration/perps_liquidation/perps_liquidation_test.yaml"
 gate_kind = "planned"
-planned_paths = ["platform/hosted/perps-keeper/src/main.rs", "platform/hosted/perps-keeper/Dockerfile", "integration_test/perps_liquidation/perps_liquidation_test.yaml"]
+planned_paths = ["platform/hosted/perps-keeper/src/main.rs", "platform/hosted/perps-keeper/Dockerfile", "tests/integration/perps_liquidation/perps_liquidation_test.yaml"]
 max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
@@ -12389,17 +12389,17 @@ wave = 16
 requires = ["3.7.1", "3.7.2", "3.7.3", "3.7.4", "3.7.5", "3.5.2", "3.6.2", "3.6.3", "3.6.4", "3.6.5", "3.6.6", "3.6.8", "3.6.9", "3.6.10", "3.6.13", "3.6.14", "3.6.16", "3.3.9", "3.4.6", "3.4.8"]
 reqs = ["8.1", "12.4", "3039.2", "3039.4"]
 capabilities = ["3.12.3"]
-do_1 = "Add integration_test/exchange_v2/exchange_v2_test.yaml for integration_test/scripts/runner.py:1 with a bring_up case: past the activation height markets are created with no migration step (modules/layerxexchange/keeper/genesis.go:13)."
+do_1 = "Add tests/integration/exchange_v2/exchange_v2_test.yaml for tests/integration/scripts/runner.py:1 with a bring_up case: past the activation height markets are created with no migration step (modules/layerxexchange/keeper/genesis.go:13)."
 do_2 = "The exchange_v2 case creates a perps market, pushes an oracle price, places two crossing orders, runs fundingTick, liquidates, creates a spot market and trades it, and buys on the launchpad, all from EVM transactions."
 do_3 = "Each step asserts its receipt succeeded and the final balances equal the scripted values; the launchpad step reads getProtocolFees (precompiles/launchpad/launchpad.go:322)."
 do_4 = "Activation is a bring-up at the activation height; no account-state migration is required."
 do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["exchange_v2", "bring_up"]
-touches = ["integration_test/exchange_v2/exchange_v2_test.yaml"]
+touches = ["tests/integration/exchange_v2/exchange_v2_test.yaml"]
 build_cmd = "make build"
-verify_cmd = "python3 integration_test/scripts/runner.py integration_test/exchange_v2/exchange_v2_test.yaml"
+verify_cmd = "python3 tests/integration/scripts/runner.py tests/integration/exchange_v2/exchange_v2_test.yaml"
 gate_kind = "planned"
-planned_paths = ["integration_test/exchange_v2/exchange_v2_test.yaml"]
+planned_paths = ["tests/integration/exchange_v2/exchange_v2_test.yaml"]
 max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
@@ -37974,10 +37974,10 @@ ac_4 = "The sequencer exposes metrics for receipt latency, WAL sync time, standb
 
 [req.9043]
 title = "Rehearse activation on a cluster before the activation height"
-ac_1 = "The upgrade integration test (integration_test/upgrade_module/major_upgrade_test.yaml:25 shape; cluster from integration_test/upgrade_module/scripts/launch_cluster.sh:7; runner integration_test/scripts/runner.py:86) runs a four-validator cluster through H_act with a sequencer and standby."
-ac_2 = "Golden values for the first ten heights after H_act (app hash, batch ranges, receipt digests) are recorded and compared on a second run (integration_test/upgrade_module/major_upgrade_test.yaml:25)."
+ac_1 = "The upgrade integration test (tests/integration/upgrade_module/major_upgrade_test.yaml:25 shape; cluster from tests/integration/upgrade_module/scripts/launch_cluster.sh:7; runner tests/integration/scripts/runner.py:86) runs a four-validator cluster through H_act with a sequencer and standby."
+ac_2 = "Golden values for the first ten heights after H_act (app hash, batch ranges, receipt digests) are recorded and compared on a second run (tests/integration/upgrade_module/major_upgrade_test.yaml:25)."
 ac_3 = "The e2e manifest gains a sequencer network (consensus/test/e2e/pkg/manifest.go:13, :85, :169) that pins the leader and runs a failover."
-ac_4 = "The rehearsal sets every value marked set at activation rehearsal (H_act, L, ReceiptKeys, module_id, timeouts, replication timeout) and records them with the cluster result (integration_test/scripts/runner.py:86)."
+ac_4 = "The rehearsal sets every value marked set at activation rehearsal (H_act, L, ReceiptKeys, module_id, timeouts, replication timeout) and records them with the cluster result (tests/integration/scripts/runner.py:86)."
 
 [req.9044]
 title = "Retire the kernel sequencer constructs with a named replacement for each"
@@ -38357,13 +38357,13 @@ symbols = ["SequencerConfig", "NewExecutor"]
 [capability.9.8.2]
 title = "Activation rehearsal on a cluster and an e2e sequencer network"
 reqs = ["9031.1", "9031.2", "9031.3", "9031.4", "9031.5", "9043.1", "9043.2", "9043.3", "9043.4"]
-touches = ["integration_test/upgrade_module/merge_activation_test.yaml", "consensus/test/e2e/pkg/manifest.go"]
-tests = ["integration_test/upgrade_module/merge_activation_test.yaml", "consensus/test/e2e/pkg/manifest_sequencer_test.go"]
-verification_contract = "python3 integration_test/scripts/runner.py integration_test/upgrade_module/merge_activation_test.yaml"
-do_1 = "The test follows the upgrade test shape (integration_test/upgrade_module/major_upgrade_test.yaml:25)."
-do_2 = "The cluster comes from the existing launcher (integration_test/upgrade_module/scripts/launch_cluster.sh:7) and the runner (integration_test/scripts/runner.py:86)."
+touches = ["tests/integration/upgrade_module/merge_activation_test.yaml", "consensus/test/e2e/pkg/manifest.go"]
+tests = ["tests/integration/upgrade_module/merge_activation_test.yaml", "consensus/test/e2e/pkg/manifest_sequencer_test.go"]
+verification_contract = "python3 tests/integration/scripts/runner.py tests/integration/upgrade_module/merge_activation_test.yaml"
+do_1 = "The test follows the upgrade test shape (tests/integration/upgrade_module/major_upgrade_test.yaml:25)."
+do_2 = "The cluster comes from the existing launcher (tests/integration/upgrade_module/scripts/launch_cluster.sh:7) and the runner (tests/integration/scripts/runner.py:86)."
 do_3 = "The e2e manifest gains a sequencer network (consensus/test/e2e/pkg/manifest.go:13, :85, :169)."
-do_4 = "Goldens for ten heights after H_act are compared across two runs (integration_test/scripts/runner.py:86)."
+do_4 = "Goldens for ten heights after H_act are compared across two runs (tests/integration/scripts/runner.py:86)."
 symbols = ["merge_activation_test", "SequencerManifest"]
 
 [capability.9.8.3]
@@ -39500,7 +39500,7 @@ feature = "9"
 req = "9031.4"
 scenario = "Given a node rolled back to H_act-1, when it replays to H_act+10, then the app hash at H_act+10 equals the first run's."
 contract = "contracts/sequencer.md#c1-activation"
-test = "integration_test/upgrade_module/merge_activation_test.yaml::rollback_and_replay"
+test = "tests/integration/upgrade_module/merge_activation_test.yaml::rollback_and_replay"
 qualification = "UNRUN"
 
 [acceptance.9.31.5]
@@ -39508,7 +39508,7 @@ feature = "9"
 req = "9031.5"
 scenario = "Given the rehearsal cluster, when the upgrade plan is submitted with H_act, L and ReceiptKeys, then those values appear in the module store at H_act and nowhere in node config."
 contract = "contracts/sequencer.md#c1-activation"
-test = "integration_test/upgrade_module/merge_activation_test.yaml::activation_values_from_plan"
+test = "tests/integration/upgrade_module/merge_activation_test.yaml::activation_values_from_plan"
 qualification = "UNRUN"
 
 [acceptance.9.32.1]
@@ -39892,7 +39892,7 @@ feature = "9"
 req = "9043.1"
 scenario = "Given the four-node cluster, when it passes H_act, then blocks continue, the leader is L[r mod len] and every validator's app hash agrees."
 contract = "contracts/sequencer.md#c1-activation"
-test = "integration_test/upgrade_module/merge_activation_test.yaml::activation_passes"
+test = "tests/integration/upgrade_module/merge_activation_test.yaml::activation_passes"
 qualification = "UNRUN"
 
 [acceptance.9.43.2]
@@ -39900,7 +39900,7 @@ feature = "9"
 req = "9043.2"
 scenario = "Given two rehearsal runs with the same inputs, when the goldens are compared, then they are equal."
 contract = "contracts/sequencer.md#c1-activation"
-test = "integration_test/upgrade_module/merge_activation_test.yaml::goldens_match"
+test = "tests/integration/upgrade_module/merge_activation_test.yaml::goldens_match"
 qualification = "UNRUN"
 
 [acceptance.9.43.3]
@@ -39916,7 +39916,7 @@ feature = "9"
 req = "9043.4"
 scenario = "Given the rehearsal output, when it is read, then every listed value is present with the gate result."
 contract = "contracts/sequencer.md#c1-activation"
-test = "integration_test/upgrade_module/merge_activation_test.yaml::activation_values_from_plan"
+test = "tests/integration/upgrade_module/merge_activation_test.yaml::activation_values_from_plan"
 qualification = "UNRUN"
 
 [acceptance.9.44.1]
@@ -44732,18 +44732,18 @@ wave = 6
 requires = ["9.1.3", "9.6.2"]
 reqs = ["8.1", "12.4", "12.6", "9031.1", "9031.2", "9031.3", "9031.4", "9031.5", "9043.1", "9043.2", "9043.3", "9043.4"]
 capabilities = ["9.8.2"]
-do_1 = "Add integration_test/upgrade_module/merge_activation_test.yaml in the shape of integration_test/upgrade_module/major_upgrade_test.yaml:25."
-do_2 = "Launch the cluster with integration_test/upgrade_module/scripts/launch_cluster.sh:7 and run it with integration_test/scripts/runner.py:86."
-do_3 = "Add integration_test/upgrade_module/scripts/merge_goldens.py comparing app hash, batch ranges and receipt digests for ten heights after H_act across two runs (integration_test/scripts/runner.py:86)."
-do_4 = "Add integration_test/upgrade_module/scripts/rollback_below_freeze.sh using rollback (sdk/server/rollback.go:41) and replay to H_act+10."
+do_1 = "Add tests/integration/upgrade_module/merge_activation_test.yaml in the shape of tests/integration/upgrade_module/major_upgrade_test.yaml:25."
+do_2 = "Launch the cluster with tests/integration/upgrade_module/scripts/launch_cluster.sh:7 and run it with tests/integration/scripts/runner.py:86."
+do_3 = "Add tests/integration/upgrade_module/scripts/merge_goldens.py comparing app hash, batch ranges and receipt digests for ten heights after H_act across two runs (tests/integration/scripts/runner.py:86)."
+do_4 = "Add tests/integration/upgrade_module/scripts/rollback_below_freeze.sh using rollback (sdk/server/rollback.go:41) and replay to H_act+10."
 do_5 = "Record every value set at activation rehearsal with the cluster result (chain.mk:372 is the cluster target)."
 do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["merge_activation_test"]
-touches = ["integration_test/upgrade_module/merge_activation_test.yaml", "integration_test/upgrade_module/scripts/merge_goldens.py", "integration_test/upgrade_module/scripts/rollback_below_freeze.sh"]
+touches = ["tests/integration/upgrade_module/merge_activation_test.yaml", "tests/integration/upgrade_module/scripts/merge_goldens.py", "tests/integration/upgrade_module/scripts/rollback_below_freeze.sh"]
 build_cmd = "go build ./daemon/paxd/..."
-verify_cmd = "python3 integration_test/scripts/runner.py integration_test/upgrade_module/merge_activation_test.yaml"
+verify_cmd = "python3 tests/integration/scripts/runner.py tests/integration/upgrade_module/merge_activation_test.yaml"
 gate_kind = "planned"
-planned_paths = ["integration_test/upgrade_module/merge_activation_test.yaml", "integration_test/upgrade_module/scripts/merge_goldens.py", "integration_test/upgrade_module/scripts/rollback_below_freeze.sh"]
+planned_paths = ["tests/integration/upgrade_module/merge_activation_test.yaml", "tests/integration/upgrade_module/scripts/merge_goldens.py", "tests/integration/upgrade_module/scripts/rollback_below_freeze.sh"]
 max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
@@ -54079,7 +54079,7 @@ ac_4 = "Image manifests drop retired binaries, such as docker/intent-ingester/Do
 
 [req.11052]
 title = "Activation rehearsal of the retirements"
-ac_1 = "A four-node rehearsal applies the merge plan registered beside the activation plan (node/upgrades.go:88, :187) and listed in knownUpgradePlans (node/upgrades.go:416-418), in the style of integration_test/upgrade_module/major_upgrade_test.yaml:3; the plan name and height are set at this rehearsal."
+ac_1 = "A four-node rehearsal applies the merge plan registered beside the activation plan (node/upgrades.go:88, :187) and listed in knownUpgradePlans (node/upgrades.go:416-418), in the style of tests/integration/upgrade_module/major_upgrade_test.yaml:3; the plan name and height are set at this rehearsal."
 ac_2 = "After the plan height every retired method of 0x1012, 0x1013, 0x1014 and 0x1015 returns LXP_MODULE_DISABLED (include/layerx/lxp_result.h:42) and every posted guarantor bond and open challenge deposit has been returned (modules/layerxanchor/keeper/guarantors.go:21)."
 ac_3 = "After the store-delete step the anchor reads return LXP_MODULE_DISABLED and the store key (storage/common/keys/store_keys.go:35) is gone from the store."
 ac_4 = "The retired-caller check exits 0 on the release revision with zero live references across every component, and the rollout test (tools/rollout/tests/rollout.test.sh:1) passes."
@@ -54825,14 +54825,14 @@ symbols = ["test-replay-golden", "relay-archive"]
 [capability.11.12.3]
 title = "Activation rehearsal of the retirements"
 reqs = ["11052.1", "11052.2", "11052.3", "11052.4"]
-touches = ["integration_test/upgrade_module/merge_activation_test.yaml"]
-tests = ["integration_test/upgrade_module/merge_activation_test.yaml"]
-verification_contract = "python3 integration_test/scripts/runner.py integration_test/upgrade_module/merge_activation_test.yaml"
-do_1 = "Write integration_test/upgrade_module/merge_activation_test.yaml in the style of integration_test/upgrade_module/major_upgrade_test.yaml:3, applying the merge plan registered beside node/upgrades.go:187."
+touches = ["tests/integration/upgrade_module/merge_activation_test.yaml"]
+tests = ["tests/integration/upgrade_module/merge_activation_test.yaml"]
+verification_contract = "python3 tests/integration/scripts/runner.py tests/integration/upgrade_module/merge_activation_test.yaml"
+do_1 = "Write tests/integration/upgrade_module/merge_activation_test.yaml in the style of tests/integration/upgrade_module/major_upgrade_test.yaml:3, applying the merge plan registered beside node/upgrades.go:187."
 do_2 = "Assert after the plan height that every retired method of 0x1012, 0x1013, 0x1014 and 0x1015 returns LXP_MODULE_DISABLED (include/layerx/lxp_result.h:42)."
 do_3 = "Assert that the anchor module balance is zero after the handler and every operator got its bond (modules/layerxanchor/keeper/guarantors.go:21)."
 do_4 = "Apply the store-delete step after the merge plan in knownUpgradePlans order (node/upgrades.go:416-418) and assert the anchor reads return LXP_MODULE_DISABLED; run python3 tools/paxeer-x/tests/retired_callers_test.py on the release revision."
-do_5 = "Run the rehearsal through integration_test/scripts/runner.py:86 on four nodes."
+do_5 = "Run the rehearsal through tests/integration/scripts/runner.py:86 on four nodes."
 symbols = ["merge_activation_test"]
 
 [acceptance.11.1.1]
@@ -56472,7 +56472,7 @@ feature = "11"
 req = "11052.1"
 scenario = "Given a four-node network on the release before the merge, when the merge plan is proposed and the plan height is reached, then every node applies it and blocks continue."
 contract = "contracts/address-table.md#c-activation"
-test = "integration_test/upgrade_module/merge_activation_test.yaml"
+test = "tests/integration/upgrade_module/merge_activation_test.yaml"
 qualification = "UNRUN"
 
 [acceptance.11.52.2]
@@ -56480,7 +56480,7 @@ feature = "11"
 req = "11052.2"
 scenario = "Given the network past the plan height, when each retired method is called, then each returns LXP_MODULE_DISABLED and every posted bond and challenge deposit is back with the operator or challenger that posted it."
 contract = "contracts/address-table.md#c-activation"
-test = "integration_test/upgrade_module/merge_activation_test.yaml"
+test = "tests/integration/upgrade_module/merge_activation_test.yaml"
 qualification = "UNRUN"
 
 [acceptance.11.52.3]
@@ -56488,7 +56488,7 @@ feature = "11"
 req = "11052.3"
 scenario = "Given the network past the store-delete step, when an anchor read is called, then it returns LXP_MODULE_DISABLED and the store key is absent."
 contract = "contracts/address-table.md#c-activation"
-test = "integration_test/upgrade_module/merge_activation_test.yaml"
+test = "tests/integration/upgrade_module/merge_activation_test.yaml"
 qualification = "UNRUN"
 
 [acceptance.11.52.4]
@@ -56496,7 +56496,7 @@ feature = "11"
 req = "11052.4"
 scenario = "Given the release revision, when the retired-caller check and the rollout test run, then both exit 0."
 contract = "contracts/address-table.md#c-activation"
-test = "integration_test/upgrade_module/merge_activation_test.yaml"
+test = "tests/integration/upgrade_module/merge_activation_test.yaml"
 qualification = "UNRUN"
 
 [contract_context.11.activation]
@@ -64820,18 +64820,18 @@ wave = 31
 requires = ["11.6.1", "11.7.1", "11.7.2", "11.7.3", "11.7.4", "11.7.5", "11.7.6", "11.7.7", "11.7.8", "11.7.9", "11.7.10", "11.7.11", "11.7.12", "11.7.13", "11.7.14", "11.7.15", "11.7.16", "11.7.17", "11.7.18", "11.7.19", "11.7.20", "11.7.21", "11.7.22", "11.7.23", "11.7.24", "11.7.25", "11.7.26", "11.7.27", "11.7.28", "11.7.29", "11.7.30", "11.7.31", "11.7.32", "11.7.33", "11.7.34", "11.7.35", "11.7.36", "11.7.37", "11.7.38", "11.7.39", "11.7.40", "11.7.41", "11.7.42", "11.7.43", "11.7.44"]
 reqs = ["11052.1", "11052.2", "11052.3", "11052.4"]
 capabilities = ["11.12.3"]
-do_1 = "Write integration_test/upgrade_module/merge_activation_test.yaml in the style of integration_test/upgrade_module/major_upgrade_test.yaml:3, applying the merge plan registered beside node/upgrades.go:187."
+do_1 = "Write tests/integration/upgrade_module/merge_activation_test.yaml in the style of tests/integration/upgrade_module/major_upgrade_test.yaml:3, applying the merge plan registered beside node/upgrades.go:187."
 do_2 = "Assert after the plan height that every retired method of 0x1012, 0x1013, 0x1014 and 0x1015 returns LXP_MODULE_DISABLED (include/layerx/lxp_result.h:42)."
 do_3 = "Assert that the anchor module balance is zero after the handler and every operator got its bond (modules/layerxanchor/keeper/guarantors.go:21)."
 do_4 = "Apply the store-delete step after the merge plan in knownUpgradePlans order (node/upgrades.go:416-418) and assert the anchor reads return LXP_MODULE_DISABLED; run python3 tools/paxeer-x/tests/retired_callers_test.py on the release revision."
-do_5 = "Run the rehearsal through integration_test/scripts/runner.py:86 on four nodes."
+do_5 = "Run the rehearsal through tests/integration/scripts/runner.py:86 on four nodes."
 do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["merge_activation_test"]
-touches = ["integration_test/upgrade_module/merge_activation_test.yaml"]
+touches = ["tests/integration/upgrade_module/merge_activation_test.yaml"]
 build_cmd = "go build ./node/..."
-verify_cmd = "python3 integration_test/scripts/runner.py integration_test/upgrade_module/merge_activation_test.yaml"
+verify_cmd = "python3 tests/integration/scripts/runner.py tests/integration/upgrade_module/merge_activation_test.yaml"
 gate_kind = "planned"
-planned_paths = ["integration_test/upgrade_module/merge_activation_test.yaml"]
+planned_paths = ["tests/integration/upgrade_module/merge_activation_test.yaml"]
 max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
@@ -66152,7 +66152,7 @@ ac_3 = "Require archive proofs to validate as 'lxp_programs_occupancy_validate_r
 title = "Create the perps liquidation integration scenario"
 ac_1 = "The kernel check `mode, NULL, &opened) != LXP_OK ||` at tests/modules/test_perps_liquidate.c:54 (result `LXP_OK`) holds unchanged when the same inputs run as the EVM transaction to layerxexchange 0x1015, with an equal result code"
 ac_2 = "The pinned value check `&liquidity_account) != 0 ||` at tests/modules/test_perps_liquidate.c:82 holds with the same value on the merged chain"
-ac_3 = "Run the scenario through 'main' (integration_test/scripts/runner.py:86) of the integration runner against a local chain"
+ac_3 = "Run the scenario through 'main' (tests/integration/scripts/runner.py:86) of the integration runner against a local chain"
 ac_4 = "Require the liquidation legs the chain applies to equal 'lx_perps_liquidation_legs_build' (src/modules/perps/lx_perps_liquidate.c:82) for the same position"
 ac_5 = "Require the fee split equal to 'lx_perps_liquidation_fee_split' (src/modules/perps/lx_perps_liquidate.c:46)"
 
@@ -66420,7 +66420,7 @@ title = "Create the sponsored bind-and-send integration scenario"
 ac_1 = "Case `testSponsoredBatchRepaysSponsorAndEmitsEvents` asserts `assertEq(token.balanceOf(sponsor), quote.tokenAmount);` at contracts/test/BatchCallAndSponsorTest.t.sol:104; it passes unchanged against the node ante fee path and feeToken 0x1018 on the merged chain"
 ac_2 = "Case `testMissingAccountSignature` asserts `vm.expectRevert(BatchCallAndSponsor.InvalidAccountSignature.selector);` at contracts/test/BatchCallAndSponsorTest.t.sol:116; it passes unchanged against the node ante fee path and feeToken 0x1018 on the merged chain"
 ac_3 = "Bind a fresh account with a 7702 authorization and send through 'executeSponsored' (contracts/src/BatchCallAndSponsor.sol:135) in one sponsored transaction"
-ac_4 = "Run the scenario through 'main' (integration_test/scripts/runner.py:86) of the integration runner"
+ac_4 = "Run the scenario through 'main' (tests/integration/scripts/runner.py:86) of the integration runner"
 
 [req.12224]
 title = "Re-target native_programs.rs at the merged chain"
@@ -75085,7 +75085,7 @@ qualification = "UNRUN"
 [acceptance.12.184.3]
 feature = "12"
 req = "12184.3"
-scenario = "Given the reference behaviour at integration_test/scripts/runner.py:86 (`main`), when the new test runs on a local merged chain with the activation height at block 1, then layerxexchange 0x1015 reproduces it and the signed sequencer receipt carries the same status, gas used and logs as eth_getTransactionReceipt"
+scenario = "Given the reference behaviour at tests/integration/scripts/runner.py:86 (`main`), when the new test runs on a local merged chain with the activation height at block 1, then layerxexchange 0x1015 reproduces it and the signed sequencer receipt carries the same status, gas used and logs as eth_getTransactionReceipt"
 contract = "contracts/exchange-launchpad.md#e-parity-vectors"
 test = "planned"
 qualification = "UNRUN"
@@ -76293,7 +76293,7 @@ qualification = "UNRUN"
 [acceptance.12.223.4]
 feature = "12"
 req = "12223.4"
-scenario = "Given the reference behaviour at integration_test/scripts/runner.py:86 (`main`), when the new test runs on a local merged chain with the activation height at block 1, then the node ante fee path and feeToken 0x1018 reproduces it and the signed sequencer receipt carries the same status, gas used and logs as eth_getTransactionReceipt"
+scenario = "Given the reference behaviour at tests/integration/scripts/runner.py:86 (`main`), when the new test runs on a local merged chain with the activation height at block 1, then the node ante fee path and feeToken 0x1018 reproduces it and the signed sequencer receipt carries the same status, gas used and logs as eth_getTransactionReceipt"
 contract = "contracts/sequencer.md#f-fee-policy-d14-a-d7-a-d10-a"
 test = "planned"
 qualification = "UNRUN"
@@ -87762,20 +87762,20 @@ wave = 8
 requires = ["9.7.2"]
 reqs = ["12184.1", "12184.2", "12184.3", "12184.4", "12184.5", "1.2", "2.1"]
 capabilities = ["12.12.1", "12.12.2", "12.12.3", "12.12.4"]
-do_1 = "Run the scenario through `main` (integration_test/scripts/runner.py:86) of the integration runner against a local chain"
+do_1 = "Run the scenario through `main` (tests/integration/scripts/runner.py:86) of the integration runner against a local chain"
 do_2 = "Require the liquidation legs the chain applies to equal `lx_perps_liquidation_legs_build` (src/modules/perps/lx_perps_liquidate.c:82) for the same position"
 do_3 = "Require the fee split equal to `lx_perps_liquidation_fee_split` (src/modules/perps/lx_perps_liquidate.c:46)"
 do_4 = "Take the reference values from `LXP_OK` at tests/modules/test_perps_liquidate.c:54, which asserts `mode, NULL, &opened) != LXP_OK ||`"
 do_5 = "Take the reference values from `value` at tests/modules/test_perps_liquidate.c:82, which asserts `&liquidity_account) != 0 ||`"
-do_6 = "Create integration_test/perps_liquidation/liquidation_test.yaml as a planned path; until it exists the gate is planned and the reference stays at integration_test/scripts/runner.py:86"
+do_6 = "Create tests/integration/perps_liquidation/liquidation_test.yaml as a planned path; until it exists the gate is planned and the reference stays at tests/integration/scripts/runner.py:86"
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["liquidation_test", "main", "lx_perps_liquidation_legs_build", "lx_perps_liquidation_fee_split", "LXP_OK", "value"]
-touches = ["integration_test/perps_liquidation/liquidation_test.yaml"]
+touches = ["tests/integration/perps_liquidation/liquidation_test.yaml"]
 tests = ["tests/modules/test_perps_liquidate.c"]
-build_cmd = "python3 -m py_compile integration_test/scripts/runner.py"
-verify_cmd = "python3 integration_test/scripts/runner.py integration_test/perps_liquidation/liquidation_test.yaml"
+build_cmd = "python3 -m py_compile tests/integration/scripts/runner.py"
+verify_cmd = "python3 tests/integration/scripts/runner.py tests/integration/perps_liquidation/liquidation_test.yaml"
 gate_kind = "planned"
-planned_paths = ["integration_test/perps_liquidation/", "integration_test/perps_liquidation/liquidation_test.yaml"]
+planned_paths = ["tests/integration/perps_liquidation/", "tests/integration/perps_liquidation/liquidation_test.yaml"]
 max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
@@ -88888,18 +88888,18 @@ requires = ["9.7.2"]
 reqs = ["12223.1", "12223.2", "12223.3", "12223.4", "7.1", "12.1"]
 capabilities = ["12.3.1", "12.3.2", "12.3.3", "12.3.4"]
 do_1 = "Bind a fresh account with a 7702 authorization and send through `executeSponsored` (contracts/src/BatchCallAndSponsor.sol:135) in one sponsored transaction"
-do_2 = "Run the scenario through `main` (integration_test/scripts/runner.py:86) of the integration runner"
+do_2 = "Run the scenario through `main` (tests/integration/scripts/runner.py:86) of the integration runner"
 do_3 = "Take the reference values from `testSponsoredBatchRepaysSponsorAndEmitsEvents` at contracts/test/BatchCallAndSponsorTest.t.sol:104, which asserts `assertEq(token.balanceOf(sponsor), quote.tokenAmount);`"
 do_4 = "Take the reference values from `testMissingAccountSignature` at contracts/test/BatchCallAndSponsorTest.t.sol:116, which asserts `vm.expectRevert(BatchCallAndSponsor.InvalidAccountSignature.selector);`"
-do_5 = "Create integration_test/sponsored_bind_send/sponsored_bind_send_test.yaml as a planned path; until it exists the gate is planned and the reference stays at contracts/src/BatchCallAndSponsor.sol:135"
+do_5 = "Create tests/integration/sponsored_bind_send/sponsored_bind_send_test.yaml as a planned path; until it exists the gate is planned and the reference stays at contracts/src/BatchCallAndSponsor.sol:135"
 do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["sponsored_bind_send_test", "executeSponsored", "main", "testSponsoredBatchRepaysSponsorAndEmitsEvents", "testMissingAccountSignature"]
-touches = ["integration_test/sponsored_bind_send/sponsored_bind_send_test.yaml"]
+touches = ["tests/integration/sponsored_bind_send/sponsored_bind_send_test.yaml"]
 tests = ["contracts/test/BatchCallAndSponsorTest.t.sol"]
-build_cmd = "python3 -m py_compile integration_test/scripts/runner.py"
-verify_cmd = "python3 integration_test/scripts/runner.py integration_test/sponsored_bind_send/sponsored_bind_send_test.yaml"
+build_cmd = "python3 -m py_compile tests/integration/scripts/runner.py"
+verify_cmd = "python3 tests/integration/scripts/runner.py tests/integration/sponsored_bind_send/sponsored_bind_send_test.yaml"
 gate_kind = "planned"
-planned_paths = ["integration_test/sponsored_bind_send/", "integration_test/sponsored_bind_send/sponsored_bind_send_test.yaml"]
+planned_paths = ["tests/integration/sponsored_bind_send/", "tests/integration/sponsored_bind_send/sponsored_bind_send_test.yaml"]
 max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2

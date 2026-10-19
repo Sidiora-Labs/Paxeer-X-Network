@@ -39,7 +39,7 @@ ignore:
   - "**/*.pb.gw.go"
 
   # Tests and test utilities
-  - "**/integration_test/**/*"
+  - "**/tests/integration/**/*"
   - "**/testutil/**/*"
   - "**/x/**/test_common.go"
   - "**/x/**/testdata/**/*"

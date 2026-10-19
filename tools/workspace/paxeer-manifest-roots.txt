@@ -7,8 +7,8 @@ go|hpx/registry/go.mod|build_test_lint
 go|sdk/cosmovisor/go.mod|build_test_lint
 go|sdk/ics23/go.mod|build_test_lint
 npm|contracts/package.json|build_static_live_test_blocked
-npm|integration_test/dapp_tests/package.json|build_static_live_test_blocked
-npm|integration_test/rpc_tests/package.json|build_static_live_test_blocked
+npm|tests/integration/dapp_tests/package.json|build_static_live_test_blocked
+npm|tests/integration/rpc_tests/package.json|build_static_live_test_blocked
 rust|tests/fixtures/example/cosmwasm/cw1155/Cargo.toml|build_test_lint
 rust|tests/fixtures/example/cosmwasm/cw20/Cargo.toml|build_test_lint
 rust|tests/fixtures/example/cosmwasm/cw721/Cargo.toml|build_test_lint

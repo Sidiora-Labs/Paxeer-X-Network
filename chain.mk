@@ -461,7 +461,7 @@ giga-integration-test:
 	@echo "Waiting 10s for nodes to stabilize..."
 	@sleep 10
 	@echo "=== Running GIGA EVM Tests ==="
-	@./integration_test/evm_module/scripts/evm_giga_tests.sh || ($(MAKE) -f $(PAXEER_PROJECT_HOME)/chain.mk docker-cluster-stop && exit 1)
+	@./tests/integration/evm_module/scripts/evm_giga_tests.sh || ($(MAKE) -f $(PAXEER_PROJECT_HOME)/chain.mk docker-cluster-stop && exit 1)
 	@echo "=== Stopping cluster ==="
 	@$(MAKE) -f $(PAXEER_PROJECT_HOME)/chain.mk docker-cluster-stop
 	@echo "=== GIGA Integration Tests Complete ==="
@@ -470,9 +470,9 @@ giga-integration-test:
 # Run Autobahn integration tests with an Autobahn-enabled cluster.
 autobahn-integration-test:
 	@# The test drives cluster start/stop itself via TestMain — see
-	@# integration_test/autobahn/autobahn_test.go. GOWORK=off: ignore ambient
+	@# tests/integration/autobahn/autobahn_test.go. GOWORK=off: ignore ambient
 	@# go.work; this target only needs stdlib + pax-tendermint.
-	@GOWORK=off go test -tags autobahn_integration -v -count=1 -timeout 30m ./integration_test/autobahn/...
+	@GOWORK=off go test -tags autobahn_integration -v -count=1 -timeout 30m ./tests/integration/autobahn/...
 .PHONY: autobahn-integration-test
 
 # Run a mixed-mode cluster: node 0 uses GIGA_EXECUTOR with OCC, nodes 1-3 use standard V2.
@@ -520,7 +520,7 @@ giga-mixed-integration-test:
 	@echo "Waiting 10s for nodes to stabilize..."
 	@sleep 10
 	@echo "=== Running GIGA EVM Tests (mixed mode) ==="
-	@./integration_test/evm_module/scripts/evm_giga_tests.sh || (echo "TEST FAILURE - check if node 0 (giga) halted due to consensus mismatch" && $(MAKE) -f $(PAXEER_PROJECT_HOME)/chain.mk docker-cluster-stop && exit 1)
+	@./tests/integration/evm_module/scripts/evm_giga_tests.sh || (echo "TEST FAILURE - check if node 0 (giga) halted due to consensus mismatch" && $(MAKE) -f $(PAXEER_PROJECT_HOME)/chain.mk docker-cluster-stop && exit 1)
 	@echo "=== Stopping cluster ==="
 	@$(MAKE) -f $(PAXEER_PROJECT_HOME)/chain.mk docker-cluster-stop
 	@echo "=== GIGA Mixed-Mode Integration Tests Complete ==="

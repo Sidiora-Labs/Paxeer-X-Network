@@ -1,7 +1,7 @@
 FROM golang:1.25.6-bookworm AS go-dist
 
 FROM ubuntu:24.04
-ENV HOME="/root" PATH="/root/go/bin:/pax-protocol/pax-chain/integration_test/upgrade_module/scripts/:$PATH"
+ENV HOME="/root" PATH="/root/go/bin:/pax-protocol/pax-chain/tests/integration/upgrade_module/scripts/:$PATH"
 RUN set -eux; \
     export DEBIAN_FRONTEND=noninteractive; \
     for attempt in 1 2 3 4 5; do \

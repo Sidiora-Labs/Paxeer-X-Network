@@ -38,7 +38,7 @@ on:
       - 'engine/**'
       - 'tests/fixtures/example/**'
       - 'hpx/**'
-      - 'integration_test/**'
+      - 'tests/integration/**'
       - 'interchain/**'
       - 'modules/**'
       - 'node/**'

@@ -39,7 +39,7 @@ _Generated graph context owned by `cg agentmd`. Regenerate with `cg agentmd --wr
 - `human/` — 1215 files, 344979 lines (mostly typescript)
 - `hpx/` — 2 files, 883 lines (mostly go)
 - `include/` — 66 files, 11369 lines (mostly c)
-- `integration_test/` — 70 files, 15680 lines (mostly typescript)
+- `tests/integration/` — 70 files, 15680 lines (mostly typescript)
 - `interchain/` — 445 files, 123556 lines (mostly go)
 - `interop/` — 180 files, 116454 lines (mostly rust)
 - `layerxproof/` — 22 files, 4516 lines (mostly go)
