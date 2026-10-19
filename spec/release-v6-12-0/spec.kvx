@@ -11576,7 +11576,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.3.99]
 title = "Domain completion: run the perps package set"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["3.2.2", "3.2.7", "3.2.11", "3.2.12", "3.2.14", "3.3.2", "3.3.3", "3.3.4"]
