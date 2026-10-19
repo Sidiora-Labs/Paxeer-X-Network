@@ -8326,3 +8326,63 @@ fix = "after the lexical rewrite, resolve every ../ chain in the old parent agai
 area = "layout moves"
 symptom = "a moved tree also reaches the repository root through index climbs that carry no ../ and no old path, Python Path(__file__).parents[N], HERE.parents[N] and Rust CARGO_MANIFEST_DIR ancestors().nth(N), and through symlink targets written as strings in Makefile and Dockerfile recipes (ln -s and readlink of ../../../../human/apps/web/node_modules), and a Go package of the root module moved with the tree changes its import path, so a lexical and ../ rewrite leaves all three pointing one level short and gofmt reorders the rewritten import blocks"
 fix = "after the ../ rewrite, raise every parents and ancestors index that landed on the root by the added depth, deepen every link target that climbs out of the moved tree, rewrite the import path of the moved packages and run gofmt on the files that carry it"
+
+[gotcha.1751]
+area = "perps fill path"
+symptom = "a PositionModified event built before the fill's maker or taker fee is booked carries the pre-fee collateral for every caller, and a keeper test of the post-fee event fails only for callers that book the fee after the event"
+fix = "book the fee inside ApplyFill before the event is built so every caller emits the post-fee collateral"
+
+[gotcha.1752]
+area = "golden recording"
+symptom = "an archive node answers an empty-data revert with JSON-RPC error -32000 and no data field, so a recorder that keys reverts on the data field treats it as a transport error and stops"
+fix = "record a -32000 error without data as a revert with empty data"
+
+[gotcha.1753]
+area = "ABI packing"
+symptom = "packing a uint256 argument whose Go value is a nil *big.Int panics inside reflect in the ABI encoder"
+fix = "allocate zero uint256 values before packing"
+
+[gotcha.1754]
+area = "long recording runs"
+symptom = "a recorder that runs longer than the shell the lane holds is killed with the shell, losing hours of archive reads"
+fix = "run it detached with nohup and a pid file, poll its log, and verify the output when the pid exits"
+
+[gotcha.1755]
+area = "lane worktrees"
+symptom = "a lane that finishes with no changes has its worktree removed automatically, so resuming it later fails with a missing working directory"
+fix = "start a fresh lane on the current base instead of resuming one that ended without changes"
+
+[gotcha.1756]
+area = "external application repositories"
+symptom = "a task whose paths start with the application name points at the external application repository on its release branch, not at the monorepo port of the same application, which lacks the release work"
+fix = "clone the external repository at its release branch before dispatching the task and land on that branch"
+
+[gotcha.1757]
+area = "environment at module load"
+symptom = "a module that reads an environment variable at load time keeps the value from the first import, so a test that sets the variable after importing sees the stale value"
+fix = "set the variable first and import the module dynamically inside the test"
+
+[gotcha.1758]
+area = "exact caller lists"
+symptom = "a test that asserts the exact set of callers of a shared base fails when a new caller is added for a legitimate reason and the test is not updated with it"
+fix = "add the new caller to the asserted list in the same change that adds it"
+
+[gotcha.1759]
+area = "perps margin"
+symptom = "a perps order that only reduces a position still has to clear the full margin check for its notional and fee reserve unless it is marked reduce-only, so a closing bid from a thin account reverts with insufficient margin"
+fix = "mark a closing order reduce-only"
+
+[gotcha.1760]
+area = "halt export fixtures"
+symptom = "a halt export built from the keys an upgrade run reads carries only those keys, so token getters a parity test replays, allowance, nonces, checkpoints and the USDL total supply, read zero where the chain at the halt height holds real values"
+fix = "extend the export fixpoint to every key the golden getter replay reads before regenerating"
+
+[gotcha.1761]
+area = "test node JSON-RPC"
+symptom = "a test node with the API and gRPC servers disabled never starts the EVM JSON-RPC servers, so a readiness probe on eth_chainId is refused forever"
+fix = "enable gRPC on a loopback port in the test home"
+
+[gotcha.1762]
+area = "Hyperfide fixtures"
+symptom = "the identity fixture gives all its migrations one 30 second budget and is fsync-bound, so under host load it times out at an arbitrary migration regardless of the tree, and a release-layout copy without the migrations directory fails the epoch import as database unavailable"
+fix = "host the disposable PostgreSQL under /dev/shm with fsync, synchronous commit and full page writes off, and include the migrations directory in release copies"
