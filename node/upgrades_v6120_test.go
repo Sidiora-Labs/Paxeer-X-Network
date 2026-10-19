@@ -576,11 +576,18 @@ func TestV6120AppliesThePlanOnTheHaltExport(t *testing.T) {
 	builder.SetGasLimit(1_000_000)
 	bz, err := a.GetTxConfig().TxEncoder()(builder.GetTx())
 	require.NoError(t, err)
-	_, results, _, err := a.ProcessBlock(after, [][]byte{bz}, &BlockProcessRequest{
-		Height: halt + 2,
-		Time:   after.BlockTime(),
-	}, abci.CommitInfo{}, false, nil)
+	// A node commits block H+1, the block the plan applied in, before it
+	// finalizes H+2 through ProcessBlock.
+	a.SetDeliverStateToCommit()
+	_, err = a.Commit(context.Background())
 	require.NoError(t, err)
+	require.Equal(t, halt+1, a.LastBlockHeight())
+	finalized, err := a.FinalizeBlock(context.Background(), &abci.RequestFinalizeBlock{
+		Txs:    [][]byte{bz},
+		Header: &tmproto.Header{ChainID: after.ChainID(), Height: halt + 2, Time: after.BlockTime()},
+	})
+	require.NoError(t, err)
+	results := finalized.TxResults
 	require.Len(t, results, 1)
 	require.Equal(t, uint32(0), results[0].Code, results[0].Log)
 	var msgData sdk.TxMsgData

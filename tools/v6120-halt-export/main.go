@@ -210,7 +210,8 @@ func (f *fetcher) fetch(ctx context.Context, keys []readKey) error {
 
 // migrate applies the v6.12.0 plan at the height after the export on a
 // discarded branch of the base state and returns the EVM keys it read and its
-// result.
+// result, adding the code of every account whose storage the plan read so a
+// contract read only by storage keeps its mainnet code.
 func (f *fetcher) migrate() (reads []readKey, err error) {
 	rec := &recorder{evmStore: evmtypes.StoreKey, reads: map[readKey]bool{}}
 	cc, _ := f.base.CacheContext()
@@ -227,8 +228,13 @@ func (f *fetcher) migrate() (reads []readKey, err error) {
 		}
 		f.a.UpgradeKeeper.ApplyUpgrade(cc.WithBlockHeight(plan.Height), plan)
 	}()
+	codes := map[readKey]bool{}
 	for k := range rec.reads {
 		reads = append(reads, k)
+		if code := (readKey{addr: k.addr, code: true}); !k.code && !rec.reads[code] && !codes[code] {
+			codes[code] = true
+			reads = append(reads, code)
+		}
 	}
 	return reads, err
 }
