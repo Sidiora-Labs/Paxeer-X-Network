@@ -1938,19 +1938,26 @@ log = fleet/logs/fixture-spot-share-token.log
 observed = Resolved for the spot step: the generator replayed only the launchpad migration, so USDL 0x85FcD13735F4309833A503EE804ea32395851479 storage slot 4 (symbol "USDL") was absent, symbol() returned an empty string and CreateShareToken refused with UnsupportedToken(); the generator now applies the whole v6.12.0 plan, added that slot, and the plan applies at H+1, after which the test fails at its later ProcessBlock call with "invalid height: 7; expected: 6".
 assumption = The ProcessBlock height failure lies in the test's block sequencing after the upgrade, not in the plan or the fixture, and was not changed.
 [finding.fixture-v6120-h2-call-return]
-revision = 3f1f4454d
-command = read-only diagnosis, no gate run
+revision = 42455225d
+command = go test ./node/ -run TestV6120AppliesThePlanOnTheHaltExport -count=1
 exit = 0
-log = fleet/logs/fixture-h2-call-return.log
-observed = The node carries return data in transaction results (modules/evm/keeper/msg_server.go:194, node/app.go:2573); the empty result comes from height gating: the fixture chain runs at initial_height 6, so H+2 is 7, gigaCustomPrecompiles (node/app.go:2625) returns the set below gigaLatePrecompileHeight 26300000, which lacks 0x1015 (engine/executor/precompiles/failfast.go:116-117), and the giga executor runs the call against an account with no code, succeeding with no return data, while the ordinary path the static call uses serves the perps executor.
-assumption = The node matches acceptance 1.4.2 ac_6, which keys the giga hand-off on gigaLatePrecompileHeight, and at mainnet H+2 the late set applies; the test is not right until either the fixture runs at the mainnet heights (initial_height H+1 and the mainnet done heights) or the giga hand-off also follows the v6.12.0 done height for chains that apply the plan below 26300000, which needs a ruling, and nothing was changed.
+log = fleet/logs/fixture-mainnet-heights-run.log
+observed = Resolved: the regenerated fixture starts at initial_height H+1 = 34742401 with the mainnet activation and v6.10 done heights, so H+2 lies above gigaLatePrecompileHeight, the giga executor hands 0x1015 to the ordinary path and the H+2 transaction returns the perps result; the plan test passes.
+assumption = None.
 [finding.fixture-v6120-done-heights-source]
-revision = 4b05b3289
-command = go build -o /dev/null ./tools/v6120-halt-export/
+revision = 42455225d
+command = go run ./tools/v6120-halt-export -rpc <archive tunnel> -activation-done 25988672 -v610-done 26029642
 exit = 0
-log = fleet/logs/fixture-mainnet-heights.log
-observed = The generator now writes initial_height H+1 and v6120-halt-heights.json from -activation-done and -v610-done and refuses without them, but the archive JSON-RPC exposes no upgrade module query and its history below 30252301 is pruned, so the activation and v6.10 done heights could not be read from the source chain's upgrade store and the fixture was not regenerated.
-assumption = The two done heights must come from the source chain's upgrade store (task 1.2.3 do_2) through a query path outside the archive JSON-RPC.
+log = fleet/logs/fixture-mainnet-heights-run.log
+observed = Resolved: the source chain's upgrade store answers the applied_plan query with height 25988672 for v6.9 and 26029642 for v6.10, the generator wrote them into v6120-halt-heights.json with initial_height 34742401, and TestVersionSwitchHeightSelection now places its plan height at H+1 from the export instead of a fixed 1000 and passes.
+assumption = None.
+[finding.node-package-unrelated-failures]
+revision = 42455225d
+command = go test ./node/ -count=1
+exit = 1
+log = fleet/logs/fixture-mainnet-heights-run.log
+observed = Failing tests that do not seed from the halt export: TestGigaCustomPrecompilesSwitchAtHeight, TestLaunchpadAirdropEntitlementsSurviveCommitAndReopen, TestLaunchpadGovernanceDispatch, TestPriceFeedLivePathCheckTx, TestPriceFeedLivePathMetricsError, TestV6120IsAKnownPlanThatAddsNoStore, TestFeeTokenGigaBlockDebitsAndRefundsInFeeDenom, TestInvalidProposalWithExcessiveGasEstimates and TestV640ToV66UpgradeServesTheExchangeBridgeAndLaunchpadPrecompiles.
+assumption = They lie outside the halt export fixture and were not investigated.
 [finding.spec-lint-tool-hang]
 revision = "c78681cb6"
 command = "cg spec lint"

@@ -296,8 +296,9 @@ func seedFromHaltExport(t *testing.T) (*app.App, sdk.Context) {
 }
 
 func TestVersionSwitchHeightSelection(t *testing.T) {
-	const doneHeight = int64(1000)
 	testApp, seeded := seedFromHaltExport(t)
+	// The plan applies at H+1, the first block after the halt export.
+	doneHeight := seeded.BlockHeight() + 1
 	ctx := seeded.WithBlockTime(time.Unix(1_800_000_000, 0).UTC())
 	exchange := common.HexToAddress(layerxexchange.ExchangeAddress)
 
@@ -322,7 +323,7 @@ func TestVersionSwitchHeightSelection(t *testing.T) {
 		require.Equal(t, methodSigs(want.ABI), methodSigs(p.ABI), "height %d tracing %v", c.BlockHeight(), c.IsTracing())
 	}
 
-	// With the live flag false, a call at 999 resolves to the v6.9 exchange.
+	// With the live flag false, a call at H resolves to the v6.9 exchange.
 	below := ctx.WithBlockHeight(doneHeight - 1)
 	served(below, legacy)
 	require.Equal(t, app.ActivationUpgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(below)[exchange])
@@ -334,21 +335,21 @@ func TestVersionSwitchHeightSelection(t *testing.T) {
 		}
 	}
 
-	// The v6.12.0 handler sets the flag at 1000.
+	// The v6.12.0 handler sets the flag at H+1.
 	at := ctx.WithBlockHeight(doneHeight)
 	plan := upgradetypes.Plan{Name: app.V6120Upgrade, Height: doneHeight}
 	require.NoError(t, testApp.UpgradeKeeper.ScheduleUpgrade(at, plan))
 	testApp.UpgradeKeeper.ApplyUpgrade(at, plan)
 	require.Equal(t, doneHeight, testApp.UpgradeKeeper.GetDoneHeight(at, app.V6120Upgrade))
 
-	// From 1000 the address serves the perpetuals executor.
+	// From H+1 the address serves the perpetuals executor.
 	served(at, next)
 	served(at.WithIsTracing(true), next)
 	require.Equal(t, app.V6120Upgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(at)[exchange])
 	served(ctx.WithBlockHeight(doneHeight+1), next)
 	require.Equal(t, app.V6120Upgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(ctx.WithBlockHeight(doneHeight + 1))[exchange])
 
-	// A trace of 999 still resolves the v6.9 exchange.
+	// A trace of H still resolves the v6.9 exchange.
 	traced := ctx.WithBlockHeight(doneHeight - 1).WithIsTracing(true)
 	require.Equal(t, app.ActivationUpgrade, testApp.EvmKeeper.GetCustomPrecompilesVersions(traced)[exchange])
 	served(traced, legacy)
