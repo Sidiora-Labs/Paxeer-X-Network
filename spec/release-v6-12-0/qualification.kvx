@@ -2036,3 +2036,11 @@ exit = 0
 log = fleet/logs/release-3.3.1-r5.log
 observed = Resolved: the flow starts from the halt export with the real v6.12.0 upgrade at the next height, and the caller's PositionOpened from openPosition and addSize now carries the collateral the call deposited per the contract, while placeLimitOrder and placeStopLimitOrder, which also run a deposit leg, still carry the account collateral because the contract defines only the openPosition case; the processblock test application cannot start from the export, so blocks are finalized on the node application with its transaction config.
 assumption = The limit-order PositionOpened collateral follows the contract once a line defines it; the integration flow on the node application satisfies the acceptance.
+
+[finding.1.2.3-export-token-storage]
+revision = 487d8a465654c81a51e6e8b26a25ef13eff7aa41
+command = go test ./node/ -run 'TestV6120HaltExportLoads'
+exit = 0
+log = fleet/logs/release-1.2.3-fix-verify.log
+observed = Resolved: the generator now replays every golden getter, refusal and the USDL supply and holder balances at H and H+1 inside its fetch loop, adding 22 codes and 4641 storage words as a strict superset (USDL gains its total supply word, pool tokens 4782 to 8950 words); 71 replayed calls still differ from the golden at H with every read key present, most likely the getters that depend on the block time of the seeded context rather than a missing slot.
+assumption = The parity tests of 2.2.18 and 2.2.19 decide the 71 calls per getter; the regenerated absent-key list is committed so a rerun needs no RPC.

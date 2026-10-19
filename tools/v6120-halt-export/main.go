@@ -1,8 +1,10 @@
 // Command v6120-halt-export adds the mainnet Launch-x contract code and
 // storage the v6.12.0 upgrade reads to the halt export fixture. It applies
-// the v6.12.0 plan on the export, records every EVM code and storage key the
-// run reads, fetches the keys the export lacks with eth_getCode and
-// eth_getStorageAt at one height and repeats until a run reads nothing new.
+// the v6.12.0 plan on the export, replays every golden.json getter and
+// refusal and the usdl.json reads at the halt height and after the plan,
+// records every EVM code and storage key the run reads, fetches the keys the
+// export lacks with eth_getCode and eth_getStorageAt at one height and repeats
+// until a run reads nothing new.
 //
 // Run from the repository root:
 //
@@ -151,7 +153,82 @@ type stateEntry struct {
 	Value   []byte `json:"value"`
 }
 
+// replayCall is one recorded read replayed against the seeded chain. check is
+// set when the record holds the result at the halt height.
+type replayCall struct {
+	from     sdk.AccAddress
+	to       common.Address
+	input    []byte
+	reverted bool
+	output   []byte
+	check    bool
+}
+
+type goldenCall struct {
+	From     *common.Address `json:"from"`
+	To       common.Address  `json:"to"`
+	Input    hexutil.Bytes   `json:"input"`
+	Reverted bool            `json:"reverted"`
+	Output   hexutil.Bytes   `json:"output"`
+}
+
+// readCalls lists every getter call and refusal of golden.json and the USDL
+// totalSupply and balanceOf reads of usdl.json, sent from caller unless the
+// record names a sender.
+func readCalls(goldenPath, usdlPath string, caller sdk.AccAddress) ([]replayCall, error) {
+	var golden struct {
+		Contracts []struct {
+			Calls []goldenCall `json:"calls"`
+		} `json:"contracts"`
+		Refusals []goldenCall `json:"refusals"`
+	}
+	bz, err := os.ReadFile(goldenPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(bz, &golden); err != nil {
+		return nil, err
+	}
+	var usdl struct {
+		Address  common.Address `json:"address"`
+		Balances []struct {
+			Address common.Address `json:"address"`
+		} `json:"balances"`
+	}
+	if bz, err = os.ReadFile(usdlPath); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(bz, &usdl); err != nil {
+		return nil, err
+	}
+	var calls []replayCall
+	add := func(c goldenCall) {
+		from := caller
+		if c.From != nil {
+			from = sdk.AccAddress(c.From.Bytes())
+		}
+		calls = append(calls, replayCall{from: from, to: c.To, input: c.Input, reverted: c.Reverted, output: c.Output,
+			check: true})
+	}
+	for _, c := range golden.Contracts {
+		for _, call := range c.Calls {
+			add(call)
+		}
+	}
+	for _, c := range golden.Refusals {
+		add(c)
+	}
+	calls = append(calls, replayCall{from: caller, to: usdl.Address, input: crypto.Keccak256([]byte("totalSupply()"))[:4]})
+	balanceOf := crypto.Keccak256([]byte("balanceOf(address)"))[:4]
+	for _, b := range usdl.Balances {
+		calls = append(calls, replayCall{from: caller, to: usdl.Address,
+			input: append(append([]byte{}, balanceOf...), common.LeftPadBytes(b.Address.Bytes(), 32)...)})
+	}
+	return calls, nil
+}
+
 type fetcher struct {
+	calls  []replayCall
 	client *rpc.Client
 	block  string
 	a      *app.App
@@ -208,12 +285,37 @@ func (f *fetcher) fetch(ctx context.Context, keys []readKey) error {
 	return nil
 }
 
-// migrate applies the v6.12.0 plan at the height after the export on a
-// discarded branch of the base state and returns the EVM keys it read and its
-// result, adding the code of every account whose storage the plan read so a
+// replay sends every call to ctx and returns how many disagree with the
+// recorded result.
+func (f *fetcher) replay(ctx sdk.Context) (mismatches int) {
+	for _, c := range f.calls {
+		to := c.to
+		out, err := func() (out []byte, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					err = fmt.Errorf("call panicked: %v", r)
+				}
+			}()
+			return f.a.EvmKeeper.StaticCallEVM(ctx, c.from, &to, c.input)
+		}()
+		if c.check && ((err != nil) != c.reverted || (err == nil && !bytes.Equal(out, c.output))) {
+			mismatches++
+		}
+	}
+	return mismatches
+}
+
+// migrate replays the calls on a discarded branch of the base state at the
+// halt height, applies the v6.12.0 plan at the height after the export on
+// another and replays the calls after it, and returns the EVM keys all of it
+// read, the plan's result and the calls at the halt height that disagree with
+// golden.json, adding the code of every account whose storage was read so a
 // contract read only by storage keeps its mainnet code.
-func (f *fetcher) migrate() (reads []readKey, err error) {
+func (f *fetcher) migrate() (reads []readKey, mismatches int, err error) {
 	rec := &recorder{evmStore: evmtypes.StoreKey, reads: map[readKey]bool{}}
+	hc, _ := f.base.CacheContext()
+	mismatches = f.replay(hc.WithMultiStore(recordingStore{cacheMultiStore: hc.MultiStore().(sdk.CacheMultiStore),
+		rec: rec}))
 	cc, _ := f.base.CacheContext()
 	cc = cc.WithMultiStore(recordingStore{cacheMultiStore: cc.MultiStore().(sdk.CacheMultiStore), rec: rec})
 	func() {
@@ -228,6 +330,9 @@ func (f *fetcher) migrate() (reads []readKey, err error) {
 		}
 		f.a.UpgradeKeeper.ApplyUpgrade(cc.WithBlockHeight(plan.Height), plan)
 	}()
+	if err == nil {
+		f.replay(cc.WithBlockHeight(cc.BlockHeight() + 1))
+	}
 	codes := map[readKey]bool{}
 	for k := range rec.reads {
 		reads = append(reads, k)
@@ -236,7 +341,7 @@ func (f *fetcher) migrate() (reads []readKey, err error) {
 			reads = append(reads, code)
 		}
 	}
-	return reads, err
+	return reads, mismatches, err
 }
 
 func (f *fetcher) pending(reads []readKey) []readKey {
@@ -445,6 +550,10 @@ func run() error {
 	exportPath := flag.String("export", filepath.Join("node", "testdata", "v6120-halt-export.json"), "halt export")
 	layoutPath := flag.String("layout", filepath.Join("modules", "launchpad", "keeper", "testdata", "v6120",
 		"layout.json"), "layout.json")
+	goldenPath := flag.String("golden", filepath.Join("modules", "launchpad", "keeper", "testdata", "v6120",
+		"golden.json"), "golden.json")
+	usdlPath := flag.String("usdl", filepath.Join("modules", "launchpad", "keeper", "testdata", "v6120",
+		"usdl.json"), "usdl.json")
 	rpcURL := flag.String("rpc", defaultRPC, "mainnet JSON-RPC")
 	activationDone := flag.Int64("activation-done", 0,
 		"done height of the activation (v6.9) plan in the source chain's upgrade store")
@@ -518,7 +627,12 @@ func run() error {
 
 	a.UpgradeKeeper.SetDone(base.WithBlockHeight(*activationDone), app.ActivationUpgrade)
 	a.UpgradeKeeper.SetDone(base.WithBlockHeight(*v610Done), app.V610Upgrade)
-	f := &fetcher{client: client, block: hexutil.EncodeUint64(height), a: a, base: base, done: map[readKey]bool{}}
+	calls, err := readCalls(*goldenPath, *usdlPath, a.LaunchpadKeeper.ModuleAddress())
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "replaying %d calls at heights %d and %d\n", len(calls), height, height+1)
+	f := &fetcher{calls: calls, client: client, block: hexutil.EncodeUint64(height), a: a, base: base, done: map[readKey]bool{}}
 	for _, e := range record.Absent {
 		if e.Slot == nil {
 			f.done[readKey{addr: e.Address, code: true}] = true
@@ -554,10 +668,11 @@ func run() error {
 			return err
 		}
 		var reads []readKey
-		reads, migrateErr = f.migrate()
+		var mismatches int
+		reads, mismatches, migrateErr = f.migrate()
 		pending = f.pending(reads)
-		fmt.Fprintf(os.Stderr, "round %d: %d reads, %d to fetch, result %v\n", round, len(reads), len(pending),
-			migrateErr)
+		fmt.Fprintf(os.Stderr, "round %d: %d reads, %d to fetch, %d calls differ from golden.json at %d, result %v\n",
+			round, len(reads), len(pending), mismatches, height, migrateErr)
 	}
 	if err := f.check(l); err != nil {
 		return err
