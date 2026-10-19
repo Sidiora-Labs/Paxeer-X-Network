@@ -188,7 +188,7 @@ revision = "8809336948050d0933dfdd981b8f0869b171f9cc"
 command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --lib capabilities"
 exit_code = 0
 log_path = "fleet/logs/2.3.4-verify-1.log"
-observed_and_assumption = "The gate exits 0 while running zero tests, because the capabilities module belongs to the gateway binary and a --lib filter selects nothing, so the launchpad probe test only compiles under --all-targets and never runs. Assumption: the verify command is corrected to the binary target and the task is qualified on that run."
+observed_and_assumption = "The gate exits 0 while running zero tests, because the capabilities module belongs to the gateway binary and a --lib filter selects nothing, so the launchpad probe test only compiles under --all-targets and never runs. Assumption: the verify command is corrected to the binary target and the task is qualified on that run. Settled at spec 1.0.1: task 2.3.4 runs the verify filter capabilities:: on the gateway binary, which selects only the capabilities module tests, and its do_6 places the readiness contract test real_gateway_readiness_capabilities_contract, which needs PAXEER_X_GATEWAY_READINESS_CASE, in the gateway suite outside this gate; the task is to be requalified against that text."
 
 [finding.5.1.15]
 revision = "3529f63d3aea6d52cedaa84b3efd09c54e0778ea"
@@ -209,7 +209,7 @@ revision = "2ce2875f8fbb86d9d854c7517d6bcf6b1b1feda3"
 command = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-intents --test precompile_router"
 exit_code = 101
 log_path = "fleet/logs/2.3.1-verify-1.log"
-observed_and_assumption = "The intents crate builds, but its router test target still uses the removed v6.10 launchpad variants that the follow-up test task owns, and the layerx-agentd dev-dependency does not compile on the integration branch because WaitRequest has no requested_verification_level field. Assumption: the follow-up test task rewrites the router test and the agentd build break is fixed as its own correction, after which this gate is rerun unchanged."
+observed_and_assumption = "The intents crate builds, but its router test target still uses the removed v6.10 launchpad variants that the follow-up test task owns, and the layerx-agentd dev-dependency does not compile on the integration branch because WaitRequest has no requested_verification_level field. Assumption: the follow-up test task rewrites the router test and the agentd build break is fixed as its own correction, after which this gate is rerun unchanged. Settled at spec 1.0.1: task 2.3.1 do_5 binds the custody-credit reserve of NativeCustodyCredit::new and of the vocabulary test to the treasury module account id and leaves no other reserve account id in the crate; the gate is to be rerun against that text."
 
 [fix.2.3.9]
 revision = "ef236702b8e6f24baeaf1287f9eb599a2130b219"
@@ -307,7 +307,7 @@ revision = "e797d7278ff031f3fc2a1a7f1797bc8a1a260b7d"
 command = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-intents --test precompile_router"
 exit_code = 101
 log_path = "fleet/logs/2.3.2-verify-3.log"
-observed_and_assumption = "The three task tests pass; two sibling tests in the same target fail: one reads fresh evidence only the exchange tif qualification harness creates, and one parses the system:paxeer-reserve account that layerx-merge req 6100 retired, which the human crates still name in a dozen places. Assumption: the harness-bound test moves to its own target and the retired reserve references are removed per req 6100."
+observed_and_assumption = "The three task tests pass; two sibling tests in the same target fail: one reads fresh evidence only the exchange tif qualification harness creates, and one parses the system:paxeer-reserve account that layerx-merge req 6100 retired, which the human crates still name in a dozen places. Assumption: the harness-bound test moves to its own target and the retired reserve references are removed per req 6100. Settled at spec 1.0.1: the custody-credit reserve is the treasury module account, task 2.3.2 do_6 rewrites the reserve helper of the custody credit test to that account id and task 2.3.1 do_5 removes every other reserve account id from the crate; the reserve test is to be requalified against that text."
 
 [fix.2.0.7]
 revision = "1eecad29e"
@@ -377,7 +377,7 @@ revision = "7ea3f6ee9"
 command = "go test ./modules/launchpad/keeper/... -run 'TestBuyMovesUsdlIntoCustody'"
 exit_code = 1
 log_path = "fleet/logs/2.1.13-verify-1.log"
-observed_and_assumption = "The keeper test package does not compile because Keeper.Swap still has the bank signature; the custody Swap, CreateMarket and RecordFee shapes belong to tasks 2.1.5, 2.1.6 and 2.1.7. Assumption: the gate is rerun once after those three land, and the older history, fee-isolation and creation-fee tests that assert the retired paths are corrected by the fix lanes of those tasks."
+observed_and_assumption = "The keeper test package does not compile because Keeper.Swap still has the bank signature; the custody Swap, CreateMarket and RecordFee shapes belong to tasks 2.1.5, 2.1.6 and 2.1.7. Assumption: the gate is rerun once after those three land, and the older history, fee-isolation and creation-fee tests that assert the retired paths are corrected by the fix lanes of those tasks. Settled at spec 1.0.1: task 2.1.13 do_4 moves TestAirdropHoldingHistory, TestAirdropSharesByHolding and TestAirdropEntitlements to the generation 2 airdrop path opened by triggerAirdrop, and do_5 and do_6 remove TestProtocolFeesPerMarket and the parallel_market_state subtest because generation 2 keeps protocol fees only in the global ledger; the gate is to be requalified against that text."
 
 [finding.3.1.1]
 revision = "d6e928186398a3ded58873d16bac8e3ad2a97326"
@@ -412,7 +412,7 @@ revision = "0de219eba"
 command = "bash tools/paxeer-x/gov/test.sh"
 exit_code = 1
 log_path = "fleet/logs/8.4.16-verify-1.log"
-observed_and_assumption = "Four of five template renders pass; 03-xweb-fee.json lacks messages[0].kernel_network_id, which is outside this task's touches, and the fourth step waits on the kernel network id from layerx-merge task 11.5.225. Assumption: the xweb fee template is corrected by its own fix lane and the gate is rerun once afterwards."
+observed_and_assumption = "Four of five template renders pass; 03-xweb-fee.json lacks messages[0].kernel_network_id, which is outside this task's touches, and the fourth step waits on the kernel network id from layerx-merge task 11.5.225. Assumption: the xweb fee template is corrected by its own fix lane and the gate is rerun once afterwards. Settled at spec 1.0.1: task 8.4.16 do_5 sets the mainnet xweb KernelNetworkId equal to the custody network id, so test.sh renders with --kernel-network-id equal to --custody-network-id, the xweb fee step asserts messages[0].kernel_network_id of 03-xweb-fee.json equals it and no separate kernel network id input is awaited."
 
 [fix.7.0.2]
 revision = "41b74b8d2"
@@ -842,7 +842,7 @@ command = "go test ./modules/launchpad/keeper/... -run 'TestUsdlBalancesMustMatc
 exit = 1
 log = "fleet/logs/2.2.16-verify-1.log"
 observed = "The USDL migration step and its golden tests compile, but the keeper test binary imports precompiles/launchpad, which on this base still names the pre-2.2.1 CreateMarket signature."
-assumption = "Rerun once 2.2.1 is merged; the golden gives no Treasury admin or token list, so USDLGolden carries a Treasuries field that 2.2.17 must fill."
+assumption = "Rerun once 2.2.1 is merged; the golden gives no Treasury admin or token list, so USDLGolden carries a Treasuries field that 2.2.17 must fill. Settled at spec 1.0.1: task 2.2.16 do_2 drains both Treasuries by withdraw from the fixture admin, recovers the generation 2 surplus by recoverSurplus and moves the generation 1 USDL surplus by a direct USDL.transfer with the generation 1 Treasury address as caller and no proxy upgrade of either Treasury, as acceptance 2.23.3 now reads; the gate is to be requalified against that text."
 
 [finding.fix-launchpad-writers]
 revision = "5796dfcdcc1c42b06c28aadfa98b7f60a24b35dc"
@@ -890,7 +890,7 @@ command = "go test ./modules/launchpad/keeper/... -run 'TestMigrateV6120Signatur
 exit = 1
 log = "fleet/logs/2.2.17-verify-1.log"
 observed = "MigrateV6120 and the EVM reader typecheck with the 2.2.16 USDL step overlaid, but the keeper test binary imports precompiles/launchpad, which on this base predates 2.2.1; the EVMReader adds InstallRetired that the node upgrade handler must adapt, and the role probes cover only the candidate address set."
-assumption = "Rerun once 2.2.1 and 2.2.16 are merged; golden.json from 2.2.15 is still absent so no full-run oracle test exists."
+assumption = "Rerun once 2.2.1 and 2.2.16 are merged; golden.json from 2.2.15 is still absent so no full-run oracle test exists. Settled at spec 1.0.1: task 2.2.17 do_7 merges the generation 1 accounting record into the generation 2 ledgers at activation, the zero accounting rule applying only to a fresh chain genesis, and do_12 carries the singleton protocol_fees_pending record into a per-denom pending-protocol-fee record claimable by the treasury, never refused and never deleted; the gate is to be requalified against that text."
 
 [finding.2.2.20]
 revision = "2993af0c73a394c7d56bbb1e9f071778ddfbb5a2"
@@ -946,7 +946,7 @@ command = "go test ./precompiles/launchpad/... -run 'TestEventEmitterAuthorizati
 exit = 1
 log = "fleet/logs/2.2.23-verify-1.log"
 observed = "retained_test.go type-checks with the pre-2.2.1 interface methods overlaid out, but the package build on this base predates 2.2.1 and the test installs the generation-2 surfaces itself because MigrateV6120 was not in the tree."
-assumption = "Rerun on the merged launchpad precompile after 2.2.1 through 2.2.6, 2.2.17 and 2.2.22 land."
+assumption = "Rerun on the merged launchpad precompile after 2.2.1 through 2.2.6, 2.2.17 and 2.2.22 land. Settled at spec 1.0.1: task 2.2.23 do_1 and acceptance 2.37.1 to 2.37.5 run the retained contracts on the migrated mainnet state at H+1, seeding node/testdata/v6120-halt-export.json and applying MigrateV6120 so the contracts keep their mainnet code and storage, never freshly deployed bytecode, so the test no longer installs the surfaces itself and is to be requalified against that text."
 
 [finding.3.2.13]
 revision = "a11d1e91e393b26c965ed1cce1b84fcb6af4956f"
@@ -1674,7 +1674,7 @@ command = go test -count=1 ./platform/perps-data/internal/decode/ -run 'TestSpot
 exit = 1
 log = fleet/logs/7.1.3-verify-1.log
 observed = Forty-five subtests pass; sixteen spot decoder subtests need a live RPC and fail before asserting.
-assumption = The implementation is complete on main; the RPC subtests rerun once a v6.12 devnet is available.
+assumption = The implementation is complete on main; the RPC subtests rerun once a v6.12 devnet is available. Settled at spec 1.0.1: task 7.1.3 do_8 adds seedSpotRestingOrders in platform/perps-data/internal/decode/spot_seed_test.go, which reads the Chainflow orderbook feed at FEED_ORIGIN and places resting spot limit orders at 0x1022 and stop orders at 0x1023 on the PERPS_DATA_TEST_RPC sandbox node before the spot journey; the gate is to be requalified against that text.
 
 [finding.fix-spot-vault-test]
 revision = 80f9d098bcaff8a25991a62ed629c09163f67b76
@@ -1890,7 +1890,7 @@ command = bash tools/release/tests/rollback.test.sh (previous binary set)
 exit = 1
 log = fleet/logs/fix-8.4.9-translated-validate.log
 observed = The previous binary stores a single native protocol_fees_pending record at launchpad key 0x03 that the v6.12.0 keeper reads as a per-token prefix, so paxd export after the upgrade decodes an empty token and panics; MigrateV6120 reads the quote token before readParams and refuses the mainnet params shape (quote_denom, no quote_token).
-assumption = The spec names only the FeeAccumulator contract fees; the migration reads params first, deletes the legacy total when it is zero and refuses the upgrade when it is nonzero, and the halt export fixture drops the stale test-chain fee entry so the rehearsal seeds the real zero total.
+assumption = The spec names only the FeeAccumulator contract fees; the migration reads params first, deletes the legacy total when it is zero and refuses the upgrade when it is nonzero, and the halt export fixture drops the stale test-chain fee entry so the rehearsal seeds the real zero total. Settled at spec 1.0.1: task 2.0.7 do_4 keeps the singleton protocol_fees_pending record at key 0x03 in the legacy types and task 2.2.17 do_12 carries it into a per-denom pending-protocol-fee record claimable by the treasury under the generation 2 rules, never refused and never deleted, so the delete-when-zero and refuse-when-nonzero path is to be replaced and requalified against that text.
 
 [finding.task-3-2-14-position-modified-equity]
 revision = 597df7b67d01
@@ -1898,7 +1898,7 @@ command = go test ./precompiles/perps/ -run 'TestEvent'
 exit = 1
 log = fleet/logs/requal-3.2.14-verify.log
 observed = TestEventPositionModified is the only failing clause: the keeper emits PositionModified with the account equity measured before the fill's trading fee is debited (positions.go emits before the fee step) while the test expects the equity after the fee, 0.222642 USDL lower, and the spec says only "share of account equity".
-assumption = The keeper's pre-fee equity stands and the test clause stays as written until a ruling on acceptance 3008.17 fixes the measurement point; every other TestEvent clause including the backstop wiring passes on this revision.
+assumption = The keeper's pre-fee equity stands and the test clause stays as written until a ruling on acceptance 3008.17 fixes the measurement point; every other TestEvent clause including the backstop wiring passes on this revision. Settled at spec 1.0.1: req 3008 ac_17 and acceptance 3.8.17 define newCollateralUsd and newCollateralAmount as the post-fee collateral measured after the fill's trading fee is debited (182,331,858 USDL units in the vector), and task 3.1.9 do_5 emits PositionModified after the fee step; the keeper is to be changed and the gate requalified against that text.
 
 [finding.fixture-generation2-protocolconfig]
 revision = 2b36dd290
