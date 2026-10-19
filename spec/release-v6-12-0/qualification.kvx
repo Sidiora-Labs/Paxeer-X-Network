@@ -1988,3 +1988,19 @@ command = "cg spec lint"
 exit_code = 124
 log_path = "scratch spec-rulings-lint.log"
 observed_and_assumption = "The spec tool's lint produced no output within 900 s on two attempts at this revision, so the decisions commit was checked structurally by hand instead: every requires reference resolves and the only dependency cycle (7.0.1, 7.0.2, 7.0.5, 7.0.4) already existed before the change; the tool hang is assumed independent of the spec content."
+
+[finding.2.3.1-treasury-account-id]
+revision = "a460c243d"
+command = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-intents --test precompile_router"
+exit = 101
+log = "fleet/logs/release-2.3.1.log"
+observed = "do_1 to do_3 hold and the build passes; do_5 binds the custody-credit reserve to the treasury module account id, but layerx-types AccountId::parse admits no treasury namespace (only system:liquidity, system:insurance, system:fees and system:paxeer-withdrawals, with system:paxeer-reserve refused), the exchange genesis still derives kind 11 from system:paxeer-reserve, and the layerx-merge spec retires the reserve account and its custody-credit disclosure outright; the two verify failures are the 2.3.2 helper still parsing system:paxeer-reserve and the exchange test needing the time-in-force ingress file."
+assumption = "A ruling names the canonical treasury account id (or confirms the layerx-merge retirement), and the task that adds it to layerx-types; 2.3.1 do_5, 2.3.2 do_6 and the other system:paxeer-reserve mentions in the crate (tests/compile.rs, tests/differential.rs, tests/native_custody.rs, vectors/v1.kvx, vectors/v2.kvx) follow it."
+
+[finding.6.2.10-pointer-addresses]
+revision = "7034579 (application repository, release branch)"
+command = "node --test --import tsx tests/precompiles.test.ts"
+exit = 0
+log = "fleet/logs/release-6.2.10-2.log"
+observed = "do_1, do_2 and do_4 hold and the verify passes 5 of 5 after the test loads the perps config dynamically with the gateway variable set; do_3 stays open because contracts/address-table.md rows 44-45 record no hex addresses for the PAX and SID pointer ERC20s, so SPOT_TOKENS.PAX keeps the zero address and SPOT_TOKENS.SID the pre-upgrade address."
+assumption = "The two pointer addresses come out of the upgrade deployment; the table is filled then and do_3 is completed unchanged."
