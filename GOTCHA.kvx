@@ -8206,3 +8206,18 @@ fix = "name the tests (TestCollectionServesEverySelector, TestFeeRightReceiverHo
 area = "git"
 symptom = "git stash followed by git stash pop on a checkout that has no local changes pops an unrelated older stash entry (git stash saves nothing when the tree is clean, so pop takes the previous stash@{0}) and leaves modify/delete and content conflicts in the working tree"
 fix = "check git stash list before any stash/pop pair, or use git stash push -q || true only when git diff --quiet reports changes; recover with git reset --hard HEAD, the popped entry is kept in the stash list on a failed pop"
+
+[gotcha.1727]
+area = "vendored trees"
+symptom = "scripts/ci/vendor-verify.sh reports two upstream files as different although they were copied byte for byte: the root .gitattributes rule '* text=auto eol=lf' converts upstream CRLF files to LF at git add, so the tracked blob no longer equals upstream's"
+fix = "stage the raw upstream blobs with git hash-object --no-filters -w and git update-index --cacheinfo 100644 <blob> <path>, then commit; the working copy is written with LF on checkout while the tracked bytes stay upstream's"
+
+[gotcha.1728]
+area = "git ignore gates"
+symptom = "git check-ignore -q <dir> passes or fails depending on whether the path exists: a directory-only pattern such as /.pytest_cache/ never matches a missing path, and a negated directory rule (!/core/) flips the result once the directory holds tracked files"
+fix = "test ignore rules with a path that never exists and has the intended shape, for example .pytest_cache/CACHEDIR.TAG for a directory rule and core.1 for a file rule"
+
+[gotcha.1729]
+area = "spec tooling"
+symptom = "cg spec done <id> reports 'touched <file> — no matching change in the worktree or in commits tagged [spec:<feature>/<id>]' and refuses to mark the task done although the files are committed on the branch"
+fix = "put the tag [spec:<feature>/<id>] inside the commit summary of every task commit (lx-commit ... \"<summary> [spec:<feature>/<id>]\"); the tool matches touched paths against commits carrying that tag"

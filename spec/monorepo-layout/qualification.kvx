@@ -1,2 +1,9 @@
 # Qualification findings for monorepo-layout: one [finding.<task>] per failure outside the task scope.
 # Keys: revision, command, exit_code, log_path, observed_and_assumption.
+
+[finding.0.1-gate-core-directory]
+revision = "fa73ea981"
+command = "git check-ignore -q .pytest_cache && git check-ignore -q core"
+exit_code = 1
+log_path = "scratch done-0.1.log"
+observed_and_assumption = "Both checks test paths that only pass by accident of the checkout: a directory-only pattern never matches a missing .pytest_cache, and once core/ holds tracked files the negation !/core/ makes git check-ignore core report not ignored, contradicting req.6 ac_5 which wants the directory tracked and a root core dump ignored. Spec 1.0.1 rewrites the gate to .pytest_cache/CACHEDIR.TAG and core.1, which test the same two rules against the intended state; the ignore rules themselves are unchanged."

@@ -3,7 +3,7 @@
 [meta]
 name = "Monorepo layout: core, sdk, services, apps, tests"
 slug = "monorepo-layout"
-version = "1.0.0"
+version = "1.0.1"
 status = "draft"
 goal = "Every top-level directory of the repository sits under core, sdk, services, apps, tests, scripts or the group that stays at the root (contracts, docs, deploy, docker, tools, spec, api), the upstream Paxeer-Network repositories the node builds from live in the tree as pinned directory snapshots, and the build, CI, deploy and spec references follow every move in the same commit."
 scope = "Phase A: eleven upstream directory imports, the tests consolidation, the off-chain moves to apps, services, sdk, contracts and tools, and the phase A docs refresh. Phase B: the kernel C tree and every root Go package to core, the Cosmos SDK fork to core/cosmos-sdk, programs, the go.mod directory replace wiring of the vendored Go deps and the sdk/js wiring of the integration tests."
@@ -111,7 +111,7 @@ ac_1 = "scripts/ci/public-repo-audit.sh passes after the imports, with any allow
 
 [task.0.1]
 title = "Add the layout and vendor check scripts and fix the root ignore rules the new tree needs"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 0
@@ -125,7 +125,7 @@ do_5 = "Finish the entire scoped implementation first; then format touched files
 symbols = []
 touches = ["scripts/ci/layout-check.sh", "scripts/ci/vendor-verify.sh", ".gitignore"]
 build_cmd = "bash -n scripts/ci/layout-check.sh && bash -n scripts/ci/vendor-verify.sh"
-verify_cmd = "bash -n scripts/ci/layout-check.sh && bash -n scripts/ci/vendor-verify.sh && git check-ignore -q .pytest_cache && git check-ignore -q core && ! git check-ignore -q core/deps/geth/go.mod"
+verify_cmd = "bash -n scripts/ci/layout-check.sh && bash -n scripts/ci/vendor-verify.sh && git check-ignore -q .pytest_cache/CACHEDIR.TAG && git check-ignore -q core.1 && ! git check-ignore -q core/deps/geth/go.mod"
 gate_kind = "planned"
 planned_paths = ["scripts/ci/layout-check.sh", "scripts/ci/vendor-verify.sh"]
 max_builds = 1
