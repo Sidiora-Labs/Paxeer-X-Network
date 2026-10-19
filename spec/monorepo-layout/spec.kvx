@@ -464,7 +464,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.1]
 title = "Move fuzz to tests/fuzz"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 3

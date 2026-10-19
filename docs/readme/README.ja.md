@@ -88,7 +88,7 @@ make paxeer-ci
 | `explorer/` | ブロックエクスプローラー。Blockscout のフォークで、モノレポの他の部分とは分離されています |
 | `go.mod`, `chain.mk`, `daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, `docker/` | Paxeer X チェーンのノード（`paxd`）、EVM/RPC 互換性、ストレージエンジン、モジュール、プリコンパイル、サブシステム固有のビルド |
 | `spec/` | 規範となる KVX 仕様、生成された設計、要件、タスクグラフ |
-| `tests/`, `fuzz/` | ネイティブ、コントラクト、リプレイ、不変条件、障害、ファズの各テストスイート |
+| `tests/`, `tests/fuzz/` | ネイティブ、コントラクト、リプレイ、不変条件、障害、ファズの各テストスイート |
 | `migrations/` | カーネルのジェネシスインポートセクション、再構築可能なプロジェクション、履歴インデックスの SQL |
 | `docs/` | Wiki、ドキュメントサイトのソース、モノレポのメモ、検定ドキュメント |
 

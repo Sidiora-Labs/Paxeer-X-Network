@@ -6,7 +6,7 @@ This repository is the canonical Sidiora Labs ecosystem monorepo for Paxeer X Ne
 
 | Path | Subsystem | Build entry | Release tags |
 | --- | --- | --- | --- |
-| `src/`, `include/`, `agent/`, `human/`, `platform/`, `programs/`, `interop/`, `contracts/`, `spec/`, `tests/`, `fuzz/`, `migrations/` | LayerX protocol, agent interface, human control plane, developer platform, programmable runtime, interoperability gateway, and settlement contracts | Root `Makefile` | `vX.Y.Z` |
+| `src/`, `include/`, `agent/`, `human/`, `platform/`, `programs/`, `interop/`, `contracts/`, `spec/`, `tests/`, `tests/fuzz/`, `migrations/` | LayerX protocol, agent interface, human control plane, developer platform, programmable runtime, interoperability gateway, and settlement contracts | Root `Makefile` | `vX.Y.Z` |
 | `go.mod`, `chain.mk`, `daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, `docker/` | Paxeer Network node, EVM/RPC compatibility, storage engines, modules, contracts, Docker environments, and subsystem-local build manifests | `Makefile` | `paxeer-network/vX.Y.Z` |
 
 ## Build and release boundaries

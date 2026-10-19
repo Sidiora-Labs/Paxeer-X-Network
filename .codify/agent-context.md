@@ -35,7 +35,7 @@ _Generated graph context owned by `cg agentmd`. Regenerate with `cg agentmd --wr
 - `custodyproof/` — 5 files, 2386 lines (mostly go)
 - `engine/` — 197 files, 48456 lines (mostly go)
 - `explorer/` — 3489 files, 282411 lines (mostly typescript)
-- `fuzz/` — 11 files, 685 lines (mostly c)
+- `tests/fuzz/` — 11 files, 685 lines (mostly c)
 - `human/` — 1215 files, 344979 lines (mostly typescript)
 - `hpx/` — 2 files, 883 lines (mostly go)
 - `include/` — 66 files, 11369 lines (mostly c)

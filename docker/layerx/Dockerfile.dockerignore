@@ -31,7 +31,6 @@ docker
 agent
 cmd
 explorer
-fuzz
 human
 include
 interop

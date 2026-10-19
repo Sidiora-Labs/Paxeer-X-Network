@@ -104,7 +104,7 @@ make paxeer-ci
 | `contracts/` | Solidity-Contracts für Paxeer-Verwahrung, Checkpoints, Garantenbonding, Claims, Streitfälle und Exits |
 | `go.mod`, `chain.mk`, `daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, `docker/` | Paxeer Network Node, EVM/RPC-Kompatibilität, Speicherengines, Module, Contracts und subsystemlokale Builds |
 | `spec/` | Normative KVX-Spezifikationen, generierte Designs, Anforderungen und Task-Graphen |
-| `tests/`, `test/`, `fuzz/` | Native, Contract-, Replay-, Invarianten-, Fault- und Fuzz-Suiten |
+| `tests/`, `test/`, `tests/fuzz/` | Native, Contract-, Replay-, Invarianten-, Fault- und Fuzz-Suiten |
 | `migrations/` | Genesis-, Migrations-, Abstimmungs- und Shadow-Replay-Arbeit |
 | `docs/` | Wiki, Monorepo-Notizen und Qualifikationsdokumentation |
 

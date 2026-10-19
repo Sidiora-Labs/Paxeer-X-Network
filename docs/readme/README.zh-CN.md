@@ -88,7 +88,7 @@ make paxeer-ci
 | `explorer/` | 区块浏览器，Blockscout 的分支，与单一仓库的其余部分分开维护 |
 | `go.mod`, `chain.mk`, `daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, `docker/` | Paxeer X 链节点（`paxd`）、EVM/RPC 兼容层、存储引擎、模块、预编译合约和子系统内的构建 |
 | `spec/` | 规范性 KVX 规格、生成的设计、需求和任务图 |
-| `tests/`, `fuzz/` | 原生、合约、重放、不变量、故障和模糊测试套件 |
+| `tests/`, `tests/fuzz/` | 原生、合约、重放、不变量、故障和模糊测试套件 |
 | `migrations/` | 用于内核创世导入分段、可重建投影和历史索引的 SQL |
 | `docs/` | Wiki、文档站点源文件、单一仓库说明和资格验证文档 |
 

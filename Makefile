@@ -411,10 +411,10 @@ $(BUILD_DIR)/tests/test_transfer_set: tests/ledger/test_transfer_set.c \
 test-ledger-set: $(BUILD_DIR)/tests/test_transfer_set
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_transfer_set
 
-$(BUILD_DIR)/tests/test_send: tests/ledger/test_send.c fuzz/fuzz_lxp_send.c \
+$(BUILD_DIR)/tests/test_send: tests/ledger/test_send.c tests/fuzz/fuzz_lxp_send.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) tests/ledger/test_send.c fuzz/fuzz_lxp_send.c \
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/ledger/test_send.c tests/fuzz/fuzz_lxp_send.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
 		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
@@ -1233,10 +1233,10 @@ test-fees: $(BUILD_DIR)/tests/test_fees $(BUILD_DIR)/tests/test_fees_v3 $(BUILD_
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_fees_v3
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_fees_v4
 
-$(BUILD_DIR)/tests/test_metering: tests/test_metering.c fuzz/fuzz_meter.c \
+$(BUILD_DIR)/tests/test_metering: tests/test_metering.c tests/fuzz/fuzz_meter.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_metering.c fuzz/fuzz_meter.c \
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_metering.c tests/fuzz/fuzz_meter.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
@@ -1344,7 +1344,7 @@ $(BUILD_DIR)/tests/test_gateway_requirement: \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(EXTRA_LDFLAGS) \
 		-lcrypto -pthread -o $@
 
-$(BUILD_DIR)/obj/fuzz/fuzz_gateway_json.o: fuzz/fuzz_gateway_json.c
+$(BUILD_DIR)/obj/fuzz/fuzz_gateway_json.o: tests/fuzz/fuzz_gateway_json.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
@@ -1666,12 +1666,12 @@ qualify-faults: $(BUILD_DIR)/tests/test_qual_recovery
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_qual_recovery
 
 $(BUILD_DIR)/tests/test_fuzz_smoke: tests/test_fuzz_smoke.c \
-		fuzz/fuzz_activity.c fuzz/fuzz_signature.c \
-		fuzz/fuzz_transfer_set.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
+		tests/fuzz/fuzz_activity.c tests/fuzz/fuzz_signature.c \
+		tests/fuzz/fuzz_transfer_set.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_fuzz_smoke.c \
-		fuzz/fuzz_activity.c fuzz/fuzz_signature.c \
-		fuzz/fuzz_transfer_set.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
+		tests/fuzz/fuzz_activity.c tests/fuzz/fuzz_signature.c \
+		tests/fuzz/fuzz_transfer_set.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
 		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
@@ -1749,7 +1749,7 @@ $(BUILD_DIR)/tests/lxp_test_codec_vectors: \
 test-codec-vectors: $(BUILD_DIR)/tests/lxp_test_codec_vectors
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_codec_vectors
 
-$(BUILD_DIR)/tests/lxp_fuzz_codec: fuzz/lxp_fuzz_codec.c \
+$(BUILD_DIR)/tests/lxp_fuzz_codec: tests/fuzz/lxp_fuzz_codec.c \
 		src/codec/lxp_codec.c src/protocol/lxp_arena.c \
 		src/protocol/lxp_protocol.c src/protocol/lxp_result.c \
 		src/protocol/lxp_u128.c
@@ -1769,10 +1769,10 @@ test-crypto-hash: $(BUILD_DIR)/tests/lxp_test_hash
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_hash
 
 $(BUILD_DIR)/tests/lxp_test_ed25519: tests/crypto/lxp_test_ed25519.c \
-		fuzz/lxp_fuzz_signature.c $(LIBRARY)
+		tests/fuzz/lxp_fuzz_signature.c $(LIBRARY)
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/crypto/lxp_test_ed25519.c \
-		fuzz/lxp_fuzz_signature.c $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -o $@
+		tests/fuzz/lxp_fuzz_signature.c $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -o $@
 
 test-crypto-ed25519: $(BUILD_DIR)/tests/lxp_test_ed25519
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_ed25519
@@ -1873,7 +1873,7 @@ test-arith-rounding: $(BUILD_DIR)/tests/lxp_test_rounding
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_rounding
 
 ARITH_PROPERTY_SOURCES := tests/arith/lxp_test_arith_property.c \
-	tests/arith/lxp_arith_reference.c fuzz/lxp_fuzz_arith.c
+	tests/arith/lxp_arith_reference.c tests/fuzz/lxp_fuzz_arith.c
 
 $(BUILD_DIR)/tests/lxp_test_arith_property: $(ARITH_PROPERTY_SOURCES) $(LIBRARY)
 	@mkdir -p $(@D)
@@ -2135,11 +2135,11 @@ test-journal: $(BUILD_DIR)/tests/lxp_test_journal \
 		$(BUILD_DIR)/tests/lxp_test_journal_tsan
 
 $(BUILD_DIR)/tests/lxp_test_activity_codec: \
-		tests/protocol/lxp_test_activity_codec.c fuzz/lxp_fuzz_activity.c \
+		tests/protocol/lxp_test_activity_codec.c tests/fuzz/lxp_fuzz_activity.c \
 		$(LIBRARY)
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/protocol/lxp_test_activity_codec.c \
-		fuzz/lxp_fuzz_activity.c $(LIBRARY) $(EXTRA_LDFLAGS) -o $@
+		tests/fuzz/lxp_fuzz_activity.c $(LIBRARY) $(EXTRA_LDFLAGS) -o $@
 
 test-activity-codec: $(BUILD_DIR)/tests/lxp_test_activity_codec
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_activity_codec

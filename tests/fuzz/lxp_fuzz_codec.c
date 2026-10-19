@@ -45,7 +45,7 @@ int main(void)
     uint64_t state = UINT64_C(0x4c6179657258467a);
     uint8_t data[64];
     size_t iteration;
-    FILE *seed = fopen("fuzz/corpus/codec/seed.bin", "rb");
+    FILE *seed = fopen("tests/fuzz/corpus/codec/seed.bin", "rb");
     if (seed == NULL) return 1;
     {
         size_t length = fread(data, 1U, sizeof(data), seed);

@@ -88,7 +88,7 @@ make paxeer-ci
 | `explorer/` | Explorador de bloques, un fork de Blockscout que se mantiene separado del resto del monorepo |
 | `go.mod`, `chain.mk`, `daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, `docker/` | Nodo de la cadena Paxeer X (`paxd`), compatibilidad EVM/RPC, motores de almacenamiento, módulos, precompilados y compilaciones propias de cada subsistema |
 | `spec/` | Especificación KVX normativa, diseño generado, requisitos y grafo de tareas |
-| `tests/`, `fuzz/` | Suites nativas, de contratos, de replay, de invariantes, de fallos y de fuzzing |
+| `tests/`, `tests/fuzz/` | Suites nativas, de contratos, de replay, de invariantes, de fallos y de fuzzing |
 | `migrations/` | SQL para las secciones de importación de génesis del kernel, proyecciones reconstruibles y el índice de historial |
 | `docs/` | Wiki, fuentes del sitio de documentación, notas del monorepo y documentación de calificación |
 

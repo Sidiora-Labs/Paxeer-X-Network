@@ -295,8 +295,8 @@ Build and test:
   - `explorer/deploy/` — 26 files, 1,146 lines, mostly json (test fixtures)
   - `explorer/frontend/` — 2,981 files, 209,140 lines, mostly typescript. This is the frontend of the Paxeer X Network block explorer: a fork of the Blockscout Next.js frontend, imported from `blockscout/frontend` at tag `v2.7.2` (see …
   - `explorer/services/` — 699 files, 66,727 lines, mostly rust
-- `fuzz/` — 12 files, 685 lines, mostly c
-  - `fuzz/corpus/` — 1 file
+- `tests/fuzz/` — 12 files, 685 lines, mostly c
+  - `tests/fuzz/corpus/` — 1 file
 - `hpx/` — 18 files, 883 lines, mostly go. HPX is the public installer, node manager, immutable artifact publisher and peer registry for Paxeer X chain nodes (consensus chain ID `hyperpax_125-1`, EVM …
   - `hpx/hosting/` — 7 files
   - `hpx/registry/` — 3 files, 883 lines, mostly go
@@ -443,7 +443,7 @@ _Not shown: 7 directories._
 - `main` — `explorer/services/sig-provider/sig-provider-server/src/main.rs:5` `async fn main() -> Result<(), anyhow::Error>`
 - `main` — `explorer/services/smart-contract-verifier/smart-contract-verifier-proto/build.rs:41` `fn main() -> Result<(), Box<dyn std::error::Error>>`
 - `main` — `explorer/services/smart-contract-verifier/smart-contract-verifier-server/src/main.rs:5` `async fn main() -> Result<(), anyhow::Error>`
-- `main` — `fuzz/lxp_fuzz_codec.c:43` `int main(void)`
+- `main` — `tests/fuzz/lxp_fuzz_codec.c:43` `int main(void)`
 - `main` — `hpx/registry/main.go:270` `func main()`
 - `main` — `human/apps/web/e2e/software-authenticator.ts:114` `async function main(): Promise<void>`
 - `main` — `human/crates/layerx-explorer-index/src/main.rs:1419` `fn main()`

@@ -104,7 +104,7 @@ make paxeer-ci
 | `contracts/` | Contratos Solidity para custodia de Paxeer, puntos de control, fianzas de garantes, reclamaciones, disputas y salidas |
 | `go.mod`, `chain.mk`, `daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, `docker/` | Nodo de Paxeer Network, compatibilidad EVM/RPC, motores de almacenamiento, módulos, contratos y compilaciones locales del subsistema |
 | `spec/` | Especificaciones normativas KVX, diseños generados, requisitos y grafos de tareas |
-| `tests/`, `test/`, `fuzz/` | Suites nativas, de contratos, replay, invariantes, fallos y fuzz |
+| `tests/`, `test/`, `tests/fuzz/` | Suites nativas, de contratos, replay, invariantes, fallos y fuzz |
 | `migrations/` | Trabajo de génesis, migración, conciliación y shadow-replay |
 | `docs/` | Wiki, notas del monorepositorio y documentación de cualificación |
 
