@@ -29,7 +29,7 @@ import (
 	bankkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"

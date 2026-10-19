@@ -4,7 +4,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"

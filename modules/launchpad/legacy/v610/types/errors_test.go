@@ -13,7 +13,7 @@ import (
 	launchpad "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/launchpad/legacy/v610"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"

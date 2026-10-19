@@ -11,7 +11,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/wasmd"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	wasmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"

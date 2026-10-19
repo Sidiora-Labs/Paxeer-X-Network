@@ -21,7 +21,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxverify"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/xweb"
 	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )

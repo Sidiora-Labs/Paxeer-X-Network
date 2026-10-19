@@ -13,7 +13,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/cw721"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/native"
 	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 )
 
 // allows us to permutate different pointer combinations

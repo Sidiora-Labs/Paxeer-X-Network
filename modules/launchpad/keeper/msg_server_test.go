@@ -9,7 +9,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/launchpadtest"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"

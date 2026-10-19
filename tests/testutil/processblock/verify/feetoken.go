@@ -9,7 +9,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	distrtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/processblock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/processblock"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )

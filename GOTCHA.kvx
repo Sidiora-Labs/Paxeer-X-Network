@@ -8276,3 +8276,8 @@ fix = "after git mv, grep the moved tree for ../ chains that climb to the root a
 area = "layout moves"
 symptom = "a path rewrite bounded by a no-word-or-hyphen lookbehind skipped a reference written as a shell default, ${VAR:-integration_test/...}, because the hyphen of :- counted as part of a name"
 fix = "after a bulk rewrite, grep again for the old path and handle each remaining hit by hand"
+
+[gotcha.1741]
+area = "layout moves"
+symptom = "the directory name testutil also names nested packages (sdk/testutil, engine/deps/testutil, modules/*/testutil, storage/common/testutil), so a bare testutil/ rewrite would have moved references to trees that stay in place"
+fix = "anchor the rewrite to the module path (Paxeer-X-Network/testutil) for Go imports and to a root position (line start, quote, space or list separator) for paths, then check each remaining hit by hand"

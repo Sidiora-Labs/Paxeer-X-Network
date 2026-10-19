@@ -6,7 +6,7 @@ import (
 
 	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/stretchr/testify/require"
 )
 

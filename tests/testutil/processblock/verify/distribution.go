@@ -9,7 +9,7 @@ import (
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types"
 	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/processblock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/processblock"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/stretchr/testify/require"
 )

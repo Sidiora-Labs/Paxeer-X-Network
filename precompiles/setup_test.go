@@ -18,7 +18,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxagent/pofq"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/xweb"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/stretchr/testify/require"

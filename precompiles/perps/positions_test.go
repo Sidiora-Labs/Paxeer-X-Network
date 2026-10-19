@@ -21,7 +21,7 @@ import (
 	perpsabi "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/perps/abi"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"

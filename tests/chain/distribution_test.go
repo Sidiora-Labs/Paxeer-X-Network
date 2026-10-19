@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/processblock"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/processblock/msgs"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/processblock/verify"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/processblock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/processblock/msgs"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/processblock/verify"
 )
 
 func TestDistribution(t *testing.T) {

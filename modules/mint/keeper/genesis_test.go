@@ -6,7 +6,7 @@ import (
 
 	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/nullify"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/nullify"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
 	"github.com/stretchr/testify/require"

@@ -365,13 +365,13 @@ Build and test:
   - `storage/wal/` — 6 files, 1,775 lines, mostly go
 - `tests/` — 513 files, 158,441 lines, mostly c (tests)
   - 32 subdirectories: `agent/`, `arith/`, `bridge/`, `chain/`, `ci/`, `codec/`, `crypto/`, `daemon/`, `explorer/`, `fixtures/`, `ledger/`, `modules/`, `network/`, `oracle/`, `paxeer/`, `platform/`, `programs/`, `protocol/`, `qualification/`, `relay-archive/`, `replay/`, `replica/`, `sdk/`, `sequencer/`, `solidity/`, `state/`, `storage/`, `support/`, `tools/`, `vectors/`, `wallet/`, `workspace/`
-- `testutil/` — 23 files, 1,415 lines, mostly go
-  - `testutil/fuzzing/` — 1 file, 19 lines, mostly go
-  - `testutil/keeper/` — 2 files, 214 lines, mostly go
-  - `testutil/network/` — 1 file, 97 lines, mostly go
-  - `testutil/nullify/` — 1 file, 57 lines, mostly go. Package nullify provides methods to init nil values structs for test assertion.
-  - `testutil/processblock/` — 17 files, 1,015 lines, mostly go
-  - `testutil/sample/` — 1 file, 13 lines, mostly go
+- `tests/testutil/` — 23 files, 1,415 lines, mostly go
+  - `tests/testutil/fuzzing/` — 1 file, 19 lines, mostly go
+  - `tests/testutil/keeper/` — 2 files, 214 lines, mostly go
+  - `tests/testutil/network/` — 1 file, 97 lines, mostly go
+  - `tests/testutil/nullify/` — 1 file, 57 lines, mostly go. Package nullify provides methods to init nil values structs for test assertion.
+  - `tests/testutil/processblock/` — 17 files, 1,015 lines, mostly go
+  - `tests/testutil/sample/` — 1 file, 13 lines, mostly go
 - `tools/` — 466 files, 132,154 lines, mostly python. Developer and operator tools for the repository.
   - 21 subdirectories: `bringup/`, `chain/`, `ci/`, `codebase-map/`, `containers/`, `flyci/`, `jev/`, `ops/`, `paxeer-x/`, `proofs/`, `qualification/`, `railway/`, `release/`, `repotest/`, `rollout/`, `runtime/`, `specgen/`, `tx-scanner/`, `utils/`, `wallet/`, `workspace/`
 - `utils/` — 29 files, 2,746 lines, mostly go

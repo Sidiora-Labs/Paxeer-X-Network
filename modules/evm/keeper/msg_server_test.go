@@ -33,7 +33,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/fixtures/example/contracts/echo"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/fixtures/example/contracts/sendall"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/fixtures/example/contracts/simplestorage"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 )
 
 type mockTx struct {

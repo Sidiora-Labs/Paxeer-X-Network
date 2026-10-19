@@ -27,7 +27,7 @@ contracts/ @Sidiora-Labs/core
 /rpc/ @Sidiora-Labs/core
 /sdk/ @Sidiora-Labs/core
 /storage/ @Sidiora-Labs/core
-/testutil/ @Sidiora-Labs/core
+/tests/testutil/ @Sidiora-Labs/core
 /utils/ @Sidiora-Labs/core
 /wasm/ @Sidiora-Labs/core
 /wasm-runtime/ @Sidiora-Labs/core

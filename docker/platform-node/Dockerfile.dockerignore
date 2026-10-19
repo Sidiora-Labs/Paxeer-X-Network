@@ -36,7 +36,7 @@ precompiles
 rpc
 sdk
 storage
-testutil
+tests/testutil
 utils
 wasm
 wasm-runtime

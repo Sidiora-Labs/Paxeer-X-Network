@@ -6,7 +6,7 @@ import (
 
 	minttypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/processblock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/processblock"
 	"github.com/stretchr/testify/require"
 )
 

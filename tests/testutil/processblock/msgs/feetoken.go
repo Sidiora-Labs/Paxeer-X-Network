@@ -12,7 +12,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/processblock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/processblock"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"

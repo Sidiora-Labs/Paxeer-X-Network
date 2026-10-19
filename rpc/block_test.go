@@ -21,7 +21,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"

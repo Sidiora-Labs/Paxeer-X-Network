@@ -11,7 +11,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
 	simtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/simulation"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/sample"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/sample"
 )
 
 // avoid unused import issue

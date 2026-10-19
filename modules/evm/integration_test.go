@@ -28,7 +28,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
 	xauthsigning "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	ethabi "github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"

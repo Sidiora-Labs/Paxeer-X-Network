@@ -1,7 +1,7 @@
 [meta]
 name = "Paxeer X Network release v6.12.0: launchpad parity, perpetuals and spot precompiles, perps data services"
 slug = "release-v6-12-0"
-version = "1.0.3"
+version = "1.1.0"
 status = "draft"
 goal = "One coordinated upgrade of the Paxeer X Network to v6.12.0 in which the launchpad precompile 0x1017 presents the exact interface of the deployed launchpad contracts and absorbs their pools, the perpetuals and spot venue runs natively in the chain as precompiles with a validator-run price sidecar, the Hyperpax application trades against those precompiles, and a dedicated indexer, gateway and portal serve the venue's data; the upgrade is applied by every validator and full node at one halt height and released as the first tagged build."
 scope = "The node binary paxd (Cosmos SDK, EVM, precompiles, upgrade handler), the launchpad, perpetuals and spot precompiles and the pricefeed precompile at 0x1020 with their keepers (modules/launchpad, modules/perps, modules/spot, modules/pricefeed), the price sidecar, the perps data services in this repository, the launchpad backend bindings in github.com/Sidiora-Labs/Launch-x, the Hyperpax application in github.com/paxlabs-inc/Hyperpax, the release pipeline and the fleet upgrade runbook."
@@ -8118,7 +8118,7 @@ ac_5 = "LXP_PERPS_UNAUTHORIZED is registered with code 35 in modules/perps/types
 title = "Domain completion runs the whole perps package set"
 ac_1 = "TestPerpsDomainWiring in modules/perps/module_test.go builds the module, the keeper and the precompile together and runs one deposit, order, fill, funding hour and close."
 ac_2 = "go test ./modules/perps/... ./precompiles/perps/... passes in one run, and precompiles/layerxexchange is unchanged."
-ac_3 = "An EVM transaction sequence in the order the Hyperpax application sends it (USDL approve of 0x1015, createVault, deposit, openPosition, setPositionTpSl, partialClose, closePosition, withdraw) is committed as signed EVM transactions, the form eth_sendRawTransaction delivers, in blocks of a real application (testutil/processblock NewTestApp and RunBlock, testutil/processblock/common.go:36, :72) wired by baseline task 1.3.100; each receipt (GetReceipt, modules/evm/keeper/receipt.go:59) has status 1 and carries the USDL Transfer logs and the events of contracts/perps.md section 18, and the following EndBlock receipt is in the block bloom and is listed by getTxHashesFromBlock (rpc/utils.go:533-553), which baseline task 1.0.6 makes serve eth_getLogs and pax_getLogs."
+ac_3 = "An EVM transaction sequence in the order the Hyperpax application sends it (USDL approve of 0x1015, createVault, deposit, openPosition, setPositionTpSl, partialClose, closePosition, withdraw) is committed as signed EVM transactions, the form eth_sendRawTransaction delivers, in blocks of a real application (tests/testutil/processblock NewTestApp and RunBlock, tests/testutil/processblock/common.go:36, :72) wired by baseline task 1.3.100; each receipt (GetReceipt, modules/evm/keeper/receipt.go:59) has status 1 and carries the USDL Transfer logs and the events of contracts/perps.md section 18, and the following EndBlock receipt is in the block bloom and is listed by getTxHashesFromBlock (rpc/utils.go:533-553), which baseline task 1.0.6 makes serve eth_getLogs and pax_getLogs."
 ac_4 = "The module follows the launchpad module shape: RegisterServices, RegisterInvariants, InitGenesis and ConsensusVersion 1 (modules/launchpad/module.go:98-113, :128)."
 
 [capability_group.3.1]
@@ -8365,7 +8365,7 @@ reqs = ["3023.3", "3021.4", "3021.5", "3019.1", "3019.4"]
 touches = ["precompiles/perps/integration_test.go", "modules/perps/keeper/scenario_test.go", "modules/perps/keeper/events_reconstruct_test.go"]
 tests = ["precompiles/perps/integration_test.go", "modules/perps/keeper/scenario_test.go", "modules/perps/keeper/events_reconstruct_test.go", "precompiles/perps/switch_test.go"]
 verification_contract = "go test ./modules/perps/... ./precompiles/perps/... -run 'TestIntegration|TestScenario|TestEventsReconstruct|TestVersionSwitch'"
-do_1 = "Drive the application flow (approve USDL to 0x1015, createVault, deposit, openPosition, setPositionTpSl, partialClose, closePosition, withdraw) as signed EVM transactions in committed blocks of a real application (testutil/processblock/common.go:36, :72), read the receipts back and find the EndBlock receipt through getTxHashesFromBlock (rpc/utils.go:533-553) of baseline task 1.0.6 (symbol TestIntegrationApplicationFlow)."
+do_1 = "Drive the application flow (approve USDL to 0x1015, createVault, deposit, openPosition, setPositionTpSl, partialClose, closePosition, withdraw) as signed EVM transactions in committed blocks of a real application (tests/testutil/processblock/common.go:36, :72), read the receipts back and find the EndBlock receipt through getTxHashesFromBlock (rpc/utils.go:533-553) of baseline task 1.0.6 (symbol TestIntegrationApplicationFlow)."
 do_2 = "Replay scenarios twice for determinism (symbol TestScenarioDeterminism) with the invariants of modules/launchpad/keeper/invariants.go:20 as pattern."
 do_3 = "Reconstruct from events (symbol TestEventsReconstruct) emitted through precompiles/common/evm_events.go:16."
 do_4 = "Replay v6.9 vectors (symbol TestVersionSwitchV69Vectors) through the switch of baseline task 1.2.1 to the executor of precompiles/layerxexchange/layerxexchange.go:198."
@@ -11478,7 +11478,7 @@ wave = 3
 requires = ["3.3.99", "1.3.100", "1.0.6"]
 reqs = ["3023.3"]
 capabilities = ["3.4.1"]
-do_1 = "Add precompiles/perps/integration_test.go (external package perps_test) on a real application of testutil/processblock (NewTestApp, testutil/processblock/common.go:36; RunBlock, :72) wired by baseline task 1.3.100, sending as signed EVM transactions, in the order the application sends them, USDL approve of 0x1015, createVault, deposit, openPosition, setPositionTpSl, partialClose, closePosition and withdraw."
+do_1 = "Add precompiles/perps/integration_test.go (external package perps_test) on a real application of tests/testutil/processblock (NewTestApp, tests/testutil/processblock/common.go:36; RunBlock, :72) wired by baseline task 1.3.100, sending as signed EVM transactions, in the order the application sends them, USDL approve of 0x1015, createVault, deposit, openPosition, setPositionTpSl, partialClose, closePosition and withdraw."
 do_2 = "Assert each receipt read with GetReceipt (modules/evm/keeper/receipt.go:59) has status 1 and carries the USDL Transfer logs and the events of contracts/perps.md section 18, and that the following block's EndBlock receipt is stored under SyntheticReceiptHash(SyntheticReceiptPerps, height), is in the block bloom (GetBlockBloom, modules/evm/keeper/log.go:14) and is listed by getTxHashesFromBlock (rpc/utils.go:533-553) of baseline task 1.0.6."
 do_3 = "Assert the solvency invariant after each block (symbol TestIntegrationApplicationFlow)."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
@@ -17126,7 +17126,7 @@ do_2 = "Write Keeper and NewKeeper(storeKey, stakingKeeper, accountKeeper, evmKe
 do_3 = "Write RegisterFeedKey(ctx, operator, pubKey) that resolves the validator through Validator (sdk/x/staking/keeper/alias_functions.go:79), requires IsBonded as ValidateFeeder does (modules/oracle/keeper/keeper.go:396-398), decodes the compressed key, refuses a feed account mapped to another validator, deletes the previous reverse entry, writes both entries and creates the auth account when HasAccount is false."
 do_4 = "Write RevokeFeedKey, GetFeedKey and GetValidatorByFeedAccount, and emit pricefeed_feed_key and pricefeed_feed_key_revoked on the context event manager."
 do_5 = "Write modules/pricefeed/testutil/store.go with the overlay of modules/xweb/testutil/store.go:25-60 and NewKeeper on the test application keepers, the shape of modules/xweb/testutil/store.go:64-68."
-do_6 = "Write TestRegistryCreatesFeedAccount and TestRegistryEvents on the test application from testutil/keeper/evm.go:22."
+do_6 = "Write TestRegistryCreatesFeedAccount and TestRegistryEvents on the test application from tests/testutil/keeper/evm.go:22."
 
 [capability.5.1.5]
 title = "Activation and genesis"

@@ -20,7 +20,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
 	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 )
 
 //go:embed abi.json

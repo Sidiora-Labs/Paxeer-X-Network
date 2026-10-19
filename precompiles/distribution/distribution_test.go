@@ -35,7 +35,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/distribution"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/stretchr/testify/require"
 )
 

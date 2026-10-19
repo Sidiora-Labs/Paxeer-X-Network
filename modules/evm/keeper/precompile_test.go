@@ -10,7 +10,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 )
 
 func toAddr(addr string) *common.Address {

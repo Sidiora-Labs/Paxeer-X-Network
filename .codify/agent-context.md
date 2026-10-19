@@ -61,7 +61,7 @@ _Generated graph context owned by `cg agentmd`. Regenerate with `cg agentmd --wr
 - `tests/` — 398 files, 149644 lines (mostly c)
 - `store/` — 7 files, 307 lines (mostly go)
 - `sync/` — 1 files, 30 lines (mostly go)
-- `testutil/` — 23 files, 1415 lines (mostly go)
+- `tests/testutil/` — 23 files, 1415 lines (mostly go)
 - `tools/` — 216 files, 84373 lines (mostly python)
 - `types/` — 1 files, 13 lines (mostly go)
 - `utils/` — 28 files, 2746 lines (mostly go)

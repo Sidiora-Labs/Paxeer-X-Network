@@ -6,8 +6,8 @@ import (
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
-	keepertest "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/nullify"
+	keepertest "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/nullify"
 	"github.com/stretchr/testify/require"
 )
 

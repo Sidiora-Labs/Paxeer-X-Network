@@ -67,7 +67,7 @@ area:paxeer:
           - rpc/**
           - sdk/**
           - storage/**
-          - testutil/**
+          - tests/testutil/**
           - utils/**
           - wasm/**
           - wasm-runtime/**

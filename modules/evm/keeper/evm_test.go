@@ -13,7 +13,7 @@ import (
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/native"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 )
 
 func TestInternalCallCreateContract(t *testing.T) {

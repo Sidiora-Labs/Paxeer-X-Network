@@ -36,7 +36,7 @@ occ_tests
 precompiles
 !precompiles/layerxanchor/abi.json
 rpc
-testutil
+tests/testutil
 utils
 wasm
 wasm-runtime

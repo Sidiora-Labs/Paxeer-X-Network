@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/stretchr/testify/require"
 )
 

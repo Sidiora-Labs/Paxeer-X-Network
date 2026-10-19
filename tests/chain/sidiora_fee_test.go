@@ -11,9 +11,9 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/processblock"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/processblock/msgs"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/processblock/verify"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/processblock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/processblock/msgs"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/processblock/verify"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )

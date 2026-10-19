@@ -5,7 +5,7 @@ import (
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/migrations"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/require"
 )

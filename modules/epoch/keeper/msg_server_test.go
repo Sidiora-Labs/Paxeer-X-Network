@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/keeper"
-	keepertest "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	keepertest "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/stretchr/testify/require"
 )
 

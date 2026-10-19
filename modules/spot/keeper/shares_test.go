@@ -16,7 +16,7 @@ import (
 	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
