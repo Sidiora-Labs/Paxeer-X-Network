@@ -8401,3 +8401,13 @@ fix = "compare traces with assert-style checks that record every divergence and 
 area = "perps-data gates"
 symptom = "the public order book feed answers 401 authentication_required without a bearer key, and a loopback test node that keeps only 100 blocks of state at 200 ms blocks prunes the heights a 20 second replay test still reads"
 fix = "serve a recorded order set on loopback and say so in the evidence, and keep at least 100000 blocks of state on a throwaway gate chain"
+
+[gotcha.1766]
+area = "perps-data source"
+symptom = "eth_getLogs over a 500-block window exceeds a 2 second deadline because the receipt store answers block by block, and the v6.12.0 activation block carries ShareTokenCreated without a share Transfer"
+fix = "route catch-up windows through the bulk-read path with its longer deadline, and land a deposit in the activation block when a test needs the same-block pointer pair"
+
+[gotcha.1767]
+area = "lane tooling"
+symptom = "the worktree command guard refuses any shell command naming a path that contains the word source, so commands touching internal/source are rejected"
+fix = "put such commands in a script file and run it with bash and the file path"

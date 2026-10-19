@@ -2116,3 +2116,11 @@ exit = 0
 log = fleet/logs/release-7.1-chain.log
 observed = gigaLatePrecompileHeight 26300000 in node/app.go applies on every chain id, so on any chain below that height calls to 0x1020 through 0x1025 succeed silently as empty accounts unless the giga executor is disabled, and paxd tx evm call-contract panics in getNonce because the node refuses the pending block tag as served by the sequencer.
 assumption = Mainnet is above the gate so the release is unaffected; both are follow-up items for local-chain tooling.
+
+[finding.7.1.1-verified]
+revision = 313eb2b484c7dc6076ac57cdd2dd745d7a08ad72
+command = go test -count=1 ./services/platform/perps-data/internal/source/ -run 'TestFollower'
+exit = 0
+log = fleet/logs/release-7.1.1.log
+observed = Resolved on the second run on the loopback v6.12.0 chain with a deposit landed in the activation block; the first run failed synthetic_receipt_check and two_pass_pointers with eth_getLogs context deadline exceeded at the 2 second single-block cap because the node answers a 500-block log window block by block at 4 to 12 ms per block, so catch-up windows now use the existing 15 second bulk-read path while the cap itself is unchanged; the first run's log was overwritten by the rerun and exists only in the lane report.
+assumption = v6.12.0 activation emits ShareTokenCreated without a share Transfer, so the same-block pointer pair exists only when a deposit lands in the activation block; prunedRefusal stays as recorded under finding.7.1.7-verified because no 7.1.1 acceptance line covers it.

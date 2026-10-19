@@ -348,7 +348,8 @@ func (f *Follower) addresses(extra map[common.Address]struct{}) []string {
 // known pointers, pass two the pointers that pass one's ShareTokenCreated
 // logs of 0x1025 created, from their creation block.
 func (f *Follower) fetchLogs(ctx context.Context, from, to uint64) ([]ethtypes.Log, error) {
-	first, err := f.opts.RPC.Logs(ctx, FetchOptions{MonitoredAddresses: f.addresses(f.pointers), FromBlock: int64(from), ToBlock: int64(to)})
+	catchUp := to > from
+	first, err := f.opts.RPC.Logs(ctx, FetchOptions{MonitoredAddresses: f.addresses(f.pointers), FromBlock: int64(from), ToBlock: int64(to), Historical: catchUp})
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +378,7 @@ func (f *Follower) fetchLogs(ctx context.Context, from, to uint64) ([]ethtypes.L
 		fresh[p] = struct{}{}
 		pass = append(pass, strings.ToLower(p.Hex()))
 	}
-	second, err := f.opts.RPC.Logs(ctx, FetchOptions{MonitoredAddresses: pass, FromBlock: int64(lowest), ToBlock: int64(to)})
+	second, err := f.opts.RPC.Logs(ctx, FetchOptions{MonitoredAddresses: pass, FromBlock: int64(lowest), ToBlock: int64(to), Historical: catchUp})
 	if err != nil {
 		return nil, err
 	}

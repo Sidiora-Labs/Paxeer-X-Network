@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math/big"
 	"net"
 	"os"
 	"reflect"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -205,6 +207,62 @@ func TestFollower(t *testing.T) {
 		}
 	})
 
+	t.Run("filters_venue_addresses", func(t *testing.T) {
+		h := newHarness(t)
+		base := h.base(t)
+		rec := &recorder{}
+		f := h.follower(t, base, rec)
+		watched := map[common.Address]bool{}
+		for _, a := range VenueAddresses {
+			watched[a] = true
+		}
+		for p := range f.pointers {
+			watched[p] = true
+		}
+		n := h.follow(t, f)
+		if n == 0 {
+			t.Fatal("stored no blocks")
+		}
+		client, err := ethclient.Dial(h.rpcURL)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		defer client.Close()
+		all, err := client.FilterLogs(h.ctx, ethereum.FilterQuery{FromBlock: new(big.Int).SetUint64(base), ToBlock: new(big.Int).SetUint64(base + uint64(n) - 1)})
+		if err != nil {
+			t.Fatalf("unfiltered logs: %v", err)
+		}
+		type key struct {
+			block, tx, index uint
+			address          common.Address
+		}
+		want := map[key]bool{}
+		for _, l := range all {
+			if watched[l.Address] {
+				want[key{uint(l.BlockNumber), l.TxIndex, l.Index, l.Address}] = true
+			}
+		}
+		got := map[key]bool{}
+		venue := 0
+		for _, b := range rec.blocks {
+			for _, l := range b.Logs {
+				if l.Address == common.HexToAddress("0x0000000000000000000000000000000000001026") || l.Address == common.HexToAddress("0x0000000000000000000000000000000000001027") || !watched[l.Address] {
+					t.Fatalf("log %d/%d of %s fetched outside the address set", l.BlockNumber, l.Index, l.Address.Hex())
+				}
+				if l.Address == PerpsModule {
+					venue++
+				}
+				got[key{uint(l.BlockNumber), l.TxIndex, l.Index, l.Address}] = true
+			}
+		}
+		if venue == 0 {
+			t.Fatalf("no 0x1015 log in %d-%d", base, base+uint64(n)-1)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("fetched %d logs with their receipt tx_index and log_index, the node holds %d of the address set in %d-%d", len(got), len(want), base, base+uint64(n)-1)
+		}
+	})
+
 	t.Run("detects_parent_mismatch", func(t *testing.T) {
 		h := newHarness(t)
 		base := h.base(t)
@@ -330,7 +388,7 @@ func TestFollower(t *testing.T) {
 		if err != nil {
 			t.Fatalf("head: %v", err)
 		}
-		res, err := h.rpc.Logs(h.ctx, FetchOptions{MonitoredAddresses: []string{strings.ToLower(PerpsModule.Hex())}, FromBlock: int64(head - MaxLogRange + 1), ToBlock: int64(head)})
+		res, err := h.rpc.Logs(h.ctx, FetchOptions{MonitoredAddresses: []string{strings.ToLower(PerpsModule.Hex())}, FromBlock: int64(head - MaxLogRange + 1), ToBlock: int64(head), Historical: true})
 		if err != nil {
 			t.Fatalf("logs: %v", err)
 		}
@@ -449,8 +507,13 @@ func TestFollower(t *testing.T) {
 		}
 		var created uint64
 		var pointer common.Address
-		for to := head; to >= MaxLogRange && created == 0; to -= MaxLogRange {
-			res, err := h.rpc.Logs(h.ctx, FetchOptions{MonitoredAddresses: []string{strings.ToLower(SpotVault.Hex())}, FromBlock: int64(to - MaxLogRange + 1), ToBlock: int64(to), Historical: true})
+		for to := head; to > 0 && created == 0; {
+			from := uint64(1)
+			if to > MaxLogRange {
+				from = to - MaxLogRange + 1
+			}
+			res, err := h.rpc.Logs(h.ctx, FetchOptions{MonitoredAddresses: []string{strings.ToLower(SpotVault.Hex())}, FromBlock: int64(from), ToBlock: int64(to), Historical: true})
+			to = from - 1
 			if err != nil {
 				t.Fatalf("logs: %v", err)
 			}
