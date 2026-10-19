@@ -1968,7 +1968,7 @@ observed_and_assumption = GovernanceGrant on the FeeAccumulator refuses with "is
 revision = f93020889
 command = go test ./node/ -run 'TestPriceFeedLivePath|TestCheckTx|TestAnte' -count=1
 exit = 0
-log = /root/lx-ops/fleet-6120/logs/pricefeed-checktx-mark.log
+log_path = "scratch pricefeed-checktx-mark.log"
 observed_and_assumption = Resolved: legacyabci.CheckTx now writes the ante branch back into the check state on ante success, as runTx does in sdk/baseapp/baseapp.go:958, so the 0x06 mark that req 5004 ac_4 and ac_8 place in the check state persists until the next Commit; TestPriceFeedLivePathCheckTx, TestPriceFeedLivePathMetricsError and the new TestCheckTxWritesAnteStateOnlyOnSuccess pass. Assumption: none; the discarded branch was inherited unchanged from the integrated Paxeer tree and no spec entry asks CheckTx to drop ante state.
 [finding.feetoken-giga-coinbase-credit]
 revision = 67c13bac4
