@@ -8281,3 +8281,8 @@ fix = "after a bulk rewrite, grep again for the old path and handle each remaini
 area = "layout moves"
 symptom = "the directory name testutil also names nested packages (sdk/testutil, engine/deps/testutil, modules/*/testutil, storage/common/testutil), so a bare testutil/ rewrite would have moved references to trees that stay in place"
 fix = "anchor the rewrite to the module path (Paxeer-X-Network/testutil) for Go imports and to a root position (line start, quote, space or list separator) for paths, then check each remaining hit by hand"
+
+[gotcha.1742]
+area = "node test wrapper"
+symptom = "a ProcessProposal test failed only in cleanup with TempDir RemoveAll: directory not empty, on a different subtest each run, because the optimistic ProcessBlock goroutine it started still wrote into the home while the temporary directories were removed"
+fix = "the test wrapper registers a cleanup after the app is built that waits on an unconsumed OptimisticProcessingInfo.Completion; cleanups run last in first out, so it runs before TempDir removal"

@@ -1,7 +1,9 @@
 package app_test
 
 import (
+	"bytes"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -24,6 +26,7 @@ import (
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/keys"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
@@ -222,17 +225,20 @@ func TestV640ToV66UpgradeServesTheExchangeBridgeAndLaunchpadPrecompiles(t *testi
 	require.True(t, launchpadtypes.DefaultParams().CreationFee.Equal(launchpadParams.CreationFee))
 
 	caller := a.AccountKeeper.GetModuleAddress(evmtypes.ModuleName)
+	call := func(contract abi.ABI, name, address, method string, args ...interface{}) []interface{} {
+		input, err := contract.Pack(method, args...)
+		require.NoError(t, err)
+		to := common.HexToAddress(address)
+		output, err := a.EvmKeeper.StaticCallEVM(ctx, caller, &to, input)
+		require.NoError(t, err, "%s.%s", name, method)
+		values, err := contract.Unpack(method, output)
+		require.NoError(t, err)
+		return values
+	}
 	view := func(name, address, method string, args ...interface{}) []interface{} {
 		info := precompiles.GetPrecompileInfo(name)
 		require.Equal(t, common.HexToAddress(address), info.Address)
-		input, err := info.ABI.Pack(method, args...)
-		require.NoError(t, err)
-		to := info.Address
-		output, err := a.EvmKeeper.StaticCallEVM(ctx, caller, &to, input)
-		require.NoError(t, err, "%s.%s", name, method)
-		values, err := info.ABI.Unpack(method, output)
-		require.NoError(t, err)
-		return values
+		return call(info.ABI, name, address, method, args...)
 	}
 
 	nonce := view(layerxexchange.PrecompileName, "0x0000000000000000000000000000000000001015",
@@ -244,6 +250,12 @@ func TestV640ToV66UpgradeServesTheExchangeBridgeAndLaunchpadPrecompiles(t *testi
 	require.Empty(t, attestors[1])
 	require.Equal(t, uint32(0), attestors[2])
 
-	markets := view(launchpad.PrecompileName, "0x0000000000000000000000000000000000001017", "getMarketCount")
+	// Until v6.12.0 is done the address serves the v6.10 launchpad, whose ABI
+	// is not the registered one.
+	legacyJSON, err := os.ReadFile("../precompiles/launchpad/legacy/v610/abi.json")
+	require.NoError(t, err)
+	legacyLaunchpad, err := abi.JSON(bytes.NewReader(legacyJSON))
+	require.NoError(t, err)
+	markets := call(legacyLaunchpad, launchpad.PrecompileName, "0x0000000000000000000000000000000000001017", "getMarketCount")
 	require.Equal(t, 0, markets[0].(*big.Int).Sign())
 }

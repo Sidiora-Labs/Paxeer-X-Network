@@ -194,6 +194,14 @@ func newTestWrapper(tb testing.TB, tm time.Time, valPub cryptotypes.PubKey, enab
 	} else {
 		appPtr = Setup(tb, false, enableEVMCustomPrecompiles, false, baseAppOptions...)
 	}
+	// An optimistic ProcessBlock that ProcessProposal started and no
+	// FinalizeBlock consumed still writes into the home; wait for it before the
+	// temporary directories are removed.
+	tb.Cleanup(func() {
+		if completion := appPtr.GetOptimisticProcessingInfo().Completion; completion != nil {
+			<-completion
+		}
+	})
 	ctx := appPtr.NewContext(false, tmproto.Header{Height: 1, ChainID: "pax-test", Time: tm})
 	wrapper := &TestWrapper{
 		App:  appPtr,

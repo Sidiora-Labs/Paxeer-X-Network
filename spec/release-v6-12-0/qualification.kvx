@@ -1952,12 +1952,30 @@ log = fleet/logs/fixture-mainnet-heights-run.log
 observed = Resolved: the source chain's upgrade store answers the applied_plan query with height 25988672 for v6.9 and 26029642 for v6.10, the generator wrote them into v6120-halt-heights.json with initial_height 34742401, and TestVersionSwitchHeightSelection now places its plan height at H+1 from the export instead of a fixed 1000 and passes.
 assumption = None.
 [finding.node-package-unrelated-failures]
-revision = 42455225d
-command = go test ./node/ -count=1
+revision = 67c13bac4
+command = go test ./node/ -run '<the nine, with TestV6120IsAKnownPlanThatAddsItsStores>' -count=1 -v
 exit = 1
-log = fleet/logs/fixture-mainnet-heights-run.log
-observed = Failing tests that do not seed from the halt export: TestGigaCustomPrecompilesSwitchAtHeight, TestLaunchpadAirdropEntitlementsSurviveCommitAndReopen, TestLaunchpadGovernanceDispatch, TestPriceFeedLivePathCheckTx, TestPriceFeedLivePathMetricsError, TestV6120IsAKnownPlanThatAddsNoStore, TestFeeTokenGigaBlockDebitsAndRefundsInFeeDenom, TestInvalidProposalWithExcessiveGasEstimates and TestV640ToV66UpgradeServesTheExchangeBridgeAndLaunchpadPrecompiles.
-assumption = They lie outside the halt export fixture and were not investigated.
+log = fleet/logs/node-nine-failures.log
+observed = None of the nine is a regression since ad1607347, where the fee-token, excessive-gas and v6.4 to v6.6 tests already failed. Four now pass: TestGigaCustomPrecompilesSwitchAtHeight asserts the gigaV6120FailFast set of the 1.3.100 wiring at the late height, TestV6120IsAKnownPlanThatAddsItsStores (renamed from TestV6120IsAKnownPlanThatAddsNoStore) asserts the v6120StoreUpgrades of 1.3.102 ac_2, TestV640ToV66UpgradeServesTheExchangeBridgeAndLaunchpadPrecompiles reads getMarketCount through the v6.10 ABI that 0x1017 serves before v6.12.0 is done, and TestInvalidProposalWithExcessiveGasEstimates no longer fails its temporary directory cleanup since the test wrapper waits for an unconsumed optimistic ProcessBlock. Five stay failing under their own findings: launchpad-role-surfaces-not-installed, pricefeed-checktx-mark-dropped and feetoken-giga-coinbase-credit.
+assumption = None.
+[finding.launchpad-role-surfaces-not-installed]
+revision = 67c13bac4
+command = go test ./node/ -run 'TestLaunchpadAirdropEntitlementsSurviveCommitAndReopen|TestLaunchpadGovernanceDispatch' -count=1
+exit = 1
+log = fleet/logs/node-nine-failures.log
+observed_and_assumption = GovernanceGrant on the FeeAccumulator refuses with "is not a role surface" and createMarket refuses LXP_LAUNCHPAD_TRANSFER_FAILED because only tests call launchpad.InstallRoleSurfaces (task 2.2.2 do_2); no genesis, v6.12.0 handler or MigrateV6120 path installs the generation 2 role surfaces, and a fresh chain serves the v6.10 launchpad at 0x1017. Assumption: the task that binds the launchpad hook of the v6.12.0 handler installs the role surfaces, and both tests stay as written until then.
+[finding.pricefeed-checktx-mark-dropped]
+revision = 67c13bac4
+command = go test ./node/ -run 'TestPriceFeedLivePathCheckTx|TestPriceFeedLivePathMetricsError' -count=1
+exit = 1
+log = fleet/logs/node-nine-failures.log
+observed_and_assumption = CheckTx reaches pricefeed.MarkSubmission through CosmosCheckTxAnte, but legacyabci.CheckTx runs the ante handler on a branch of the check state that it never writes back, so the mark of contracts/pricefeed.md item 7 (and the oracle counter it cites as the model) is dropped and acceptance 5.19.1 and the rate-limited half of 5.19.4 cannot hold. Assumption: writing the CheckTx ante branch changes check-state handling for every Cosmos tx and needs a spec decision, so the tests stay as written.
+[finding.feetoken-giga-coinbase-credit]
+revision = 67c13bac4
+command = go test ./node/ -run 'TestFeeTokenGigaBlockDebitsAndRefundsInFeeDenom' -count=1
+exit = 1
+log = fleet/logs/node-nine-failures.log
+observed_and_assumption = After the giga block the payer holds the funded amount less the converted fee, but neither coinbase(0) nor the fee collector holds the converted fee of 32697, so the credit made by gigaFeeTokenStateDB to the coinbase of the tx index is not found where the test or the end-block sweep expects it. Assumption: the giga fee-token coinbase credit needs its own investigation, and the test assertion stays as written.
 [finding.spec-lint-tool-hang]
 revision = "c78681cb6"
 command = "cg spec lint"

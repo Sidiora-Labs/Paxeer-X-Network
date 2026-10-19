@@ -18,7 +18,10 @@ func TestGigaCustomPrecompilesSwitchAtHeight(t *testing.T) {
 		require.Contains(t, before, addr)
 	}
 	at := gigaCustomPrecompiles(gigaLatePrecompileHeight)
-	require.Len(t, at, len(gigaprecompiles.FailFastPrecompileAddresses)+len(gigaprecompiles.LateFailFastPrecompileAddresses))
+	require.Equal(t, gigaV6120FailFast, at)
+	for _, addr := range gigaprecompiles.FailFastPrecompileAddresses {
+		require.Contains(t, at, addr)
+	}
 	for _, addr := range gigaprecompiles.LateFailFastPrecompileAddresses {
 		require.Contains(t, at, addr)
 		require.Same(t, gigaprecompiles.FailFastSingleton, at[addr])

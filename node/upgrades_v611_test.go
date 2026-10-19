@@ -102,12 +102,13 @@ func (c *v6120Chain) apply(t *testing.T) {
 	require.Equal(t, c.ctx.BlockHeight(), c.app.UpgradeKeeper.GetDoneHeight(c.ctx, V6120Upgrade))
 }
 
-func TestV6120IsAKnownPlanThatAddsNoStore(t *testing.T) {
+func TestV6120IsAKnownPlanThatAddsItsStores(t *testing.T) {
 	require.Contains(t, knownUpgradePlans(), V6120Upgrade)
 	c := newV6120Chain(t)
 	require.True(t, c.app.UpgradeKeeper.HasHandler(V6120Upgrade))
-	_, ok := layerxStoreUpgrades(V6120Upgrade)
-	require.False(t, ok, "the plan adds no store")
+	upgrades, ok := layerxStoreUpgrades(V6120Upgrade)
+	require.True(t, ok, "the plan mounts the perps, spot and pricefeed stores")
+	require.Equal(t, v6120StoreUpgrades(), upgrades)
 }
 
 func TestV6120MintsTheSlotBalancesZeroesThemAndMovesTheMintAuthority(t *testing.T) {
