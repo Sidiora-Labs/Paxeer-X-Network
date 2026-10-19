@@ -2068,3 +2068,19 @@ exit = 0
 log = fleet/logs/release-2.2.18-verify-4.log
 observed = Resolved: the seeded halt-height branch ran under the test app chain id, so block.chainid was the default and every EIP-712 DOMAIN_SEPARATOR differed from the golden eth_call records; under the mainnet chain id every replayed token call matches, including allowances, nonces and the past-balance, past-supply and past-votes getters.
 assumption = The 71 differing calls recorded under finding.1.2.3-export-token-storage are the same chain-id effect and no missing slot; 2.2.19 confirms per getter.
+
+[finding.2.2.19-spec-contradictions]
+revision = 226440a4bf1272236c8cfe698e34096
+command = go test ./precompiles/launchpad/ -run 'TestPoolSurfaceParity|TestSidioraPoolSurfaceParity|TestRoleSurfaceParity|TestSurfaceParity' -count=1
+exit = 1
+log = fleet/logs/release-2.2.19-verify-5.log
+observed = Implemented, not qualified: only four contradictions between the acceptance text and the golden fixture remain red, left intact on both sides: generation 1 pool getters PAUSER_ROLE, SNAPSHOT_INTERVAL, SNAPSHOT_MIN_VOLUME_BPS, cumulative volumes, currentFeeBps, emergencyPaused, lastSnapshotTimestamp and pendingGuardian (ac lines 1687-1714 say served, the generation 1 contract reverted with empty data at the halt on all 45 pools); getPriceSnapshots (ac_19 cites the ordered ring, the contract returned the raw ring on 38 pools); poolIndexMigrationCursor (req 2011 ac_16 halt value 0 against req 2025 ac_1 rebuilt value 50); generation 1 swap (ac_34 cites the contract behaviour that reverts InsufficientInput without a paid input, the golden traces succeed and leave realUsdlBalance above the USDL balance by the input).
+assumption = Each row needs a spec ruling on which value the precompile serves; the swap trace check uses require so later SidioraPool traces were not evaluated and must be rechecked after the ruling.
+
+[finding.2.2.6-refusal-corrected]
+revision = 226440a4bf1272236c8cfe698e34096
+command = go test ./precompiles/launchpad/ -run 'TestFeeRolesServeEverySelector' -count=1
+exit = 0
+log = fleet/logs/release-2.2.6-requal-226440a4b.log
+observed = The done task refused accountingInitialized, accountingMigrationCursor, getProtocolFeesPending, getLpRewardsBalance, legacyAirdropUnallocated, claim, burn and sendLpRewards with InvalidConfiguration against req ac lines 1799-1825 that say served; the precompile and keeper now serve them with a pool-keyed LP rewards ledger and router entry points, the test asserts the served values and the named reverts, and its gate was rerun once at this revision.
+assumption = The genesis field AccountingInitialized stays false while the getter returns true as ac_7 requires; no other done task asserts the refusal.

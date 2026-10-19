@@ -18,6 +18,7 @@ var (
 	totalLiabilitiesKey = []byte{0x49}
 	// opticalSurplusPrefix keys FeeAccumulator._opticalSurplus of one pool.
 	opticalSurplusPrefix = []byte{0x4a}
+	lpRewardsPrefix      = []byte{0x4b} // pool -> FeeAccumulator._lpRewardsBalance
 
 	opticalGetFlags              = crypto.Keccak256([]byte("getFlags()"))[:4]
 	opticalBeforeFeeDistribution = crypto.Keccak256([]byte("beforeFeeDistribution(address,uint256)"))[:4]
@@ -54,6 +55,16 @@ func (k *Keeper) feeHeld() QuoteLedger { return FeeHeldLedger(k.generation2.FeeA
 // TotalLiabilities is FeeAccumulator.totalLiabilities.
 func (k *Keeper) TotalLiabilities(ctx sdk.Context) (sdk.Int, error) {
 	return k.getLedgerAmount(ctx, totalLiabilitiesKey)
+}
+
+func lpRewardsKey(pool common.Address) []byte {
+	return append(append([]byte(nil), lpRewardsPrefix...), pool.Bytes()...)
+}
+
+// LpRewardsBalance is FeeAccumulator.getLpRewardsBalance(pool): the
+// cumulative LP rewards sent to pool.
+func (k *Keeper) LpRewardsBalance(ctx sdk.Context, pool common.Address) (sdk.Int, error) {
+	return k.getLedgerAmount(ctx, lpRewardsKey(pool))
 }
 
 // OpticalSurplus is FeeAccumulator.getOpticalSurplus(pool).
@@ -386,6 +397,41 @@ func (k *Keeper) Claim(ctx sdk.Context, caller NestedCaller, sender common.Addre
 	if recipient == (common.Address{}) {
 		return ctx, sdk.Int{}, types.ErrZeroAddress
 	}
+	return k.claim(ctx, caller, market, recipient)
+}
+
+// RouterClaim is FeeAccumulator.claim(pool, recipient) sent by a
+// FEES_ROUTER_ROLE holder of the migrated role table.
+func (k *Keeper) RouterClaim(ctx sdk.Context, caller NestedCaller, sender, pool, recipient common.Address) (sdk.Context,
+	sdk.Int, error) {
+	if err := k.CheckRole(ctx, k.generation2.FeeAccumulator, FeesRouterRole, sender); err != nil {
+		return ctx, sdk.Int{}, err
+	}
+	if recipient == (common.Address{}) {
+		return ctx, sdk.Int{}, types.ErrZeroAddress
+	}
+	market, err := k.routerMarket(ctx, pool)
+	if err != nil {
+		return ctx, sdk.Int{}, err
+	}
+	return k.claim(ctx, caller, market, recipient)
+}
+
+// routerMarket is the market of pool for a FeeAccumulator write by
+// FEES_ROUTER_ROLE: a pool without a market has no accumulated fees.
+func (k *Keeper) routerMarket(ctx sdk.Context, pool common.Address) (types.Market, error) {
+	market, found, err := k.poolMarket(ctx, pool)
+	if err != nil {
+		return types.Market{}, err
+	}
+	if !found {
+		return types.Market{}, types.ErrNoFeesAccumulated
+	}
+	return market, nil
+}
+
+func (k *Keeper) claim(ctx sdk.Context, caller NestedCaller, market types.Market, recipient common.Address) (sdk.Context,
+	sdk.Int, error) {
 	amount, err := k.distribute(ctx, &market)
 	if err != nil {
 		return ctx, sdk.Int{}, err
@@ -395,7 +441,7 @@ func (k *Keeper) Claim(ctx sdk.Context, caller NestedCaller, sender common.Addre
 		return ctx, sdk.Int{}, err
 	}
 	ctx.EventManager().EmitEvent(sdk.NewEvent(types.EventTypeFeesClaimed,
-		sdk.NewAttribute(types.AttributeKeyDenom, denom),
+		sdk.NewAttribute(types.AttributeKeyDenom, market.Denom),
 		sdk.NewAttribute(types.AttributeKeyRecipient, recipient.Hex()),
 		sdk.NewAttribute(types.AttributeKeyAmount, amount.String())))
 	return ctx, amount, nil
@@ -421,6 +467,24 @@ func (k *Keeper) Burn(ctx sdk.Context, caller NestedCaller, sender common.Addres
 	if err != nil {
 		return ctx, sdk.Int{}, err
 	}
+	return k.burn(ctx, caller, market)
+}
+
+// RouterBurn is FeeAccumulator.burn(pool) sent by a FEES_ROUTER_ROLE holder
+// of the migrated role table.
+func (k *Keeper) RouterBurn(ctx sdk.Context, caller NestedCaller, sender, pool common.Address) (sdk.Context, sdk.Int,
+	error) {
+	if err := k.CheckRole(ctx, k.generation2.FeeAccumulator, FeesRouterRole, sender); err != nil {
+		return ctx, sdk.Int{}, err
+	}
+	market, err := k.routerMarket(ctx, pool)
+	if err != nil {
+		return ctx, sdk.Int{}, err
+	}
+	return k.burn(ctx, caller, market)
+}
+
+func (k *Keeper) burn(ctx sdk.Context, caller NestedCaller, market types.Market) (sdk.Context, sdk.Int, error) {
 	amount, err := k.distribute(ctx, &market)
 	if err != nil {
 		return ctx, sdk.Int{}, err
@@ -430,7 +494,7 @@ func (k *Keeper) Burn(ctx sdk.Context, caller NestedCaller, sender common.Addres
 		return ctx, sdk.Int{}, err
 	}
 	ctx.EventManager().EmitEvent(sdk.NewEvent(types.EventTypeFeesBurned,
-		sdk.NewAttribute(types.AttributeKeyDenom, denom),
+		sdk.NewAttribute(types.AttributeKeyDenom, market.Denom),
 		sdk.NewAttribute(types.AttributeKeyAmount, amount.String())))
 	return ctx, amount, nil
 }
@@ -584,17 +648,38 @@ func (k *Keeper) ExecuteLpRewards(ctx sdk.Context, caller sdk.AccAddress, denom 
 	if err != nil {
 		return sdk.Int{}, err
 	}
+	return k.sendLpRewards(ctx, market)
+}
+
+// RouterSendLpRewards is FeeAccumulator.sendLpRewards(pool) sent by a
+// FEES_ROUTER_ROLE holder of the migrated role table.
+func (k *Keeper) RouterSendLpRewards(ctx sdk.Context, sender, pool common.Address) (sdk.Int, error) {
+	if err := k.CheckRole(ctx, k.generation2.FeeAccumulator, FeesRouterRole, sender); err != nil {
+		return sdk.Int{}, err
+	}
+	market, err := k.routerMarket(ctx, pool)
+	if err != nil {
+		return sdk.Int{}, err
+	}
+	return k.sendLpRewards(ctx, market)
+}
+
+func (k *Keeper) sendLpRewards(ctx sdk.Context, market types.Market) (sdk.Int, error) {
 	amount, err := k.distribute(ctx, &market)
 	if err != nil {
 		return sdk.Int{}, err
 	}
-	if err := k.MoveQuote(ctx, k.feeHeld(), HeldQuoteLedger(common.HexToAddress(market.PoolAddress)), amount); err != nil {
+	pool := common.HexToAddress(market.PoolAddress)
+	if err := k.addLedgerAmount(ctx, lpRewardsKey(pool), amount); err != nil {
+		return sdk.Int{}, err
+	}
+	if err := k.MoveQuote(ctx, k.feeHeld(), HeldQuoteLedger(pool), amount); err != nil {
 		return sdk.Int{}, err
 	}
 	market.RealQuoteBalance = market.RealQuoteBalance.Add(amount)
 	k.setMarket(ctx, market)
 	ctx.EventManager().EmitEvent(sdk.NewEvent(types.EventTypeLpRewardsSent,
-		sdk.NewAttribute(types.AttributeKeyDenom, denom),
+		sdk.NewAttribute(types.AttributeKeyDenom, market.Denom),
 		sdk.NewAttribute(AttributeKeyPool, market.PoolAddress),
 		sdk.NewAttribute(types.AttributeKeyAmount, amount.String())))
 	return amount, nil

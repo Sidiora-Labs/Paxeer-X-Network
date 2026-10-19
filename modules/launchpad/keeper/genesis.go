@@ -141,8 +141,11 @@ func (k *Keeper) initFeeAccounting(ctx sdk.Context, a types.FeeAccounting, pools
 			!account.AirdropBalance.Equal(market.AirdropBalance) || account.AirdropEpoch != market.AirdropEpoch {
 			return fmt.Errorf("%w: fee account disagrees with market %s", types.ErrInvalidGenesis, account.Pool)
 		}
-		if !account.LpRewardsBalance.IsZero() || !account.LegacyAirdropUnallocated.IsZero() || account.AccountingMigrated {
+		if !account.LegacyAirdropUnallocated.IsZero() || account.AccountingMigrated {
 			return fmt.Errorf("%w: unsupported pool migration accounting %s", types.ErrInvalidGenesis, account.Pool)
+		}
+		if err := k.setLedgerAmount(ctx, lpRewardsKey(common.HexToAddress(account.Pool)), account.LpRewardsBalance); err != nil {
+			return err
 		}
 		if err := k.setLedgerAmount(ctx, opticalSurplusKey(common.HexToAddress(account.Pool)), account.OpticalSurplus); err != nil {
 			return err
@@ -380,9 +383,13 @@ func (k *Keeper) exportFeeAccounting(ctx sdk.Context, gs *types.GenesisState) er
 		if err != nil {
 			return err
 		}
+		lpRewards, err := k.LpRewardsBalance(ctx, pool)
+		if err != nil {
+			return err
+		}
 		gs.FeeAccounting.Pools = append(gs.FeeAccounting.Pools, types.PoolFeeAccount{
 			Pool: surface.Address, AccumulatedFees: market.AccumulatedFees, AirdropBalance: market.AirdropBalance,
-			AirdropEpoch: market.AirdropEpoch, LpRewardsBalance: sdk.ZeroInt(), OpticalSurplus: surplus,
+			AirdropEpoch: market.AirdropEpoch, LpRewardsBalance: lpRewards, OpticalSurplus: surplus,
 			LegacyAirdropUnallocated: sdk.ZeroInt()})
 	}
 	epochs := sdk.KVStorePrefixIterator(k.store(ctx), poolAirdropEpochPrefix)

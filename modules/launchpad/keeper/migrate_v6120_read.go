@@ -829,6 +829,29 @@ func readRoles(ctx sdk.Context, k *Keeper, evm EVMReader, fx migrationFixture, c
 	return nil
 }
 
+// readFactoryNonces carries SidioraFactory._nonces of the generation 2
+// factory for every pool creator into the keeper factory nonce, so getNonce
+// answers at 0x3993…8830 as the contract did at the halt height (requirement
+// 2004 ac_6).
+func readFactoryNonces(ctx sdk.Context, k *Keeper, evm EVMReader, fx migrationFixture, pools []v6120Pool) error {
+	s := contractStorage{ctx: ctx, evm: evm}
+	slot, err := fx.layout.slot(types.RoleFactory, "_nonces")
+	if err != nil {
+		return err
+	}
+	for _, pool := range pools {
+		creator := pool.Metadata.Creator
+		nonce, err := s.uint64(k.generation2.SidioraFactory, mappingSlot(addressWordHash(creator), slot))
+		if err != nil {
+			return err
+		}
+		if nonce > 0 {
+			k.setUint64(ctx, addressKey(factoryNoncePrefix, creator), nonce)
+		}
+	}
+	return nil
+}
+
 // v6120Accounting is the merged FeeAccumulator accounting of one pool.
 type v6120Accounting struct {
 	AccumulatedFees sdk.Int

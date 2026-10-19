@@ -8391,3 +8391,8 @@ fix = "host the disposable PostgreSQL under /dev/shm with fsync, synchronous com
 area = "v6.12.0 migration tests"
 symptom = "a seeded halt-height test context under the test app chain id makes every chain-bound getter such as the EIP-712 DOMAIN_SEPARATOR differ from golden eth_call records, which looks like a missing storage slot"
 fix = "run the seeded branch under the mainnet chain id hyperpax_125-1 so block.chainid matches the recorded calls"
+
+[gotcha.1764]
+area = "surface parity tests"
+symptom = "a trace comparison that uses require stops the whole test at the first divergent trace, so every later trace of that contract goes unchecked and a verify log says nothing about them"
+fix = "compare traces with assert-style checks that record every divergence and fail once at the end"

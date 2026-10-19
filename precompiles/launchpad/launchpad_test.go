@@ -18,6 +18,7 @@ import (
 	launchpadkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/launchpadtest"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
+	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/launchpad"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
@@ -160,16 +161,28 @@ type harness struct {
 }
 
 // newEnv builds the harness at blockTime and, when height is positive, at
-// that height, with the default launchpad genesis and no surfaces.
-func newEnv(t *testing.T, blockTime time.Time, height int64) *harness {
+// that height, and, when chainID is set, on that chain, with the default
+// launchpad genesis and no surfaces. seed, when set, writes into the harness
+// branch and the launchpad store under key before the genesis runs.
+func newEnv(t *testing.T, chainID string, blockTime time.Time, height int64,
+	seed func(ctx sdk.Context, key sdk.StoreKey)) *harness {
 	t.Helper()
 	app := testkeeper.EVMTestApp
 	ctx := app.GetContextForDeliverTx([]byte{}).WithBlockTime(blockTime)
+	if chainID != "" {
+		ctx = ctx.WithChainID(chainID)
+	}
 	if height > 0 {
 		ctx = ctx.WithBlockHeight(height)
 	}
 	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
-	k, ctx := launchpadtest.NewKeeper(app, ctx)
+	key := sdk.NewKVStoreKey(types.StoreKey)
+	ctx = launchpadtest.WithStore(ctx, key)
+	k := launchpadkeeper.NewKeeper(key, app.BankKeeper, tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper),
+		&app.EvmKeeper)
+	if seed != nil {
+		seed(ctx, key)
+	}
 	k.InitGenesis(ctx, *types.DefaultGenesis())
 	h := &harness{t: t, keeper: k}
 	p, err := launchpad.NewPrecompile(keepers{Keepers: app.GetPrecompileKeepers(), launchpad: k})
@@ -194,7 +207,7 @@ func newEnv(t *testing.T, blockTime time.Time, height int64) *harness {
 // generation 2 role surfaces installed.
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	h := newEnv(t, genesisTime, 0)
+	h := newEnv(t, "", genesisTime, 0, nil)
 	h.usdl = h.deployERC20("USD Ledger", "USDL", big.NewInt(usdlSupply), h.caller)
 	params := h.keeper.GetParams(h.ctx())
 	params.QuoteToken = h.usdl.Hex()

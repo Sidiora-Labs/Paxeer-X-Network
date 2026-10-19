@@ -420,15 +420,32 @@ func TestFeeRolesServeEverySelector(t *testing.T) {
 	e.refused(types.ErrUnauthorized, fa, e.outsider, "claimOpticalSurplus", e.pool, one, e.outsider)
 	e.refused(types.ErrUnauthorized, fa, e.outsider, "claimOpticalSurplus", e.outsider, one, e.outsider)
 
-	// The FEES_ROUTER_ROLE transfers have no pool-keyed keeper entry.
-	e.refused(types.ErrInvalidConfiguration, fa, router, "claim", e.pool, e.owner)
-	e.refused(types.ErrInvalidConfiguration, fa, router, "burn", e.pool)
-	e.refused(types.ErrInvalidConfiguration, fa, router, "sendLpRewards", e.pool)
-	for _, name := range []string{"accountingInitialized", "accountingMigrationCursor", "getProtocolFeesPending"} {
-		e.refused(types.ErrInvalidConfiguration, fa, e.outsider, name)
+	// The migrated accounting: initialized, no cursor, no pending protocol
+	// fees, no LP rewards sent and no legacy airdrop left unallocated.
+	require.Equal(t, true, e.view(fa, "accountingInitialized"))
+	for _, name := range []string{"accountingMigrationCursor", "getProtocolFeesPending"} {
+		same(t, n(0), e.view(fa, name), name)
 	}
-	e.refused(types.ErrInvalidConfiguration, fa, e.outsider, "getLpRewardsBalance", e.pool)
-	e.refused(types.ErrInvalidConfiguration, fa, e.outsider, "legacyAirdropUnallocated", e.pool)
+	same(t, n(0), e.view(fa, "getLpRewardsBalance", e.pool))
+	same(t, n(0), e.view(fa, "legacyAirdropUnallocated", e.pool))
+
+	// claim: a FEES_ROUTER_ROLE holder pays a pool's accumulated fees to a
+	// recipient.
+	routerRecipient := feeTestAddress("router recipient R")
+	e.refused(types.ErrZeroAddress, fa, router, "claim", e.pool, common.Address{})
+	e.refused(types.ErrNoFeesAccumulated, fa, router, "claim", e.outsider, routerRecipient)
+	e.refused(types.ErrNoFeesAccumulated, fa, router, "burn", e.outsider)
+	e.refused(types.ErrNoFeesAccumulated, fa, router, "sendLpRewards", e.outsider)
+	start = e.logCount()
+	require.Equal(t, []interface{}{n(feeTestPoolCut)}, e.write(fa, router, "claim", e.pool, routerRecipient))
+	logs = e.logsSince(start)
+	require.GreaterOrEqual(t, len(logs), 1)
+	e.requireLog(logs[len(logs)-1], accumulator, fa, "FeesClaimed", e.pool, routerRecipient, n(feeTestPoolCut))
+	require.Equal(t, feeTestPoolCut, e.balance(e.usdl, routerRecipient))
+	same(t, n(0), e.view(fa, "getAccumulatedFees", e.pool))
+	require.Equal(t, n(feeTestSurplus), e.view(fa, "totalLiabilities"))
+	e.refused(types.ErrNoFeesAccumulated, fa, router, "claim", e.pool, routerRecipient)
+	e.write(fa, e.pool, "recordFee", e.pool, n(feeTestFee))
 
 	// claimFees: the owner of fee right 1 under CLAIM takes the pool cut.
 	e.refused(types.ErrNotFeeRightsHolder, fr, e.outsider, "claimFees", one)
@@ -481,6 +498,31 @@ func TestFeeRolesServeEverySelector(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, sdk.NewInt(feeTestPoolCut).String(), market.RealQuoteBalance.String())
 	require.Equal(t, n(feeTestSurplus), e.view(fa, "totalLiabilities"))
+	require.Equal(t, n(feeTestPoolCut), e.view(fa, "getLpRewardsBalance", e.pool))
+
+	// burn and sendLpRewards: a FEES_ROUTER_ROLE holder burns a pool's
+	// accumulated fees or sends them to the pool's curve.
+	e.write(fa, e.pool, "recordFee", e.pool, n(feeTestFee))
+	start = e.logCount()
+	require.Equal(t, []interface{}{n(feeTestPoolCut)}, e.write(fa, router, "burn", e.pool))
+	logs = e.logsSince(start)
+	require.GreaterOrEqual(t, len(logs), 1)
+	e.requireLog(logs[len(logs)-1], accumulator, fa, "FeesBurned", e.pool, n(feeTestPoolCut))
+	require.Equal(t, 2*feeTestPoolCut, e.balance(e.usdl, common.HexToAddress(types.DeadAddress)))
+	require.Equal(t, n(feeTestSurplus), e.view(fa, "totalLiabilities"))
+	e.refused(types.ErrNoFeesAccumulated, fa, router, "burn", e.pool)
+	e.write(fa, e.pool, "recordFee", e.pool, n(feeTestFee))
+	start = e.logCount()
+	require.Equal(t, []interface{}{n(feeTestPoolCut)}, e.write(fa, router, "sendLpRewards", e.pool))
+	logs = e.logsSince(start)
+	require.Len(t, logs, 1)
+	e.requireLog(logs[0], accumulator, fa, "LpRewardsSent", e.pool, n(feeTestPoolCut))
+	market, found = e.k.GetMarket(e.stateDB.Ctx(), e.denom)
+	require.True(t, found)
+	require.Equal(t, sdk.NewInt(2*feeTestPoolCut).String(), market.RealQuoteBalance.String())
+	require.Equal(t, n(2*feeTestPoolCut), e.view(fa, "getLpRewardsBalance", e.pool))
+	require.Equal(t, n(feeTestSurplus), e.view(fa, "totalLiabilities"))
+	e.refused(types.ErrNoFeesAccumulated, fa, router, "sendLpRewards", e.pool)
 
 	// executeAirdrop: the pool cut opens epoch 1 over the checkpointed supply
 	// outside the pool at block.number-1.

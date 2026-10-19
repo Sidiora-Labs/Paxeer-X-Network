@@ -1,21 +1,34 @@
 package launchpad_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	launchpadkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
+	keeperv610 "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/legacy/v610/keeper"
+	typesv610 "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/legacy/v610/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
+	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/launchpad"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,16 +76,14 @@ type goldenLog struct {
 }
 
 type goldenTrace struct {
-	Family    string         `json:"family"`
-	Key       string         `json:"key"`
-	Signature string         `json:"signature"`
-	From      common.Address `json:"from"`
-	To        common.Address `json:"to"`
-	Input     hexutil.Bytes  `json:"input"`
-	CallTrace goldenFrame    `json:"callTrace"`
-	PreState  map[common.Address]struct {
-		StateDiff map[common.Hash]common.Hash `json:"stateDiff"`
-	} `json:"preState,omitempty"`
+	Family    string                            `json:"family"`
+	Key       string                            `json:"key"`
+	Signature string                            `json:"signature"`
+	From      common.Address                    `json:"from"`
+	To        common.Address                    `json:"to"`
+	Input     hexutil.Bytes                     `json:"input"`
+	CallTrace goldenFrame                       `json:"callTrace"`
+	PreState  map[common.Address]goldenOverride `json:"preState,omitempty"`
 }
 
 type goldenRecord struct {
@@ -102,13 +113,110 @@ func loadGolden(t *testing.T) goldenRecord {
 	return g
 }
 
-// migratedHarness is newEnv at the golden halt timestamp and the next height
-// with the halt-height state migrated by the v6.12.0 launchpad hook.
-func migratedHarness(t *testing.T, g goldenRecord) *harness {
+// haltChainID is the chain the golden record was taken on (EVM chain id 125),
+// the chain H+1 runs on.
+const haltChainID = "hyperpax_125-1"
+
+// poolsPath is the book-held fixture of requirement 2.38.
+var poolsPath = filepath.Join("..", "..", "modules", "launchpad", "keeper", "testdata", "v6120", "pools.json")
+
+// haltExportPath is the genesis export of the chain at the golden height H,
+// whose EVM state carries the Launch-x contracts of both generations.
+var haltExportPath = filepath.Join("..", "..", "node", "testdata", "v6120-halt-export.json")
+
+var (
+	haltOnce    sync.Once
+	haltInitial int64
+	haltEVM     evmtypes.GenesisState
+	haltErr     error
+)
+
+// haltState is the initial height and the EVM genesis of the halt-height
+// export, read once.
+func haltState(t *testing.T) (int64, evmtypes.GenesisState) {
 	t.Helper()
-	require.FailNow(t, "the golden replay runs on the state of launchpadkeeper.MigrateV6120(ctx, k, evm), "+
-		"which modules/launchpad/keeper does not declare yet", "golden height %d", g.Height)
-	return nil
+	haltOnce.Do(func() {
+		raw, err := os.ReadFile(haltExportPath)
+		if err != nil {
+			haltErr = err
+			return
+		}
+		var export struct {
+			InitialHeight json.Number                `json:"initial_height"`
+			AppState      map[string]json.RawMessage `json:"app_state"`
+		}
+		if haltErr = json.Unmarshal(raw, &export); haltErr != nil {
+			return
+		}
+		if haltInitial, haltErr = export.InitialHeight.Int64(); haltErr != nil {
+			return
+		}
+		evmState, ok := export.AppState["evm"]
+		if !ok {
+			haltErr = fmt.Errorf("%s has no evm state", haltExportPath)
+			return
+		}
+		haltErr = testkeeper.EVMTestApp.AppCodec().UnmarshalAsJSON(evmState, &haltEVM)
+	})
+	require.NoError(t, haltErr, "halt-height export %s", haltExportPath)
+	return haltInitial, haltEVM
+}
+
+// migrationEVM is the EVM keeper with the retirement runtime of the
+// launchpad precompile, as the v6.12.0 upgrade handler passes it.
+type migrationEVM struct{ *evmkeeper.Keeper }
+
+func (m migrationEVM) InstallRetired(ctx sdk.Context, retired, replacement common.Address) error {
+	return launchpad.InstallRetired(ctx, m.Keeper, retired, replacement)
+}
+
+// goldenOverride is the debug_traceCall state override of one account: the
+// storage words that replaced the state at H for one traced call.
+type goldenOverride struct {
+	StateDiff map[common.Hash]common.Hash `json:"stateDiff"`
+}
+
+// migratedHarness is newEnv at the golden halt timestamp and the next height
+// with the EVM state of the halt-height export, the pre-state overrides
+// written over it, the v6.10 launchpad store and the v6.12.0 launchpad hook
+// MigrateV6120 run on it.
+func migratedHarness(t *testing.T, g goldenRecord, pre map[common.Address]goldenOverride) *harness {
+	t.Helper()
+	initial, genesis := haltState(t)
+	require.Equal(t, int64(g.Height)+1, initial,
+		"halt-height export %s is not the export of golden height %d", haltExportPath, g.Height)
+	evm := &testkeeper.EVMTestApp.EvmKeeper
+	var storeKey sdk.StoreKey
+	h := newEnv(t, haltChainID, time.Unix(int64(g.Timestamp)+1, 0).UTC(), initial, func(ctx sdk.Context, key sdk.StoreKey) {
+		storeKey = key
+		for _, code := range genesis.Codes {
+			evm.SetCode(ctx, common.HexToAddress(code.Address), code.Code)
+		}
+		for _, state := range genesis.States {
+			evm.SetState(ctx, common.HexToAddress(state.Address), common.BytesToHash(state.Key),
+				common.BytesToHash(state.Value))
+		}
+		for _, nonce := range genesis.Nonces {
+			evm.SetNonce(ctx, common.HexToAddress(nonce.Address), nonce.Nonce)
+		}
+		for address, account := range pre {
+			for slot, value := range account.StateDiff {
+				evm.SetState(ctx, address, slot, value)
+			}
+		}
+	})
+	app := testkeeper.EVMTestApp
+	legacy := keeperv610.NewKeeper(storeKey, app.BankKeeper,
+		tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper), &app.EvmKeeper)
+	params := typesv610.DefaultParams()
+	params.QuoteDenom = "uhpx"
+	require.NoError(t, legacy.UpdateParams(h.ctx(), legacy.Authority(), params))
+	pending, err := sdk.ZeroInt().Marshal()
+	require.NoError(t, err)
+	h.ctx().KVStore(storeKey).Set(types.ProtocolFeesPrefix, pending)
+	require.NoError(t, launchpadkeeper.MigrateV6120(h.ctx(), *h.keeper, migrationEVM{evm}))
+	h.usdl = common.HexToAddress(h.keeper.GetParams(h.ctx()).QuoteToken)
+	return h
 }
 
 // directOwner maps each abi.json signature to the role 0x1017 resolves it to:
@@ -206,71 +314,439 @@ func requireServed(t *testing.T, h *harness, role string, at common.Address) {
 	}
 }
 
+// goldenTranslation is how the halt-height record reads at H+1: generation 1
+// role addresses and the generation 1 EventEmitter answer for their
+// generation 2 replacements in the getters of generation 1 pools (ruling 5),
+// EventEmitter events are emitted at 0x1017, every USDL holder the launchpad
+// holds for (pools, the FeeAccumulator and Treasury of both generations, the
+// module EVM address) is one custody balance, the generation 2 role
+// addresses answer with the generation 1 state merged in (requirement 2025),
+// the pools of pools.json hold min(book, held) (requirement 2024 ac_4) and
+// views read at the H+1 block time.
+type goldenTranslation struct {
+	quote    common.Address
+	moves    map[common.Address]common.Address
+	emitters map[common.Address]bool
+	tokens   map[common.Address]bool
+	internal map[common.Address]bool
+	factory  common.Address
+	// legacy is the generation 1 answer by role and input.
+	legacy map[string]*goldenCall
+	// pools is the generation 1 then the generation 2 _allPools array.
+	pools []common.Address
+	// liabilities is the generation 1 FeeAccumulator liability merged in.
+	liabilities *big.Int
+	// reserves is the realUsdlBalance and tokenReserve change of each pool
+	// of pools.json, and effective its golden getEffectiveReserves words.
+	reserves  map[common.Address][2]*big.Int
+	effective map[common.Address][2]*big.Int
+	// elapsed is the H+1 block time less the golden timestamp.
+	elapsed int64
+}
+
+func translation(h *harness, g goldenRecord) goldenTranslation {
+	tr := goldenTranslation{quote: h.usdl, moves: map[common.Address]common.Address{},
+		emitters: map[common.Address]bool{}, tokens: map[common.Address]bool{h.usdl: true},
+		internal: map[common.Address]bool{h.custody(): true, h.keeper.TreasuryContract(): true},
+		factory:  h.keeper.Generation2().SidioraFactory, legacy: map[string]*goldenCall{},
+		liabilities: new(big.Int), reserves: map[common.Address][2]*big.Int{},
+		effective: map[common.Address][2]*big.Int{}, elapsed: h.ctx().BlockTime().Unix() - int64(g.Timestamp)}
+	roles := map[int]map[string]common.Address{}
+	pools := map[int][]common.Address{}
+	for _, gen := range g.Generations {
+		roles[gen.Generation] = gen.Roles
+		pools[gen.Generation] = gen.Pools
+		for _, pool := range gen.Pools {
+			tr.internal[pool] = true
+		}
+		for _, role := range []string{types.RoleFeeAccumulator, types.RoleTreasury} {
+			if a := gen.Roles[role]; a != (common.Address{}) {
+				tr.internal[a] = true
+			}
+		}
+	}
+	tr.pools = append(append(tr.pools, pools[1]...), pools[2]...)
+	for role, from := range roles[1] {
+		if to := roles[2][role]; from != (common.Address{}) && to != (common.Address{}) && from != to {
+			tr.moves[from] = to
+		}
+	}
+	emitter := h.keeper.Generation2().EventEmitter
+	tr.emitters[emitter] = true
+	for _, c := range g.Contracts {
+		switch c.Role {
+		case roleERC20:
+			tr.tokens[c.Address] = true
+		case types.RolePool:
+			for _, call := range c.Calls {
+				if call.Reverted {
+					continue
+				}
+				switch {
+				case call.Signature == "eventEmitter()" && len(call.Output) == 32:
+					at := common.BytesToAddress(call.Output)
+					tr.emitters[at] = true
+					if c.Generation == 1 && at != emitter {
+						tr.moves[at] = emitter
+					}
+				case call.Signature == "getEffectiveReserves()" && len(call.Output) == 64:
+					tr.effective[c.Address] = [2]*big.Int{new(big.Int).SetBytes(call.Output[:32]),
+						new(big.Int).SetBytes(call.Output[32:])}
+				}
+			}
+		default:
+			if c.Generation != 1 {
+				continue
+			}
+			for _, call := range c.Calls {
+				tr.legacy[c.Role+"/"+call.Input.String()] = call
+				if c.Role == types.RoleFeeAccumulator && !call.Reverted &&
+					(call.Signature == "getAccumulatedFees(address)" || call.Signature == "getAirdropBalance(address)" ||
+						call.Signature == "getOpticalSurplus(address)") {
+					tr.liabilities.Add(tr.liabilities, new(big.Int).SetBytes(call.Output))
+				}
+			}
+		}
+	}
+	raw, err := os.ReadFile(poolsPath)
+	require.NoError(h.t, err, poolsPath)
+	var fixture struct {
+		Deltas []struct {
+			Pool  common.Address `json:"pool"`
+			Asset string         `json:"asset"`
+			Book  string         `json:"book"`
+			Held  string         `json:"held"`
+		} `json:"deltas"`
+	}
+	require.NoError(h.t, json.Unmarshal(raw, &fixture), poolsPath)
+	for _, d := range fixture.Deltas {
+		book, ok := new(big.Int).SetString(d.Book, 10)
+		require.True(h.t, ok, "%s book %s", poolsPath, d.Book)
+		held, ok := new(big.Int).SetString(d.Held, 10)
+		require.True(h.t, ok, "%s held %s", poolsPath, d.Held)
+		change := new(big.Int)
+		if held.Cmp(book) < 0 {
+			change.Sub(held, book)
+		}
+		r, found := tr.reserves[d.Pool]
+		if !found {
+			r = [2]*big.Int{new(big.Int), new(big.Int)}
+		}
+		if d.Asset == "usdl" {
+			r[0].Add(r[0], change)
+		} else {
+			r[1].Add(r[1], change)
+		}
+		tr.reserves[d.Pool] = r
+	}
+	return tr
+}
+
+// shifted is out with its word i increased by delta.
+func shifted(out []byte, i int, delta *big.Int) []byte {
+	moved := append([]byte(nil), out...)
+	word := new(big.Int).Add(new(big.Int).SetBytes(moved[32*i:32*i+32]), delta)
+	copy(moved[32*i:32*i+32], common.LeftPadBytes(word.Bytes(), 32))
+	return moved
+}
+
+func bigWord(v *big.Int) []byte { return common.LeftPadBytes(v.Bytes(), 32) }
+
+// reserved is the answer of a pool getter at a pool of pools.json with
+// realUsdlBalance and tokenReserve set to min(book, held) (requirement 2024
+// ac_4) and the price taken from the effective reserves.
+func (tr goldenTranslation) reserved(pool common.Address, signature string, out []byte) []byte {
+	r, ok := tr.reserves[pool]
+	if !ok {
+		return out
+	}
+	switch signature {
+	case "realUsdlBalance()":
+		return shifted(out, 0, r[0])
+	case "tokenReserve()":
+		return shifted(out, 0, r[1])
+	case "getReserves()":
+		return shifted(shifted(out, 1, r[0]), 2, r[1])
+	case "getEffectiveReserves()":
+		return shifted(shifted(out, 0, r[0]), 1, r[1])
+	case "getPoolInfo()":
+		return shifted(shifted(out, 3, r[0]), 4, r[1])
+	case "getPrice()":
+		e := tr.effective[pool]
+		quote := new(big.Int).Add(e[0], r[0])
+		token := new(big.Int).Add(e[1], r[1])
+		return bigWord(quote.Div(quote.Mul(quote, big.NewInt(1e18)), token))
+	}
+	return out
+}
+
+// merged is the answer of a generation 2 role address with the generation 1
+// state MigrateV6120 merges into it (requirements 2024 and 2025).
+func (tr goldenTranslation) merged(role, signature string, input, out []byte) []byte {
+	legacy := tr.legacy[role+"/"+hexutil.Bytes(input).String()]
+	answered := legacy != nil && !legacy.Reverted
+	pools := big.NewInt(int64(len(tr.pools)))
+	switch {
+	case signature == "hasRole(bytes32,address)":
+		// Memberships other than DEFAULT_ADMIN_ROLE merge (2025 ac_2).
+		if answered && new(big.Int).SetBytes(input[4:36]).Sign() != 0 &&
+			new(big.Int).SetBytes(legacy.Output).Sign() != 0 {
+			return amountWord(1)
+		}
+	case role == types.RoleFeeAccumulator && signature == "getAccumulatedFees(address)" && answered:
+		return shifted(out, 0, new(big.Int).SetBytes(legacy.Output))
+	case role == types.RoleFeeAccumulator && signature == "totalLiabilities()":
+		return shifted(out, 0, tr.liabilities)
+	case role == types.RoleFeeRights && (signature == "nextTokenId()" || signature == "totalSupply()"):
+		// Generation 1 fee rights are minted again at nextTokenId (2025 ac_1).
+		supply := tr.legacy[role+"/"+hexutil.Bytes(crypto.Keccak256([]byte("totalSupply()"))[:4]).String()]
+		if supply != nil && !supply.Reverted {
+			return shifted(out, 0, new(big.Int).SetBytes(supply.Output))
+		}
+	case role == types.RolePoolRegistry && signature == "getPoolCount()":
+		return bigWord(pools)
+	case (role == types.RolePoolRegistry || role == types.RoleQuoter) && signature == "getAllPools(uint256,uint256)":
+		offset := new(big.Int).SetBytes(input[4:36])
+		end := new(big.Int).Add(offset, new(big.Int).SetBytes(input[36:68]))
+		if end.Cmp(pools) > 0 {
+			end = pools
+		}
+		var page []common.Address
+		if offset.Cmp(end) < 0 {
+			page = tr.pools[offset.Int64():end.Int64()]
+		}
+		encoded := append(amountWord(32), amountWord(int64(len(page)))...)
+		for _, pool := range page {
+			encoded = append(encoded, addressWord(pool)...)
+		}
+		return encoded
+	case role == types.RoleQuoter && signature == "getPoolStats(address)" && len(out) == 256:
+		// poolAge is block.timestamp less the creation time (Quoter.sol:100).
+		return shifted(out, 5, big.NewInt(tr.elapsed))
+	}
+	return out
+}
+
+// movedWords is out with every 32-byte word holding a moved address
+// replaced by its generation 2 address.
+func (tr goldenTranslation) movedWords(out []byte) []byte {
+	moved := append([]byte(nil), out...)
+	for i := 0; i+32 <= len(moved); i += 32 {
+		word := moved[i : i+32]
+		if new(big.Int).Rsh(new(big.Int).SetBytes(word), 160).Sign() != 0 {
+			continue
+		}
+		if to, ok := tr.moves[common.BytesToAddress(word)]; ok {
+			copy(word, common.LeftPadBytes(to.Bytes(), 32))
+		}
+	}
+	return moved
+}
+
+// expected is the answer at H+1 to a call with signature and input the
+// golden record answered at H with reverted and out at to, a contract of role
+// and generation: a retired generation 1 address reverts
+// Retired(replacement), every served role address counts no default admin
+// (requirement 2025 ac_2), a generation 1 pool answers with the generation 2
+// role addresses and factory (ruling 5), a pool of pools.json with the
+// reserves of requirement 2024 ac_4, a generation 2 role address with the
+// generation 1 state merged in, and every other contract as it did.
+func (h *harness) expected(tr goldenTranslation, to common.Address, role string, generation int, reverted bool,
+	signature string, input, out []byte) (retired, wantReverted bool, want hexutil.Bytes) {
+	h.t.Helper()
+	entry, found, err := h.keeper.GetRetired(h.ctx(), to)
+	require.NoError(h.t, err)
+	if found {
+		return true, true, errorData("Retired(address)",
+			common.LeftPadBytes(common.HexToAddress(entry.Replacement).Bytes(), 32))
+	}
+	switch {
+	case signature == "registeredDefaultAdminCount()":
+		return false, false, make(hexutil.Bytes, 32)
+	case role == types.RolePool:
+		if generation == 1 {
+			if signature == "factory()" {
+				return false, false, common.LeftPadBytes(tr.factory.Bytes(), 32)
+			}
+			out = tr.movedWords(out)
+		}
+		if !reverted {
+			out = tr.reserved(to, signature, out)
+		}
+	case role != roleERC20 && generation == 2 && !reverted:
+		out = tr.merged(role, signature, input, out)
+	}
+	return false, reverted, out
+}
+
+// balanceChanges are the net ERC20 balance changes the Transfer logs of the
+// USDL and pool-token contracts make, keyed token/holder, with the USDL the
+// launchpad holds for counted as one custody holder.
+func (tr goldenTranslation) balanceChanges(logs []goldenLog) map[string]string {
+	transfer := crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)"))
+	deltas := map[string]*big.Int{}
+	add := func(token, holder common.Address, amount *big.Int) {
+		key := token.Hex() + "/" + holder.Hex()
+		if token == tr.quote && tr.internal[holder] {
+			key = token.Hex() + "/launchpad"
+		}
+		if deltas[key] == nil {
+			deltas[key] = new(big.Int)
+		}
+		deltas[key].Add(deltas[key], amount)
+	}
+	for _, log := range logs {
+		if !tr.tokens[log.Address] || len(log.Topics) != 3 || log.Topics[0] != transfer {
+			continue
+		}
+		amount := new(big.Int).SetBytes(log.Data)
+		add(log.Address, common.BytesToAddress(log.Topics[1].Bytes()), new(big.Int).Neg(amount))
+		add(log.Address, common.BytesToAddress(log.Topics[2].Bytes()), amount)
+	}
+	out := map[string]string{}
+	for key, delta := range deltas {
+		if delta.Sign() != 0 {
+			out[key] = delta.String()
+		}
+	}
+	return out
+}
+
+// events are the logs other than the ERC20 Transfer and Approval logs of the
+// token contracts, whose effect balanceChanges compares, as address and
+// topics, sorted; golden logs are read at their H+1 emitter with moved topic
+// words.
+func (tr goldenTranslation) events(logs []goldenLog, golden bool) []string {
+	transfer := crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)"))
+	approval := crypto.Keccak256Hash([]byte("Approval(address,address,uint256)"))
+	out := []string{}
+	for _, log := range logs {
+		if len(log.Topics) > 0 && tr.tokens[log.Address] && (log.Topics[0] == transfer || log.Topics[0] == approval) {
+			continue
+		}
+		address, topics := log.Address, log.Topics
+		if golden {
+			if to, ok := tr.moves[address]; ok {
+				address = to
+			}
+			if tr.emitters[address] || tr.emitters[log.Address] {
+				address = precompile
+			}
+			topics = make([]common.Hash, len(log.Topics))
+			for i, topic := range log.Topics {
+				topics[i] = common.BytesToHash(tr.movedWords(topic.Bytes()))
+			}
+		}
+		entry := address.Hex()
+		for _, topic := range topics {
+			entry += " " + topic.Hex()
+		}
+		out = append(out, entry)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // replayGolden replays every halt-height call and trace the golden record
-// holds for role on the migrated harness and requires the same success and
-// output bytes, and for traces the same quote and pool-token Transfer logs.
+// holds for role on the migrated harness. Calls give the same success and
+// output bytes; traces the same success, output bytes, USDL and pool-token
+// balance changes and logs, a trace with a pre-state override running on a
+// harness migrated from the overridden halt state, and a Router or Factory
+// trace pulling with the allowance its caller held for that role at H
+// granted to 0x1017 (requirement 2.18).
 func replayGolden(t *testing.T, role string) {
 	t.Helper()
 	g := loadGolden(t)
-	h := migratedHarness(t, g)
+	h := migratedHarness(t, g, nil)
+	tr := translation(h, g)
+	generations := map[common.Address]int{}
+	for _, c := range g.Contracts {
+		generations[c.Address] = c.Generation
+	}
 	replayed := 0
 	for _, c := range g.Contracts {
 		if c.Role != role {
 			continue
 		}
 		for _, call := range c.Calls {
-			from := h.caller
+			var from common.Address
 			if call.From != nil {
 				from = *call.From
 			}
+			_, reverted, want := h.expected(tr, call.To, role, c.Generation, call.Reverted, call.Signature, call.Input,
+				call.Output)
 			snapshot := h.stateDB.Snapshot()
 			ret, err := h.send(from, call.To, call.Input)
 			h.stateDB.RevertToSnapshot(snapshot)
-			require.Equal(t, call.Reverted, err != nil, "%s %s at %s", role, call.Key, call.To.Hex())
-			require.Equal(t, call.Output, hexutil.Bytes(ret), "%s %s at %s", role, call.Key, call.To.Hex())
+			assert.Equal(t, reverted, err != nil, "%s %s at %s", role, call.Key, call.To.Hex())
+			assert.Equal(t, want.String(), hexutil.Bytes(ret).String(), "%s %s at %s", role, call.Key, call.To.Hex())
 			replayed++
 		}
 	}
-	transfer := crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)"))
 	for _, trace := range g.Traces {
-		if !strings.HasPrefix(trace.Key, role) {
+		if !strings.HasPrefix(trace.Key, role+".") {
 			continue
 		}
-		snapshot := h.stateDB.Snapshot()
-		for address, account := range trace.PreState {
-			for slot, value := range account.StateDiff {
-				h.stateDB.SetState(address, slot, value)
-			}
+		th, ttr := h, tr
+		if len(trace.PreState) > 0 {
+			th = migratedHarness(t, g, trace.PreState)
+			ttr = translation(th, g)
 		}
-		start := h.logCount()
-		ret, err := h.send(trace.From, trace.To, trace.Input)
-		require.Equal(t, trace.CallTrace.Error != "", err != nil, "%s trace %s", role, trace.Key)
-		require.Equal(t, trace.CallTrace.Output, hexutil.Bytes(ret), "%s trace %s", role, trace.Key)
-		var want, got []goldenLog
-		collectTransfers(trace.CallTrace, transfer, &want)
-		for _, log := range h.stateDB.GetAllLogs()[start:] {
-			if len(log.Topics) > 0 && log.Topics[0] == transfer {
-				got = append(got, goldenLog{Address: log.Address, Topics: log.Topics, Data: log.Data})
-			}
+		generation, ok := generations[trace.To]
+		if !ok {
+			generation = 2
 		}
-		h.stateDB.RevertToSnapshot(snapshot)
-		same(t, want, got, "%s trace %s Transfer logs", role, trace.Key)
+		th.replayTrace(ttr, role, generation, trace)
 		replayed++
 	}
 	require.NotZero(t, replayed, "the golden record holds no call of %s", role)
 }
 
-func collectTransfers(frame goldenFrame, topic common.Hash, out *[]goldenLog) {
+func (h *harness) replayTrace(tr goldenTranslation, role string, generation int, trace *goldenTrace) {
+	t := h.t
+	t.Helper()
+	retired, reverted, want := h.expected(tr, trace.To, role, generation, trace.CallTrace.Error != "",
+		trace.Signature, trace.Input, trace.CallTrace.Output)
+	snapshot := h.stateDB.Snapshot()
+	defer h.stateDB.RevertToSnapshot(snapshot)
+	surface, found, err := h.keeper.GetSurface(h.ctx(), trace.To)
+	require.NoError(t, err)
+	if found && (surface.Role == types.RoleRouter || surface.Role == types.RoleFactory) {
+		tokens := make([]common.Address, 0, len(tr.tokens))
+		for token := range tr.tokens {
+			tokens = append(tokens, token)
+		}
+		sort.Slice(tokens, func(i, j int) bool { return bytes.Compare(tokens[i][:], tokens[j][:]) < 0 })
+		for _, token := range tokens {
+			allowance := h.view(token, roleERC20, "allowance", trace.From, trace.To)[0].(*big.Int)
+			if allowance.Sign() > 0 {
+				h.approve(token, trace.From, allowance)
+			}
+		}
+	}
+	start := h.logCount()
+	ret, err := h.send(trace.From, trace.To, trace.Input)
+	require.Equal(t, reverted, err != nil, "%s trace %s", role, trace.Key)
+	require.Equal(t, want, hexutil.Bytes(ret), "%s trace %s", role, trace.Key)
+	var golden, got []goldenLog
+	if !retired {
+		collectLogs(trace.CallTrace, &golden)
+	}
+	for _, log := range h.stateDB.GetAllLogs()[start:] {
+		got = append(got, goldenLog{Address: log.Address, Topics: log.Topics, Data: log.Data})
+	}
+	same(t, tr.balanceChanges(golden), tr.balanceChanges(got), "%s trace %s balance changes", role, trace.Key)
+	same(t, tr.events(golden, true), tr.events(got, false), "%s trace %s logs", role, trace.Key)
+}
+
+// collectLogs appends the logs of frame and of its calls that did not fail.
+func collectLogs(frame goldenFrame, out *[]goldenLog) {
 	if frame.Error != "" {
 		return
 	}
-	for _, log := range frame.Logs {
-		if len(log.Topics) > 0 && log.Topics[0] == topic {
-			*out = append(*out, log)
-		}
-	}
+	*out = append(*out, frame.Logs...)
 	for _, sub := range frame.Calls {
-		collectTransfers(sub, topic, out)
+		collectLogs(sub, out)
 	}
 }
 
@@ -319,7 +795,10 @@ func TestSidioraFactorySurfaceParity(t *testing.T) {
 		common.Address{}))
 	require.Equal(t, [32]byte(crypto.Keccak256Hash([]byte("ROUTER_ROLE"))),
 		view32(t, h, at, types.RoleFactory, "ROUTER_ROLE"))
-	require.Equal(t, true, view32(t, h, at, types.RoleFactory, "hasRole",
+	// Role membership answers from the migrated role table (requirement
+	// 2.13); a fresh chain migrated none, so the Router holds no ROUTER_ROLE
+	// here and the halt-height grant is checked by the golden replay.
+	require.Equal(t, false, view32(t, h, at, types.RoleFactory, "hasRole",
 		[32]byte(crypto.Keccak256Hash([]byte("ROUTER_ROLE"))), router))
 	replayGolden(t, types.RoleFactory)
 }

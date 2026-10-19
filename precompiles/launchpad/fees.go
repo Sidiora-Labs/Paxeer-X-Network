@@ -28,7 +28,8 @@ var (
 	feeDeadAddress        = common.HexToAddress(types.DeadAddress)
 	feeStrategyOfEntry    = map[string]types.FeeStrategy{"claimFees": types.FeeStrategyClaim, "executeBurn": types.FeeStrategyBurn, "executeAirdrop": types.FeeStrategyAirdrop, "executeLpRewards": types.FeeStrategyLpRewards}
 	feeAccumulatorEntries = map[string]bool{"recordFee": true, "recordOpticalSurplus": true, "triggerAirdrop": true,
-		"claimAirdrop": true, "claimAirdropEpoch": true, "claimLegacyAirdrop": true, "claimOpticalSurplus": true}
+		"claimAirdrop": true, "claimAirdropEpoch": true, "claimLegacyAirdrop": true, "claimOpticalSurplus": true,
+		"claim": true, "burn": true, "sendLpRewards": true}
 )
 
 // feeRoleChecks is the onlyRole modifier of every role-gated write of the
@@ -378,13 +379,20 @@ func feeAccumulator(p PrecompileExecutor, c *call, contract common.Address) ([]b
 			return nil, err
 		}
 		return c.method.Outputs.Pack(supported)
-	case "accountingInitialized", "accountingMigrationCursor", "getProtocolFeesPending", "getLpRewardsBalance",
-		"legacyAirdropUnallocated":
-		return nil, fmt.Errorf("%w: FeeAccumulator.%s has no keeper record", types.ErrInvalidConfiguration,
-			c.method.Name)
-	case "claim", "burn", "sendLpRewards":
-		return nil, fmt.Errorf("%w: FeeAccumulator.%s has no pool-keyed keeper entry for a role holder",
-			types.ErrInvalidConfiguration, c.method.Name)
+	case "accountingInitialized":
+		// The migration requires the initialized accounting and the keeper
+		// keeps it: every write serves the migrated accounting.
+		return c.method.Outputs.Pack(true)
+	case "accountingMigrationCursor", "getProtocolFeesPending", "legacyAirdropUnallocated":
+		// The migration and the genesis refuse a nonzero value and the keeper
+		// never accrues one.
+		return c.method.Outputs.Pack(new(big.Int))
+	case "getLpRewardsBalance":
+		balance, err := p.keeper.LpRewardsBalance(c.ctx, c.args[0].(common.Address))
+		if err != nil {
+			return nil, err
+		}
+		return c.method.Outputs.Pack(balance.BigInt())
 	case "authorizeOptical":
 		return feeGrant(p, c, contract, feeOpticalClaimRole)
 	case "authorizePool":
@@ -513,6 +521,36 @@ func feeAccumulatorEntry(p PrecompileExecutor, c *call, contract common.Address)
 		}
 		amount, err := feeClaimAirdrop(p, c, pool, c.args[1].(common.Address), epoch)
 		if err != nil {
+			return nil, err
+		}
+		return c.method.Outputs.Pack(amount.BigInt())
+	case "claim":
+		recipient := c.args[1].(common.Address)
+		ctx, amount, err := p.keeper.RouterClaim(c.ctx, c.nested, c.caller, pool, recipient)
+		if err != nil {
+			return nil, err
+		}
+		c.ctx = ctx
+		if err := feeLog(c, contract, c.role, "FeesClaimed", pool, recipient, amount.BigInt()); err != nil {
+			return nil, err
+		}
+		return c.method.Outputs.Pack(amount.BigInt())
+	case "burn":
+		ctx, amount, err := p.keeper.RouterBurn(c.ctx, c.nested, c.caller, pool)
+		if err != nil {
+			return nil, err
+		}
+		c.ctx = ctx
+		if err := feeLog(c, contract, c.role, "FeesBurned", pool, amount.BigInt()); err != nil {
+			return nil, err
+		}
+		return c.method.Outputs.Pack(amount.BigInt())
+	case "sendLpRewards":
+		amount, err := p.keeper.RouterSendLpRewards(c.ctx, c.caller, pool)
+		if err != nil {
+			return nil, err
+		}
+		if err := feeLog(c, contract, c.role, "LpRewardsSent", pool, amount.BigInt()); err != nil {
 			return nil, err
 		}
 		return c.method.Outputs.Pack(amount.BigInt())
