@@ -21,6 +21,7 @@ import (
 	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -1111,4 +1112,34 @@ func TestPauseStateMigrates(t *testing.T) {
 			require.ErrorIs(t, err, types.ErrPaused, pool.Hex())
 		}
 	}
+}
+
+func TestMarketNamesTrimmed(t *testing.T) {
+	r := migratedV6120(t)
+	stringType, err := abi.NewType("string", "", nil)
+	require.NoError(t, err)
+	stored := func(token common.Address, signature string) string {
+		out, err := abi.Arguments{{Type: stringType}}.Unpack(r.view(token, signature))
+		require.NoError(t, err)
+		return out[0].(string)
+	}
+	want := []map[string]string{}
+	for i := uint64(1); i <= r.k.GetMarketCount(r.ctx); i++ {
+		market, ok := r.k.GetMarketByIndex(r.ctx, i)
+		require.True(t, ok)
+		token := common.HexToAddress(market.TokenAddress)
+		for _, f := range []struct{ field, signature, got string }{
+			{"name", "name()", market.Name}, {"symbol", "symbol()", market.Symbol},
+		} {
+			value := stored(token, f.signature)
+			require.Equal(t, strings.TrimSpace(value), f.got, "%s %s", market.PoolAddress, f.field)
+			if value != f.got {
+				want = append(want, map[string]string{keeper.AttributeKeyPool: market.PoolAddress,
+					keeper.AttributeKeyField: f.field, keeper.AttributeKeyStored: value, keeper.AttributeKeyTrimmed: f.got})
+			}
+		}
+	}
+	require.Contains(t, want, map[string]string{keeper.AttributeKeyPool: "0xf5950B58486Df0550cdDD6f6A1671B769F489814",
+		keeper.AttributeKeyField: "name", keeper.AttributeKeyStored: "PAXMAN ", keeper.AttributeKeyTrimmed: "PAXMAN"})
+	require.ElementsMatch(t, want, eventsOf(r.ctx, keeper.EventTypeMigrationMarketNameTrimmed))
 }

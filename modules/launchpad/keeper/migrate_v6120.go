@@ -21,8 +21,14 @@ const (
 	// deposited in the generation 1 Treasury and so not merged into the
 	// generation 2 pending protocol fees.
 	EventTypeMigrationSettledProtocolFees = "launchpad_migration_settled_protocol_fees"
+	// EventTypeMigrationMarketNameTrimmed records a pool token name or
+	// symbol whose stored value carries surrounding whitespace, together
+	// with the trimmed value the market record keeps.
+	EventTypeMigrationMarketNameTrimmed = "launchpad_migration_market_name_trimmed"
 
 	AttributeKeyTreasury    = "treasury"
+	AttributeKeyStored      = "stored"
+	AttributeKeyTrimmed     = "trimmed"
 	AttributeKeyField       = "field"
 	AttributeKeyGeneration1 = "generation_1"
 	AttributeKeyGeneration2 = "generation_2"

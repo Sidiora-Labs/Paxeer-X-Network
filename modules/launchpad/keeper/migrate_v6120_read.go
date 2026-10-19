@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/big"
 	"sort"
+	"strings"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
@@ -418,6 +419,19 @@ func readPool(ctx sdk.Context, k *Keeper, evm EVMReader, caller NestedCaller, fx
 	symbol, err := tokenString(ctx, caller, token, erc20Symbol)
 	if err != nil {
 		return err
+	}
+	for _, field := range []struct {
+		key   string
+		value *string
+	}{{"name", &name}, {"symbol", &symbol}} {
+		if trimmed := strings.TrimSpace(*field.value); trimmed != *field.value {
+			ctx.EventManager().EmitEvent(sdk.NewEvent(EventTypeMigrationMarketNameTrimmed,
+				sdk.NewAttribute(AttributeKeyPool, pool.Address.Hex()),
+				sdk.NewAttribute(AttributeKeyField, field.key),
+				sdk.NewAttribute(AttributeKeyStored, *field.value),
+				sdk.NewAttribute(AttributeKeyTrimmed, trimmed)))
+			*field.value = trimmed
+		}
 	}
 	supply, err := tokenSupply(ctx, caller, token)
 	if err != nil {

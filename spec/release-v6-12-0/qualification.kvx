@@ -1925,12 +1925,19 @@ observed = Resolved: the generation 1 accumulator runs the original implementati
 assumption = The settled counter stays out of the merged getProtocolFeesPending (spec 1.0.2, acceptance 2.25.3 and task 2.2.17 do_7); the generator now stops at the next refusal recorded in [finding.fixture-pool-token-name-space].
 
 [finding.fixture-pool-token-name-space]
-revision = 623331ac8
+revision = 3155bc3ef
 command = go run ./tools/v6120-halt-export -rpc <archive tunnel>
+exit = 0
+log = fleet/logs/fixture-name-trim.log
+observed = Resolved: MigrateV6120 now trims surrounding Unicode whitespace from the pool token name and symbol before building the market record and logs each trim as a launchpad_migration_market_name_trimmed event, so the generator completed at H with 1 code and 6361 states added and the fixture was regenerated; the token contract and the market validation are unchanged.
+assumption = golden.json and TestAccountingMatchesGolden still wait on the trader address for the record tool.
+[finding.fixture-v6120-spot-share-token]
+revision = 3155bc3ef
+command = go test ./node/
 exit = 1
-log = fleet/logs/fixture-gen1-accounting-gen.log
-observed = After 210 rounds (1 code and 6296 states added) MigrateV6120 refuses with "pool 0xf5950B58486Df0550cdDD6f6A1671B769F489814: LXP_LAUNCHPAD_INVALID_MARKET: name must be non-blank UTF-8 without surrounding space" because its pool token 0x0E47092AAA7a2BE33DE71F5a73e8E3B6bc8b4e58 has name and symbol "PAXMAN " with a trailing space at H; the fixture was left at its committed state and golden.json was not recorded.
-assumption = Market validation (modules/launchpad/types/market.go:41) and the mainnet token metadata disagree; carrying the name as stored, trimming it in the market record, or refusing needs a ruling, and neither the validation nor the migration was changed.
+log = fleet/logs/fixture-name-trim.log
+observed = On the regenerated fixture TestV6120AppliesThePlanOnTheHaltExport passes the launchpad step and panics in the spot step with "share token of 0x85FcD13735F4309833A503EE804ea32395851479: UnsupportedToken()", and TestVersionSwitchHeightSelection still fails, so the generation 2 ProtocolConfig finding stays open.
+assumption = The spot step and the other node failures in the same run (giga precompile switch, launchpad airdrop and governance, optimistic processing, price feed live path, v6.12.0 known plan) lie outside the launchpad migration and were not changed.
 [finding.spec-lint-tool-hang]
 revision = "c78681cb6"
 command = "cg spec lint"
