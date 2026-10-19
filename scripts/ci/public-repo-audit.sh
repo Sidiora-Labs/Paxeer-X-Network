@@ -107,9 +107,20 @@ if [ -n "$large_file" ]; then
     exit 1
 fi
 
+reviewed_symlinks='^spec/specgen$'
+reviewed_symlinks="$reviewed_symlinks"'|^core/deps/cosmwasm/packages/vm/testdata/floaty\.wasm$'
+root_real=$(pwd -P)
 symlinks=''
 while IFS= read -r publication_file; do
     if [ -L "$publication_file" ]; then
+        if printf '%s\n' "$publication_file" | grep -Eq -- "$reviewed_symlinks"; then
+            symlink_target=$(realpath -- "$publication_file" 2>/dev/null || true)
+            case "$symlink_target" in
+                "$root_real"/?*) continue ;;
+            esac
+            echo "reviewed symbolic link does not resolve inside the repository: $publication_file" >&2
+            exit 1
+        fi
         symlinks="${symlinks}${symlinks:+
 }$publication_file"
     fi

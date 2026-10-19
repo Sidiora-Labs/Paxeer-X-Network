@@ -14,3 +14,31 @@ command = "cg spec done -f monorepo-layout 1.1"
 exit_code = 124
 log_path = "scratch layout-wave1-verify.log"
 observed_and_assumption = "The spec tool's done command produced no output for 1500 s on two attempts while its background trace subprocesses spun at full CPU, so the eleven wave 1 statuses were set by hand after each task's declared verify_cmd was run once at this revision and exited 0 (all eleven vendor directories equal their pinned upstream sha); the tool defect is assumed independent of the spec content."
+
+[finding.2.1-tracked-symlink-specgen]
+revision = "e8df8dca9"
+command = "scripts/ci/public-repo-audit.sh"
+exit_code = 1
+log_path = ".logs/task-2.1.log"
+observed_and_assumption = "The tracked symbolic link spec/specgen (to ../scripts/specgen.sh) fails the symlink check, masked until the Docker actions of publish-images.yml were pinned; it predates the imports, so spec 1.0.2 lists it as a reviewed link that must resolve inside the repository."
+
+[finding.2.1-eventdriver-root-module]
+revision = "e8df8dca9"
+command = "go build ./..."
+exit_code = 1
+log_path = ".logs/task-2.1.log"
+observed_and_assumption = "launchpad/tools/production/load/eventdriver has no go.mod and is not in launchpad/go.work, so it falls under the root module and cannot resolve its KindleLaunch shared, pgx and NATS imports; it predates the imports, so spec 1.0.2 gives it its own leaf module."
+
+[finding.2.1-cosmwasm-go-root-module]
+revision = "e8df8dca9"
+command = "go build ./..."
+exit_code = 1
+log_path = ".logs/task-2.1.log"
+observed_and_assumption = "core/deps/cosmwasm tracks no go.mod, so its Go test material under packages/go-gen/tests (files without a package clause) lands under the root ./... pattern; spec 1.0.2 fences it with a boundary go.mod that vendor-verify accepts as the only extra file beside VENDOR.kvx."
+
+[finding.2.1-private-references-tracked]
+revision = "e8df8dca9"
+command = "scripts/ci/public-repo-audit.sh"
+exit_code = 1
+log_path = ".logs/task-2.1.log"
+observed_and_assumption = "Once the symlink check passes, the private-reference check fails on tracked files that predate the imports: four GOTCHA.kvx entries naming a private workspace path, launchpad/.github/copilot-instructions.md naming an infrastructure address, and three tools/paxeer-x and tools/qualification/paxeer-x scripts defaulting to a private workspace path; scrubbing them is outside task 2.1 and needs its own task."

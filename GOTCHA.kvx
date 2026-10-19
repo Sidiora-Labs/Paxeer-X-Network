@@ -8221,3 +8221,23 @@ fix = "test ignore rules with a path that never exists and has the intended shap
 area = "spec tooling"
 symptom = "cg spec done <id> reports 'touched <file> — no matching change in the worktree or in commits tagged [spec:<feature>/<id>]' and refuses to mark the task done although the files are committed on the branch"
 fix = "put the tag [spec:<feature>/<id>] inside the commit summary of every task commit (lx-commit ... \"<summary> [spec:<feature>/<id>]\"); the tool matches touched paths against commits carrying that tag"
+
+[gotcha.1730]
+area = "vendored trees"
+symptom = "a vendored Rust tree that carries Go files but no go.mod lands under the root module, and go build ./... fails on its Go fixtures (expected 'package', found 'type')"
+fix = "fence the tree with a boundary go.mod holding only a module line and a go line, which vendor-verify accepts when upstream tracks no go.mod"
+
+[gotcha.1731]
+area = "go workspaces"
+symptom = "a leaf directory left out of a nested go.work and without a go.mod of its own silently joins the root module, so go build ./... at the root tries to resolve its imports there and fails"
+fix = "give the leaf its own go.mod in the shape of its siblings and add it to the use list of the nested go.work"
+
+[gotcha.1732]
+area = "go builds"
+symptom = "go build ./... inside a single main-package directory writes the binary next to the sources, and the public-repo audit then reports it as an untracked publication file (binary file matches)"
+fix = "build a standalone leaf with go build -o /dev/null ./... or delete the binary before running the audit"
+
+[gotcha.1733]
+area = "worktree builds"
+symptom = "go build ./... in a fresh worktree compiles but fails to link paxd and three tools with cannot find -llayerx and -llayerx_programs_sandbox, because build/ and programs/target/ are ignored native outputs that a new worktree does not hold"
+fix = "build the native libraries in the worktree first, or point CGO_LDFLAGS -L at an existing build of them for a link-only check"

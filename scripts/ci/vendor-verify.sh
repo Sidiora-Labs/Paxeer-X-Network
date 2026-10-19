@@ -13,9 +13,10 @@
 # repository and compares the index entries (git ls-files -s) of both sides:
 # every upstream file must be tracked under <dir> with the same blob id, which
 # is the same bytes, and the same mode. Under <dir> nothing else may be tracked
-# except VENDOR.kvx, no .git may exist, and <dir>/.gitignore must equal the
-# upstream .gitignore (or be absent upstream) followed only by negation lines,
-# the lines that start with '!'.
+# except VENDOR.kvx and, when upstream tracks no go.mod at its root, one
+# boundary go.mod that holds exactly a module line and a go line; no .git may
+# exist, and <dir>/.gitignore must equal the upstream .gitignore (or be absent
+# upstream) followed only by negation lines, the lines that start with '!'.
 #
 # Run from anywhere:
 #
@@ -169,6 +170,25 @@ while IFS=$'\t' read -r path want have; do
         continue
     fi
     if [ "$path" = ".gitignore" ]; then
+        continue
+    fi
+    if [ "$path" = "go.mod" ] && [ "$want" = "-" ]; then
+        if [ "${have% *}" != "100644" ]; then
+            echo "$dir/go.mod: mode ${have% *}, must be 100644"
+            differs=1
+        fi
+        bad=$(git -C "$dir" cat-file blob "${have#* }" | awk -v file="$dir/go.mod" '
+            NR == 1 && /^module [^[:space:]]+$/ { next }
+            NR == 2 && /^go [0-9]+(\.[0-9]+)*$/ { next }
+            NR == 1 { printf "%s:1: boundary go.mod must start with module <path>, got: %s\n", file, $0; next }
+            NR == 2 { printf "%s:2: boundary go.mod must end with go <version>, got: %s\n", file, $0; next }
+            { printf "%s:%d: boundary go.mod holds only a module line and a go line, extra: %s\n", file, NR, $0 }
+            END { if (NR < 2) printf "%s: boundary go.mod holds %d of its 2 lines\n", file, NR }
+        ')
+        if [ -n "$bad" ]; then
+            printf '%s\n' "$bad"
+            differs=1
+        fi
         continue
     fi
     if [ "$have" = "-" ]; then

@@ -24,4 +24,5 @@ use (
 	./shared
 	./security
 	./security/control
+	./tools/production/load/eventdriver
 )
