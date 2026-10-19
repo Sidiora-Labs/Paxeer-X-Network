@@ -1938,12 +1938,12 @@ log = fleet/logs/fixture-spot-share-token.log
 observed = Resolved for the spot step: the generator replayed only the launchpad migration, so USDL 0x85FcD13735F4309833A503EE804ea32395851479 storage slot 4 (symbol "USDL") was absent, symbol() returned an empty string and CreateShareToken refused with UnsupportedToken(); the generator now applies the whole v6.12.0 plan, added that slot, and the plan applies at H+1, after which the test fails at its later ProcessBlock call with "invalid height: 7; expected: 6".
 assumption = The ProcessBlock height failure lies in the test's block sequencing after the upgrade, not in the plan or the fixture, and was not changed.
 [finding.fixture-v6120-h2-call-return]
-revision = 2e56493cb
-command = go test ./node/ -run TestV6120AppliesThePlanOnTheHaltExport -count=1
-exit = 1
-log = fleet/logs/fixture-processblock-height.log
-observed = The "invalid height: 7; expected: 6" failure was the test driving H+2 without committing block H+1; with H+1 committed and H+2 finalized through FinalizeBlock as a node does, the getActiveMarketIds() transaction to 0x1015 at H+2 succeeds with code 0 but returns no data, while the same call by StaticCallEVM returns 640 bytes.
-assumption = The block path at H+2 does not reach the perps executor at 0x1015 although the static call does; neither the node nor the assertion was changed.
+revision = 3f1f4454d
+command = read-only diagnosis, no gate run
+exit = 0
+log = fleet/logs/fixture-h2-call-return.log
+observed = The node carries return data in transaction results (modules/evm/keeper/msg_server.go:194, node/app.go:2573); the empty result comes from height gating: the fixture chain runs at initial_height 6, so H+2 is 7, gigaCustomPrecompiles (node/app.go:2625) returns the set below gigaLatePrecompileHeight 26300000, which lacks 0x1015 (engine/executor/precompiles/failfast.go:116-117), and the giga executor runs the call against an account with no code, succeeding with no return data, while the ordinary path the static call uses serves the perps executor.
+assumption = The node matches acceptance 1.4.2 ac_6, which keys the giga hand-off on gigaLatePrecompileHeight, and at mainnet H+2 the late set applies; the test is not right until either the fixture runs at the mainnet heights (initial_height H+1 and the mainnet done heights) or the giga hand-off also follows the v6.12.0 done height for chains that apply the plan below 26300000, which needs a ruling, and nothing was changed.
 [finding.spec-lint-tool-hang]
 revision = "c78681cb6"
 command = "cg spec lint"
