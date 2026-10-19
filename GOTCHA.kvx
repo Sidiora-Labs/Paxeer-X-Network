@@ -8296,3 +8296,8 @@ fix = "SidioraERC20 calls pool.opticalAddress() on each transfer once bound and 
 area = "layout moves"
 symptom = "layout-check.sh reads text lexically, so a path that resolves from another directory (a corpus path after cd programs, an unanchored ignore pattern, a $name/ shell expansion) reads as a root-anchored reference to a moved directory and fails the gate although nothing was left behind"
 fix = "write each such line so it says what it means: a root-anchored $(CURDIR)/... path, a leading-slash ignore pattern at the new location, ${name}/ for a variable; never relax the script"
+
+[gotcha.1745]
+area = "api alignment"
+symptom = "a crate downstream of an API type change kept reading a removed field (layerx-mcp read TrackedSubmission.verification_level after it became rung) and nothing in the per-task gate built it, so make agent-build failed on main"
+fix = "the workspace build is the gate for API type changes: build every crate that depends on the changed type, not only the crate that owns it"

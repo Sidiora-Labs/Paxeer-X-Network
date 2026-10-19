@@ -24,6 +24,7 @@ use layerx_mcp::tools::write::{
 };
 use layerx_types::ids::Did;
 use layerx_types::result::ResultCode;
+use layerx_types::rung::Rung;
 use layerx_types::verify::VerificationLevel;
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -120,7 +121,7 @@ fn server(root: &std::path::Path) -> (Server, SessionControl, TenantId) {
     (server, control, bound_tenant)
 }
 
-fn submission(state: SubmissionState, level: Level) -> TrackedSubmission {
+fn submission(state: SubmissionState, rung: Rung) -> TrackedSubmission {
     TrackedSubmission {
         submission_ref: SubmissionRef::new("submission-1")
             .unwrap_or_else(|error| panic!("submission ref: {error:?}")),
@@ -129,7 +130,7 @@ fn submission(state: SubmissionState, level: Level) -> TrackedSubmission {
             kind: "receipt".to_owned(),
             digest: [4; 32],
         }],
-        verification_level: level,
+        rung,
         transitions: Vec::new(),
     }
 }
@@ -180,7 +181,7 @@ fn unknown_is_never_reported_as_success_and_late_receipt_resolves_through_track(
         b"validated-request".to_vec(),
         |_| WriteTranscript {
             stages: ORDINARY_WRITE_STAGES.to_vec(),
-            submission: Ok(submission(SubmissionState::Unknown, Level::SequencerSigned)),
+            submission: Ok(submission(SubmissionState::Unknown, Rung::Receipted)),
             receipt: None,
         },
         4_000,
@@ -202,7 +203,7 @@ fn unknown_is_never_reported_as_success_and_late_receipt_resolves_through_track(
                     receipt_ref: ReceiptRef::new("receipt-1")
                         .unwrap_or_else(|error| panic!("receipt ref: {error:?}")),
                 },
-                Level::BatchIncluded,
+                Rung::Receipted,
             )),
             receipt: Some(receipt()),
         },
@@ -229,7 +230,7 @@ fn terminal_protocol_rejection_names_track_stage_and_exact_result_code() {
                 SubmissionState::Failed {
                     result: result_code,
                 },
-                Level::SequencerSigned,
+                Rung::Receipted,
             )),
             receipt: None,
         },
@@ -261,7 +262,7 @@ fn executed_without_matching_verified_receipt_is_never_success() {
                     receipt_ref: ReceiptRef::new("receipt-1")
                         .unwrap_or_else(|error| panic!("receipt ref: {error:?}")),
                 },
-                Level::BatchIncluded,
+                Rung::Receipted,
             )),
             receipt: None,
         },
@@ -271,6 +272,40 @@ fn executed_without_matching_verified_receipt_is_never_success() {
         result,
         Err(WriteToolError::SuccessWithoutVerifiedReceipt)
     ));
+
+    for (rung, level) in [
+        (Rung::Receipted, Level::Unverified),
+        (Rung::Submitted, Level::Unverified),
+        (Rung::Submitted, Level::BatchIncluded),
+        (Rung::Committed, Level::BatchIncluded),
+        (Rung::Receipted, Level::CheckpointFinalised),
+        (Rung::Receipted, Level::SettlementAnchored),
+    ] {
+        let result = execute(
+            &mut server,
+            50,
+            b"validated-request".to_vec(),
+            |_| WriteTranscript {
+                stages: ORDINARY_WRITE_STAGES.to_vec(),
+                submission: Ok(submission(
+                    SubmissionState::Executed {
+                        receipt_ref: ReceiptRef::new("receipt-1")
+                            .unwrap_or_else(|error| panic!("receipt ref: {error:?}")),
+                    },
+                    rung,
+                )),
+                receipt: Some(VerifiedReceipt {
+                    verification_level: level,
+                    ..receipt()
+                }),
+            },
+            0,
+        );
+        assert!(
+            matches!(result, Err(WriteToolError::SuccessWithoutVerifiedReceipt)),
+            "{rung:?} with {level:?}: {result:?}"
+        );
+    }
     let _ = fs::remove_dir_all(root);
 }
 
@@ -290,7 +325,7 @@ fn closed_session_refuses_submit_and_track_with_a_typed_revocation_before_any_tr
             executed = true;
             WriteTranscript {
                 stages: ORDINARY_WRITE_STAGES.to_vec(),
-                submission: Ok(submission(SubmissionState::Unknown, Level::SequencerSigned)),
+                submission: Ok(submission(SubmissionState::Unknown, Rung::Receipted)),
                 receipt: None,
             }
         },
@@ -313,7 +348,7 @@ fn closed_session_refuses_submit_and_track_with_a_typed_revocation_before_any_tr
                         receipt_ref: ReceiptRef::new("receipt-1")
                             .unwrap_or_else(|error| panic!("receipt ref: {error:?}")),
                     },
-                    Level::BatchIncluded,
+                    Rung::Receipted,
                 )),
                 receipt: Some(receipt()),
             }
@@ -383,7 +418,7 @@ fn incomplete_success_transcripts_never_become_executed() {
                         receipt_ref: ReceiptRef::new("receipt-1")
                             .unwrap_or_else(|error| panic!("receipt ref: {error:?}")),
                     },
-                    Level::SequencerSigned,
+                    Rung::Receipted,
                 )),
                 receipt: None,
             },
