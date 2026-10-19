@@ -3,9 +3,9 @@ package app
 import (
 	"testing"
 
-	spotkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/keeper"
 	perpsprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/perps"
 	pricefeedprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pricefeed"
+	spotprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/spot"
 	putils "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +19,7 @@ func TestPrecompileKeepersV6120Accessors(t *testing.T) {
 	require.NotNil(t, perps.PerpsK())
 	require.Same(t, a.PerpsKeeper, perps.PerpsK())
 
-	spot, ok := keepers.(interface{ SpotK() *spotkeeper.Keeper })
+	spot, ok := keepers.(spotprecompile.SpotKeepers)
 	require.True(t, ok)
 	require.NotNil(t, spot.SpotK())
 	require.Same(t, a.SpotKeeper, spot.SpotK())

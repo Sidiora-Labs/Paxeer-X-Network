@@ -12,6 +12,9 @@ import (
 	spotkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/keeper"
 	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
 	xwebkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/keeper"
+	perpsprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/perps"
+	pricefeedprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pricefeed"
+	spotprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/spot"
 	putils "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	bankkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
@@ -142,3 +145,6 @@ func (pk *PrecompileKeepers) PriceFeedK() *pricefeedkeeper.Keeper {
 
 var _ putils.XWebKeepers = (*PrecompileKeepers)(nil)
 var _ putils.PriceFeedKeepers = (*PrecompileKeepers)(nil)
+var _ perpsprecompile.PerpsKeepers = (*PrecompileKeepers)(nil)
+var _ spotprecompile.SpotKeepers = (*PrecompileKeepers)(nil)
+var _ pricefeedprecompile.PriceFeedKeepers = (*PrecompileKeepers)(nil)
