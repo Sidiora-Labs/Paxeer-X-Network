@@ -2044,3 +2044,19 @@ exit = 0
 log = fleet/logs/release-1.2.3-fix-verify.log
 observed = Resolved: the generator now replays every golden getter, refusal and the USDL supply and holder balances at H and H+1 inside its fetch loop, adding 22 codes and 4641 storage words as a strict superset (USDL gains its total supply word, pool tokens 4782 to 8950 words); 71 replayed calls still differ from the golden at H with every read key present, most likely the getters that depend on the block time of the seeded context rather than a missing slot.
 assumption = The parity tests of 2.2.18 and 2.2.19 decide the 71 calls per getter; the regenerated absent-key list is committed so a rerun needs no RPC.
+
+[finding.1.3.102-verified]
+revision = 9c8b9ee74618251e1d3128572c7808322b03e9f5
+command = go test ./node/ -run 'TestV6120StoreUpgradesAddOnlyTheNewModules|TestV6120RefusesUnmountedStores'
+exit = 0
+log = fleet/logs/release-1.3.102.log
+observed = Resolved: the node test binary compiles again and both store upgrade tests pass on the implementation already on main; the native libraries link from programs/target/release.
+assumption = The earlier finding.1.3.102 is superseded.
+
+[finding.1.3.103-verified]
+revision = b5e463c65bcea5b443e98ae5c905fbb37ab5aad5
+command = go build ./node/...
+exit = 0
+log = fleet/logs/release-1.3.103-verify.log
+observed = The end block already calls the perps and spot end-blockers behind the live flag as wired by the baseline task, and the node builds; the layerx-merge task that also edits the end block is still pending and rebases on this.
+assumption = The pay epoch hooks task lands after this wiring.
