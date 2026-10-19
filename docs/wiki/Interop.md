@@ -1,15 +1,15 @@
 # Interoperability adapters
 
 Interop crates translate foreign protocols into LayerX-shaped
-evidence. They never write balances (`interop/README.md`). The
+evidence. They never write balances (`services/interop/README.md`). The
 executable edge is `layerx-interop-gateway` plus
 `layerx-interop-service`. State-changing routes must end in a
 receipt-verified LayerX operation
-(`interop/crates/layerx-interop-gateway`).
+(`services/interop/crates/layerx-interop-gateway`).
 
 Adapter registration ids in the gateway are `x402`, `ap2`, `ucp`,
 `visa-tap`, `fiat`, and `migration`. Ingress transports are `http`,
-`mcp`, and `a2a` (`interop/crates/layerx-interop-gateway/src/server.rs`).
+`mcp`, and `a2a` (`services/interop/crates/layerx-interop-gateway/src/server.rs`).
 
 Evidence policies parsed by the gateway:
 `layerx-receipt`, `verified-mandate+layerx-receipt`,
@@ -27,7 +27,7 @@ noted in the spec `reality` fields. Parent rollup tasks 22–26 remain
 ## Gateway routes
 
 `interop_gateway_routes()` in
-`interop/crates/layerx-interop-gateway/src/server.rs`:
+`services/interop/crates/layerx-interop-gateway/src/server.rs`:
 
 | Method | Path |
 | --- | --- |
@@ -64,7 +64,7 @@ required transports are `http`, `mcp`, `a2a`.
 | Visa TAP | [Visa TAP](VisaTap.md) | `layerx-visa-tap` |
 | Portable receipts | [Portable receipt verifier](PortableVerifier.md) | `layerx-portable` |
 | Fiat ramps | [Fiat ramps](FiatRamps.md) | `layerx-fiat` |
-| Market-maker ramps | [Market-maker ramps](MarketMakerRamps.md) | `platform/ramps` (not under `interop/crates`) |
+| Market-maker ramps | [Market-maker ramps](MarketMakerRamps.md) | `platform/ramps` (not under `services/interop/crates`) |
 | Ethereum and Solana mirrors | [Mirrors](Mirrors.md) | `layerx-mirror` |
 | Ethereum and Solana migration | [Migration](Migration.md) | `layerx-migrate` |
 

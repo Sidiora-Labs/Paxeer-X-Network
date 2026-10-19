@@ -35,7 +35,7 @@ export const SERVICE_PAYEE_ACCOUNT = "agent:did:layerx:conformance-seller:main";
  * Derives the payee account identifier the advertised `extra.layerx.account`
  * resolves to, using the same derivation the buyer middleware applies in
  * `accountNamesPayTo` and the interop adapter applies in
- * `interop/crates/layerx-x402/src/model.rs`. The native (`LX:ACCOUNT:v1`)
+ * `services/interop/crates/layerx-x402/src/model.rs`. The native (`LX:ACCOUNT:v1`)
  * identifier is the current one; the legacy digest is the protocol-2 form the
  * buyer still accepts.
  */

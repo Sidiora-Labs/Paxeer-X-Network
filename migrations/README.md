@@ -23,5 +23,5 @@ make test-history
 | Kind | Location |
 | --- | --- |
 | Genesis builder and import sources | `cmd/layerx-genesis/` |
-| Ethereum and Solana source-chain migration | [`interop/crates/layerx-migrate`](../interop/crates/layerx-migrate/OPERATIONS.md) |
+| Ethereum and Solana source-chain migration | [`services/interop/crates/layerx-migrate`](../services/interop/crates/layerx-migrate/OPERATIONS.md) |
 | Paxeer X chain EVM module store migrations | `modules/evm/migrations/` |

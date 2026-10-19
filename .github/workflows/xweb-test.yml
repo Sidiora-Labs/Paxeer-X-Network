@@ -3,11 +3,11 @@ name: Paxeer X / xweb Test
 on:
   pull_request:
     paths:
-      - 'interop/crates/x-websearch/**'
-      - 'interop/deploy/x-websearch/**'
-      - 'interop/crates/layerx-x402/src/**'
-      - 'interop/Cargo.toml'
-      - 'interop/Cargo.lock'
+      - 'services/interop/crates/x-websearch/**'
+      - 'services/interop/deploy/x-websearch/**'
+      - 'services/interop/crates/layerx-x402/src/**'
+      - 'services/interop/Cargo.toml'
+      - 'services/interop/Cargo.lock'
       - 'modules/xweb/**'
       - 'modules/layerxbridge/**'
       - 'precompiles/xweb/**'
@@ -43,11 +43,11 @@ on:
     branches:
       - main
     paths:
-      - 'interop/crates/x-websearch/**'
-      - 'interop/deploy/x-websearch/**'
-      - 'interop/crates/layerx-x402/src/**'
-      - 'interop/Cargo.toml'
-      - 'interop/Cargo.lock'
+      - 'services/interop/crates/x-websearch/**'
+      - 'services/interop/deploy/x-websearch/**'
+      - 'services/interop/crates/layerx-x402/src/**'
+      - 'services/interop/Cargo.toml'
+      - 'services/interop/Cargo.lock'
       - 'modules/xweb/**'
       - 'modules/layerxbridge/**'
       - 'precompiles/xweb/**'
@@ -113,7 +113,7 @@ jobs:
         run: rustup toolchain install 1.91.1 --profile minimal --no-self-update
 
       - name: Run cargo test for the x-websearch crate
-        run: cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch
+        run: cargo test --locked --manifest-path services/interop/Cargo.toml -p x-websearch
 
   module-precompile:
     name: go test for modules/xweb and precompiles/xweb

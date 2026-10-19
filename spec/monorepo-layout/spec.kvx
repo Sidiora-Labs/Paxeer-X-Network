@@ -649,7 +649,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2]
 title = "Move interop to services/interop"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 4

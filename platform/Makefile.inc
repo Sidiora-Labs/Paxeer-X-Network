@@ -167,7 +167,7 @@ platform-test-plain-listeners: $(BUILD_DIR)/bin/layerxd $(BUILD_DIR)/bin/layerx-
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-dashboard --test plain_listener
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-webhooks --test plain_listener
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-reference-ramp --test plain_listener
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh cargo test --offline --manifest-path interop/Cargo.toml --locked -p layerx-interop-service --test plain_listener
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh cargo test --offline --manifest-path services/interop/Cargo.toml --locked -p layerx-interop-service --test plain_listener
 	$(BRIDGE_PYTHON) tests/relay-archive/plain_listener.py $(BUILD_DIR)
 
 platform-test-paxeer-boundary:

@@ -891,7 +891,7 @@ class Harness:
 
     def breakpoint(self, boundary):
         if boundary == "pending-payment":
-            source = ROOT / "interop/crates/x-websearch/src/payment.rs"
+            source = ROOT / "services/interop/crates/x-websearch/src/payment.rs"
             lines = source.read_text().splitlines()
             begin = next(
                 i for i, line in enumerate(lines) if line.strip() == "fn submit("
@@ -918,7 +918,7 @@ class Harness:
         }
         filename, needle = allowed[boundary]
         require(
-            row["file"] == "interop/crates/x-websearch/src/" + filename,
+            row["file"] == "services/interop/crates/x-websearch/src/" + filename,
             "boundary source file mismatch",
         )
         lines = source.read_text().splitlines()
@@ -1676,7 +1676,7 @@ class KernelHarness:
             "ready-to-sign": "let Ok(signed) = self.submitter.sign(&observation, now_ms) else {",
             "after-submit": "let fresh = matches!(&answer, Some(RpcAnswer::Result(_)));",
         }
-        source = ROOT / "interop/crates/x-websearch/src/kernel.rs"
+        source = ROOT / "services/interop/crates/x-websearch/src/kernel.rs"
         lines = [
             i
             for i, line in enumerate(source.read_text().splitlines(), 1)
@@ -2653,7 +2653,7 @@ class ReadinessHarness:
     def stale_progress(self, service, role, dependency):
         driver = service[4]
         self.wait_ready(service, lambda roles: roles[role]["state"] == "ready", 210)
-        source = ROOT / "interop/crates/x-websearch/src/main.rs"
+        source = ROOT / "services/interop/crates/x-websearch/src/main.rs"
         function = "attest_round" if role == "evm_attestor" else "relay_round"
         lines = [
             line
@@ -2768,7 +2768,7 @@ class ReadinessHarness:
             version.returncode == 0 and b"nginx/" in version.stderr,
             "frontend tool is not nginx",
         )
-        source = ROOT / "interop/deploy/search-front/nginx.conf"
+        source = ROOT / "services/interop/deploy/search-front/nginx.conf"
         require(
             row["source_sha256"] == digest(source), "frontend source identity mismatch"
         )

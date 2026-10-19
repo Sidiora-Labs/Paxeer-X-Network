@@ -100,7 +100,7 @@ with the receipt authority ([`../authority`](../authority/README.md)). Shape:
 ```
 
 A fuller example is
-[`interop/deploy/gateway/module-registry.example.json`](../../../interop/deploy/gateway/module-registry.example.json).
+[`services/interop/deploy/gateway/module-registry.example.json`](../../../services/interop/deploy/gateway/module-registry.example.json).
 The asset shown is illustrative. `schema_version` must be 2. There must be
 1..256 assets; every asset ID is nonzero lowercase 64-digit hex and unique;
 currency and symbol hold 1..32 bytes without control characters; decimals is at

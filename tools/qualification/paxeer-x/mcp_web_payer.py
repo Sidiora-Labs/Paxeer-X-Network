@@ -29,8 +29,8 @@ CASES = ('web.search', 'web.fetch', 'web.content', 'wrong_tenant', 'wrong_sessio
 SOURCE_PATHS = ('services/agent/Cargo.toml', 'services/agent/Cargo.lock', 'services/agent/crates',
     'platform/Cargo.toml', 'platform/Cargo.lock', 'platform/cli',
     'human/crates/layerx-human-kms', 'human/wallet/attestor',
-    'interop/Cargo.toml', 'interop/Cargo.lock', 'interop/crates/x-websearch',
-    'interop/crates/layerx-x402', 'programs/crates', 'programs/sdk/rust',
+    'services/interop/Cargo.toml', 'services/interop/Cargo.lock', 'services/interop/crates/x-websearch',
+    'services/interop/crates/layerx-x402', 'programs/crates', 'programs/sdk/rust',
     'tools/qualification/paxeer-x/mcp_web_payer.py',
     'tools/qualification/paxeer-x/mcp_daemon_revocation.py',
     'tools/qualification/paxeer-x/agent_http_bounds.py',
@@ -309,7 +309,7 @@ class Corpus:
                 provenance['artifact'] == row['artifact'], 'genuine owner build provenance does not bind executable')
             build_steps(provenance['steps'], role)
             require(artifact(row['artifact']['path']) == row['artifact'], 'real owner executable changed')
-            expected = 'interop/crates/x-websearch/src/main.rs' if role == 'x-websearch' else 'human/wallet/attestor/cmd/attestor/main.go'
+            expected = 'services/interop/crates/x-websearch/src/main.rs' if role == 'x-websearch' else 'human/wallet/attestor/cmd/attestor/main.go'
             needed(expected in row['source_paths'], 'actual production owner entrypoint binding missing')
             environment = {'PATH': os.environ.get('PATH', os.defpath)}
             environment.update(self.fixture.substitute(row['environment']))

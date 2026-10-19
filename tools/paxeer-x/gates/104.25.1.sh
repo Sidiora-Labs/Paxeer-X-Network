@@ -100,7 +100,7 @@ def build(directory):
             except BlockingIOError:
                 remaining(1)
                 time.sleep(1)
-        command = ['/root/.cargo/bin/cargo', 'test', '--locked', '--manifest-path', 'interop/Cargo.toml',
+        command = ['/root/.cargo/bin/cargo', 'test', '--locked', '--manifest-path', 'services/interop/Cargo.toml',
                    '-p', 'layerx-mirror', '--lib', '--test', 'checkpoint_vectors', '--no-run', '--message-format=json']
         execute(command, directory / 'build.log', 1200)
     if source_identity() != before:
@@ -145,7 +145,7 @@ def live_evidence():
         refuse('live owner evidence schema or exit does not attest a complete run')
     if live.get('revision') != git('rev-parse', 'HEAD') or live.get('tree') != git('rev-parse', 'HEAD^{tree}'):
         refuse('live evidence belongs to a different published source')
-    expected = sorted((ROOT / 'interop/crates/layerx-mirror/src').rglob('*.rs')) + [ROOT / 'scripts/qualify-mirror-live.sh']
+    expected = sorted((ROOT / 'services/interop/crates/layerx-mirror/src').rglob('*.rs')) + [ROOT / 'scripts/qualify-mirror-live.sh']
     if live.get('source_hashes') != {str(p.relative_to(ROOT)): digest(p) for p in expected}:
         refuse('live publisher source identity differs')
     for key in ('publisher_sha256', 'fault_controller_sha256'):

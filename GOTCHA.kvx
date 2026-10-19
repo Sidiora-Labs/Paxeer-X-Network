@@ -8306,3 +8306,8 @@ fix = "the workspace build is the gate for API type changes: build every crate t
 area = "layout moves"
 symptom = "relative paths in a moved tree resolve from different bases (the file directory for include_str! and #[path], the crate for CARGO_MANIFEST_DIR joins, dist/test for compiled TypeScript tests, src/ for include_str! text a build.rs generates), so a depth rewrite keyed on the file's own directory misjudges some"
 fix = "resolve each ../ chain against every plausible base in the pre-move tree and review by hand any that disagree"
+
+[gotcha.1747]
+area = "layout moves"
+symptom = "a root path built from a variable ($REPO_ROOT/interop, root + \"/interop, a fixture tree $fx/interop that mirrors the repository) and a Path join of separate segments (ROOT / \"interop\") are preceded by a letter or are slash-less, so neither the root-anchored search nor layout-check.sh sees them and they keep the old path after a move"
+fix = "after the lexical rewrite, search for variable-prefixed and segment-joined forms of the moved name, rewrite those whose variable is the repository root or a fixture copy of it, and leave runtime directories that only share the name"

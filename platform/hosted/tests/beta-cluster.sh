@@ -32,7 +32,7 @@
 #                                       32-byte seed is the node's sequencer key, so the node, the receipt
 #                                       authority, the gateway and the registry share one sequencer identity
 #   LAYERX_BETA_MIRROR_FOUNDRY_BIN      directory holding the pinned forge and cast that
-#                                       interop/deploy/mirror/deploy-ethereum-mirror.sh needs to compile and deploy
+#                                       services/interop/deploy/mirror/deploy-ethereum-mirror.sh needs to compile and deploy
 #                                       the Ethereum mirror archive contract (default /root/.foundry/bin). Nothing
 #                                       else in the bring-up uses Foundry: custody (0x…1013) and the checkpoint
 #                                       anchor (0x…1014) are native chain modules configured in the Paxeer genesis,
@@ -60,29 +60,29 @@
 #                                       that only builds and publishes images sets its own bound here
 #                                       (default LAYERX_BETA_MIN_FREE_GIB)
 #   LAYERX_BETA_INTEROP_CONFORMANCE_X402  optional overrides of the five first-party adapter conformance
-#   LAYERX_BETA_INTEROP_CONFORMANCE_AP2   suites derived from interop/specs/conformance, whose identifier,
+#   LAYERX_BETA_INTEROP_CONFORMANCE_AP2   suites derived from services/interop/specs/conformance, whose identifier,
 #   LAYERX_BETA_INTEROP_CONFORMANCE_UCP   vector count and SHA-256 come from the very vector files the
 #   LAYERX_BETA_INTEROP_CONFORMANCE_VISA_TAP  adapter tests read, as
 #   LAYERX_BETA_INTEROP_CONFORMANCE_FIAT  '<suite-identifier>,<vector-count>,<suite-sha256>'. No upstream
 #                                       publishes a suite for UCP, Visa TAP or the fiat provider callbacks
-#                                       (interop/specs/vendor/CONFORMANCE.md), so unset means derived from
+#                                       (services/interop/specs/vendor/CONFORMANCE.md), so unset means derived from
 #                                       this checkout and a declared value pins an imported suite instead
 #   LAYERX_BETA_INTEROP_CONFORMANCE_HTTP  optional overrides of the three first-party transport binding
 #   LAYERX_BETA_INTEROP_CONFORMANCE_MCP   suites, as '<suite-sha256>'; unset derives the digest from
-#   LAYERX_BETA_INTEROP_CONFORMANCE_A2A   interop/specs/conformance/transport-<binding>, and the binding
+#   LAYERX_BETA_INTEROP_CONFORMANCE_A2A   services/interop/specs/conformance/transport-<binding>, and the binding
 #                                       version and specification digest are derived from
-#                                       interop/specs/vendor/x402/transports
+#                                       services/interop/specs/vendor/x402/transports
 #   LAYERX_BETA_INTEROP_AP2_KEYS        optional JSON counterparty trust roots that pin real external
 #   LAYERX_BETA_INTEROP_AP2_ASSETS      counterparties: the AP2 mandate issuer keys and asset bindings, the
 #   LAYERX_BETA_INTEROP_VISA_AGENTS     Visa TAP agent registry keys and merchant targets, and the fiat
 #   LAYERX_BETA_INTEROP_VISA_TARGETS    provider callback keys. Unset, the bring-up generates them for this
 #   LAYERX_BETA_INTEROP_FIAT_PROVIDERS  testnet's own test clients and names them layerx-beta-*
-#                                       (interop/deploy/gateway/README.md)
+#                                       (services/interop/deploy/gateway/README.md)
 #   LAYERX_BETA_INTEROP_X402_SUPPORTED  optional overrides of the two in-cluster trust roots, which default
 #   LAYERX_BETA_INTEROP_UCP_PAYMENT_HANDLER  to this cluster's own facilitator declaration and the UCP
 #                                       payment handler of the vendored UCP revision
 #   LAYERX_BETA_INTEROP_MANIFEST_FILE   optional interop gateway manifest that overrides any rendered field
-#                                       (interop/deploy/gateway/README.md)
+#                                       (services/interop/deploy/gateway/README.md)
 #   LAYERX_BETA_TESTNET_PORT            host ports of the testnet, gateway and faucet port-forwards
 #   LAYERX_BETA_GATEWAY_PORT            (defaults 19443, 19444, 19445)
 #   LAYERX_BETA_FAUCET_PORT
@@ -144,7 +144,7 @@
 # when none of them is, recording the Solana inputs as a missing owner input. The publisher and its signer
 # are containers of the layerx-node pod, so they reach the node LNI socket and the signer socket over pod
 # volumes and need no host paths. The publisher keys live in the layerx-mirror-signer Secret this script
-# generates and are served by interop/crates/layerx-mirror-signer under the fixed handles
+# generates and are served by services/interop/crates/layerx-mirror-signer under the fixed handles
 # mirror/ethereum/beta and mirror/solana/beta, so no owner-operated signer service is involved.
 #
 # Solana mirror inputs (optional as a group: set all of them to mirror to Solana, none to mirror to the EVM
@@ -719,7 +719,7 @@ ca_generate() {
 
 interop_beta_roots_generate() {
     # The interop counterparties of a private testnet are its own test clients, so the bring-up
-    # generates their trust roots and interop/deploy/gateway/render.py renders the public halves
+    # generates their trust roots and services/interop/deploy/gateway/render.py renders the public halves
     # under layerx-beta-* names; LAYERX_BETA_INTEROP_{AP2_KEYS,AP2_ASSETS,VISA_AGENTS,VISA_TARGETS,
     # FIAT_PROVIDERS} pin real external counterparties instead.
     local d=$1 use_case decimals currency port audience principal expires
@@ -2623,7 +2623,7 @@ mirror_publish() {
             solana_record=$LAYERX_BETA_MIRROR_SOLANA_DEPLOYMENT_FILE
         else
             [ -n "${LAYERX_BETA_MIRROR_SOLANA_TOOLCHAIN_BIN:-}" ] \
-                || fail "LAYERX_BETA_MIRROR_SOLANA_TOOLCHAIN_BIN is unset; it must hold the pinned solana, solana-keygen and cargo-build-sbf so interop/deploy/mirror/deploy-solana-mirror.sh can build and deploy the solana-mirror program, or set LAYERX_BETA_MIRROR_SOLANA_DEPLOYMENT_FILE to a record produced elsewhere"
+                || fail "LAYERX_BETA_MIRROR_SOLANA_TOOLCHAIN_BIN is unset; it must hold the pinned solana, solana-keygen and cargo-build-sbf so services/interop/deploy/mirror/deploy-solana-mirror.sh can build and deploy the solana-mirror program, or set LAYERX_BETA_MIRROR_SOLANA_DEPLOYMENT_FILE to a record produced elsewhere"
             solana_deploy_url=${LAYERX_BETA_MIRROR_SOLANA_DEPLOY_RPC_URL:-$LAYERX_BETA_MIRROR_SOLANA_RPC_URL}
             solana_record="$dir/solana-deployment.json"
             log "mirror: deploying the solana-mirror program through $solana_deploy_url"
@@ -2631,7 +2631,7 @@ mirror_publish() {
                 LAYERX_SOLANA_MIRROR_KEYPAIR_FILE="$LAYERX_BETA_MIRROR_SOLANA_KEYPAIR_FILE" \
                 LAYERX_SOLANA_MIRROR_DEPLOYMENT_RECORD="$solana_record" \
                 LAYERX_SOLANA_MIRROR_TOOLCHAIN_BIN="$LAYERX_BETA_MIRROR_SOLANA_TOOLCHAIN_BIN" \
-                bash "$REPO_ROOT/interop/deploy/mirror/deploy-solana-mirror.sh" \
+                bash "$REPO_ROOT/services/interop/deploy/mirror/deploy-solana-mirror.sh" \
                 > "$LOG_DIR/mirror-solana-deploy.log" 2>&1; then
                 tail -n 40 "$LOG_DIR/mirror-solana-deploy.log" >&2
                 fail "the solana-mirror program could not be deployed (log $LOG_DIR/mirror-solana-deploy.log)"
@@ -2642,7 +2642,7 @@ mirror_publish() {
             upgradeable_loader_id program_elf_sha256 deployment_signature rooted_slot; do
             jq -er --arg field "$field" 'has($field) and (.[$field] | tostring | length > 0)' \
                 "$solana_record" > /dev/null \
-                || fail "the Solana deployment record $solana_record records no $field; interop/deploy/mirror/solana-deployment.json lists every required post-deploy record"
+                || fail "the Solana deployment record $solana_record records no $field; services/interop/deploy/mirror/solana-deployment.json lists every required post-deploy record"
         done
         solana_genesis=$(jq -r '.genesis_hash' "$solana_record")
         solana_program=$(jq -r '.program_id' "$solana_record")
@@ -2710,7 +2710,7 @@ mirror_publish() {
         LAYERX_MIRROR_PUBLISHER_ADDRESS="$publisher_address" \
         LAYERX_MIRROR_DEPLOYMENT_RECORD="$dir/ethereum-deployment.json" \
         LAYERX_MIRROR_FOUNDRY_BIN="$MIRROR_FOUNDRY_BIN" \
-        bash "$REPO_ROOT/interop/deploy/mirror/deploy-ethereum-mirror.sh" > "$LOG_DIR/mirror-deploy.log" 2>&1; then
+        bash "$REPO_ROOT/services/interop/deploy/mirror/deploy-ethereum-mirror.sh" > "$LOG_DIR/mirror-deploy.log" 2>&1; then
         tail -n 40 "$LOG_DIR/mirror-deploy.log" >&2
         fail "the Ethereum mirror archive contract could not be deployed (log $LOG_DIR/mirror-deploy.log)"
     fi
@@ -2746,7 +2746,7 @@ mirror_publish() {
             --solana-signer-socket "$MIRROR_SIGNER_SOCKET"
         )
     fi
-    python3 "$REPO_ROOT/interop/deploy/mirror/render-config.py" \
+    python3 "$REPO_ROOT/services/interop/deploy/mirror/render-config.py" \
         --output "$dir/config.json" \
         --state-directory /var/lib/layerx-mirror \
         --first-batch-number 1 \
@@ -2995,8 +2995,8 @@ port_forwards_stop() {
 interop_inputs_require() {
     local manifest=${LAYERX_BETA_INTEROP_MANIFEST_FILE:-}
     [ -z "$manifest" ] || [ -r "$manifest" ] || fail "LAYERX_BETA_INTEROP_MANIFEST_FILE=$manifest is not readable"
-    python3 "$REPO_ROOT/interop/deploy/gateway/render.py" --check \
-        || fail "the interop gateway configuration lacks deployment inputs named above; interop/deploy/gateway/README.md documents each variable"
+    python3 "$REPO_ROOT/services/interop/deploy/gateway/render.py" --check \
+        || fail "the interop gateway configuration lacks deployment inputs named above; services/interop/deploy/gateway/README.md documents each variable"
 }
 
 interop_runtime_render() {
@@ -3007,7 +3007,7 @@ interop_runtime_render() {
     [ -n "$network" ] || fail "the interop deployment does not declare LAYERX_INTEROP_NETWORK_ID"
     [ -r "$SECRETS_DIR/interop-beta-roots.json" ] \
         || fail "the generated interop beta trust roots are missing; the bring-up generates them in secrets_generate"
-    python3 "$REPO_ROOT/interop/deploy/gateway/render.py" --network-id "$network" \
+    python3 "$REPO_ROOT/services/interop/deploy/gateway/render.py" --network-id "$network" \
         --sequencer-public-key-file "$SECRETS_DIR/sequencer-public-key" \
         --beta-roots-file "$SECRETS_DIR/interop-beta-roots.json" \
         --out "$SECRETS_DIR/interop-config.json" \

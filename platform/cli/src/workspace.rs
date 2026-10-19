@@ -595,7 +595,7 @@ const PROGRAMS_TEST: &[Step] = &[Step::command(
 const INTEROP_INSTALL: &[Step] = &[Step::command(
     "Fetch the locked interop workspace crates",
     "cargo",
-    &["fetch", "--manifest-path", "interop/Cargo.toml", "--locked"],
+    &["fetch", "--manifest-path", "services/interop/Cargo.toml", "--locked"],
     ".",
     &["cargo"],
 )];

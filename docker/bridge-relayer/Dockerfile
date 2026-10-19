@@ -7,8 +7,8 @@ ENV CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=/src/.lane-target
 ENV PATH=/usr/local/rustup/toolchains/1.91.1-x86_64-unknown-linux-gnu/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV RUSTC=/usr/local/rustup/toolchains/1.91.1-x86_64-unknown-linux-gnu/bin/rustc
 COPY . .
-RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package layerx-bridge-relayer --bin layerx-bridge-relayer --bin layerx-bridge-cosign
-RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package layerx-mirror-signer --bin layerx-mirror-signer
+RUN cargo build --locked --manifest-path services/interop/Cargo.toml --release --package layerx-bridge-relayer --bin layerx-bridge-relayer --bin layerx-bridge-cosign
+RUN cargo build --locked --manifest-path services/interop/Cargo.toml --release --package layerx-mirror-signer --bin layerx-mirror-signer
 
 FROM debian@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 RUN apt-get update \
@@ -26,6 +26,6 @@ RUN apt-get update \
 COPY --from=build /src/.lane-target/release/layerx-bridge-relayer /usr/local/bin/layerx-bridge-relayer
 COPY --from=build /src/.lane-target/release/layerx-bridge-cosign /usr/local/bin/layerx-bridge-cosign
 COPY --from=build /src/.lane-target/release/layerx-mirror-signer /usr/local/bin/layerx-mirror-signer
-COPY interop/deploy/bridge-relayer/signer-keys.json /etc/layerx/bridge-signer/keys.json
+COPY services/interop/deploy/bridge-relayer/signer-keys.json /etc/layerx/bridge-signer/keys.json
 COPY docker/bridge-relayer/entrypoint.sh /usr/local/bin/bridge-relayer-entrypoint
 ENTRYPOINT ["/usr/local/bin/bridge-relayer-entrypoint"]

@@ -235,7 +235,7 @@ class Sidecar:
             "broadcast": ("submit.rs", "Ok(Outcome::Sent { hash: signed.hash })"),
         }
         name, needle = boundaries[stage]
-        path = ROOT / "interop/crates/x-websearch/src" / name
+        path = ROOT / "services/interop/crates/x-websearch/src" / name
         source = path.read_text()
         pattern = r"\s*".join(re.escape(character) for character in "".join(needle.split()))
         matches = list(re.finditer(r"(?m)^[ \t]*(?P<statement>" + pattern + r")[ \t]*$", source))

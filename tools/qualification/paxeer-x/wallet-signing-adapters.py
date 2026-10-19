@@ -72,14 +72,14 @@ def main():
     for relative in ('human/wallet/gateway/src', 'human/wallet/gateway/dist', 'human/wallet/gateway/migrations',
                      'human/wallet/sdk/src', 'human/wallet/sdk/dist',
                      'services/agent/sdk/typescript/src', 'services/agent/sdk/typescript/dist',
-                     'interop/crates/layerx-gas-station/src'):
+                     'services/interop/crates/layerx-gas-station/src'):
         expected.update(str(path.relative_to(ROOT)) for path in (ROOT / relative).rglob('*') if path.is_file())
     expected.update(str(path.relative_to(ROOT)) for path in (ROOT / 'human/wallet/attestor').rglob('*.go'))
     expected.update(('human/wallet/attestor/go.mod', 'human/wallet/attestor/go.sum',
                      'human/apps/wallet/src/account/DepositFlow.tsx',
                      'human/wallet/gateway/test/e2e/wallet-signing-adapters.production.ts',
                      'human/wallet/gateway/package.json', 'human/wallet/sdk/package.json',
-                     'services/agent/sdk/typescript/package.json', 'interop/crates/layerx-gas-station/Cargo.toml'))
+                     'services/agent/sdk/typescript/package.json', 'services/interop/crates/layerx-gas-station/Cargo.toml'))
     require(expected and set(manifest) == expected, 'complete current source and prebuilt artifact manifest required')
     for relative, digest in manifest.items():
         require(not any(part == '.env' or part.startswith('.env.') for part in Path(relative).parts), 'credential files are not source artifacts')

@@ -17,7 +17,7 @@ LayerX is under active development and release qualification. The public network
 | **Chain directories at the repository root (`daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, ...)** | Paxeer Network itself: `paxd`, EVM execution, JSON-RPC, chain modules, Docker, node distribution |
 | [`spec/`](../spec/) | Normative LayerX specifications (KVX first) |
 
-`402LXP` remains the only LayerX balance writer. There is no LayerX token. Paxeer is the custody domain; Ethereum and Solana mirrors in `interop/` are archives, not settlement venues.
+`402LXP` remains the only LayerX balance writer. There is no LayerX token. Paxeer is the custody domain; Ethereum and Solana mirrors in `services/interop/` are archives, not settlement venues.
 
 The Cosmos-style chain identifier used by node distribution is `hyperpax_125-1` (EVM chain ID `125`). See [`hpx/`](../hpx/).
 

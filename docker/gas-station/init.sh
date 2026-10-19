@@ -1,6 +1,6 @@
 #!/bin/bash
 # Init of the gas-station service on Railway
-# (interop/deploy/gas-station/railway.env.example). Runs as root in the
+# (services/interop/deploy/gas-station/railway.env.example). Runs as root in the
 # container: renders the station configuration and the rate publisher
 # configuration from the service's env and secrets onto the volume, hands the
 # journal directory to uid 4020 and runs both processes of the container under

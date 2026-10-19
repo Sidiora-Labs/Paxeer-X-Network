@@ -58,7 +58,7 @@ static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
 
 fn fixture(name: &str) -> Value {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../../interop/crates/x-websearch/tests/fixtures")
+        .join("../../../../services/interop/crates/x-websearch/tests/fixtures")
         .join(name);
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("fixture {}: {error}", path.display()));

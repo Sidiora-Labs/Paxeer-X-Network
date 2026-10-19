@@ -1528,7 +1528,7 @@ kill -TERM -- "-$kernel_init_pgid" 2>/dev/null || true
 # real cast keystore as the check account; the curl stand-in answers the
 # chain name's /quote and /submit and the router's JSON-RPC from the files of
 # CHECK_LIVE_TEST_GAS, and keeps each request the station received.
-gas="$(fx_app interop/deploy/gas-station/fly.toml)"
+gas="$(fx_app services/interop/deploy/gas-station/fly.toml)"
 gas_sid=0x21f7b20a555199fa73A238B1a91FD0f549068fEe
 gas_paymaster=0x1234567890abcdef1234567890abcdef12345678
 gas_sponsor=0x5ce0000000000000000000000000000000000001
@@ -1549,8 +1549,8 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_gas_toml_absent "$work/h
 	"fail gas toml=absent" \
 	"check-live: 1 check(s) failed"
 
-mkdir -p "$fx/interop/deploy/gas-station" "$work/fly/$gas/app/data/gas-station"
-printf 'app = "%s"\n' "$gas" >"$fx/interop/deploy/gas-station/fly.toml"
+mkdir -p "$fx/services/interop/deploy/gas-station" "$work/fly/$gas/app/data/gas-station"
+printf 'app = "%s"\n' "$gas" >"$fx/services/interop/deploy/gas-station/fly.toml"
 printf '{"listen":"[::]:8080","chain_id":125,"endpoints":["https://api-mainnet-beta.paxeer.network/rpc","https://api4.mainnet-beta.paxeer.network","https://api5.mainnet-beta.paxeer.network"],"paymaster":"%s","token":"%s","decimals":6,"gas_limit":200000,"max_priority_fee_per_gas":1000000000,"max_rate_age":300}\n' \
 	"$gas_paymaster" "$gas_sid" >"$work/fly/$gas/app/data/gas-station/station.json"
 export CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[{"volume":"vol_fixture"}]}}]'
@@ -1746,12 +1746,12 @@ unset CHECK_LIVE_ROUTER_CONNECT
 # stand in for the two running processes on each of the five relayer apps,
 # and each relayer's volume holds its own journal.
 bridges=()
-mkdir -p "$fx/interop/deploy/bridge-relayer" "$fx/bridge/deploy" "$fx/bridge/evm/chains/base" "$fx/bridge/solana/chains/solana" \
+mkdir -p "$fx/services/interop/deploy/bridge-relayer" "$fx/bridge/deploy" "$fx/bridge/evm/chains/base" "$fx/bridge/solana/chains/solana" \
 	"$work/bridge/records" "$work/bridge/bin"
 for n in 1 2 3 4 5; do
-	bridges+=("$(fx_app "interop/deploy/bridge-relayer/relayer-$n.toml")")
+	bridges+=("$(fx_app "services/interop/deploy/bridge-relayer/relayer-$n.toml")")
 	mkdir -p "$work/fly/${bridges[-1]}/app/data/relayer"
-	printf 'app = "%s"\n' "${bridges[-1]}" >"$fx/interop/deploy/bridge-relayer/relayer-$n.toml"
+	printf 'app = "%s"\n' "${bridges[-1]}" >"$fx/services/interop/deploy/bridge-relayer/relayer-$n.toml"
 done
 bridge="${bridges[0]}"
 bridge_none=()
@@ -3020,10 +3020,10 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_registry_plan_toml_line_
 # and a fixture Makefile whose three conformance targets exit with the code in
 # their leg file; the sandbox target also wants both bearer tokens in its
 # environment exactly as their files hold them.
-mkdir -p "$work/adapters" "$fx/interop/deploy/gateway" "$fx/interop/specs/conformance"
-cp "$root/interop/deploy/gateway/render.py" "$fx/interop/deploy/gateway/"
-cp -r "$root/interop/specs/conformance/ap2" "$root/interop/specs/conformance/visa-tap" \
-	"$root/interop/specs/conformance/fiat" "$fx/interop/specs/conformance/"
+mkdir -p "$work/adapters" "$fx/services/interop/deploy/gateway" "$fx/services/interop/specs/conformance"
+cp "$root/services/interop/deploy/gateway/render.py" "$fx/services/interop/deploy/gateway/"
+cp -r "$root/services/interop/specs/conformance/ap2" "$root/services/interop/specs/conformance/visa-tap" \
+	"$root/services/interop/specs/conformance/fiat" "$fx/services/interop/specs/conformance/"
 cat >"$fx/Makefile" <<'MK'
 interop-test-mandates interop-test-visa-tap:
 	@exit $$(cat $(CHECK_LIVE_TEST_LEGS)/$@)
@@ -3040,7 +3040,7 @@ printf '%s' "$adapters_operator" >"$work/adapters/operator"
 python3 - "$root" >"$work/adapters/doc.json" <<'PY'
 import importlib.util, json, pathlib, sys
 
-spec = importlib.util.spec_from_file_location("render", sys.argv[1] + "/interop/deploy/gateway/render.py")
+spec = importlib.util.spec_from_file_location("render", sys.argv[1] + "/services/interop/deploy/gateway/render.py")
 render = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(render)
 adapters = []
@@ -3205,13 +3205,13 @@ export CHECK_LIVE_TEST_FLY="$fly"
 # host unit count with CHECK_LIVE_TEST_XWEB_UNITS and the attestor listener
 # count with CHECK_LIVE_TEST_XWEB_LISTENERS for the up-* destinations, so the
 # validators cases see every remote port unreachable and exit 1.
-mkdir -p "$fx/interop/deploy/x-websearch"
+mkdir -p "$fx/services/interop/deploy/x-websearch"
 for n in 1 2 3 4; do
-	printf 'app = "%s"\n' "$(fx_app "interop/deploy/x-websearch/attestor-$n.toml")" >"$fx/interop/deploy/x-websearch/attestor-$n.toml"
+	printf 'app = "%s"\n' "$(fx_app "services/interop/deploy/x-websearch/attestor-$n.toml")" >"$fx/services/interop/deploy/x-websearch/attestor-$n.toml"
 done
-xweb1="$(fx_app interop/deploy/x-websearch/attestor-1.toml)"
-xweb2="$(fx_app interop/deploy/x-websearch/attestor-2.toml)"
-xweb4="$(fx_app interop/deploy/x-websearch/attestor-4.toml)"
+xweb1="$(fx_app services/interop/deploy/x-websearch/attestor-1.toml)"
+xweb2="$(fx_app services/interop/deploy/x-websearch/attestor-2.toml)"
+xweb4="$(fx_app services/interop/deploy/x-websearch/attestor-4.toml)"
 mkdir -p "$work/xweb-bin"
 cat >"$work/xweb-bin/socat" <<'SH'
 #!/usr/bin/env bash
@@ -3257,7 +3257,7 @@ xweb_machine='[{"state":"started","region":"ams","config":{"mounts":[{"volume":"
 sed 's/^VALIDATOR_HOSTS=.*/VALIDATOR_HOSTS="down-validator-a"/' "$work/hosts-good.env" >"$work/hosts-xweb-down.env"
 
 for n in 1 2 3 4; do
-	keys="$fly/$(fx_app "interop/deploy/x-websearch/attestor-$n.toml")/app/data/keys"
+	keys="$fly/$(fx_app "services/interop/deploy/x-websearch/attestor-$n.toml")/app/data/keys"
 	mkdir -p "$keys"
 	for role in attestor submitter receiver; do
 		(umask 077 && openssl rand -hex 32 >"$keys/$role.key")
@@ -3281,7 +3281,7 @@ CHECK_LIVE_TEST_XWEB_DOWN="8480 8493" CHECK_LIVE_TEST_XWEB_UNITS=2 CHECK_LIVE_TE
 	"fail machines app=$xweb1 machines=1 started=0 volumes=0" \
 	"fail public-ips app=$xweb1 count=1" \
 	"fail health app=$xweb1 http=none" \
-	"fail hop app=$xweb1 peer=$(fx_app interop/deploy/x-websearch/attestor-3.toml) port=8493 http=none" \
+	"fail hop app=$xweb1 peer=$(fx_app services/interop/deploy/x-websearch/attestor-3.toml) port=8493 http=none" \
 	"pass hop app=$xweb1 peer=$xweb2 port=8492 http=200" \
 	"fail VALIDATOR_HOSTS[0] x-websearch-units=2" \
 	"check-live: 17 check(s) failed"
@@ -3301,13 +3301,13 @@ cp -p "$xweb2_keys/submitter.key" "$xweb2_keys/attestor.key"
 mv "$work/xweb2-submitter.key" "$xweb2_keys/submitter.key"
 chmod 600 "$xweb2_keys/receiver.key"
 
-mv "$fx/interop/deploy/x-websearch/attestor-2.toml" "$work/attestor-2.toml"
+mv "$fx/services/interop/deploy/x-websearch/attestor-2.toml" "$work/attestor-2.toml"
 CHECK_LIVE_TEST_MACHINES="$xweb_machine" CHECK_LIVE_TEST_IPS='[]' CHECK_LIVE_TEST_PROGRAM="$fx_checker" PATH="$work/xweb-bin:$PATH" expect check_live_xweb_attestors_missing_toml "$work/hosts-xweb-down.env" 1 xweb-attestors -- \
 	"fail attestor-2 toml=absent" \
 	"pass hop app=$xweb1 peer=attestor-2 port=8492 http=200" \
 	"fail VALIDATOR_HOSTS[0] x-websearch-units ssh=255" \
 	"check-live: 2 check(s) failed"
-mv "$work/attestor-2.toml" "$fx/interop/deploy/x-websearch/attestor-2.toml"
+mv "$work/attestor-2.toml" "$fx/services/interop/deploy/x-websearch/attestor-2.toml"
 
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" PATH="$work/xweb-bin:$PATH" expect check_live_validators_after_the_move "$work/hosts-xweb-fly.env" 1 validators -- \
 	"pass VALIDATOR_HOSTS[0] listeners-8480-8481=0" \

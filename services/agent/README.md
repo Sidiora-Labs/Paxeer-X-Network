@@ -81,7 +81,7 @@ the `agent-test-*` targets in the root `Makefile`.
 
 The MCP server is [`crates/layerx-mcp`](crates/layerx-mcp/README.md): one
 tenant, one scope set, daemon-only routing. The interop MCP/A2A transports live
-in [`interop/`](../../interop/README.md), and the `layerx install mcp`,
+in [`services/interop/`](../../services/interop/README.md), and the `layerx install mcp`,
 `layerx install a2a`, `layerx mcp serve` and `layerx a2a serve` commands live in
 [`platform/cli/`](../../platform/cli/README.md).
 

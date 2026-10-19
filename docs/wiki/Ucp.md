@@ -2,7 +2,7 @@
 
 `layerx-ucp` implements UCP revision `2026-04-08`: merchant profile,
 capability negotiation, checkout completion, and order read backed by
-verified LayerX receipts (`interop/crates/layerx-ucp/src/lib.rs`).
+verified LayerX receipts (`services/interop/crates/layerx-ucp/src/lib.rs`).
 The adapter id is `ucp`. `spec/layerx-platform/spec.kvx` task 23.2 is
 **done**.
 
@@ -22,7 +22,7 @@ The adapter id is `ucp`. `spec/layerx-platform/spec.kvx` task 23.2 is
 ## Gateway route
 
 `POST /v1/http/ucp/checkouts/complete`
-(`interop/crates/layerx-interop-gateway/src/server.rs`).
+(`services/interop/crates/layerx-interop-gateway/src/server.rs`).
 
 ---
 

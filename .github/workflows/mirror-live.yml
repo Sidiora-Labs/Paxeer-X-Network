@@ -26,11 +26,11 @@ jobs:
           printf '%s' "${MIRROR_LIVE_CONFIG}" > .live-secrets/config.json
           chmod 0600 .live-secrets/config.json
       - name: Build qualification executable
-        run: cargo build --locked --release --manifest-path interop/Cargo.toml --package layerx-mirror --bin layerx-mirror-publisher
+        run: cargo build --locked --release --manifest-path services/interop/Cargo.toml --package layerx-mirror --bin layerx-mirror-publisher
       - name: Publish and retrieve the same live archive on both chains
         env:
           LAYERX_MIRROR_LIVE_CONFIG: .live-secrets/config.json
-          LAYERX_MIRROR_PUBLISHER_BIN: interop/target/release/layerx-mirror-publisher
+          LAYERX_MIRROR_PUBLISHER_BIN: services/interop/target/release/layerx-mirror-publisher
           LAYERX_MIRROR_FAULT_CONTROLLER: /opt/layerx/bin/mirror-devnet-fault-control
         run: scripts/qualify-mirror-live.sh
       - name: Remove materialized configuration

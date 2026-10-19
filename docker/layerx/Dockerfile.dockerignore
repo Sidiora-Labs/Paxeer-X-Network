@@ -33,7 +33,7 @@ cmd
 explorer
 human
 include
-interop
+services/interop
 layerx
 layerx-network.png
 migrations
@@ -46,10 +46,10 @@ tests
 
 !services/agent/Cargo.toml
 !human/Cargo.toml
-!interop/Cargo.toml
+!services/interop/Cargo.toml
 !platform/Cargo.toml
 !programs/Cargo.toml
-!interop/Cargo.lock
+!services/interop/Cargo.lock
 !services/agent/crates/layerx-agent-api/**
 !services/agent/crates/layerx-agentd/**
 !services/agent/crates/layerx-client/**
@@ -61,20 +61,20 @@ tests
 !services/agent/crates/layerx-types/**
 !services/agent/crates/layerx-wire/**
 !human/crates/layerx-intents/**
-!interop/crates/layerx-ap2/**
-!interop/crates/layerx-bridge-relayer/**
-!interop/crates/layerx-fiat/**
-!interop/crates/layerx-gas-station/**
-!interop/crates/layerx-interop-gateway/**
-!interop/crates/layerx-interop-service/**
-!interop/crates/layerx-migrate/**
-!interop/crates/layerx-mirror-signer/**
-!interop/crates/layerx-mirror/**
-!interop/crates/layerx-portable/**
-!interop/crates/layerx-ucp/**
-!interop/crates/layerx-visa-tap/**
-!interop/crates/layerx-x402/**
-!interop/crates/x-websearch/**
+!services/interop/crates/layerx-ap2/**
+!services/interop/crates/layerx-bridge-relayer/**
+!services/interop/crates/layerx-fiat/**
+!services/interop/crates/layerx-gas-station/**
+!services/interop/crates/layerx-interop-gateway/**
+!services/interop/crates/layerx-interop-service/**
+!services/interop/crates/layerx-migrate/**
+!services/interop/crates/layerx-mirror-signer/**
+!services/interop/crates/layerx-mirror/**
+!services/interop/crates/layerx-portable/**
+!services/interop/crates/layerx-ucp/**
+!services/interop/crates/layerx-visa-tap/**
+!services/interop/crates/layerx-x402/**
+!services/interop/crates/x-websearch/**
 !platform/hosted/gateway/**
 !platform/hosted/indexer/**
 !platform/hosted/internal/**
@@ -93,7 +93,7 @@ tests
 !services/agent/deny.toml
 !services/agent/unsafe-allowlist.toml
 !contracts/config/checkpoint-settlement.json
-!interop/specs/vendor/x402/x402-specification-v2.md
+!services/interop/specs/vendor/x402/x402-specification-v2.md
 
 **/.env
 **/.env.*

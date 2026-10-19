@@ -3,7 +3,7 @@ set -euo pipefail
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 set +e
-timeout 15m cargo test --locked --manifest-path interop/Cargo.toml -p layerx-bridge-relayer --test outbound_isolation 2>&1 | tee "$log"
+timeout 15m cargo test --locked --manifest-path services/interop/Cargo.toml -p layerx-bridge-relayer --test outbound_isolation 2>&1 | tee "$log"
 result=${PIPESTATUS[0]}
 set -e
 if ((result != 0)); then exit "$result"; fi

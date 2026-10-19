@@ -5,9 +5,9 @@ RUN apt-get update \
 WORKDIR /src
 ENV CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR=/src/.lane-target
 COPY . .
-RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package layerx-mirror --bin layerx-mirror-publisher
-RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package layerx-mirror --bin layerx-mirror-verify
-RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package layerx-mirror-signer --bin layerx-mirror-signer
+RUN cargo build --locked --manifest-path services/interop/Cargo.toml --release --package layerx-mirror --bin layerx-mirror-publisher
+RUN cargo build --locked --manifest-path services/interop/Cargo.toml --release --package layerx-mirror --bin layerx-mirror-verify
+RUN cargo build --locked --manifest-path services/interop/Cargo.toml --release --package layerx-mirror-signer --bin layerx-mirror-signer
 
 FROM debian:bookworm-slim
 RUN apt-get update \

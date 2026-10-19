@@ -635,8 +635,8 @@ fn publishing_fewer_packages_than_declared_is_refused() {
 fn explicit_undeclared_package_is_refused() {
     let source = replaced(
         &committed_workflow(),
-        "cargo publish --locked --manifest-path interop/Cargo.toml -p layerx-mirror",
-        "cargo publish --locked --manifest-path interop/Cargo.toml -p layerx-ucp",
+        "cargo publish --locked --manifest-path services/interop/Cargo.toml -p layerx-mirror",
+        "cargo publish --locked --manifest-path services/interop/Cargo.toml -p layerx-ucp",
     );
     expect_workflow_refusal(
         &source,

@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - 'bridge/**'
-      - 'interop/crates/layerx-bridge-relayer/**'
+      - 'services/interop/crates/layerx-bridge-relayer/**'
       - '.github/workflows/bridge-test.yml'
   merge_group:
   push:
@@ -13,7 +13,7 @@ on:
       - release/**
     paths:
       - 'bridge/**'
-      - 'interop/crates/layerx-bridge-relayer/**'
+      - 'services/interop/crates/layerx-bridge-relayer/**'
       - '.github/workflows/bridge-test.yml'
 
 permissions:
@@ -90,7 +90,7 @@ jobs:
         run: rustup toolchain install 1.91.1 --profile minimal --no-self-update
 
       - name: Run cargo test for the layerx-bridge-relayer crate
-        run: cargo test --locked --manifest-path interop/Cargo.toml -p layerx-bridge-relayer
+        run: cargo test --locked --manifest-path services/interop/Cargo.toml -p layerx-bridge-relayer
 
   deploy-tooling:
     name: go test and the offline check scripts for bridge/deploy and bridge/vectors

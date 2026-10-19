@@ -16,8 +16,8 @@ for tail in ("accounts", "assets"):
     assert route["service"] == "interop" and route["upstream"] == "interop"
     assert route["method"] == "POST" and route["proxy"] is True
     assert route["authentication"] == "gateway-api-key" and route["retries"] == 0
-    assert route["source"] == "interop/crates/layerx-interop-service/src/server.rs"
-spec = importlib.util.spec_from_file_location("migration_renderer", root / "interop/deploy/gateway/render.py")
+    assert route["source"] == "services/interop/crates/layerx-interop-service/src/server.rs"
+spec = importlib.util.spec_from_file_location("migration_renderer", root / "services/interop/deploy/gateway/render.py")
 renderer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(renderer)
 assert renderer.migration_profile({}) is None

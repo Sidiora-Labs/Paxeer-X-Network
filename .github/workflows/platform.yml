@@ -632,10 +632,10 @@ jobs:
       - name: Package every declared crate from the locked workspaces
         run: |
           cargo package --locked --no-verify --manifest-path programs/Cargo.toml -p layerx-programs-runtime
-          cargo package --locked --no-verify --manifest-path interop/Cargo.toml -p layerx-mirror
+          cargo package --locked --no-verify --manifest-path services/interop/Cargo.toml -p layerx-mirror
           cargo package --locked --no-verify --manifest-path services/agent/Cargo.toml --workspace --exclude layerx-agentd --exclude layerx-mcp
           for package in $LAYERX_RELEASE_PACKAGES; do
-            found=$(find programs/target/package interop/target/package services/agent/target/package -maxdepth 1 -name "$package-$LAYERX_RELEASE_VERSION.crate" | head -n 1)
+            found=$(find programs/target/package services/interop/target/package services/agent/target/package -maxdepth 1 -name "$package-$LAYERX_RELEASE_VERSION.crate" | head -n 1)
             test -n "$found"
             cp "$found" "$LAYERX_RELEASE_OUTPUT/"
           done
@@ -667,7 +667,7 @@ jobs:
       - name: Generate the SBOM of every published workspace
         run: |
           syft scan dir:services/agent -o spdx-json="$LAYERX_RELEASE_OUTPUT/agent.sbom.spdx.json"
-          syft scan dir:interop/crates/layerx-mirror -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-mirror.sbom.spdx.json"
+          syft scan dir:services/interop/crates/layerx-mirror -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-mirror.sbom.spdx.json"
           syft scan dir:programs/crates/layerx-programs-runtime -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-programs-runtime.sbom.spdx.json"
       - name: Sign every crate with sigstore keyless signing
         if: startsWith(github.ref, 'refs/tags/sdk-v')
@@ -698,7 +698,7 @@ jobs:
         run: |
           test -n "$CARGO_REGISTRY_TOKEN"
           cargo publish --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime $LAYERX_RELEASE_REGISTRY_FLAG
-          cargo publish --locked --manifest-path interop/Cargo.toml -p layerx-mirror $LAYERX_RELEASE_REGISTRY_FLAG
+          cargo publish --locked --manifest-path services/interop/Cargo.toml -p layerx-mirror $LAYERX_RELEASE_REGISTRY_FLAG
           cargo publish --locked --manifest-path services/agent/Cargo.toml --workspace --exclude layerx-agentd --exclude layerx-mcp $LAYERX_RELEASE_REGISTRY_FLAG
           echo published=true >> "$LAYERX_RELEASE_OUTPUT/publication.txt"
       - name: Install every crate from the registry and verify its digest

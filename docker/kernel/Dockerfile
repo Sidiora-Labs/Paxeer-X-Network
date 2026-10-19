@@ -19,9 +19,9 @@ RUN rustup show active-toolchain \
 RUN cargo build --locked --release --manifest-path platform/Cargo.toml \
         -p layerx-platform-core -p layerx-platform-authority -p layerx-runtime-clock -p layerx-platform-agent-boundary \
         -p layerx-platform-paxeer-boundary -p layerx-oracle-feeder
-RUN CARGO_TARGET_DIR=/src/.lane-target cargo build --locked --manifest-path interop/Cargo.toml --release \
+RUN CARGO_TARGET_DIR=/src/.lane-target cargo build --locked --manifest-path services/interop/Cargo.toml --release \
         --package layerx-mirror --bin layerx-mirror-publisher --bin layerx-mirror-verify \
-    && CARGO_TARGET_DIR=/src/.lane-target cargo build --locked --manifest-path interop/Cargo.toml --release \
+    && CARGO_TARGET_DIR=/src/.lane-target cargo build --locked --manifest-path services/interop/Cargo.toml --release \
         --package layerx-mirror-signer --bin layerx-mirror-signer
 RUN cargo build --locked --release --manifest-path human/Cargo.toml -p layerx-human-service -p layerx-human-kms -p layerx-explorer-index --bins
 RUN cargo build --locked --release --manifest-path services/agent/Cargo.toml -p layerx-agentd-host --bin layerx-agentd -p layerx-mcp --bin layerx-mcp

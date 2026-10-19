@@ -110,7 +110,7 @@ FAULT_HEADER = ROOT / "include" / "layerx" / "lxp_fault.h"
 PROGRAMS_DIRECTORY = ROOT / "programs"
 AGENT_MANIFEST = ROOT / "agent" / "Cargo.toml"
 HUMAN_MANIFEST = ROOT / "human" / "Cargo.toml"
-INTEROP_MANIFEST = ROOT / "interop" / "Cargo.toml"
+INTEROP_MANIFEST = ROOT / "services" / "interop" / "Cargo.toml"
 PLATFORM_MANIFEST = ROOT / "platform" / "Cargo.toml"
 SCHEMA_CHECK_MANIFEST = ROOT / "human" / "tools" / "schema-check" / "Cargo.toml"
 
@@ -1205,7 +1205,7 @@ def interop_case(
     ctx.artifact_json(
         "compatibility",
         "compatibility.json",
-        {"case": ctx.case_id, **crate_identity(ROOT / "interop" / "crates" / crate), **compatibility},
+        {"case": ctx.case_id, **crate_identity(ROOT / "services" / "interop" / "crates" / crate), **compatibility},
     )
     ctx.artifact_log("proof", proof)
     ctx.result(
@@ -1218,7 +1218,7 @@ def pinned_conformance(ctx: CaseContext, crate: str, package: str, target: str, 
     pinned = interop_test(ctx, "pinned-spec", package, "--test", "pinned_spec")
     result = ctx.make(target)
     proof = interop_test(ctx, proof_suite, package, "--test", proof_suite)
-    vectors = sorted(path for path in (ROOT / "interop" / "crates" / crate / "tests").rglob("*") if path.is_file() and path.suffix != ".rs")
+    vectors = sorted(path for path in (ROOT / "services" / "interop" / "crates" / crate / "tests").rglob("*") if path.is_file() and path.suffix != ".rs")
     interop_case(
         ctx,
         crate=crate,
@@ -1339,7 +1339,7 @@ def mirror_verifier(ctx: CaseContext) -> Path:
         ),
         label="build-mirror-verify",
     )
-    target = Path(ctx.environment.get("CARGO_TARGET_DIR", str(ROOT / "interop" / "target")))
+    target = Path(ctx.environment.get("CARGO_TARGET_DIR", str(ROOT / "services" / "interop" / "target")))
     return ctx.require_executable(target / "release" / "layerx-mirror-verify", "layerx-mirror-verify")
 
 

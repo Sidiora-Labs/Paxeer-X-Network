@@ -135,23 +135,23 @@ Build and test:
 - npm (`human/wallet/sdk/package.json`, run in `human/wallet/sdk/`): `npm run build`, `npm run build:agent-sdk`, `npm run dev`, `npm test`, `npm run typecheck`, `npm run lint`
 - npm (`tests/integration/dapp_tests/package.json`, run in `tests/integration/dapp_tests/`): `npm install`
 - npm (`tests/integration/rpc_tests/package.json`, run in `tests/integration/rpc_tests/`): `npm run compile`, `npm run rpc:geth`, `npm run rpc:fork`, `npm run rpc:bootstrap`, `npm run rpc:run`, `npm run test:rpc`, `npm run report:merge`, `npm run rpc:ci`
-- cargo (`interop/Cargo.toml`, run in `interop/`): `cargo build`, `cargo test`
-- cargo (`interop/contracts/solana-mirror/Cargo.toml`, run in `interop/contracts/solana-mirror/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/layerx-ap2/Cargo.toml`, run in `interop/crates/layerx-ap2/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/layerx-bridge-relayer/Cargo.toml`, run in `interop/crates/layerx-bridge-relayer/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/layerx-fiat/Cargo.toml`, run in `interop/crates/layerx-fiat/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/layerx-gas-station/Cargo.toml`, run in `interop/crates/layerx-gas-station/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/layerx-intent-ingester/Cargo.toml`, run in `interop/crates/layerx-intent-ingester/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/layerx-interop-gateway/Cargo.toml`, run in `interop/crates/layerx-interop-gateway/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/layerx-interop-service/Cargo.toml`, run in `interop/crates/layerx-interop-service/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/layerx-migrate/Cargo.toml`, run in `interop/crates/layerx-migrate/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/layerx-mirror-signer/Cargo.toml`, run in `interop/crates/layerx-mirror-signer/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/layerx-mirror/Cargo.toml`, run in `interop/crates/layerx-mirror/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/layerx-portable/Cargo.toml`, run in `interop/crates/layerx-portable/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/layerx-ucp/Cargo.toml`, run in `interop/crates/layerx-ucp/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/layerx-visa-tap/Cargo.toml`, run in `interop/crates/layerx-visa-tap/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/layerx-x402/Cargo.toml`, run in `interop/crates/layerx-x402/`): `cargo build`, `cargo test`
-- cargo (`interop/crates/x-websearch/Cargo.toml`, run in `interop/crates/x-websearch/`): `cargo build`, `cargo test`
+- cargo (`services/interop/Cargo.toml`, run in `services/interop/`): `cargo build`, `cargo test`
+- cargo (`services/interop/contracts/solana-mirror/Cargo.toml`, run in `services/interop/contracts/solana-mirror/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/layerx-ap2/Cargo.toml`, run in `services/interop/crates/layerx-ap2/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/layerx-bridge-relayer/Cargo.toml`, run in `services/interop/crates/layerx-bridge-relayer/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/layerx-fiat/Cargo.toml`, run in `services/interop/crates/layerx-fiat/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/layerx-gas-station/Cargo.toml`, run in `services/interop/crates/layerx-gas-station/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/layerx-intent-ingester/Cargo.toml`, run in `services/interop/crates/layerx-intent-ingester/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/layerx-interop-gateway/Cargo.toml`, run in `services/interop/crates/layerx-interop-gateway/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/layerx-interop-service/Cargo.toml`, run in `services/interop/crates/layerx-interop-service/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/layerx-migrate/Cargo.toml`, run in `services/interop/crates/layerx-migrate/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/layerx-mirror-signer/Cargo.toml`, run in `services/interop/crates/layerx-mirror-signer/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/layerx-mirror/Cargo.toml`, run in `services/interop/crates/layerx-mirror/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/layerx-portable/Cargo.toml`, run in `services/interop/crates/layerx-portable/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/layerx-ucp/Cargo.toml`, run in `services/interop/crates/layerx-ucp/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/layerx-visa-tap/Cargo.toml`, run in `services/interop/crates/layerx-visa-tap/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/layerx-x402/Cargo.toml`, run in `services/interop/crates/layerx-x402/`): `cargo build`, `cargo test`
+- cargo (`services/interop/crates/x-websearch/Cargo.toml`, run in `services/interop/crates/x-websearch/`): `cargo build`, `cargo test`
 - npm (`package.json`): `npm run build`
 - cargo (`platform/Cargo.toml`, run in `platform/`): `cargo build`, `cargo test`
 - cargo (`platform/cli/Cargo.toml`, run in `platform/cli/`): `cargo build`, `cargo test`
@@ -314,11 +314,11 @@ Build and test:
   - `interchain/proto/` — 31 files
   - `interchain/testing/` — 48 files, 6,388 lines, mostly go. The testing package comprises of four parts constructed as a stack. - coordinator - chain - path - endpoint
   - `interchain/third_party/` — 1 file
-- `interop/` — 349 files, 125,353 lines, mostly rust. Adapters at the edge of Paxeer X Network.
-  - `interop/contracts/` — 9 files, 1,252 lines, mostly rust
-  - `interop/crates/` — 262 files, 119,115 lines, mostly rust
-  - `interop/deploy/` — 43 files, 2,501 lines, mostly json
-  - `interop/specs/` — 29 files, 2,485 lines, mostly json
+- `services/interop/` — 349 files, 125,353 lines, mostly rust. Adapters at the edge of Paxeer X Network.
+  - `services/interop/contracts/` — 9 files, 1,252 lines, mostly rust
+  - `services/interop/crates/` — 262 files, 119,115 lines, mostly rust
+  - `services/interop/deploy/` — 43 files, 2,501 lines, mostly json
+  - `services/interop/specs/` — 29 files, 2,485 lines, mostly json
 - `layerxproof/` — 25 files, 5,517 lines, mostly go
   - `layerxproof/codec/` — 10 files, 2,449 lines, mostly go
   - `layerxproof/testdata/` — 4 files, 1,498 lines, mostly json (test fixtures)
@@ -465,18 +465,18 @@ _Not shown: 7 directories._
 - `main` — `human/wallet/gateway/src/jobs/backfillAccounts.ts:101` `export async function main(argv: readonly string[]): Promise<number>`
 - `main` — `tests/integration/contracts/contract_dep_generator.py:27` `def main()`
 - `main` — `interchain/testing/simapp/simd/main.go:13` `func main()`
-- `main` — `interop/crates/layerx-bridge-relayer/src/bin/cosign.rs:11` `fn main() -> ExitCode`
-- `main` — `interop/crates/layerx-bridge-relayer/src/main.rs:17` `fn main() -> ExitCode`
-- `main` — `interop/crates/layerx-gas-station/src/main.rs:203` `fn main() -> ExitCode`
-- `main` — `interop/crates/layerx-intent-ingester/src/main.rs:209` `fn main() -> ExitCode`
-- `main` — `interop/crates/layerx-interop-service/src/main.rs:95` `fn main()`
-- `main` — `interop/crates/layerx-migrate/src/main.rs:347` `fn main()`
-- `main` — `interop/crates/layerx-mirror-signer/src/main.rs:13` `fn main() -> ExitCode`
-- `main` — `interop/crates/layerx-mirror/src/bin/layerx-mirror-publisher.rs:24` `fn main()`
-- `main` — `interop/crates/layerx-mirror/src/bin/layerx-mirror-verify.rs:99` `fn main()`
-- `main` — `interop/crates/x-websearch/src/main.rs:1258` `fn main() -> ExitCode`
-- `main` — `interop/deploy/gateway/render.py:835` `def main(argv)`
-- `main` — `interop/deploy/mirror/render-config.py:150` `def main(argv)`
+- `main` — `services/interop/crates/layerx-bridge-relayer/src/bin/cosign.rs:11` `fn main() -> ExitCode`
+- `main` — `services/interop/crates/layerx-bridge-relayer/src/main.rs:17` `fn main() -> ExitCode`
+- `main` — `services/interop/crates/layerx-gas-station/src/main.rs:203` `fn main() -> ExitCode`
+- `main` — `services/interop/crates/layerx-intent-ingester/src/main.rs:209` `fn main() -> ExitCode`
+- `main` — `services/interop/crates/layerx-interop-service/src/main.rs:95` `fn main()`
+- `main` — `services/interop/crates/layerx-migrate/src/main.rs:347` `fn main()`
+- `main` — `services/interop/crates/layerx-mirror-signer/src/main.rs:13` `fn main() -> ExitCode`
+- `main` — `services/interop/crates/layerx-mirror/src/bin/layerx-mirror-publisher.rs:24` `fn main()`
+- `main` — `services/interop/crates/layerx-mirror/src/bin/layerx-mirror-verify.rs:99` `fn main()`
+- `main` — `services/interop/crates/x-websearch/src/main.rs:1258` `fn main() -> ExitCode`
+- `main` — `services/interop/deploy/gateway/render.py:835` `def main(argv)`
+- `main` — `services/interop/deploy/mirror/render-config.py:150` `def main(argv)`
 - `main` — `platform/cli/examples/hosted-send.rs:148` `fn main()`
 - `main` — `platform/cli/src/main.rs:1563` `fn main() -> ExitCode`
 - `main` — `platform/emulator/build.rs:12` `fn main()`
@@ -854,11 +854,11 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
   - _+128 more_
 - `interchain/testing/` — 11 test files
   - _+11 more_
-- `interop/contracts/` — 2 test files
+- `services/interop/contracts/` — 2 test files
   - _+2 more_
-- `interop/crates/` — 59 test files
+- `services/interop/crates/` — 59 test files
   - _+59 more_
-- `interop/deploy/` — 3 test files
+- `services/interop/deploy/` — 3 test files
   - _+3 more_
 - `layerxproof/codec/` — 2 test files
   - _+2 more_
@@ -1182,12 +1182,12 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
 - `human/wallet/gateway/test/fixtures/` — 12 fixture files: `attestor/`
 - `human/wallet/sdk/test/fixtures/` — 21 fixture files: `endpoint/`, `gateway/`, `modules/`
 - `tests/integration/evm_module/rpc_io_test/testdata/` — 162 fixture files: `cross_check/`, `debug_getRawBlock/`, `debug_getRawHeader/`, `debug_getRawReceipts/`, `debug_getRawTransaction/`, `debug_traceBlockByHash/`, `debug_traceBlockByNumber/`, `debug_traceCall/`, `debug_traceStateAccess/`, `debug_traceTransaction/`, `echo_echo/`, `eth_accounts/`, `eth_blobBaseFee/`, `eth_blockNumber/`, `eth_call/`, `eth_chainId/` and 53 more
-- `interop/contracts/solana-mirror/tests/fixtures/` — 1 fixture file
-- `interop/crates/layerx-bridge-relayer/tests/fixtures/` — 6 fixture files
-- `interop/crates/layerx-gas-station/tests/fixtures/` — 3 fixture files
-- `interop/crates/layerx-mirror/tests/fixtures/` — 7 fixture files: `native-publisher/`
-- `interop/crates/x-websearch/tests/fixtures/` — 52 fixture files: `api/`, `binary/`, `config/`, `crawl-site/`, `evm/`, `gateway/`, `kernel/`, `site/`
-- `interop/deploy/x-websearch/tests/fixtures/` — 5 fixture files: `site/`
+- `services/interop/contracts/solana-mirror/tests/fixtures/` — 1 fixture file
+- `services/interop/crates/layerx-bridge-relayer/tests/fixtures/` — 6 fixture files
+- `services/interop/crates/layerx-gas-station/tests/fixtures/` — 3 fixture files
+- `services/interop/crates/layerx-mirror/tests/fixtures/` — 7 fixture files: `native-publisher/`
+- `services/interop/crates/x-websearch/tests/fixtures/` — 52 fixture files: `api/`, `binary/`, `config/`, `crawl-site/`, `evm/`, `gateway/`, `kernel/`, `site/`
+- `services/interop/deploy/x-websearch/tests/fixtures/` — 5 fixture files: `site/`
 - `layerxproof/testdata/` — 4 fixture files
 - `modules/xweb/types/testdata/` — 3 fixture files
 - `node/testdata/` — 1 fixture file

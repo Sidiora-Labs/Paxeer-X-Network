@@ -29,7 +29,7 @@ done
 while IFS= read -r -d '' dockerfile; do
     dockerfile=${dockerfile#./}
     [ -n "${table_paths[$dockerfile]+present}" ] || fail "no beta-images.sh row for $dockerfile"
-done < <(find human/wallet interop -name Dockerfile -not -path '*/node_modules/*' -print0 2>/dev/null)
+done < <(find human/wallet services/interop -name Dockerfile -not -path '*/node_modules/*' -print0 2>/dev/null)
 for dockerfile in docker/intent-ingester/Dockerfile docker/redis/Dockerfile; do
     [ -n "${table_paths[$dockerfile]+present}" ] || fail "no beta-images.sh row for $dockerfile"
 done
@@ -45,7 +45,7 @@ on = doc.get("on", doc.get(True))
 push = on["push"]
 assert "main" in push["branches"], "push to main is not a trigger"
 assert push["tags"], "tag trigger dropped"
-for path in ("docker/**", "platform/**", "interop/**", "human/wallet/**", "explorer/**"):
+for path in ("docker/**", "platform/**", "services/interop/**", "human/wallet/**", "explorer/**"):
     assert path in push["paths"], f"missing push path {path}"
 assert "workflow_dispatch" in on, "dispatch trigger dropped"
 jobs = doc["jobs"]

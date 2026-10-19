@@ -92,7 +92,7 @@ def git(*args):
     return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
 if git('status', '--porcelain=v1', '--untracked-files=normal'):
     raise SystemExit('mirror live evidence refuses dirty source')
-paths = sorted((root / 'interop/crates/layerx-mirror/src').rglob('*.rs'))
+paths = sorted((root / 'services/interop/crates/layerx-mirror/src').rglob('*.rs'))
 paths += [root / 'scripts/qualify-mirror-live.sh']
 record = {'schema': 'layerx.mirror-live-evidence.v1', 'exit_code': 0,
           'revision': git('rev-parse', 'HEAD'), 'tree': git('rev-parse', 'HEAD^{tree}'),

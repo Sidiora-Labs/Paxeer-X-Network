@@ -3,7 +3,7 @@
 Batch mirror archives are published to external chains as pure archives:
 commitments plus retrievable data. No vaults, no portals, no custody
 semantics (`spec/layerx-platform/spec.kvx`, decision `multichain_surface`
-and requirement 34; `interop/crates/layerx-mirror/README.md`).
+and requirement 34; `services/interop/crates/layerx-mirror/README.md`).
 
 Anyone can verify LayerX state from a mirror. Funds do not live on those
 chains. Settlement stays on Paxeer (EVM chain ID `125`).
@@ -15,14 +15,14 @@ chains. Settlement stays on Paxeer (EVM chain ID `125`).
 | `layerx-mirror-publisher` | `cargo run --bin layerx-mirror-publisher -- <config.json>` |
 | `layerx-mirror-verify` | `cargo run --bin layerx-mirror-verify -- <config.json>` |
 
-On-chain programs are `interop/contracts/ethereum-mirror/` and
-`interop/contracts/solana-mirror/`. Remote signer framing is
-`interop/deploy/mirror/signer-protocol.md`.
+On-chain programs are `services/interop/contracts/ethereum-mirror/` and
+`services/interop/contracts/solana-mirror/`. Remote signer framing is
+`services/interop/deploy/mirror/signer-protocol.md`.
 
 From the monorepo root: `make interop-build`, `make interop-test`.
 Operator live targets `make mirror-live` and `make mirror-verify-live`
 require operator configuration and are not a public RPC
-(`interop/README.md`).
+(`services/interop/README.md`).
 
 ## Freshness
 

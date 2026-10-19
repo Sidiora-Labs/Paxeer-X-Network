@@ -27,7 +27,7 @@ def generated_catalog(directory, binary):
     import yaml
     root = Path(directory).resolve()
     repo = Path(__file__).resolve().parents[3]
-    registry = json.loads((repo / 'interop/deploy/gateway/module-registry.example.json').read_text())
+    registry = json.loads((repo / 'services/interop/deploy/gateway/module-registry.example.json').read_text())
     node = list(yaml.safe_load_all((repo / 'platform/hosted/node/deployment.yaml').read_text()))
     config = next(d for d in node if d['kind'] == 'ConfigMap' and 'asset-id' in d.get('data', {}))
     asset = config['data']['asset-id']

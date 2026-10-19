@@ -3,7 +3,7 @@
 Adapters at the edge translate someone else's protocol into evidence shaped
 for LayerX. They never write balances. `402LXP` remains the only balance
 writer. Custody and withdrawal guarantees stay on Paxeer
-(`interop/README.md`; `spec/layerx-platform/spec.kvx`, decision
+(`services/interop/README.md`; `spec/layerx-platform/spec.kvx`, decision
 `interop_edge`).
 
 The platform specification (requirement 32) requires first-class x402 v2
@@ -18,15 +18,15 @@ claim vocabulary.
 
 | Surface | Tree | Page |
 | --- | --- | --- |
-| x402 v2 | `interop/crates/layerx-x402` | [x402](x402.md) |
-| AP2 | `interop/crates/layerx-ap2` | [AP2](ap2.md) |
-| UCP | `interop/crates/layerx-ucp` | [UCP](ucp.md) |
-| Visa TAP | `interop/crates/layerx-visa-tap` | [Visa TAP](visa-tap.md) |
-| Portable receipts | `interop/crates/layerx-portable` | [Portable receipts](portable-receipts.md) |
-| Fiat rails | `interop/crates/layerx-fiat` | [Ramps and fiat](ramps.md) |
+| x402 v2 | `services/interop/crates/layerx-x402` | [x402](x402.md) |
+| AP2 | `services/interop/crates/layerx-ap2` | [AP2](ap2.md) |
+| UCP | `services/interop/crates/layerx-ucp` | [UCP](ucp.md) |
+| Visa TAP | `services/interop/crates/layerx-visa-tap` | [Visa TAP](visa-tap.md) |
+| Portable receipts | `services/interop/crates/layerx-portable` | [Portable receipts](portable-receipts.md) |
+| Fiat rails | `services/interop/crates/layerx-fiat` | [Ramps and fiat](ramps.md) |
 | Market-maker ramps | `platform/ramps` | [Ramps and fiat](ramps.md) |
-| Ethereum / Solana mirrors | `interop/crates/layerx-mirror` | [Mirrors](mirrors.md) |
-| ETH / Solana migration | `interop/crates/layerx-migrate` | See `interop/crates/layerx-migrate/OPERATIONS.md` |
+| Ethereum / Solana mirrors | `services/interop/crates/layerx-mirror` | [Mirrors](mirrors.md) |
+| ETH / Solana migration | `services/interop/crates/layerx-migrate` | See `services/interop/crates/layerx-migrate/OPERATIONS.md` |
 
 There is no standalone `layerx-a2a` crate. A2A is a transport on the gateway
 and on x402, plus the CLI installer in `platform/cli`.

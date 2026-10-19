@@ -14,7 +14,7 @@ This crate lives in the agent workspace (`services/agent/`). Related surfaces:
 | --- | --- |
 | This server | `services/agent/crates/layerx-mcp` |
 | Daemon | `services/agent/crates/layerx-agentd` |
-| MCP / A2A as interop transports | [`interop/`](../../../../interop/README.md) |
+| MCP / A2A as interop transports | [`services/interop/`](../../../../services/interop/README.md) |
 | `layerx install mcp` / `layerx mcp serve` | [`platform/cli/`](../../../../platform/cli/README.md) |
 
 ## Tools in this crate

@@ -836,7 +836,7 @@ mod tests {
     #[test]
     fn program_events_answer_in_the_shape_the_kernel_watcher_pins() {
         let watch = fixture(include_bytes!(
-            "../../../../interop/crates/x-websearch/tests/fixtures/kernel/watch.json"
+            "../../../../services/interop/crates/x-websearch/tests/fixtures/kernel/watch.json"
         ));
         let recorded = fixture(include_bytes!("../tests/fixtures/program-events.json"));
         let recorded = exchanges(&recorded, "/exchanges");

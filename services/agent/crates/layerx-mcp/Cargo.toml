@@ -16,9 +16,9 @@ layerx-types = { path = "../layerx-types" }
 layerx-agent-api = { path = "../layerx-agent-api" }
 layerx-agentd = { path = "../layerx-agentd" }
 layerx-crypto = { path = "../layerx-crypto" }
-layerx-interop-gateway = { path = "../../../../interop/crates/layerx-interop-gateway" }
+layerx-interop-gateway = { path = "../../../../services/interop/crates/layerx-interop-gateway" }
 layerx-proof = { path = "../layerx-proof" }
-layerx-x402 = { path = "../../../../interop/crates/layerx-x402" }
+layerx-x402 = { path = "../../../../services/interop/crates/layerx-x402" }
 rustix = { version = "=1.1.4", features = ["net"] }
 serde = "=1.0.229"
 serde_json = "=1.0.151"

@@ -57,7 +57,7 @@ render serve <directory>
 
 render attestor <directory>
           writes <directory>/attestor-<N>.json for the four Fly attestor apps
-          of interop/deploy/x-websearch/attestor-<N>.toml: listen [::]:8480,
+          of services/interop/deploy/x-websearch/attestor-<N>.toml: listen [::]:8480,
           data_dir /data/state, gateway.endpoint the router's /rpc with the
           kernel's sequencer id and public key, the four assets with their
           prices, evm the https name of a serving RPC name (attestor N takes

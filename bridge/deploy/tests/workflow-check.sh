@@ -2,7 +2,7 @@
 # Offline check of .github/workflows/bridge-test.yml: the workflow triggers on
 # pull requests, the merge group and pushes to main and the release branches; it
 # carries exactly the three path filters bridge/**,
-# interop/crates/layerx-bridge-relayer/** and the workflow file itself, each
+# services/interop/crates/layerx-bridge-relayer/** and the workflow file itself, each
 # naming a path this repository holds or this feature's spec declares; it runs
 # four jobs whose names are the four legs and whose names claim no tool the job
 # does not invoke; every command runs from the repository root with a tool the
@@ -49,7 +49,7 @@ import yaml
 WORKFLOW_PATH = ".github/workflows/bridge-test.yml"
 FILTERS = [
     "bridge/**",
-    "interop/crates/layerx-bridge-relayer/**",
+    "services/interop/crates/layerx-bridge-relayer/**",
     WORKFLOW_PATH,
 ]
 PUSH_BRANCHES = ["main", "release/**"]
@@ -71,7 +71,7 @@ LEGS = {
     "relayer-crate": {
         "name": "cargo test for the layerx-bridge-relayer crate",
         "tools": ["cargo test"],
-        "paths": ["interop/Cargo.toml"],
+        "paths": ["services/interop/Cargo.toml"],
     },
     "deploy-tooling": {
         "name": (
@@ -116,7 +116,7 @@ ALLOWED_PROGRAMS = {
 INPUT_PATHS = {
     "bridge/evm",
     "bridge/solana/Cargo.toml",
-    "interop/Cargo.toml",
+    "services/interop/Cargo.toml",
     "bridge/vectors",
     "bridge/deploy",
     "bridge/deploy/tests/workflow-check.sh",
@@ -140,7 +140,7 @@ SPEC_PATH = "spec/paxeer-x-bridge/spec.kvx"
 REFERENCE_WORKFLOW = ".github/workflows/paxeer-forge-test.yml"
 
 PATH_TOKEN = re.compile(
-    r"(?<![A-Za-z0-9._/-])\.?/?((?:bridge|interop)/[A-Za-z0-9._/*-]+)"
+    r"(?<![A-Za-z0-9._/-])\.?/?((?:bridge|services/interop)/[A-Za-z0-9._/*-]+)"
 )
 CLONE_LINE = re.compile(
     r"git clone --depth 1 --branch (\S+) (https://\S+) (\S+)"
@@ -196,7 +196,7 @@ def declared_by_spec(spec_text, path):
 def crate_names(root):
     names = set()
     manifests = glob.glob(
-        os.path.join(root, "interop", "crates", "*", "Cargo.toml")
+        os.path.join(root, "services", "interop", "crates", "*", "Cargo.toml")
     ) + glob.glob(os.path.join(root, "bridge", "*", "Cargo.toml"))
     for manifest in manifests:
         with open(manifest, "r", encoding="utf-8") as handle:
@@ -607,7 +607,7 @@ def check_versions_are_the_repository_pins(root, document, jobs):
     if not anza:
         refuse("no job installs a pinned Solana toolchain for cargo-build-sbf")
     recorded = set()
-    for path in sorted(glob.glob(os.path.join(root, "interop", "deploy", "mirror", "*.json"))):
+    for path in sorted(glob.glob(os.path.join(root, "services", "interop", "deploy", "mirror", "*.json"))):
         with open(path, "r", encoding="utf-8") as handle:
             try:
                 record = json.load(handle)

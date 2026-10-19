@@ -20,7 +20,7 @@ HUMAN_MANIFEST := human/Cargo.toml
 HUMAN_WEB_DIR := human/apps/web
 HUMAN_NPM ?= npm --prefix $(HUMAN_WEB_DIR)
 INTEROP_CARGO ?= cargo
-INTEROP_MANIFEST := interop/Cargo.toml
+INTEROP_MANIFEST := services/interop/Cargo.toml
 PAXEER_DIR := $(CURDIR)
 PAXEER_MAKE := $(MAKE) -f $(PAXEER_DIR)/chain.mk
 HPX_ORIGIN ?= https://node.hyperpaxeer.com
@@ -198,14 +198,14 @@ check: test
 mirror-live:
 	$(INTEROP_CARGO) build --locked --release --manifest-path $(INTEROP_MANIFEST) \
 		--package layerx-mirror --bin layerx-mirror-publisher
-	LAYERX_MIRROR_PUBLISHER_BIN=interop/target/release/layerx-mirror-publisher \
+	LAYERX_MIRROR_PUBLISHER_BIN=services/interop/target/release/layerx-mirror-publisher \
 		LAYERX_MIRROR_FAULT_CONTROLLER="$${LAYERX_MIRROR_FAULT_CONTROLLER:?set the authenticated devnet fault controller}" \
 		./scripts/qualify-mirror-live.sh
 
 mirror-verify-live:
 	$(INTEROP_CARGO) build --locked --release --manifest-path $(INTEROP_MANIFEST) \
 		--package layerx-mirror --bin layerx-mirror-verify
-	LAYERX_MIRROR_VERIFY_BIN=interop/target/release/layerx-mirror-verify \
+	LAYERX_MIRROR_VERIFY_BIN=services/interop/target/release/layerx-mirror-verify \
 		./scripts/qualify-mirror-verification-live.sh
 
 build: $(LIBRARY)
@@ -3299,7 +3299,7 @@ workspace-install:
 	cargo fetch --manifest-path human/Cargo.toml --locked
 	cargo fetch --manifest-path platform/Cargo.toml --locked
 	cd programs && cargo fetch --locked
-	cargo fetch --manifest-path interop/Cargo.toml --locked
+	cargo fetch --manifest-path services/interop/Cargo.toml --locked
 	$(MAKE) platform-js-install programs-js-install
 	$(MAKE) developer-dashboard-install paxeer-manifest-install platform-dependencies-install
 	go mod download
@@ -3366,7 +3366,7 @@ interop-test-ramps-sandbox:
 	sh platform/ramps/sandbox-journey.sh
 
 INTEROP_CARGO ?= cargo
-INTEROP_MANIFEST := interop/Cargo.toml
+INTEROP_MANIFEST := services/interop/Cargo.toml
 
 .PHONY: interop-build interop-test interop-lint interop-test-x402 interop-test-mandates interop-test-migration interop-test-migration-testnets interop-test-ucp interop-test-portable interop-test-visa-tap interop-test-mirrors
 
@@ -3378,9 +3378,9 @@ interop-test:
 
 interop-test-mirrors:
 	$(INTEROP_CARGO) test --manifest-path $(INTEROP_MANIFEST) --locked -p layerx-mirror
-	cargo test --manifest-path interop/contracts/solana-mirror/Cargo.toml --locked
-	forge test --root . --contracts interop/contracts/ethereum-mirror \
-		--match-path interop/contracts/ethereum-mirror/test/LayerXMirrorArchive.t.sol \
+	cargo test --manifest-path services/interop/contracts/solana-mirror/Cargo.toml --locked
+	forge test --root . --contracts services/interop/contracts/ethereum-mirror \
+		--match-path services/interop/contracts/ethereum-mirror/test/LayerXMirrorArchive.t.sol \
 		--use 0.8.30 --evm-version paris --optimize --optimizer-runs 100000 \
 		--via-ir --no-metadata
 

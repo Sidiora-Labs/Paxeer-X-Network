@@ -13,7 +13,7 @@ for i in 1 2 3 4 5; do
 done
 
 out=$work/out
-ATTESTOR_CERT_DIR=$work/certs MODULE_REGISTRY_FILE=$root/interop/deploy/gateway/module-registry.example.json \
+ATTESTOR_CERT_DIR=$work/certs MODULE_REGISTRY_FILE=$root/services/interop/deploy/gateway/module-registry.example.json \
 	"$root/tools/bringup/mint-secrets.sh" "$out" >"$work/stdout"
 
 [ "$(stat -c %a "$out")" = 700 ] || fail "out-dir mode is not 700"
@@ -137,7 +137,7 @@ done
 [ "$(plain router.railway.env ENDPOINT_KEY_PROVISIONING_KEY)" != "$(plain router.railway.env ENDPOINT_COMPONENT_TOKEN)" ] ||
 	fail "independent tokens collide"
 hex "$(plain router.railway.env ENDPOINT_KEY_PROVISIONING_KEY)" "key provisioning key"
-cmp -s <(plain router.railway.env ENDPOINT_MODULE_REGISTRY) "$root/interop/deploy/gateway/module-registry.example.json" ||
+cmp -s <(plain router.railway.env ENDPOINT_MODULE_REGISTRY) "$root/services/interop/deploy/gateway/module-registry.example.json" ||
 	fail "module registry does not round-trip"
 
 # Each Railway script reads its own dotenv and sets every variable of it on
@@ -197,7 +197,7 @@ EOF
 ) || fail "gateway rejected the minted files"
 
 # A second run into the filled directory is refused.
-if ATTESTOR_CERT_DIR=$work/certs MODULE_REGISTRY_FILE=$root/interop/deploy/gateway/module-registry.example.json \
+if ATTESTOR_CERT_DIR=$work/certs MODULE_REGISTRY_FILE=$root/services/interop/deploy/gateway/module-registry.example.json \
 	"$root/tools/bringup/mint-secrets.sh" "$out" >/dev/null 2>&1; then
 	fail "tool overwrote an existing mint"
 fi

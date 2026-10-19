@@ -5,7 +5,7 @@ RUN apt-get update \
 WORKDIR /src
 ENV CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR=/src/.x-websearch-target
 COPY . .
-RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package x-websearch --bin x-websearch
+RUN cargo build --locked --manifest-path services/interop/Cargo.toml --release --package x-websearch --bin x-websearch
 
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS fly
 RUN apt-get update \

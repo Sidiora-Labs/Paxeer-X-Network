@@ -24,12 +24,12 @@ ROOT = Path(__file__).resolve().parents[2]
 TAG_PREFIX = "sdk-v"
 BETA = re.compile(r"^(\d+)\.(\d+)\.(\d+)-beta\.(\d+)$")
 
-CARGO_WORKSPACES = ["services/agent/Cargo.toml", "interop/Cargo.toml", "programs/Cargo.toml"]
+CARGO_WORKSPACES = ["services/agent/Cargo.toml", "services/interop/Cargo.toml", "programs/Cargo.toml"]
 CRATES = {
     "layerx-agent-api": "services/agent/crates/layerx-agent-api/Cargo.toml",
     "layerx-client": "services/agent/crates/layerx-client/Cargo.toml",
     "layerx-crypto": "services/agent/crates/layerx-crypto/Cargo.toml",
-    "layerx-mirror": "interop/crates/layerx-mirror/Cargo.toml",
+    "layerx-mirror": "services/interop/crates/layerx-mirror/Cargo.toml",
     "layerx-programs-runtime": "programs/crates/layerx-programs-runtime/Cargo.toml",
     "layerx-proof": "services/agent/crates/layerx-proof/Cargo.toml",
     "layerx-sdk": "services/agent/crates/layerx-sdk/Cargo.toml",

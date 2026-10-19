@@ -151,7 +151,7 @@ class ForgeExtractionTests(unittest.TestCase):
         self.assertEqual(failures[1].message, "assertion failed: 3 != 4")
         self.assertEqual(
             failures[0].location,
-            "interop/contracts/ethereum-mirror/test/MirrorCheckpoint.t.sol",
+            "services/interop/contracts/ethereum-mirror/test/MirrorCheckpoint.t.sol",
         )
 
 

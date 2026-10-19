@@ -1,0 +1,3809 @@
+use crate::config::{
+    decode_hex, parse_hex32, Ap2KeyPin, Config, FiatProviderPin, VisaAgentPin, VisaTargetPin,
+};
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine as _;
+use ed25519_dalek::{Signature, Verifier as _, VerifyingKey as Ed25519Key};
+use layerx_ap2::{
+    authorize_payment, Ap2Error, KeyResolver, KeyUse, LayerXAssetBinding, MandateMode,
+    MandateVerifier, Merchant, ProtectedHeader, VerificationContext,
+};
+use layerx_fiat::{
+    EvidenceClass, ExternalId, FiatAdapter, FiatJourneyState, FiatRail, ProviderEvidence,
+    ProviderVerifier, TokenReference, VerifiedProviderFacts,
+};
+use layerx_interop_gateway::principal::PrincipalId;
+use layerx_interop_gateway::server::{
+    interop_gateway_routes, ExternalState, HostedAdapter, IngressTransport, InteropRoute,
+};
+use layerx_interop_gateway::trace::TraceId;
+use layerx_interop_gateway::GatewayCore;
+use layerx_migrate::ramp_v2::{SourceSettlementRequestV2, SourceSettlementResponseV2};
+use layerx_migrate::{ExternalHistorySink, MigrationError, SourceEvidence, SourceVerifier};
+use layerx_platform_gateway::http::{IncomingRequest, OutboundRequest, OutgoingResponse};
+use layerx_platform_gateway::store::{
+    Completion, KeyRecord, Reservation, ReservationRequest, TapCredentialRecord,
+    TapNonceConsumption,
+};
+use layerx_platform_gateway::{
+    authenticate_gateway_key, gateway_audit_event, gateway_digest, verify_activity_operation,
+    verify_submission, AccessError, AuthorityFacts, ModuleRegistry, VerifiedSubmission,
+    VerifiedTransfer,
+};
+use layerx_proof::receipt::{verify, AuthorizedBatch};
+use layerx_ucp::{
+    Capability, CheckoutStatus, CheckoutSubmission, ExecutedUcpPayment, NegotiatedCapabilities,
+    OrderMetadata, PaymentHandler, PlatformProfile, UcpAdapter, UcpError, UcpIdempotencyKey,
+    UcpPaymentIntent, UcpPaymentPlane, UcpPlaneResult,
+};
+use layerx_visa_tap::{
+    prepare_trusted_intent, AgentIntent, AgentPublicKey, CredentialBinding, CredentialBindingStore,
+    KeyStatus, RegisteredAgentKey, TapError, TapRequest, TapVerifier, TrustedAgentRegistry,
+};
+use layerx_x402::buyer::{BuyerPaymentPlane, PaymentBuildRequest, SupportedKind};
+use layerx_x402::facilitator::{
+    FacilitatorPaymentRequest, FacilitatorPlane, FacilitatorRequest, FacilitatorSettlementOutcome,
+    PlaneVerifyOutcome, SettlementStep,
+};
+use layerx_x402::model::{PaymentRequirements, X402Error};
+use layerx_x402::seller::ExecutedPayment as X402ExecutedPayment;
+use layerx_x402::transport::encode_payment_required;
+use layerx_x402::transport::{decode_facilitator_request, TransportKind, TransportValue};
+use layerx_x402::{Buyer, Facilitator, PaymentRequired, Seller};
+use p256::ecdsa::VerifyingKey as P256Key;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
+use std::time::{SystemTime, UNIX_EPOCH};
+use subtle::ConstantTimeEq;
+
+const MAX_BODY: usize = 512 * 1024;
+const FIAT_EVIDENCE_SIGNATURE_DOMAIN: &[u8] = b"LayerX/interop/fiat/provider-evidence/v1\0";
+
+pub fn route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
+    if request.headers.contains_key("x-layerx-principal")
+        || request.headers.contains_key("x-layerx-api-key")
+    {
+        return failure(400, "untrusted_identity_header", None);
+    }
+    let Ok(parsed) = interop_gateway_routes(&request.method, &request.path) else {
+        return failure(404, "not_found", None);
+    };
+    match parsed {
+        InteropRoute::Live => live(),
+        InteropRoute::Ready => ready(config),
+        InteropRoute::AdapterMetadata => metadata(config),
+        route => authenticated(config, request, &route),
+    }
+}
+
+fn authenticated(
+    config: &Config,
+    request: &IncomingRequest,
+    route: &InteropRoute<'_>,
+) -> OutgoingResponse {
+    if request.body.len() > MAX_BODY {
+        return failure(400, "request_too_large", None);
+    }
+    let Some(authorization) = request.headers.get("authorization") else {
+        return failure(401, "api_key_required", None);
+    };
+    let record = match authenticate_gateway_key(&config.store, authorization) {
+        Ok(record) => record,
+        Err(AccessError::Unauthenticated) => return failure(401, "api_key_required", None),
+        Err(AccessError::PersistenceUnavailable) => {
+            return failure(503, "persistence_unavailable", Some(5))
+        }
+    };
+    let trace = trace(request);
+    if let InteropRoute::Resume { operation } = &route {
+        return resume_operation(config, &record, authorization, &trace, operation);
+    }
+    reserve_operation(config, request, route, record, trace)
+}
+
+fn reserve_operation(
+    config: &Config,
+    request: &IncomingRequest,
+    route: &InteropRoute<'_>,
+    record: KeyRecord,
+    trace: TraceId,
+) -> OutgoingResponse {
+    let observed_at = now().unwrap_or(1);
+    let adapter = route.adapter().map_or("operation", HostedAdapter::surface);
+    let request_digest = gateway_digest(&[
+        b"interop-ingress-v1",
+        request.method.as_bytes(),
+        request.path.as_bytes(),
+        &request.body,
+    ]);
+    let callback_identity = uses_callback_identity(route);
+    let idempotency = if callback_identity {
+        request_digest.as_str()
+    } else {
+        match request.headers.get("idempotency-key") {
+            Some(value) if valid_identifier(value, 128) => value,
+            _ => return failure(400, "idempotency_key_required", None),
+        }
+    };
+    let scope = gateway_digest(&[
+        b"interop-operation-v1",
+        record.principal_digest.as_bytes(),
+        adapter.as_bytes(),
+        idempotency.as_bytes(),
+    ]);
+    let audit = gateway_audit_event(
+        &record.principal_digest,
+        "interop_ingress",
+        adapter,
+        "attempted",
+        observed_at,
+    );
+    let Ok(continuation) = continuation(request) else {
+        return failure(400, "request_too_large", None);
+    };
+    match config.store.reserve(
+        &record,
+        ReservationRequest {
+            idempotency_scope: &scope,
+            request_digest: &request_digest,
+            now: observed_at,
+            retention_seconds: config.idempotency_seconds,
+            activity_id: &request_digest,
+            protocol_idempotency_key: idempotency,
+            principal_digest: &record.principal_digest,
+            audit_event: &audit,
+            continuation: &continuation,
+        },
+    ) {
+        Ok(Reservation::Revoked) => return failure(401, "api_key_required", None),
+        Ok(Reservation::RateLimited {
+            retry_after_seconds,
+        }) => return failure(429, "quota_exceeded", Some(retry_after_seconds)),
+        Ok(Reservation::Existing {
+            digest,
+            state,
+            response,
+            principal,
+            ..
+        }) => {
+            if principal
+                .as_bytes()
+                .ct_eq(record.principal_digest.as_bytes())
+                .unwrap_u8()
+                != 1
+            {
+                return failure(404, "operation_not_found", None);
+            }
+            if digest
+                .as_bytes()
+                .ct_eq(request_digest.as_bytes())
+                .unwrap_u8()
+                != 1
+            {
+                return failure(409, "idempotency_conflict", None);
+            }
+            if state != "pending" {
+                return stored_response(&state, &response, &trace, &scope);
+            }
+        }
+        Ok(Reservation::Reserved) => {}
+        Err(_) => return failure(503, "persistence_unavailable", Some(5)),
+    }
+    complete_operation(
+        config,
+        request,
+        route,
+        IngressOperation {
+            record,
+            trace,
+            scope,
+            request_digest,
+            adapter,
+            observed_at,
+        },
+    )
+}
+
+fn uses_callback_identity(route: &InteropRoute<'_>) -> bool {
+    matches!(
+        route,
+        InteropRoute::Ap2VerifyMandates
+            | InteropRoute::Ap2Execute
+            | InteropRoute::VisaVerifyIntent
+            | InteropRoute::VisaExecuteIntent
+            | InteropRoute::FiatCallback { .. }
+    )
+}
+
+struct IngressOperation {
+    record: KeyRecord,
+    trace: TraceId,
+    scope: String,
+    request_digest: String,
+    adapter: &'static str,
+    observed_at: u64,
+}
+
+fn complete_operation(
+    config: &Config,
+    request: &IncomingRequest,
+    route: &InteropRoute<'_>,
+    operation: IngressOperation,
+) -> OutgoingResponse {
+    let IngressOperation {
+        record,
+        trace,
+        scope,
+        request_digest,
+        adapter,
+        observed_at,
+    } = operation;
+    let Ok(principal) = PrincipalId::new(record.principal_digest.clone()) else {
+        return failure(503, "persistence_unavailable", Some(5));
+    };
+    let dispatched = dispatch(config, request, route, &record, &principal, &trace, &scope);
+    let body = dispatched.body(&trace, &scope);
+    let completion_audit = gateway_audit_event(
+        &record.principal_digest,
+        "interop_ingress",
+        adapter,
+        dispatched.durable_state,
+        observed_at,
+    );
+    if config
+        .store
+        .complete(Completion {
+            idempotency_scope: &scope,
+            request_digest: &request_digest,
+            state: dispatched.durable_state,
+            response_hex: &hex(&body),
+            receipt_hex: dispatched.receipt_hex.as_deref().unwrap_or(""),
+            activity_id: dispatched.activity_id.as_deref(),
+            principal_digest: &record.principal_digest,
+            audit_event: &completion_audit,
+        })
+        .is_err()
+    {
+        return failure(503, "persistence_unavailable", Some(5));
+    }
+    OutgoingResponse {
+        content_type: "application/json".to_owned(),
+        headers: Vec::new(),
+        status: dispatched.status,
+        body,
+        retry_after: None,
+    }
+}
+
+fn resume_operation(
+    config: &Config,
+    record: &KeyRecord,
+    authorization: &str,
+    trace: &TraceId,
+    operation: &str,
+) -> OutgoingResponse {
+    match config.store.operation(operation) {
+        Ok(Some(stored))
+            if stored
+                .principal
+                .as_bytes()
+                .ct_eq(record.principal_digest.as_bytes())
+                .unwrap_u8()
+                == 1 =>
+        {
+            if stored.state == "pending" && !stored.continuation.is_empty() {
+                match resumed_request(&stored.continuation, authorization) {
+                    Ok(resumed) => match interop_gateway_routes(&resumed.method, &resumed.path) {
+                        Ok(resumed_route)
+                            if !matches!(resumed_route, InteropRoute::Resume { .. }) =>
+                        {
+                            authenticated(config, &resumed, &resumed_route)
+                        }
+                        _ => failure(503, "continuation_invalid", Some(5)),
+                    },
+                    Err(()) => failure(503, "continuation_invalid", Some(5)),
+                }
+            } else {
+                stored_response(&stored.state, &stored.response, trace, operation)
+            }
+        }
+        Ok(Some(_) | None) => failure(404, "operation_not_found", None),
+        Err(_) => failure(503, "persistence_unavailable", Some(5)),
+    }
+}
+
+struct Dispatch {
+    status: u16,
+    durable_state: &'static str,
+    result: Value,
+    error: Option<&'static str>,
+    receipt_hex: Option<String>,
+    activity_id: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct DurableContinuation {
+    method: String,
+    path: String,
+    content_type: String,
+    idempotency_key: Option<String>,
+    body: String,
+}
+
+fn continuation(request: &IncomingRequest) -> Result<String, ()> {
+    serde_json::to_string(&DurableContinuation {
+        method: request.method.clone(),
+        path: request.path.clone(),
+        content_type: request
+            .headers
+            .get("content-type")
+            .cloned()
+            .unwrap_or_default(),
+        idempotency_key: request.headers.get("idempotency-key").cloned(),
+        body: hex(&request.body),
+    })
+    .map_err(|_| ())
+}
+
+fn resumed_request(encoded: &str, authorization: &str) -> Result<IncomingRequest, ()> {
+    let continuation: DurableContinuation = serde_json::from_str(encoded).map_err(|_| ())?;
+    if !matches!(continuation.method.as_str(), "GET" | "POST")
+        || !(continuation.path.starts_with("/v1/")
+            || (continuation.method == "POST"
+                && matches!(
+                    continuation.path.as_str(),
+                    "/v2/migration/accounts" | "/v2/migration/assets"
+                        | "/v2/migration/history" | "/v2/migration/history/read"
+                )))
+        || continuation.path.starts_with("/v1/operations/")
+    {
+        return Err(());
+    }
+    let mut headers = BTreeMap::new();
+    headers.insert("authorization".to_owned(), authorization.to_owned());
+    headers.insert("content-type".to_owned(), continuation.content_type);
+    if let Some(idempotency) = continuation.idempotency_key {
+        headers.insert("idempotency-key".to_owned(), idempotency);
+    }
+    Ok(IncomingRequest {
+        method: continuation.method,
+        path: continuation.path,
+        headers,
+        body: decode_hex(&continuation.body, MAX_BODY).map_err(|_| ())?,
+    })
+}
+
+impl Dispatch {
+    fn result(status: u16, state: &'static str, result: Value) -> Self {
+        Self {
+            status,
+            durable_state: state,
+            result,
+            error: None,
+            receipt_hex: None,
+            activity_id: None,
+        }
+    }
+
+    fn error(status: u16, state: &'static str, code: &'static str) -> Self {
+        Self {
+            status,
+            durable_state: state,
+            result: Value::Null,
+            error: Some(code),
+            receipt_hex: None,
+            activity_id: None,
+        }
+    }
+
+    fn body(&self, trace: &TraceId, operation: &str) -> Vec<u8> {
+        let value = self.error.map_or_else(
+            || json!({ "ok": true, "operation": operation, "result": self.result, "trace": trace.as_str() }),
+            |code| json!({ "ok": false, "operation": operation, "error": { "code": code }, "trace": trace.as_str() }),
+        );
+        value.to_string().into_bytes()
+    }
+}
+
+fn dispatch(
+    config: &Config,
+    request: &IncomingRequest,
+    route: &InteropRoute<'_>,
+    record: &KeyRecord,
+    principal: &PrincipalId,
+    trace: &TraceId,
+    operation: &str,
+) -> Dispatch {
+    match *route {
+        InteropRoute::Resume { .. } => {
+            Dispatch::result(202, "pending", json!({ "state": "pending" }))
+        }
+        InteropRoute::X402Supported { transport } => x402_supported(config, transport),
+        InteropRoute::X402BuyerBuild { transport } => {
+            x402_buyer(config, request, transport, trace, operation)
+        }
+        InteropRoute::X402SellerOffer { transport } => x402_seller(request, transport),
+        InteropRoute::X402Verify { transport } => {
+            x402_verify(config, request, transport, record, principal, trace)
+        }
+        InteropRoute::X402Settle { transport } => {
+            x402_settle(config, request, transport, record, principal, trace)
+        }
+        InteropRoute::Ap2VerifyMandates => {
+            ap2(config, request, record, principal, trace, operation, false)
+        }
+        InteropRoute::Ap2Execute => ap2(config, request, record, principal, trace, operation, true),
+        InteropRoute::UcpComplete => ucp(config, request, record, principal, trace, operation),
+        InteropRoute::VisaVerifyIntent => {
+            visa(config, request, record, principal, trace, operation, false)
+        }
+        InteropRoute::VisaExecuteIntent => {
+            visa(config, request, record, principal, trace, operation, true)
+        }
+        InteropRoute::FiatCallback { adapter } => fiat(
+            config, request, record, principal, trace, operation, adapter,
+        ),
+        InteropRoute::MigrationAccountV2 => {
+            migration_account_v2(config, request, record, principal, trace)
+        }
+        InteropRoute::MigrationAssetV2 => migration_asset_v2(config, request, record, trace),
+        InteropRoute::MigrationHistoryImportV2 => migration_history_import_v2(config, request, record, principal, trace),
+        InteropRoute::MigrationHistoryReadV2 => migration_history_read_v2(config, request, principal),
+        InteropRoute::Live | InteropRoute::Ready | InteropRoute::AdapterMetadata => {
+            Dispatch::error(404, "refused", "not_found")
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MigrationHistoryImportRequestV2 {
+    chain: MigrationSourceV2,
+    ownership_evidence: String,
+    source_evidence: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MigrationHistoryReadRequestV2 {
+    cursor: Option<String>,
+    limit: usize,
+}
+
+fn history_evidence(encoded: &str) -> Result<SourceEvidence, MigrationError> {
+    let decoded = STANDARD.decode(encoded).map_err(|_| MigrationError::InvalidEvidence)?;
+    if STANDARD.encode(&decoded) != encoded {
+        return Err(MigrationError::InvalidEvidence);
+    }
+    SourceEvidence::new(decoded)
+}
+
+fn migration_history_import_v2(
+    config: &Config,
+    request: &IncomingRequest,
+    record: &KeyRecord,
+    principal: &PrincipalId,
+    trace: &TraceId,
+) -> Dispatch {
+    let Ok(body) = direct_body::<MigrationHistoryImportRequestV2>(request) else {
+        return Dispatch::error(400, "refused", "invalid_migration_request");
+    };
+    let Some(profile) = config.migration_v2.as_ref() else {
+        return Dispatch::error(503, "refused", "migration_v2_unconfigured");
+    };
+    let Some(history) = profile.history.as_ref() else {
+        return Dispatch::error(503, "refused", "migration_history_unconfigured");
+    };
+    let Ok(identity) = parse_hex32(&record.signer_public_key) else {
+        return Dispatch::error(503, "refused", "authenticated_signer_invalid");
+    };
+    if identity == [0; 32] {
+        return Dispatch::error(503, "refused", "authenticated_signer_invalid");
+    }
+    let imported = (|| -> Result<Value, MigrationError> {
+        let ownership = history_evidence(&body.ownership_evidence)?;
+        let evidence = history_evidence(&body.source_evidence)?;
+        let page = match body.chain {
+            MigrationSourceV2::Ethereum => profile.ethereum.as_ref()
+                .ok_or(MigrationError::Configuration)?
+                .verify_owned_history(&ownership, &evidence, identity, trace)?,
+            MigrationSourceV2::Solana => profile.solana.as_ref()
+                .ok_or(MigrationError::Configuration)?
+                .verify_owned_history(&ownership, &evidence, identity, trace)?,
+        };
+        {
+            let mut sink = history.lock().map_err(|_| MigrationError::StorageRefused)?;
+            sink.store_external(principal, &page, trace)?;
+        }
+        match body.chain {
+            MigrationSourceV2::Ethereum => profile.ethereum.as_ref()
+                .ok_or(MigrationError::Configuration)?.commit_history(&evidence, &page, trace)?,
+            MigrationSourceV2::Solana => profile.solana.as_ref()
+                .ok_or(MigrationError::Configuration)?.commit_history(&evidence, &page, trace)?,
+        }
+        Ok(json!({"version":"external-history-v2", "state":"external-history-imported",
+            "record_count":page.records().len(), "next_cursor":page.next_cursor().map(|value| hex(&value)),
+            "evidence_digest":hex(&page.evidence_digest()), "provenance":"external", "layerx_receipt":false}))
+    })();
+    match imported {
+        Ok(value) => Dispatch::result(200, "external_history_imported", value),
+        Err(error) => migration_history_error(error),
+    }
+}
+
+fn migration_history_read_v2(config: &Config, request: &IncomingRequest, principal: &PrincipalId) -> Dispatch {
+    let Ok(body) = direct_body::<MigrationHistoryReadRequestV2>(request) else {
+        return Dispatch::error(400, "refused", "invalid_migration_request");
+    };
+    let Some(history) = config.migration_v2.as_ref().and_then(|profile| profile.history.as_ref()) else {
+        return Dispatch::error(503, "refused", "migration_history_unconfigured");
+    };
+    let cursor = match body.cursor {
+        None => None,
+        Some(text) => match parse_hex32(&text) {
+            Ok(value) if value != [0; 32] && hex(&value) == text => Some(value),
+            _ => return Dispatch::error(400, "refused", "invalid_history"),
+        },
+    };
+    let page = history.lock().map_err(|_| MigrationError::StorageRefused)
+        .and_then(|sink| sink.read(principal, cursor, body.limit));
+    match page {
+        Ok(page) => Dispatch::result(200, "external_history_read", page.json()),
+        Err(error) => migration_history_error(error),
+    }
+}
+
+fn migration_history_error(error: MigrationError) -> Dispatch {
+    let (status, state) = match error {
+        MigrationError::SourcePending => (202, "pending"),
+        MigrationError::RpcUnavailable | MigrationError::RpcDivergence
+            | MigrationError::RpcResponseMismatch => (503, "pending"),
+        MigrationError::RpcRateLimited { .. } => (429, "pending"),
+        MigrationError::Configuration | MigrationError::StorageRefused
+            | MigrationError::CheckpointIntegrity => (503, "refused"),
+        MigrationError::CheckpointConflict | MigrationError::SourceDisplaced
+            | MigrationError::SourceReverted => (409, "refused"),
+        _ => (400, "refused"),
+    };
+    Dispatch::error(status, state, error.code())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum MigrationSourceV2 {
+    Ethereum,
+    Solana,
+}
+
+impl MigrationSourceV2 {
+    const fn label(&self) -> &'static str {
+        match self {
+            Self::Ethereum => "ethereum",
+            Self::Solana => "solana",
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MigrationAssetRequestV2 {
+    order_digest: [u8; 32],
+    chain: MigrationSourceV2,
+    source_evidence: String,
+}
+
+fn migration_asset_v2(
+    config: &Config,
+    request: &IncomingRequest,
+    record: &KeyRecord,
+    trace: &TraceId,
+) -> Dispatch {
+    let Ok(body) = direct_body::<MigrationAssetRequestV2>(request) else {
+        return Dispatch::error(400, "refused", "invalid_migration_request");
+    };
+    let Some(ramp) = config
+        .migration_v2
+        .as_ref()
+        .and_then(|profile| profile.ramp_intake.as_ref())
+    else {
+        return Dispatch::error(503, "refused", "migration_ramp_unconfigured");
+    };
+    let Ok(identity) = parse_hex32(&record.signer_public_key) else {
+        return Dispatch::error(503, "refused", "authenticated_signer_invalid");
+    };
+    if identity == [0; 32] {
+        return Dispatch::error(503, "refused", "authenticated_signer_invalid");
+    }
+    let Some(customer_authorization) = request.headers.get("authorization") else {
+        return Dispatch::error(401, "refused", "api_key_required");
+    };
+    let Ok(decoded) = STANDARD.decode(&body.source_evidence) else {
+        return Dispatch::error(400, "refused", "invalid_evidence");
+    };
+    if STANDARD.encode(&decoded) != body.source_evidence {
+        return Dispatch::error(400, "refused", "invalid_evidence");
+    }
+    let Ok(evidence) = SourceEvidence::new(decoded) else {
+        return Dispatch::error(400, "refused", "invalid_evidence");
+    };
+    let Ok(settlement) =
+        SourceSettlementRequestV2::new(body.order_digest, body.chain.label(), &evidence)
+    else {
+        return Dispatch::error(400, "refused", "invalid_migration_request");
+    };
+    let Ok(encoded) = serde_json::to_vec(&settlement) else {
+        return Dispatch::error(503, "refused", "migration_encoding_invalid");
+    };
+    let service_authorization = zeroize::Zeroizing::new(format!("Bearer {}", ramp.token.as_str()));
+    let Ok(upstream) = config.client.request_migration_source_settlement(
+        &ramp.endpoint,
+        service_authorization.as_str(),
+        &OutboundRequest {
+            method: "POST",
+            path: "/internal/v2/source-settlements",
+            idempotency: request.headers.get("idempotency-key").map(String::as_str),
+            content_type: "application/json",
+            body: &encoded,
+        },
+        Some(trace.as_str()),
+        customer_authorization,
+        &identity,
+    ) else {
+        return Dispatch::error(503, "pending", "migration_ramp_unavailable");
+    };
+    if !matches!(upstream.status, 200 | 202) {
+        return Dispatch::error(
+            if matches!(upstream.status, 401 | 403 | 404 | 409 | 422) {
+                upstream.status
+            } else {
+                503
+            },
+            if matches!(upstream.status, 401 | 403 | 404 | 409 | 422) {
+                "refused"
+            } else {
+                "pending"
+            },
+            "migration_source_settlement_refused",
+        );
+    }
+    if upstream.content_type != "application/json" || upstream.body.len() > MAX_BODY {
+        return Dispatch::error(503, "refused", "migration_response_invalid");
+    }
+    let Ok(response) = serde_json::from_slice::<SourceSettlementResponseV2>(&upstream.body) else {
+        return Dispatch::error(503, "refused", "migration_response_invalid");
+    };
+    if response.validate(&settlement, &evidence).is_err() {
+        return Dispatch::error(503, "refused", "migration_response_mismatch");
+    }
+    let durable_state = match response.state.as_str() {
+        "done" => "external_source_recorded",
+        "layerx_refused" => "refused",
+        _ => "pending",
+    };
+    Dispatch::result(
+        upstream.status,
+        durable_state,
+        json!({
+            "source_settlement": response,
+            "provenance": "external-custody",
+            "custody_label": "External custody: this independent market maker controls the off-platform funds and payout.",
+            "layerx_receipt": false,
+        }),
+    )
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MigrationAccountRequestV2 {
+    chain: MigrationSourceV2,
+    source_evidence: String,
+}
+
+fn migration_account_v2(
+    config: &Config,
+    request: &IncomingRequest,
+    record: &KeyRecord,
+    principal: &PrincipalId,
+    trace: &TraceId,
+) -> Dispatch {
+    let Ok(body) = direct_body::<MigrationAccountRequestV2>(request) else {
+        return Dispatch::error(400, "refused", "invalid_migration_request");
+    };
+    let Some(profile) = config.migration_v2.as_ref() else {
+        return Dispatch::error(503, "refused", "migration_v2_unconfigured");
+    };
+    let Ok(identity) = parse_hex32(&record.signer_public_key) else {
+        return Dispatch::error(503, "refused", "authenticated_signer_invalid");
+    };
+    if identity == [0; 32] {
+        return Dispatch::error(503, "refused", "authenticated_signer_invalid");
+    }
+    let Ok(decoded) = STANDARD.decode(&body.source_evidence) else {
+        return Dispatch::error(400, "refused", "invalid_evidence");
+    };
+    if STANDARD.encode(&decoded) != body.source_evidence {
+        return Dispatch::error(400, "refused", "invalid_evidence");
+    }
+    let Ok(evidence) = SourceEvidence::new(decoded) else {
+        return Dispatch::error(400, "refused", "invalid_evidence");
+    };
+    let confirmed = match body.chain {
+        MigrationSourceV2::Ethereum => {
+            let Some(verifier) = profile.ethereum.as_ref() else {
+                return Dispatch::error(503, "refused", "migration_source_unconfigured");
+            };
+            profile.mapping_store.confirm(
+                principal,
+                identity,
+                &evidence,
+                verifier,
+                &profile.paxeer_binding,
+                trace,
+            )
+        }
+        MigrationSourceV2::Solana => {
+            let Some(verifier) = profile.solana.as_ref() else {
+                return Dispatch::error(503, "refused", "migration_source_unconfigured");
+            };
+            profile.mapping_store.confirm(
+                principal,
+                identity,
+                &evidence,
+                verifier,
+                &profile.paxeer_binding,
+                trace,
+            )
+        }
+    };
+    match confirmed {
+        Ok(mapping) => match serde_json::to_value(mapping) {
+            Ok(value) => Dispatch::result(200, "external_mapping_confirmed", value),
+            Err(_) => Dispatch::error(503, "refused", "mapping_encoding_invalid"),
+        },
+        Err(error) => {
+            let (status, state) = match error {
+                MigrationError::SourcePending => (202, "pending"),
+                MigrationError::RpcUnavailable
+                | MigrationError::RpcDivergence
+                | MigrationError::RpcResponseMismatch => (503, "pending"),
+                MigrationError::RpcRateLimited { .. } => (429, "pending"),
+                MigrationError::Configuration
+                | MigrationError::StorageRefused
+                | MigrationError::CheckpointIntegrity => (503, "refused"),
+                MigrationError::CheckpointConflict
+                | MigrationError::SourceDisplaced
+                | MigrationError::SourceReverted => (409, "refused"),
+                _ => (400, "refused"),
+            };
+            Dispatch::error(status, state, error.code())
+        }
+    }
+}
+
+#[cfg(test)]
+mod migration_v2_request_tests {
+    use super::{direct_body, history_evidence, resumed_request, DurableContinuation,
+        MigrationAccountRequestV2, MigrationHistoryImportRequestV2, MigrationHistoryReadRequestV2};
+    use layerx_platform_gateway::http::IncomingRequest;
+    use std::collections::BTreeMap;
+
+    fn request(body: &[u8]) -> IncomingRequest {
+        IncomingRequest {
+            method: "POST".to_owned(),
+            path: "/v2/migration/accounts".to_owned(),
+            headers: BTreeMap::from([("content-type".to_owned(), "application/json".to_owned())]),
+            body: body.to_vec(),
+        }
+    }
+
+    #[test]
+    fn mapping_body_cannot_supply_owner_or_receipt_authority() {
+        assert!(direct_body::<MigrationAccountRequestV2>(&request(
+            br#"{"chain":"ethereum","source_evidence":"AQ=="}"#,
+        ))
+        .is_ok());
+        for body in [
+            br#"{"chain":"ethereum","source_evidence":"AQ==","principal":"other"}"#.as_slice(),
+            br#"{"chain":"ethereum","source_evidence":"AQ==","layerx_identity":"other"}"#
+                .as_slice(),
+            br#"{"chain":"ethereum","source_evidence":"AQ==","layerx_receipt":true}"#.as_slice(),
+            br#"{"chain":"paxeer","source_evidence":"AQ=="}"#.as_slice(),
+            br#"{"chain":"ethereum","chain":"solana","source_evidence":"AQ=="}"#.as_slice(),
+        ] {
+            assert!(direct_body::<MigrationAccountRequestV2>(&request(body)).is_err());
+        }
+    }
+
+    #[test]
+    fn pending_mapping_resumes_only_the_exact_authenticated_route() {
+        let encoded = serde_json::to_string(&DurableContinuation {
+            method: "POST".to_owned(),
+            path: "/v2/migration/accounts".to_owned(),
+            content_type: "application/json".to_owned(),
+            idempotency_key: Some("mapping-key".to_owned()),
+            body: "7b7d".to_owned(),
+        })
+        .unwrap_or_else(|error| panic!("continuation encoding: {error}"));
+        let resumed = resumed_request(&encoded, "Bearer renewed-key")
+            .unwrap_or_else(|()| panic!("exact migration continuation refused"));
+        assert_eq!(resumed.path, "/v2/migration/accounts");
+        assert_eq!(
+            resumed.headers.get("authorization").map(String::as_str),
+            Some("Bearer renewed-key")
+        );
+        for (method, path) in [
+            ("GET", "/v2/migration/accounts"),
+            ("POST", "/v2/migration/assets/invalid"),
+        ] {
+            let encoded = serde_json::to_string(&DurableContinuation {
+                method: method.to_owned(),
+                path: path.to_owned(),
+                content_type: "application/json".to_owned(),
+                idempotency_key: None,
+                body: "7b7d".to_owned(),
+            })
+            .unwrap_or_else(|error| panic!("continuation encoding: {error}"));
+            assert!(resumed_request(&encoded, "Bearer renewed-key").is_err());
+        }
+    }
+
+    #[test]
+    fn history_body_cannot_inject_owner_or_receipt_authority() {
+        assert!(direct_body::<MigrationHistoryImportRequestV2>(&request(
+            br#"{"chain":"ethereum","ownership_evidence":"AQ==","source_evidence":"Ag=="}"#,
+        )).is_ok());
+        assert!(direct_body::<MigrationHistoryReadRequestV2>(&request(
+            br#"{"cursor":null,"limit":1}"#,
+        )).is_ok());
+        for body in [
+            br#"{"chain":"ethereum","ownership_evidence":"AQ==","source_evidence":"Ag==","principal":"other"}"#.as_slice(),
+            br#"{"chain":"ethereum","ownership_evidence":"AQ==","source_evidence":"Ag==","layerx_receipt":true}"#.as_slice(),
+        ] {
+            assert!(direct_body::<MigrationHistoryImportRequestV2>(&request(body)).is_err());
+        }
+        for body in [
+            br#"{"cursor":null,"limit":1,"principal":"other"}"#.as_slice(),
+            br#"{"cursor":null,"limit":1,"layerx_receipt":true}"#.as_slice(),
+            br#"{"cursor":null,"limit":-1}"#.as_slice(),
+        ] {
+            assert!(direct_body::<MigrationHistoryReadRequestV2>(&request(body)).is_err());
+        }
+        for malformed in ["", "AQ", "AR==", "AQ==\n", "AQ-_", "!!!!"] {
+            assert!(history_evidence(malformed).is_err());
+        }
+    }
+
+    #[test]
+    fn history_pending_continuations_retain_exact_route_and_reauthentication() {
+        for path in ["/v2/migration/history", "/v2/migration/history/read"] {
+            let encoded = serde_json::to_string(&DurableContinuation {
+                method: "POST".to_owned(), path: path.to_owned(),
+                content_type: "application/json".to_owned(), idempotency_key: Some("history-key".to_owned()),
+                body: "7b7d".to_owned(),
+            }).unwrap_or_else(|error| panic!("history continuation: {error}"));
+            let resumed = resumed_request(&encoded, "Bearer renewed-key")
+                .unwrap_or_else(|()| panic!("history continuation refused"));
+            assert_eq!(resumed.path, path);
+            assert_eq!(resumed.headers.get("authorization").map(String::as_str), Some("Bearer renewed-key"));
+        }
+    }
+}
+
+fn x402_supported(config: &Config, transport: IngressTransport) -> Dispatch {
+    match Facilitator::new(config.manifest.x402_supported.clone()) {
+        Ok(facilitator) => Dispatch::result(
+            200,
+            "completed",
+            json!({ "transport": transport.label(), "supported": facilitator.supported() }),
+        ),
+        Err(_) => Dispatch::error(503, "pending", "adapter_configuration_invalid"),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BuyerRequest {
+    payment_required: PaymentRequired,
+    scheme_payload: Value,
+}
+
+fn x402_buyer(
+    config: &Config,
+    request: &IncomingRequest,
+    transport: IngressTransport,
+    trace: &TraceId,
+    operation: &str,
+) -> Dispatch {
+    let body: BuyerRequest = match typed_body(request, transport) {
+        Ok(value) => value,
+        Err(()) => return Dispatch::error(400, "refused", "invalid_x402_buyer_request"),
+    };
+    let Ok(TransportValue::HttpHeader { value: header, .. }) =
+        encode_payment_required(TransportKind::Http, &body.payment_required)
+    else {
+        return Dispatch::error(400, "refused", "invalid_x402_offer");
+    };
+    let supported = config
+        .manifest
+        .x402_supported
+        .kinds
+        .iter()
+        .map(|kind| SupportedKind {
+            scheme: kind.scheme.clone(),
+            network: kind.network.clone(),
+        })
+        .collect();
+    let Ok(buyer) = Buyer::new(supported) else {
+        return Dispatch::error(503, "pending", "adapter_configuration_invalid");
+    };
+    let mut plane = BuyerPlane {
+        payload: Some(body.scheme_payload),
+    };
+    let Ok(idempotency) = parse_hex32(operation) else {
+        return Dispatch::error(503, "pending", "operation_identity_invalid");
+    };
+    match buyer.build_payment(&header, idempotency, &mut plane, trace) {
+        Ok(built) => Dispatch::result(
+            200,
+            "completed",
+            json!({
+                "transport": transport.label(),
+                "payment_header": built.header,
+                "payment_payload": built.payload,
+                "idempotency_key": hex(&built.idempotency_key)
+            }),
+        ),
+        Err(_) => Dispatch::error(400, "refused", "x402_buyer_refused"),
+    }
+}
+
+struct BuyerPlane {
+    payload: Option<Value>,
+}
+
+impl BuyerPaymentPlane for BuyerPlane {
+    fn construct(
+        &mut self,
+        _request: PaymentBuildRequest,
+    ) -> Result<Value, layerx_x402::model::X402Error> {
+        self.payload
+            .take()
+            .filter(Value::is_object)
+            .ok_or(layerx_x402::model::X402Error::InvalidPayload)
+    }
+}
+
+fn x402_seller(request: &IncomingRequest, transport: IngressTransport) -> Dispatch {
+    let required: PaymentRequired = match typed_body(request, transport) {
+        Ok(value) => value,
+        Err(()) => return Dispatch::error(400, "refused", "invalid_x402_offer"),
+    };
+    let Ok(seller) = Seller::new(required) else {
+        return Dispatch::error(400, "refused", "invalid_x402_offer");
+    };
+    match seller.payment_required() {
+        Ok(signal) => Dispatch::result(
+            200,
+            "completed",
+            json!({
+                "transport": transport.label(),
+                "status": signal.status,
+                "payment_required_header": signal.header,
+                "payment_required": signal.body
+            }),
+        ),
+        Err(_) => Dispatch::error(400, "refused", "x402_offer_encoding_refused"),
+    }
+}
+
+fn x402_request(
+    request: &IncomingRequest,
+    transport: IngressTransport,
+) -> Result<FacilitatorRequest, ()> {
+    let value: Value = typed_body(request, transport)?;
+    decode_facilitator_request(transport_kind(transport), &TransportValue::Json(value))
+        .map_err(|_| ())
+}
+
+fn gateway_core(config: &Config, trace: &TraceId, now: u64) -> Result<GatewayCore, ()> {
+    let mut gateway = GatewayCore::new();
+    for registered in config.manifest.adapters.values() {
+        gateway
+            .register_adapter(registered.descriptor.clone(), trace, now)
+            .map_err(|_| ())?;
+    }
+    Ok(gateway)
+}
+
+struct X402VerifyPlane<'a> {
+    modules: &'a ModuleRegistry,
+    protocol_version: u16,
+    protocol_network_id: u32,
+    expected_signer: [u8; 32],
+    observed_at: u64,
+}
+
+fn verified_x402_transfer(
+    request: &FacilitatorPaymentRequest,
+    modules: &ModuleRegistry,
+    protocol_version: u16,
+    protocol_network_id: u32,
+    expected_signer: &[u8; 32],
+    observed_at: u64,
+) -> Result<(VerifiedSubmission, VerifiedTransfer), &'static str> {
+    let activity = request
+        .payment_payload
+        .payload
+        .get("layerxActivity")
+        .and_then(Value::as_str)
+        .and_then(|value| decode_hex(value, MAX_BODY).ok())
+        .filter(|value| !value.is_empty())
+        .ok_or("typed_intent_required")?;
+    let declared_idempotency = request
+        .payment_payload
+        .payload
+        .get("layerxIdempotencyKey")
+        .and_then(Value::as_str)
+        .and_then(|value| parse_hex32(value).ok())
+        .ok_or("protocol_idempotency_required")?;
+    let submission = verify_submission(
+        &activity,
+        modules,
+        protocol_version,
+        protocol_network_id,
+        expected_signer,
+    )
+    .map_err(|_| "activity_authorization_refused")?;
+    if submission.idempotency_key() != declared_idempotency {
+        return Err("protocol_idempotency_mismatch");
+    }
+    let transfer = submission.transfer().ok_or("typed_transfer_required")?;
+    let (asset, recipient) = x402_facts(&request.payment_requirements)?;
+    if transfer.asset() != asset
+        || transfer.recipient() != recipient
+        || transfer.amount() != request.payment_requirements.amount.value()
+    {
+        return Err("payment_requirements_mismatch");
+    }
+    if observed_at < transfer.not_before()
+        || observed_at > transfer.not_after()
+        || observed_at > transfer.expires_at()
+    {
+        return Err("activity_time_window_refused");
+    }
+    Ok((submission, transfer))
+}
+
+fn x402_facts(requirements: &PaymentRequirements) -> Result<([u8; 32], [u8; 32]), &'static str> {
+    requirements.layerx_facts().map_err(|_| "unsupported_offer")
+}
+
+impl FacilitatorPlane for X402VerifyPlane<'_> {
+    fn verify(
+        &mut self,
+        request: &FacilitatorPaymentRequest,
+        _trace: &TraceId,
+    ) -> Result<PlaneVerifyOutcome, X402Error> {
+        match verified_x402_transfer(
+            request,
+            self.modules,
+            self.protocol_version,
+            self.protocol_network_id,
+            &self.expected_signer,
+            self.observed_at,
+        ) {
+            Ok((submission, transfer)) => Ok(PlaneVerifyOutcome::Valid {
+                payer: Some(hex(&transfer.payer())),
+                extra: Some(json!({ "layerxActivityId": hex(&submission.activity_id()) })),
+            }),
+            Err(reason) => Ok(PlaneVerifyOutcome::Invalid {
+                reason,
+                payer: None,
+            }),
+        }
+    }
+
+    fn settle(
+        &mut self,
+        _request: FacilitatorPaymentRequest,
+        _trace: &TraceId,
+    ) -> Result<FacilitatorSettlementOutcome, X402Error> {
+        Err(X402Error::PaymentRefused)
+    }
+}
+
+fn x402_verify(
+    config: &Config,
+    request: &IncomingRequest,
+    transport: IngressTransport,
+    record: &KeyRecord,
+    principal: &PrincipalId,
+    trace: &TraceId,
+) -> Dispatch {
+    let Ok(parsed) = x402_request(request, transport) else {
+        return Dispatch::error(400, "refused", "invalid_x402_request");
+    };
+    let Ok(facilitator) = Facilitator::new(config.manifest.x402_supported.clone()) else {
+        return Dispatch::error(503, "pending", "adapter_configuration_invalid");
+    };
+    let Ok(expected_signer) = parse_hex32(&record.signer_public_key) else {
+        return Dispatch::error(503, "pending", "authenticated_signer_invalid");
+    };
+    let Ok(server_now) = now() else {
+        return Dispatch::error(503, "pending", "clock_unavailable");
+    };
+    let Ok(mut gateway) = gateway_core(config, trace, server_now) else {
+        return Dispatch::error(503, "pending", "adapter_configuration_invalid");
+    };
+    let mut plane = X402VerifyPlane {
+        modules: &config.modules,
+        protocol_version: config.protocol_version,
+        protocol_network_id: config.protocol_network_id,
+        expected_signer,
+        observed_at: server_now,
+    };
+    match facilitator.verify(
+        &mut gateway,
+        principal,
+        &parsed,
+        &mut plane,
+        trace,
+        server_now,
+    ) {
+        Ok(response) => Dispatch::result(200, "completed", json!(response)),
+        Err(traced) => match traced.into_error() {
+            X402Error::UnsupportedOffer => {
+                Dispatch::error(400, "refused", "unsupported_x402_offer")
+            }
+            X402Error::Gateway(_) => Dispatch::error(503, "pending", "settlement_unavailable"),
+            _ => Dispatch::error(400, "refused", "invalid_x402_request"),
+        },
+    }
+}
+
+struct X402SettlePlane<'a> {
+    config: &'a Config,
+    authorization: &'a str,
+    expected_signer: &'a str,
+    trace: &'a TraceId,
+    receipt_hex: Option<String>,
+    activity_id: Option<String>,
+    unavailable: bool,
+    observed_at: u64,
+}
+
+impl FacilitatorPlane for X402SettlePlane<'_> {
+    fn verify(
+        &mut self,
+        _request: &FacilitatorPaymentRequest,
+        _trace: &TraceId,
+    ) -> Result<PlaneVerifyOutcome, X402Error> {
+        Err(X402Error::PaymentRefused)
+    }
+
+    fn settle(
+        &mut self,
+        request: FacilitatorPaymentRequest,
+        _trace: &TraceId,
+    ) -> Result<FacilitatorSettlementOutcome, X402Error> {
+        let activity = request
+            .payment_payload
+            .payload
+            .get("layerxActivity")
+            .and_then(Value::as_str)
+            .and_then(|value| decode_hex(value, MAX_BODY).ok())
+            .filter(|value| !value.is_empty());
+        let Some(activity) = activity else {
+            return Ok(FacilitatorSettlementOutcome::Refused {
+                reason: "typed_intent_required",
+                payer: None,
+            });
+        };
+        let Ok(expected_signer) = parse_hex32(self.expected_signer) else {
+            return Err(X402Error::PaymentRefused);
+        };
+        let (submission, _) = match verified_x402_transfer(
+            &request,
+            &self.config.modules,
+            self.config.protocol_version,
+            self.config.protocol_network_id,
+            &expected_signer,
+            self.observed_at,
+        ) {
+            Ok(value) => value,
+            Err(reason) => {
+                return Ok(FacilitatorSettlementOutcome::Refused {
+                    reason,
+                    payer: None,
+                })
+            }
+        };
+        let idempotency = hex(&submission.idempotency_key());
+        let execution = Execution {
+            config: self.config,
+            authorization: self.authorization,
+            activity,
+            idempotency: &idempotency,
+            expected_signer: self.expected_signer,
+            submitted_activity_id: Some(submission.activity_id()),
+            trace: self.trace,
+        };
+        match execution.submit() {
+            Ok(PlaneOutcome::Pending) => Ok(FacilitatorSettlementOutcome::Pending {
+                transaction: idempotency,
+            }),
+            Ok(PlaneOutcome::Refused) => Ok(FacilitatorSettlementOutcome::Refused {
+                reason: "payment_refused",
+                payer: None,
+            }),
+            Ok(PlaneOutcome::Executed(evidence)) => {
+                self.receipt_hex = Some(hex(&evidence.receipt));
+                self.activity_id = Some(hex(&evidence.verified.activity_id()));
+                Ok(FacilitatorSettlementOutcome::Executed(
+                    X402ExecutedPayment {
+                        canonical_receipt: evidence.receipt,
+                        authorised_batch: evidence.authorized,
+                    },
+                ))
+            }
+            Err(_) => {
+                self.unavailable = true;
+                Err(X402Error::PaymentRefused)
+            }
+        }
+    }
+}
+
+fn x402_settle(
+    config: &Config,
+    request: &IncomingRequest,
+    transport: IngressTransport,
+    record: &KeyRecord,
+    principal: &PrincipalId,
+    trace: &TraceId,
+) -> Dispatch {
+    let Ok(parsed) = x402_request(request, transport) else {
+        return Dispatch::error(400, "refused", "invalid_x402_request");
+    };
+    let stable_identity = parsed
+        .payment_payload
+        .payload
+        .get("layerxIdempotencyKey")
+        .and_then(Value::as_str)
+        .and_then(|value| parse_hex32(value).ok());
+    let Some(stable_identity) = stable_identity else {
+        return Dispatch::error(400, "refused", "protocol_idempotency_required");
+    };
+    let Some(authorization) = request.headers.get("authorization") else {
+        return Dispatch::error(401, "refused", "api_key_required");
+    };
+    let Ok(facilitator) = Facilitator::new(config.manifest.x402_supported.clone()) else {
+        return Dispatch::error(503, "pending", "adapter_configuration_invalid");
+    };
+    let Ok(server_now) = now() else {
+        return Dispatch::error(503, "pending", "clock_unavailable");
+    };
+    let Ok(mut gateway) = gateway_core(config, trace, server_now) else {
+        return Dispatch::error(503, "pending", "adapter_configuration_invalid");
+    };
+    let mut plane = X402SettlePlane {
+        config,
+        authorization,
+        expected_signer: &record.signer_public_key,
+        trace,
+        receipt_hex: None,
+        activity_id: None,
+        unavailable: false,
+        observed_at: server_now,
+    };
+    let settled = facilitator.settle(
+        &mut gateway,
+        principal,
+        &parsed,
+        stable_identity,
+        SettlementStep::Single,
+        &mut plane,
+        trace,
+        server_now,
+    );
+    match settled {
+        Ok(response) => {
+            if response.success {
+                let mut result = Dispatch::result(200, "completed", json!(response));
+                result.receipt_hex = plane.receipt_hex;
+                result.activity_id = plane.activity_id;
+                result
+            } else if response.error_reason.as_deref() == Some("settlement_pending") {
+                Dispatch::result(202, "pending", json!(response))
+            } else {
+                Dispatch::result(200, "refused", json!(response))
+            }
+        }
+        Err(traced) => {
+            if plane.unavailable {
+                return Dispatch::error(503, "pending", "settlement_unavailable");
+            }
+            match traced.into_error() {
+                X402Error::UnsupportedOffer => {
+                    Dispatch::error(400, "refused", "unsupported_x402_offer")
+                }
+                X402Error::EvidenceMismatch | X402Error::EvidenceMissing => {
+                    Dispatch::error(503, "pending", "receipt_intent_mismatch")
+                }
+                X402Error::Gateway(_) => Dispatch::error(503, "pending", "settlement_unavailable"),
+                _ => Dispatch::error(400, "refused", "invalid_x402_request"),
+            }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Ap2Request {
+    checkout_presentation: String,
+    payment_presentation: String,
+    nonce: String,
+    #[serde(default)]
+    activity: String,
+}
+
+struct DispatchContext<'a> {
+    config: &'a Config,
+    request: &'a IncomingRequest,
+    record: &'a KeyRecord,
+    principal: &'a PrincipalId,
+    trace: &'a TraceId,
+}
+
+fn ap2(
+    config: &Config,
+    request: &IncomingRequest,
+    record: &KeyRecord,
+    principal: &PrincipalId,
+    trace: &TraceId,
+    _operation: &str,
+    execute: bool,
+) -> Dispatch {
+    let body: Ap2Request = match direct_body(request) {
+        Ok(value) => value,
+        Err(()) => return Dispatch::error(400, "refused", "invalid_ap2_request"),
+    };
+    let resolver = Ap2Resolver {
+        keys: &config.manifest.ap2_keys,
+    };
+    if parse_hex32(&record.principal_digest).is_err()
+        || record.principal_digest != record.principal_digest.to_ascii_lowercase()
+    {
+        return Dispatch::error(503, "pending", "authenticated_principal_invalid");
+    }
+    let Ok(server_now) = now() else {
+        return Dispatch::error(503, "pending", "clock_unavailable");
+    };
+    let mut matched = None;
+    for binding in config
+        .manifest
+        .ap2_assets
+        .iter()
+        .filter(|binding| binding.principal_digest == record.principal_digest)
+    {
+        let context = VerificationContext {
+            now: server_now,
+            clock_skew_seconds: 0,
+            expected_audience: &binding.audience,
+            expected_nonce: &body.nonce,
+            currency_minor_exponent: binding.minor_unit_exponent,
+            usage: None,
+        };
+        let Ok(verified) = MandateVerifier::new(&resolver).verify(
+            &body.checkout_presentation,
+            &body.payment_presentation,
+            &context,
+        ) else {
+            continue;
+        };
+        if verified.amount().currency() != binding.currency.as_str() {
+            continue;
+        }
+        if matched.replace((binding, verified)).is_some() {
+            return Dispatch::error(400, "refused", "asset_binding_ambiguous");
+        }
+    }
+    let Some((binding, verified)) = matched else {
+        return Dispatch::error(400, "refused", "mandate_verification_refused");
+    };
+    if !execute {
+        let mode = match verified.mode() {
+            MandateMode::Direct => "direct",
+            MandateMode::Autonomous => "autonomous",
+        };
+        return Dispatch::result(
+            200,
+            "completed",
+            json!({
+                "state": "mandate-verified",
+                "mode": mode,
+                "transaction_id": verified.transaction_id(),
+                "checkout_id": verified.checkout_id(),
+                "currency": verified.amount().currency(),
+                "minor_units": verified.amount().minor_units().to_string(),
+                "execution_at": verified.execution_at()
+            }),
+        );
+    }
+    ap2_execute(
+        &DispatchContext {
+            config,
+            request,
+            record,
+            principal,
+            trace,
+        },
+        &body,
+        binding,
+        &verified,
+        server_now,
+    )
+}
+
+fn ap2_execute(
+    context: &DispatchContext<'_>,
+    body: &Ap2Request,
+    binding: &crate::config::Ap2AssetBinding,
+    verified: &layerx_ap2::VerifiedMandates,
+    server_now: u64,
+) -> Dispatch {
+    let DispatchContext {
+        config,
+        request,
+        record,
+        principal,
+        trace,
+    } = *context;
+    if verified.amount().currency().len() != 3 || body.activity.is_empty() {
+        return Dispatch::error(400, "refused", "typed_intent_required");
+    }
+    let Ok(activity) = decode_hex(&body.activity, MAX_BODY) else {
+        return Dispatch::error(400, "refused", "typed_intent_required");
+    };
+    let Ok(asset) = parse_hex32(&binding.asset) else {
+        return Dispatch::error(400, "refused", "asset_binding_invalid");
+    };
+    let Ok(payer) = parse_hex32(&binding.payer_account) else {
+        return Dispatch::error(400, "refused", "account_binding_invalid");
+    };
+    let Ok(recipient) = parse_hex32(&binding.payee_account) else {
+        return Dispatch::error(400, "refused", "account_binding_invalid");
+    };
+    let Ok(atomic_units) = binding.atomic_units_per_minor_unit.parse::<u128>() else {
+        return Dispatch::error(503, "pending", "adapter_configuration_invalid");
+    };
+    let Ok(payee_merchant) = Merchant::new(
+        binding.payee_merchant_id.clone(),
+        binding.payee_merchant_name.clone(),
+        binding.payee_merchant_website.clone(),
+    ) else {
+        return Dispatch::error(503, "pending", "adapter_configuration_invalid");
+    };
+    let layerx_binding = LayerXAssetBinding {
+        currency: binding.currency.clone(),
+        minor_unit_exponent: binding.minor_unit_exponent,
+        atomic_units_per_minor_unit: atomic_units,
+        asset,
+        payer_receipt_account: payer,
+        payee_receipt_account: recipient,
+        payee_merchant,
+    };
+    let context = VerificationContext {
+        now: server_now,
+        clock_skew_seconds: 0,
+        expected_audience: &binding.audience,
+        expected_nonce: &body.nonce,
+        currency_minor_exponent: binding.minor_unit_exponent,
+        usage: None,
+    };
+    let payment = match authorize_payment(principal, verified, &context, &layerx_binding) {
+        Ok(value) => value,
+        Err(Ap2Error::ConstraintViolated(_)) => {
+            return Dispatch::error(400, "refused", "mandate_merchant_mismatch")
+        }
+        Err(_) => return Dispatch::error(400, "refused", "asset_binding_invalid"),
+    };
+    let authorization = request
+        .headers
+        .get("authorization")
+        .map_or("", String::as_str);
+    let activity_idempotency_key = hex(&payment.idempotency_key());
+    let execution = Execution {
+        config,
+        authorization,
+        activity,
+        idempotency: &activity_idempotency_key,
+        expected_signer: &record.signer_public_key,
+        submitted_activity_id: None,
+        trace,
+    };
+    match execution.submit() {
+        Ok(PlaneOutcome::Pending) => Dispatch::result(
+            202,
+            "pending",
+            json!({ "state": ExternalState::Pending.label() }),
+        ),
+        Ok(PlaneOutcome::Refused) => Dispatch::result(
+            200,
+            "refused",
+            json!({ "state": ExternalState::Refused.label() }),
+        ),
+        Ok(PlaneOutcome::Executed(evidence)) => ap2_executed(&payment, &evidence),
+        Err(_) => Dispatch::error(503, "pending", "settlement_unavailable"),
+    }
+}
+
+fn ap2_executed(payment: &layerx_ap2::AuthorizedPayment, evidence: &ExecutionEvidence) -> Dispatch {
+    let Ok(receipt) = verify(&evidence.receipt, &evidence.authorized) else {
+        return Dispatch::error(503, "pending", "receipt_verification_failed");
+    };
+    let Some(protocol) = receipt.receipt().protocol() else {
+        return Dispatch::error(503, "pending", "receipt_verification_failed");
+    };
+    if protocol.asset() != payment.asset()
+        || protocol.from() != payment.payer_receipt_account()
+        || protocol.to() != payment.payee_receipt_account()
+        || protocol.amount() != payment.amount()
+    {
+        return Dispatch::error(503, "pending", "receipt_intent_mismatch");
+    }
+    let mut result = Dispatch::result(
+        200,
+        "completed",
+        json!({
+            "state": ExternalState::ReceiptVerified.label(),
+            "transaction_id": payment.transaction_id(),
+            "checkout_id": payment.checkout_id(),
+            "receipt_digest": hex(&evidence.verified.receipt_digest())
+        }),
+    );
+    result.receipt_hex = Some(hex(&evidence.receipt));
+    result.activity_id = Some(hex(&evidence.verified.activity_id()));
+    result
+}
+
+struct Ap2Resolver<'a> {
+    keys: &'a [Ap2KeyPin],
+}
+
+impl KeyResolver for Ap2Resolver<'_> {
+    fn resolve(
+        &self,
+        usage: KeyUse,
+        header: &ProtectedHeader,
+    ) -> Result<P256Key, layerx_ap2::Ap2Error> {
+        if header.certificate_chain().is_some() {
+            return Err(layerx_ap2::Ap2Error::KeyResolution);
+        }
+        let use_case = match usage {
+            KeyUse::CheckoutMandateIssuer => "checkout-mandate",
+            KeyUse::PaymentMandateIssuer => "payment-mandate",
+            KeyUse::MerchantCheckout => "merchant-checkout",
+        };
+        let kid = header.key_id().ok_or(layerx_ap2::Ap2Error::KeyResolution)?;
+        let pin = self
+            .keys
+            .iter()
+            .find(|pin| pin.use_case == use_case && pin.key_id == kid)
+            .ok_or(layerx_ap2::Ap2Error::KeyResolution)?;
+        let bytes = decode_hex(&pin.public_key_sec1, 65)
+            .map_err(|_| layerx_ap2::Ap2Error::KeyResolution)?;
+        P256Key::from_sec1_bytes(&bytes).map_err(|_| layerx_ap2::Ap2Error::KeyResolution)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UcpCapabilityWire {
+    name: String,
+    version: String,
+    spec: String,
+    schema: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UcpHandlerWire {
+    id: String,
+    version: String,
+    spec: String,
+    schema: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UcpRequest {
+    checkout_id: String,
+    currency: String,
+    total_minor: String,
+    asset: String,
+    recipient: String,
+    idempotency_key: String,
+    profile_url: String,
+    capabilities: Vec<UcpCapabilityWire>,
+    payment_handlers: Vec<UcpHandlerWire>,
+    activity: String,
+    order_id: String,
+    permalink_url: String,
+}
+
+fn ucp_client_profile(body: &UcpRequest) -> Result<PlatformProfile, ()> {
+    if body.capabilities.len() > 32 || body.payment_handlers.len() > 32 {
+        return Err(());
+    }
+    let mut capabilities = Vec::with_capacity(body.capabilities.len());
+    for capability in &body.capabilities {
+        capabilities.push(
+            Capability::new(
+                &capability.name,
+                &capability.version,
+                &capability.spec,
+                &capability.schema,
+            )
+            .map_err(|_| ())?,
+        );
+    }
+    let mut payment_handlers = Vec::with_capacity(body.payment_handlers.len());
+    for handler in &body.payment_handlers {
+        payment_handlers.push(
+            PaymentHandler::new(
+                &handler.id,
+                &handler.version,
+                &handler.spec,
+                &handler.schema,
+            )
+            .map_err(|_| ())?,
+        );
+    }
+    Ok(PlatformProfile {
+        profile_url: body.profile_url.clone(),
+        capabilities,
+        payment_handlers,
+    })
+}
+
+struct UcpServicePlane<'a> {
+    config: &'a Config,
+    authorization: &'a str,
+    expected_signer: &'a str,
+    activity: Vec<u8>,
+    order_id: String,
+    permalink_url: String,
+    receipt_hex: Option<String>,
+    activity_id: Option<String>,
+    unavailable: bool,
+}
+
+impl UcpPaymentPlane for UcpServicePlane<'_> {
+    fn execute(
+        &mut self,
+        intent: &UcpPaymentIntent,
+        trace: &TraceId,
+    ) -> Result<UcpPlaneResult, UcpError> {
+        let idempotency = hex(&intent.idempotency_key);
+        let execution = Execution {
+            config: self.config,
+            authorization: self.authorization,
+            activity: self.activity.clone(),
+            idempotency: &idempotency,
+            expected_signer: self.expected_signer,
+            submitted_activity_id: None,
+            trace,
+        };
+        match execution.submit() {
+            Ok(PlaneOutcome::Pending) => Ok(UcpPlaneResult::Pending),
+            Ok(PlaneOutcome::Refused) => Ok(UcpPlaneResult::Refused),
+            Ok(PlaneOutcome::Executed(evidence)) => {
+                self.receipt_hex = Some(hex(&evidence.receipt));
+                self.activity_id = Some(hex(&evidence.verified.activity_id()));
+                Ok(UcpPlaneResult::Executed(Box::new(ExecutedUcpPayment {
+                    metadata: OrderMetadata {
+                        order_id: self.order_id.clone(),
+                        permalink_url: self.permalink_url.clone(),
+                    },
+                    canonical_receipt: evidence.receipt,
+                    authorised_batch: evidence.authorized,
+                })))
+            }
+            Err(_) => {
+                self.unavailable = true;
+                Err(UcpError::PlaneRefused)
+            }
+        }
+    }
+}
+
+fn ucp(
+    config: &Config,
+    request: &IncomingRequest,
+    record: &KeyRecord,
+    principal: &PrincipalId,
+    trace: &TraceId,
+    _operation: &str,
+) -> Dispatch {
+    let body: UcpRequest = match direct_body(request) {
+        Ok(value) => value,
+        Err(()) => return Dispatch::error(400, "refused", "invalid_ucp_request"),
+    };
+    let Ok(client_platform) = ucp_client_profile(&body) else {
+        return Dispatch::error(400, "refused", "ucp_profile_refused");
+    };
+    let Ok(negotiated) =
+        NegotiatedCapabilities::negotiate(&client_platform, &config.manifest.ucp_payment_handler)
+    else {
+        return Dispatch::error(400, "refused", "ucp_capability_refused");
+    };
+    let currency: [u8; 3] = match body.currency.as_bytes().try_into() {
+        Ok(value) => value,
+        Err(_) => return Dispatch::error(400, "refused", "ucp_currency_invalid"),
+    };
+    let submission = CheckoutSubmission {
+        checkout_id: body.checkout_id.clone(),
+        currency,
+        total_minor: match body.total_minor.parse::<u128>() {
+            Ok(value) => value,
+            Err(_) => return Dispatch::error(400, "refused", "ucp_amount_invalid"),
+        },
+        layerx_asset: match parse_hex32(&body.asset) {
+            Ok(value) => value,
+            Err(_) => return Dispatch::error(400, "refused", "ucp_asset_invalid"),
+        },
+        layerx_recipient: match parse_hex32(&body.recipient) {
+            Ok(value) => value,
+            Err(_) => return Dispatch::error(400, "refused", "ucp_recipient_invalid"),
+        },
+        idempotency_key: match UcpIdempotencyKey::parse(&body.idempotency_key) {
+            Ok(value) => value,
+            Err(_) => return Dispatch::error(400, "refused", "ucp_idempotency_invalid"),
+        },
+        negotiated,
+    };
+    if body.activity.is_empty() {
+        return Dispatch::error(400, "refused", "typed_intent_required");
+    }
+    let Ok(activity) = decode_hex(&body.activity, MAX_BODY) else {
+        return Dispatch::error(400, "refused", "typed_intent_required");
+    };
+    let Ok(server_now) = now() else {
+        return Dispatch::error(503, "pending", "clock_unavailable");
+    };
+    let Ok(mut gateway) = gateway_core(config, trace, server_now) else {
+        return Dispatch::error(503, "pending", "adapter_configuration_invalid");
+    };
+    let authorization = request
+        .headers
+        .get("authorization")
+        .map_or("", String::as_str);
+    let mut plane = UcpServicePlane {
+        config,
+        authorization,
+        expected_signer: &record.signer_public_key,
+        activity,
+        order_id: body.order_id,
+        permalink_url: body.permalink_url,
+        receipt_hex: None,
+        activity_id: None,
+        unavailable: false,
+    };
+    let completed = UcpAdapter::complete_checkout(
+        &mut gateway,
+        principal,
+        &submission,
+        &mut plane,
+        trace,
+        server_now,
+    );
+    ucp_outcome(completed, plane)
+}
+
+fn ucp_outcome(
+    completed: Result<layerx_ucp::CheckoutOutcome, layerx_interop_gateway::trace::Traced<UcpError>>,
+    plane: UcpServicePlane<'_>,
+) -> Dispatch {
+    match completed {
+        Ok(outcome) => match outcome.status {
+            CheckoutStatus::Completed => {
+                let Some(order) = outcome.order else {
+                    return Dispatch::error(503, "pending", "receipt_intent_mismatch");
+                };
+                let mut result = Dispatch::result(
+                    200,
+                    "completed",
+                    json!({
+                        "state": ExternalState::ReceiptVerified.label(),
+                        "order": {
+                            "id": order.id, "checkout_id": order.checkout_id,
+                            "permalink_url": order.permalink_url,
+                            "currency": String::from_utf8_lossy(&order.currency),
+                            "total_minor": order.total_minor.to_string(),
+                            "receipt_digest": hex(&order.receipt_digest)
+                        }
+                    }),
+                );
+                result.receipt_hex = plane.receipt_hex;
+                result.activity_id = plane.activity_id;
+                result
+            }
+            CheckoutStatus::CompleteInProgress => Dispatch::result(
+                202,
+                "pending",
+                json!({ "state": ExternalState::Pending.label() }),
+            ),
+            _ => Dispatch::result(
+                200,
+                "refused",
+                json!({ "state": ExternalState::Refused.label() }),
+            ),
+        },
+        Err(traced) => {
+            if plane.unavailable {
+                return Dispatch::error(503, "pending", "settlement_unavailable");
+            }
+            match traced.into_error() {
+                UcpError::InvalidOrder => Dispatch::error(400, "refused", "ucp_order_invalid"),
+                UcpError::ReceiptMismatch
+                | UcpError::ReceiptRequired
+                | UcpError::OrderEvidenceRequired => {
+                    Dispatch::error(503, "pending", "receipt_intent_mismatch")
+                }
+                UcpError::Gateway(_) => Dispatch::error(503, "pending", "settlement_unavailable"),
+                _ => Dispatch::error(400, "refused", "invalid_ucp_request"),
+            }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VisaRequest {
+    authority: String,
+    path: String,
+    signature_input: String,
+    signature: String,
+    #[serde(default)]
+    activity: String,
+}
+
+struct VisaActivityBinding {
+    canonical: Vec<u8>,
+    activity_id: [u8; 32],
+    idempotency_key: String,
+}
+
+fn visa(
+    config: &Config,
+    request: &IncomingRequest,
+    record: &KeyRecord,
+    principal: &PrincipalId,
+    trace: &TraceId,
+    operation: &str,
+    execute: bool,
+) -> Dispatch {
+    let Ok(body) = direct_body::<VisaRequest>(request) else {
+        return Dispatch::error(400, "refused", "invalid_visa_tap_request");
+    };
+    let Ok(tap) = TapRequest::parse(
+        body.authority,
+        body.path,
+        &body.signature_input,
+        &body.signature,
+    ) else {
+        return Dispatch::error(400, "refused", "visa_tap_refused");
+    };
+    let Some(target) = config
+        .manifest
+        .visa_targets
+        .iter()
+        .find(|target| target.principal_digest.as_str() == record.principal_digest)
+    else {
+        return Dispatch::error(400, "refused", "visa_tap_target_unavailable");
+    };
+    if require_visa_target(&tap, target).is_err() {
+        return Dispatch::error(400, "refused", "visa_tap_target_mismatch");
+    }
+    let registry = VisaRegistry {
+        pins: &config.manifest.visa_agents,
+    };
+    let Ok(observed_at) = now() else {
+        return Dispatch::error(503, "pending", "server_clock_unavailable");
+    };
+    let Ok(verified) =
+        TapVerifier::verify_credential(&tap, &registry, observed_at, config.tap_clock_skew_seconds)
+    else {
+        return Dispatch::error(400, "refused", "visa_tap_refused");
+    };
+    let Some(layerx_agent) = verified.layerx_agent else {
+        return Dispatch::error(400, "refused", "layerx_agent_binding_required");
+    };
+    let Ok(signer_public_key) = parse_hex32(&record.signer_public_key) else {
+        return Dispatch::error(503, "pending", "persistence_unavailable");
+    };
+    if let Err(code) = require_visa_actor(layerx_agent, signer_public_key) {
+        return Dispatch::error(400, "refused", code);
+    }
+    if let Err(code) = require_visa_route(execute, verified.intent, &body.activity) {
+        return Dispatch::error(400, "refused", code);
+    }
+    let activity_binding = match visa_activity(config, &body.activity, execute, signer_public_key) {
+        Ok(binding) => binding,
+        Err(refusal) => return refusal,
+    };
+    if !execute {
+        let Ok(binding) = layerx_visa_tap::verified_agent_binding(layerx_agent, &verified) else {
+            return Dispatch::error(400, "refused", "visa_tap_refused");
+        };
+        return Dispatch::result(
+            200,
+            "completed",
+            json!({
+                "state": "credential-verified", "agent_id": binding.trusted_agent_id,
+                "layerx_agent": hex(&binding.layerx_agent),
+                "credential_evidence": hex(&binding.evidence_digest)
+            }),
+        );
+    }
+    let replay_until = match verified
+        .expires_at
+        .checked_add(config.tap_clock_skew_seconds)
+    {
+        Some(value) if value > observed_at => value,
+        _ => return Dispatch::error(400, "refused", "visa_tap_refused"),
+    };
+    let tap_audit = gateway_audit_event(
+        &record.principal_digest,
+        "visa_tap_nonce",
+        &verified.key_id,
+        "attempted",
+        observed_at,
+    );
+    let mut bindings = DurableVisaBinding {
+        store: &config.store,
+        nonce: tap.nonce(),
+        intent: verified.intent,
+        activity_id: activity_binding.as_ref().map(|binding| binding.activity_id),
+        signer_public_key,
+        target_authority: tap.authority(),
+        target_path: tap.path(),
+        operation_identity: operation,
+        credential_expires_at: verified.expires_at,
+        replay_until,
+        consumed_at: observed_at,
+        audit_event: &tap_audit,
+    };
+    match prepare_trusted_intent(principal, layerx_agent, &verified, &mut bindings, trace) {
+        Ok(_) => {}
+        Err(TapError::Replay) => return Dispatch::error(409, "refused", "visa_tap_replayed"),
+        Err(TapError::StorageRefused) => {
+            return Dispatch::error(503, "pending", "persistence_unavailable")
+        }
+        Err(_) => return Dispatch::error(400, "refused", "visa_tap_refused"),
+    }
+    visa_execute(config, request, record, trace, activity_binding)
+}
+
+fn visa_execute(
+    config: &Config,
+    request: &IncomingRequest,
+    record: &KeyRecord,
+    trace: &TraceId,
+    activity_binding: Option<VisaActivityBinding>,
+) -> Dispatch {
+    let Some(activity) = activity_binding else {
+        return Dispatch::error(400, "refused", "typed_intent_required");
+    };
+    let activity_id = activity.activity_id;
+    let idempotency_key = activity.idempotency_key;
+    let canonical = activity.canonical;
+    let authorization = request
+        .headers
+        .get("authorization")
+        .map_or("", String::as_str);
+    match (Execution {
+        config,
+        authorization,
+        activity: canonical,
+        idempotency: &idempotency_key,
+        expected_signer: &record.signer_public_key,
+        submitted_activity_id: Some(activity_id),
+        trace,
+    })
+    .submit()
+    {
+        Ok(PlaneOutcome::Pending) => Dispatch::result(
+            202,
+            "pending",
+            json!({ "state": ExternalState::Pending.label() }),
+        ),
+        Ok(PlaneOutcome::Refused) => Dispatch::result(
+            200,
+            "refused",
+            json!({ "state": ExternalState::Refused.label() }),
+        ),
+        Ok(PlaneOutcome::Executed(evidence)) => {
+            let mut result = Dispatch::result(
+                200,
+                "completed",
+                json!({ "state": ExternalState::ReceiptVerified.label(), "receipt_digest": hex(&evidence.verified.receipt_digest()) }),
+            );
+            result.receipt_hex = Some(hex(&evidence.receipt));
+            result.activity_id = Some(hex(&evidence.verified.activity_id()));
+            result
+        }
+        Err(_) => Dispatch::error(503, "pending", "settlement_unavailable"),
+    }
+}
+
+fn visa_activity(
+    config: &Config,
+    activity: &str,
+    execute: bool,
+    signer_public_key: [u8; 32],
+) -> Result<Option<VisaActivityBinding>, Dispatch> {
+    Ok(if execute {
+        let canonical = match decode_hex(activity, MAX_BODY) {
+            Ok(value) if !value.is_empty() => value,
+            _ => return Err(Dispatch::error(400, "refused", "typed_intent_required")),
+        };
+        let Ok(submission) = verify_submission(
+            &canonical,
+            &config.modules,
+            config.protocol_version,
+            config.protocol_network_id,
+            &signer_public_key,
+        ) else {
+            return Err(Dispatch::error(
+                400,
+                "refused",
+                "activity_authorization_refused",
+            ));
+        };
+        Some(VisaActivityBinding {
+            canonical,
+            activity_id: submission.activity_id(),
+            idempotency_key: hex(&submission.idempotency_key()),
+        })
+    } else {
+        None
+    })
+}
+
+fn require_visa_actor(
+    layerx_agent: [u8; 32],
+    signer_public_key: [u8; 32],
+) -> Result<(), &'static str> {
+    if layerx_agent == signer_public_key {
+        Ok(())
+    } else {
+        Err("layerx_agent_signer_mismatch")
+    }
+}
+
+fn require_visa_target(tap: &TapRequest, target: &VisaTargetPin) -> Result<(), &'static str> {
+    if tap.authority() == target.authority.as_str() && tap.path() == target.path.as_str() {
+        Ok(())
+    } else {
+        Err("visa_tap_target_mismatch")
+    }
+}
+
+fn require_visa_route(
+    execute: bool,
+    intent: AgentIntent,
+    activity: &str,
+) -> Result<(), &'static str> {
+    if execute && intent != AgentIntent::Pay {
+        return Err("payer_credential_required");
+    }
+    if execute && activity.is_empty() {
+        return Err("typed_intent_required");
+    }
+    if !execute && !activity.is_empty() {
+        return Err("unexpected_activity_decoration");
+    }
+    Ok(())
+}
+
+struct VisaRegistry<'a> {
+    pins: &'a [VisaAgentPin],
+}
+
+impl TrustedAgentRegistry for VisaRegistry<'_> {
+    fn resolve(
+        &self,
+        key_id: &str,
+        now: u64,
+    ) -> Result<RegisteredAgentKey, layerx_visa_tap::TapError> {
+        let pin = self
+            .pins
+            .iter()
+            .find(|pin| pin.key_id == key_id)
+            .ok_or(layerx_visa_tap::TapError::UnknownKey)?;
+        let status = match pin.status.as_str() {
+            "active" => KeyStatus::Active,
+            "revoked" => return Err(layerx_visa_tap::TapError::Revoked),
+            _ => return Err(layerx_visa_tap::TapError::RegistryUnavailable),
+        };
+        if pin.expires_at <= now {
+            return Err(layerx_visa_tap::TapError::ExpiredKey);
+        }
+        let key = match pin.algorithm.as_str() {
+            "ed25519" => AgentPublicKey::Ed25519(
+                parse_hex32(&pin.public_key)
+                    .map_err(|_| layerx_visa_tap::TapError::RegistryUnavailable)?,
+            ),
+            "rsa-pss-sha256" => AgentPublicKey::RsaPssSha256Pem(
+                STANDARD
+                    .decode(&pin.public_key)
+                    .map_err(|_| layerx_visa_tap::TapError::RegistryUnavailable)?,
+            ),
+            _ => return Err(layerx_visa_tap::TapError::RegistryUnavailable),
+        };
+        Ok(RegisteredAgentKey {
+            key_id: pin.key_id.clone(),
+            agent_id: pin.agent_id.clone(),
+            agent_domain: pin.agent_domain.clone(),
+            layerx_agent: Some(
+                parse_hex32(&pin.layerx_agent)
+                    .map_err(|_| layerx_visa_tap::TapError::RegistryUnavailable)?,
+            ),
+            key,
+            status,
+            expires_at: pin.expires_at,
+        })
+    }
+}
+
+struct DurableVisaBinding<'a> {
+    store: &'a layerx_platform_gateway::store::RedisStore,
+    nonce: &'a str,
+    intent: AgentIntent,
+    activity_id: Option<[u8; 32]>,
+    signer_public_key: [u8; 32],
+    target_authority: &'a str,
+    target_path: &'a str,
+    operation_identity: &'a str,
+    credential_expires_at: u64,
+    replay_until: u64,
+    consumed_at: u64,
+    audit_event: &'a str,
+}
+
+impl CredentialBindingStore for DurableVisaBinding<'_> {
+    fn put(
+        &mut self,
+        principal: &PrincipalId,
+        binding: &CredentialBinding,
+        _trace: &TraceId,
+    ) -> Result<(), TapError> {
+        let record = TapCredentialRecord {
+            principal_digest: principal.as_str().to_owned(),
+            key_id: binding.key_id.clone(),
+            layerx_agent: hex(&binding.layerx_agent),
+            trusted_agent_id: binding.trusted_agent_id.clone(),
+            trusted_agent_domain: binding.trusted_agent_domain.clone(),
+            intent: match self.intent {
+                AgentIntent::Browse => "browse",
+                AgentIntent::Pay => "pay",
+            }
+            .to_owned(),
+            evidence_digest: hex(&binding.evidence_digest),
+            activity_id: self.activity_id.map(|value| hex(&value)),
+            signer_public_key: hex(&self.signer_public_key),
+            target_authority: self.target_authority.to_owned(),
+            target_path: self.target_path.to_owned(),
+            operation_identity: self.operation_identity.to_owned(),
+            credential_expires_at: self.credential_expires_at,
+        };
+        match self.store.consume_tap_nonce(
+            &binding.key_id,
+            self.nonce,
+            &record,
+            self.consumed_at,
+            self.replay_until,
+            self.audit_event,
+        ) {
+            Ok(
+                TapNonceConsumption::Consumed { .. } | TapNonceConsumption::AlreadyConsumed { .. },
+            ) => Ok(()),
+            Ok(TapNonceConsumption::Replay) => Err(TapError::Replay),
+            Err(_) => Err(TapError::StorageRefused),
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct FiatFacts {
+    provider: String,
+    settlement: String,
+    token_reference_sha256: String,
+    rail: String,
+    class: String,
+    amount: String,
+    asset: String,
+    destination: String,
+    observed_at: u64,
+    hold_until: Option<u64>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct FiatEvidenceEnvelope {
+    facts: FiatFacts,
+    signature: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FiatCallback {
+    token_reference: String,
+    evidence: FiatEvidenceEnvelope,
+    #[serde(default)]
+    activity: String,
+}
+
+fn fiat(
+    config: &Config,
+    request: &IncomingRequest,
+    record: &KeyRecord,
+    _principal: &PrincipalId,
+    trace: &TraceId,
+    _operation: &str,
+    adapter: HostedAdapter,
+) -> Dispatch {
+    let body: FiatCallback = match direct_body(request) {
+        Ok(value) => value,
+        Err(()) => return Dispatch::error(400, "refused", "invalid_provider_callback"),
+    };
+    let Ok(token) = TokenReference::new(body.token_reference.into_bytes()) else {
+        return Dispatch::error(400, "refused", "provider_callback_refused");
+    };
+    let Ok(evidence_bytes) = serde_json::to_vec(&body.evidence) else {
+        return Dispatch::error(400, "refused", "provider_callback_refused");
+    };
+    let Ok(evidence) = ProviderEvidence::new(evidence_bytes) else {
+        return Dispatch::error(400, "refused", "provider_callback_refused");
+    };
+    let evidence_verifier = FiatEvidenceVerifier {
+        pins: &config.manifest.fiat_providers,
+        expected_rail: adapter,
+    };
+    let activity = decode_hex(&body.activity, MAX_BODY)
+        .ok()
+        .filter(|value| !value.is_empty());
+    let authorization = request
+        .headers
+        .get("authorization")
+        .map_or("", String::as_str);
+    let Ok(facts) = FiatAdapter::verify_evidence(&token, &evidence, &evidence_verifier, trace)
+    else {
+        return Dispatch::error(400, "refused", "provider_callback_refused");
+    };
+    match facts.class {
+        EvidenceClass::Authorised => fiat_state(&FiatJourneyState::AuthorisedHold {
+            until: facts.hold_until.unwrap_or(facts.observed_at),
+        }),
+        EvidenceClass::Clearing => fiat_state(&FiatJourneyState::ClearingHold {
+            until: facts.hold_until.unwrap_or(facts.observed_at),
+        }),
+        EvidenceClass::Settled | EvidenceClass::Reversed | EvidenceClass::Chargeback => {
+            let Some(activity) = activity else {
+                return Dispatch::error(400, "refused", "typed_intent_required");
+            };
+            let protocol_idempotency = hex(&FiatAdapter::idempotency_key(&facts));
+            let execution = Execution {
+                config,
+                authorization,
+                activity,
+                idempotency: &protocol_idempotency,
+                expected_signer: &record.signer_public_key,
+                submitted_activity_id: None,
+                trace,
+            };
+            match execution.submit() {
+                Ok(PlaneOutcome::Pending) => fiat_state(&match facts.class {
+                    EvidenceClass::Settled => FiatJourneyState::CreditPending,
+                    EvidenceClass::Reversed => FiatJourneyState::ReversalPending {
+                        hold_until: facts.hold_until,
+                    },
+                    EvidenceClass::Chargeback => FiatJourneyState::ChargebackPending {
+                        hold_until: facts.hold_until,
+                    },
+                    EvidenceClass::Authorised | EvidenceClass::Clearing => {
+                        FiatJourneyState::Refused
+                    }
+                }),
+                Ok(PlaneOutcome::Refused) => fiat_state(&FiatJourneyState::Refused),
+                Ok(PlaneOutcome::Executed(executed)) => fiat_executed(&facts, &executed),
+                Err(_) => Dispatch::error(503, "pending", "settlement_unavailable"),
+            }
+        }
+    }
+}
+
+fn fiat_executed(facts: &VerifiedProviderFacts, executed: &ExecutionEvidence) -> Dispatch {
+    let Ok(verified) = verify(&executed.receipt, &executed.authorized) else {
+        return Dispatch::error(503, "pending", "receipt_verification_failed");
+    };
+    let Some(protocol) = verified.receipt().protocol() else {
+        return Dispatch::error(503, "pending", "receipt_verification_failed");
+    };
+    let account_matches = match facts.class {
+        EvidenceClass::Settled => protocol.to() == facts.destination,
+        EvidenceClass::Reversed | EvidenceClass::Chargeback => protocol.from() == facts.destination,
+        EvidenceClass::Authorised | EvidenceClass::Clearing => false,
+    };
+    if protocol.asset() != facts.asset || protocol.amount() != facts.amount || !account_matches {
+        return Dispatch::error(503, "pending", "receipt_intent_mismatch");
+    }
+    let digest = executed.verified.receipt_digest();
+    let state = match facts.class {
+        EvidenceClass::Settled => FiatJourneyState::Credited {
+            receipt_digest: digest,
+        },
+        EvidenceClass::Reversed => FiatJourneyState::Reversed {
+            receipt_digest: digest,
+        },
+        EvidenceClass::Chargeback => FiatJourneyState::ChargedBack {
+            receipt_digest: digest,
+        },
+        EvidenceClass::Authorised | EvidenceClass::Clearing => FiatJourneyState::Refused,
+    };
+    let mut result = fiat_state(&state);
+    result.receipt_hex = Some(hex(&executed.receipt));
+    result.activity_id = Some(hex(&executed.verified.activity_id()));
+    result
+}
+
+fn fiat_state(state: &FiatJourneyState) -> Dispatch {
+    match state {
+        FiatJourneyState::AuthorisedHold { until } => Dispatch::result(
+            200,
+            "completed",
+            json!({ "state": "authorised-hold", "until": until }),
+        ),
+        FiatJourneyState::ClearingHold { until } => Dispatch::result(
+            200,
+            "completed",
+            json!({ "state": "clearing-hold", "until": until }),
+        ),
+        FiatJourneyState::CreditPending => Dispatch::result(
+            202,
+            "pending",
+            json!({ "state": ExternalState::Pending.label() }),
+        ),
+        FiatJourneyState::ReversalPending { hold_until } => Dispatch::result(
+            202,
+            "pending",
+            json!({ "state": ExternalState::ReversalPending.label(), "hold_until": hold_until }),
+        ),
+        FiatJourneyState::ChargebackPending { hold_until } => Dispatch::result(
+            202,
+            "pending",
+            json!({ "state": "chargeback-pending", "hold_until": hold_until }),
+        ),
+        FiatJourneyState::Credited { receipt_digest } => Dispatch::result(
+            200,
+            "completed",
+            json!({ "state": ExternalState::ReceiptVerified.label(), "receipt_digest": hex(receipt_digest) }),
+        ),
+        FiatJourneyState::Reversed { receipt_digest } => Dispatch::result(
+            200,
+            "completed",
+            json!({ "state": ExternalState::Reversed.label(), "receipt_digest": hex(receipt_digest) }),
+        ),
+        FiatJourneyState::ChargedBack { receipt_digest } => Dispatch::result(
+            200,
+            "completed",
+            json!({ "state": "charged-back", "receipt_digest": hex(receipt_digest) }),
+        ),
+        FiatJourneyState::Refused => Dispatch::result(
+            200,
+            "refused",
+            json!({ "state": ExternalState::Refused.label() }),
+        ),
+    }
+}
+
+struct FiatEvidenceVerifier<'a> {
+    pins: &'a [FiatProviderPin],
+    expected_rail: HostedAdapter,
+}
+
+impl ProviderVerifier for FiatEvidenceVerifier<'_> {
+    fn verify(
+        &self,
+        token: &TokenReference,
+        evidence: &ProviderEvidence,
+        _trace: &TraceId,
+    ) -> Result<VerifiedProviderFacts, layerx_fiat::FiatError> {
+        let envelope: FiatEvidenceEnvelope = serde_json::from_slice(evidence.canonical())
+            .map_err(|_| layerx_fiat::FiatError::InvalidEvidence)?;
+        let pin = self
+            .pins
+            .iter()
+            .find(|pin| pin.provider == envelope.facts.provider)
+            .ok_or(layerx_fiat::FiatError::InvalidEvidence)?;
+        let public = parse_hex32(&pin.public_key_ed25519)
+            .map_err(|_| layerx_fiat::FiatError::InvalidEvidence)?;
+        let key =
+            Ed25519Key::from_bytes(&public).map_err(|_| layerx_fiat::FiatError::InvalidEvidence)?;
+        let signature_bytes = decode_hex(&envelope.signature, 64)
+            .map_err(|_| layerx_fiat::FiatError::InvalidEvidence)?;
+        let signature = Signature::from_slice(&signature_bytes)
+            .map_err(|_| layerx_fiat::FiatError::InvalidEvidence)?;
+        let canonical = serde_json::to_vec(&envelope.facts)
+            .map_err(|_| layerx_fiat::FiatError::InvalidEvidence)?;
+        let mut signed = Vec::with_capacity(FIAT_EVIDENCE_SIGNATURE_DOMAIN.len() + canonical.len());
+        signed.extend_from_slice(FIAT_EVIDENCE_SIGNATURE_DOMAIN);
+        signed.extend_from_slice(&canonical);
+        key.verify(&signed, &signature)
+            .map_err(|_| layerx_fiat::FiatError::InvalidEvidence)?;
+        let expected_token_digest = parse_hex32(&envelope.facts.token_reference_sha256)
+            .map_err(|_| layerx_fiat::FiatError::InvalidEvidence)?;
+        let actual_token_digest: [u8; 32] = Sha256::digest(token.as_bytes()).into();
+        if expected_token_digest
+            .ct_eq(&actual_token_digest)
+            .unwrap_u8()
+            != 1
+        {
+            return Err(layerx_fiat::FiatError::InvalidEvidence);
+        }
+        let rail = match envelope.facts.rail.as_str() {
+            "card" if self.expected_rail == HostedAdapter::FiatCard => FiatRail::Card,
+            "bank" if self.expected_rail == HostedAdapter::FiatBank => FiatRail::Bank,
+            "rtp" if self.expected_rail == HostedAdapter::FiatRtp => FiatRail::RealTimePayment,
+            _ => return Err(layerx_fiat::FiatError::InvalidEvidence),
+        };
+        let class = match envelope.facts.class.as_str() {
+            "authorised" => EvidenceClass::Authorised,
+            "clearing" => EvidenceClass::Clearing,
+            "settled" => EvidenceClass::Settled,
+            "reversed" => EvidenceClass::Reversed,
+            "chargeback" => EvidenceClass::Chargeback,
+            _ => return Err(layerx_fiat::FiatError::InvalidEvidence),
+        };
+        Ok(VerifiedProviderFacts {
+            provider: ExternalId::new(envelope.facts.provider)?,
+            settlement: ExternalId::new(envelope.facts.settlement)?,
+            rail,
+            class,
+            amount: envelope
+                .facts
+                .amount
+                .parse()
+                .map_err(|_| layerx_fiat::FiatError::InvalidEvidence)?,
+            asset: parse_hex32(&envelope.facts.asset)
+                .map_err(|_| layerx_fiat::FiatError::InvalidEvidence)?,
+            destination: parse_hex32(&envelope.facts.destination)
+                .map_err(|_| layerx_fiat::FiatError::InvalidEvidence)?,
+            observed_at: envelope.facts.observed_at,
+            hold_until: envelope.facts.hold_until,
+        })
+    }
+}
+
+struct Execution<'a> {
+    config: &'a Config,
+    authorization: &'a str,
+    activity: Vec<u8>,
+    idempotency: &'a str,
+    expected_signer: &'a str,
+    submitted_activity_id: Option<[u8; 32]>,
+    trace: &'a TraceId,
+}
+
+enum PlaneOutcome {
+    Pending,
+    Refused,
+    Executed(Box<ExecutionEvidence>),
+}
+
+struct ExecutionEvidence {
+    receipt: Vec<u8>,
+    authorized: AuthorizedBatch,
+    verified: layerx_platform_gateway::VerifiedOperation,
+}
+
+impl Execution<'_> {
+    fn submit(&self) -> Result<PlaneOutcome, String> {
+        if parse_hex32(self.expected_signer).is_err() {
+            return Err("authenticated signer binding is invalid".to_owned());
+        }
+        let upstream = self.config.client.request_authorized_traced(
+            &self.config.hosted_gateway,
+            self.authorization,
+            &OutboundRequest {
+                method: "POST",
+                path: "/v1/activities",
+                idempotency: Some(self.idempotency),
+                content_type: "application/octet-stream",
+                body: &self.activity,
+            },
+            Some(self.trace.as_str()),
+        )?;
+        if upstream.status == 202 {
+            return Ok(PlaneOutcome::Pending);
+        }
+        if (400..500).contains(&upstream.status) {
+            return Ok(PlaneOutcome::Refused);
+        }
+        if upstream.status != 200 || upstream.content_type != "application/json" {
+            return Err("hosted gateway is unavailable".to_owned());
+        }
+        let response: HostedActivity = serde_json::from_slice(&upstream.body)
+            .map_err(|_| "hosted gateway response is invalid".to_owned())?;
+        if !response.ok || response.result.receipt.is_empty() {
+            return Err("hosted gateway response lacks receipt evidence".to_owned());
+        }
+        let receipt = decode_hex(&response.result.receipt, MAX_BODY)?;
+        let authority = authority(
+            self.config,
+            &response.result.activity_id,
+            &receipt,
+            self.trace,
+        )?;
+        let authorized = AuthorizedBatch::new(
+            authority.batch_id,
+            authority.asset,
+            authority.previous_state_root,
+            authority.resulting_state_root,
+            authority.sequencer_public_key,
+        );
+        let facts = AuthorityFacts::new(
+            authority.batch_id,
+            authority.asset,
+            authority.previous_state_root,
+            authority.resulting_state_root,
+            authority.sequencer_public_key,
+        );
+        let expected = parse_hex32(&response.result.activity_id)?;
+        let verified = verify_activity_operation(
+            &receipt,
+            facts,
+            &self.config.trusted_sequencer_key,
+            Some(expected),
+        )
+        .map_err(|_| "independent receipt verification failed".to_owned())?;
+        if let Some(submitted) = self.submitted_activity_id {
+            require_receipt_activity(submitted, verified.activity_id())?;
+        }
+        let independently_verified = verify(&receipt, &authorized)
+            .map_err(|_| "independent receipt verification failed".to_owned())?;
+        let protocol = independently_verified
+            .receipt()
+            .protocol()
+            .ok_or_else(|| "independent receipt verification failed".to_owned())?;
+        if !response
+            .result
+            .batch_id
+            .eq_ignore_ascii_case(&hex(&protocol.batch_id()))
+            || response.result.global_sequence != protocol.global_sequence()
+            || response.result.result_code != protocol.result_code()
+            || !response
+                .result
+                .state_root
+                .eq_ignore_ascii_case(&hex(&protocol.resulting_state_root()))
+        {
+            return Err("hosted gateway response conflicts with verified receipt".to_owned());
+        }
+        Ok(PlaneOutcome::Executed(Box::new(ExecutionEvidence {
+            receipt,
+            authorized,
+            verified,
+        })))
+    }
+}
+
+fn require_receipt_activity(
+    submitted_activity_id: [u8; 32],
+    receipt_activity_id: [u8; 32],
+) -> Result<(), String> {
+    if submitted_activity_id == receipt_activity_id {
+        Ok(())
+    } else {
+        Err("verified receipt does not match the submitted activity".to_owned())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HostedActivity {
+    ok: bool,
+    result: HostedResult,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HostedResult {
+    activity_id: String,
+    batch_id: String,
+    global_sequence: u64,
+    result_code: i32,
+    state_root: String,
+    receipt: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthorityResponse {
+    activity_id: String,
+    receipt: String,
+    batch_id: String,
+    asset: String,
+    previous_state_root: String,
+    resulting_state_root: String,
+    sequencer_public_key: String,
+    network_id: String,
+    protocol_network_id: u32,
+    wire_version: String,
+    #[serde(
+        default,
+        deserialize_with = "layerx_platform_gateway::authority_evidence::present_maintained"
+    )]
+    batch_evidence: Option<layerx_platform_gateway::authority_evidence::MaintainedBatchDocument>,
+}
+
+struct AuthorizedFacts {
+    batch_id: [u8; 32],
+    asset: [u8; 32],
+    previous_state_root: [u8; 32],
+    resulting_state_root: [u8; 32],
+    sequencer_public_key: [u8; 32],
+}
+
+fn authority(
+    config: &Config,
+    activity_id: &str,
+    receipt: &[u8],
+    trace: &TraceId,
+) -> Result<AuthorizedFacts, String> {
+    let authorization = format!("Bearer {}", config.receipt_authority_token.as_str());
+    let response = config.client.request_authorized_traced(
+        &config.receipt_authority,
+        &authorization,
+        &OutboundRequest {
+            method: "GET",
+            path: &format!("/v1/authorized-batches/by-activity/{activity_id}"),
+            idempotency: None,
+            content_type: "application/json",
+            body: &[],
+        },
+        Some(trace.as_str()),
+    )?;
+    if response.status != 200 || response.content_type != "application/json" {
+        return Err("receipt authority is unavailable".to_owned());
+    }
+    let facts: AuthorityResponse = serde_json::from_slice(&response.body)
+        .map_err(|_| "receipt authority response is invalid".to_owned())?;
+    if !facts.activity_id.eq_ignore_ascii_case(activity_id)
+        || facts.network_id != config.network_id
+        || facts.protocol_network_id != config.protocol_network_id
+        || facts.wire_version != config.wire_version
+    {
+        return Err("receipt authority scope mismatch".to_owned());
+    }
+    let authority_receipt = decode_hex(&facts.receipt, MAX_BODY)?;
+    if authority_receipt.len() != receipt.len() || authority_receipt.ct_eq(receipt).unwrap_u8() != 1
+    {
+        return Err("receipt authority scope mismatch".to_owned());
+    }
+    let authorized = AuthorizedBatch::new(
+        parse_hex32(&facts.batch_id)?,
+        parse_hex32(&facts.asset)?,
+        parse_hex32(&facts.previous_state_root)?,
+        parse_hex32(&facts.resulting_state_root)?,
+        parse_hex32(&facts.sequencer_public_key)?,
+    );
+    let authorized = match facts.batch_evidence {
+        None => authorized,
+        Some(maintained) => maintained
+            .authorize(receipt, &authorized, &config.sequencer_authorization)
+            .map_err(|_| "receipt authority maintained evidence is invalid".to_owned())?,
+    };
+    Ok(AuthorizedFacts {
+        batch_id: authorized.batch_id(),
+        asset: authorized.asset(),
+        previous_state_root: authorized.previous_state_root(),
+        resulting_state_root: authorized.resulting_state_root(),
+        sequencer_public_key: authorized.sequencer_public_key(),
+    })
+}
+
+fn direct_body<T: DeserializeOwned>(request: &IncomingRequest) -> Result<T, ()> {
+    if request.headers.get("content-type").map(String::as_str) != Some("application/json") {
+        return Err(());
+    }
+    serde_json::from_slice(&request.body).map_err(|_| ())
+}
+
+fn typed_body<T: DeserializeOwned>(
+    request: &IncomingRequest,
+    _transport: IngressTransport,
+) -> Result<T, ()> {
+    direct_body(request)
+}
+
+fn transport_kind(transport: IngressTransport) -> TransportKind {
+    match transport {
+        IngressTransport::Http => TransportKind::Http,
+        IngressTransport::Mcp => TransportKind::Mcp,
+        IngressTransport::A2a => TransportKind::A2a,
+    }
+}
+
+fn live() -> OutgoingResponse {
+    json_response(
+        200,
+        &json!({ "status": "live", "service": "layerx-interop-gateway", "package_semver": env!("CARGO_PKG_VERSION") }),
+    )
+}
+
+#[derive(Clone, Copy)]
+struct HostedReadiness {
+    chain_serving: bool,
+    layerx_activity: bool,
+}
+
+struct SettlementReadiness {
+    durable: bool,
+    hosted: HostedReadiness,
+    authority: bool,
+    configured: bool,
+    observed_at_seconds: u64,
+}
+
+fn adapter_configured(config: &Config, adapter: &str, now: u64) -> bool {
+    match adapter {
+        "x402" => !config.manifest.x402_supported.kinds.is_empty(),
+        "ap2" => !config.manifest.ap2_keys.is_empty() && !config.manifest.ap2_assets.is_empty(),
+        "ucp" => true,
+        "visa-tap" => {
+            !config.manifest.visa_targets.is_empty()
+                && config
+                    .manifest
+                    .visa_agents
+                    .iter()
+                    .any(|key| key.status == "active" && key.expires_at > now)
+        }
+        "fiat" => !config.manifest.fiat_providers.is_empty(),
+        _ => false,
+    }
+}
+
+impl SettlementReadiness {
+    fn observe(config: &Config) -> Self {
+        let observed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .map(|now| now.as_secs());
+        let observed_at_seconds = observed.unwrap_or(0);
+        let configured = observed.is_some()
+            && ["x402", "ap2", "ucp", "visa-tap", "fiat"]
+                .iter()
+                .all(|adapter| adapter_configured(config, adapter, observed_at_seconds));
+        Self {
+            configured,
+            observed_at_seconds,
+            durable: config.store.ready(),
+            hosted: hosted_readiness(config),
+            authority: dependency_ready(
+                config,
+                &config.receipt_authority,
+                config.receipt_authority_token.as_str(),
+            ),
+        }
+    }
+
+    fn settlement(&self) -> bool {
+        self.configured && self.durable && self.hosted.layerx_activity && self.authority
+    }
+
+    fn capabilities(&self, config: &Config) -> Value {
+        json!({
+            "chain_serving": {
+                "state": readiness(self.hosted.chain_serving),
+                "reason": if self.hosted.chain_serving { "ready" } else { "unreachable" },
+                "chain_id": config.readiness_chain_id
+            },
+            "layerx_settlement": {
+                "state": readiness(self.settlement()),
+                "reason": if self.settlement() { "ready" } else { "unreachable" }
+            }
+        })
+    }
+}
+
+fn ready(config: &Config) -> OutgoingResponse {
+    let state = SettlementReadiness::observe(config);
+    let ready = state.settlement();
+    json_response(
+        if ready { 200 } else { 503 },
+        &json!({
+            "readiness_version": 1,
+            "service": "layerx-interop-gateway",
+            "status": if ready { "ready" } else { "degraded" },
+            "network_id": config.network_id,
+            "lxp_wire_version": config.wire_version,
+            "protocol_version": config.protocol_version,
+            "protocol_network_id": config.protocol_network_id,
+            "capabilities": state.capabilities(config),
+            "components": { "durable_gateway_store": readiness(state.durable),
+                "hosted_gateway": readiness(state.hosted.layerx_activity),
+                "receipt_authority": readiness(state.authority) }
+        }),
+    )
+}
+
+fn metadata(config: &Config) -> OutgoingResponse {
+    let state = SettlementReadiness::observe(config);
+    let adapters: Vec<_> = config.manifest.adapters.values().map(|registered| {
+        let descriptor = &registered.descriptor;
+        let configured = adapter_configured(config, descriptor.id().as_str(), state.observed_at_seconds);
+        let verification_boundary = match descriptor.id().as_str() {
+            "x402" => "signed-402lxp-transfer-requirements-pre-settlement",
+            "ap2" => "verified-mandate-and-layerx-receipt",
+            "ucp" => "negotiated-checkout-and-layerx-receipt",
+            "visa-tap" => "trusted-agent-credential-and-layerx-receipt-on-execution",
+            "fiat" => "verified-provider-settlement-and-layerx-receipt",
+            _ => "unavailable",
+        };
+        json!({
+            "id": descriptor.id().as_str(), "specification": descriptor.spec().protocol().as_str(),
+            "version": descriptor.spec().version().as_str(), "specification_sha256": hex(&descriptor.spec().document_digest()),
+            "conformance_suite": descriptor.conformance().suite().as_str(), "conformance_vectors": descriptor.conformance().vector_count(),
+            "conformance_sha256": hex(&descriptor.conformance().suite_digest()), "evidence_policy": registered.evidence.label(),
+            "verification_boundary": verification_boundary,
+            "readiness": {
+                "configuration": readiness(configured),
+                "ingress": readiness(state.durable && configured),
+                "settlement": readiness(state.settlement() && configured),
+                "receipt_verification": readiness(state.authority && configured)
+            }
+        })
+    }).collect();
+    let transports: Vec<_> = config.manifest.transports.values().map(|pin| json!({
+        "id": pin.id, "version": pin.version, "specification_sha256": pin.specification_sha256,
+        "conformance_sha256": pin.conformance_sha256
+    })).collect();
+    json_response(
+        200,
+        &json!({ "readiness_version": 1,
+        "capabilities": state.capabilities(config), "adapters": adapters, "transports": transports }),
+    )
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReceiptAuthorityReadiness {
+    ready: bool,
+    network_id: String,
+    protocol_network_id: u32,
+    wire_version: String,
+}
+
+fn dependency_ready(
+    config: &Config,
+    endpoint: &layerx_platform_gateway::http::Endpoint,
+    token: &str,
+) -> bool {
+    let Ok(response) = config.client.request(
+        endpoint,
+        token,
+        &OutboundRequest {
+            method: "GET",
+            path: "/readyz",
+            idempotency: None,
+            content_type: "application/json",
+            body: &[],
+        },
+    ) else {
+        return false;
+    };
+    if response.status != 200
+        || response.content_type != "application/json"
+        || response.body.len() > MAX_BODY
+    {
+        return false;
+    }
+    let Ok(document) = serde_json::from_slice::<ReceiptAuthorityReadiness>(&response.body) else {
+        return false;
+    };
+    document.ready
+        && document.network_id == config.network_id
+        && document.protocol_network_id == config.protocol_network_id
+        && document.wire_version == config.wire_version
+}
+
+#[derive(Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum GatewayState {
+    Ready,
+    Unavailable,
+}
+
+#[derive(Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum GatewayReason {
+    Ready,
+    Unreachable,
+    NotConfigured,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayBackendReadiness {
+    state: GatewayState,
+    reason: GatewayReason,
+}
+
+impl GatewayBackendReadiness {
+    fn ready(&self) -> bool {
+        self.state == GatewayState::Ready && self.reason == GatewayReason::Ready
+    }
+    fn canonical(&self) -> bool {
+        (self.state == GatewayState::Ready) == (self.reason == GatewayReason::Ready)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayComponents {
+    durable_store: GatewayState,
+    core_agent_boundary: GatewayState,
+    public_core: GatewayState,
+    identity: GatewayState,
+    independent_receipt_authority: GatewayState,
+    program_registry: GatewayState,
+    principal_state_boundary: GatewayState,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayBackends {
+    durable_store: GatewayBackendReadiness,
+    event_producer: GatewayBackendReadiness,
+    paxeer_chain: GatewayBackendReadiness,
+    core_agent_boundary: GatewayBackendReadiness,
+    public_core: GatewayBackendReadiness,
+    independent_receipt_authority: GatewayBackendReadiness,
+    identity: GatewayBackendReadiness,
+    program_registry: GatewayBackendReadiness,
+}
+
+impl GatewayBackends {
+    fn canonical(&self) -> bool {
+        [
+            &self.durable_store,
+            &self.event_producer,
+            &self.paxeer_chain,
+            &self.core_agent_boundary,
+            &self.public_core,
+            &self.independent_receipt_authority,
+            &self.identity,
+            &self.program_registry,
+        ]
+        .iter()
+        .all(|state| state.canonical())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayChainCapability {
+    state: GatewayState,
+    reason: GatewayReason,
+    chain_id: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayCapabilities {
+    chain_serving: GatewayChainCapability,
+    layerx_activity: GatewayBackendReadiness,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayActivityReadiness {
+    readiness_version: u16,
+    service: String,
+    status: String,
+    package_semver: String,
+    scope: String,
+    network_id: String,
+    lxp_wire_version: String,
+    protocol_version: u16,
+    protocol_network_id: u32,
+    observed_at_ms: u64,
+    valid_until_ms: u64,
+    components: GatewayComponents,
+    backends: GatewayBackends,
+    capabilities: GatewayCapabilities,
+    product_routes: (),
+}
+
+fn decode_hosted_readiness(
+    config: &Config,
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+    now_ms: u64,
+) -> HostedReadiness {
+    let unavailable = HostedReadiness {
+        chain_serving: false,
+        layerx_activity: false,
+    };
+    if !matches!(status, 200 | 503) || content_type != "application/json" || body.len() > MAX_BODY {
+        return unavailable;
+    }
+    let Ok(document) = serde_json::from_slice::<GatewayActivityReadiness>(body) else {
+        return unavailable;
+    };
+    let components = &document.components;
+    let backends = &document.backends;
+    let component_agreement = [
+        (components.durable_store, &backends.durable_store),
+        (
+            components.core_agent_boundary,
+            &backends.core_agent_boundary,
+        ),
+        (components.public_core, &backends.public_core),
+        (components.identity, &backends.identity),
+        (
+            components.independent_receipt_authority,
+            &backends.independent_receipt_authority,
+        ),
+        (components.program_registry, &backends.program_registry),
+    ]
+    .iter()
+    .all(|(component, backend)| (*component == GatewayState::Ready) == backend.ready());
+    let lifetime = document.valid_until_ms.checked_sub(document.observed_at_ms);
+    if document.readiness_version != 1
+        || document.service != "layerx-gateway"
+        || document.scope != "core"
+        || document.package_semver.is_empty()
+        || document.package_semver.len() > 128
+        || document.network_id != config.network_id
+        || document.lxp_wire_version != config.wire_version
+        || document.protocol_version != config.protocol_version
+        || document.protocol_network_id != config.protocol_network_id
+        || document.capabilities.chain_serving.chain_id != config.readiness_chain_id
+        || document.observed_at_ms > now_ms
+        || document.valid_until_ms <= now_ms
+        || now_ms - document.observed_at_ms > config.readiness_max_age_ms
+        || !lifetime.is_some_and(|age| age > 0 && age <= 30_000)
+        || !backends.canonical()
+        || !component_agreement
+        || components.principal_state_boundary != GatewayState::Unavailable
+        || !document.capabilities.layerx_activity.canonical()
+        || ((document.capabilities.chain_serving.state == GatewayState::Ready)
+            != (document.capabilities.chain_serving.reason == GatewayReason::Ready))
+        || ((document.capabilities.chain_serving.state == GatewayState::Ready)
+            != backends.paxeer_chain.ready())
+    {
+        return unavailable;
+    }
+    let activity = document.capabilities.layerx_activity.ready()
+        && backends.durable_store.ready()
+        && backends.core_agent_boundary.ready()
+        && backends.independent_receipt_authority.ready();
+    if (document.status == "ready") != activity
+        || !matches!(document.status.as_str(), "ready" | "degraded")
+        || (status == 200) != activity
+    {
+        return unavailable;
+    }
+    let _ = document.product_routes;
+    HostedReadiness {
+        chain_serving: document.capabilities.chain_serving.state == GatewayState::Ready,
+        layerx_activity: activity,
+    }
+}
+
+fn hosted_readiness(config: &Config) -> HostedReadiness {
+    let unavailable = HostedReadiness {
+        chain_serving: false,
+        layerx_activity: false,
+    };
+    let Ok(response) = config.client.request(
+        &config.hosted_gateway,
+        "readiness",
+        &OutboundRequest {
+            method: "GET",
+            path: "/readyz/core",
+            idempotency: None,
+            content_type: "application/json",
+            body: &[],
+        },
+    ) else {
+        return unavailable;
+    };
+    let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+        return unavailable;
+    };
+    let Ok(now) = u64::try_from(now.as_millis()) else {
+        return unavailable;
+    };
+    decode_hosted_readiness(
+        config,
+        response.status,
+        &response.content_type,
+        &response.body,
+        now,
+    )
+}
+
+const fn readiness(value: bool) -> &'static str {
+    if value {
+        "ready"
+    } else {
+        "unavailable"
+    }
+}
+
+fn stored_response(
+    state: &str,
+    stored: &str,
+    trace: &TraceId,
+    operation: &str,
+) -> OutgoingResponse {
+    match decode_hex(stored, MAX_BODY) {
+        Ok(body) if !body.is_empty() => OutgoingResponse {
+            content_type: "application/json".to_owned(),
+            headers: Vec::new(),
+            status: if state == "pending" { 202 } else { 200 },
+            body,
+            retry_after: None,
+        },
+        _ if state == "pending" => json_response(
+            202,
+            &json!({ "ok": true, "operation": operation, "result": { "state": "pending" }, "trace": trace.as_str() }),
+        ),
+        _ => failure(503, "persistence_unavailable", Some(5)),
+    }
+}
+
+fn failure(status: u16, code: &str, retry_after: Option<u64>) -> OutgoingResponse {
+    OutgoingResponse {
+        content_type: "application/json".to_owned(),
+        headers: Vec::new(),
+        status,
+        body: json!({ "ok": false, "error": { "code": code } })
+            .to_string()
+            .into_bytes(),
+        retry_after,
+    }
+}
+
+fn json_response(status: u16, value: &Value) -> OutgoingResponse {
+    OutgoingResponse {
+        content_type: "application/json".to_owned(),
+        headers: Vec::new(),
+        status,
+        body: value.to_string().into_bytes(),
+        retry_after: None,
+    }
+}
+
+fn trace(request: &IncomingRequest) -> TraceId {
+    let mut digest = Sha256::new();
+    digest.update(request.method.as_bytes());
+    digest.update([0]);
+    digest.update(request.path.as_bytes());
+    digest.update([0]);
+    digest.update(&request.body);
+    digest.update(now().unwrap_or(1).to_be_bytes());
+    let output = digest.finalize();
+    let mut entropy = [0_u8; 16];
+    entropy.copy_from_slice(&output[..16]);
+    TraceId::from_inbound(
+        request.headers.get("x-trace-id").map(String::as_str),
+        entropy,
+    )
+}
+
+fn now() -> Result<u64, String> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_secs())
+        .map_err(|_| "system clock precedes Unix epoch".to_owned())
+}
+
+fn valid_identifier(value: &str, maximum: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= maximum
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut value = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        value.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+    }
+    value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ed25519_dalek::{Signer as _, SigningKey};
+    use layerx_interop_gateway::adapter::{AdapterId, ConformanceSuite};
+    use layerx_x402::facilitator::{FacilitatorKind, SupportedResponse};
+    use layerx_x402::model::AtomicAmount;
+    use layerx_x402::{x402_adapter_descriptor, PaymentPayload};
+
+    fn parsed_tap(authority: &str, path: &str) -> TapRequest {
+        TapRequest::parse(
+            authority,
+            path,
+            "sig2=(\"@authority\" \"@path\");created=1;keyid=\"tap-key-1\";alg=\"Ed25519\";expires=100;nonce=\"target-nonce\";tag=\"agent-payer-auth\"",
+            "sig2=:AA==:",
+        )
+        .unwrap_or_else(|error| panic!("TAP target fixture must parse: {error}"))
+    }
+
+    fn visa_pin(status: &str, expires_at: u64) -> VisaAgentPin {
+        VisaAgentPin {
+            key_id: "tap-key-1".to_owned(),
+            agent_id: "trusted-agent-1".to_owned(),
+            agent_domain: "https://agent.example".to_owned(),
+            layerx_agent: "11".repeat(32),
+            algorithm: "ed25519".to_owned(),
+            public_key: "22".repeat(32),
+            status: status.to_owned(),
+            expires_at,
+        }
+    }
+
+    fn visa_wire() -> serde_json::Value {
+        serde_json::json!({
+            "authority": "shop.example",
+            "path": "/checkout",
+            "signature_input": "sig2=(\"@authority\" \"@path\")",
+            "signature": "sig2=:AA==:"
+        })
+    }
+
+    fn signed_fiat_evidence(signing: &SigningKey, token: &TokenReference) -> ProviderEvidence {
+        let facts = FiatFacts {
+            provider: "provider-001".to_owned(),
+            settlement: "settlement-001".to_owned(),
+            token_reference_sha256: hex(&Sha256::digest(token.as_bytes())),
+            rail: "card".to_owned(),
+            class: "settled".to_owned(),
+            amount: "10000".to_owned(),
+            asset: "41".repeat(32),
+            destination: "42".repeat(32),
+            observed_at: 1_700_000_000,
+            hold_until: None,
+        };
+        let canonical = serde_json::to_vec(&facts)
+            .unwrap_or_else(|error| panic!("fiat facts serialize: {error:?}"));
+        let mut signed = FIAT_EVIDENCE_SIGNATURE_DOMAIN.to_vec();
+        signed.extend_from_slice(&canonical);
+        let signature = signing.sign(&signed);
+        ProviderEvidence::new(
+            serde_json::to_vec(&FiatEvidenceEnvelope {
+                facts,
+                signature: hex(&signature.to_bytes()),
+            })
+            .unwrap_or_else(|error| panic!("fiat evidence serializes: {error:?}")),
+        )
+        .unwrap_or_else(|error| panic!("fiat evidence is bounded: {error:?}"))
+    }
+
+    #[test]
+    fn visa_wire_has_no_caller_time_or_trust_override() {
+        assert!(serde_json::from_value::<VisaRequest>(visa_wire()).is_ok());
+        let mut caller_time = visa_wire();
+        caller_time["now"] = serde_json::json!(u64::MAX);
+        assert!(serde_json::from_value::<VisaRequest>(caller_time).is_err());
+        let mut trust_override = visa_wire();
+        trust_override["verified"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<VisaRequest>(trust_override).is_err());
+    }
+
+    #[test]
+    fn unrelated_activity_decoration_and_browse_execution_are_refused() {
+        assert_eq!(
+            require_visa_route(false, AgentIntent::Browse, "00"),
+            Err("unexpected_activity_decoration")
+        );
+        assert_eq!(
+            require_visa_route(true, AgentIntent::Browse, "00"),
+            Err("payer_credential_required")
+        );
+    }
+
+    #[test]
+    fn visa_target_refuses_cross_authority_and_cross_path_credentials() {
+        let target = VisaTargetPin {
+            principal_digest: "33".repeat(32),
+            authority: "shop.example".to_owned(),
+            path: "/checkout".to_owned(),
+        };
+        assert!(require_visa_target(&parsed_tap("shop.example", "/checkout"), &target).is_ok());
+        assert!(require_visa_target(&parsed_tap("other.example", "/checkout"), &target).is_err());
+        assert!(require_visa_target(&parsed_tap("shop.example", "/other"), &target).is_err());
+    }
+
+    #[test]
+    fn visa_registry_preserves_revocation_and_expiry_instead_of_synthesizing_active() {
+        let revoked = vec![visa_pin("revoked", 100)];
+        let revoked_registry = VisaRegistry { pins: &revoked };
+        assert_eq!(
+            TapVerifier::verify_credential(
+                &parsed_tap("shop.example", "/checkout"),
+                &revoked_registry,
+                1,
+                0,
+            ),
+            Err(TapError::Revoked)
+        );
+        let expired = vec![visa_pin("active", 1)];
+        let expired_registry = VisaRegistry { pins: &expired };
+        assert_eq!(
+            TapVerifier::verify_credential(
+                &parsed_tap("shop.example", "/checkout"),
+                &expired_registry,
+                2,
+                0,
+            ),
+            Err(TapError::ExpiredKey)
+        );
+        assert_eq!(
+            revoked_registry.resolve("unknown-key", 1),
+            Err(TapError::UnknownKey)
+        );
+    }
+
+    #[test]
+    fn tap_agent_must_be_the_authenticated_activity_signer() {
+        assert!(require_visa_actor([0x41; 32], [0x41; 32]).is_ok());
+        assert_eq!(
+            require_visa_actor([0x41; 32], [0x42; 32]),
+            Err("layerx_agent_signer_mismatch")
+        );
+    }
+
+    #[test]
+    fn receipt_must_match_the_exact_submitted_activity() {
+        assert!(require_receipt_activity([0x51; 32], [0x51; 32]).is_ok());
+        assert!(require_receipt_activity([0x51; 32], [0x52; 32]).is_err());
+    }
+
+    #[test]
+    fn fiat_provider_signature_binds_the_opaque_token_reference() {
+        let signing = SigningKey::from_bytes(&[0x61; 32]);
+        let token = TokenReference::new(b"provider-token-a".to_vec())
+            .unwrap_or_else(|error| panic!("opaque provider token is valid: {error:?}"));
+        let substituted = TokenReference::new(b"provider-token-b".to_vec())
+            .unwrap_or_else(|error| panic!("substitute provider token is valid: {error:?}"));
+        let evidence = signed_fiat_evidence(&signing, &token);
+        let pins = [FiatProviderPin {
+            provider: "provider-001".to_owned(),
+            public_key_ed25519: hex(signing.verifying_key().as_bytes()),
+        }];
+        let evidence_verifier = FiatEvidenceVerifier {
+            pins: &pins,
+            expected_rail: HostedAdapter::FiatCard,
+        };
+        let trace = TraceId::mint([0x62; 16]);
+        assert!(evidence_verifier.verify(&token, &evidence, &trace).is_ok());
+        assert_eq!(
+            evidence_verifier.verify(&substituted, &evidence, &trace),
+            Err(layerx_fiat::FiatError::InvalidEvidence)
+        );
+    }
+
+    #[test]
+    fn fiat_callback_refuses_caller_selected_economic_identity() {
+        let callback = serde_json::json!({
+            "token_reference": "provider-token-a",
+            "evidence": {
+                "facts": {
+                    "provider": "provider-001",
+                    "settlement": "settlement-001",
+                    "token_reference_sha256": "11".repeat(32),
+                    "rail": "card",
+                    "class": "settled",
+                    "amount": "10000",
+                    "asset": "41".repeat(32),
+                    "destination": "42".repeat(32),
+                    "observed_at": 1_700_000_000,
+                    "hold_until": null
+                },
+                "signature": "22".repeat(64)
+            },
+            "activity": "00",
+            "activity_idempotency_key": "33".repeat(32)
+        });
+        assert!(serde_json::from_value::<FiatCallback>(callback).is_err());
+    }
+
+    const X402_FIXTURE_ACCOUNT: &str = "agent:did:layerx:interop-merchant:main";
+
+    fn x402_fixture_pay_to() -> String {
+        const DIGITS: &[u8; 16] = b"0123456789abcdef";
+        let identifiers = layerx_x402::model::account_identifiers(X402_FIXTURE_ACCOUNT)
+            .unwrap_or_else(|error| panic!("fixture account has identifiers: {error:?}"));
+        let mut text = String::with_capacity(64);
+        for byte in identifiers[0] {
+            text.push(char::from(DIGITS[usize::from(byte >> 4)]));
+            text.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+        }
+        text
+    }
+
+    fn x402_fixture_request(payload: Value) -> FacilitatorRequest {
+        let requirements = PaymentRequirements {
+            scheme: "exact".to_owned(),
+            network: "layerx:beta".to_owned(),
+            amount: AtomicAmount::parse("1000")
+                .unwrap_or_else(|error| panic!("fixture amount is canonical: {error:?}")),
+            asset: "44".repeat(32),
+            pay_to: x402_fixture_pay_to(),
+            max_timeout_seconds: 60,
+            extra: Some(serde_json::json!({
+                "layerx": {
+                    "commitment": "executed",
+                    "account": X402_FIXTURE_ACCOUNT,
+                    "currency": "LXP"
+                }
+            })),
+        };
+        FacilitatorRequest {
+            x402_version: 2,
+            payment_payload: PaymentPayload {
+                x402_version: 2,
+                resource: None,
+                payload,
+                accepted: requirements.clone(),
+                extensions: BTreeMap::new(),
+            },
+            payment_requirements: requirements,
+        }
+    }
+
+    fn x402_fixture_gateway(trace: &TraceId) -> GatewayCore {
+        let conformance = ConformanceSuite::new(
+            AdapterId::new("x402-v2-local-matrix")
+                .unwrap_or_else(|error| panic!("suite id is valid: {error:?}")),
+            1,
+            [0x11; 32],
+        )
+        .unwrap_or_else(|error| panic!("conformance suite is declared: {error:?}"));
+        let mut gateway = GatewayCore::new();
+        gateway
+            .register_adapter(
+                x402_adapter_descriptor(conformance)
+                    .unwrap_or_else(|error| panic!("x402 descriptor is valid: {error:?}")),
+                trace,
+                10,
+            )
+            .unwrap_or_else(|error| panic!("x402 adapter registers: {error:?}"));
+        gateway
+    }
+
+    #[test]
+    fn x402_verify_refuses_unsigned_and_unverifiable_payments_through_the_facilitator() {
+        let facilitator = Facilitator::new(SupportedResponse {
+            kinds: vec![FacilitatorKind {
+                x402_version: 2,
+                scheme: "exact".to_owned(),
+                network: "layerx:beta".to_owned(),
+                extra: None,
+            }],
+            extensions: vec![],
+            signers: BTreeMap::new(),
+        })
+        .unwrap_or_else(|error| panic!("facilitator supports the layerx exact kind: {error:?}"));
+        let trace = TraceId::mint([0x71; 16]);
+        let principal = PrincipalId::new("principal-x402-verify")
+            .unwrap_or_else(|error| panic!("principal id is valid: {error:?}"));
+        let modules = ModuleRegistry::new(&[])
+            .unwrap_or_else(|error| panic!("empty module registry is valid: {error:?}"));
+        let mut plane = X402VerifyPlane {
+            modules: &modules,
+            protocol_version: layerx_wire::limits::PROTOCOL_VERSION,
+            protocol_network_id: 1,
+            expected_signer: [0x21; 32],
+            observed_at: 10,
+        };
+        let mut gateway = x402_fixture_gateway(&trace);
+        let unsigned = facilitator
+            .verify(
+                &mut gateway,
+                &principal,
+                &x402_fixture_request(serde_json::json!({})),
+                &mut plane,
+                &trace,
+                10,
+            )
+            .unwrap_or_else(|error| {
+                panic!("verify renders a refusal for a payment without a typed activity: {error:?}")
+            });
+        assert!(!unsigned.is_valid);
+        assert_eq!(
+            unsigned.invalid_reason.as_deref(),
+            Some("typed_intent_required")
+        );
+        let unverifiable = facilitator
+            .verify(
+                &mut gateway,
+                &principal,
+                &x402_fixture_request(serde_json::json!({
+                    "layerxActivity": "deadbeef",
+                    "layerxIdempotencyKey": "00".repeat(32),
+                })),
+                &mut plane,
+                &trace,
+                10,
+            )
+            .unwrap_or_else(|error| {
+                panic!("verify renders a refusal for unverifiable activity bytes: {error:?}")
+            });
+        assert!(!unverifiable.is_valid);
+        assert_eq!(
+            unverifiable.invalid_reason.as_deref(),
+            Some("activity_authorization_refused")
+        );
+    }
+
+    fn ucp_wire(capabilities: Value, payment_handlers: Value) -> UcpRequest {
+        let mut wire = serde_json::json!({
+            "checkout_id": "checkout-1",
+            "currency": "USD",
+            "total_minor": "1000",
+            "asset": "44".repeat(32),
+            "recipient": "45".repeat(32),
+            "idempotency_key": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "profile_url": "https://client.example/profile",
+            "capabilities": [],
+            "payment_handlers": [],
+            "activity": "00",
+            "order_id": "order-1",
+            "permalink_url": "https://merchant.example/orders/1"
+        });
+        wire["capabilities"] = capabilities;
+        wire["payment_handlers"] = payment_handlers;
+        serde_json::from_value(wire)
+            .unwrap_or_else(|error| panic!("UCP wire request parses: {error:?}"))
+    }
+
+    #[test]
+    fn ucp_negotiation_refuses_incompatible_client_profiles() {
+        let platform_handler = PaymentHandler::new(
+            "dev.layerx.payment",
+            "2026-04-08",
+            "https://interchain.paxeer.network/specs/payment-handler",
+            "https://interchain.paxeer.network/schemas/payment-handler.json",
+        )
+        .unwrap_or_else(|error| panic!("platform payment handler is valid: {error:?}"));
+        let handler_wire = serde_json::json!([{
+            "id": "dev.layerx.payment",
+            "version": "2026-04-08",
+            "spec": "https://interchain.paxeer.network/specs/payment-handler",
+            "schema": "https://interchain.paxeer.network/schemas/payment-handler.json"
+        }]);
+        let checkout_wire = serde_json::json!([{
+            "name": "dev.ucp.shopping.checkout",
+            "version": "2026-04-08",
+            "spec": "https://ucp.dev/2026-04-08/specification/checkout",
+            "schema": "https://ucp.dev/2026-04-08/schemas/shopping/checkout.json"
+        }]);
+        let without_checkout =
+            ucp_client_profile(&ucp_wire(serde_json::json!([]), handler_wire.clone()))
+                .unwrap_or_else(|error| {
+                    panic!("client profile without checkout parses: {error:?}")
+                });
+        assert_eq!(
+            NegotiatedCapabilities::negotiate(&without_checkout, &platform_handler),
+            Err(UcpError::CapabilityUnavailable)
+        );
+        let foreign_handler_wire = serde_json::json!([{
+            "id": "dev.other.payment",
+            "version": "2026-04-08",
+            "spec": "https://other.example/specs/payment-handler",
+            "schema": "https://other.example/schemas/payment-handler.json"
+        }]);
+        let foreign_handler =
+            ucp_client_profile(&ucp_wire(checkout_wire.clone(), foreign_handler_wire))
+                .unwrap_or_else(|error| {
+                    panic!("client profile with a foreign handler parses: {error:?}")
+                });
+        assert_eq!(
+            NegotiatedCapabilities::negotiate(&foreign_handler, &platform_handler),
+            Err(UcpError::PaymentHandlerUnavailable)
+        );
+        let compatible = ucp_client_profile(&ucp_wire(checkout_wire, handler_wire))
+            .unwrap_or_else(|error| panic!("compatible client profile parses: {error:?}"));
+        let negotiated = NegotiatedCapabilities::negotiate(&compatible, &platform_handler)
+            .unwrap_or_else(|error| panic!("compatible client profile negotiates: {error:?}"));
+        assert!(negotiated.checkout());
+    }
+
+    #[test]
+    fn ap2_request_refuses_caller_clock_audience_and_economic_identity() {
+        let mut request = serde_json::json!({
+            "checkout_presentation": "checkout",
+            "payment_presentation": "payment",
+            "nonce": "merchant-issued-nonce",
+            "activity": "00"
+        });
+        assert!(serde_json::from_value::<Ap2Request>(request.clone()).is_ok());
+        for field in [
+            "now",
+            "clock_skew_seconds",
+            "audience",
+            "currency_minor_exponent",
+            "activity_idempotency_key",
+        ] {
+            request[field] = serde_json::json!(1);
+            assert!(serde_json::from_value::<Ap2Request>(request.clone()).is_err());
+            request
+                .as_object_mut()
+                .unwrap_or_else(|| panic!("AP2 request is an object"))
+                .remove(field);
+        }
+    }
+}
+
+#[cfg(test)]
+mod receipt_authority_shape_tests {
+    use super::{AuthorityResponse, MAX_BODY};
+    use crate::config::decode_hex;
+
+    fn captured_authority_document() -> serde_json::Value {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../../platform/hosted/gateway/tests/fixtures/maintained-authority.json");
+        let bytes = std::fs::read(path).unwrap_or_else(|error| panic!("{error}"));
+        let capture: serde_json::Value =
+            serde_json::from_slice(&bytes).unwrap_or_else(|error| panic!("{error}"));
+        let mut document = capture["authority"].clone();
+        document["receipt"] = capture["receipt_hex"].clone();
+        let header = decode_hex(
+            capture["authority"]["batch_evidence"]["header_hex"]
+                .as_str()
+                .unwrap_or_else(|| panic!("captured maintained header")),
+            MAX_BODY,
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+        document["protocol_network_id"] =
+            serde_json::json!(layerx_wire::receipt::decode_batch_header(&header)
+                .unwrap_or_else(|error| panic!("{error:?}"))
+                .network_id());
+        document
+    }
+
+    fn decodes(document: &serde_json::Value) -> bool {
+        let bytes = serde_json::to_vec(document).unwrap_or_else(|error| panic!("{error}"));
+        serde_json::from_slice::<AuthorityResponse>(&bytes).is_ok()
+    }
+
+    #[test]
+    fn real_receipt_authority_response_decodes_with_its_receipt_scope_and_attachment() {
+        let document = captured_authority_document();
+        assert!(decodes(&document));
+        let mut historical = document.clone();
+        historical
+            .as_object_mut()
+            .unwrap_or_else(|| panic!("authority response is an object"))
+            .remove("batch_evidence");
+        assert!(decodes(&historical));
+        let mut null = document.clone();
+        null["batch_evidence"] = serde_json::Value::Null;
+        assert!(!decodes(&null));
+        let mut unknown = document.clone();
+        unknown["unexpected"] = serde_json::json!(true);
+        assert!(!decodes(&unknown));
+        for field in ["receipt", "protocol_network_id", "batch_id", "network_id"] {
+            let mut missing = document.clone();
+            missing
+                .as_object_mut()
+                .unwrap_or_else(|| panic!("authority response is an object"))
+                .remove(field);
+            assert!(!decodes(&missing));
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReadinessReceiptInput {
+    activity_hex: String,
+    receipt_hex: String,
+    activity_id: String,
+    batch_id: String,
+    expected_signer: String,
+}
+
+pub fn verify_readiness_receipt(config: &Config, path: &str) -> Result<Value, String> {
+    use std::os::unix::fs::PermissionsExt;
+    let metadata =
+        std::fs::symlink_metadata(path).map_err(|_| "receipt input is unavailable".to_owned())?;
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.permissions().mode() & 0o077 != 0
+        || metadata.len() == 0
+        || metadata.len() > (4 * MAX_BODY) as u64
+    {
+        return Err("receipt input must be a protected bounded regular file".to_owned());
+    }
+    let input: ReadinessReceiptInput = serde_json::from_slice(
+        &std::fs::read(path).map_err(|_| "receipt input is unavailable".to_owned())?,
+    )
+    .map_err(|_| "receipt input shape is invalid".to_owned())?;
+    let activity = decode_hex(&input.activity_hex, MAX_BODY)?;
+    let receipt = decode_hex(&input.receipt_hex, MAX_BODY)?;
+    let signer = parse_hex32(&input.expected_signer)?;
+    let activity_id = parse_hex32(&input.activity_id)?;
+    let batch_id = parse_hex32(&input.batch_id)?;
+    let submission = verify_submission(
+        &activity,
+        &config.modules,
+        config.protocol_version,
+        config.protocol_network_id,
+        &signer,
+    )
+    .map_err(|_| "receipt activity signature or domain is invalid".to_owned())?;
+    require_receipt_activity(activity_id, submission.activity_id())?;
+    let trace = TraceId::mint(
+        activity_id[..16]
+            .try_into()
+            .map_err(|_| "receipt trace is invalid".to_owned())?,
+    );
+    let facts = authority(config, &input.activity_id, &receipt, &trace)?;
+    if facts.batch_id != batch_id {
+        return Err("receipt batch identity mismatch".to_owned());
+    }
+    let authorized = AuthorizedBatch::new(
+        facts.batch_id,
+        facts.asset,
+        facts.previous_state_root,
+        facts.resulting_state_root,
+        facts.sequencer_public_key,
+    );
+    let operation = verify_activity_operation(
+        &receipt,
+        AuthorityFacts::new(
+            facts.batch_id,
+            facts.asset,
+            facts.previous_state_root,
+            facts.resulting_state_root,
+            facts.sequencer_public_key,
+        ),
+        &config.trusted_sequencer_key,
+        Some(activity_id),
+    )
+    .map_err(|_| "independent activity receipt verification failed".to_owned())?;
+    require_receipt_activity(submission.activity_id(), operation.activity_id())?;
+    let verified = verify(&receipt, &authorized)
+        .map_err(|_| "independent batch receipt verification failed".to_owned())?;
+    let protocol = verified
+        .receipt()
+        .protocol()
+        .ok_or_else(|| "protocol receipt is required".to_owned())?;
+    if protocol.batch_id() != batch_id || protocol.result_code() != 0 {
+        return Err("settlement receipt did not execute successfully".to_owned());
+    }
+    Ok(
+        json!({ "verified": true, "activity_id": hex(&activity_id), "batch_id": hex(&batch_id),
+        "receipt_sha256": hex(&Sha256::digest(&receipt)),
+        "receipt_digest": hex(&operation.receipt_digest()), "network_id": config.network_id,
+        "protocol_network_id": config.protocol_network_id, "wire_version": config.wire_version }),
+    )
+}

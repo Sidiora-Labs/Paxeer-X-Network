@@ -6,7 +6,7 @@ as tools under an explicit scope. Read tools return verified core bytes. Write
 tools prepare and submit canonical activities and return receipts. No MCP tool
 returns a claimed outcome that is not backed by a receipt or proof.
 
-There are two MCP surfaces in this repository (`interop/README.md`,
+There are two MCP surfaces in this repository (`services/interop/README.md`,
 `services/agent/crates/layerx-mcp/README.md`):
 
 | Surface | Role |
@@ -74,5 +74,5 @@ Host values for `layerx install mcp` are `layerx`, `claude-code`,
 ## Interop ingress
 
 MCP is also an ingress label on the interoperability gateway, next to `http`
-and `a2a` (`interop/README.md`). That path translates foreign protocols; it
+and `a2a` (`services/interop/README.md`). That path translates foreign protocols; it
 does not write balances. See [x402](../interop/x402.md).

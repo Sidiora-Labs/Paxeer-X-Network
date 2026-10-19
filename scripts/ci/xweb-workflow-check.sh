@@ -52,11 +52,11 @@ SPEC_PATH = "spec/paxeer-x-web/spec.kvx"
 GATE_TASK = ("3", "1")
 
 FILTERS = [
-    "interop/crates/x-websearch/**",
-    "interop/deploy/x-websearch/**",
-    "interop/crates/layerx-x402/src/**",
-    "interop/Cargo.toml",
-    "interop/Cargo.lock",
+    "services/interop/crates/x-websearch/**",
+    "services/interop/deploy/x-websearch/**",
+    "services/interop/crates/layerx-x402/src/**",
+    "services/interop/Cargo.toml",
+    "services/interop/Cargo.lock",
     "modules/xweb/**",
     "modules/layerxbridge/**",
     "precompiles/xweb/**",
@@ -716,7 +716,7 @@ def check_installers(root, jobs):
                 )
             if not any(WASM_TARGET in line for line in installs if line.startswith("rustup ")):
                 refuse("the job %s runs the programs targets without the %s target" % (job_id, WASM_TARGET))
-        if "interop/Cargo.toml" in joined:
+        if "services/interop/Cargo.toml" in joined:
             packages = apt_packages(installs)
             if SIDECAR_PACKAGES <= packages:
                 note("the job %s installs the native-tls build dependencies" % job_id)
@@ -938,8 +938,8 @@ MUTATIONS = {
         1,
     ),
     "working-directory": (
-        "        run: cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch\n",
-        "        run: cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch\n"
+        "        run: cargo test --locked --manifest-path services/interop/Cargo.toml -p x-websearch\n",
+        "        run: cargo test --locked --manifest-path services/interop/Cargo.toml -p x-websearch\n"
         "        working-directory: interop\n",
         1,
     ),

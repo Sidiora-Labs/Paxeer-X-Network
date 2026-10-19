@@ -18,7 +18,7 @@ docker
 explorer
 human
 hpx
-interop
+services/interop
 platform
 programs
 spec

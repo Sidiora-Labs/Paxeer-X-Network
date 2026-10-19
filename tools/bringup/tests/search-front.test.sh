@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Renders the search front's upstream list and the serving sidecar
 # configuration from a fixture env, and runs nginx -t on
-# interop/deploy/search-front/nginx.conf with the rendered list included.
+# services/interop/deploy/search-front/nginx.conf with the rendered list included.
 # The readiness probes go through a closed local proxy port, so neither
 # pinned name is ready and the render takes its unadmitted-primary path.
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -65,7 +65,7 @@ check render_refuses_non_api_name '[ "$status" -eq 1 ]'
 status=0
 env "${fixture_env[@]}" "$front" config >"$work/x-websearch.json" 2>"$work/config.err" || status=$?
 check config_exit '[ "$status" -eq 0 ]'
-check config_matches_template 'env "${fixture_env[@]}" python3 - "$repo_root/interop/crates/x-websearch/config.example.json" "$work/x-websearch.json" <<"PY"
+check config_matches_template 'env "${fixture_env[@]}" python3 - "$repo_root/services/interop/crates/x-websearch/config.example.json" "$work/x-websearch.json" <<"PY"
 import json, os, re, sys
 template = json.load(open(sys.argv[1]))
 rendered = json.load(open(sys.argv[2]))
@@ -99,7 +99,7 @@ sed -e "s|/var/log/nginx/error.log|$work/logs/error.log|" \
 	-e "s|/var/run/nginx.pid|$work/nginx.pid|" \
 	-e "s|/etc/nginx/search/upstreams.conf|$work/upstreams.conf|" \
 	-e "s|listen \[::\]:8080 ipv6only=off;|listen 127.0.0.1:18080;|" \
-	"$repo_root/interop/deploy/search-front/nginx.conf" >"$work/nginx.conf"
+	"$repo_root/services/interop/deploy/search-front/nginx.conf" >"$work/nginx.conf"
 check nginx_conf_passes_402 'grep -Fq "proxy_intercept_errors off;" "$work/nginx.conf" && ! grep -Eiq "proxy_hide_header +(PAYMENT|LAYERX)" "$work/nginx.conf"'
 if command -v nginx >/dev/null 2>&1; then
 	check nginx_t 'nginx -t -c "$work/nginx.conf" >"$work/nginx-t.out" 2>&1 || { cat "$work/nginx-t.out"; false; }'

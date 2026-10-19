@@ -3,7 +3,7 @@
 `layerx-visa-tap` implements Visa Trusted Agent Protocol verification:
 RFC 9421-style `sig2` signatures, a trusted-agent registry, nonce
 replay, and browse/pay tags `agent-browser-auth` /
-`agent-payer-auth` (`interop/crates/layerx-visa-tap/src/lib.rs`).
+`agent-payer-auth` (`services/interop/crates/layerx-visa-tap/src/lib.rs`).
 Binding to a LayerX agent is non-authoritative. Execute hands off a
 typed intent. The adapter id is `visa-tap`.
 `spec/layerx-platform/spec.kvx` task 23.3 is **done**.

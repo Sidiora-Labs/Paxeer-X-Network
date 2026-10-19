@@ -100,7 +100,7 @@ BARE_URL = re.compile(r"\b(?:[A-Za-z][A-Za-z0-9+.-]*://|www\.)[^\s<>()`|\"']+")
 HTML_LINK = re.compile(r"\b(?:href|src)\s*=\s*[\"']([^\"']+)[\"']", re.I)
 
 PATH_TOKEN = re.compile(
-    r"(?<![\w./@:-])(?:\./)?((?:bridge|interop|modules|precompiles|node|sdk|spec|docs|contracts|tools|\.github)"
+    r"(?<![\w./@:-])(?:\./)?((?:bridge|services/interop|modules|precompiles|node|sdk|spec|docs|contracts|tools|\.github)"
     r"/[A-Za-z0-9_.<>*/-]*)"
 )
 GO_QUALIFIED = re.compile(r"^(.+)\.([A-Z][A-Za-z0-9_]*)$")

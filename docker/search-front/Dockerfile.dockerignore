@@ -1,5 +1,5 @@
 *
-!interop/deploy/search-front/nginx.conf
+!services/interop/deploy/search-front/nginx.conf
 !docker/search-front/resolver.conf.template
 !docker/search-front/files.tsv
 !docker/search-front/real-ip.sh

@@ -1,9 +1,9 @@
 [meta]
 name = "layerx-mirror-verification"
 version = 2
-source_contract = "interop/contracts/ethereum-mirror/LayerXMirrorArchive.sol"
-source_program = "interop/contracts/solana-mirror/src/lib.rs"
-archive_codec = "interop/crates/layerx-mirror/src/publisher.rs"
+source_contract = "services/interop/contracts/ethereum-mirror/LayerXMirrorArchive.sol"
+source_program = "services/interop/contracts/solana-mirror/src/lib.rs"
+archive_codec = "services/interop/crates/layerx-mirror/src/publisher.rs"
 
 [limits]
 max_sources = 8

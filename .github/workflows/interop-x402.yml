@@ -4,10 +4,10 @@ on:
   push:
     branches: [main]
     paths:
-      - "interop/crates/layerx-x402/**"
-      - "interop/crates/layerx-interop-gateway/**"
-      - "interop/Cargo.toml"
-      - "interop/Cargo.lock"
+      - "services/interop/crates/layerx-x402/**"
+      - "services/interop/crates/layerx-interop-gateway/**"
+      - "services/interop/Cargo.toml"
+      - "services/interop/Cargo.lock"
       - "services/agent/crates/layerx-proof/**"
       - "services/agent/crates/layerx-wire/**"
       - "services/agent/crates/layerx-crypto/**"
@@ -16,10 +16,10 @@ on:
       - ".github/workflows/interop-x402.yml"
   pull_request:
     paths:
-      - "interop/crates/layerx-x402/**"
-      - "interop/crates/layerx-interop-gateway/**"
-      - "interop/Cargo.toml"
-      - "interop/Cargo.lock"
+      - "services/interop/crates/layerx-x402/**"
+      - "services/interop/crates/layerx-interop-gateway/**"
+      - "services/interop/Cargo.toml"
+      - "services/interop/Cargo.lock"
       - "services/agent/crates/layerx-proof/**"
       - "services/agent/crates/layerx-wire/**"
       - "services/agent/crates/layerx-crypto/**"

@@ -2,7 +2,7 @@
 
 `layerx-migrate` maps external accounts, credits assets, and imports
 external history through `SourceVerifier` + `MigrationPlane` +
-gateway idempotency (`interop/crates/layerx-migrate/src/lib.rs`).
+gateway idempotency (`services/interop/crates/layerx-migrate/src/lib.rs`).
 The adapter id is `migration`.
 
 `spec/layerx-platform/spec.kvx` task 24.1 is **implemented**. The
@@ -39,7 +39,7 @@ Domain strings in the crate:
 - `LayerX/interop/migration/custody-context/v1`
 - `LayerX/interop/migration/binding-context/v1`
 
-Operator notes: `interop/crates/layerx-migrate/README.md` and
+Operator notes: `services/interop/crates/layerx-migrate/README.md` and
 `OPERATIONS.md`.
 
 The adapter is registered as `migration` on the gateway core. It is

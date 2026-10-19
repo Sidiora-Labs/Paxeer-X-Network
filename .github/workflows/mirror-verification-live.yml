@@ -23,10 +23,10 @@ jobs:
           tar -xf .live-secrets/vectors.tar -C .live-secrets
           chmod 0600 .live-secrets/*
       - name: Build production verifier for qualification
-        run: cargo build --locked --release --manifest-path interop/Cargo.toml --package layerx-mirror --bin layerx-mirror-verify
+        run: cargo build --locked --release --manifest-path services/interop/Cargo.toml --package layerx-mirror --bin layerx-mirror-verify
       - name: Verify from mirrors with LayerX infrastructure absent
         env:
-          LAYERX_MIRROR_VERIFY_BIN: interop/target/release/layerx-mirror-verify
+          LAYERX_MIRROR_VERIFY_BIN: services/interop/target/release/layerx-mirror-verify
           LAYERX_MIRROR_VERIFY_CONFIG: .live-secrets/verify.json
           LAYERX_MIRROR_CANONICAL_REQUEST: .live-secrets/canonical.json
           LAYERX_MIRROR_FAILOVER_REQUEST: .live-secrets/failover.json

@@ -17,7 +17,7 @@ usage() {
 usage: tools/bringup/search-front.sh names | render | config | deploy
 
 The search front of search.paxeer.network: the nginx Fly app of
-interop/deploy/search-front/fly.toml that keeps each client address on one
+services/interop/deploy/search-front/fly.toml that keeps each client address on one
 serving RPC name. Runs on the edge host, the operator host that holds the Fly
 login; names reads the host map from BRINGUP_HOSTS_FILE without printing it.
 
@@ -40,7 +40,7 @@ render    prints the upstream list that nginx includes at http level: a
           backend before every paid request.
 
 config    prints the serving sidecar configuration of
-          interop/crates/x-websearch/config.example.json with every "${NAME}"
+          services/interop/crates/x-websearch/config.example.json with every "${NAME}"
           string replaced by the environment variable NAME and the note
           dropped. Exits 1 naming every unset or empty variable, never a
           value.
@@ -71,13 +71,13 @@ error or a host map lacking a role.
 EOF
 }
 
-search_front_toml="interop/deploy/search-front/fly.toml"
+search_front_toml="services/interop/deploy/search-front/fly.toml"
 search_front_host="search.paxeer.network"
 search_front_secret="SEARCH_FRONT_UPSTREAMS"
 search_front_regions="${SEARCH_FRONT_REGIONS:-ams,fra}"
 search_front_primary="${SEARCH_FRONT_PRIMARY:-api15.paxeer.network}"
 search_front_backup="${SEARCH_FRONT_BACKUP:-api1.paxeer.network}"
-search_front_config_template="interop/crates/x-websearch/config.example.json"
+search_front_config_template="services/interop/crates/x-websearch/config.example.json"
 
 search_front_names() {
 	local -a dests validators lines=()

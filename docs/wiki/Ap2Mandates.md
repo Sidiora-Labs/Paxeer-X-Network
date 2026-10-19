@@ -2,7 +2,7 @@
 
 `layerx-ap2` verifies AP2 v1 mandates (SD-JWT / JOSE), checks
 constraints, and maps an execute path onto typed LayerX intents plus
-receipt signing (`interop/crates/layerx-ap2/src/lib.rs`). The adapter
+receipt signing (`services/interop/crates/layerx-ap2/src/lib.rs`). The adapter
 id is `ap2`. Pins are `AP2_SPEC_COMMIT` and `AP2_SPEC_SHA256`.
 `spec/layerx-platform/spec.kvx` task 23.1 is **done**.
 
@@ -15,7 +15,7 @@ external evidence.
 
 ## Gateway routes
 
-HTTP only (`interop/crates/layerx-interop-gateway/src/server.rs`):
+HTTP only (`services/interop/crates/layerx-interop-gateway/src/server.rs`):
 
 - `POST /v1/http/ap2/mandates/verify`
 - `POST /v1/http/ap2/execute`
@@ -41,7 +41,7 @@ Descriptor: `ap2_adapter_descriptor()`. Codify anchor:
 `interop_ap2()`.
 
 Conformance vectors live under
-`interop/crates/layerx-ap2/tests/vectors/` (amount-range, binding
+`services/interop/crates/layerx-ap2/tests/vectors/` (amount-range, binding
 mismatch, expired, invalid signature, autonomous line items).
 
 [Interop](Interop.md) · [Home](Home.md)

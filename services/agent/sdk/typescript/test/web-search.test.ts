@@ -26,7 +26,7 @@ interface Step {
 }
 interface Vector { readonly payload: string; readonly media_type: string; readonly text: string; readonly digest: string }
 
-const fixture = (path: string): Json => JSON.parse(readFileSync(new URL(`../../../../../../interop/crates/x-websearch/tests/fixtures/${path}`, import.meta.url), "utf8")) as Json;
+const fixture = (path: string): Json => JSON.parse(readFileSync(new URL(`../../../../../../services/interop/crates/x-websearch/tests/fixtures/${path}`, import.meta.url), "utf8")) as Json;
 const exchange = (fixture("client-exchange.json")["exchange"] as Step[]);
 const vectors = (fixture("content-vectors.json")["vectors"] as Vector[]);
 const buyer = fixture("gateway/buyer.json");

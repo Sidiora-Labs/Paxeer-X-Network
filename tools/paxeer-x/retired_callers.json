@@ -416,7 +416,7 @@
         "intent-ingester"
       ],
       "deleted_trees": [
-        "interop/crates/layerx-intent-ingester"
+        "services/interop/crates/layerx-intent-ingester"
       ],
       "replacement": "0x1015 executes synchronously in the transaction, so the ingester and its workspace, image, rollout and CI entries are removed"
     },
@@ -440,7 +440,7 @@
         "LAYERX_INGESTER_MARKET_MAP"
       ],
       "deleted_trees": [
-        "interop/crates/layerx-intent-ingester/src/submit.rs"
+        "services/interop/crates/layerx-intent-ingester/src/submit.rs"
       ],
       "replacement": "one market id lives in the exchange store and 0x1015 getMarket reads it"
     },

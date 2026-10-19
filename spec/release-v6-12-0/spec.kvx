@@ -1,7 +1,7 @@
 [meta]
 name = "Paxeer X Network release v6.12.0: launchpad parity, perpetuals and spot precompiles, perps data services"
 slug = "release-v6-12-0"
-version = "1.1.1"
+version = "1.2.0"
 status = "draft"
 goal = "One coordinated upgrade of the Paxeer X Network to v6.12.0 in which the launchpad precompile 0x1017 presents the exact interface of the deployed launchpad contracts and absorbs their pools, the perpetuals and spot venue runs natively in the chain as precompiles with a validator-run price sidecar, the Hyperpax application trades against those precompiles, and a dedicated indexer, gateway and portal serve the venue's data; the upgrade is applied by every validator and full node at one halt height and released as the first tagged build."
 scope = "The node binary paxd (Cosmos SDK, EVM, precompiles, upgrade handler), the launchpad, perpetuals and spot precompiles and the pricefeed precompile at 0x1020 with their keepers (modules/launchpad, modules/perps, modules/spot, modules/pricefeed), the price sidecar, the perps data services in this repository, the launchpad backend bindings in github.com/Sidiora-Labs/Launch-x, the Hyperpax application in github.com/paxlabs-inc/Hyperpax, the release pipeline and the fleet upgrade runbook."
@@ -17023,9 +17023,9 @@ ac_5 = "LXP_PRICEFEED_UNREGISTERED_FEEDER or LXP_PRICEFEED_NOT_VALIDATOR from a 
 
 [req.5015]
 title = "The sidecar installs from tools/price-sidecar with names only"
-ac_1 = "price-sidecar.service follows interop/deploy/x-websearch/x-websearch.service:1-51: dedicated User and Group, LoadCredential for feed.key and chainflow.key, Environment lines passing %d paths in PRICE_SIDECAR_FEED_KEY_FILE and PRICE_FEED_REST_API_KEY_FILE, Restart=on-failure, StateDirectory with mode 0700, UMask=0077 and the same sandbox directives."
+ac_1 = "price-sidecar.service follows services/interop/deploy/x-websearch/x-websearch.service:1-51: dedicated User and Group, LoadCredential for feed.key and chainflow.key, Environment lines passing %d paths in PRICE_SIDECAR_FEED_KEY_FILE and PRICE_FEED_REST_API_KEY_FILE, Restart=on-failure, StateDirectory with mode 0700, UMask=0077 and the same sandbox directives."
 ac_2 = "config.template.json carries every config field with empty values for the Chainflow feed base address, chain id, validator and feed account, and names only the environment variables PRICE_SIDECAR_CONFIG, PRICE_SIDECAR_FEED_KEY_FILE, PRICE_FEED_REST_API_KEY_FILE, PRICE_SIDECAR_STATE_DIR, PRICE_SIDECAR_HEALTH_ADDR, PRICE_SIDECAR_CONSENSUS_RPC_URL, PRICE_SIDECAR_EVM_RPC_URL."
-ac_3 = "The config loader refuses every empty field of the template naming the field, the placeholder proof of interop/deploy/x-websearch/tests/packaging-check.sh:1-11."
+ac_3 = "The config loader refuses every empty field of the template naming the field, the placeholder proof of services/interop/deploy/x-websearch/tests/packaging-check.sh:1-11."
 
 [req.5016]
 title = "The price path works end to end on an in-process multi-validator chain"
@@ -17321,9 +17321,9 @@ reqs = ["5015.1", "5015.2", "5015.3"]
 touches = ["tools/price-sidecar/price-sidecar.service", "tools/price-sidecar/config.template.json", "tools/price-sidecar/tests/packaging-check.sh"]
 tests = ["tools/price-sidecar/tests/packaging-check.sh"]
 verification_contract = "bash tools/price-sidecar/tests/packaging-check.sh"
-do_1 = "Write tools/price-sidecar/price-sidecar.service with the user, LoadCredential, Environment, restart, state directory and sandbox directives of interop/deploy/x-websearch/x-websearch.service:1-51."
+do_1 = "Write tools/price-sidecar/price-sidecar.service with the user, LoadCredential, Environment, restart, state directory and sandbox directives of services/interop/deploy/x-websearch/x-websearch.service:1-51."
 do_2 = "Write tools/price-sidecar/config.template.json with every config field and empty values for the Chainflow feed base address, chain id, validator and feed account."
-do_3 = "Write tools/price-sidecar/tests/packaging-check.sh with the offline checks of interop/deploy/x-websearch/tests/packaging-check.sh:1-30: unit directives, names-only template and the loader refusing every placeholder."
+do_3 = "Write tools/price-sidecar/tests/packaging-check.sh with the offline checks of services/interop/deploy/x-websearch/tests/packaging-check.sh:1-30: unit directives, names-only template and the loader refusing every placeholder."
 do_4 = "Keep host values out of every tracked file: the operator fills the template in access-controlled storage."
 
 [capability.5.6.1]

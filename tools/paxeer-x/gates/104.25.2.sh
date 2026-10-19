@@ -96,7 +96,7 @@ def build(directory):
             except BlockingIOError:
                 remaining(1)
                 time.sleep(1)
-        command = ['/root/.cargo/bin/cargo', 'build', '--locked', '--manifest-path', 'interop/Cargo.toml',
+        command = ['/root/.cargo/bin/cargo', 'build', '--locked', '--manifest-path', 'services/interop/Cargo.toml',
                    '-p', 'layerx-mirror', '--tests', '--bin', 'layerx-mirror-verify', '--message-format=json']
         execute(command, directory / 'build.log', 1200)
     with Path('/root/lx-cargo/platform-build.lock').open('a') as platform_lock:

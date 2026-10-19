@@ -30,9 +30,9 @@ wallet-pwa|docker/wallet-pwa/Dockerfile|human/apps/wallet/Dockerfile|.
 web|docker/web/Dockerfile|human/apps/web/Dockerfile|.
 wallet-gateway|docker/wallet-gateway/Dockerfile|human/wallet/gateway/Dockerfile|.
 wallet-attestor|docker/wallet-attestor/Dockerfile|human/wallet/attestor/Dockerfile|.
-interop-gateway|docker/interop-gateway/Dockerfile|interop/deploy/gateway/Dockerfile|.
-interop-mirror|docker/interop-mirror/Dockerfile|interop/deploy/mirror/Dockerfile|.
-x-websearch|docker/x-websearch/Dockerfile|interop/deploy/x-websearch/Dockerfile|.
+interop-gateway|docker/interop-gateway/Dockerfile|services/interop/deploy/gateway/Dockerfile|.
+interop-mirror|docker/interop-mirror/Dockerfile|services/interop/deploy/mirror/Dockerfile|.
+x-websearch|docker/x-websearch/Dockerfile|services/interop/deploy/x-websearch/Dockerfile|.
 platform-agent-boundary|docker/platform-agent-boundary/Dockerfile|platform/hosted/agent-boundary/Dockerfile|.
 platform-authority|docker/platform-authority/Dockerfile|platform/hosted/authority/Dockerfile|.
 platform-core|docker/platform-core/Dockerfile|platform/hosted/core/Dockerfile|.

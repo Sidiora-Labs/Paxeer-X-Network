@@ -753,7 +753,7 @@ memory() {
 
 # The mirror-signer and mirror-publisher containers' secrets, in the box env
 # file, each base64: the Ethereum secp256k1 publisher key, the
-# Solana ed25519 publisher keypair, the config interop/deploy/mirror/
+# Solana ed25519 publisher keypair, the config services/interop/deploy/mirror/
 # render-config.py rendered, and a tar of the <backend>.ca.der and
 # <backend>.token files its RPC endpoints name under $mirror_run/rpc.
 # mirror_inputs writes each present one to memory for uid 4021 and drops it

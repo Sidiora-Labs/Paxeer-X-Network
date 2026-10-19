@@ -1,5 +1,5 @@
 # The interop gateway at interchain.paxeer.network: layerx-interop-gateway of
-# interop/crates/layerx-interop-service on its plain listener behind the Fly
+# services/interop/crates/layerx-interop-service on its plain listener behind the Fly
 # edge, on at least two machines in ams and fra. It keeps no state of its own:
 # its operations live in the router's Redis under the gateway keyspace. The
 # env is the LAYERX_INTEROP_* contract of deployment.yaml beside this file,
@@ -10,7 +10,7 @@
 # tools/bringup/ca.sh issue interop-client (the CA DER is the outbound root of
 # the receipt authority and Redis; the router's public chain verifies against
 # the image's system roots); INTEROP_CONFIG, the document
-# interop/deploy/gateway/render.py renders, its AP2, Visa TAP and fiat roots
+# services/interop/deploy/gateway/render.py renders, its AP2, Visa TAP and fiat roots
 # from the owner inputs LAYERX_BETA_INTEROP_AP2_KEYS, _AP2_ASSETS,
 # _VISA_AGENTS, _VISA_TARGETS and _FIAT_PROVIDERS, each also staged as a
 # secret of this app under its own name, and INTEROP_MODULE_REGISTRY, the

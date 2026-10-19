@@ -38,7 +38,7 @@ from layerx_sdk.web_search import _bound_payer_did, _derived, _payment_error
 from layerx_sdk.x402_rpc import PaymentRpcError, _decode_rpc_response
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-_FIXTURES = _REPO_ROOT / "interop" / "crates" / "x-websearch" / "tests" / "fixtures"
+_FIXTURES = _REPO_ROOT / "services" / "interop" / "crates" / "x-websearch" / "tests" / "fixtures"
 _SIGNATURES_PATH = (
     _REPO_ROOT
     / "platform"

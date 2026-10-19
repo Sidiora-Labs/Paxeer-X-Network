@@ -2,7 +2,7 @@
 
 `layerx-mirror` builds batch archives, publishes them to Ethereum or
 Solana, and verifies receipts from those mirror sources
-(`interop/crates/layerx-mirror/src/lib.rs`). Binaries:
+(`services/interop/crates/layerx-mirror/src/lib.rs`). Binaries:
 `layerx-mirror-publisher` and `layerx-mirror-verify`.
 
 `spec/layerx-platform/spec.kvx` tasks 25.1 and 25.2 are
@@ -25,7 +25,7 @@ Key types: `Archive`, `ArchiveCommitment`, `Publisher`,
 `SolanaArchiveClient`, `LniArchiveSource`, `RemoteChainSigner`,
 `PublicationJournal`.
 
-Contracts used by the publisher live under `interop/contracts/`.
+Contracts used by the publisher live under `services/interop/contracts/`.
 
 ---
 

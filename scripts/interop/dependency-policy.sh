@@ -6,7 +6,7 @@ metadata_file=$(mktemp)
 license_file=$(mktemp)
 trap 'rm -f -- "$metadata_file" "$license_file"' EXIT HUP INT TERM
 
-cargo metadata --manifest-path "$repo_root/interop/Cargo.toml" \
+cargo metadata --manifest-path "$repo_root/services/interop/Cargo.toml" \
     --locked --format-version 1 >"$metadata_file"
 
 banned='^(bindgen|libsqlite3-sys|rusqlite|sqlx-sqlite|layerx-core|layerx-protocol-core|layerx-human-service|layerx-paxeer-client|layerx-explorer-index|ctor|inventory)$'
@@ -69,9 +69,9 @@ LICENSE_ALTERNATIVES
 done <"$license_file"
 
 if command -v rg >/dev/null 2>&1; then
-    unsafe_hits=$(rg -n --glob '*.rs' '\bunsafe\s+(fn|trait|impl|extern)|\bunsafe\s*\{' "$repo_root/interop/crates" || true)
+    unsafe_hits=$(rg -n --glob '*.rs' '\bunsafe\s+(fn|trait|impl|extern)|\bunsafe\s*\{' "$repo_root/services/interop/crates" || true)
 else
-    unsafe_hits=$(grep -rEn --include='*.rs' '\bunsafe[[:space:]]+(fn|trait|impl|extern)|\bunsafe[[:space:]]*\{' "$repo_root/interop/crates" || true)
+    unsafe_hits=$(grep -rEn --include='*.rs' '\bunsafe[[:space:]]+(fn|trait|impl|extern)|\bunsafe[[:space:]]*\{' "$repo_root/services/interop/crates" || true)
 fi
 if [ -n "$unsafe_hits" ]; then
     printf '%s\n' "$unsafe_hits" >&2

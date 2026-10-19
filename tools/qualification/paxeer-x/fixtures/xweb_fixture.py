@@ -21,7 +21,7 @@ THRESHOLD = 3
 ATTESTORS = 4
 CALLBACK_GAS = 100_000
 XWEB_PRECOMPILE = "0x" + "00" * 18 + "1019"
-TEMPLATE = ROOT / "interop/crates/x-websearch/tests/fixtures/binary/config.json"
+TEMPLATE = ROOT / "services/interop/crates/x-websearch/tests/fixtures/binary/config.json"
 CHAIN_PORTS = ("EVM", "EVM_WS", "RPC", "P2P", "GRPC", "GRPC_WEB", "API")
 
 

@@ -122,7 +122,7 @@ explorer  reads the deployed explorer at CHECK_LIVE_EXPLORER_ORIGIN, by default
 bridge    runs bridge/deploy/checklist.sh for every chain under bridge/evm/chains
           and bridge/solana/chains against PAXEER_BRIDGE_RECORDS_DIR/<chain>.json,
           then reads a machine of the app of each of
-          interop/deploy/bridge-relayer/relayer-1.toml through relayer-5.toml
+          services/interop/deploy/bridge-relayer/relayer-1.toml through relayer-5.toml
           through flyctl ssh console, one line per check:
   checklist  "pass checklist chain=<chain> exit=0", or "fail checklist
              chain=<chain> record=absent" or "fail checklist chain=<chain>
@@ -1349,13 +1349,13 @@ print(len(ms), len(started), len(mounts))
 
 # check_search_front: search.paxeer.network answers /healthz 200 over a
 # certificate valid for the name, through the edge host that proxies it to the
-# app of interop/deploy/search-front/fly.toml; the app runs
+# app of services/interop/deploy/search-front/fly.toml; the app runs
 # at least two started machines in two regions; the upstream list a machine
 # mounts equals the serving RPC names of tools/bringup/search-front.sh names
 # and holds no validator host's apiN name; two requests from this address get
 # the same X-Search-Node, one of those names. One line per check.
 check_search_front() {
-	local host=search.paxeer.network toml=interop/deploy/search-front/fly.toml
+	local host=search.paxeer.network toml=services/interop/deploy/search-front/fly.toml
 	local app status headers code listing mounted expected validators listed first second failures=0
 	if ! command -v flyctl >/dev/null 2>&1; then
 		echo "check-live: flyctl is required" >&2
@@ -1949,7 +1949,7 @@ check_agent_public() {
 	finish "$failures"
 }
 
-# check_gas: the gas station app of interop/deploy/gas-station/fly.toml runs
+# check_gas: the gas station app of services/interop/deploy/gas-station/fly.toml runs
 # one started machine with one volume and the configuration its init rendered
 # there names chain 125, the SID token, the router first among three
 # endpoints and the paymaster; the account of CHECK_LIVE_GAS_ACCOUNT_KEYSTORE
@@ -2004,7 +2004,7 @@ gas_sign() {
 }
 
 check_gas() {
-	local toml=interop/deploy/gas-station/fly.toml name
+	local toml=services/interop/deploy/gas-station/fly.toml name
 	local app answer n_machines n_started n_mounts config chain token endpoints first paymaster gas_limit priority
 	local account code rate price nonce auth_nonce gas_cost w status body quote sponsor amount maximum deadline qnonce
 	local qd calls_hash bd account_sig auth_sig auth_rlp call_data tx receipt attempt verdict failures=0
@@ -2370,7 +2370,7 @@ done'
 # bridge/evm/chains and bridge/solana/chains against the deployment record
 # PAXEER_BRIDGE_RECORDS_DIR/<chain>.json, each run bounded by ten times
 # CHECK_LIVE_TIMEOUT; a machine of the app of each of
-# interop/deploy/bridge-relayer/relayer-1.toml through relayer-5.toml runs both
+# services/interop/deploy/bridge-relayer/relayer-1.toml through relayer-5.toml runs both
 # the relayer and its bridge signer; and the journal on the volume of one of
 # them records one observed deposit completed by that relayer's own included
 # bridgeIn transaction. One line per check; a
@@ -2413,7 +2413,7 @@ check_bridge() {
 	done
 
 	for n in 1 2 3 4 5; do
-		toml="interop/deploy/bridge-relayer/relayer-$n.toml"
+		toml="services/interop/deploy/bridge-relayer/relayer-$n.toml"
 		if ! app="$(fly_app "$toml")"; then
 			echo "fail bridge toml=absent relayer=$n"
 			failures=$((failures + 1))
@@ -4429,7 +4429,7 @@ router_prerequisite() {
 # each the make target of the tree followed by the adapter's entry of
 # GET <CHECK_LIVE_INTEROP_ORIGIN>/v1/adapters (default
 # https://interchain.paxeer.network), whose conformance suite, vector count
-# and digest equal the suite interop/deploy/gateway/render.py derives from this
+# and digest equal the suite services/interop/deploy/gateway/render.py derives from this
 # checkout and whose four readiness fields are ready: mandates
 # (interop-test-mandates, ap2), visa-tap (interop-test-visa-tap, visa-tap) and
 # ramps-sandbox (interop-test-ramps-sandbox, fiat). The sandbox journey reads
@@ -4477,7 +4477,7 @@ import importlib.util, json, pathlib, sys
 
 root, app, path, http = sys.argv[1:5]
 exits = sys.argv[5:]
-spec = importlib.util.spec_from_file_location("render", root + "/interop/deploy/gateway/render.py")
+spec = importlib.util.spec_from_file_location("render", root + "/services/interop/deploy/gateway/render.py")
 render = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(render)
 try:
@@ -4727,7 +4727,7 @@ PY
 }
 
 # check_xweb_attestors: each of the four apps of
-# interop/deploy/x-websearch/attestor-<N>.toml runs one started machine with
+# services/interop/deploy/x-websearch/attestor-<N>.toml runs one started machine with
 # its volume and holds no public IP; inside it, through flyctl ssh console,
 # the attestor answers /health on 8480 and every other attestor answers
 # /health through its loopback hop 849<M>, and its volume holds the three
@@ -4747,7 +4747,7 @@ check_xweb_attestors() {
 	local -a apps dests
 	local n m answer n_machines n_started n_mounts code status failures=0
 	for n in 1 2 3 4; do
-		apps[n]="$(fly_app "interop/deploy/x-websearch/attestor-$n.toml")" || apps[n]=""
+		apps[n]="$(fly_app "services/interop/deploy/x-websearch/attestor-$n.toml")" || apps[n]=""
 	done
 	for n in 1 2 3 4; do
 		if [ -z "${apps[n]}" ]; then

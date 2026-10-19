@@ -33,10 +33,10 @@ result, provider credential, signer handle, or activity id.
 
 ## Fiat adapter
 
-`interop/crates/layerx-fiat` is the gateway adapter id `fiat`. Supported
+`services/interop/crates/layerx-fiat` is the gateway adapter id `fiat`. Supported
 rails are `Card`, `Bank`, and `RealTimePayment`. Card data terminates at the
 certified provider; the crate accepts only opaque token references
-(`interop/crates/layerx-fiat/src/lib.rs`; `spec/layerx-platform/spec.kvx`,
+(`services/interop/crates/layerx-fiat/src/lib.rs`; `spec/layerx-platform/spec.kvx`,
 requirement 33 `ac_3`–`ac_4`).
 
 Money entering LayerX through an external rail is credited only against

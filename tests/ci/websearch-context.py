@@ -20,8 +20,8 @@ EXTRA = {
     "include/layerx/lxp_result.h", "include/layerx/programs.h",
     "services/agent/deny.toml", "services/agent/unsafe-allowlist.toml",
     "contracts/config/checkpoint-settlement.json",
-    "interop/specs/vendor/x402/x402-specification-v2.md",
-    "interop/Cargo.lock", "rust-toolchain.toml",
+    "services/interop/specs/vendor/x402/x402-specification-v2.md",
+    "services/interop/Cargo.lock", "rust-toolchain.toml",
 }
 CHECKS = 0
 
@@ -126,11 +126,11 @@ def dependency_inputs(tracked):
                     return manifest, value["workspace"]
         raise Refused("Cargo workspace unavailable: " + relative(path))
 
-    workspace_file = ROOT / "interop/Cargo.toml"
+    workspace_file = ROOT / "services/interop/Cargo.toml"
     root = read(workspace_file)["workspace"]
     pending = []
     for member in root["members"]:
-        matches = list((ROOT / "interop").glob(member + "/Cargo.toml"))
+        matches = list((ROOT / "services" / "interop").glob(member + "/Cargo.toml"))
         require(matches, "missing Cargo workspace member: " + member)
         pending.extend(matches)
     visited = set()
@@ -197,18 +197,18 @@ def negatives(required, available, policy):
             CHECKS += 1
         else:
             raise Refused("missing input accepted: " + name)
-    forbidden = [".env", ".env.production", "interop/.env", "agent/secret.env",
-                 "interop/crates/x-websearch/.env.local", ".chat/owner.kvx",
+    forbidden = [".env", ".env.production", "services/interop/.env", "agent/secret.env",
+                 "services/interop/crates/x-websearch/.env.local", ".chat/owner.kvx",
                  ".logs/raw.log", "private-evidence/candidate.json", "secrets/token",
-                 "services/agent/crates/layerx-types/private.key", "interop/key.pem",
-                 "interop/target/release/x-websearch", ".git/config",
-                 "interop/.x-websearch-target/release/x-websearch",
+                 "services/agent/crates/layerx-types/private.key", "services/interop/key.pem",
+                 "services/interop/target/release/x-websearch", ".git/config",
+                 "services/interop/.x-websearch-target/release/x-websearch",
                  "human/node_modules/huge", "agent/.cache/build"]
     for name in forbidden:
         check(not admitted(name, policy), "sensitive/cache path admitted: " + name)
-    check(admitted("interop/specs/vendor/x402/x402-specification-v2.md", policy),
+    check(admitted("services/interop/specs/vendor/x402/x402-specification-v2.md", policy),
           "compiled x402 document excluded")
-    check(not admitted("interop/specs/vendor/x402/unrelated.md", policy),
+    check(not admitted("services/interop/specs/vendor/x402/unrelated.md", policy),
           "unrelated Markdown admitted")
 
 
@@ -227,7 +227,7 @@ def main():
     dockerfile = (ROOT / DOCKERFILE).read_text()
     check(bool(re.search(r"FROM docker.io/rust:1\.91\.1-bookworm@sha256:[0-9a-f]{64} AS x-websearch", dockerfile)),
           "x-websearch base image is not pinned")
-    check("cargo build --locked --manifest-path interop/Cargo.toml --release --package x-websearch --bin x-websearch" in dockerfile,
+    check("cargo build --locked --manifest-path services/interop/Cargo.toml --release --package x-websearch --bin x-websearch" in dockerfile,
           "production Cargo build command missing")
     check("test -x /src/.x-websearch-target/release/x-websearch" in dockerfile,
           "expected executable check missing")

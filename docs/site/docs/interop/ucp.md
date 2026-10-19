@@ -1,10 +1,10 @@
 # UCP
 
 `layerx-ucp` is the interoperability adapter for UCP merchant profiles,
-checkout, and orders (`interop/crates/layerx-ucp`). The adapter id is `ucp`.
+checkout, and orders (`services/interop/crates/layerx-ucp`). The adapter id is `ucp`.
 The crate pins UCP revision `2026-04-08` and the checkout / order
 specification and schema URLs published at `ucp.dev`
-(`interop/crates/layerx-ucp/src/lib.rs`).
+(`services/interop/crates/layerx-ucp/src/lib.rs`).
 
 The platform specification (`spec/layerx-platform/spec.kvx`, requirement 32
 `ac_4`) requires UCP merchant profiles, capability negotiation, checkout, and
@@ -33,7 +33,7 @@ methods.
 ## Status
 
 The adapter crate, pinned vendor documents under
-`interop/specs/vendor/ucp/`, and tests under
-`interop/crates/layerx-ucp/tests/` are in this tree. End-to-end
+`services/interop/specs/vendor/ucp/`, and tests under
+`services/interop/crates/layerx-ucp/tests/` are in this tree. End-to-end
 qualification against the published UCP vectors is a platform / beta gate
 and is not claimed here.
