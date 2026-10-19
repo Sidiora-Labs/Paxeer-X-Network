@@ -8256,3 +8256,8 @@ fix = "scan case-sensitively with non-alphanumeric boundaries around key shapes,
 area = "spec editing"
 symptom = "a sed range that ends at a section header which does not exist runs to the end of the file, so a status flip addressed to one task flipped every later task"
 fix = "end ranges at the next header pattern, never at a guessed id, and read the diff stat before committing"
+
+[gotcha.1737]
+area = "layout moves"
+symptom = "a moved directory still carried its own old path inside a source file (a fuzz harness opening its seed corpus by a hard-coded relative path), and the reference search ran only over the rest of the tree"
+fix = "after git mv, grep the moved tree itself for its former path before the first gate"
