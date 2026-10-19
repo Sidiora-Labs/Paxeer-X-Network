@@ -829,12 +829,21 @@ type v6120Accounting struct {
 // generations for every pool and merges them: _accumulatedFees,
 // _airdropBalance and _opticalSurplus add up, the airdrop epochs with their
 // snapshot fields (slots 15 to 18) and legacy fields (slots 23 and 24) and the
-// claims of holders.json come from the accumulator that opened them. State the
-// keeper has no store for (_protocolFeesPending, _lpRewardsBalance,
-// legacyAirdropUnallocated, an uninitialized accounting) refuses. It returns
-// the accounting of every pool and the merged totalLiabilities.
+// claims of holders.json come from the accumulator that opened them. The
+// generation 1 accumulator runs the original implementation, whose layout ends
+// at _opticalSurplus (slot 13), so it is read with those slots only: its
+// accounting is reconciled as FeeAccumulator.migrateAccounting does, each pool
+// adding _accumulatedFees, _airdropBalance and _opticalSurplus to
+// totalLiabilities, and its _protocolFeesPending counter, which tracks USDL
+// already deposited in the generation 1 Treasury, is returned as settled
+// instead of merged. accountingInitialized comes from the generation 2
+// accumulator. State the keeper has no store for (generation 2
+// _protocolFeesPending, _lpRewardsBalance, legacyAirdropUnallocated, an
+// uninitialized generation 2 accounting) refuses. It returns the accounting of
+// every pool, the merged totalLiabilities and the settled generation 1
+// protocol fees.
 func readAccounting(ctx sdk.Context, k *Keeper, evm EVMReader, fx migrationFixture,
-	pools []v6120Pool) (map[common.Address]v6120Accounting, sdk.Int, error) {
+	pools []v6120Pool) (map[common.Address]v6120Accounting, sdk.Int, sdk.Int, error) {
 	s := contractStorage{ctx: ctx, evm: evm}
 	slots := map[string]common.Hash{}
 	for _, entry := range fx.layout.Storage[types.RoleFeeAccumulator] {
@@ -845,27 +854,30 @@ func readAccounting(ctx sdk.Context, k *Keeper, evm EVMReader, fx migrationFixtu
 		"airdropSnapshotBlock", "airdropEligibleSupply", "airdropEpochRemaining", "airdropClaimedSupply",
 		"accountingInitialized", "legacyAirdropUnallocated", "legacyAirdropRoot", "legacyAirdropRemaining"} {
 		if _, ok := slots[field]; !ok {
-			return nil, sdk.Int{}, fmt.Errorf("%w: layout.json has no FeeAccumulator.%s",
+			return nil, sdk.Int{}, sdk.Int{}, fmt.Errorf("%w: layout.json has no FeeAccumulator.%s",
 				types.ErrInvalidConfiguration, field)
 		}
 	}
-	accumulators := []common.Address{generation1Roles.FeeAccumulator, k.generation2.FeeAccumulator}
-	liabilities := sdk.ZeroInt()
-	for _, accumulator := range accumulators {
-		initialized, err := s.flag(accumulator, slots["accountingInitialized"])
-		if err != nil {
-			return nil, sdk.Int{}, err
-		}
-		if !initialized {
-			return nil, sdk.Int{}, fmt.Errorf("%w: FeeAccumulator %s accounting is not initialized", ErrNoKeeperStore,
-				accumulator.Hex())
-		}
-		if pending := s.amount(accumulator, slots["_protocolFeesPending"]); !pending.IsZero() {
-			return nil, sdk.Int{}, fmt.Errorf("%w: FeeAccumulator %s _protocolFeesPending %s", ErrNoKeeperStore,
-				accumulator.Hex(), pending)
-		}
-		liabilities = liabilities.Add(s.amount(accumulator, slots["totalLiabilities"]))
+	generation1, generation2 := generation1Roles.FeeAccumulator, k.generation2.FeeAccumulator
+	accumulators := []common.Address{generation1, generation2}
+	// original reports whether field is in the layout the accumulator runs.
+	original := func(accumulator common.Address, field string) bool {
+		return accumulator != generation1 || slots[field].Big().Cmp(slots["_opticalSurplus"].Big()) <= 0
 	}
+	initialized, err := s.flag(generation2, slots["accountingInitialized"])
+	if err != nil {
+		return nil, sdk.Int{}, sdk.Int{}, err
+	}
+	if !initialized {
+		return nil, sdk.Int{}, sdk.Int{}, fmt.Errorf("%w: FeeAccumulator %s accounting is not initialized", ErrNoKeeperStore,
+			generation2.Hex())
+	}
+	if pending := s.amount(generation2, slots["_protocolFeesPending"]); !pending.IsZero() {
+		return nil, sdk.Int{}, sdk.Int{}, fmt.Errorf("%w: FeeAccumulator %s _protocolFeesPending %s", ErrNoKeeperStore,
+			generation2.Hex(), pending)
+	}
+	liabilities := s.amount(generation2, slots["totalLiabilities"])
+	settled := s.amount(generation1, slots["_protocolFeesPending"])
 
 	out := map[common.Address]v6120Accounting{}
 	for _, pool := range pools {
@@ -874,49 +886,71 @@ func readAccounting(ctx sdk.Context, k *Keeper, evm EVMReader, fx migrationFixtu
 			OpticalSurplus: sdk.ZeroInt()}
 		var opened common.Address
 		for _, accumulator := range accumulators {
-			acc.AccumulatedFees = acc.AccumulatedFees.Add(s.amount(accumulator, mappingSlot(key, slots["_accumulatedFees"])))
-			acc.AirdropBalance = acc.AirdropBalance.Add(s.amount(accumulator, mappingSlot(key, slots["_airdropBalance"])))
-			acc.OpticalSurplus = acc.OpticalSurplus.Add(s.amount(accumulator, mappingSlot(key, slots["_opticalSurplus"])))
-			for _, field := range []string{"_lpRewardsBalance", "legacyAirdropUnallocated"} {
-				if v := s.amount(accumulator, mappingSlot(key, slots[field])); !v.IsZero() {
-					return nil, sdk.Int{}, fmt.Errorf("%w: FeeAccumulator %s %s of %s is %s", ErrNoKeeperStore,
-						accumulator.Hex(), field, pool.Address.Hex(), v)
-				}
+			fees := s.amount(accumulator, mappingSlot(key, slots["_accumulatedFees"]))
+			airdrop := s.amount(accumulator, mappingSlot(key, slots["_airdropBalance"]))
+			surplus := s.amount(accumulator, mappingSlot(key, slots["_opticalSurplus"]))
+			acc.AccumulatedFees = acc.AccumulatedFees.Add(fees)
+			acc.AirdropBalance = acc.AirdropBalance.Add(airdrop)
+			acc.OpticalSurplus = acc.OpticalSurplus.Add(surplus)
+			var unallocated sdk.Int
+			if accumulator == generation1 {
+				liabilities = liabilities.Add(fees).Add(airdrop).Add(surplus)
+				unallocated = airdrop
+			} else {
+				unallocated = s.amount(accumulator, mappingSlot(key, slots["legacyAirdropUnallocated"]))
+			}
+			if v := s.amount(accumulator, mappingSlot(key, slots["_lpRewardsBalance"])); !v.IsZero() {
+				return nil, sdk.Int{}, sdk.Int{}, fmt.Errorf("%w: FeeAccumulator %s _lpRewardsBalance of %s is %s",
+					ErrNoKeeperStore, accumulator.Hex(), pool.Address.Hex(), v)
+			}
+			if !unallocated.IsZero() {
+				return nil, sdk.Int{}, sdk.Int{}, fmt.Errorf("%w: FeeAccumulator %s legacyAirdropUnallocated of %s is %s",
+					ErrNoKeeperStore, accumulator.Hex(), pool.Address.Hex(), unallocated)
 			}
 			epoch, err := s.uint64(accumulator, mappingSlot(key, slots["_airdropEpoch"]))
 			if err != nil {
-				return nil, sdk.Int{}, err
+				return nil, sdk.Int{}, sdk.Int{}, err
 			}
 			if epoch == 0 {
 				continue
 			}
 			if opened != (common.Address{}) {
-				return nil, sdk.Int{}, fmt.Errorf("%w: pool %s has airdrop epochs at %s and %s", ErrMigrationStorage,
+				return nil, sdk.Int{}, sdk.Int{}, fmt.Errorf("%w: pool %s has airdrop epochs at %s and %s", ErrMigrationStorage,
 					pool.Address.Hex(), opened.Hex(), accumulator.Hex())
 			}
 			opened = accumulator
 			for e := uint64(1); e <= epoch; e++ {
 				epochKey := uintWord(e)
 				at := func(field string) common.Hash { return mappingSlot(epochKey, mappingSlot(key, slots[field])) }
-				snapshot, err := s.uint64(accumulator, at("airdropSnapshotBlock"))
-				if err != nil {
-					return nil, sdk.Int{}, err
+				amount := func(field string) sdk.Int {
+					if !original(accumulator, field) {
+						return sdk.ZeroInt()
+					}
+					return s.amount(accumulator, at(field))
+				}
+				var snapshot uint64
+				if original(accumulator, "airdropSnapshotBlock") {
+					if snapshot, err = s.uint64(accumulator, at("airdropSnapshotBlock")); err != nil {
+						return nil, sdk.Int{}, sdk.Int{}, err
+					}
 				}
 				record := types.PoolAirdropEpoch{Pool: pool.Address.Hex(), Epoch: e,
-					Amount: s.amount(accumulator, at("_airdropEpochAmount")), SnapshotBlock: snapshot,
-					EligibleSupply:  s.amount(accumulator, at("airdropEligibleSupply")),
-					Remaining:       s.amount(accumulator, at("airdropEpochRemaining")),
-					ClaimedSupply:   s.amount(accumulator, at("airdropClaimedSupply")),
-					LegacyRemaining: s.amount(accumulator, at("legacyAirdropRemaining"))}
-				if root := s.word(accumulator, at("legacyAirdropRoot")); root != (common.Hash{}) {
-					record.LegacyRoot = root.Hex()
+					Amount: amount("_airdropEpochAmount"), SnapshotBlock: snapshot,
+					EligibleSupply:  amount("airdropEligibleSupply"),
+					Remaining:       amount("airdropEpochRemaining"),
+					ClaimedSupply:   amount("airdropClaimedSupply"),
+					LegacyRemaining: amount("legacyAirdropRemaining")}
+				if original(accumulator, "legacyAirdropRoot") {
+					if root := s.word(accumulator, at("legacyAirdropRoot")); root != (common.Hash{}) {
+						record.LegacyRoot = root.Hex()
+					}
 				}
 				acc.Epochs = append(acc.Epochs, record)
 				for _, holder := range fx.holders[common.HexToAddress(pool.Market.TokenAddress)] {
 					claimed, err := s.flag(accumulator, mappingSlot(epochKey, mappingSlot(addressWordHash(holder),
 						mappingSlot(key, slots["_airdropClaimed"]))))
 					if err != nil {
-						return nil, sdk.Int{}, err
+						return nil, sdk.Int{}, sdk.Int{}, err
 					}
 					if claimed {
 						acc.Claims = append(acc.Claims, holder)
@@ -927,7 +961,7 @@ func readAccounting(ctx sdk.Context, k *Keeper, evm EVMReader, fx migrationFixtu
 		}
 		out[pool.Address] = acc
 	}
-	return out, liabilities, nil
+	return out, liabilities, settled, nil
 }
 
 // ProtocolConfigDiff is one ProtocolConfig field whose generation 1 value

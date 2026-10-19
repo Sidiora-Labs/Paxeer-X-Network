@@ -16,7 +16,13 @@ const (
 	// ProtocolConfig field whose value differs from the generation 2 value
 	// the migration applies.
 	EventTypeMigrationProtocolConfigDiff = "launchpad_migration_protocol_config_diff"
+	// EventTypeMigrationSettledProtocolFees records the generation 1
+	// FeeAccumulator _protocolFeesPending counter, protocol fees already
+	// deposited in the generation 1 Treasury and so not merged into the
+	// generation 2 pending protocol fees.
+	EventTypeMigrationSettledProtocolFees = "launchpad_migration_settled_protocol_fees"
 
+	AttributeKeyTreasury    = "treasury"
 	AttributeKeyField       = "field"
 	AttributeKeyGeneration1 = "generation_1"
 	AttributeKeyGeneration2 = "generation_2"
@@ -132,7 +138,7 @@ func runV6120(ctx sdk.Context, k *Keeper, evm EVMReader) error {
 	if err != nil {
 		return err
 	}
-	accounting, liabilities, err := readAccounting(ctx, k, evm, fx, pools)
+	accounting, liabilities, settled, err := readAccounting(ctx, k, evm, fx, pools)
 	if err != nil {
 		return err
 	}
@@ -148,6 +154,10 @@ func runV6120(ctx sdk.Context, k *Keeper, evm EVMReader) error {
 	if err := writeAccounting(ctx, k, pools, accounting, liabilities); err != nil {
 		return err
 	}
+	ctx.EventManager().EmitEvent(sdk.NewEvent(EventTypeMigrationSettledProtocolFees,
+		sdk.NewAttribute(AttributeKeyAddress, generation1Roles.FeeAccumulator.Hex()),
+		sdk.NewAttribute(AttributeKeyTreasury, generation1Roles.Treasury.Hex()),
+		sdk.NewAttribute(types.AttributeKeyAmount, settled.String())))
 	if err := readRoles(ctx, k, evm, fx, candidates); err != nil {
 		return err
 	}
@@ -307,8 +317,9 @@ func installPoolSurface(ctx sdk.Context, k *Keeper, evm EVMReader, pool v6120Poo
 }
 
 // writeAccounting writes the merged airdrop epochs and claims, optical
-// surplus and totalLiabilities, and moves the generation 1 FeeAccumulator's
-// custody ledger into the generation 2 one that serves every market.
+// surplus and totalLiabilities, moves the generation 1 FeeAccumulator's
+// custody ledger into the generation 2 one that serves every market, and
+// refuses when that ledger does not cover totalLiabilities.
 func writeAccounting(ctx sdk.Context, k *Keeper, pools []v6120Pool, accounting map[common.Address]v6120Accounting,
 	liabilities sdk.Int) error {
 	store := k.store(ctx)
@@ -337,7 +348,17 @@ func writeAccounting(ctx sdk.Context, k *Keeper, pools []v6120Pool, accounting m
 		return err
 	}
 	if held.IsPositive() {
-		return k.MoveQuote(ctx, legacy, k.feeHeld(), held)
+		if err := k.MoveQuote(ctx, legacy, k.feeHeld(), held); err != nil {
+			return err
+		}
+	}
+	feeHeld, err := k.GetQuoteLedger(ctx, k.feeHeld())
+	if err != nil {
+		return err
+	}
+	if feeHeld.LT(liabilities) {
+		return fmt.Errorf("%w: generation 2 FeeAccumulator holds %s, totalLiabilities %s", types.ErrInsufficientSurplus,
+			feeHeld, liabilities)
 	}
 	return nil
 }

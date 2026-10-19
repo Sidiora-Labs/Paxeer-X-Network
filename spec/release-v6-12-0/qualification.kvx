@@ -1917,13 +1917,20 @@ observed = Resolved: balanceOf at H over the 69703 addresses the explorer databa
 assumption = The added holders are the dormant load-test wallets last active below the retained-history boundary; the scan tool reproduces the list from any address source, and the generator now stops at the next refusal recorded in [finding.fixture-fee-accumulator-uninitialized].
 
 [finding.fixture-fee-accumulator-uninitialized]
-revision = e8df8dca9
-command = go run ./tools/v6120-halt-export (regenerate node/testdata/v6120-halt-export.json from H 34742400 with the completed holders.json)
+revision = 623331ac8
+command = go run ./tools/v6120-halt-export -rpc <archive tunnel> (with readAccounting reading the generation 1 FeeAccumulator through its original slot 0-13 layout)
 exit = 1
-log = fleet/logs/holders-halt-export-gen.log
-observed = After 209 rounds (1 code and 6251 states added, the generation-2 ProtocolConfig 0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6 among them) MigrateV6120 refuses with "no keeper store: FeeAccumulator 0x50C69dF6637b3DCE6a7407C5A4b4F99E68514A76 accounting is not initialized" and no further read is requested, so the fixture was left at its committed state.
-assumption = The migration requires initialized FeeAccumulator accounting that the mainnet contract does not hold at H, which needs a ruling on the migration or the contract state; the migration was not patched.
+log = fleet/logs/fixture-gen1-accounting.log
+observed = Resolved: the generation 1 accumulator runs the original implementation (no accountingInitialized field), its USDL balance 2414497551549 equals the sum of its per-pool _accumulatedFees, and its _protocolFeesPending 375676131511 equals the generation 1 Treasury USDL ledger exactly; MigrateV6120 now reconciles it as migrateAccounting does, records the 375676131511 as settled protocol fees, checks the generation 2 fee custody covers totalLiabilities, and passes the accounting step.
+assumption = The settled counter stays out of the merged getProtocolFeesPending (spec 1.0.2, acceptance 2.25.3 and task 2.2.17 do_7); the generator now stops at the next refusal recorded in [finding.fixture-pool-token-name-space].
 
+[finding.fixture-pool-token-name-space]
+revision = 623331ac8
+command = go run ./tools/v6120-halt-export -rpc <archive tunnel>
+exit = 1
+log = fleet/logs/fixture-gen1-accounting-gen.log
+observed = After 210 rounds (1 code and 6296 states added) MigrateV6120 refuses with "pool 0xf5950B58486Df0550cdDD6f6A1671B769F489814: LXP_LAUNCHPAD_INVALID_MARKET: name must be non-blank UTF-8 without surrounding space" because its pool token 0x0E47092AAA7a2BE33DE71F5a73e8E3B6bc8b4e58 has name and symbol "PAXMAN " with a trailing space at H; the fixture was left at its committed state and golden.json was not recorded.
+assumption = Market validation (modules/launchpad/types/market.go:41) and the mainnet token metadata disagree; carrying the name as stored, trimming it in the market record, or refusing needs a ruling, and neither the validation nor the migration was changed.
 [finding.spec-lint-tool-hang]
 revision = "c78681cb6"
 command = "cg spec lint"

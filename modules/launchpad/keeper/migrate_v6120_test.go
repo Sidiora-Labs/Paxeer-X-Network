@@ -741,21 +741,20 @@ func TestRolesMigrateWithoutAdmin(t *testing.T) {
 func TestAccountingMatchesGolden(t *testing.T) {
 	r := migratedV6120(t)
 	accumulators := r.golden.accumulators(t)
-	liabilities := sdk.ZeroInt()
-	for _, a := range accumulators {
-		require.True(t, r.golden.flag(t, a, "accountingInitialized()"), a.Hex())
-		require.True(t, r.golden.uint(t, a, "getProtocolFeesPending()").IsZero(), a.Hex())
-		liabilities = liabilities.Add(r.golden.uint(t, a, "totalLiabilities()"))
-	}
-	got, err := r.k.TotalLiabilities(r.ctx)
-	require.NoError(t, err)
-	require.Equal(t, liabilities, got)
+	require.Equal(t, v6120Generation2FeeAccumulator, accumulators[1])
+	require.True(t, r.golden.flag(t, accumulators[1], "accountingInitialized()"))
+	require.True(t, r.golden.uint(t, accumulators[1], "getProtocolFeesPending()").IsZero())
+	liabilities := r.golden.uint(t, accumulators[1], "totalLiabilities()")
 	for _, pool := range r.golden.pools(t) {
 		fees, airdrop, surplus := sdk.ZeroInt(), sdk.ZeroInt(), sdk.ZeroInt()
-		for _, a := range accumulators {
-			fees = fees.Add(r.golden.uint(t, a, "getAccumulatedFees(address)", addressWord(pool)))
-			airdrop = airdrop.Add(r.golden.uint(t, a, "getAirdropBalance(address)", addressWord(pool)))
-			surplus = surplus.Add(r.golden.uint(t, a, "getOpticalSurplus(address)", addressWord(pool)))
+		for i, a := range accumulators {
+			f := r.golden.uint(t, a, "getAccumulatedFees(address)", addressWord(pool))
+			d := r.golden.uint(t, a, "getAirdropBalance(address)", addressWord(pool))
+			o := r.golden.uint(t, a, "getOpticalSurplus(address)", addressWord(pool))
+			fees, airdrop, surplus = fees.Add(f), airdrop.Add(d), surplus.Add(o)
+			if i == 0 {
+				liabilities = liabilities.Add(f).Add(d).Add(o)
+			}
 			require.True(t, r.golden.uint(t, a, "getLpRewardsBalance(address)", addressWord(pool)).IsZero())
 		}
 		market := r.market(pool)
@@ -765,6 +764,13 @@ func TestAccountingMatchesGolden(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, surplus, got, pool.Hex())
 	}
+	got, err := r.k.TotalLiabilities(r.ctx)
+	require.NoError(t, err)
+	require.Equal(t, liabilities, got)
+	require.Equal(t, []map[string]string{{keeper.AttributeKeyAddress: accumulators[0].Hex(),
+		keeper.AttributeKeyTreasury: r.golden.generation(t, 1).Roles[types.RoleTreasury].Hex(),
+		types.AttributeKeyAmount:    r.golden.uint(t, accumulators[0], "getProtocolFeesPending()").String()}},
+		eventsOf(r.ctx, keeper.EventTypeMigrationSettledProtocolFees))
 	held := sdk.ZeroInt()
 	for _, a := range accumulators {
 		held = held.Add(r.usdlBalance(a))
