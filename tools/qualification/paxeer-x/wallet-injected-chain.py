@@ -26,7 +26,9 @@ EVIDENCE = fixture.EVIDENCE
 
 def build():
     extension, anvil = fixture.provision()
-    dependency = Path(os.environ.get('WALLET_INJECTED_NODE_MODULES', '/root/Layerx-protocol/human/apps/wallet/node_modules')).resolve()
+    dependency_value = os.environ.get('WALLET_INJECTED_NODE_MODULES')
+    fixture.require(dependency_value, 'WALLET_INJECTED_NODE_MODULES must name the wallet node_modules directory (human/apps/wallet/node_modules)')
+    dependency = Path(dependency_value).resolve()
     node = Path(os.environ.get('WALLET_INJECTED_NODE', '/root/lx-toolchains/node24/bin/node')).resolve()
     fixture.require(node.is_file() and os.access(node, os.X_OK), 'actual Node executable required')
     package = json.loads((dependency / '@playwright/test/package.json').read_text())

@@ -125,7 +125,10 @@ def build(directory):
             artifacts[item['target']['name']] = {'path': str(path), 'sha256': digest(path)}
     if set(artifacts) != {'layerx_mirror', 'layerx-mirror-verify'}:
         refuse('actual compiler did not emit native test and production verifier executables')
-    tsc = Path(os.environ.get('PAXEER_X_MIRROR_WEB_TSC', '/root/Layerx-protocol/human/apps/web/node_modules/typescript/bin/tsc'))
+    tsc_value = os.environ.get('PAXEER_X_MIRROR_WEB_TSC')
+    if not tsc_value:
+        refuse('PAXEER_X_MIRROR_WEB_TSC must name the web TypeScript compiler (human/apps/web/node_modules/typescript/bin/tsc)')
+    tsc = Path(tsc_value)
     node = Path('/root/lx-toolchains/node24/bin/node')
     execute([str(node), str(tsc), '--noEmit', '--incremental', 'false', '--project', str(ROOT / 'human/apps/web/tsconfig.json')], directory / 'web-typecheck.log', 300)
     if source_identity() != before:

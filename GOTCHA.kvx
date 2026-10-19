@@ -4041,7 +4041,7 @@ observed = "rustfmt --check already reports drift in human_runtime.rs before thi
 
 [gotcha.834]
 title = "git commit in fleet worktrees"
-observed = "The shared post-commit hook (/root/Layerx-protocol/.git/hooks/post-commit, which runs cg git-sync) blocks git commit --no-verify for minutes, even though the commit itself has already been written. Do: Run the commit in the background or under timeout, then check git log."
+observed = "The shared post-commit hook (the main checkout's .git/hooks/post-commit, which runs cg git-sync) blocks git commit --no-verify for minutes, even though the commit itself has already been written. Do: Run the commit in the background or under timeout, then check git log."
 
 [gotcha.835]
 title = "verify-task candidate manifest"
@@ -4081,7 +4081,7 @@ observed = "make programs-sdk-rust / response-fixture/build.sh fails with 'lock 
 
 [gotcha.844]
 title = "git commit in fleet worktrees"
-observed = "git commit --no-verify still takes 1-3 minutes because /root/Layerx-protocol/.git/hooks/post-commit runs (--no-verify does not skip post-commit) Do: run commits with a long timeout or in the background"
+observed = "git commit --no-verify still takes 1-3 minutes because the main checkout's .git/hooks/post-commit runs (--no-verify does not skip post-commit) Do: run commits with a long timeout or in the background"
 
 [gotcha.845]
 title = "programs/crates/layerx-programs-runtime/src/host/*.rs tests"
@@ -4101,7 +4101,7 @@ observed = "IDENTIFIER_BYTES is private, so other SDK modules cannot name the 32
 
 [gotcha.849]
 title = "git commit in fleet worktrees"
-observed = "commit takes over 2 minutes even with --no-verify because the shared post-commit hook at /root/Layerx-protocol/.git/hooks/post-commit runs anyway Do: run commits in the background or with a long timeout"
+observed = "commit takes over 2 minutes even with --no-verify because the shared post-commit hook in the main checkout's .git/hooks/post-commit runs anyway Do: run commits in the background or with a long timeout"
 
 [gotcha.850]
 title = "tools/paxeer-x/verify-task.sh candidate manifest"
@@ -4277,7 +4277,7 @@ observed = "two retained vectors rejected by WasmEngine::declared(): reference t
 
 [gotcha.893]
 title = "git commit in fleet worktrees"
-observed = "post-commit hook in /root/Layerx-protocol/.git/hooks blocks for minutes even with --no-verify Do: run commits in background and wait"
+observed = "post-commit hook in the main checkout's .git/hooks blocks for minutes even with --no-verify Do: run commits in background and wait"
 
 [gotcha.894]
 title = "calls.rs/tests rustfmt"
@@ -8241,3 +8241,8 @@ fix = "build a standalone leaf with go build -o /dev/null ./... or delete the bi
 area = "worktree builds"
 symptom = "go build ./... in a fresh worktree compiles but fails to link paxd and three tools with cannot find -llayerx and -llayerx_programs_sandbox, because build/ and programs/target/ are ignored native outputs that a new worktree does not hold"
 fix = "build the native libraries in the worktree first, or point CGO_LDFLAGS -L at an existing build of them for a link-only check"
+
+[gotcha.1734]
+area = "public audit"
+symptom = "private host and workspace references in gate scripts and ledgers (hard-coded checkout paths as defaults, an infrastructure address in agent instructions, absolute paths in gotcha entries) reach the public-repo audit and fail its private-reference check"
+fix = "gate scripts read hosts and paths from environment variables and fail with a message naming the variable when it is unset; ledgers name the role of a file or host, never its path or address"

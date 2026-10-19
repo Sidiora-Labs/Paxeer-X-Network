@@ -37,8 +37,8 @@ log_path = ".logs/task-2.1.log"
 observed_and_assumption = "core/deps/cosmwasm tracks no go.mod, so its Go test material under packages/go-gen/tests (files without a package clause) lands under the root ./... pattern; spec 1.0.2 fences it with a boundary go.mod that vendor-verify accepts as the only extra file beside VENDOR.kvx."
 
 [finding.2.1-private-references-tracked]
-revision = "e8df8dca9"
+revision = "b7b362b50 with the scrub of this commit applied"
 command = "scripts/ci/public-repo-audit.sh"
 exit_code = 1
 log_path = ".logs/task-2.1.log"
-observed_and_assumption = "Once the symlink check passes, the private-reference check fails on tracked files that predate the imports: four GOTCHA.kvx entries naming a private workspace path, launchpad/.github/copilot-instructions.md naming an infrastructure address, and three tools/paxeer-x and tools/qualification/paxeer-x scripts defaulting to a private workspace path; scrubbing them is outside task 2.1 and needs its own task."
+observed_and_assumption = "Four GOTCHA.kvx entries, launchpad/.github/copilot-instructions.md and three tools/paxeer-x and tools/qualification/paxeer-x scripts carried private workspace paths or an infrastructure address that predate the imports; after their scrub the private-reference check passes and the audit stops at the secret scan on twelve tracked non-vendored files (base64 PNG data in SVG assets matching the case-insensitive JWT shape, PEM header literals in tests and node/testdata/v6120-halt-export.json), which need their own task."

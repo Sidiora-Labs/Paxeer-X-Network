@@ -48,5 +48,5 @@ This file is a GENERATED pointer to it. Do not hand-edit it; edit `spec/workflow
 - **No Git**: Do not git commit/push on the dev box; the user drives commits. Uncommitted/untracked state is expected — never flag it as a problem.
 - **Ui No Borders**: Client UI: never use border strokes for depth/separation — separation comes purely from background-color contrast between layers.
 - **Ui No Emojis**: No emojis, purple gradients, or glow effects in UI or output.
-- **Gideon Validator**: Never touch the validator cluster 147.93.139.18 for any write/restart/exec unless explicitly named.
+- **Gideon Validator**: Never touch the validator cluster at the configured host for any write/restart/exec unless explicitly named.
 - **Gideon Chainloss**: Any op risking total chain-state loss needs the user's explicit YES via a forced gate; never auto-approved.

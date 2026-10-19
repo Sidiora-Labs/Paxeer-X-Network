@@ -124,7 +124,9 @@ def command(argv, name, timeout, environment=None):
 
 def build():
     extension, anvil = provision()
-    dependency_root = Path(os.environ.get('WALLET_INJECTED_NODE_MODULES', '/root/Layerx-protocol/human/apps/wallet/node_modules')).resolve()
+    dependency_value = os.environ.get('WALLET_INJECTED_NODE_MODULES')
+    require(dependency_value, 'WALLET_INJECTED_NODE_MODULES must name the wallet node_modules directory (human/apps/wallet/node_modules)')
+    dependency_root = Path(dependency_value).resolve()
     node = Path(os.environ.get('WALLET_INJECTED_NODE', '/root/lx-toolchains/node24/bin/node')).resolve()
     require(node.is_file() and os.access(node, os.X_OK), 'actual Node executable required')
     playwright = dependency_root / '@playwright/test'
