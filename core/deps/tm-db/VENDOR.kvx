@@ -1,0 +1,4 @@
+[vendor]
+url = "https://github.com/Paxeer-Network/pax-tm-db"
+ref = "v0.0.5-pax.1"
+sha = "beba0f87dffd8fa8ff89ad84d79fe0022e616f53"
