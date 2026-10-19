@@ -2012,3 +2012,11 @@ exit = 0
 log = "fleet/logs/release-3.2.14-fix.log"
 observed = "Resolved: the maker or taker fee is booked inside ApplyFill before PositionModified is built, so the event carries post-fee collateral for every caller; the ADL rank score and the margin-ratio bucket still read pre-fee equity, as before the change."
 assumption = "Req 3008 ac_17 covers the event only; the ADL and margin inputs follow their own requirements and are unchanged."
+
+[finding.2.2.15-golden-recorded]
+revision = "ebda8e5bd"
+command = "go test ./modules/launchpad/keeper/testdata/v6120/record/... -run 'TestRecordRefusesSupplyMismatch'"
+exit = 0
+log = "fleet/logs/golden-verify.log"
+observed = "Resolved: golden.json is recorded at height 34742400 (45 generation 1 pools, 4 generation 2 pools, 116 contracts, 54850 getter calls, 19 refusals with zero-filled arguments, 37 traces, 49 supplies each equal to its holder sum) after two recorder repairs: an empty-data revert arrives as JSON-RPC -32000 without a data field and is now recorded as a revert, and uint256 zero arguments are allocated so packing no longer panics."
+assumption = "The golden-dependent gates of 2.2.18, 2.2.19 and 8.4.7 run against this record; the earlier findings that cite the missing record are superseded."

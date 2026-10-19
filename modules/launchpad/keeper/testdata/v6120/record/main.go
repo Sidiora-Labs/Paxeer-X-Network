@@ -50,6 +50,8 @@ const (
 	batchSize                = 100
 	maxAirdropEpochs         = 1024
 	revertErrorCode          = 3
+	emptyRevertErrorCode     = -32000
+	emptyRevertMessage       = "execution reverted"
 
 	familySwap     = "swap"
 	familyPermit   = "permit"
@@ -683,11 +685,18 @@ func (r *recorder) flush(ctx context.Context) error {
 
 func revertData(callErr error) (hexutil.Bytes, error) {
 	var coded rpc.Error
-	if !errors.As(callErr, &coded) || coded.ErrorCode() != revertErrorCode {
+	if !errors.As(callErr, &coded) {
 		return nil, callErr
 	}
 	var withData rpc.DataError
-	if !errors.As(callErr, &withData) {
+	hasData := errors.As(callErr, &withData) && withData.ErrorData() != nil
+	if coded.ErrorCode() == emptyRevertErrorCode && coded.Error() == emptyRevertMessage && !hasData {
+		return hexutil.Bytes{}, nil
+	}
+	if coded.ErrorCode() != revertErrorCode {
+		return nil, callErr
+	}
+	if !hasData {
 		return nil, fmt.Errorf("revert without data: %w", callErr)
 	}
 	encoded, ok := withData.ErrorData().(string)
@@ -1434,9 +1443,30 @@ func (r *recorder) readRoleMembers(ctx context.Context) error {
 func zeroArgs(m abi.Method) []interface{} {
 	args := make([]interface{}, len(m.Inputs))
 	for i, in := range m.Inputs {
-		args[i] = reflect.New(in.Type.GetType()).Elem().Interface()
+		args[i] = zeroValue(in.Type.GetType()).Interface()
 	}
 	return args
+}
+
+// zeroValue is the zero of t with every pointer allocated, so a uint256
+// argument packs as 0 rather than as a nil *big.Int.
+func zeroValue(t reflect.Type) reflect.Value {
+	v := reflect.New(t).Elem()
+	switch t.Kind() {
+	case reflect.Ptr:
+		v.Set(reflect.New(t.Elem()))
+	case reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			v.Index(i).Set(zeroValue(t.Elem()))
+		}
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			if v.Field(i).CanSet() {
+				v.Field(i).Set(zeroValue(t.Field(i).Type))
+			}
+		}
+	}
+	return v
 }
 
 func (r *recorder) generation(n int) *generation {
