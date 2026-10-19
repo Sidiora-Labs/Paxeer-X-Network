@@ -8253,4 +8253,6 @@ symptom = "rg -i on a secret pattern makes AKIA[0-9A-Z]{16} match any 20 alphanu
 fix = "scan case-sensitively with non-alphanumeric boundaries around key shapes, decode a JWT header before reporting it, require a base64 body after a PEM header, and keep positive and negative self-test cases beside the scanner"
 
 [gotcha.1736]
-text = "A sed range that ends at a section header which does not exist runs to the end of the file: a status flip addressed to one task flipped every later task. End ranges at the next header pattern, never at a guessed id, and check the diff stat before committing."
+area = "spec editing"
+symptom = "a sed range that ends at a section header which does not exist runs to the end of the file, so a status flip addressed to one task flipped every later task"
+fix = "end ranges at the next header pattern, never at a guessed id, and read the diff stat before committing"
