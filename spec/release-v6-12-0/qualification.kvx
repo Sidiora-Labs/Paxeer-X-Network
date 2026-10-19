@@ -2028,3 +2028,11 @@ exit = 1
 log = fleet/logs/release-8.4.7.log
 observed = Five of six scenarios pass on binaries staged by the release build; the previous binary's halt signals itself and lets consensus continue, so it intermittently exits non-zero mid-shutdown or signs a prevote at H+1 before stopping, which the exit-0 and no-prevote assertions refuse.
 assumption = The assertions and the swap tooling stay as written; the rollout treats the halted previous binary's exit status as informational, a validator with a stray H+1 prevote sits out round 0 after the swap, and the v6.12.0 halt holds Commit until shutdown so the next upgrade is clean.
+
+[finding.3.3.1-position-opened-collateral]
+revision = 380156d18d7921d35d009c051a5480baa747d65f
+command = go test ./precompiles/perps/ -run 'TestIntegration'
+exit = 0
+log = fleet/logs/release-3.3.1-r5.log
+observed = Resolved: the flow starts from the halt export with the real v6.12.0 upgrade at the next height, and the caller's PositionOpened from openPosition and addSize now carries the collateral the call deposited per the contract, while placeLimitOrder and placeStopLimitOrder, which also run a deposit leg, still carry the account collateral because the contract defines only the openPosition case; the processblock test application cannot start from the export, so blocks are finalized on the node application with its transaction config.
+assumption = The limit-order PositionOpened collateral follows the contract once a line defines it; the integration flow on the node application satisfies the acceptance.

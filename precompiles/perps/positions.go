@@ -259,7 +259,8 @@ func handleLiquidate(p PrecompileExecutor, ctx sdk.Context, method *abi.Method, 
 // MARKET IOC order of the compatibility opens: notional
 // N = c x L / (1 + L x f) rounded down, base N / P rounded down to the lot,
 // where P is the highest price the order can fill at, the default bound for a
-// buy and the best bid for a sell.
+// buy and the best bid for a sell. A PositionOpened of the caller carries the
+// deposit of the call as its collateralAmount (contracts/perps.md section 18).
 func (p PrecompileExecutor) compatibilityOpen(ctx sdk.Context, evm *vm.EVM, caller, token common.Address,
 	marketID uint64, isLong bool, amount, leverage uint256.Int) (perpskeeper.PlaceResult, error) {
 	if amount.IsZero() {
@@ -287,6 +288,13 @@ func (p PrecompileExecutor) compatibilityOpen(ctx sdk.Context, evm *vm.EVM, call
 	})
 	if err != nil {
 		return perpskeeper.PlaceResult{}, err
+	}
+	for i, record := range result.Events {
+		if record.Name == types.EventPositionOpened && record.Args[1] == caller {
+			args := append([]any(nil), record.Args...)
+			args[8] = amount.ToBig()
+			result.Events[i].Args = args
+		}
 	}
 	if err := p.emitPositionRecords(evm, result.Events); err != nil {
 		return perpskeeper.PlaceResult{}, err

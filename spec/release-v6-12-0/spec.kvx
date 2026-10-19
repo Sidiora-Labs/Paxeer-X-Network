@@ -11472,7 +11472,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.3.1]
 title = "Drive the application flow through committed EVM transactions and read the logs back"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["3.3.99", "1.3.100", "1.0.6"]
