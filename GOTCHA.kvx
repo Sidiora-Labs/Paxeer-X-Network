@@ -8286,3 +8286,8 @@ fix = "anchor the rewrite to the module path (Paxeer-X-Network/testutil) for Go 
 area = "node test wrapper"
 symptom = "a ProcessProposal test failed only in cleanup with TempDir RemoveAll: directory not empty, on a different subtest each run, because the optimistic ProcessBlock goroutine it started still wrote into the home while the temporary directories were removed"
 fix = "the test wrapper registers a cleanup after the app is built that waits on an unconsumed OptimisticProcessingInfo.Completion; cleanups run last in first out, so it runs before TempDir removal"
+
+[gotcha.1743]
+area = "launchpad"
+symptom = "createMarket on a fresh test chain refuses LXP_LAUNCHPAD_TRANSFER_FAILED: execution reverted on the pool-token transfer although every surface is installed"
+fix = "SidioraERC20 calls pool.opticalAddress() on each transfer once bound and the pool surface forwards to 0x1017, which serves the v6.10 launchpad on a fresh chain until the v6.12.0 plan is done; read a surface-routed failure against the precompile set InitChainer selects before suspecting the surface records"

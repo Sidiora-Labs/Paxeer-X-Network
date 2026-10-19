@@ -167,6 +167,9 @@ func runV6120(ctx sdk.Context, k *Keeper, evm EVMReader) error {
 	if err := readRoles(ctx, k, evm, fx, candidates); err != nil {
 		return err
 	}
+	if err := k.InstallRoleSurfaces(ctx, evm); err != nil {
+		return err
+	}
 	if err := retireAddresses(ctx, k, evm); err != nil {
 		return err
 	}

@@ -1959,11 +1959,17 @@ log = fleet/logs/node-nine-failures.log
 observed = None of the nine is a regression since ad1607347, where the fee-token, excessive-gas and v6.4 to v6.6 tests already failed. Four now pass: TestGigaCustomPrecompilesSwitchAtHeight asserts the gigaV6120FailFast set of the 1.3.100 wiring at the late height, TestV6120IsAKnownPlanThatAddsItsStores (renamed from TestV6120IsAKnownPlanThatAddsNoStore) asserts the v6120StoreUpgrades of 1.3.102 ac_2, TestV640ToV66UpgradeServesTheExchangeBridgeAndLaunchpadPrecompiles reads getMarketCount through the v6.10 ABI that 0x1017 serves before v6.12.0 is done, and TestInvalidProposalWithExcessiveGasEstimates no longer fails its temporary directory cleanup since the test wrapper waits for an unconsumed optimistic ProcessBlock. Five stay failing under their own findings: launchpad-role-surfaces-not-installed, pricefeed-checktx-mark-dropped and feetoken-giga-coinbase-credit.
 assumption = None.
 [finding.launchpad-role-surfaces-not-installed]
-revision = 67c13bac4
+revision = f93020889
+command = go test ./node/ -run 'TestLaunchpadAirdropEntitlementsSurviveCommitAndReopen|TestLaunchpadGovernanceDispatch|TestV6120AppliesThePlanOnTheHaltExport' -count=1
+exit = 1
+log = fleet/logs/launchpad-role-surfaces.log
+observed_and_assumption = Resolved for the role surfaces: Keeper.InstallRoleSurfaces is called by MigrateV6120 step 4 before the retirement runtime (req.2002 ac_1, task 2.2.17 do_9) and by InitGenesis on a fresh chain whose nine generation 2 role addresses hold no code, so GovernanceGrant at the FeeAccumulator now succeeds and TestV6120AppliesThePlanOnTheHaltExport passes; both launchpad tests now stop at createMarket under finding launchpad-fresh-chain-serves-v610. Assumption: None.
+[finding.launchpad-fresh-chain-serves-v610]
+revision = f93020889
 command = go test ./node/ -run 'TestLaunchpadAirdropEntitlementsSurviveCommitAndReopen|TestLaunchpadGovernanceDispatch' -count=1
 exit = 1
-log = fleet/logs/node-nine-failures.log
-observed_and_assumption = GovernanceGrant on the FeeAccumulator refuses with "is not a role surface" and createMarket refuses LXP_LAUNCHPAD_TRANSFER_FAILED because only tests call launchpad.InstallRoleSurfaces (task 2.2.2 do_2); no genesis, v6.12.0 handler or MigrateV6120 path installs the generation 2 role surfaces, and a fresh chain serves the v6.10 launchpad at 0x1017. Assumption: the task that binds the launchpad hook of the v6.12.0 handler installs the role surfaces, and both tests stay as written until then.
+log = fleet/logs/launchpad-role-surfaces.log
+observed_and_assumption = createMarket refuses LXP_LAUNCHPAD_TRANSFER_FAILED: execution reverted on the pool-token transfer from the SidioraFactory to the pool, because SidioraERC20 calls pool.opticalAddress() on every transfer once bound, the pool surface forwards to 0x1017, and a fresh chain serves the v6.10 launchpad there since InitChainer sets v6120Live from the v6.12.0 done height (task 1.2.1 do_3, req.1007 ac_4). Assumption: which precompile set a fresh chain serves at genesis needs a spec decision, so both tests stay as written.
 [finding.pricefeed-checktx-mark-dropped]
 revision = f93020889
 command = go test ./node/ -run 'TestPriceFeedLivePath|TestCheckTx|TestAnte' -count=1

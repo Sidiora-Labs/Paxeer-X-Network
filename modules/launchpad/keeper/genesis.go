@@ -54,6 +54,9 @@ func (k *Keeper) InitGenesis(ctx sdk.Context, gs types.GenesisState) {
 	if err := k.initContracts(ctx, gs); err != nil {
 		panic(fmt.Errorf("launchpad: genesis contracts: %w", err))
 	}
+	if err := k.installGenesisRoleSurfaces(ctx); err != nil {
+		panic(fmt.Errorf("launchpad: genesis role surfaces: %w", err))
+	}
 }
 
 // initContracts imports the surfaces, role tables, fee rights, custody and

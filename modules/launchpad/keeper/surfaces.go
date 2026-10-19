@@ -84,3 +84,47 @@ func (k *Keeper) GetSurface(ctx sdk.Context, address common.Address) (Surface, b
 	}
 	return surface, true, nil
 }
+
+// roleSurfaceOrder is the order InstallRoleSurfaces writes the generation 2
+// role surfaces in.
+var roleSurfaceOrder = []string{
+	types.RoleFactory, types.RoleRouter, types.RoleQuoter, types.RoleProtocolConfig, types.RolePoolRegistry,
+	types.RoleFeeAccumulator, types.RoleFeeRights, types.RoleFeesRouter, types.RoleTreasury,
+}
+
+// CodeWriter is the EVM keeper method that installs runtime code.
+type CodeWriter interface {
+	SetCode(ctx sdk.Context, addr common.Address, code []byte)
+}
+
+// InstallRoleSurfaces installs the generation 2 role surfaces of ruling 5:
+// SidioraFactory, Router, Quoter, ProtocolConfig, PoolRegistry,
+// FeeAccumulator, the fee-right collection, FeesRouter and the Treasury,
+// each at its address of Generation2Surfaces, registered with the surface
+// runtime written by SetCode. A role surface carries no market and serves the
+// markets of every generation; storage, balance and nonce at each address are
+// left as they are, and a second install writes the same records.
+func (k *Keeper) InstallRoleSurfaces(ctx sdk.Context, evm CodeWriter) error {
+	for _, role := range roleSurfaceOrder {
+		address := Generation2Surfaces[role]
+		if err := k.SetSurface(ctx, address, Surface{Role: role, Generation: types.Generation2}); err != nil {
+			return err
+		}
+		evm.SetCode(ctx, address, surfaceRuntime)
+	}
+	return nil
+}
+
+// installGenesisRoleSurfaces installs the role surfaces of a fresh chain at
+// genesis: when none of the generation 2 role addresses holds code. A chain
+// started from an export keeps what the export carries, either the surfaces
+// already installed or the deployed generation 2 contracts that MigrateV6120
+// replaces at the v6.12.0 activation height.
+func (k *Keeper) installGenesisRoleSurfaces(ctx sdk.Context) error {
+	for _, role := range roleSurfaceOrder {
+		if len(k.evmKeeper.GetCode(ctx, Generation2Surfaces[role])) != 0 {
+			return nil
+		}
+	}
+	return k.InstallRoleSurfaces(ctx, k.evmKeeper)
+}
