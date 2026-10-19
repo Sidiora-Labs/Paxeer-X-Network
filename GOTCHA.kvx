@@ -8246,3 +8246,8 @@ fix = "build the native libraries in the worktree first, or point CGO_LDFLAGS -L
 area = "public audit"
 symptom = "private host and workspace references in gate scripts and ledgers (hard-coded checkout paths as defaults, an infrastructure address in agent instructions, absolute paths in gotcha entries) reach the public-repo audit and fail its private-reference check"
 fix = "gate scripts read hosts and paths from environment variables and fail with a message naming the variable when it is unset; ledgers name the role of a file or host, never its path or address"
+
+[gotcha.1735]
+area = "public audit"
+symptom = "rg -i on a secret pattern makes AKIA[0-9A-Z]{16} match any 20 alphanumeric characters of base64, so embedded PNG data and state exports read as AWS keys, and a bare PEM header string used by code to build or recognise keys reads as a private key"
+fix = "scan case-sensitively with non-alphanumeric boundaries around key shapes, decode a JWT header before reporting it, require a base64 body after a PEM header, and keep positive and negative self-test cases beside the scanner"

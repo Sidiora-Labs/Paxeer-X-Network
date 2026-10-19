@@ -161,8 +161,14 @@ secret_scan_allowlist="$secret_scan_allowlist"'|^platform/integrations/ios/Sourc
 secret_scan_allowlist="$secret_scan_allowlist"'|^platform/integrations/android/src/main/java/com/sidiora/layerx/android/EmbeddedSecretDetector\.java$'
 secret_scan_allowlist="$secret_scan_allowlist"'|^programs/vendor/'
 secret_scan_allowlist="$secret_scan_allowlist"'|^core/deps/db-backend/remotedb/test\.key$'
-secret_shapes='(-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|xox[baprs]-[A-Za-z0-9-]{20,}|sk_live_[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})'
-if audit_rg "$secret_scan_allowlist" -i "$secret_shapes"; then
+if ! sh scripts/ci/secret-scan.sh --self-test; then
+    echo "secret scan self-test failed" >&2
+    exit 1
+fi
+if ! tr '\0' '\n' < "$publication_files_nul" \
+    | grep -Ev -- "$secret_scan_allowlist" \
+    | tr '\n' '\0' \
+    | sh scripts/ci/secret-scan.sh; then
     echo "secret-shaped material found in publication set" >&2
     exit 1
 fi
@@ -180,7 +186,7 @@ for script in tools/*.sh scripts/ci/*.sh; do
 done
 
 if command -v go >/dev/null 2>&1; then
-    (cd spec/specgen && go run . -root "$root" -check)
+    spec/specgen -check
 else
     echo "go is required to verify generated specification artifacts" >&2
     exit 1

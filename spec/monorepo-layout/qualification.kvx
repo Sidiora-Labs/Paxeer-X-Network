@@ -42,3 +42,17 @@ command = "scripts/ci/public-repo-audit.sh"
 exit_code = 1
 log_path = ".logs/task-2.1.log"
 observed_and_assumption = "Four GOTCHA.kvx entries, launchpad/.github/copilot-instructions.md and three tools/paxeer-x and tools/qualification/paxeer-x scripts carried private workspace paths or an infrastructure address that predate the imports; after their scrub the private-reference check passes and the audit stops at the secret scan on twelve tracked non-vendored files (base64 PNG data in SVG assets matching the case-insensitive JWT shape, PEM header literals in tests and node/testdata/v6120-halt-export.json), which need their own task."
+
+[finding.2.1-secret-scan-shapes]
+revision = "fe6575020 with the scanner of this commit applied"
+command = "scripts/ci/public-repo-audit.sh"
+exit_code = 1
+log_path = ".logs/task-2.1.log"
+observed_and_assumption = "The twelve secret-scan hits were the case-insensitive AWS key shape inside base64 (SVG PNG data and the halt export) and bare PEM header literals; the scan moves to scripts/ci/secret-scan.sh, case-sensitive with key boundaries, JWT header decoding and a PEM body requirement, guarded by a self-test, and passes with no new allowlist entry."
+
+[finding.2.1-specgen-check-stale]
+revision = "fe6575020 with the scanner of this commit applied"
+command = "scripts/ci/public-repo-audit.sh"
+exit_code = 1
+log_path = ".logs/task-2.1.log"
+observed_and_assumption = "The audit's last step ran cd spec/specgen, which has been the bash entry point to tools/specgen since before the imports, and now runs spec/specgen -check, which reports 1426 validation errors in the active layerx-merge feature spec; that predates this task and needs its own task."
