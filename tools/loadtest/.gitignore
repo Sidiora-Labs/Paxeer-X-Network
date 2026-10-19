@@ -1,0 +1,27 @@
+# Build artifacts
+build/
+
+# IDE files
+.vscode/
+*.swp
+*.swo
+.idea
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+
+# Coverage files
+coverage.out
+coverage.html

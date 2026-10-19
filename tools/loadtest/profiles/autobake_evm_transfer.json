@@ -1,0 +1,31 @@
+{
+    "chainId": 713714,
+    "paxChainId": "pax-autobake",
+    "endpoints": [
+      "https://evm-rpc.pax-autobake.paxnetwork.io"
+    ],
+    "accounts": {
+      "count": 5000,
+      "newAccountRate": 0.0
+    },
+    "scenarios": [
+      {
+        "name": "EVMTransfer",
+        "weight": 1
+      }
+    ],
+    "settings": {
+      "workers": 500,
+      "tps": 0,
+      "statsInterval": "5s",
+      "bufferSize": 1000,
+      "dryRun": false,
+      "debug": false,
+      "trackReceipts": false,
+      "trackBlocks": false,
+      "trackUserLatency": false,
+      "prewarm": false,
+      "rampUp": false,
+      "reportPath": "/home/ubuntu/evm_transfer_report.txt"
+    }
+  }

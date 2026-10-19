@@ -1,0 +1,33 @@
+{
+  "chainId": 713714,
+  "paxChainId": "local-docker",
+  "endpoints": [
+    "http://127.0.0.1:8545",
+    "http://127.0.0.1:8547",
+    "http://127.0.0.1:8549",
+    "http://127.0.0.1:8551"
+  ],
+  "accounts": {
+    "count": 5000,
+    "newAccountRate": 0.0
+  },
+  "scenarios": [
+    {
+      "name": "ERC20",
+      "weight": 1
+    }
+  ],
+  "settings": {
+    "workers": 1,
+    "tps": 0,
+    "statsInterval": "5s",
+    "bufferSize": 1000,
+    "dryRun": false,
+    "debug": false,
+    "trackReceipts": false,
+    "trackBlocks": false,
+    "trackUserLatency": false,
+    "prewarm": false,
+    "rampUp": false
+  }
+}

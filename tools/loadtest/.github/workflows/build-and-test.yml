@@ -1,0 +1,68 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        go-version: [1.24.5]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+    
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    
+    - name: Download dependencies
+      run: go mod download
+    
+    - name: Verify dependencies
+      run: go mod verify
+    
+    - name: Install golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: latest
+        skip-cache: false
+        skip-pkg-cache: false
+        skip-build-cache: false
+    
+    - name: Run linting
+      run: make lint
+    
+    - name: Run tests
+      run: make test
+    
+    - name: Build binary
+      run: make build
+    
+    - name: Test binary execution (help)
+      run: ./build/seiload --help
+    
+    - name: Test dry-run with sample config
+      run: |
+        ./build/seiload --config profiles/local.json --dry-run --workers 1 --stats-interval 1s &
+        SEILOAD_PID=$!
+        sleep 5
+        kill $SEILOAD_PID || true
+        wait $SEILOAD_PID 2>/dev/null || true
