@@ -1,0 +1,4 @@
+[vendor]
+url = "https://github.com/Paxeer-Network/pax-js"
+ref = "v1.0.6-pax.1"
+sha = "5d299156ba6108605626d347f1f5d91d50a1531d"
