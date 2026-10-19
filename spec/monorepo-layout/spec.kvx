@@ -571,7 +571,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.5]
 title = "Move occ_tests to tests/occ"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 3

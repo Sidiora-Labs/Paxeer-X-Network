@@ -22,7 +22,7 @@ contracts/ @Sidiora-Labs/core
 /interchain/ @Sidiora-Labs/core
 /modules/ @Sidiora-Labs/core
 /node/ @Sidiora-Labs/core
-/occ_tests/ @Sidiora-Labs/core
+/tests/occ/ @Sidiora-Labs/core
 /precompiles/ @Sidiora-Labs/core
 /rpc/ @Sidiora-Labs/core
 /sdk/ @Sidiora-Labs/core

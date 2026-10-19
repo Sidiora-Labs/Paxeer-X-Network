@@ -36,7 +36,7 @@ on:
       - 'interchain/**'
       - 'modules/**'
       - 'node/**'
-      - 'occ_tests/**'
+      - 'tests/occ/**'
       - 'precompiles/**'
       - 'rpc/**'
       - 'sdk/**'
@@ -104,7 +104,7 @@ jobs:
               per_page: 100,
             });
             const chainFiles = ['go.mod', 'go.sum', 'chain.mk', 'docker/layerx/Dockerfile', 'docker/layerx/Dockerfile.dockerignore', 'foundry.paxeer.toml', 'buf.gen.yaml', 'buf.lock', 'buf.yaml', '.github/codecov.yml', '.golangci.yml', 'tools/repotest/gen.go', 'tools/repotest/link_directives_test.go', 'tools/repotest/mod_test.go', 'scripts/run_blocktests.sh', 'tools/release/version.json', 'contracts/config/client.toml', 'contracts/hardhat.config.js', 'contracts/package.json', 'contracts/package-lock.json', 'contracts/tsconfig.json', 'docs/evm_jsonrpc_unsupported.md', 'docs/paxeer-network.md', 'docs/paxeer-chain-docs.md'];
-            const chainPrefixes = ['admin/', 'api/', 'tools/benchmark/', 'consensus/', 'custodyproof/', 'daemon/', 'docker/', 'engine/', 'tests/fixtures/example/', 'hpx/', 'tests/integration/', 'interchain/', 'modules/', 'node/', 'occ_tests/', 'precompiles/', 'rpc/', 'sdk/', 'storage/', 'tests/testutil/', 'utils/', 'wasm/', 'wasm-runtime/', 'contracts/src/', 'contracts/test/', 'contracts/scripts/', 'contracts/wasm/', 'docs/swagger/', 'docs/swagger-ui/', 'tests/chain/', 'tools/chain/', 'tools/tx-scanner/', 'tools/utils/'];
+            const chainPrefixes = ['admin/', 'api/', 'tools/benchmark/', 'consensus/', 'custodyproof/', 'daemon/', 'docker/', 'engine/', 'tests/fixtures/example/', 'hpx/', 'tests/integration/', 'interchain/', 'modules/', 'node/', 'tests/occ/', 'precompiles/', 'rpc/', 'sdk/', 'storage/', 'tests/testutil/', 'utils/', 'wasm/', 'wasm-runtime/', 'contracts/src/', 'contracts/test/', 'contracts/scripts/', 'contracts/wasm/', 'docs/swagger/', 'docs/swagger-ui/', 'tests/chain/', 'tools/chain/', 'tools/tx-scanner/', 'tools/utils/'];
             const layerxScripts = ['scripts/PaxeerBetaDeploy.s.sol', 'scripts/qualify-mirror-live.sh', 'scripts/qualify-mirror-verification-live.sh'];
             const inScope = files.some(({ filename }) =>
               chainFiles.includes(filename) ||

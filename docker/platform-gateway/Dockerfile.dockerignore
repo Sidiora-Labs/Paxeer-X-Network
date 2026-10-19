@@ -28,7 +28,7 @@ tests/integration
 interchain
 modules
 node
-occ_tests
+tests/occ
 rpc
 sdk
 storage

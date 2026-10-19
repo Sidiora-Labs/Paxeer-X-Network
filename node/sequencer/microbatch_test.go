@@ -8,9 +8,9 @@ import (
 
 	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/sequencer"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/occ_tests/utils"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/occ/utils"
 	"github.com/stretchr/testify/require"
 )
 

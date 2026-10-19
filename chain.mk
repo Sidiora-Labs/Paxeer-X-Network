@@ -544,7 +544,7 @@ $(BUILDDIR):
 $(BUILDDIR)/packages.txt:$(GO_TEST_FILES) $(BUILDDIR)
 	go list -f "{{ if (or .TestGoFiles .XTestGoFiles) }}{{ .ImportPath }}{{ end }}" ./... | sort > $@
 
-TARGET_PACKAGE := github.com/Sidiora-Labs/Paxeer-X-Network/occ_tests
+TARGET_PACKAGE := github.com/Sidiora-Labs/Paxeer-X-Network/tests/occ
 
 split-test-packages:$(BUILDDIR)/packages.txt
 	split -d -n l/$(NUM_SPLIT) $< $<.

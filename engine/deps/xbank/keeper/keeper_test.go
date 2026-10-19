@@ -11,7 +11,6 @@ import (
 	minttypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/apptesting"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/occ_tests/utils"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
 	tmtime "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/std"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
@@ -19,6 +18,7 @@ import (
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	vesting "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/vesting/types"
 	cosmosbanktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/occ/utils"
 	"github.com/stretchr/testify/suite"
 )
 

@@ -329,9 +329,9 @@ Build and test:
   - 19 subdirectories: `epoch/`, `evm/`, `launchpad/`, `layerxagent/`, `layerxanchor/`, `layerxauth/`, `layerxbridge/`, `layerxcustody/`, `layerxexchange/`, `layerxgov/`, `layerxledger/`, `layerxpay/`, `lxphost/`, `mint/`, `oracle/`, `sequencer/`, `store/`, `tokenfactory/`, `xweb/`
 - `node/` — 136 files, 82,100 lines, mostly go
   - 10 subdirectories: `ante/`, `antedecorators/`, `apptesting/`, `benchmark/`, `genesis/`, `legacyabci/`, `params/`, `sequencer/`, `testdata/`, `upgrades/`
-- `occ_tests/` — 3 files, 898 lines, mostly go (tests)
-  - `occ_tests/messages/` — 1 file, 203 lines, mostly go (tests)
-  - `occ_tests/utils/` — 1 file, 398 lines, mostly go
+- `tests/occ/` — 3 files, 898 lines, mostly go (tests)
+  - `tests/occ/messages/` — 1 file, 203 lines, mostly go (tests)
+  - `tests/occ/utils/` — 1 file, 398 lines, mostly go
 - `platform/` — 952 files, 337,799 lines, mostly rust
   - 10 subdirectories: `cli/`, `emulator/`, `hosted/`, `integrations/`, `middleware/`, `ramps/`, `relay_archive/`, `release/`, `sdk/`, `tests/`
 - `precompiles/` — 523 files, 92,886 lines, mostly go
@@ -918,9 +918,9 @@ Test code calls 0 of the 94,978 functions in product source directly (tests that
   - _+14 more_
 - `node/upgrades/` — 1 test file
   - _+1 more_
-- `occ_tests/` — 1 test file
+- `tests/occ/` — 1 test file
   - _+1 more_
-- `occ_tests/messages/` — 1 test file
+- `tests/occ/messages/` — 1 test file
   - _+1 more_
 - `platform/cli/` — 18 test files
   - _+18 more_

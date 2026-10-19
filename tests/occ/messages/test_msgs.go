@@ -13,9 +13,9 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/occ_tests/utils"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/occ/utils"
 )
 
 const instantiateMsg = `{"whitelist": ["pax1h9yjz89tl0dl6zu65dpxcqnxfhq60wxxknccgp"],

@@ -33,7 +33,7 @@ on:
       - 'interchain/**'
       - 'modules/**'
       - 'node/**'
-      - 'occ_tests/**'
+      - 'tests/occ/**'
       - 'precompiles/**'
       - 'rpc/**'
       - 'sdk/**'

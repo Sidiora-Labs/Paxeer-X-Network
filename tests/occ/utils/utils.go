@@ -157,8 +157,8 @@ func deployCW20Token(tCtx *TestContext, i int) (string, error) {
 
 // NewTestContext initializes a new TestContext with a new app and a new contract
 func NewTestContext(tb testing.TB, testAccts []TestAcct, blockTime time.Time, workers int, occEnabled bool) *TestContext {
-	contractFile := "../tests/integration/contracts/mars.wasm"
-	cw20ContractFile := "../contracts/wasm/cw20_base.wasm"
+	contractFile := "../../tests/integration/contracts/mars.wasm"
+	cw20ContractFile := "../../contracts/wasm/cw20_base.wasm"
 
 	wrapper := app.NewTestWrapper(tb, blockTime, testAccts[0].PublicKey, true, func(ba *baseapp.BaseApp) {
 		ba.SetOccEnabled(occEnabled)

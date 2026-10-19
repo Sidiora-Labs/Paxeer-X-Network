@@ -32,7 +32,7 @@ modules
 !modules/evm/config
 !modules/layerxcustody/types
 node
-occ_tests
+tests/occ
 precompiles
 !precompiles/layerxanchor/abi.json
 rpc
