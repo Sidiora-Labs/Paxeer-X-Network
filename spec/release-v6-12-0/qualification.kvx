@@ -1944,6 +1944,13 @@ exit = 0
 log = fleet/logs/fixture-h2-call-return.log
 observed = The node carries return data in transaction results (modules/evm/keeper/msg_server.go:194, node/app.go:2573); the empty result comes from height gating: the fixture chain runs at initial_height 6, so H+2 is 7, gigaCustomPrecompiles (node/app.go:2625) returns the set below gigaLatePrecompileHeight 26300000, which lacks 0x1015 (engine/executor/precompiles/failfast.go:116-117), and the giga executor runs the call against an account with no code, succeeding with no return data, while the ordinary path the static call uses serves the perps executor.
 assumption = The node matches acceptance 1.4.2 ac_6, which keys the giga hand-off on gigaLatePrecompileHeight, and at mainnet H+2 the late set applies; the test is not right until either the fixture runs at the mainnet heights (initial_height H+1 and the mainnet done heights) or the giga hand-off also follows the v6.12.0 done height for chains that apply the plan below 26300000, which needs a ruling, and nothing was changed.
+[finding.fixture-v6120-done-heights-source]
+revision = 4b05b3289
+command = go build -o /dev/null ./tools/v6120-halt-export/
+exit = 0
+log = fleet/logs/fixture-mainnet-heights.log
+observed = The generator now writes initial_height H+1 and v6120-halt-heights.json from -activation-done and -v610-done and refuses without them, but the archive JSON-RPC exposes no upgrade module query and its history below 30252301 is pruned, so the activation and v6.10 done heights could not be read from the source chain's upgrade store and the fixture was not regenerated.
+assumption = The two done heights must come from the source chain's upgrade store (task 1.2.3 do_2) through a query path outside the archive JSON-RPC.
 [finding.spec-lint-tool-hang]
 revision = "c78681cb6"
 command = "cg spec lint"

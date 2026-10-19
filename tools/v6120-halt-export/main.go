@@ -417,6 +417,20 @@ func writeExport(path string, raw []byte, codes []codeEntry, states []stateEntry
 	return os.WriteFile(path, append(out, '\n'), 0o644)
 }
 
+// withInitialHeight returns the genesis document raw with initial_height set
+// to height.
+func withInitialHeight(raw []byte, height uint64) ([]byte, error) {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, err
+	}
+	var err error
+	if doc["initial_height"], err = marshal(fmt.Sprint(height)); err != nil {
+		return nil, err
+	}
+	return marshal(doc)
+}
+
 func marshal(v interface{}) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -432,7 +446,11 @@ func run() error {
 	layoutPath := flag.String("layout", filepath.Join("modules", "launchpad", "keeper", "testdata", "v6120",
 		"layout.json"), "layout.json")
 	rpcURL := flag.String("rpc", defaultRPC, "mainnet JSON-RPC")
+	activationDone := flag.Int64("activation-done", 0,
+		"done height of the activation (v6.9) plan in the source chain's upgrade store")
+	v610Done := flag.Int64("v610-done", 0, "done height of the v6.10 plan in the source chain's upgrade store")
 	flag.Parse()
+	heightsPath := filepath.Join(filepath.Dir(*exportPath), "v6120-halt-heights.json")
 	heightPath := strings.TrimSuffix(*exportPath, ".json") + ".height"
 
 	var l layoutFile
@@ -465,6 +483,18 @@ func run() error {
 		return err
 	}
 	height := record.Height
+	if *activationDone <= 0 || *v610Done <= *activationDone || uint64(*v610Done) > height {
+		return fmt.Errorf("done heights activation %d and v6.10 %d must rise and not pass the halt height %d",
+			*activationDone, *v610Done, height)
+	}
+	// The export is a mainnet export: its chain starts at the block after the
+	// halt height H, as paxd export writes it.
+	if raw, err = withInitialHeight(raw, height+1); err != nil {
+		return err
+	}
+	if doc, err = tmtypes.GenesisDocFromJSON(raw); err != nil {
+		return err
+	}
 
 	home, err := os.MkdirTemp("", "v6120-halt-export")
 	if err != nil {
@@ -486,6 +516,8 @@ func run() error {
 	base := a.NewContext(false, tmproto.Header{Height: doc.InitialHeight - 1, ChainID: doc.ChainID,
 		Time: doc.GenesisTime})
 
+	a.UpgradeKeeper.SetDone(base.WithBlockHeight(*activationDone), app.ActivationUpgrade)
+	a.UpgradeKeeper.SetDone(base.WithBlockHeight(*v610Done), app.V610Upgrade)
 	f := &fetcher{client: client, block: hexutil.EncodeUint64(height), a: a, base: base, done: map[readKey]bool{}}
 	for _, e := range record.Absent {
 		if e.Slot == nil {
@@ -533,11 +565,16 @@ func run() error {
 	if err := writeRecord(heightPath, height, f.done, f); err != nil {
 		return err
 	}
-	if len(f.codes) > 0 || len(f.states) > 0 {
-		fmt.Fprintf(os.Stderr, "height %d: adding %d codes and %d states\n", height, len(f.codes), len(f.states))
-		if err := writeExport(*exportPath, raw, f.codes, f.states); err != nil {
-			return err
-		}
+	fmt.Fprintf(os.Stderr, "height %d: adding %d codes and %d states\n", height, len(f.codes), len(f.states))
+	if err := writeExport(*exportPath, raw, f.codes, f.states); err != nil {
+		return err
+	}
+	heights, err := marshal(map[string]int64{app.ActivationUpgrade: *activationDone, app.V610Upgrade: *v610Done})
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(heightsPath, append(heights, '\n'), 0o644); err != nil {
+		return err
 	}
 	if migrateErr != nil {
 		return fmt.Errorf("v6.12.0 plan on the export at height %d: %w", height, migrateErr)
