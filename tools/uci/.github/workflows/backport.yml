@@ -1,0 +1,70 @@
+name: Backport
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        required: false
+        type: string
+        default: 'stable'
+      backport-team:
+        required: true
+        type: string
+        description: 'The org/team-slug allowed to trigger /backport (e.g. my-org/my-team)'
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  backport:
+    name: Backport
+    runs-on: ubuntu-latest
+    # Only run if:
+    #  - triggered by pull request merging, or
+    #  - `/backport` commented on a PR by someone other than the bot
+    #    (team membership is verified in a later step)
+    if: >
+      (
+        github.event_name == 'pull_request_target' &&
+        github.event.pull_request.merged
+      ) || (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        github.event.comment.user.id != fromJSON(vars.PLATFORM_CODE_AGENT_USER_ID) &&
+        startsWith(github.event.comment.body, '/backport')
+      )
+    steps:
+      - name: Generate GitHub App token
+        id: generate-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.PLATFORM_CODE_AGENT_APP_ID }}
+          private-key: ${{ secrets.PLATFORM_CODE_AGENT_APP_PK }}
+      - name: Check team membership for /backport comments
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          ORG_TEAM: ${{ inputs.backport-team }}
+          COMMENT_USER: ${{ github.event.comment.user.login }}
+        run: |
+          ORG="${ORG_TEAM%%/*}"
+          TEAM="${ORG_TEAM##*/}"
+          if ! gh api "orgs/${ORG}/teams/${TEAM}/memberships/${COMMENT_USER}" --silent; then
+            echo "::error::User ${COMMENT_USER} is not a member of ${ORG}/${TEAM}"
+            exit 1
+          fi
+          echo "User ${COMMENT_USER} is a member of ${ORG_TEAM}"
+      - uses: actions/checkout@v7
+      - name: Create backport pull requests
+        uses: korthout/backport-action@v4.6.0
+        with:
+          github_token: ${{ steps.generate-token.outputs.token }}
+          add_author_as_assignee: 'true'
+          copy_assignees: 'true'
+          add_labels: 'backport'
+          pull_title: |-
+            Backport `${target_branch}`: ${pull_title}
+          pull_description: |-
+            Backport of #${pull_number} to `${target_branch}`.
+          experimental: |-
+            {
+              "conflict_resolution": "draft_commit_conflicts"
+            }

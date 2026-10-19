@@ -1,0 +1,4 @@
+[vendor]
+url = "https://github.com/Paxeer-Network/pax-uci"
+ref = "main"
+sha = "eb65d6d3f967c661f6af91cfac599fd355445f71"

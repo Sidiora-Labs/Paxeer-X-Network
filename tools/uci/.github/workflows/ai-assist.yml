@@ -1,0 +1,22 @@
+name: AI Assistant
+on:
+  issue_comment:
+    types: [ created ]
+  pull_request_review_comment:
+    types: [ created ]
+  pull_request_review:
+    types: [ submitted ]
+jobs:
+  assistant:
+    # See: https://github.com/sei-protocol/uci/releases/tag/v0.0.17
+    uses: sei-protocol/uci/.github/workflows/ai-assistant.yml@1d50ef2bd27c695493f254c3037eb6b78f9bb85f
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    secrets: inherit
+    with:
+      # See: https://github.com/sei-protocol/uci/releases/tag/v0.0.17
+      uci-ref: 1d50ef2bd27c695493f254c3037eb6b78f9bb85f
+      allowed-team: 'sei-protocol/sei-core'

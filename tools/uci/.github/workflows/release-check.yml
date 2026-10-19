@@ -1,0 +1,270 @@
+name: Release
+on:
+  workflow_call:
+    inputs:
+      branches:
+        required: false
+        type: string
+        default: ${{ format('["{0}"]', github.event.repository.default_branch) }}
+
+jobs:
+  release-check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "EOF=EOF$RANDOM" >> $GITHUB_ENV
+      - id: pr
+        name: Retrieve PR information
+        env:
+          PULL_REQUEST: ${{ toJSON(github.event.pull_request) }}
+        uses: actions/github-script@v9
+        with:
+          script: |
+            let pr = JSON.parse(process.env.PULL_REQUEST);
+            if (pr == null) {
+              const {data: pulls} = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                commit_sha: context.sha
+              });
+              const open = pulls.filter(p => p.state == 'open');
+              if (open.length == 0) {
+                core.setFailed(`No open PR found for commit ${context.sha}`);
+                return;
+              }
+              if (open.length > 1) {
+                core.setFailed(`Multiple open PRs found for commit ${context.sha}`);
+                return;
+              }
+              pr = open[0];
+            }
+            core.setOutput('json', JSON.stringify(pr));
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - id: version
+        name: Determine version
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_FULL_NAME: ${{ fromJSON(steps.pr.outputs.json).head.repo.full_name }}
+          HEAD_SHA: ${{ fromJSON(steps.pr.outputs.json).head.sha }}
+        run: |
+          # If `version.json` file doesn't exists, `version` is `""` and `404` is printed on stderr.
+          # The step won't be marked as a failure though because the error happens in a subshell.
+          version="$(gh api -X GET "repos/$HEAD_FULL_NAME/contents/version.json" -f ref="$HEAD_SHA" --jq '.content' | base64 -d | jq -r '.version')"
+          echo "version=$version"
+          echo "version=$version" >> $GITHUB_OUTPUT
+      - id: branch
+        name: Check if the branch is a release branch
+        if: steps.version.outputs.version != ''
+        env:
+          BRANCHES: ${{ inputs.branches }}
+          BASE_REF: ${{ fromJSON(steps.pr.outputs.json).base.ref }}
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const branches = JSON.parse(process.env.BRANCHES);
+            const release = branches.some(b => {
+              const regexPattern = b.replace(/\*/g, '.*');
+              const regex = new RegExp(`^${regexPattern}$`);
+              return regex.test(process.env.BASE_REF);
+            });
+            console.log(`This is a release branch: ${release}`);
+            core.setOutput('release', release);
+      - id: tag
+        name: Check if the tag already exists
+        if: steps.version.outputs.version != ''
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ALLOWED: ${{ steps.branch.outputs.release == 'true' || contains(fromJSON(steps.pr.outputs.json).labels.*.name, 'release') }}
+        run: |
+          git fetch origin --tags
+          status=0
+          git rev-list "$VERSION" &> /dev/null || status=$?
+          if [[ $status == 0 ]]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "needed=false" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "needed=$ALLOWED" >> $GITHUB_OUTPUT
+          fi
+      - name: Install semver (node command line tool)
+        if: steps.tag.outputs.needed == 'true'
+        run: npm install -g "https://github.com/npm/node-semver#dc0fe202faaf19a545ce5eeab3480be84180a082" # v7.3.8
+      - name: Check version
+        if: steps.tag.outputs.needed == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        # semver fails if the version is not valid (e.g. v0.1 would fail)
+        run: semver "$VERSION"
+      - id: prerelease
+        if: steps.tag.outputs.needed == 'true'
+        name: Check if this is a pre-release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        # semver -r fails if the version is not valid or if it is a pre-release (e.g v0.1 or v0.1.0-rc1 would fail)
+        run: echo "prerelease=$(semver -r "$VERSION" && echo false || echo true)" >> $GITHUB_OUTPUT
+      - id: prev
+        name: Determine version number to compare to
+        if: steps.tag.outputs.needed == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.prerelease.outputs.prerelease }}
+        # We need to determine the version number we want to compare to,
+        # taking into account that this might be a (patch) release on a release branch.
+        # Example:
+        # Imagine a module that has releases for v0.1.0, v0.2.0, v0.3.0 and v0.3.0-rc1.
+        # When trying to cut a release v0.2.1, we need to base our comparisons on v0.2.0.
+        # When trying to cut a release v0.3.1 or v0.4.0, we need to base our comparisons on v0.3.0.
+        # When trying to cut a release v0.3.0-rc2, we need to base our comparisons on v0.3.0-rc1.
+        run: |
+          git fetch origin --tags
+          go install github.com/marten-seemann/semver-highest@fcdc98f8820ff0e6613c1bee071c096febd98dbf
+          vs=$(git tag | paste -sd , -)
+          if [[ ! -z "$vs" ]]; then
+            v=$(semver-highest -target "$VERSION" -versions "$vs" -prerelease="$PRERELEASE")
+            status=$?
+            if [[ $status != 0 ]]; then
+              echo $v
+              exit $status
+            fi
+            echo "version=$v" >> $GITHUB_OUTPUT
+          fi
+      - id: git-diff
+        name: run git diff on go.mod file(s)
+        if: steps.tag.outputs.needed == 'true' && steps.prev.outputs.version != ''
+        env:
+          PREV_VERSION: ${{ steps.prev.outputs.version }}
+        run: |
+          # First get the diff for the go.mod file in the root directory...
+          output=$(git diff "$PREV_VERSION..HEAD" -- './go.mod')
+          # ... then get the diff for all go.mod files in subdirectories.
+          # Note that this command also finds go.mod files more than one level deep in the directory structure.
+          output+=$(git diff "$PREV_VERSION..HEAD" -- '*/go.mod')
+          if [[ -z "$output" ]]; then
+            output="(empty)"
+          fi
+          printf "output<<$EOF\n%s\n$EOF" "$output" >> $GITHUB_OUTPUT
+      - id: gorelease
+        name: Run gorelease
+        if: steps.tag.outputs.needed == 'true' && steps.prev.outputs.version != ''
+        env:
+          PREV_VERSION: ${{ steps.prev.outputs.version }}
+        # see https://github.com/golang/exp/commits/master/cmd/gorelease
+        run: |
+          go mod download
+          go install golang.org/x/exp/cmd/gorelease@3dfff04db8fa6b6338ec60a0317f99db30637e41 # https://cs.opensource.google/go/x/exp/+/3dfff04db8fa6b6338ec60a0317f99db30637e41
+          output=$((gorelease -base "$PREV_VERSION") 2>&1 || true)
+          printf "output<<$EOF\n%s\n$EOF" "$output" >> $GITHUB_OUTPUT
+      - id: gocompat
+        name: Check Compatibility
+        if: steps.tag.outputs.needed == 'true' && steps.prev.outputs.version != ''
+        env:
+          PREV_VERSION: ${{ steps.prev.outputs.version }}
+        run: |
+          go install github.com/smola/gocompat/cmd/gocompat@8498b97a44792a3a6063c47014726baa63e2e669 # v0.3.0
+          output=$(gocompat compare --go1compat --git-refs="$PREV_VERSION..HEAD" ./... || true)
+          if [[ -z "$output" ]]; then
+            output="(empty)"
+          fi
+          printf "output<<$EOF\n%s\n$EOF" "$output" >> $GITHUB_OUTPUT
+      - id: release
+        if: steps.tag.outputs.needed == 'true' && fromJSON(steps.pr.outputs.json).head.repo.full_name == fromJSON(steps.pr.outputs.json).base.repo.full_name
+        uses: galargh/action-gh-release@571276229e7c9e6ea18f99bad24122a4c3ec813f # https://github.com/galargh/action-gh-release/pull/1
+        with:
+          draft: true
+          tag_name: ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          target_commitish: ${{ fromJSON(steps.pr.outputs.json).base.ref }}
+      - id: message
+        if: steps.tag.outputs.exists == 'false'
+        env:
+          HEADER: |
+            Suggested version: `${{ steps.version.outputs.version }}`
+          BODY: |
+            Comparing to: [${{ steps.prev.outputs.version }}](${{ fromJSON(steps.pr.outputs.json).base.repo.html_url }}/releases/tag/${{ steps.prev.outputs.version }}) ([diff](${{ fromJSON(steps.pr.outputs.json).base.repo.html_url }}/compare/${{ steps.prev.outputs.version }}..${{ fromJSON(steps.pr.outputs.json).head.label }}))
+
+            Changes in `go.mod` file(s):
+            ```diff
+            ${{ steps.git-diff.outputs.output }}
+            ```
+
+            `gorelease` says:
+            ```
+            ${{ steps.gorelease.outputs.output }}
+            ```
+
+            `gocompat` says:
+            ```
+            ${{ steps.gocompat.outputs.output }}
+            ```
+
+          BODY_ALT: |
+            This is the first release of this module.
+
+          RELEASE_BRANCH_NOTICE: |
+            ## Cutting a Release (when not on `${{ inputs.branches }}`)
+
+            This PR is targeting `${{ fromJSON(steps.pr.outputs.json).base.ref }}`, which is not any of ${{ inputs.branches }}.
+            If you wish to cut a release once this PR is merged, please add the `release` label to this PR.
+
+          DIFF_NOTICE: |
+            ## Cutting a Release (and modifying non-markdown files)
+
+            This PR is modifying both `version.json` and non-markdown files.
+            The Release Checker is not able to analyse files that are not checked in to `${{ fromJSON(steps.pr.outputs.json).base.ref }}`. This might cause the above analysis to be inaccurate.
+            Please consider performing all the code changes in a separate PR before cutting the release.
+
+          RELEASE_NOTICE: |
+            ## Automatically created GitHub Release
+
+            A [draft GitHub Release](${{ steps.release.outputs.url }}) has been created.
+            It is going to be published when this PR is merged.
+            You can modify its' body to include any release notes you wish to include with the release.
+
+          RELEASE_NOTICE_ALT: |
+            ## Automatically created GitHub Release
+
+            Pre-creating GitHub Releases on release PRs initiated from forks is not supported.
+            If you wish to prepare release notes yourself, you should create a draft GitHub Release for tag `${{ steps.version.outputs.version }}` manually.
+            The draft GitHub Release is going to be published when this PR is merged.
+            If you choose not to create a draft GitHub Release, a published GitHub Released is going to be created when this PR is merged.
+
+          BASE_REF: ${{ fromJSON(steps.pr.outputs.json).base.ref }}
+          HEAD_LABEL: ${{ fromJSON(steps.pr.outputs.json).head.label }}
+          HEAD_FULL_NAME: ${{ fromJSON(steps.pr.outputs.json).head.repo.full_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PREV_VERSION: ${{ steps.prev.outputs.version }}
+          TAG_NEEDED: ${{ steps.tag.outputs.needed }}
+        run: |
+          echo "output<<$EOF" >> $GITHUB_OUTPUT
+
+          if [[ "$TAG_NEEDED" == "false" ]]; then
+            echo "$RELEASE_BRANCH_NOTICE" >> $GITHUB_OUTPUT
+          else
+            echo "$HEADER" >> $GITHUB_OUTPUT
+            if [[ "$PREV_VERSION" != "" ]]; then
+              echo "$BODY" >> $GITHUB_OUTPUT
+            else
+              echo "$BODY_ALT" >> $GITHUB_OUTPUT
+            fi
+            diff="$(gh api -X GET "repos/$GITHUB_REPOSITORY/compare/$BASE_REF...$HEAD_LABEL" --jq '.files | map(.filename) | map(select(test("^(version\\.json|.*\\.md)$") | not)) | .[]')"
+            if [[ "$diff" != "" ]]; then
+              echo "$DIFF_NOTICE" >> $GITHUB_OUTPUT
+            fi
+            if [[ "$GITHUB_REPOSITORY" == "$HEAD_FULL_NAME" ]]; then
+              echo "$RELEASE_NOTICE" >> $GITHUB_OUTPUT
+            else
+              echo "$RELEASE_NOTICE_ALT" >> $GITHUB_OUTPUT
+            fi
+          fi
+          echo "$EOF" >> $GITHUB_OUTPUT
+      - name: Post message on PR
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        if: steps.tag.outputs.exists == 'false'
+        with:
+          header: release-check
+          recreate: true
+          message: ${{ steps.message.outputs.output }}
+          number: ${{ fromJSON(steps.pr.outputs.json).number }}

@@ -1,0 +1,1143 @@
+name: AI Review
+run-name: UCI / AI Review
+# Reusable three-pass PR review delivered as ONE GitHub PR review:
+#   * preflight     -> assembles the prompts (base prompt + extra-instructions) and loads
+#                      REVIEW.md from the PR's BASE branch plus previous seidroid review
+#                      threads, once, for the whole pipeline.
+#   * codex_review  -> OpenAI Codex reviews the diff (own job, contents:read).
+#   * cursor_review -> Cursor CLI reviews the diff (own job, contents:read). Runs parallel
+#                      to Codex; both are third-party tools kept at least privilege so they
+#                      never see the app token or any write scope.
+#   * claude_review -> consumes BOTH, does its own review, MERGES all three, returns TYPED
+#                      output, then a github-script step posts one PR review + a check run.
+#   * complete_review_reaction -> clears the in-progress reaction and, when the review
+#                      succeeds, marks an explicit request complete.
+#
+# Skip switch: label a PR with the `skip-review-label` input value (default `ai: skip-review`)
+# and the whole pipeline is skipped -- no scouts, no Claude review, no PR review, no
+# "AI Review" check run. For adding/removing the label to take effect immediately (not just
+# on the next push), the caller should include `labeled` and `unlabeled` in its
+# `pull_request` trigger types. Those events run this workflow only when the changed label
+# is the configured skip or nitpick label; changes to other labels are ignored.
+#
+# Nit switch: nit-level findings are included only when the PR has the `nitpick-label`
+# input value (default `ai: nitpick`). Suggestions and blockers are unaffected.
+#
+# Call it from `pull_request` plus the three PR-comment events used by the assistant (see
+# .github/seidroid/ai-review/README.md). It refuses to run under `pull_request_target`.
+on:
+  workflow_call:
+    inputs:
+      uci-ref:
+        description: "Ref of sei-protocol/uci to fetch prompt files from. Pin to your `uses:` ref."
+        required: false
+        type: string
+        default: 'main'
+      enable-codex:
+        description: "Run the OpenAI Codex scout pass."
+        required: false
+        type: boolean
+        default: true
+      enable-cursor:
+        description: "Run the Cursor scout pass."
+        required: false
+        type: boolean
+        default: true
+      extra-instructions:
+        description: "Extra guidance appended to the scout and review prompts."
+        required: false
+        type: string
+        default: ''
+      prebuild-script:
+        description: "Inline shell run in the scout jobs after checkout, before the tool (e.g. warm offline deps)."
+        required: false
+        type: string
+        default: ''
+      guidelines-file:
+        description: "Repo guidelines file loaded from the PR base branch."
+        required: false
+        type: string
+        default: 'REVIEW.md'
+      skip-review-label:
+        description: "If this label is present on the PR, the entire review pipeline is skipped."
+        required: false
+        type: string
+        default: 'ai: skip-review'
+      nitpick-label:
+        description: "Include nit-level findings only when this label is present on the PR."
+        required: false
+        type: string
+        default: 'ai: nitpick'
+      trigger-phrase:
+        description: "Mention used for an explicit re-review request."
+        required: false
+        type: string
+        default: '@seidroid'
+      allowed-team:
+        description: "org/team-slug allowed to request re-reviews. Empty denies everyone."
+        required: false
+        type: string
+        default: 'sei-protocol/sei-core'
+      runs-on:
+        description: "Runner label."
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      claude-model:
+        description: "Optional Claude model override."
+        required: false
+        type: string
+        default: ''
+      approve-on-success:
+        description: "If true, APPROVE on a clean verdict; otherwise COMMENT."
+        required: false
+        type: boolean
+        default: true
+      re-review-on-push:
+        description: "Run another review on every pull_request synchronize event."
+        required: false
+        type: boolean
+        default: false
+      timeout-minutes:
+        description: "Per-job timeout in minutes."
+        required: false
+        type: number
+        default: 15
+
+permissions: { }
+
+concurrency:
+  # Serialize reviews per PR so automatic and explicit runs cannot race when posting,
+  # dismissing previous findings, or updating the AI Review check.
+  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Preflight: assemble prompts + load base-branch guidelines, once.
+  # ---------------------------------------------------------------------------
+  preflight:
+    name: Preflight
+    runs-on: ${{ inputs.runs-on }}
+    # Comment events are cheap-filtered here, then exact command parsing and authorization
+    # happen in `resolve`. Non-command comments never reach a model.
+    if: >-
+      ${{
+        github.event_name == 'pull_request' ||
+        (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.pull_request &&
+          github.event.comment.user.type != 'Bot' &&
+          contains(github.event.comment.body, inputs.trigger-phrase) &&
+          contains(github.event.comment.body, 'review')
+        ) ||
+        (
+          github.event_name == 'pull_request_review_comment' &&
+          github.event.comment.user.type != 'Bot' &&
+          contains(github.event.comment.body, inputs.trigger-phrase) &&
+          contains(github.event.comment.body, 'review')
+        ) ||
+        (
+          github.event_name == 'pull_request_review' &&
+          github.event.review.user.type != 'Bot' &&
+          github.event.review.body &&
+          contains(github.event.comment.body, inputs.trigger-phrase) &&
+          contains(github.event.comment.body, 'review')
+        )
+      }}
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      should_run: ${{ steps.resolve.outputs.should_run }}
+      reaction_subject_id: ${{ steps.resolve.outputs.reaction_subject_id }}
+      pr_number: ${{ steps.resolve.outputs.pr_number }}
+      head_sha: ${{ steps.resolve.outputs.head_sha }}
+      base_sha: ${{ steps.resolve.outputs.base_sha }}
+      pr_title: ${{ steps.resolve.outputs.pr_title }}
+      pr_body: ${{ steps.resolve.outputs.pr_body }}
+      include_nits: ${{ steps.resolve.outputs.include_nits }}
+      scout_prompt: ${{ steps.assemble.outputs.scout_prompt }}
+      review_prompt: ${{ steps.assemble.outputs.review_prompt }}
+      guidelines: ${{ steps.guidelines.outputs.content }}
+      review_history: ${{ steps.review-history.outputs.content }}
+    steps:
+      - name: Refuse unsafe or unsupported events
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          case "$EVENT_NAME" in
+            pull_request|issue_comment|pull_request_review_comment|pull_request_review) ;;
+            *)
+              echo "::error::ai-review cannot be called from '$EVENT_NAME'. Refusing to run."
+              exit 1
+              ;;
+          esac
+
+      - name: Detect app credentials
+        id: creds
+        env:
+          APP_ID: ${{ secrets.PLATFORM_CODE_AGENT_APP_ID }}
+        run: |
+          if [ -n "$APP_ID" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Generate GitHub App token (to read uci prompts)
+        id: app-token
+        if: steps.creds.outputs.present == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.PLATFORM_CODE_AGENT_APP_ID }}
+          private-key: ${{ secrets.PLATFORM_CODE_AGENT_APP_PK }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            uci
+
+      # By default, run one automatic review per PR. Callers may opt into re-reviewing
+      # every synchronize event; otherwise further reviews require an exact command from
+      # an active member of allowed-team. Membership lookup failures deny access.
+      - name: Resolve and authorize review request
+        id: resolve
+        uses: actions/github-script@v9
+        env:
+          TRIGGER_PHRASE: ${{ inputs.trigger-phrase }}
+          ALLOWED_TEAM: ${{ inputs.allowed-team }}
+          SKIP_REVIEW_LABEL: ${{ inputs.skip-review-label }}
+          NITPICK_LABEL: ${{ inputs.nitpick-label }}
+          SEIDROID_USER_ID: ${{ vars.PLATFORM_CODE_AGENT_USER_ID }}
+          RE_REVIEW_ON_PUSH: ${{ inputs.re-review-on-push }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          script: |
+            const MARKER = "<!-- ai-combined-review -->";
+            const eventName = context.eventName;
+            const isAutomatic = eventName === "pull_request";
+            const supportedCommentEvents = new Set([
+              "issue_comment",
+              "pull_request_review_comment",
+              "pull_request_review",
+            ]);
+
+            let number = context.payload.pull_request?.number || context.payload.issue?.number;
+            if (!number || (!isAutomatic && !supportedCommentEvents.has(eventName))) {
+              core.setOutput("should_run", "false");
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const { data: pr } = await github.rest.pulls.get({
+              owner, repo, pull_number: number,
+            });
+
+            const isFork = pr.head.repo?.id !== pr.base.repo?.id;
+            if (!isAutomatic && isFork) {
+              core.notice(
+                "Explicit re-reviews are disabled for fork-originated pull requests."
+              );
+              core.setOutput("should_run", "false");
+              return;
+            }
+
+            core.setOutput("pr_number", String(number));
+            core.setOutput("head_sha", pr.head.sha);
+            core.setOutput("base_sha", pr.base.sha);
+            core.setOutput("pr_title", pr.title || "");
+            core.setOutput("pr_body", pr.body || "");
+
+            const labels = (pr.labels || []).map(label =>
+              typeof label === "string" ? label : label.name
+            );
+            core.setOutput("include_nits", String(labels.includes(process.env.NITPICK_LABEL)));
+            if (pr.draft || labels.includes(process.env.SKIP_REVIEW_LABEL)) {
+              core.notice("PR is draft or has the skip-review label; review will not run.");
+              core.setOutput("should_run", "false");
+              return;
+            }
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner, repo, pull_number: number, per_page: 100,
+            });
+            const botId = String(process.env.SEIDROID_USER_ID || "");
+            const isSeidroid = review => botId
+              ? String(review.user?.id || "") === botId
+              : review.user?.login === "seidroid[bot]";
+            const alreadyReviewed = reviews.some(review =>
+              isSeidroid(review) && (review.body || "").includes(MARKER)
+            );
+
+            if (isAutomatic) {
+              const allowedActions = new Set([
+                "opened", "ready_for_review", "synchronize", "reopened", "labeled", "unlabeled",
+              ]);
+              const relevantLabelEvent =
+                !["labeled", "unlabeled"].includes(context.payload.action) ||
+                [process.env.SKIP_REVIEW_LABEL, process.env.NITPICK_LABEL]
+                  .includes(context.payload.label?.name);
+              const automaticReReview =
+                context.payload.action === "synchronize" &&
+                String(process.env.RE_REVIEW_ON_PUSH || "false") === "true";
+              const shouldRun =
+                allowedActions.has(context.payload.action) &&
+                relevantLabelEvent &&
+                (!alreadyReviewed || automaticReReview);
+              if (alreadyReviewed && !automaticReReview) {
+                core.notice("seidroid has already reviewed this PR; waiting for an authorized @seidroid review request.");
+              }
+              core.setOutput("should_run", String(shouldRun));
+              return;
+            }
+
+            const body = eventName === "pull_request_review"
+              ? context.payload.review?.body
+              : context.payload.comment?.body;
+            const actor = eventName === "pull_request_review"
+              ? context.payload.review?.user?.login
+              : context.payload.comment?.user?.login;
+            const normalize = value => String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+            const command = `${normalize(process.env.TRIGGER_PHRASE)} review`;
+            if (normalize(body) !== command || !actor) {
+              core.setOutput("should_run", "false");
+              return;
+            }
+
+            let authorized = false;
+            const team = String(process.env.ALLOWED_TEAM || "");
+            const slash = team.indexOf("/");
+            if (slash > 0 && slash < team.length - 1) {
+              const org = team.slice(0, slash);
+              const team_slug = team.slice(slash + 1);
+              try {
+                const membership = await github.rest.teams.getMembershipForUserInOrg({
+                  org, team_slug, username: actor,
+                });
+                authorized = membership.data.state === "active";
+              } catch (error) {
+                core.notice(`Could not verify active membership for ${actor} in ${team}; denying request.`);
+              }
+            } else {
+              core.notice("allowed-team is empty or invalid; denying request.");
+            }
+
+            core.setOutput("should_run", String(authorized));
+            if (!authorized) {
+              core.notice(`${actor} is not authorized to request a seidroid review.`);
+              return;
+            }
+
+            const subjectId = eventName === "pull_request_review"
+              ? context.payload.review?.node_id
+              : context.payload.comment?.node_id;
+            if (!subjectId) {
+              core.warning("The review request has no reactable GitHub node ID.");
+              return;
+            }
+
+            try {
+              await github.graphql(
+                `mutation($subjectId: ID!) {
+                  addReaction(input: {subjectId: $subjectId, content: EYES}) {
+                    reaction { content }
+                  }
+                }`,
+                { subjectId },
+              );
+              core.setOutput("reaction_subject_id", subjectId);
+            } catch (error) {
+              core.warning(`Could not add the in-progress reaction: ${error.message}`);
+            }
+
+      - name: Fetch seidroid prompt files
+        if: steps.resolve.outputs.should_run == 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: sei-protocol/uci
+          ref: ${{ inputs.uci-ref }}
+          path: .uci
+          sparse-checkout: .github/seidroid/ai-review
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+          token: ${{ steps.app-token.outputs.token || github.token }}
+
+      - name: Assemble prompts
+        id: assemble
+        if: steps.resolve.outputs.should_run == 'true'
+        env:
+          EXTRA: ${{ inputs.extra-instructions }}
+        run: |
+          assemble() {
+            cat ".uci/.github/seidroid/ai-review/$1"
+            if [ -n "$EXTRA" ]; then
+              printf '\n\n## Additional instructions from the caller\n\n%s\n' "$EXTRA"
+            fi
+          }
+          {
+            echo "scout_prompt<<__SCOUT_EOF__"
+            assemble scout.md
+            echo "__SCOUT_EOF__"
+            echo "review_prompt<<__REVIEW_EOF__"
+            assemble review.md
+            echo "__REVIEW_EOF__"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Load review guidelines from the base branch
+        id: guidelines
+        if: steps.resolve.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ steps.resolve.outputs.base_sha }}
+          FILE: ${{ inputs.guidelines-file }}
+        run: |
+          content=""
+          if out="$(gh api "repos/${REPO}/contents/${FILE}?ref=${BASE_SHA}" -H "Accept: application/vnd.github.raw" 2>/dev/null)"; then
+            content="$out"
+            echo "Loaded ${FILE} from base ${BASE_SHA}."
+          else
+            echo "No ${FILE} on base; proceeding without repo-specific guidelines."
+          fi
+          {
+            echo "content<<__GUIDELINES_EOF__"
+            printf '%s\n' "$content"
+            echo "__GUIDELINES_EOF__"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Load previous seidroid review threads
+        id: review-history
+        if: steps.resolve.outputs.should_run == 'true'
+        uses: actions/github-script@v9
+        env:
+          SEIDROID_USER_ID: ${{ vars.PLATFORM_CODE_AGENT_USER_ID }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          script: |
+            const MARKER = "<!-- ai-combined-review -->";
+            const { owner, repo } = context.repo;
+            const pull_number = Number(${{ steps.resolve.outputs.pr_number }});
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner, repo, pull_number, per_page: 100,
+            });
+            const botId = String(process.env.SEIDROID_USER_ID || "");
+            const isSeidroid = review => botId
+              ? String(review.user?.id || "") === botId
+              : review.user?.login === "seidroid[bot]";
+            const seidroidReviews = reviews.filter(r =>
+              isSeidroid(r) && (r.body || "").includes(MARKER)
+            );
+            const reviewIds = new Set(seidroidReviews.map(r => r.id));
+
+            const comments = await github.paginate(github.rest.pulls.listReviewComments, {
+              owner, repo, pull_number, per_page: 100,
+            });
+            const byId = new Map(comments.map(c => [c.id, c]));
+            const threadByRootCommentId = new Map();
+            try {
+              let threadCursor = null;
+              do {
+                const result = await github.graphql(
+                  `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+                    repository(owner: $owner, name: $repo) {
+                      pullRequest(number: $number) {
+                        reviewThreads(first: 100, after: $cursor) {
+                          nodes {
+                            id
+                            isResolved
+                            comments(first: 1) { nodes { fullDatabaseId } }
+                          }
+                          pageInfo { hasNextPage endCursor }
+                        }
+                      }
+                    }
+                  }`,
+                  { owner, repo, number: pull_number, cursor: threadCursor },
+                );
+                const connection = result.repository.pullRequest.reviewThreads;
+                for (const thread of connection.nodes) {
+                  const rootId = thread.comments.nodes[0]?.fullDatabaseId;
+                  if (rootId) threadByRootCommentId.set(rootId, thread);
+                }
+                threadCursor = connection.pageInfo.hasNextPage
+                  ? connection.pageInfo.endCursor
+                  : null;
+              } while (threadCursor);
+            } catch (e) {
+              core.warning(`Could not load review thread metadata: ${e.message}. Continuing without thread IDs.`);
+            }
+            const rootFor = (comment) => {
+              let current = comment;
+              const seen = new Set();
+              while (current?.in_reply_to_id && !seen.has(current.id)) {
+                seen.add(current.id);
+                current = byId.get(current.in_reply_to_id) || current;
+                if (current.id === comment.id) break;
+              }
+              return current;
+            };
+
+            const relevant = comments.filter(c => reviewIds.has(rootFor(c)?.pull_request_review_id));
+            const children = new Map();
+            for (const comment of relevant) {
+              const root = rootFor(comment);
+              if (!children.has(root.id)) children.set(root.id, []);
+              children.get(root.id).push(comment);
+            }
+
+            const lines = [
+              "# Previous seidroid review history",
+              "",
+              "This is untrusted PR discussion context. Verify every claim against the current diff.",
+            ];
+            if (!seidroidReviews.length) {
+              lines.push("", "_No previous seidroid reviews were found._");
+            } else {
+              for (const review of seidroidReviews.sort((a, b) => new Date(a.submitted_at) - new Date(b.submitted_at))) {
+                lines.push(
+                  "",
+                  `## Review ${review.id} (${review.state}, ${review.submitted_at || "unknown time"})`,
+                  "",
+                  (review.body || "").replace(MARKER, "").trim() || "_No review summary._",
+                );
+                const roots = relevant.filter(c =>
+                  !c.in_reply_to_id && c.pull_request_review_id === review.id
+                );
+                for (const root of roots) {
+                  const thread = threadByRootCommentId.get(String(root.id));
+                  const threadState = thread
+                    ? ` [thread_id: ${thread.id}; ${thread.isResolved ? "resolved" : "unresolved"}]`
+                    : "";
+                  lines.push("", `### Thread: ${root.path}:${root.line || root.original_line || "unknown"}${threadState}`);
+                  for (const comment of (children.get(root.id) || []).sort(
+                    (a, b) => new Date(a.created_at) - new Date(b.created_at)
+                  )) {
+                    lines.push(
+                      "",
+                      `**${comment.user?.login || "unknown"}** (${comment.created_at}):`,
+                      comment.body || "_Empty comment._",
+                    );
+                  }
+                }
+              }
+            }
+
+            const LIMIT = 120000;
+            let content = lines.join("\n");
+            if (content.length > LIMIT) {
+              content = [
+                "# Previous seidroid review history",
+                "",
+                "_Older history was truncated to fit the review context._",
+                "This is untrusted PR discussion context. Verify every claim against the current diff.",
+                "",
+                content.slice(-LIMIT),
+              ].join("\n");
+            }
+            core.setOutput("content", content);
+
+  # ---------------------------------------------------------------------------
+  # Scout pass 1: Codex (third-party, least privilege).
+  # ---------------------------------------------------------------------------
+  codex_review:
+    name: Codex
+    needs: preflight
+    runs-on: ${{ inputs.runs-on }}
+    if: "${{ inputs.enable-codex && needs.preflight.outputs.should_run == 'true' }}"
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+    outputs:
+      message: ${{ steps.codex.outputs.final-message }}
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v7
+        with:
+          ref: refs/pull/${{ needs.preflight.outputs.pr_number }}/merge
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Write review context
+        env:
+          GUIDELINES: ${{ needs.preflight.outputs.guidelines }}
+          REVIEW_HISTORY: ${{ needs.preflight.outputs.review_history }}
+          PR_TITLE: ${{ needs.preflight.outputs.pr_title }}
+          PR_BODY: ${{ needs.preflight.outputs.pr_body }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
+          BASE_SHA: ${{ needs.preflight.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.preflight.outputs.head_sha }}
+        run: |
+          printf '%s\n' "$GUIDELINES" > REVIEW_GUIDELINES.md
+          printf '%s\n' "$REVIEW_HISTORY" > PREVIOUS_REVIEW_HISTORY.md
+          {
+            echo "# Pull request context"
+            echo
+            echo "Repository: ${REPO}"
+            echo "PR number: ${PR_NUMBER}"
+            echo "Base SHA: ${BASE_SHA}"
+            echo "Head SHA: ${HEAD_SHA}"
+            echo
+            echo "To see the changes under review, run:"
+            echo "    git diff ${BASE_SHA}...${HEAD_SHA}"
+            echo
+            echo "## Title"
+            printf '%s\n' "$PR_TITLE"
+            echo
+            echo "## Description"
+            printf '%s\n' "$PR_BODY"
+          } > pr-context.md
+
+      - name: Prebuild (warm Codex's offline sandbox)
+        if: inputs.prebuild-script != ''
+        run: ${{ inputs.prebuild-script }}
+
+      - name: Run Codex
+        id: codex
+        # A Codex failure must NOT block Claude's review.
+        continue-on-error: true
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.PLATFORM_CODE_AGENT_OPENAI_API_KEY }}
+          prompt: ${{ needs.preflight.outputs.scout_prompt }}
+
+  # ---------------------------------------------------------------------------
+  # Scout pass 2: Cursor (CLI agent, least privilege). Parallel with Codex.
+  # ---------------------------------------------------------------------------
+  cursor_review:
+    name: Cursor
+    needs: preflight
+    runs-on: ${{ inputs.runs-on }}
+    if: "${{ inputs.enable-cursor && needs.preflight.outputs.should_run == 'true' }}"
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+    outputs:
+      message: ${{ steps.cursor.outputs.message }}
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v7
+        with:
+          ref: refs/pull/${{ needs.preflight.outputs.pr_number }}/merge
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Write review context
+        env:
+          GUIDELINES: ${{ needs.preflight.outputs.guidelines }}
+          REVIEW_HISTORY: ${{ needs.preflight.outputs.review_history }}
+          PR_TITLE: ${{ needs.preflight.outputs.pr_title }}
+          PR_BODY: ${{ needs.preflight.outputs.pr_body }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
+          BASE_SHA: ${{ needs.preflight.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.preflight.outputs.head_sha }}
+        run: |
+          printf '%s\n' "$GUIDELINES" > REVIEW_GUIDELINES.md
+          printf '%s\n' "$REVIEW_HISTORY" > PREVIOUS_REVIEW_HISTORY.md
+          {
+            echo "# Pull request context"
+            echo
+            echo "Repository: ${REPO}"
+            echo "PR number: ${PR_NUMBER}"
+            echo "Base SHA: ${BASE_SHA}"
+            echo "Head SHA: ${HEAD_SHA}"
+            echo
+            echo "To see the changes under review, run:"
+            echo "    git diff ${BASE_SHA}...${HEAD_SHA}"
+            echo
+            echo "## Title"
+            printf '%s\n' "$PR_TITLE"
+            echo
+            echo "## Description"
+            printf '%s\n' "$PR_BODY"
+          } > pr-context.md
+
+      - name: Install Cursor CLI
+        continue-on-error: true
+        run: |
+          curl https://cursor.com/install -fsS | bash
+          echo "$HOME/.cursor/bin" >> "$GITHUB_PATH"
+
+      - name: Run Cursor Agent
+        id: cursor
+        # A Cursor failure must NOT block Claude's review (mirrors Codex).
+        continue-on-error: true
+        env:
+          CURSOR_API_KEY: ${{ secrets.PLATFORM_CODE_AGENT_CURSOR_API_KEY }}
+          PROMPT: ${{ needs.preflight.outputs.scout_prompt }}
+        run: |
+          set +e
+          if [ -z "$CURSOR_API_KEY" ]; then
+            echo "::notice::CURSOR_API_KEY is empty -- skipping Cursor."
+            { echo "message<<__EMPTY__"; echo ""; echo "__EMPTY__"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          agent -p --trust --output-format json -- "$PROMPT" \
+            > "${RUNNER_TEMP}/cursor-out.json" 2> "${RUNNER_TEMP}/cursor-err.txt"
+          echo "cursor-agent exit code: $?"
+          tail -n 20 "${RUNNER_TEMP}/cursor-err.txt" 2>/dev/null || true
+          MSG="$(jq -rs '.[-1] | (.result // .text // .message // .content // empty)' "${RUNNER_TEMP}/cursor-out.json" 2>/dev/null)"
+          [ -n "$MSG" ] || MSG="$(cat "${RUNNER_TEMP}/cursor-out.json" 2>/dev/null)"
+          DELIM="CURSOR_EOF_$$_${RANDOM}"
+          {
+            echo "message<<${DELIM}"
+            printf '%s\n' "$MSG"
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # Synthesis: Claude considers Codex + Cursor, then returns ONE typed review.
+  # ---------------------------------------------------------------------------
+  claude_review:
+    name: Claude
+    needs: [ preflight, codex_review, cursor_review ]
+    runs-on: ${{ inputs.runs-on }}
+    # `!cancelled()` lets this run when a scout is toggled off or fails. `should_run`
+    # carries the preflight's draft/label/history/authorization decision to every pass.
+    if: "${{ !cancelled() && needs.preflight.result == 'success' && needs.preflight.outputs.should_run == 'true' }}"
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+      pull-requests: write   # create the PR review + inline comments, dismiss stale reviews
+      checks: write          # create the "AI Review" check run
+      id-token: write        # Anthropic workload identity federation
+    steps:
+      - name: Detect app credentials
+        id: creds
+        env:
+          APP_ID: ${{ secrets.PLATFORM_CODE_AGENT_APP_ID }}
+        run: |
+          if [ -n "$APP_ID" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Generate GitHub App token
+        id: app-token
+        if: steps.creds.outputs.present == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.PLATFORM_CODE_AGENT_APP_ID }}
+          private-key: ${{ secrets.PLATFORM_CODE_AGENT_APP_PK }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: refs/pull/${{ needs.preflight.outputs.pr_number }}/merge
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Write context files for Claude
+        env:
+          GUIDELINES: ${{ needs.preflight.outputs.guidelines }}
+          REVIEW_HISTORY: ${{ needs.preflight.outputs.review_history }}
+          CODEX_REVIEW: ${{ needs.codex_review.outputs.message }}
+          CURSOR_REVIEW: ${{ needs.cursor_review.outputs.message }}
+        run: |
+          printf '%s\n' "$GUIDELINES" > REVIEW_GUIDELINES.md
+          printf '%s\n' "$REVIEW_HISTORY" > PREVIOUS_REVIEW_HISTORY.md
+          printf '%s\n' "$CODEX_REVIEW" > codex-review.md
+          printf '%s\n' "$CURSOR_REVIEW" > cursor-review.md
+
+      - name: Combined review (Claude considers Codex + Cursor)
+        id: review
+        uses: anthropics/claude-code-action@v1
+        with:
+          github_token: ${{ steps.app-token.outputs.token || github.token }}
+          anthropic_federation_rule_id: ${{ vars.PLATFORM_CODE_AGENT_ANTHROPIC_FDRL_ID }}
+          anthropic_organization_id: ${{ vars.SEI_LABS_ANTHROPIC_ORG_ID }}
+          anthropic_service_account_id: ${{ vars.PLATFORM_CODE_AGENT_ANTHROPIC_SVAC_ID }}
+          bot_id: ${{ vars.PLATFORM_CODE_AGENT_USER_ID }}
+          bot_name: 'seidroid[bot]'
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ needs.preflight.outputs.pr_number }}
+            INCLUDE NITS: ${{ needs.preflight.outputs.include_nits }}
+
+            ${{ needs.preflight.outputs.review_prompt }}
+          claude_args: |
+            --allowedTools "Read,Bash(gh pr diff:*),Bash(gh pr view:*)"
+            ${{ inputs.claude-model != '' && format('--model {0}', inputs.claude-model) || '' }}
+            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["success","neutral","failure"],"description":"Overall combined verdict"},"summary":{"type":"string","description":"One- or two-sentence overall summary"},"blockers":{"type":"array","items":{"type":"string"},"description":"Blocking issues introduced by the PR and NOT tied to a specific line. Empty array if none."},"non_blockers":{"type":"array","description":"Non-blocking findings introduced by the PR and NOT tied to a specific line. Empty array if none.","items":{"type":"object","properties":{"severity":{"type":"string","enum":["suggestion","nit"],"description":"Severity of this non-blocking finding"},"body":{"type":"string","description":"Concise finding without a severity prefix."}},"required":["severity","body"]}},"pre_existing_issues":{"type":"array","description":"Issues already present on the base branch. Empty array if none.","items":{"type":"object","properties":{"severity":{"type":"string","enum":["blocker","suggestion"],"description":"Use blocker only for a critical pre-existing bug."},"body":{"type":"string","description":"Concise issue including its location and impact."}},"required":["severity","body"]}},"resolved_thread_ids":{"type":"array","items":{"type":"string"},"description":"Exact thread_id values for unresolved previous seidroid inline findings that the current changes address. Empty array if none."},"inline_comments":{"type":"array","description":"PR-introduced findings tied to a specific changed line. Empty array if none.","items":{"type":"object","properties":{"path":{"type":"string","description":"Repo-relative file path exactly as in the diff"},"line":{"type":"integer","description":"Line number on the given side. NEW file line for RIGHT, OLD file line for LEFT. Must be a line present in the PR diff."},"side":{"type":"string","enum":["RIGHT","LEFT"],"description":"RIGHT = new/head version (default). LEFT = base/old version, for comments on removed lines."},"severity":{"type":"string","enum":["blocker","suggestion","nit"],"description":"Severity of this inline finding"},"body":{"type":"string","description":"The comment text without a severity prefix."},"supersedes_thread_ids":{"type":"array","items":{"type":"string"},"description":"Exact thread_id values for unresolved previous seidroid findings replaced by this new inline comment. Empty array for a new finding."}},"required":["path","line","severity","body","supersedes_thread_ids"]}}},"required":["verdict","summary","blockers","non_blockers","pre_existing_issues","resolved_thread_ids","inline_comments"]}'
+
+      - name: Post the combined review and report verdict as a check run
+        # Run on review success AND failure (to report the verdict), but NOT when the run
+        # was cancelled by `concurrency` (a superseded push) -- the newer run posts instead.
+        if: ${{ !cancelled() }}
+        uses: actions/github-script@v9
+        env:
+          STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
+          APPROVE_ON_SUCCESS: ${{ inputs.approve-on-success }}
+          INCLUDE_NITS: ${{ needs.preflight.outputs.include_nits }}
+          PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.preflight.outputs.head_sha }}
+          SEIDROID_USER_ID: ${{ vars.PLATFORM_CODE_AGENT_USER_ID }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          script: |
+            const approveOnSuccess = String(process.env.APPROVE_ON_SUCCESS || "true") === "true";
+            const includeNits = String(process.env.INCLUDE_NITS || "false") === "true";
+            const number = Number(process.env.PR_NUMBER);
+            const sha = process.env.HEAD_SHA;
+
+            // ---- 1) Parse the structured output -----------------------------
+            let parsed = null;
+            try { parsed = JSON.parse(process.env.STRUCTURED_OUTPUT || ""); }
+            catch (e) { core.warning(`Could not parse structured_output: ${e.message}`); }
+            const haveOutput = parsed && typeof parsed === "object";
+            const stripSeverityTags = (body) => String(body || "").replace(
+              /^(?:\s*(?:\*\*)?\[(?:blocker|suggestion|nit)\](?:\*\*)?\s*)+/i,
+              "",
+            ).trim();
+
+            let verdict = String(parsed?.verdict ?? "").trim().toLowerCase();
+            const VALID = ["success", "neutral", "failure"];
+            if (!VALID.includes(verdict)) {
+              core.warning(`No valid verdict (got "${verdict || "<empty>"}"); defaulting to failure.`);
+              verdict = "failure";
+            }
+            const summary = String(parsed?.summary ?? "").trim();
+            const blockers = Array.isArray(parsed?.blockers) ? parsed.blockers.map(s => String(s).trim()).filter(Boolean) : [];
+            const nonBlockers = Array.isArray(parsed?.non_blockers)
+              ? parsed.non_blockers.map(finding => typeof finding === "string"
+                ? { severity: "suggestion", body: stripSeverityTags(finding) }
+                : {
+                    severity: String(finding?.severity ?? "suggestion").toLowerCase() === "nit"
+                      ? "nit"
+                      : "suggestion",
+                    body: stripSeverityTags(finding?.body),
+                  }).filter(finding =>
+                  finding.body && (includeNits || finding.severity !== "nit")
+                )
+              : [];
+            const preExisting = Array.isArray(parsed?.pre_existing_issues)
+              ? parsed.pre_existing_issues.map(issue => ({
+                  severity: String(issue?.severity ?? "suggestion").toLowerCase() === "blocker"
+                    ? "blocker"
+                    : "suggestion",
+                  body: String(issue?.body ?? "").trim(),
+                })).filter(issue => issue.body)
+              : [];
+            const resolvedThreadIds = [...new Set(
+              Array.isArray(parsed?.resolved_thread_ids)
+                ? parsed.resolved_thread_ids.map(s => String(s).trim()).filter(Boolean)
+                : []
+            )];
+            const inline = Array.isArray(parsed?.inline_comments) ? parsed.inline_comments : [];
+            const tag = (s) => {
+              const v = String(s || "suggestion").toLowerCase();
+              return v === "blocker" ? "**[blocker]** " : v === "nit" ? "**[nit]** " : "**[suggestion]** ";
+            };
+
+            // ---- 2) Build a commentable-line index from the actual PR diff ----
+            const valid = { RIGHT: {}, LEFT: {} };
+            if (number) {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner: context.repo.owner, repo: context.repo.repo,
+                pull_number: number, per_page: 100,
+              });
+              for (const f of files) {
+                if (!f.patch) continue; // binary / too large: cannot anchor here
+                valid.RIGHT[f.filename] = new Set();
+                valid.LEFT[f.filename] = new Set();
+                let oldLn = 0, newLn = 0;
+                for (const line of f.patch.split("\n")) {
+                  const m = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+                  if (m) { oldLn = parseInt(m[1], 10); newLn = parseInt(m[2], 10); continue; }
+                  if (line.startsWith("+")) { valid.RIGHT[f.filename].add(newLn); newLn++; }
+                  else if (line.startsWith("-")) { valid.LEFT[f.filename].add(oldLn); oldLn++; }
+                  else if (line.startsWith(" ")) { valid.RIGHT[f.filename].add(newLn); valid.LEFT[f.filename].add(oldLn); oldLn++; newLn++; }
+                }
+              }
+            }
+
+            // ---- 3) Split inline findings into anchorable vs orphaned ---------
+            const reviewComments = [];
+            const orphaned = [];
+            for (const c of inline) {
+              const path = String(c?.path ?? "").trim();
+              const lineNum = Number.isInteger(c?.line) ? c.line : parseInt(c?.line, 10);
+              const side = String(c?.side ?? "RIGHT").toUpperCase() === "LEFT" ? "LEFT" : "RIGHT";
+              const severity = String(c?.severity ?? "suggestion").toLowerCase();
+              const body = stripSeverityTags(c?.body);
+              const supersedesThreadIds = [...new Set(
+                Array.isArray(c?.supersedes_thread_ids)
+                  ? c.supersedes_thread_ids.map(s => String(s).trim()).filter(Boolean)
+                  : []
+              )];
+              if (!path || !body || (!includeNits && severity === "nit")) continue;
+              const anchorable = Number.isInteger(lineNum) && valid[side][path]?.has(lineNum);
+              if (anchorable) reviewComments.push({
+                path, line: lineNum, side, severity, body, supersedesThreadIds,
+              });
+              else orphaned.push({ path, line: Number.isInteger(lineNum) ? lineNum : null, severity, body });
+            }
+            const inlineBlockers = reviewComments.filter(c => c.severity === "blocker").length;
+            const inlineOther = reviewComments.length - inlineBlockers;
+            const orphanedBlockers = orphaned.filter(c => c.severity === "blocker").length;
+            const preExistingBlockers = preExisting.filter(issue => issue.severity === "blocker").length;
+            const preExistingOther = preExisting.length - preExistingBlockers;
+
+            // Blocker-driven gate: pass iff there are zero blocker findings anywhere
+            // (PR/file-level, anchored inline, orphaned inline, or critical pre-existing).
+            // Supersedes Claude's reported `verdict` whenever we have parsed output.
+            const totalBlockers = blockers.length + inlineBlockers + orphanedBlockers + preExistingBlockers;
+            if (haveOutput) verdict = totalBlockers > 0 ? "failure" : "success";
+
+            // ---- 4) Assemble the review body ---------------------------------
+            let body;
+            if (!haveOutput) {
+              body = "The automated review did not complete; see the failing **AI Review** check for details.";
+            } else {
+              const L = [];
+              if (summary) L.push(summary);
+              L.push("", `**Findings:** ${totalBlockers} blocking | ${nonBlockers.length + inlineOther + preExistingOther} non-blocking | ${reviewComments.length} posted inline`);
+
+              L.push("", "### Blockers");
+              if (blockers.length) blockers.forEach(b => L.push(`- ${b}`));
+              else L.push("- _None at the file/PR level._");
+              if (inlineBlockers) L.push(`- _${inlineBlockers} blocking issue(s) flagged inline on specific lines._`);
+              if (orphanedBlockers) L.push(`- _${orphanedBlockers} blocking issue(s) listed below under unanchored comments._`);
+              if (preExistingBlockers) L.push(`- _${preExistingBlockers} critical pre-existing blocker(s) listed below under pre-existing issues._`);
+
+              L.push("", "### Non-blocking");
+              if (nonBlockers.length) nonBlockers.forEach(n => L.push(`- ${tag(n.severity)}${n.body}`));
+              else L.push("- _None at the file/PR level._");
+              if (inlineOther) L.push(`- _${inlineOther} suggestion(s)/nit(s) flagged inline on specific lines._`);
+              if (preExistingOther) L.push(`- _${preExistingOther} non-blocking pre-existing issue(s) listed below under pre-existing issues._`);
+
+              if (preExisting.length) {
+                L.push("", "### Pre-existing issues");
+                preExisting.forEach(issue => L.push(`- ${tag(issue.severity)}${issue.body}`));
+              }
+
+              if (orphaned.length) {
+                L.push("", "### Comments that couldn't be anchored to the diff");
+                orphaned.forEach(o => L.push(`- \`${o.path}${o.line ? `:${o.line}` : ""}\` -- ${tag(o.severity)}${o.body}`));
+              }
+              body = L.join("\n");
+            }
+
+            // ---- 5) Marker + verdict -> review event -------------------------
+            const MARKER = "<!-- ai-combined-review -->";
+            body = `${MARKER}\n${body}`;
+            let reviewEvent = "COMMENT";
+            if (haveOutput && verdict === "failure") reviewEvent = "REQUEST_CHANGES";
+            else if (haveOutput && verdict === "success" && approveOnSuccess) reviewEvent = "APPROVE";
+
+            // ---- 6) Post the review, inline -> body-only -> COMMENT fallback --
+            let postedReviewId = null;
+            let postedInlineComments = false;
+            if (number && sha) {
+              const mkComments = () => reviewComments.map(c => ({
+                path: c.path, line: c.line, side: c.side, body: tag(c.severity) + c.body,
+              }));
+              const post = (event, withComments, bodyText) => github.rest.pulls.createReview({
+                owner: context.repo.owner, repo: context.repo.repo, pull_number: number,
+                commit_id: sha, event, body: bodyText,
+                ...(withComments ? { comments: mkComments() } : {}),
+              });
+              try {
+                const response = await post(reviewEvent, true, body);
+                postedReviewId = response.data.id;
+                postedInlineComments = reviewComments.length > 0;
+              } catch (e1) {
+                core.warning(`createReview (inline, ${reviewEvent}) failed: ${e1.status} ${e1.message}. Retrying body-only.`);
+                let bodyOnly = body;
+                if (reviewComments.length) {
+                  const dump = reviewComments.map(c => `- \`${c.path}:${c.line}\` (${c.side}) -- ${tag(c.severity)}${c.body}`);
+                  bodyOnly += `\n\n### Inline comments (could not post inline; listed here)\n${dump.join("\n")}`;
+                }
+                try {
+                  const response = await post(reviewEvent, false, bodyOnly);
+                  postedReviewId = response.data.id;
+                } catch (e2) {
+                  if (reviewEvent !== "COMMENT") {
+                    core.warning(`createReview (body-only, ${reviewEvent}) failed: ${e2.status} ${e2.message}. Retrying as COMMENT.`);
+                    const response = await post("COMMENT", false, bodyOnly);
+                    postedReviewId = response.data.id;
+                  } else {
+                    throw e2;
+                  }
+                }
+              }
+            }
+
+            // ---- 7) Resolve prior inline findings fixed or superseded here ----
+            const threadIdsToResolve = new Set(resolvedThreadIds);
+            if (postedInlineComments) {
+              for (const comment of reviewComments) {
+                for (const threadId of comment.supersedesThreadIds) {
+                  threadIdsToResolve.add(threadId);
+                }
+              }
+            }
+            if (number && postedReviewId && haveOutput && threadIdsToResolve.size) {
+              try {
+                const reviews = await github.paginate(github.rest.pulls.listReviews, {
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  pull_number: number, per_page: 100,
+                });
+                const botId = String(process.env.SEIDROID_USER_ID || "");
+                const isSeidroid = review => botId
+                  ? String(review.user?.id || "") === botId
+                  : review.user?.login === "seidroid[bot]";
+                const priorReviewIds = new Set(reviews
+                  .filter(r =>
+                    r.id !== postedReviewId &&
+                    isSeidroid(r) &&
+                    (r.body || "").includes(MARKER)
+                  )
+                  .map(r => String(r.id)));
+
+                const eligibleThreadIds = new Set();
+                let cursor = null;
+                do {
+                  const result = await github.graphql(
+                    `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+                      repository(owner: $owner, name: $repo) {
+                        pullRequest(number: $number) {
+                          reviewThreads(first: 100, after: $cursor) {
+                            nodes {
+                              id
+                              isResolved
+                              comments(first: 1) {
+                                nodes { pullRequestReview { fullDatabaseId } }
+                              }
+                            }
+                            pageInfo { hasNextPage endCursor }
+                          }
+                        }
+                      }
+                    }`,
+                    {
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      number,
+                      cursor,
+                    },
+                  );
+                  const connection = result.repository.pullRequest.reviewThreads;
+                  for (const thread of connection.nodes) {
+                    const reviewId = thread.comments.nodes[0]?.pullRequestReview?.fullDatabaseId;
+                    if (!thread.isResolved && priorReviewIds.has(reviewId)) {
+                      eligibleThreadIds.add(thread.id);
+                    }
+                  }
+                  cursor = connection.pageInfo.hasNextPage
+                    ? connection.pageInfo.endCursor
+                    : null;
+                } while (cursor);
+
+                for (const threadId of threadIdsToResolve) {
+                  if (!eligibleThreadIds.has(threadId)) {
+                    core.warning(`Ignoring ineligible review thread ID: ${threadId}`);
+                    continue;
+                  }
+                  await github.graphql(
+                    `mutation($threadId: ID!) {
+                      resolveReviewThread(input: {threadId: $threadId}) {
+                        thread { id isResolved }
+                      }
+                    }`,
+                    { threadId },
+                  );
+                  core.info(`Resolved addressed or superseded review thread ${threadId}.`);
+                }
+              } catch (e) {
+                core.warning(`Could not resolve addressed or superseded review threads: ${e.message}`);
+              }
+            }
+
+            // ---- 8) No longer failing? Dismiss our prior REQUEST_CHANGES ------
+            if (number && haveOutput && verdict !== "failure") {
+              try {
+                const reviews = await github.paginate(github.rest.pulls.listReviews, {
+                  owner: context.repo.owner, repo: context.repo.repo, pull_number: number, per_page: 100,
+                });
+                for (const r of reviews) {
+                  if (r.state === "CHANGES_REQUESTED" && (r.body || "").includes(MARKER)) {
+                    await github.rest.pulls.dismissReview({
+                      owner: context.repo.owner, repo: context.repo.repo,
+                      pull_number: number, review_id: r.id,
+                      message: "Superseded: latest AI review found no blocking issues.",
+                    });
+                  }
+                }
+              } catch (e) {
+                core.warning(`Could not dismiss prior change-request reviews: ${e.message}`);
+              }
+            }
+
+            // ---- 9) Report the verdict as a check run (the merge gate) -------
+            if (!sha) { core.setFailed("No pull_request head SHA; cannot report status."); return; }
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: "AI Review",
+              head_sha: sha,
+              status: "completed",
+              conclusion: verdict,
+              output: {
+                title: `Claude + Codex + Cursor Review: ${verdict}`,
+                summary: summary || "No summary provided.",
+              },
+            });
+
+  complete_review_reaction:
+    name: Complete review reaction
+    needs: [ preflight, codex_review, cursor_review, claude_review ]
+    if: ${{ always() && needs.preflight.outputs.reaction_subject_id != '' }}
+    runs-on: ${{ inputs.runs-on }}
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Detect app credentials
+        id: creds
+        env:
+          APP_ID: ${{ secrets.PLATFORM_CODE_AGENT_APP_ID }}
+        run: |
+          if [ -n "$APP_ID" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Generate GitHub App token
+        id: app-token
+        if: steps.creds.outputs.present == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.PLATFORM_CODE_AGENT_APP_ID }}
+          private-key: ${{ secrets.PLATFORM_CODE_AGENT_APP_PK }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+
+      - name: Mark review request complete
+        uses: actions/github-script@v9
+        env:
+          SUBJECT_ID: ${{ needs.preflight.outputs.reaction_subject_id }}
+          REVIEW_SUCCEEDED: ${{ needs.claude_review.result == 'success' }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          script: |
+            const subjectId = process.env.SUBJECT_ID;
+            if (process.env.REVIEW_SUCCEEDED === "true") {
+              try {
+                await github.graphql(
+                  `mutation($subjectId: ID!) {
+                    addReaction(input: {subjectId: $subjectId, content: THUMBS_UP}) {
+                      reaction { content }
+                    }
+                  }`,
+                  { subjectId },
+                );
+              } catch (error) {
+                core.warning(`Could not add the completion reaction: ${error.message}`);
+              }
+            }
+            try {
+              await github.graphql(
+                `mutation($subjectId: ID!) {
+                  removeReaction(input: {subjectId: $subjectId, content: EYES}) {
+                    subject { id }
+                  }
+                }`,
+                { subjectId },
+              );
+            } catch (error) {
+              core.warning(`Could not clear the in-progress reaction: ${error.message}`);
+            }

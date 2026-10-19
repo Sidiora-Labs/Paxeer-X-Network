@@ -1,0 +1,242 @@
+name: Seidroid Assistant
+run-name: UCI / Seidroid Assistant
+# Reusable conversational responder: mention @seidroid on a PR and the bot answers.
+#   - Triggers on PR comments, inline review-comment replies, and review bodies (the
+#     caller wires the events; see .github/seidroid/ai-review/README.md).
+#   - Tag mode (no `prompt` -> the comment text IS the request). The action posts the
+#     answer in the same inline thread for a review-comment reply, or as a PR
+#     conversation comment otherwise.
+#   - READ-ONLY by default. Set `allow-write: true` (and grant `contents: write`) to let
+#     @seidroid push fixes when asked.
+#
+# Access control: only ACTIVE members of `allowed-team` may invoke it; the team check runs
+# BEFORE the model and fails CLOSED (any lookup error or non-member -> no response). The
+# seidroid app needs org "Members: Read"; without it the lookup errors and everyone is
+# denied. Comment-triggered workflows run from the DEFAULT branch, so a PR author cannot
+# alter this responder from within their PR. Bot-authored comments never trigger it.
+on:
+  workflow_call:
+    inputs:
+      uci-ref:
+        description: "Ref of sei-protocol/uci to fetch the assistant prompt from. Pin to your `uses:` ref."
+        required: false
+        type: string
+        default: 'main'
+      extra-instructions:
+        description: "Extra guidance appended to the persona. Must not contain double-quote characters."
+        required: false
+        type: string
+        default: ''
+      trigger-phrase:
+        description: "Mention that invokes the bot."
+        required: false
+        type: string
+        default: '@seidroid'
+      allowed-team:
+        description: "org/team-slug allowed to invoke the bot. Empty denies everyone."
+        required: false
+        type: string
+        default: 'sei-protocol/sei-core'
+      allow-write:
+        description: "Grant Claude edit/commit tools. Requires `contents: write` from the caller."
+        required: false
+        type: boolean
+        default: false
+      runs-on:
+        description: "Runner label."
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      claude-model:
+        description: "Optional Claude model override."
+        required: false
+        type: string
+        default: ''
+      timeout-minutes:
+        description: "Job timeout in minutes."
+        required: false
+        type: number
+        default: 10
+
+concurrency:
+  # One reply at a time per PR; never cancel a reply that is mid-generation.
+  group: seidroid-reply-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  reply:
+    name: Reply
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    # Cheap pre-filter so a runner only spins up for a real @seidroid mention from a human.
+    # WHO is allowed is enforced by the team gate below, not here.
+    if: |
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        github.event.comment.user.type != 'Bot' &&
+        contains(github.event.comment.body, inputs.trigger-phrase) &&
+        github.event.comment.body != format('{0} review', inputs.trigger-phrase)
+      ) || (
+        github.event_name == 'pull_request_review_comment' &&
+        github.event.comment.user.type != 'Bot' &&
+        contains(github.event.comment.body, inputs.trigger-phrase) &&
+        github.event.comment.body != format('{0} review', inputs.trigger-phrase)
+      ) || (
+        github.event_name == 'pull_request_review' &&
+        github.event.review.user.type != 'Bot' &&
+        github.event.review.body &&
+        contains(github.event.review.body, inputs.trigger-phrase) &&
+        github.event.review.body != format('{0} review', inputs.trigger-phrase)
+      )
+    permissions:
+      pull-requests: write   # post the reply / in-thread reply
+      issues: write          # reply on the PR conversation timeline
+      id-token: write        # Anthropic workload identity federation (OIDC)
+    steps:
+      # The review workflow owns the exact `@seidroid review` command. Reserving it here
+      # prevents the conversational assistant from posting a competing generic response.
+      - name: Route request
+        id: route
+        uses: actions/github-script@v9
+        env:
+          BODY: ${{ github.event.comment.body || github.event.review.body }}
+          TRIGGER_PHRASE: ${{ inputs.trigger-phrase }}
+        with:
+          script: |
+            const normalize = value =>
+              String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+            const isReview =
+              normalize(process.env.BODY) ===
+              `${normalize(process.env.TRIGGER_PHRASE)} review`;
+            core.setOutput("is_review_command", String(isReview));
+
+      - name: Generate GitHub App token
+        id: app-token
+        if: success() && steps.route.outputs.is_review_command != 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.PLATFORM_CODE_AGENT_APP_ID }}
+          private-key: ${{ secrets.PLATFORM_CODE_AGENT_APP_PK }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            uci
+
+      # ---- Team gate: checked BEFORE Claude. Non-members -> do nothing. --------
+      - name: Restrict to team members
+        id: gate
+        if: success() && steps.route.outputs.is_review_command != 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ORG_TEAM: ${{ inputs.allowed-team }}
+          ACTOR: ${{ github.event.comment.user.login || github.event.review.user.login }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: |
+          if [ -z "$ORG_TEAM" ]; then
+            echo "::notice::allowed-team is empty; denying by default (fail closed)."
+            echo "is_member=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ORG="${ORG_TEAM%%/*}"
+          TEAM="${ORG_TEAM##*/}"
+          # Fail closed: 404 (not a member), 403 (app missing Members:read), an empty actor,
+          # or a "pending" invite all resolve to "not active" -> deny.
+          STATE="$(gh api "orgs/${ORG}/teams/${TEAM}/memberships/${ACTOR}" --jq '.state' 2>/dev/null || true)"
+          if [ "$STATE" != "active" ]; then
+            echo "is_member=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${ACTOR} is not an active member of ${ORG_TEAM}; seidroid will not respond."
+            exit 0
+          fi
+
+          IS_FORK="$(
+            gh api "repos/${REPO}/pulls/${PR_NUMBER}" \
+              --jq '.head.repo.id != .base.repo.id' 2>/dev/null || true
+          )"
+          if [ "$IS_FORK" != "false" ]; then
+            echo "is_member=false" >> "$GITHUB_OUTPUT"
+            if [ "$IS_FORK" = "true" ]; then
+              echo "::notice::Seidroid Assistant is disabled for fork-originated pull requests."
+            else
+              echo "::notice::Could not verify the pull request source repository; denying request."
+            fi
+            exit 0
+          fi
+
+          echo "is_member=true" >> "$GITHUB_OUTPUT"
+          echo "Authorized: ${ACTOR} is an active member of ${ORG_TEAM}."
+      - name: React 👀 while working
+        id: ack
+        if: steps.gate.outputs.is_member == 'true' && github.event_name != 'pull_request_review'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          CID: ${{ github.event.comment.id }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request_review_comment" ]; then
+            EP="repos/${REPO}/pulls/comments/${CID}/reactions"
+          else
+            EP="repos/${REPO}/issues/comments/${CID}/reactions"
+          fi
+          RID="$(gh api --method POST "$EP" -f content=eyes --jq '.id')"
+          echo "endpoint=${EP}"  >> "$GITHUB_OUTPUT"
+          echo "rid=${RID}"      >> "$GITHUB_OUTPUT"
+      - name: Checkout repository
+        if: steps.gate.outputs.is_member == 'true'
+        uses: actions/checkout@v7
+        with:
+          token: ${{ steps.app-token.outputs.token || github.token }}
+          ref: ${{ github.ref }}
+
+      - name: Fetch assistant prompt
+        if: steps.gate.outputs.is_member == 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: sei-protocol/uci
+          ref: ${{ inputs.uci-ref }}
+          path: .uci
+          sparse-checkout: .github/seidroid/ai-review
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Assemble system prompt
+        id: prompt
+        if: steps.gate.outputs.is_member == 'true'
+        env:
+          EXTRA: ${{ inputs.extra-instructions }}
+        run: |
+          TEXT="$(cat .uci/.github/seidroid/ai-review/assistant.md)"
+          if [ -n "$EXTRA" ]; then
+            TEXT="${TEXT}  Additional instructions: ${EXTRA}"
+          fi
+          # Collapse to a single line so it injects cleanly into --append-system-prompt.
+          TEXT="$(printf '%s' "$TEXT" | tr '\n' ' ' | tr -s ' ')"
+          echo "text=${TEXT}" >> "$GITHUB_OUTPUT"
+
+      - name: Respond to @seidroid
+        if: steps.gate.outputs.is_member == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          github_token: ${{ steps.app-token.outputs.token }}
+          anthropic_federation_rule_id: ${{ vars.PLATFORM_CODE_AGENT_ANTHROPIC_FDRL_ID }}
+          anthropic_organization_id: ${{ vars.SEI_LABS_ANTHROPIC_ORG_ID }}
+          anthropic_service_account_id: ${{ vars.PLATFORM_CODE_AGENT_ANTHROPIC_SVAC_ID }}
+          bot_id: ${{ vars.PLATFORM_CODE_AGENT_USER_ID }}
+          bot_name: 'seidroid[bot]'
+          # No `prompt` -> the action stays in tag mode and treats the comment text as the
+          # request. --append-system-prompt steers HOW it replies without leaving tag mode.
+          trigger_phrase: ${{ inputs.trigger-phrase }}
+          claude_args: |
+            --allowedTools "${{ inputs.allow-write && 'Read,Glob,Grep,Edit,Write,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git commit:*)' || 'Read,Glob,Grep,Bash(gh pr diff:*),Bash(gh pr view:*)' }}"
+            ${{ inputs.claude-model != '' && format('--model {0}', inputs.claude-model) || '' }}
+            --append-system-prompt "${{ steps.prompt.outputs.text }}"
+
+      - name: Clear 👀 when done
+        if: always() && steps.ack.outputs.rid != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          EP: ${{ steps.ack.outputs.endpoint }}
+          RID: ${{ steps.ack.outputs.rid }}
+        run: gh api --method DELETE "${EP}/${RID}" || true

@@ -1,0 +1,84 @@
+name: Stale Check
+
+on:
+  workflow_call:
+    inputs:
+      stale-issue-label:
+        description: "Label to apply to stale issues"
+        required: false
+        default: "kind/stale"
+        type: string
+      stale-pr-label:
+        description: "Label to apply to stale PRs"
+        required: false
+        default: "kind/stale"
+        type: string
+      any-of-labels:
+        description: "Labels that trigger stale detection. Disabled by default"
+        required: false
+        type: string
+      days-before-issue-stale:
+        description: "Days before marking an issue as stale"
+        required: false
+        default: 8
+        type: number
+      days-before-issue-close:
+        description: "Days before closing a stale issue"
+        required: false
+        default: 2
+        type: number
+      days-before-pr-stale:
+        description: "Days before marking a PR as stale"
+        required: false
+        default: 8
+        type: number
+      days-before-pr-close:
+        description: "Days before closing a stale PR"
+        required: false
+        default: 2
+        type: number
+      remove-stale-when-updated:
+        description: "Whether to remove stale label when updated"
+        required: false
+        default: true
+        type: boolean
+      enable-statistics:
+        description: "Whether to enable statistics"
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  stale:
+    name: Check Issues and PRs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v11
+        with:
+          repo-token: ${{ github.token }}
+          stale-issue-message: |
+            Thank you for opening this issue and taking the time to share your thoughts. 
+            We’d love to keep moving this forward, but we need a bit more information from you. 
+            Please add any additional details within the next ${{ inputs.days-before-issue-close }} day(s) so we can continue collaborating on a solution together. 
+            If we don’t hear back, the issue will close automatically — but you’re always welcome to reopen it when you’re ready.
+          close-issue-message: |
+            We’re closing this issue for now as we haven’t received additional input. 
+            Please know that your effort is appreciated — and when you’re ready to revisit this, we’ll be here to pick it up again. 
+            Thank you for contributing and helping us improve Sei.
+          stale-pr-message: |
+            We truly appreciate your contribution and the time you’ve invested in this PR. 
+            Before we can merge it, we’d love your help addressing the remaining feedback or sharing your perspective. 
+            If we don’t hear back within ${{ inputs.days-before-pr-close }} day(s), this PR will close automatically — but don’t worry, you can reopen it anytime when you’re ready to continue. 
+          close-pr-message: |
+            This PR is being closed due to inactivity, but we want to acknowledge and thank you for the effort you’ve put in. 
+            Please feel free to reopen it whenever you’re ready to pick it back up. 
+          stale-issue-label: ${{ inputs.stale-issue-label }}
+          stale-pr-label: ${{ inputs.stale-pr-label }}
+          any-of-labels: ${{ inputs.any-of-labels }}
+          days-before-issue-stale: ${{ inputs.days-before-issue-stale }}
+          days-before-issue-close: ${{ inputs.days-before-issue-close }}
+          days-before-pr-stale: ${{ inputs.days-before-pr-stale }}
+          days-before-pr-close: ${{ inputs.days-before-pr-close }}
+          remove-stale-when-updated: ${{ inputs.remove-stale-when-updated }}
+          enable-statistics: ${{ inputs.enable-statistics }}
+

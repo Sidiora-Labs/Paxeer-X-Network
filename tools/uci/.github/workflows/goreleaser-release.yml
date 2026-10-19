@@ -1,0 +1,110 @@
+name: GoReleaser
+run-name: UCI / GoReleaser Release
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: "Go version. Mutually exclusive with go-version-file."
+        required: false
+        type: string
+        default: ''
+      go-version-file:
+        description: "Path to go.mod (or other) for Go version detection. Mutually exclusive with go-version."
+        required: false
+        type: string
+        default: ''
+      goreleaser-version:
+        description: "GoReleaser version expression (e.g. '~> v2', 'v2.4.4', 'latest', 'nightly')."
+        required: false
+        type: string
+        default: '~> v2'
+      args:
+        description: "Arguments passed to goreleaser."
+        required: false
+        type: string
+        default: 'release --clean'
+      working-directory:
+        description: "Repo subdirectory containing .goreleaser.yaml."
+        required: false
+        type: string
+        default: '.'
+      ref:
+        description: "Git ref to checkout. Empty checks out the triggering ref."
+        required: false
+        type: string
+        default: ''
+      checkout-latest-tag:
+        description: "After checkout, switch to the latest tag (sorted by v:refname). Useful when triggered by workflow_run."
+        required: false
+        type: boolean
+        default: false
+      submodules:
+        description: "Submodule checkout option, passed to actions/checkout (false | true | recursive)."
+        required: false
+        type: string
+        default: 'false'
+      fetch-depth:
+        description: "Fetch depth for actions/checkout. 0 = full history (required by GoReleaser to compute changelog)."
+        required: false
+        type: number
+        default: 0
+      runs-on:
+        description: "Runner label."
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      prebuild-script:
+        description: "Inline shell run after checkout, before goreleaser. Use for system deps or per-repo prep."
+        required: false
+        type: string
+        default: ''
+    secrets:
+      UCI_GITHUB_TOKEN:
+        description: "Optional override for the token used to create the GitHub Release. Defaults to github.token."
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    name: Publish
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: ${{ inputs.fetch-depth }}
+          ref: ${{ inputs.ref }}
+          submodules: ${{ inputs.submodules }}
+      - name: Checkout latest tag
+        if: inputs.checkout-latest-tag
+        run: |
+          git fetch origin --tags --force
+          LATEST_TAG=$(git tag --sort=-v:refname | head -n 1)
+          if [[ -z "${LATEST_TAG}" ]]; then
+            echo "::error::no tags present in repo"
+            exit 1
+          fi
+          echo "Checking out latest tag: ${LATEST_TAG}"
+          git checkout "${LATEST_TAG}"
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ inputs.go-version }}
+          # When neither version input is given, default to <working-directory>/go.mod
+          # so version auto-detection works for callers building in a subdirectory.
+          go-version-file: ${{ inputs.go-version-file != '' && inputs.go-version-file || (inputs.go-version == '' && format('{0}/go.mod', inputs.working-directory) || '') }}
+      - name: Run prebuild script
+        if: inputs.prebuild-script != ''
+        working-directory: ${{ inputs.working-directory }}
+        run: ${{ inputs.prebuild-script }}
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: ${{ inputs.goreleaser-version }}
+          args: ${{ inputs.args }}
+          workdir: ${{ inputs.working-directory }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.UCI_GITHUB_TOKEN || github.token }}

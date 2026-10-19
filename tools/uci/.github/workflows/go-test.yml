@@ -1,0 +1,52 @@
+name: Go
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        required: false
+        type: string
+        default: 'stable'
+      test:
+        required: false
+        type: boolean
+        default: true
+      race:
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    if: inputs.test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '${{ inputs.go-version }}'
+      - name: Run repo-specific setup
+        uses: ./.github/actions/go-test-setup
+        if: hashFiles('./.github/actions/go-test-setup') != ''
+      - name: Run tests
+        run: go test ./...
+
+  race:
+    name: Test (race)
+    runs-on: ubuntu-latest
+    if: inputs.race
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '${{ inputs.go-version }}'
+      - name: Run repo-specific setup
+        uses: ./.github/actions/go-test-setup
+        if: hashFiles('./.github/actions/go-test-setup') != ''
+      - name: Run tests
+        run: go test -race ./...

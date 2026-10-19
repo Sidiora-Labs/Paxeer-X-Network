@@ -1,0 +1,139 @@
+name: Release
+on:
+  workflow_call:
+    inputs:
+      branches:
+        required: false
+        type: string
+        default: ${{ format('["{0}"]', github.event.repository.default_branch) }}
+    outputs:
+      version:
+        description: "Version from version.json (e.g. v1.2.3). Empty if version.json is absent."
+        value: ${{ jobs.releaser.outputs.version }}
+      release_created:
+        description: "'true' if a new GitHub Release was created in this run, else 'false'."
+        value: ${{ jobs.releaser.outputs.release_created }}
+    secrets:
+      UCI_GITHUB_TOKEN:
+        required: false
+
+jobs:
+  releaser:
+    name: Publish
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_created: ${{ steps.release.outputs.id != '' && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: version
+        name: Determine version
+        run: jq -r .version version.json | xargs -I{} echo "version={}" | tee -a $GITHUB_OUTPUT
+      - id: latest
+        if: steps.version.outputs.version != ''
+        name: Determine latest version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git fetch origin --tags
+          echo -e "$VERSION\n$(git tag)" | sort -V | tail -n1 | xargs -I{} echo "latest={}" | tee -a $GITHUB_OUTPUT
+      - id: branch
+        name: Check if the branch is a release branch
+        if: steps.version.outputs.version != ''
+        env:
+          BRANCHES: ${{ inputs.branches }}
+          REF: ${{ github.ref }}
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const branches = JSON.parse(process.env.BRANCHES);
+            const ref = process.env.REF.replace(/^refs\/heads\//, '');
+            const release = branches.some(b => {
+              const regexPattern = b.replace(/\*/g, '.*');
+              const regex = new RegExp(`^${regexPattern}$`);
+              return regex.test(ref);
+            });
+            console.log(`This is a release branch: ${release}`);
+            core.setOutput('release', release);
+      - id: pr
+        if: steps.version.outputs.version != '' && steps.branch.outputs.release == 'false'
+        name: Check if this is a merge commit of a release PR
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          QUERY: repository:${{ github.repository }} is:pr is:merged ${{ github.sha }}
+          SHA: ${{ github.sha }}
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const [owner, repo] = process.env.REPOSITORY.split('/');
+            const items = await github.paginate(github.rest.search.issuesAndPullRequests, {
+              q: process.env.QUERY,
+            });
+            let pr;
+            for (const item of items) {
+              const candidate = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: item.number,
+              });
+              if (candidate.data.merge_commit_sha === process.env.SHA) {
+                pr = candidate;
+                break;
+              }
+            }
+            if (pr !== undefined) {
+              console.log(`Found PR: ${pr.data.html_url}`);
+              const labels = pr.data.labels.map(l => l.name);
+              const release = labels.includes('release');
+              console.log(`This is a release PR: ${release}`);
+              core.setOutput('release', release);
+            } else {
+              console.log('No PR found');
+              core.setOutput('release', false);
+            }
+      - id: tag
+        name: Check if tag already exists
+        if: steps.branch.outputs.release == 'true' || steps.pr.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git fetch origin --tags
+          status=0
+          git rev-list "$VERSION" &> /dev/null || status=$?
+          if [[ $status == 0 ]]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+      - id: release
+        name: Create release
+        if: steps.tag.outputs.exists == 'false'
+        uses: galargh/action-gh-release@571276229e7c9e6ea18f99bad24122a4c3ec813f # https://github.com/galargh/action-gh-release/pull/1
+        with:
+          draft: false
+          tag_name: ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          target_commitish: ${{ github.sha }}
+          make_latest: ${{ steps.version.outputs.version == steps.latest.outputs.latest }}
+          token: ${{ secrets.UCI_GITHUB_TOKEN || github.token }}
+      - name: Create release.json
+        if: steps.release.outputs.id != ''
+        env:
+          RELEASE: |
+            {
+              "draft": false,
+              "version": "${{ steps.version.outputs.version }}",
+              "url": "${{ steps.release.outputs.url }}",
+              "id": "${{ steps.release.outputs.id }}",
+              "upload_url": "${{ steps.release.outputs.upload_url }}",
+              "assets": ${{ steps.release.outputs.assets }},
+              "make_latest": ${{ steps.version.outputs.version == steps.latest.outputs.latest }}
+            }
+        run: jq . <<< "$RELEASE" > release.json
+      - name: Upload release.json
+        if: steps.release.outputs.id != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: release.json
