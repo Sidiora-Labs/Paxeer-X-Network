@@ -27773,7 +27773,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.2.15]
 title = "Spot user REST routes and leaderboards"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["7.1.1", "7.1.5", "7.1.10"]

@@ -555,6 +555,9 @@ func TestSpotUsersREST(t *testing.T) {
 			body.ERC20[i].BlockNumber = nil
 		}
 		spotEqual(t, "holdings", body, want)
+		if len(body.ERC20) != 1 || body.ERC20[0].Token != spotHexOf(tk.sid) || body.ERC20[0].Balance == "0" {
+			t.Fatalf("holdings erc20 = %+v, want one non-zero entry for SID %s", body.ERC20, spotHexOf(tk.sid))
+		}
 	})
 
 	t.Run("positions", func(t *testing.T) {
