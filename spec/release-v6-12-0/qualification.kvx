@@ -2004,3 +2004,11 @@ exit = 0
 log = "fleet/logs/release-6.2.10-2.log"
 observed = "do_1, do_2 and do_4 hold and the verify passes 5 of 5 after the test loads the perps config dynamically with the gateway variable set; do_3 stays open because contracts/address-table.md rows 44-45 record no hex addresses for the PAX and SID pointer ERC20s, so SPOT_TOKENS.PAX keeps the zero address and SPOT_TOKENS.SID the pre-upgrade address."
 assumption = "The two pointer addresses come out of the upgrade deployment; the table is filled then and do_3 is completed unchanged."
+
+[finding.3.2.14-adl-prefee-equity]
+revision = "ac8a31b4b"
+command = "go test ./precompiles/perps/ -run 'TestEvent'"
+exit = 0
+log = "fleet/logs/release-3.2.14-fix.log"
+observed = "Resolved: the maker or taker fee is booked inside ApplyFill before PositionModified is built, so the event carries post-fee collateral for every caller; the ADL rank score and the margin-ratio bucket still read pre-fee equity, as before the change."
+assumption = "Req 3008 ac_17 covers the event only; the ADL and margin inputs follow their own requirements and are unchanged."

@@ -416,27 +416,20 @@ func (k *Keeper) fillMaker(ctx sdk.Context, marketID uint64, maker, taker types.
 
 	makerApplied, err := k.ApplyFill(ctx, PositionFill{
 		Account: maker.Account, MarketID: marketID, IsLong: maker.IsLong, SizeBase: size, Price: price,
-		Leverage: maker.Leverage, Kind: FillKindTrade,
+		Leverage: maker.Leverage, Kind: FillKindTrade, Fee: FeeRoleMaker,
 	})
 	if err != nil {
 		return FillResult{}, nil, err
 	}
 	takerApplied, err := k.ApplyFill(ctx, PositionFill{
 		Account: taker.Account, MarketID: marketID, IsLong: taker.IsLong, SizeBase: size, Price: price,
-		Leverage: taker.Leverage, Kind: kind,
+		Leverage: taker.Leverage, Kind: kind, Fee: FeeRoleTaker,
 	})
 	if err != nil {
 		return FillResult{}, nil, err
 	}
 	makerPosition, takerPosition := makerApplied.PositionID, takerApplied.PositionID
-	makerFee, err := k.MakerFee(ctx, makerPosition, maker.Account, marketID, *notional)
-	if err != nil {
-		return FillResult{}, nil, err
-	}
-	takerFee, err := k.TakerFee(ctx, takerPosition, taker.Account, marketID, *notional)
-	if err != nil {
-		return FillResult{}, nil, err
-	}
+	makerFee, takerFee := makerApplied.Fee, takerApplied.Fee
 	makerFeeUsd := makerFee.FeeUsd.ToBig()
 	makerFeeTokens := makerFee.Tokens.ToBig()
 	if makerFee.FeeType == FeeTypeMakerRebate {

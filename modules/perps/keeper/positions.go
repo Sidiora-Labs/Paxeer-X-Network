@@ -33,6 +33,16 @@ const (
 	FillKindBackstop    FillKind = 3
 )
 
+// FeeRole is the trading fee ApplyFill books on the fill once it is netted:
+// none (an ADL step), the maker fee or rebate, or the taker fee.
+type FeeRole uint8
+
+const (
+	FeeRoleNone  FeeRole = 0
+	FeeRoleMaker FeeRole = 1
+	FeeRoleTaker FeeRole = 2
+)
+
 var (
 	positionWad      = big.NewInt(1_000_000_000_000_000_000)
 	positionUsdlUnit = big.NewInt(1_000_000_000_000)
@@ -41,7 +51,8 @@ var (
 
 // PositionFill is one side of a fill: the account buys (IsLong) or sells
 // SizeBase in base units at Price; Leverage is that of the order and becomes
-// the leverage of a position the fill opens or flips.
+// the leverage of a position the fill opens or flips; Fee is the trading fee
+// the fill books on its notional.
 type PositionFill struct {
 	Account  common.Address
 	MarketID uint64
@@ -50,6 +61,7 @@ type PositionFill struct {
 	Price    uint256.Int
 	Leverage uint256.Int
 	Kind     FillKind
+	Fee      FeeRole
 }
 
 // TradeSettlement is what one fill settled into one position: the fill
@@ -70,11 +82,13 @@ type TradeSettlement struct {
 // PositionFillResult is the outcome of ApplyFill: the account's position in
 // the market after the fill (the closed one when the fill closed it), the
 // funding and position events in emission order, and one settlement per
-// position the fill touched, the closed part of a flip first.
+// position the fill touched, the closed part of a flip first, and the
+// trading fee booked on the fill.
 type PositionFillResult struct {
 	PositionID uint256.Int
 	Events     []types.EventRecord
 	Trades     []TradeSettlement
+	Fee        FeeBooking
 }
 
 // TradeSettledEvents returns the TradeSettled records of the fill net of its
@@ -118,7 +132,9 @@ func (r PositionFillResult) TradeSettledEvents(feeUsd, feeTokens *big.Int) []typ
 // so the solvency identity of contracts/perps.md section 24 holds exactly;
 // the rounding a closed position leaves goes to residueUsd. Every position
 // write rewrites its AdlRankIndex entry and the account's MarginRatioIndex
-// entry. Fees are booked by the caller, which builds TradeSettled through
+// entry. The trading fee of fill.Fee is then booked to the position on the
+// fill notional, so PositionModified carries the post-fee collateral; the
+// caller emits the fee events and builds TradeSettled through
 // TradeSettledEvents. A refused fill writes nothing.
 func (k *Keeper) ApplyFill(ctx sdk.Context, fill PositionFill) (PositionFillResult, error) {
 	cacheCtx, write := ctx.CacheContext()
@@ -257,7 +273,17 @@ func (k *Keeper) applyFill(ctx sdk.Context, fill PositionFill) (PositionFillResu
 			[]byte{})
 		store.Set(types.PositionKey(position.ID), position.Marshal())
 	}
+	if result.Fee, err = k.positionFee(ctx, fill, result.PositionID, notional); err != nil {
+		return PositionFillResult{}, err
+	}
 	if modified {
+		if fill.Fee != FeeRoleNone {
+			postFee, err := k.Equity(ctx, fill.Account)
+			if err != nil {
+				return PositionFillResult{}, err
+			}
+			equity = postFee.BigInt()
+		}
 		event, err := k.positionModifiedEvent(ctx, fill.Account, position, equity)
 		if err != nil {
 			return PositionFillResult{}, err
@@ -265,6 +291,26 @@ func (k *Keeper) applyFill(ctx sdk.Context, fill PositionFill) (PositionFillResu
 		result.Events = append(result.Events, event)
 	}
 	return result, nil
+}
+
+// positionFee books the trading fee of the fill's role on its notional to
+// the position.
+func (k *Keeper) positionFee(ctx sdk.Context, fill PositionFill, positionID uint256.Int,
+	notional *big.Int) (FeeBooking, error) {
+	var notionalUsd uint256.Int
+	if overflow := notionalUsd.SetFromBig(notional); overflow {
+		return FeeBooking{}, fmt.Errorf("%w: notional of fill of %s", types.ErrOverflow, fill.Account)
+	}
+	switch fill.Fee {
+	case FeeRoleNone:
+		return FeeBooking{}, nil
+	case FeeRoleMaker:
+		return k.MakerFee(ctx, positionID, fill.Account, fill.MarketID, notionalUsd)
+	case FeeRoleTaker:
+		return k.TakerFee(ctx, positionID, fill.Account, fill.MarketID, notionalUsd)
+	default:
+		return FeeBooking{}, fmt.Errorf("%w: fee role %d", types.ErrInvalidParams, fill.Fee)
+	}
 }
 
 // positionKindTradeType is the tradeType a liquidation, ADL or backstop fill

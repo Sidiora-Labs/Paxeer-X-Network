@@ -256,6 +256,30 @@ func TestPositionsWeightedEntry(t *testing.T) {
 	require.True(t, env.store.Has(types.AdlRankIndexKey(0, types.SideBuy, rank, *uint256.NewInt(7))))
 }
 
+// TestPositionsModifiedAfterFee books the taker fee of the increase of
+// TestPositionsWeightedEntry, 494.76 USD at 450 ppm, inside ApplyFill:
+// PositionModified carries the collateral net of the 0.222642 USDL fee.
+func TestPositionsModifiedAfterFee(t *testing.T) {
+	env := newPositionsEnv(t, e18(62_000), uint256.Int{})
+	env.setAccount(positionHolder, 100_000_000, 1, 0)
+	env.setPosition(longBTC(7, base(1_650), 60_000, e18(5)))
+
+	result, err := env.k.ApplyFill(env.ctx, keeper.PositionFill{
+		Account: positionHolder, MarketID: 0, IsLong: true, SizeBase: base(798), Price: e18(62_000), Leverage: e18(10),
+		Fee: keeper.FeeRoleTaker,
+	})
+	require.NoError(t, err)
+	require.Equal(t, keeper.FeeTypeTrading, result.Fee.FeeType)
+	require.Equal(t, wordOf(t, "222642000000000000"), result.Fee.FeeUsd)
+	require.Equal(t, *uint256.NewInt(222_642), result.Fee.Tokens)
+	require.Equal(t, recordStrings([]types.EventRecord{
+		record(types.EventPositionEntryPriceChanged, num(7), usd(60_000), dec(t, "60651960784313725490196")),
+		record(types.EventPositionModified, num(7), dec(t, "1517760000000000000000"),
+			dec(t, "132777358000000000000"), num(132_777_358)),
+	}), recordStrings(result.Events))
+	require.Equal(t, *uint256.NewInt(132_777_358), env.account(t, positionHolder).Collateral)
+}
+
 func TestPositionsNettingFlip(t *testing.T) {
 	env := newPositionsEnv(t, e18(60_000), uint256.Int{})
 	env.setAccount(positionHolder, 100_000_000, 1, 0)
