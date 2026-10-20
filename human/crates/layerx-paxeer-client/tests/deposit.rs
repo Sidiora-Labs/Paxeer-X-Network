@@ -528,8 +528,8 @@ fn legacy_credit_receipt_remains_explicitly_protocol_v1() {
 fn signed_custody_root_mints_an_opaque_proof_but_credit_ingress_fails_closed() {
     let anvil = Anvil::launch();
     let (_token, vault) = deploy_custody(&anvil);
-    let reserve = AccountId::parse("system:paxeer-reserve")
-        .unwrap_or_else(|error| panic!("reserve: {error:?}"));
+    let reserve =
+        AccountId::parse("system:treasury").unwrap_or_else(|error| panic!("reserve: {error:?}"));
     let recipient = AccountId::parse("agent:did:layerx:deposit-recipient:main")
         .unwrap_or_else(|error| panic!("recipient: {error:?}"));
 
@@ -753,8 +753,7 @@ fn light_credit(
     proof: &layerx_paxeer_client::DepositProof,
 ) -> layerx_paxeer_client::NativeCustodyCredit {
     let owner = SigningKey::from_bytes(&[0x66; 32]);
-    let reserve =
-        AccountId::parse("system:paxeer-reserve").unwrap_or_else(|error| panic!("{error:?}"));
+    let reserve = AccountId::parse("system:treasury").unwrap_or_else(|error| panic!("{error:?}"));
     let bundle = &LIGHT_CREDIT[layerx_paxeer_client::NATIVE_CUSTODY_CREDIT_HEAD_BYTES..];
     let mut module = Sha256::new();
     module.update(b"LX:CUSTODY:MODULE:v1");
@@ -826,7 +825,7 @@ fn protocol_three_custody_proof_binds_native_beneficiary_and_selected_version() 
     let (_, vault) = deploy_custody(&anvil);
     let recipient = AccountId::parse("agent:did:layerx:deposit-recipient:main")
         .unwrap_or_else(|error| panic!("protocol-three custody: {error:?}"));
-    let reserve = AccountId::parse("system:paxeer-reserve")
+    let reserve = AccountId::parse("system:treasury")
         .unwrap_or_else(|error| panic!("protocol-three custody: {error:?}"));
     let beneficiary = layerx_paxeer_client::account_address_for_protocol(&recipient, 3)
         .unwrap_or_else(|error| panic!("protocol-three custody: {error:?}"));

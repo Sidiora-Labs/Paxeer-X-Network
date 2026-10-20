@@ -2332,3 +2332,11 @@ exit = 1
 log = fleet/logs/issue-665-1.log
 observed = The offline check resolves every dependency from the bootstrapped cache and then fails to compile layerx-paxeer-client, which still names the retired paxeer-reserve account namespace.
 assumption = The human crates are bound to the treasury namespace in a separate fix; the bootstrap recipes in this commit are complete.
+
+[finding.human-service-api2-write]
+revision = db26759c41eefcd9629cb827ae64f69e5513cba3
+command = cargo build --locked --manifest-path human/Cargo.toml
+exit = 101
+log = fleet/logs/human-reserve-build-1.log
+observed = With the custody-credit reserve bound to the treasury namespace, layerx-paxeer-client and the platform workspace compile again, but layerx-human-service still names SubmissionState::Acknowledged and TrackedSubmission.verification_level, which the API 2 write alignment removed from layerx-agent-api.
+assumption = The human service is aligned to the current write states in a follow-up fix; the hosted core keeps the kernel's reserve id until the kernel adopts the treasury namespace.

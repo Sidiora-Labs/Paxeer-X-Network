@@ -79,7 +79,7 @@ fn resolver_selects_every_normative_mechanism_and_vocabulary_term() {
         Relationship::Custody(CustodyRoute::Deposit {
             deposit_proof: DepositProofId::new([1; 32]),
             checkpoint: CheckpointId::new([2; 32]),
-            reserve: account("system:paxeer-reserve"),
+            reserve: account("system:treasury"),
             idempotency_key: key(3),
         }),
         50,
@@ -211,7 +211,7 @@ fn custody_words_cannot_escape_the_wallet_boundary() {
         Relationship::Custody(CustodyRoute::Deposit {
             deposit_proof: DepositProofId::new([1; 32]),
             checkpoint: CheckpointId::new([2; 32]),
-            reserve: account("system:paxeer-reserve"),
+            reserve: account("system:treasury"),
             idempotency_key: key(3),
         }),
         1,
@@ -275,7 +275,7 @@ fn relationship(selector: u8, sequence: u64, byte: u8) -> Relationship {
         4 => Relationship::Custody(CustodyRoute::Deposit {
             deposit_proof: DepositProofId::new([nonzero; 32]),
             checkpoint: CheckpointId::new([nonzero; 32]),
-            reserve: account("system:paxeer-reserve"),
+            reserve: account("system:treasury"),
             idempotency_key: key(nonzero),
         }),
         _ => Relationship::Custody(CustodyRoute::Withdrawal {

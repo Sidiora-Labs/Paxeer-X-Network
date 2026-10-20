@@ -772,7 +772,7 @@ impl RouteResolver {
                     reserve,
                     idempotency_key,
                 }),
-            ) if reserve.namespace() == AccountNamespace::SystemPaxeerReserve => Ok(one_leg(
+            ) if reserve.namespace() == AccountNamespace::SystemTreasury => Ok(one_leg(
                 MovementTerm::Deposit,
                 Mechanism::BridgeDepositCredit,
                 BridgeDepositCredit::new(

@@ -150,7 +150,7 @@ impl PlanningRequest {
             || context.evm_max_fee_per_gas == 0
             || context.evm_max_priority_fee_per_gas > context.evm_max_fee_per_gas
             || context.reserve.namespace()
-                != layerx_types::account::AccountNamespace::SystemPaxeerReserve
+                != layerx_types::account::AccountNamespace::SystemTreasury
             || context.withdrawals_account.namespace()
                 != layerx_types::account::AccountNamespace::SystemPaxeerWithdrawals
             || context

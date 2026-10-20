@@ -9,8 +9,8 @@ fn protocol_three_matches_native_ledger_account_vectors() {
             "efc9802f76722dfc48ebfed35bfd8b20dbc2775fe2f027d6cbd595aff1307454",
         ),
         (
-            "system:paxeer-reserve",
-            "6e0e5cca5cfaa1b20ddd1c6174321eeaf00dd74bce2adcd78b61e15aa9e26f7c",
+            "system:treasury",
+            "6bf40bc6e0f5ac9535582c71001d6460e2bae3da2aa5f2c92cdeaf23f3579cdb",
         ),
         (
             "system:paxeer-withdrawals",

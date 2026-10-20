@@ -487,7 +487,7 @@ fn bootstrap_intent(
         }
         let credit = layerx_intents::NativeCustodyCredit::new(
             raw,
-            AccountId::parse("system:paxeer-reserve").map_err(refused)?,
+            AccountId::parse("system:treasury").map_err(refused)?,
             AccountId::parse(&format!("agent:{}:main", owner.did)).map_err(refused)?,
         )
         .map_err(refused)?;

@@ -1024,7 +1024,7 @@ impl Fixture {
         drop(store);
         let recipient = AccountId::parse("agent:did:layerx:deposit-recipient:main")
             .unwrap_or_else(|error| panic!("recipient: {error:?}"));
-        let reserve = AccountId::parse("system:paxeer-reserve")
+        let reserve = AccountId::parse("system:treasury")
             .unwrap_or_else(|error| panic!("reserve: {error:?}"));
         let plan = DepositPlan {
             journey_id: JourneyId::new("jrn_depositcrash")

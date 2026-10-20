@@ -3578,7 +3578,7 @@ fn resolve_movement_context(
     let mut context = super::movement_provider::PlanningContext {
         request_anchor: balance.observed_checkpoint,
         account,
-        reserve: AccountId::parse("system:paxeer-reserve")
+        reserve: AccountId::parse("system:treasury")
             .map_err(|_| ApiFailure::upstream_degraded())?,
         withdrawals_account: AccountId::parse("system:paxeer-withdrawals")
             .map_err(|_| ApiFailure::upstream_degraded())?,
@@ -4884,8 +4884,7 @@ impl ProductionComponents {
             crate::journeys::ObservedStateBuilder::new(
                 layerx_types::intent::TimestampSeconds::from_u64(observed_at),
                 account.clone(),
-                AccountId::parse("system:paxeer-reserve")
-                    .map_err(|_| ApiFailure::upstream_degraded())?,
+                AccountId::parse("system:treasury").map_err(|_| ApiFailure::upstream_degraded())?,
                 AccountId::parse("system:paxeer-withdrawals")
                     .map_err(|_| ApiFailure::upstream_degraded())?,
             )

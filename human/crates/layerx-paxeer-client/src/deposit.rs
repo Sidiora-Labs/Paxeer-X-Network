@@ -1699,14 +1699,14 @@ impl DepositProof {
     ///
     /// # Errors
     ///
-    /// Refuses a reserve outside `system:paxeer-reserve`, a different custody
+    /// Refuses a reserve outside `system:treasury`, a different custody
     /// beneficiary, or a missing or mismatched authenticated native attestation.
     pub fn credit_intent(
         &self,
         reserve: &AccountId,
         recipient: &AccountId,
     ) -> Result<Intent, DepositFailure> {
-        if reserve.namespace() != AccountNamespace::SystemPaxeerReserve {
+        if reserve.namespace() != AccountNamespace::SystemTreasury {
             return Err(DepositFailure::CreditRefused(CreditFault::ReserveNamespace));
         }
         let recipient_address = account_address_for_protocol(recipient, self.protocol_version)

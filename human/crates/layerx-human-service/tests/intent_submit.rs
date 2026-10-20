@@ -201,7 +201,7 @@ fn observed_with(
         ));
         CustodyContext::new(
             wallet,
-            account("system:paxeer-reserve"),
+            account("system:treasury"),
             account("system:paxeer-withdrawals"),
         )
         .unwrap_or_else(|error| panic!("custody context: {error:?}"))
@@ -996,7 +996,7 @@ fn deposit_for(plan: &UnifiedPlan, request: &SubmitPlanRequest, wallet: EvmAddre
         asset: plan.legs()[1].asset(),
         amount: plan.legs()[1].amount(),
         recipient: account(HOME),
-        reserve: account("system:paxeer-reserve"),
+        reserve: account("system:treasury"),
         currency: "LXP".to_owned(),
         agent: DepositAgentPlan {
             actor: actor(),

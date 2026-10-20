@@ -2385,7 +2385,7 @@ mod tests {
             asset: [6; 32],
             amount: 25,
             recipient: "agent:did:layerx:deposit-recipient:main".to_owned(),
-            reserve: "system:paxeer-reserve".to_owned(),
+            reserve: "system:treasury".to_owned(),
             currency: "LXP".to_owned(),
             actor: "did:layerx:deposit-recipient".to_owned(),
             authority: "owner:deposit-owner".to_owned(),

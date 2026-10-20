@@ -8450,3 +8450,13 @@ detail = "InitGenesis writes gs.FeeHeld into the fee held ledger and validation 
 area = "launchpad/core/trading-charts"
 summary = "A hanging httptest server must also stop on test end"
 detail = "A test server whose handler waits only for the request context leaves one connection open after the geth RPC client's context ends, so Close blocks until the package's test timeout; make the handler also select on a channel the test closes at cleanup."
+
+[gotcha.1776]
+area = "services/agent/crates/layerx-mcp"
+summary = "layerx-mcp source and tests are not rustfmt-clean"
+detail = "Running rustfmt over layerx-mcp files reformats unrelated lines; format only the hunks you touch or leave formatting as found so the diff stays task-scoped."
+
+[gotcha.1777]
+area = "services/interop"
+summary = "Some interop tests still produce layerx:beta networks"
+detail = "The x402 buyer and seller accept only eip155:<chain id> networks, but layerx-x402 tests e2e, buyer and transports, layerx-interop-service server.rs and the gateway render.py assertion still spell layerx:beta; align them when touching those files."

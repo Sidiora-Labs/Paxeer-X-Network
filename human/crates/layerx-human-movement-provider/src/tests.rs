@@ -184,7 +184,7 @@ fn untrusted_context() -> Result<PlanningContext> {
     Ok(PlanningContext {
         request_anchor: [18; 32],
         account: checked(AccountId::parse("agent:did:layerx:alice:main"))?,
-        reserve: checked(AccountId::parse("system:paxeer-reserve"))?,
+        reserve: checked(AccountId::parse("system:treasury"))?,
         withdrawals_account: checked(AccountId::parse("system:paxeer-withdrawals"))?,
         route: None,
         amount: Amount::from_u128(10),

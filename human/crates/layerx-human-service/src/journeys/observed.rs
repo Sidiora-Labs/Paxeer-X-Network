@@ -462,7 +462,7 @@ mod tests {
         ObservedStateBuilder::new(
             TimestampSeconds::from_u64(1_000),
             account(OWNER),
-            account("system:paxeer-reserve"),
+            account("system:treasury"),
             account("system:paxeer-withdrawals"),
         )
     }

@@ -575,7 +575,7 @@ impl CustodyContext {
         reserve: AccountId,
         withdrawals: AccountId,
     ) -> Result<Self, Refusal> {
-        if reserve.namespace() != AccountNamespace::SystemPaxeerReserve
+        if reserve.namespace() != AccountNamespace::SystemTreasury
             || withdrawals.namespace() != AccountNamespace::SystemPaxeerWithdrawals
         {
             return Err(Refusal::WalletNotBound);
@@ -2294,7 +2294,7 @@ mod tests {
     fn custody() -> CustodyContext {
         CustodyContext::new(
             EvmAddress::new([7; 20]),
-            account("system:paxeer-reserve"),
+            account("system:treasury"),
             account("system:paxeer-withdrawals"),
         )
         .unwrap_or_else(|error| panic!("custody: {error}"))
