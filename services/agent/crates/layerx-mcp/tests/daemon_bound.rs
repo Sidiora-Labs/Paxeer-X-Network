@@ -306,8 +306,10 @@ fn exchange(session: &mut Session<DaemonBoundary>, requests: &[Value]) -> Vec<Va
 #[test]
 fn the_served_catalogue_is_the_daemon_catalogue_and_every_tool_is_fully_described() {
     let full = catalogue::surface(DeploymentMode::Full);
-    assert_eq!(full.len(), 21);
-    assert_eq!(full.as_slice(), served());
+    assert_eq!(served().len(), 22);
+    assert_eq!(full.len(), 33);
+    assert_eq!(&full[..served().len()], served());
+    assert_eq!(&full[served().len()..], catalogue::SESSION_TOOLS.as_slice());
     let read_only = catalogue::surface(DeploymentMode::ReadOnly);
     assert!(!read_only.is_empty());
     assert!(read_only.iter().all(|tool| tool.kind == ToolKind::Read));
@@ -315,6 +317,7 @@ fn the_served_catalogue_is_the_daemon_catalogue_and_every_tool_is_fully_describe
         read_only.len(),
         served()
             .iter()
+            .chain(catalogue::SESSION_TOOLS.iter())
             .filter(|tool| tool.kind == ToolKind::Read)
             .count()
     );
@@ -328,12 +331,20 @@ fn the_served_catalogue_is_the_daemon_catalogue_and_every_tool_is_fully_describe
         assert!(catalogue::description(tool.name).is_some());
         let schema = catalogue::input_schema(tool.name)
             .unwrap_or_else(|| panic!("tool {} has no schema", tool.name));
-        assert_eq!(
-            schema
-                .pointer("/additionalProperties")
-                .and_then(Value::as_bool),
-            Some(false)
-        );
+        let branches = schema
+            .pointer("/oneOf")
+            .and_then(Value::as_array)
+            .map_or_else(|| vec![&schema], |branches| branches.iter().collect());
+        for branch in branches {
+            assert_eq!(
+                branch
+                    .pointer("/additionalProperties")
+                    .and_then(Value::as_bool),
+                Some(false),
+                "tool {} has an open input schema",
+                tool.name
+            );
+        }
         assert_eq!(
             listing
                 .pointer("/annotations/readOnlyHint")
@@ -494,12 +505,12 @@ fn assert_daemon_handshake(initialize: &Value, listed: &Value) {
         .pointer("/result/_meta/layerx~1write_tools")
         .and_then(Value::as_u64)
         .unwrap_or_default();
-    assert_eq!(reads.saturating_add(writes), 21);
+    assert_eq!(reads.saturating_add(writes), 22);
     let tools = listed
         .pointer("/result/tools")
         .and_then(Value::as_array)
         .unwrap_or_else(|| panic!("tools absent"));
-    assert_eq!(tools.len(), 21);
+    assert_eq!(tools.len(), 22);
 }
 
 fn assert_daemon_read(read: &Value, program: &str) {
@@ -772,7 +783,7 @@ fn the_protocol_socket_refuses_every_unprotected_endpoint_and_serves_an_admitted
             .pointer("/result/tools")
             .and_then(Value::as_array)
             .map(Vec::len),
-        Some(21)
+        Some(22)
     );
     let _ = fs::remove_dir_all(root);
 }
@@ -1045,7 +1056,7 @@ fn the_web_section_is_closed_and_typed() {
         (
             "unexpected",
             json!("1"),
-            "web field unexpected is not accepted",
+            "web has an unaccepted field",
         ),
         ("approval_threshold", json!(10), "field approval_threshold"),
         (

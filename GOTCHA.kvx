@@ -8460,3 +8460,13 @@ detail = "Running rustfmt over layerx-mcp files reformats unrelated lines; forma
 area = "services/interop"
 summary = "Some interop tests still produce layerx:beta networks"
 detail = "The x402 buyer and seller accept only eip155:<chain id> networks, but layerx-x402 tests e2e, buyer and transports, layerx-interop-service server.rs and the gateway render.py assertion still spell layerx:beta; align them when touching those files."
+
+[gotcha.1778]
+area = "services/interop/crates/layerx-x402"
+summary = "layerx_facts and is_layerx_network refuse every eip155 offer"
+detail = "PaymentRequirements::layerx_facts() and is_layerx_network() in model.rs still key on the layerx network namespace, so a caller that reads asset or payee through them fails silently on the eip155 offers the seller now writes; parse the fields directly after layerx_terms() has checked them."
+
+[gotcha.1779]
+area = "services/interop/crates/x-websearch"
+summary = "DeliveryRecord::validate still expects the retired settlement form"
+detail = "payment.rs validate checks for lxp:<digest> and sequencer-signed while the seller writes verificationLevel receipted with a 0x transaction; the do_19 step of the x-websearch task in spec/layerx-merge is still open, so a sidecar delivery recorded from a live seller fails validation."
