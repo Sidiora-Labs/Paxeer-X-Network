@@ -8635,3 +8635,18 @@ detail = "A test that executes a subcommand directly needs SilenceUsage and Sile
 area = "modules/tests"
 summary = "applying v6.12.0 on a fresh test app outside package node panics in the launchpad step"
 detail = "Only package node can bind the nil launchpad hooks, so tests elsewhere record the done height through the upgrade keeper's SetDone instead of running the migration."
+
+[gotcha.1813]
+area = "go/tests"
+summary = "a panic in one Go test hides every test after it in the package"
+detail = "A failure list taken from a panicking package is incomplete; fix the panic first, then rerun to see the rest."
+
+[gotcha.1814]
+area = "rpc/tests"
+summary = "rpc/tests cosmos transactions carry hard-coded account numbers that shift when module accounts are added"
+detail = "A wrong account number fails signature verification silently and shows up later as a missing synthetic receipt or a nil result; measure the number from the harness instead of guessing."
+
+[gotcha.1815]
+area = "rpc/tests"
+summary = "the debug-trace mock in rpc/setup_test.go overwrites tx1's receipt with a gas-price-0 stub"
+detail = "tx1 therefore never has a standard receipt and is filtered as an ante failure; other tests depend on the stub, so committed-receipt checks use the multi-tx block instead."

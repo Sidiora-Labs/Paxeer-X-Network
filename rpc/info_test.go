@@ -79,8 +79,8 @@ func TestGasPrice(t *testing.T) {
 	require.Nil(t, resObj["error"], "gas price RPC refused: %v", resObj["error"])
 	Ctx = Ctx.WithBlockHeight(8)
 	result := resObj["result"].(string)
-	onePointOneGwei := "0x4190ab00"
-	require.Equal(t, onePointOneGwei, result)
+	onePointOneMinFee := "0x46492a0"
+	require.Equal(t, onePointOneMinFee, result)
 }
 
 func TestFeeHistory(t *testing.T) {
@@ -417,8 +417,8 @@ func TestFeeHistoryBaseFeePerGasIncludesChild(t *testing.T) {
 	require.Equal(t, 0.0, gasUsedRatios[0])
 	baseFees, ok := result["baseFeePerGas"].([]interface{})
 	require.True(t, ok, "baseFeePerGas should be present when EVM history is available")
-	require.Equal(t, "0x3b9aca00", baseFees[0])
-	require.Equal(t, "0x3b9aca00", baseFees[1])
+	require.Equal(t, "0x3fe56c0", baseFees[0])
+	require.Equal(t, "0x3fe56c0", baseFees[1])
 	require.Equal(t, len(gasUsedRatios)+1, len(baseFees))
 }
 

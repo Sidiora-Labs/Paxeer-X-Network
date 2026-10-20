@@ -55,7 +55,7 @@ func TestGetBalance(t *testing.T) {
 			name:       "pending block",
 			addr:       "0x1234567890123456789023456789012345678901",
 			blockNr:    "pending",
-			wantErr:    false,
+			wantErr:    true,
 			wantAmount: "0x38d7ea4c68000",
 		},
 		{
@@ -80,8 +80,11 @@ func TestGetBalance(t *testing.T) {
 			resObj := map[string]interface{}{}
 			require.Nil(t, json.Unmarshal(resBody, &resObj))
 			if tt.wantErr {
-				_, ok := resObj["error"]
+				errObj, ok := resObj["error"].(map[string]interface{})
 				require.True(t, ok)
+				require.Equal(t, float64(-32000), errObj["code"])
+				require.Equal(t, "pending served by sequencer", errObj["message"])
+				require.NotContains(t, resObj, "result")
 			} else {
 				_, ok := resObj["error"]
 				require.False(t, ok)
@@ -118,7 +121,7 @@ func TestGetCode(t *testing.T) {
 		{
 			name:    "pending block",
 			blockNr: "pending",
-			wantErr: false,
+			wantErr: true,
 		},
 	}
 
@@ -135,8 +138,11 @@ func TestGetCode(t *testing.T) {
 			resObj := map[string]interface{}{}
 			require.Nil(t, json.Unmarshal(resBody, &resObj))
 			if tt.wantErr {
-				_, ok := resObj["error"]
+				errObj, ok := resObj["error"].(map[string]interface{})
 				require.True(t, ok)
+				require.Equal(t, float64(-32000), errObj["code"])
+				require.Equal(t, "pending served by sequencer", errObj["message"])
+				require.NotContains(t, resObj, "result")
 			} else {
 				_, ok := resObj["error"]
 				require.False(t, ok)
@@ -175,7 +181,7 @@ func TestGetStorageAt(t *testing.T) {
 		{
 			name:    "pending block",
 			blockNr: "pending",
-			wantErr: false,
+			wantErr: true,
 		},
 	}
 
@@ -193,8 +199,11 @@ func TestGetStorageAt(t *testing.T) {
 			resObj := map[string]interface{}{}
 			require.Nil(t, json.Unmarshal(resBody, &resObj))
 			if tt.wantErr {
-				_, ok := resObj["error"]
+				errObj, ok := resObj["error"].(map[string]interface{})
 				require.True(t, ok)
+				require.Equal(t, float64(-32000), errObj["code"])
+				require.Equal(t, "pending served by sequencer", errObj["message"])
+				require.NotContains(t, resObj, "result")
 			} else {
 				_, ok := resObj["error"]
 				require.False(t, ok)

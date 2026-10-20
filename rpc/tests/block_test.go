@@ -28,7 +28,7 @@ func TestGetBlockByHash(t *testing.T) {
 func TestGetPaxBlockByHash(t *testing.T) {
 	cw20 := "pax18cszlvm6pze0x9sz32qnjq4vtd45xehqs8dq7cwy8yhq35wfnn3qcm2ty5" // hardcoded
 	tx1 := signAndEncodeTx(registerCW20Pointer(0, cw20), mnemonic1)
-	tx2 := signAndEncodeCosmosTx(transferCW20Msg(mnemonic1, cw20), mnemonic1, 7, 0)
+	tx2 := signAndEncodeCosmosTx(transferCW20Msg(mnemonic1, cw20), mnemonic1, 19, 0)
 	SetupTestServer(t, [][][]byte{{tx1}, {tx2}}, mnemonicInitializer(mnemonic1), cw20Initializer(mnemonic1, true)).Run(
 		func(port int) {
 			res := sendRequestWithNamespace("pax", port, "getBlockByHash", common.HexToHash("0x9dd3e6c427b6936f973b240cd5780b8ee4bf8fab0c8d281afb28089db51bb4af").Hex(), true)

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
 	types2 "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/mock"
@@ -526,7 +527,12 @@ func (c *MockClient) Events(_ context.Context, req *coretypes.RequestEvents) (*c
 }
 
 func (c *MockClient) Validators(ctx context.Context, height *int64, page, perPage *int) (*coretypes.ResultValidators, error) {
-	return &coretypes.ResultValidators{}, nil
+	validator := tmtypes.NewValidator(ed25519.TestSecretKey([]byte("rpc-test-validator")).Public(), 1)
+	res := &coretypes.ResultValidators{Validators: []*tmtypes.Validator{validator}, Count: 1, Total: 1}
+	if height != nil {
+		res.BlockHeight = *height
+	}
+	return res, nil
 }
 
 func buildSingleResultEvent(data interface{}, more bool, cursor string, event string) *coretypes.ResultEvents {

@@ -104,6 +104,7 @@ func buildSyntheticReceiptFixture(t *testing.T, txs []sdk.Tx, kinds ...keeper.Sy
 			LogsBloom:         bloom[:],
 		}))
 	}
+	require.NoError(t, application.HandlePreCommit(ctx))
 	for _, kind := range kinds {
 		require.Eventually(t, func() bool {
 			_, err := k.GetReceipt(ctx, keeper.SyntheticReceiptHash(kind, parityTestHeight))

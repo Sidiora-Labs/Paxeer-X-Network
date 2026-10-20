@@ -444,13 +444,13 @@ func TestStandardReceiptStaysCommittedOnly(t *testing.T) {
 	require.Nil(t, sendRequestGood(t, "getTransactionReceipt", hash.Hex())["result"],
 		"the sequencer rung never feeds eth_getTransactionReceipt; only the committed EVM receipt does")
 
-	committed := sendRequestGood(t, "getTransactionReceipt", tx1.Hash().Hex())
+	committed := sendRequestGood(t, "getTransactionReceipt", multiTxBlockTx1.Hash().Hex())
 	require.Nil(t, committed["error"])
 	receipt, ok := committed["result"].(map[string]any)
 	require.True(t, ok, "a committed transaction keeps its standard receipt")
-	require.Equal(t, TestBlockHash, receipt["blockHash"])
-	require.Equal(t, "0x8", receipt["blockNumber"])
-	require.Equal(t, tx1.Hash().Hex(), receipt["transactionHash"])
+	require.Equal(t, MultiTxBlockHash, receipt["blockHash"])
+	require.Equal(t, "0x2", receipt["blockNumber"])
+	require.Equal(t, multiTxBlockTx1.Hash().Hex(), receipt["transactionHash"])
 }
 
 func TestSequencerReceiptJSONMatchesBytes(t *testing.T) {
