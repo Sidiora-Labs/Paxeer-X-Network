@@ -215,7 +215,7 @@ services:
     image: ${METADATA_IMAGE:?immutable service image required}
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.svc
+      dockerfile: deploy/Dockerfile.native
       args: { SERVICE: media/metadata, BIN: metadatad }
     env_file: ["${METADATA_ENV_FILE:?reviewed service environment required}"]
     environment:
