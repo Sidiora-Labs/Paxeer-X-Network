@@ -1013,44 +1013,7 @@ func (a *ReadAdapter) Snapshot(ctx context.Context, pin BlockPin, pool common.Ad
 		if err := a.attest(ctx, pin); err != nil {
 			return nil, err
 		}
-		registryABI, err := bindings.PoolRegistryMetaData.GetAbi()
-		if err != nil {
-			return nil, err
-		}
-		payload, err := registryABI.Pack("isRegisteredPool", pool)
-		if err != nil {
-			return nil, err
-		}
-		registry := common.HexToAddress(a.manifest.Roles["PoolRegistry"].Address)
-		membership, err := a.client.ReadPinned(ctx, pin, []ethereum.CallMsg{{To: &registry, Data: payload}})
-		if err != nil {
-			return nil, err
-		}
-		decoded, err := registryABI.Unpack("isRegisteredPool", membership[0])
-		if err != nil || len(decoded) != 1 || decoded[0] != true {
-			return nil, errors.New("pool not registered at selected block")
-		}
-		_, err = readVerified(a.client, ctx, "pool_code_identity", func(ctx context.Context, e *ethclient.Client) (bool, error) {
-			err := a.client.atPinned(ctx, e, pin, func(height *big.Int, _ *types.Header) error {
-				code, err := e.CodeAt(ctx, pool, height)
-				if err != nil {
-					return err
-				}
-				if len(code) == 0 || crypto.Keccak256Hash(code) != a.poolProxyRuntimeHash {
-					return errors.New("pool proxy runtime identity mismatch")
-				}
-				slot, err := e.StorageAt(ctx, pool, deployment.BeaconSlot, height)
-				if err != nil {
-					return err
-				}
-				if len(slot) != 32 || new(big.Int).SetBytes(slot[:12]).Sign() != 0 || common.BytesToAddress(slot[12:]) != common.HexToAddress(a.manifest.Roles["PoolBeacon"].Address) {
-					return errors.New("pool beacon identity mismatch")
-				}
-				return nil
-			})
-			return err == nil, err
-		})
-		if err != nil {
+		if err := a.identifyPool(ctx, pin, pool); err != nil {
 			return nil, err
 		}
 		methods := []string{"virtualUsdlReserve()", "realUsdlBalance()", "tokenReserve()", "currentFeeBps()"}
@@ -1080,6 +1043,61 @@ func (a *ReadAdapter) Snapshot(ctx context.Context, pin BlockPin, pool common.Ad
 		return PoolSnapshot{}, errors.New("invalid pool fee")
 	}
 	return PoolSnapshot{ChainID: "125", PoolAddress: pool, BlockNumber: new(big.Int).SetUint64(pin.Number).String(), BlockHash: pin.Hash, DeploymentVersion: pin.DeploymentVersion, ManifestHash: a.binding.ManifestHash, InterfaceHash: a.binding.InterfaceHash, CapabilityHash: a.binding.CapabilityHash, ConfigurationRevision: a.configurationRevision, ObservedAt: pin.ObservedAt, VirtualUSDLReserve: raw[0], RealUSDLBalance: raw[1], TokenReserve: raw[2], FeeBps: uint16(new(big.Int).SetBytes(values[3]).Uint64())}, nil
+}
+
+// surfaceRuntimeHash is keccak256 of the launchpad precompile SurfaceRuntime,
+// the runtime written at every surface pool address.
+var surfaceRuntimeHash = common.HexToHash("0x6302ff80f4168c2af23afbf3117c613edd66d288d120eee825f9ecadd43a392f")
+
+// identifyPool requires PoolRegistry membership at pin, then the pool code: a
+// surface runtime is identified by its code hash alone; a pool proxy runtime
+// must also hold the PoolBeacon in its beacon slot.
+func (a *ReadAdapter) identifyPool(ctx context.Context, pin BlockPin, pool common.Address) error {
+	registryABI, err := bindings.PoolRegistryMetaData.GetAbi()
+	if err != nil {
+		return err
+	}
+	payload, err := registryABI.Pack("isRegisteredPool", pool)
+	if err != nil {
+		return err
+	}
+	registry := common.HexToAddress(a.manifest.Roles["PoolRegistry"].Address)
+	membership, err := a.client.ReadPinned(ctx, pin, []ethereum.CallMsg{{To: &registry, Data: payload}})
+	if err != nil {
+		return err
+	}
+	decoded, err := registryABI.Unpack("isRegisteredPool", membership[0])
+	if err != nil || len(decoded) != 1 || decoded[0] != true {
+		return errors.New("pool not registered at selected block")
+	}
+	_, err = readVerified(a.client, ctx, "pool_code_identity", func(ctx context.Context, e *ethclient.Client) (bool, error) {
+		err := a.client.atPinned(ctx, e, pin, func(height *big.Int, _ *types.Header) error {
+			code, err := e.CodeAt(ctx, pool, height)
+			if err != nil {
+				return err
+			}
+			if len(code) == 0 {
+				return errors.New("pool proxy runtime identity mismatch")
+			}
+			switch crypto.Keccak256Hash(code) {
+			case surfaceRuntimeHash:
+				return nil
+			case a.poolProxyRuntimeHash:
+			default:
+				return errors.New("pool proxy runtime identity mismatch")
+			}
+			slot, err := e.StorageAt(ctx, pool, deployment.BeaconSlot, height)
+			if err != nil {
+				return err
+			}
+			if len(slot) != 32 || new(big.Int).SetBytes(slot[:12]).Sign() != 0 || common.BytesToAddress(slot[12:]) != common.HexToAddress(a.manifest.Roles["PoolBeacon"].Address) {
+				return errors.New("pool beacon identity mismatch")
+			}
+			return nil
+		})
+		return err == nil, err
+	})
+	return err
 }
 
 var ErrReceiptPosition = errors.New("RECEIPT_POSITION_UNREPRESENTABLE: frozen receipt requires event logIndex for a log-free transaction")
