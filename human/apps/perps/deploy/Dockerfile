@@ -61,7 +61,7 @@ ENV NODE_ENV=production
 # build time. They must be provided here, not at `docker run` time.
 # We accept them as build args (or fall back to safe defaults) and
 # re-export them so `next build` can see them.
-ARG NEXT_PUBLIC_PAXEER_RPC_URL=https://public-mainnet.rpcpaxeer.online/evm
+ARG NEXT_PUBLIC_PAXEER_RPC_URL=
 ARG NEXT_PUBLIC_PAXEER_RPC_URLS=
 ARG NEXT_PUBLIC_NETWORK_STATUS_WS_URL=
 ARG NEXT_PUBLIC_LOG_LEVEL=warn
