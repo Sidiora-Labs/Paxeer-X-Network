@@ -69,18 +69,25 @@ export LC_ALL=C TZ=UTC
 rm -rf -- "$out"
 mkdir -p "$out"
 
+link_dir=/tmp/paxeer-release-build
+mkdir -p "$link_dir"
+exec 9>"$link_dir/lock"
+flock 9
+src=$link_dir/src
+ln -sfn "$root" "$src"
+
 version_pkg=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version
-ldflags="-buildid= -checklinkname=0 \
+ldflags="-buildid= -checklinkname=0 -extld=$root/tools/release/extld.sh \
 -X $version_pkg.Name=paxeer \
 -X $version_pkg.AppName=paxd \
 -X $version_pkg.Version=$version \
 -X $version_pkg.Commit=$commit \
 -X $version_pkg.BuildTags=netgo,ledger"
 
-export RUSTFLAGS="--remap-path-prefix=$root=. --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
+export RUSTFLAGS="--remap-path-prefix=$root=. --remap-path-prefix=$src=. --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
 native_libs=(build/liblayerx.a programs/target/release/liblayerx_programs_sandbox.a)
 echo "build-paxd: native libraries ${native_libs[*]}"
-make --no-print-directory EXTRA_CFLAGS="-ffile-prefix-map=$root=." paxd-native-libs
+make --no-print-directory PROGRAMS_DIR="$src/programs" EXTRA_CFLAGS="-ffile-prefix-map=$root=." paxd-native-libs
 sha256sum "${native_libs[@]}" > "$out/native-libs.sha256"
 
 paxd="paxd-$version-$goos-$goarch"
@@ -102,14 +109,14 @@ if [ "$goos/$goarch" = linux/amd64 ]; then
   done
 fi
 
-cargo build --locked --release --manifest-path services/platform/Cargo.toml -p layerx-oracle-feeder --bin price-sidecar
-platform_target=$(cargo metadata --locked --format-version 1 --no-deps --manifest-path services/platform/Cargo.toml | jq -er '.target_directory')
+cargo build --locked --release --manifest-path "$src/services/platform/Cargo.toml" -p layerx-oracle-feeder --bin price-sidecar
+platform_target=$(cargo metadata --locked --format-version 1 --no-deps --manifest-path "$src/services/platform/Cargo.toml" | jq -er '.target_directory')
 cp "$platform_target/release/price-sidecar" "$out/price-sidecar-$version-$goos-$goarch"
 
 if [ "${PAXD_RELEASE_LAYERXD:-0}" = 1 ]; then
   build_dir=$(mktemp -d)
   trap 'rm -rf -- "$build_dir"' EXIT
-  make --no-print-directory BUILD_DIR="$build_dir" LXP_REVISION="$commit" \
+  make --no-print-directory PROGRAMS_DIR="$src/programs" BUILD_DIR="$build_dir" LXP_REVISION="$commit" \
     EXTRA_CFLAGS="-ffile-prefix-map=$root=. -ffile-prefix-map=$build_dir=build" layerxd
   cp "$build_dir/bin/layerxd" "$out/layerxd-$version-$goos-$goarch"
 fi

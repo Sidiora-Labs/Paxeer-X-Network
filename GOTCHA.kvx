@@ -8740,3 +8740,18 @@ detail = "Skip them with -skip '^Test(0x[0-9a-f]+|[0-9]+)$' to see the rest of r
 area = "rpc"
 summary = "StateAtBlock returns the state after its argument, per the vendored geth tracer contract"
 detail = "The tracer callers pass the parent block and expect the state the block's transactions start from; the backend runs initializeBlock on x+1 when it exists and otherwise snapshots the tip, never the state before x."
+
+[gotcha.1834]
+area = "release/build"
+summary = "cargo hashes the absolute path of a path dependency outside the workspace into crate names"
+detail = "--remap-path-prefix cannot reach it; the release build reaches the tree through a fixed symlink so every checkout hashes the same path."
+
+[gotcha.1835]
+area = "release/build"
+summary = "the cgo ${SRCDIR} rpath lands in the ELF RUNPATH even under -trimpath"
+detail = "tools/release/extld.sh drops absolute rpath arguments, also inside Go's @response file used once linker arguments pass 30 KiB, and sets $ORIGIN."
+
+[gotcha.1836]
+area = "release/build"
+summary = "release builds are serialised per host by the build lock"
+detail = "A second build-paxd.sh on the same host waits for the lock on the shared source symlink."

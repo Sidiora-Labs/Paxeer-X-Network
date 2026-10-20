@@ -3425,6 +3425,7 @@ bridge-test-solana:
 	cargo test --locked --manifest-path bridge/solana/Cargo.toml
 
 PROGRAMS_CARGO ?= cargo
+PROGRAMS_DIR ?= $(CURDIR)/programs
 PROGRAMS_TARGET_DIR := $(CURDIR)/programs/target
 PROGRAMS_WORKSPACE_CARGO = env CARGO_TARGET_DIR='$(PROGRAMS_TARGET_DIR)' $(PROGRAMS_CARGO)
 PROGRAMS_RUNTIME_LIB := programs/target/debug/liblayerx_programs_sandbox.a
@@ -3447,7 +3448,7 @@ programs-build:
 
 .PHONY: programs-release-build
 $(PROGRAMS_RELEASE_RUNTIME_LIB) programs-release-build:
-	cd programs && $(PROGRAMS_WORKSPACE_CARGO) build --locked --release -p layerx-programs-sandbox --features layerx-programs-sandbox/host-ffi
+	cd programs && $(PROGRAMS_WORKSPACE_CARGO) build --locked --release -p layerx-programs-sandbox --features layerx-programs-sandbox/host-ffi --manifest-path '$(PROGRAMS_DIR)/Cargo.toml'
 
 programs-lint: programs-module-boundaries
 	cd programs && $(PROGRAMS_CARGO) clippy --locked --workspace --all-targets --features layerx-programs-sandbox/host-ffi -- -D warnings

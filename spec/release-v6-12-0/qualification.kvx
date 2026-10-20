@@ -2516,3 +2516,11 @@ exit = 1
 log = "domain-fix-d-skipall-3.log"
 observed = "TestGetTransactionReceiptFailedTx panicked once in a replay-free run and passed in the runs before and after with no stack captured."
 assumption = "Intermittent harness race; re-examine only if it recurs with a stack."
+
+[finding.8.4.3-verified]
+revision = "b337ba30a"
+command = "bash tools/release/tests/reproducible.test.sh"
+exit = 0
+log = "release-8.4.3-fix-verify-1.log"
+observed = "All five cases pass including paths_remapped: cargo path-dependency hashes are pinned through a fixed build symlink and the cgo rpath is replaced by $ORIGIN through an extld wrapper, so two checkouts produce identical SHA256SUMS."
+assumption = "Release builds run one at a time per host under the build lock; paxd resolves libwasmvm beside itself first, then the system copy."
