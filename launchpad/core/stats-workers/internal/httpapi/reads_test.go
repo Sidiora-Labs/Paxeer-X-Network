@@ -153,6 +153,41 @@ func TestHolderDistributionRoute(t *testing.T) {
 		}
 	})
 
+	t.Run("walletMap limit and offset bounds", func(t *testing.T) {
+		const pool = "0xdistlimits"
+		seedInitial(t, ctx, st, pool, nil)
+		insertHolder(t, ctx, st, pool, "0xa", "500000000000000", "5000")
+		insertHolder(t, ctx, st, pool, "0xb", "100000000000000", "1000")
+		insertHolder(t, ctx, st, pool, "0xc", "010000000000000", "100")
+
+		for _, query := range []string{"limit=-1", "limit=-1&offset=0", "offset=-1"} {
+			rec := serve(t, h, http.MethodGet, "/stats/"+pool+"/holders/distribution?"+query, nil, nil)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("%s: status = %d, want 400", query, rec.Code)
+			}
+		}
+		for _, c := range []struct {
+			query          string
+			limit, entries int
+		}{
+			{"", 200, 3},
+			{"limit=0", 0, 0},
+			{"limit=1&offset=1", 1, 1},
+			{"limit=900", 500, 3},
+		} {
+			rec := serve(t, h, http.MethodGet, "/stats/"+pool+"/holders/distribution?"+c.query, nil, nil)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%q: status = %d", c.query, rec.Code)
+			}
+			var got resp
+			decode(t, rec, &got)
+			if got.WalletMapLimit != c.limit || len(got.WalletMap) != c.entries || got.WalletMapTotal != 3 {
+				t.Fatalf("%q: walletMap limit:%d len:%d total:%d, want limit:%d len:%d total:3",
+					c.query, got.WalletMapLimit, len(got.WalletMap), got.WalletMapTotal, c.limit, c.entries)
+			}
+		}
+	})
+
 	t.Run("empty pool returns zeroed distribution", func(t *testing.T) {
 		rec := serve(t, h, http.MethodGet, "/stats/0xempty/holders/distribution", nil, nil)
 		var got resp

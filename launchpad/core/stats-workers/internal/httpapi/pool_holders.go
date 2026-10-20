@@ -114,6 +114,10 @@ func holderDistribution(st *store.Store) http.HandlerFunc {
 			walletLimit = 500
 		}
 		walletOffset := parseIntDefault(q.Get("offset"), 0)
+		if walletLimit < 0 || walletOffset < 0 {
+			sharedhttp.WriteError(w, http.StatusBadRequest, "Bad Request", "limit and offset must be non-negative")
+			return
+		}
 
 		allHolders, err := st.ListHoldersByBalance(r.Context(), poolAddress)
 		if err != nil {
@@ -215,9 +219,7 @@ func holderDistribution(st *store.Store) http.HandlerFunc {
 			if end > len(walletMap) {
 				end = len(walletMap)
 			}
-			if walletOffset >= 0 {
-				paginated = walletMap[walletOffset:end]
-			}
+			paginated = walletMap[walletOffset:end]
 		}
 
 		sharedhttp.WriteJSON(w, http.StatusOK, map[string]any{
