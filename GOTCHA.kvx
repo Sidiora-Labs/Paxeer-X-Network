@@ -8725,3 +8725,13 @@ detail = "Use go test -skip on the panicking names to see the rest of the packag
 area = "rpc"
 summary = "the pending block tag is resolved only through the watermark manager's resolvePending"
 detail = "getBlockNumber takes the manager and refuses with ErrPendingServedBySequencer on nodes without a pending snapshot; never map pending to nil/latest again (layerx-merge req.9003 ac_2/ac_3)."
+
+[gotcha.1831]
+area = "rpc"
+summary = "a cosmos query at height 0 silently serves latest state"
+detail = "An off-by-one that reaches height 0 returns post-block state instead of an error; check the computed height before querying."
+
+[gotcha.1832]
+area = "rpc/tests"
+summary = "every regression_test.go case replays upstream-chain transactions that carry a removed oracle message type"
+detail = "Skip them with -skip '^Test(0x[0-9a-f]+|[0-9]+)$' to see the rest of rpc/tests; they cannot pass on this chain until re-recorded or retired."

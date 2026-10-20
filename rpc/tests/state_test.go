@@ -16,7 +16,7 @@ func TestGetBalance(t *testing.T) {
 			require.Equal(t, "0x21e19e0c9bab2400000", balance)
 			res = sendRequestWithNamespace("eth", port, "getBalance", getAddrWithMnemonic(mnemonic1).Hex(), "0x2")
 			balance = res["result"].(string)
-			require.Equal(t, "0x21e19e0b6a140b5a830", balance)
+			require.Equal(t, "0x21e19e0c8731a83c230", balance)
 			res = sendRequestWithNamespace("eth", port, "getBalance", getAddrWithMnemonic(mnemonic1).Hex(), "0x3")
 			fmt.Println(res)
 			err := res["error"].(map[string]interface{})

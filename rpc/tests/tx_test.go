@@ -347,9 +347,9 @@ func TestGetTransactionGasPrice(t *testing.T) {
 			gasPrice, exists := result["gasPrice"]
 			require.True(t, exists, "gasPrice field should exist in response")
 
-			// The gasPrice should match the GasFeeCap from the DynamicFeeTx
-			expectedGasPrice := "0x3b9aca00" // 1000000000 in hex
-			require.Equal(t, expectedGasPrice, gasPrice, "gasPrice should match the transaction's GasFeeCap")
+			// A mined DynamicFeeTx reports its effective gas price: the 67000000 wei base fee, below its GasFeeCap, with no tip
+			expectedGasPrice := "0x3fe56c0"
+			require.Equal(t, expectedGasPrice, gasPrice, "gasPrice should be the effective gas price")
 		},
 	)
 }
