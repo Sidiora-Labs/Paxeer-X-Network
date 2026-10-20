@@ -4,8 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	"encoding/base64"
 	"github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts/internal/config"
 	"github.com/Sidiora-Technologies/KindleLaunch/shared/config/deployment"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nkeys"
 )
 
 // validEnv returns the full set of env vars required for a successful Load.
@@ -118,5 +121,73 @@ func TestLoadMissingRequiredBaseVar(t *testing.T) {
 
 	if _, err := config.Load(); err == nil {
 		t.Fatal("Load: expected error for missing DATABASE_URL")
+	}
+}
+
+// inlineNATSCreds returns a user JWT signed by a fresh account nkey and the
+// .creds content carrying it with the user seed.
+func inlineNATSCreds(t *testing.T) (string, string) {
+	t.Helper()
+	account, err := nkeys.CreateAccount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := nkeys.CreateUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	accountPub, _ := account.PublicKey()
+	userPub, _ := user.PublicKey()
+	enc := base64.RawURLEncoding.EncodeToString
+	signing := enc([]byte(`{"typ":"JWT","alg":"ed25519-nkey"}`)) + "." + enc([]byte(`{"sub":"`+userPub+`","iss":"`+accountPub+`","nats":{"type":"user","version":2}}`))
+	signature, err := account.Sign([]byte(signing))
+	if err != nil {
+		t.Fatal(err)
+	}
+	userJWT := signing + "." + enc(signature)
+	seed, err := user.Seed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return userJWT, "-----BEGIN NATS USER JWT-----\n" + userJWT + "\n------END NATS USER JWT------\n\n-----BEGIN USER NKEY SEED-----\n" + string(seed) + "\n------END USER NKEY SEED------\n"
+}
+
+func TestInlineNATSCredentials(t *testing.T) {
+	userJWT, creds := inlineNATSCreds(t)
+	applyEnv(t, validEnv())
+	t.Setenv("NATS_CREDENTIALS_CREDS", creds)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("inline NATS_CREDENTIALS_CREDS rejected: %v", err)
+	}
+	options, err := cfg.RuntimeNATSOptions()
+	if err != nil {
+		t.Fatalf("inline NATS_CREDENTIALS_CREDS options: %v", err)
+	}
+	var applied nats.Options
+	for _, option := range options {
+		if err := option(&applied); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if applied.UserJWT == nil || applied.SignatureCB == nil {
+		t.Fatal("inline NATS_CREDENTIALS_CREDS set no user JWT handler")
+	}
+	if got, err := applied.UserJWT(); err != nil || got != userJWT {
+		t.Fatalf("user JWT = %q, %v", got, err)
+	}
+	if _, err := applied.SignatureCB([]byte("nonce")); err != nil {
+		t.Fatalf("inline seed cannot sign: %v", err)
+	}
+	t.Setenv("NATS_CREDENTIALS", "/etc/nats/user.creds")
+	if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "NATS_CREDENTIALS and NATS_CREDENTIALS_CREDS are both set") {
+		t.Fatalf("both NATS credential sources accepted: %v", err)
+	}
+	t.Setenv("NATS_CREDENTIALS", "")
+	t.Setenv("NATS_CREDENTIALS_CREDS", "")
+	t.Setenv("NODE_ENV", "production")
+	t.Setenv("RUNTIME_PROFILE", "container")
+	if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "NATS_CREDENTIALS or NATS_CREDENTIALS_CREDS is required") {
+		t.Fatalf("missing NATS credentials accepted in a production profile: %v", err)
 	}
 }

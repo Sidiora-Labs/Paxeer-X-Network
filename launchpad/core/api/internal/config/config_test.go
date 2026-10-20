@@ -1,7 +1,12 @@
 package config
 
 import (
+	"encoding/base64"
 	"os"
+
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nkeys"
+	"strings"
 	"testing"
 	"time"
 )
@@ -163,4 +168,83 @@ func TestValidate_DirectBoundary(t *testing.T) {
 	if err := bad.Validate(); err == nil {
 		t.Error("Port=0 should fail validation")
 	}
+}
+
+func TestLoad_InlineMaterial(t *testing.T) {
+	pairs := []struct{ file, inline string }{
+		{"IDENTITY_CA_FILE", "IDENTITY_CA_PEM"},
+		{"IDENTITY_CLIENT_CERT_FILE", "IDENTITY_CLIENT_CERT_PEM"},
+		{"IDENTITY_CLIENT_KEY_FILE", "IDENTITY_CLIENT_KEY_PEM"},
+		{"NATS_CREDENTIALS", "NATS_CREDENTIALS_CREDS"},
+	}
+	for _, p := range pairs {
+		t.Run(p.inline, func(t *testing.T) {
+			setBase(t)
+			for _, other := range pairs {
+				if other != p {
+					t.Setenv(other.inline, "inline")
+				}
+			}
+			t.Setenv(p.inline, "-----BEGIN MATERIAL-----\n"+p.inline+"\n-----END MATERIAL-----\n")
+			if _, err := Load(); err != nil {
+				t.Fatalf("inline %s rejected: %v", p.inline, err)
+			}
+			t.Setenv(p.file, "/etc/identity/material.pem")
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), p.file+" and "+p.inline+" are both set") {
+				t.Fatalf("both %s and %s accepted: %v", p.file, p.inline, err)
+			}
+			t.Setenv(p.file, "")
+			t.Setenv(p.inline, "")
+			t.Setenv("RUNTIME_PROFILE", "container")
+			t.Setenv("API_ROLE", "sockets")
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), p.file+" or "+p.inline+" is required") {
+				t.Fatalf("missing %s accepted in a production profile: %v", p.inline, err)
+			}
+		})
+	}
+
+	cfg := Config{IdentityCAPEM: "ca", IdentityClientCertPEM: "cert", IdentityClientKeyPEM: "key"}
+	if ca, cert, key, err := cfg.IdentityTLSMaterial(); err != nil || string(ca) != "ca" || string(cert) != "cert" || string(key) != "key" {
+		t.Fatalf("inline identity material = %q %q %q, %v", ca, cert, key, err)
+	}
+	userJWT, creds := inlineNATSCreds(t)
+	option, err := (&Config{NATSCredentialsCreds: creds}).NATSCredentialsOption()
+	if err != nil {
+		t.Fatalf("inline NATS_CREDENTIALS_CREDS option: %v", err)
+	}
+	var applied nats.Options
+	if err = option(&applied); err != nil || applied.UserJWT == nil {
+		t.Fatalf("inline NATS_CREDENTIALS_CREDS set no user JWT: %v", err)
+	}
+	if got, err := applied.UserJWT(); err != nil || got != userJWT {
+		t.Fatalf("user JWT = %q, %v", got, err)
+	}
+}
+
+// inlineNATSCreds returns a user JWT signed by a fresh account nkey and the
+// .creds content carrying it with the user seed.
+func inlineNATSCreds(t *testing.T) (string, string) {
+	t.Helper()
+	account, err := nkeys.CreateAccount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := nkeys.CreateUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	accountPub, _ := account.PublicKey()
+	userPub, _ := user.PublicKey()
+	enc := base64.RawURLEncoding.EncodeToString
+	signing := enc([]byte(`{"typ":"JWT","alg":"ed25519-nkey"}`)) + "." + enc([]byte(`{"sub":"`+userPub+`","iss":"`+accountPub+`","nats":{"type":"user","version":2}}`))
+	signature, err := account.Sign([]byte(signing))
+	if err != nil {
+		t.Fatal(err)
+	}
+	userJWT := signing + "." + enc(signature)
+	seed, err := user.Seed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return userJWT, "-----BEGIN NATS USER JWT-----\n" + userJWT + "\n------END NATS USER JWT------\n\n-----BEGIN USER NKEY SEED-----\n" + string(seed) + "\n------END USER NKEY SEED------\n"
 }

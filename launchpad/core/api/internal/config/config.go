@@ -22,6 +22,8 @@ import (
 	dbproduction "github.com/Sidiora-Technologies/KindleLaunch/shared/db/production"
 	sharedsecrets "github.com/Sidiora-Technologies/KindleLaunch/shared/secrets"
 	pgxpool "github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nkeys"
 	"io"
 	"net/url"
 	"os"
@@ -45,6 +47,9 @@ type Config struct {
 	IdentityCAFile           string `env:"IDENTITY_CA_FILE"`
 	IdentityClientCertFile   string `env:"IDENTITY_CLIENT_CERT_FILE"`
 	IdentityClientKeyFile    string `env:"IDENTITY_CLIENT_KEY_FILE"`
+	IdentityCAPEM            string `env:"IDENTITY_CA_PEM"`
+	IdentityClientCertPEM    string `env:"IDENTITY_CLIENT_CERT_PEM"`
+	IdentityClientKeyPEM     string `env:"IDENTITY_CLIENT_KEY_PEM"`
 	IdentitySigningKey       string `env:"IDENTITY_SIGNING_KEY"`
 	IdentityIssuer           string `env:"IDENTITY_ASSERTION_ISSUER"`
 	IdentityAudience         string `env:"IDENTITY_ASSERTION_AUDIENCE"`
@@ -55,13 +60,14 @@ type Config struct {
 	StreamSchema             string `env:"STREAM_SCHEMA" envDefault:"api_stream"`
 	// StreamRelayFile/SHA256 bind the API_ROLE=rest api_stream outbox relay
 	// document (app/stream_relay.go streamRelayDocument).
-	StreamRelayFile     string `env:"STREAM_RELAY_CONFIG_FILE"`
-	StreamRelayDocument string `env:"STREAM_RELAY_CONFIG_DOCUMENT"`
-	StreamRelaySHA256   string `env:"STREAM_RELAY_CONFIG_SHA256"`
-	NATSURL             string `env:"NATS_URL"`
-	NATSCredentials     string `env:"NATS_CREDENTIALS"`
-	AdmissionCapacity   int    `env:"API_ADMISSION_CAPACITY" envDefault:"1000"`
-	AdmissionMaxWaiting int    `env:"API_ADMISSION_MAX_WAITING" envDefault:"1000"`
+	StreamRelayFile      string `env:"STREAM_RELAY_CONFIG_FILE"`
+	StreamRelayDocument  string `env:"STREAM_RELAY_CONFIG_DOCUMENT"`
+	StreamRelaySHA256    string `env:"STREAM_RELAY_CONFIG_SHA256"`
+	NATSURL              string `env:"NATS_URL"`
+	NATSCredentials      string `env:"NATS_CREDENTIALS"`
+	NATSCredentialsCreds string `env:"NATS_CREDENTIALS_CREDS"`
+	AdmissionCapacity    int    `env:"API_ADMISSION_CAPACITY" envDefault:"1000"`
+	AdmissionMaxWaiting  int    `env:"API_ADMISSION_MAX_WAITING" envDefault:"1000"`
 
 	// NetworkAuthorityCacheTTLSec bounds how long the non-production
 	// GET /v2/network/authority reuses one attestation (success or failure).
@@ -151,6 +157,9 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
 	if err = cfg.registerInlineDocuments(); err != nil {
+		return Config{}, fmt.Errorf("config: %w", err)
+	}
+	if err = cfg.checkInlineMaterial(); err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
 	if err := cfg.Validate(); err != nil {
@@ -402,6 +411,9 @@ func (c *Config) registerInlineDocuments() error {
 		if p.file != "" && p.inline != "" {
 			return fmt.Errorf("%s_FILE and %s_DOCUMENT are both set", p.name, p.name)
 		}
+		if p.inline != "" && p.digest == "" {
+			return fmt.Errorf("%s_DOCUMENT is set without %s_SHA256", p.name, p.name)
+		}
 		if p.inline != "" {
 			documents[p.digest] = p.inline
 		}
@@ -475,4 +487,104 @@ func decodeBoundDocument(path, inline, digest string, out any) error {
 		return fmt.Errorf("runtime_document_trailing_data")
 	}
 	return nil
+}
+
+// checkInlineMaterial enforces that at most one of each file variable and its
+// inline sibling is set and, in a production runtime profile, that the
+// identity mTLS material is present and the broker credentials are present
+// whenever this role connects to the broker.
+func (c *Config) checkInlineMaterial() error {
+	production := c.NodeEnv == "production" && c.RuntimeProfile != ""
+	broker := c.APIRole == "sockets" || c.StreamRelayFile != "" || c.StreamRelayDocument != ""
+	for _, p := range []struct {
+		fileName, inlineName, file, inline string
+		required                           bool
+	}{
+		{"IDENTITY_CA_FILE", "IDENTITY_CA_PEM", c.IdentityCAFile, c.IdentityCAPEM, production},
+		{"IDENTITY_CLIENT_CERT_FILE", "IDENTITY_CLIENT_CERT_PEM", c.IdentityClientCertFile, c.IdentityClientCertPEM, production},
+		{"IDENTITY_CLIENT_KEY_FILE", "IDENTITY_CLIENT_KEY_PEM", c.IdentityClientKeyFile, c.IdentityClientKeyPEM, production},
+		{"NATS_CREDENTIALS", "NATS_CREDENTIALS_CREDS", c.NATSCredentials, c.NATSCredentialsCreds, production && broker},
+	} {
+		if p.file != "" && p.inline != "" {
+			return fmt.Errorf("%s and %s are both set", p.fileName, p.inlineName)
+		}
+		if p.required && p.file == "" && p.inline == "" {
+			return fmt.Errorf("%s or %s is required", p.fileName, p.inlineName)
+		}
+	}
+	return nil
+}
+
+// materialBytes returns the inline value when set, else the bounded content
+// of the file. Exactly one of the two must be set.
+func materialBytes(fileName, path, inlineName, inline string) ([]byte, error) {
+	if (path == "") == (inline == "") {
+		return nil, fmt.Errorf("exactly one of %s and %s is required", fileName, inlineName)
+	}
+	raw := []byte(inline)
+	if path != "" {
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Size() > 1048576 {
+			return nil, fmt.Errorf("%s unavailable", fileName)
+		}
+		if raw, err = os.ReadFile(path); err != nil {
+			return nil, fmt.Errorf("%s unavailable", fileName)
+		}
+	}
+	if len(raw) == 0 || len(raw) > 1048576 {
+		return nil, fmt.Errorf("%s or %s invalid", fileName, inlineName)
+	}
+	return raw, nil
+}
+
+// IdentityTLSMaterial returns the identity channel CA bundle, client
+// certificate and client key PEM, each from its inline variable or its file.
+func (c *Config) IdentityTLSMaterial() (ca, cert, key []byte, err error) {
+	if ca, err = materialBytes("IDENTITY_CA_FILE", c.IdentityCAFile, "IDENTITY_CA_PEM", c.IdentityCAPEM); err != nil {
+		return nil, nil, nil, err
+	}
+	if cert, err = materialBytes("IDENTITY_CLIENT_CERT_FILE", c.IdentityClientCertFile, "IDENTITY_CLIENT_CERT_PEM", c.IdentityClientCertPEM); err != nil {
+		return nil, nil, nil, err
+	}
+	if key, err = materialBytes("IDENTITY_CLIENT_KEY_FILE", c.IdentityClientKeyFile, "IDENTITY_CLIENT_KEY_PEM", c.IdentityClientKeyPEM); err != nil {
+		return nil, nil, nil, err
+	}
+	return ca, cert, key, nil
+}
+
+// NATSCredentialsOption returns the broker user credentials option from
+// NATS_CREDENTIALS_CREDS when set, else from the NATS_CREDENTIALS file.
+func (c *Config) NATSCredentialsOption() (nats.Option, error) {
+	if c.NATSCredentials != "" && c.NATSCredentialsCreds != "" {
+		return nil, fmt.Errorf("NATS_CREDENTIALS and NATS_CREDENTIALS_CREDS are both set")
+	}
+	if c.NATSCredentialsCreds != "" {
+		return inlineNATSCredentials(c.NATSCredentialsCreds)
+	}
+	if c.NATSCredentials == "" {
+		return nil, fmt.Errorf("NATS_CREDENTIALS or NATS_CREDENTIALS_CREDS is required")
+	}
+	return nats.UserCredentials(c.NATSCredentials), nil
+}
+
+// inlineNATSCredentials turns the content of a NATS .creds file
+// (NATS_CREDENTIALS_CREDS) into the same user JWT and seed option
+// nats.UserCredentials builds from the file form.
+func inlineNATSCredentials(creds string) (nats.Option, error) {
+	if len(creds) > 1048576 {
+		return nil, fmt.Errorf("broker_credentials_invalid: NATS_CREDENTIALS_CREDS")
+	}
+	userJWT, err := nkeys.ParseDecoratedJWT([]byte(creds))
+	if err != nil || strings.Count(userJWT, ".") != 2 || strings.ContainsAny(userJWT, " \t\r\n") {
+		return nil, fmt.Errorf("broker_credentials_invalid: NATS_CREDENTIALS_CREDS")
+	}
+	pair, err := nkeys.ParseDecoratedNKey([]byte(creds))
+	if err != nil {
+		return nil, fmt.Errorf("broker_credentials_invalid: NATS_CREDENTIALS_CREDS")
+	}
+	seed, err := pair.Seed()
+	if err != nil {
+		return nil, fmt.Errorf("broker_credentials_invalid: NATS_CREDENTIALS_CREDS")
+	}
+	return nats.UserJWTAndSeed(userJWT, string(seed)), nil
 }

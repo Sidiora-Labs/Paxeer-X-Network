@@ -613,7 +613,7 @@ func (a *App) registerDiscovery(ctx context.Context, router chi.Router, identity
 		p, err := identity.AuthenticateRequest(r.Context(), r)
 		return p.AccountID, err
 	}
-	if a.cfg.DiscoveryRuntimeFile != "" {
+	if a.cfg.DiscoveryRuntimeFile != "" || a.cfg.DiscoveryRuntimeDocument != "" {
 		var document discoveryRuntimeDocument
 		if err := config.ReadBoundDocument(a.cfg.DiscoveryRuntimeFile, a.cfg.DiscoveryRuntimeSHA256, &document); err != nil {
 			return err

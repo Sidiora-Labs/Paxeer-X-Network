@@ -22,6 +22,7 @@ import (
 	sharedsecrets "github.com/Sidiora-Technologies/KindleLaunch/shared/secrets"
 	pgxpool "github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nkeys"
 	"io"
 	"net/url"
 	"os"
@@ -79,6 +80,7 @@ type Config struct {
 	DeliveryConfigSHA256      string `env:"DELIVERY_CONFIG_SHA256"`
 	NATSURL                   string `env:"NATS_URL"`
 	NATSCredentials           string `env:"NATS_CREDENTIALS"`
+	NATSCredentialsCreds      string `env:"NATS_CREDENTIALS_CREDS"`
 
 	sharedconfig.BaseEnv
 
@@ -327,8 +329,12 @@ func (c *Config) ResolveProductionSecrets(ctx context.Context) (func(context.Con
 		}
 		bindings["NATS_USERNAME"] = &c.NATSUsername
 		bindings["NATS_PASSWORD"] = &c.NATSPassword
-	} else {
+	} else if c.NATSCredentials != "" {
 		bindings["NATS_CREDENTIALS"] = &c.NATSCredentials
+	} else if c.NATSCredentialsCreds != "" {
+		bindings["NATS_CREDENTIALS_CREDS"] = &c.NATSCredentialsCreds
+	} else {
+		return nil, nil, fmt.Errorf("required_secret_unavailable: NATS_CREDENTIALS or NATS_CREDENTIALS_CREDS")
 	}
 	consumed := map[string]string{}
 	for key, target := range bindings {
@@ -461,6 +467,12 @@ var (
 )
 
 func (c *Config) registerInlineDocuments() error {
+	if c.NATSCredentials != "" && c.NATSCredentialsCreds != "" {
+		return fmt.Errorf("NATS_CREDENTIALS and NATS_CREDENTIALS_CREDS are both set")
+	}
+	if c.NodeEnv == "production" && c.RuntimeProfile != "" && c.DeploymentRealm != "private_fixture" && c.NATSCredentials == "" && c.NATSCredentialsCreds == "" {
+		return fmt.Errorf("NATS_CREDENTIALS or NATS_CREDENTIALS_CREDS is required")
+	}
 	pairs := []struct{ name, file, inline, digest string }{
 		{"DB_BUDGET", c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256},
 		{"EXPECTED_SCHEMA", c.ExpectedSchemaFile, c.ExpectedSchemaDocument, c.ExpectedSchemaSHA256},
@@ -559,8 +571,37 @@ func (c *Config) RuntimeNATSOptions() ([]nats.Option, error) {
 		}
 		return append(options, nats.UserInfo(c.NATSUsername, c.NATSPassword)), nil
 	}
+	if c.NATSCredentialsCreds != "" {
+		credentials, err := inlineNATSCredentials(c.NATSCredentialsCreds)
+		if err != nil {
+			return nil, err
+		}
+		return append(options, credentials), nil
+	}
 	if c.NATSCredentials == "" {
 		return nil, fmt.Errorf("broker_credentials_missing")
 	}
 	return append(options, nats.UserCredentials(c.NATSCredentials)), nil
+}
+
+// inlineNATSCredentials turns the content of a NATS .creds file
+// (NATS_CREDENTIALS_CREDS) into the same user JWT and seed option
+// nats.UserCredentials builds from the file form.
+func inlineNATSCredentials(creds string) (nats.Option, error) {
+	if len(creds) > 1048576 {
+		return nil, fmt.Errorf("broker_credentials_invalid: NATS_CREDENTIALS_CREDS")
+	}
+	userJWT, err := nkeys.ParseDecoratedJWT([]byte(creds))
+	if err != nil || strings.Count(userJWT, ".") != 2 || strings.ContainsAny(userJWT, " \t\r\n") {
+		return nil, fmt.Errorf("broker_credentials_invalid: NATS_CREDENTIALS_CREDS")
+	}
+	pair, err := nkeys.ParseDecoratedNKey([]byte(creds))
+	if err != nil {
+		return nil, fmt.Errorf("broker_credentials_invalid: NATS_CREDENTIALS_CREDS")
+	}
+	seed, err := pair.Seed()
+	if err != nil {
+		return nil, fmt.Errorf("broker_credentials_invalid: NATS_CREDENTIALS_CREDS")
+	}
+	return nats.UserJWTAndSeed(userJWT, string(seed)), nil
 }

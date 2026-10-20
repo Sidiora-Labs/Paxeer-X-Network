@@ -18,6 +18,7 @@ import (
 	sharedsecrets "github.com/Sidiora-Technologies/KindleLaunch/shared/secrets"
 	pgxpool "github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nkeys"
 	"io"
 	"net/url"
 	"os"
@@ -53,6 +54,7 @@ type Config struct {
 	DeliveryConfigSHA256      string `env:"DELIVERY_CONFIG_SHA256"`
 	NATSURL                   string `env:"NATS_URL"`
 	NATSCredentials           string `env:"NATS_CREDENTIALS"`
+	NATSCredentialsCreds      string `env:"NATS_CREDENTIALS_CREDS"`
 
 	// Production identity channel to the gateway identity authority's private
 	// mTLS listener (IDENTITY_SERVICE_URL=https://gateway.railway.internal:8443):
@@ -64,6 +66,8 @@ type Config struct {
 	IdentityURL                string `env:"IDENTITY_SERVICE_URL"`
 	IdentityMTLSCAFile         string `env:"IDENTITY_MTLS_CA_FILE"`
 	IdentityMTLSClientCertFile string `env:"IDENTITY_MTLS_CLIENT_CERT_FILE"`
+	IdentityMTLSCAPEM          string `env:"IDENTITY_MTLS_CA_PEM"`
+	IdentityMTLSClientCertPEM  string `env:"IDENTITY_MTLS_CLIENT_CERT_PEM"`
 	IdentityMTLSClientKeyFile  string `env:"IDENTITY_MTLS_CLIENT_KEY_FILE"`
 	IdentityMTLSClientKeyPEM   string `env:"IDENTITY_MTLS_CLIENT_KEY_PEM"`
 	IdentityMTLSPeerCertSHA256 string `env:"IDENTITY_MTLS_PEER_CERT_SHA256"`
@@ -134,20 +138,20 @@ func (c Config) ValidateProductionWorkers() error {
 // IdentityClient describes statsd's private identity channel (issuer
 // "stats") for sharedauth.NewMTLSIdentityClient.
 func (c *Config) IdentityClient() sharedauth.MTLSIdentityClientConfig {
-	return sharedauth.MTLSIdentityClientConfig{Endpoint: strings.TrimRight(strings.TrimSpace(c.IdentityURL), "/"), PeerCertSHA256: c.IdentityMTLSPeerCertSHA256, CAFile: c.IdentityMTLSCAFile, ClientCertFile: c.IdentityMTLSClientCertFile, ClientKeyFile: c.IdentityMTLSClientKeyFile, ClientKeyPEM: c.IdentityMTLSClientKeyPEM, Issuer: "stats", SigningKey: c.IdentitySigningKey}
+	return sharedauth.MTLSIdentityClientConfig{Endpoint: strings.TrimRight(strings.TrimSpace(c.IdentityURL), "/"), PeerCertSHA256: c.IdentityMTLSPeerCertSHA256, CAFile: c.IdentityMTLSCAFile, CAPEM: c.IdentityMTLSCAPEM, ClientCertFile: c.IdentityMTLSClientCertFile, ClientCertPEM: c.IdentityMTLSClientCertPEM, ClientKeyFile: c.IdentityMTLSClientKeyFile, ClientKeyPEM: c.IdentityMTLSClientKeyPEM, Issuer: "stats", SigningKey: c.IdentitySigningKey}
 }
 
 // ValidateIdentityClient checks the production identity channel settings:
 // an https origin without path (the gateway serves /internal/v2/identity/*
-// only on its mTLS listener), the CA and client certificate files, exactly one
-// client key source, the lowercase gateway server pin and a well-formed
+// only on its mTLS listener), exactly one source each for the CA, the client
+// certificate and the client key, the lowercase gateway server pin and a well-formed
 // ed25519 assertion key.
 func (c *Config) ValidateIdentityClient() error {
 	endpoint, err := url.Parse(strings.TrimRight(strings.TrimSpace(c.IdentityURL), "/"))
 	if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil || endpoint.Path != "" || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" {
 		return fmt.Errorf("identity_authority_endpoint_invalid")
 	}
-	if c.IdentityMTLSCAFile == "" || c.IdentityMTLSClientCertFile == "" || (c.IdentityMTLSClientKeyFile == "") == (c.IdentityMTLSClientKeyPEM == "") {
+	if (c.IdentityMTLSCAFile == "") == (c.IdentityMTLSCAPEM == "") || (c.IdentityMTLSClientCertFile == "") == (c.IdentityMTLSClientCertPEM == "") || (c.IdentityMTLSClientKeyFile == "") == (c.IdentityMTLSClientKeyPEM == "") {
 		return fmt.Errorf("identity_authority_mtls_missing")
 	}
 	if pin, e := hex.DecodeString(c.IdentityMTLSPeerCertSHA256); e != nil || len(pin) != 32 || strings.ToLower(c.IdentityMTLSPeerCertSHA256) != c.IdentityMTLSPeerCertSHA256 {
@@ -204,8 +208,12 @@ func (c *Config) ResolveProductionSecrets(ctx context.Context) (func(context.Con
 		}
 		bindings["NATS_USERNAME"] = &c.NATSUsername
 		bindings["NATS_PASSWORD"] = &c.NATSPassword
-	} else {
+	} else if c.NATSCredentials != "" {
 		bindings["NATS_CREDENTIALS"] = &c.NATSCredentials
+	} else if c.NATSCredentialsCreds != "" {
+		bindings["NATS_CREDENTIALS_CREDS"] = &c.NATSCredentialsCreds
+	} else {
+		return nil, nil, fmt.Errorf("required_secret_unavailable: NATS_CREDENTIALS or NATS_CREDENTIALS_CREDS")
 	}
 	consumed := map[string]string{}
 	for key, target := range bindings {
@@ -338,6 +346,24 @@ var (
 )
 
 func (c *Config) registerInlineDocuments() error {
+	for _, p := range []struct{ fileName, inlineName, file, inline string }{
+		{"IDENTITY_MTLS_CA_FILE", "IDENTITY_MTLS_CA_PEM", c.IdentityMTLSCAFile, c.IdentityMTLSCAPEM},
+		{"IDENTITY_MTLS_CLIENT_CERT_FILE", "IDENTITY_MTLS_CLIENT_CERT_PEM", c.IdentityMTLSClientCertFile, c.IdentityMTLSClientCertPEM},
+		{"IDENTITY_MTLS_CLIENT_KEY_FILE", "IDENTITY_MTLS_CLIENT_KEY_PEM", c.IdentityMTLSClientKeyFile, c.IdentityMTLSClientKeyPEM},
+	} {
+		if p.file != "" && p.inline != "" {
+			return fmt.Errorf("%s and %s are both set", p.fileName, p.inlineName)
+		}
+		if c.NodeEnv == "production" && c.RuntimeProfile != "" && p.file == "" && p.inline == "" {
+			return fmt.Errorf("%s or %s is required", p.fileName, p.inlineName)
+		}
+	}
+	if c.NATSCredentials != "" && c.NATSCredentialsCreds != "" {
+		return fmt.Errorf("NATS_CREDENTIALS and NATS_CREDENTIALS_CREDS are both set")
+	}
+	if c.NodeEnv == "production" && c.RuntimeProfile != "" && c.DeploymentRealm != "private_fixture" && c.NATSCredentials == "" && c.NATSCredentialsCreds == "" {
+		return fmt.Errorf("NATS_CREDENTIALS or NATS_CREDENTIALS_CREDS is required")
+	}
 	pairs := []struct{ name, file, inline, digest string }{
 		{"DB_BUDGET", c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256},
 		{"EXPECTED_SCHEMA", c.ExpectedSchemaFile, c.ExpectedSchemaDocument, c.ExpectedSchemaSHA256},
@@ -434,6 +460,13 @@ func (c *Config) RuntimeNATSOptions() ([]nats.Option, error) {
 		}
 		return append(options, nats.UserInfo(c.NATSUsername, c.NATSPassword)), nil
 	}
+	if c.NATSCredentialsCreds != "" {
+		credentials, err := inlineNATSCredentials(c.NATSCredentialsCreds)
+		if err != nil {
+			return nil, err
+		}
+		return append(options, credentials), nil
+	}
 	if c.NATSCredentials == "" {
 		return nil, fmt.Errorf("broker_credentials_missing")
 	}
@@ -450,4 +483,26 @@ func (c Config) Phase2Keys() (cursor, audit []byte, err error) {
 		return nil, nil, fmt.Errorf("stats_audit_key_invalid")
 	}
 	return cursor, audit, nil
+}
+
+// inlineNATSCredentials turns the content of a NATS .creds file
+// (NATS_CREDENTIALS_CREDS) into the same user JWT and seed option
+// nats.UserCredentials builds from the file form.
+func inlineNATSCredentials(creds string) (nats.Option, error) {
+	if len(creds) > 1048576 {
+		return nil, fmt.Errorf("broker_credentials_invalid: NATS_CREDENTIALS_CREDS")
+	}
+	userJWT, err := nkeys.ParseDecoratedJWT([]byte(creds))
+	if err != nil || strings.Count(userJWT, ".") != 2 || strings.ContainsAny(userJWT, " \t\r\n") {
+		return nil, fmt.Errorf("broker_credentials_invalid: NATS_CREDENTIALS_CREDS")
+	}
+	pair, err := nkeys.ParseDecoratedNKey([]byte(creds))
+	if err != nil {
+		return nil, fmt.Errorf("broker_credentials_invalid: NATS_CREDENTIALS_CREDS")
+	}
+	seed, err := pair.Seed()
+	if err != nil {
+		return nil, fmt.Errorf("broker_credentials_invalid: NATS_CREDENTIALS_CREDS")
+	}
+	return nats.UserJWTAndSeed(userJWT, string(seed)), nil
 }

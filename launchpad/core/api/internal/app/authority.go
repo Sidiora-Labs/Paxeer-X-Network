@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -40,12 +39,15 @@ type requestIdentity interface {
 }
 
 func runtimeIdentity(c *config.Config) (sharedauth.MTLSIdentityAuthority, error) {
+	caPEM, certPEM, keyPEM, err := c.IdentityTLSMaterial()
+	if err != nil {
+		return sharedauth.MTLSIdentityAuthority{}, err
+	}
 	roots := x509.NewCertPool()
-	pem, err := os.ReadFile(c.IdentityCAFile)
-	if err != nil || !roots.AppendCertsFromPEM(pem) {
+	if !roots.AppendCertsFromPEM(caPEM) {
 		return sharedauth.MTLSIdentityAuthority{}, errors.New("identity trust roots unavailable")
 	}
-	cert, err := tls.LoadX509KeyPair(c.IdentityClientCertFile, c.IdentityClientKeyFile)
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		return sharedauth.MTLSIdentityAuthority{}, err
 	}
@@ -139,7 +141,7 @@ func newNetworkAuthority(ctx context.Context, pool *pgxpool.Pool, c *config.Conf
 			a.proxies = append(a.proxies, proxy)
 		}
 	}
-	if c.NetworkAuthorityFile == "" || c.NetworkAuthoritySHA256 == "" || c.NetworkRPCURL == "" {
+	if (c.NetworkAuthorityFile == "" && c.NetworkAuthorityDocument == "") || c.NetworkAuthoritySHA256 == "" || c.NetworkRPCURL == "" {
 		a.unavailable = errors.New("reviewed network authority document and RPC unavailable")
 		return a, nil
 	}

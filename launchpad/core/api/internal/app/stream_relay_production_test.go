@@ -3,8 +3,12 @@ package app
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,9 +18,13 @@ import (
 	"github.com/Sidiora-Technologies/KindleLaunch/core/api/internal/broker"
 	"github.com/Sidiora-Technologies/KindleLaunch/core/api/internal/config"
 	"github.com/Sidiora-Technologies/KindleLaunch/core/api/internal/internaltest"
+	"github.com/Sidiora-Technologies/KindleLaunch/core/api/internal/rest"
 	sharedauth "github.com/Sidiora-Technologies/KindleLaunch/shared/auth"
 	"github.com/Sidiora-Technologies/KindleLaunch/shared/delivery"
 	"github.com/Sidiora-Technologies/KindleLaunch/shared/delivery/natsdriver"
+	sharedhttp "github.com/Sidiora-Technologies/KindleLaunch/shared/http"
+	"github.com/Sidiora-Technologies/KindleLaunch/shared/testpki"
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -381,5 +389,89 @@ func TestStreamRelayDocumentBounds(t *testing.T) {
 		if filterWithin(c.inner, c.outer) != c.want {
 			t.Fatalf("filterWithin(%s, %s) != %v", c.inner, c.outer, c.want)
 		}
+	}
+}
+
+// TestRuntimeIdentityInlineMaterial builds the production identity channel
+// from the inline IDENTITY_CA_PEM, IDENTITY_CLIENT_CERT_PEM and
+// IDENTITY_CLIENT_KEY_PEM values and completes an mTLS round trip with a
+// listener that requires the client certificate.
+func TestRuntimeIdentityInlineMaterial(t *testing.T) {
+	pki := testpki.New(t)
+	server := pki.Leaf("gateway-server", "gateway.railway.internal")
+	client := pki.Leaf("api-client", "api.railway.internal")
+	caPEM, err := os.ReadFile(pki.CAFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	presented := make(chan []byte, 1)
+	listener := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		presented <- r.TLS.PeerCertificates[0].Raw
+	}))
+	listener.TLS = &tls.Config{MinVersion: tls.VersionTLS13, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pki.Roots(), Certificates: []tls.Certificate{server.Pair}}
+	listener.StartTLS()
+	defer listener.Close()
+	cfg := &config.Config{IdentityURL: listener.URL, IdentityPeerCertSHA256: server.SHA256, IdentityCAPEM: string(caPEM), IdentityClientCertPEM: string(client.CertPEM), IdentityClientKeyPEM: string(client.KeyPEM), IdentitySigningKey: base64.RawStdEncoding.EncodeToString(testpki.Ed25519(t).Private), IdentityIssuer: "api", IdentityAudience: "identity"}
+	authority, err := runtimeIdentity(cfg)
+	if err != nil {
+		t.Fatalf("inline identity material rejected: %v", err)
+	}
+	response, err := authority.Client.Get(listener.URL)
+	if err != nil {
+		t.Fatalf("inline mTLS round trip: %v", err)
+	}
+	response.Body.Close()
+	if got := <-presented; string(got) != string(client.Pair.Certificate[0]) {
+		t.Fatal("listener saw a different client certificate than IDENTITY_CLIENT_CERT_PEM")
+	}
+	cfg.IdentityCAFile = pki.CAFile
+	if _, err = runtimeIdentity(cfg); err == nil || !strings.Contains(err.Error(), "IDENTITY_CA_FILE and IDENTITY_CA_PEM") {
+		t.Fatalf("both identity CA sources accepted: %v", err)
+	}
+}
+
+// loadInlineDocument loads the config with one inline bound document whose
+// declared digest is wrong for its bytes.
+func loadInlineDocument(t *testing.T, name string) config.Config {
+	t.Helper()
+	t.Setenv("DATABASE_URL", "postgres://kl:kl@localhost:5432/kl")
+	t.Setenv("REDIS_URL", "redis://localhost:6379/0")
+	t.Setenv(name+"_DOCUMENT", base64.StdEncoding.EncodeToString([]byte(`{"schemaVersion":2}`)))
+	t.Setenv(name+"_SHA256", fmt.Sprintf("%x", sha256.Sum256([]byte("another document"))))
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("inline %s_DOCUMENT rejected at load: %v", name, err)
+	}
+	return cfg
+}
+
+func TestNetworkAuthorityInlineDocumentGate(t *testing.T) {
+	cfg := loadInlineDocument(t, "NETWORK_AUTHORITY_CONFIG")
+	cfg.NetworkRPCURL = "https://rpc.example"
+	if _, err := newNetworkAuthority(context.Background(), nil, &cfg); err == nil || err.Error() != "runtime_document_binding_mismatch" {
+		t.Fatalf("inline network authority document with a wrong digest did not fail startup: %v", err)
+	}
+}
+
+func TestDiscoveryRuntimeInlineDocumentGate(t *testing.T) {
+	cfg := loadInlineDocument(t, "DISCOVERY_RUNTIME_CONFIG")
+	admission, err := rest.NewAdmission(10, 1, time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &App{cfg: cfg}
+	if err = a.registerDiscovery(context.Background(), chi.NewRouter(), nil, admission, map[string]sharedhttp.Check{}); err == nil || err.Error() != "runtime_document_binding_mismatch" {
+		t.Fatalf("inline discovery runtime document with a wrong digest did not fail startup: %v", err)
+	}
+}
+
+func TestStreamRelayInlineDocumentGate(t *testing.T) {
+	cfg := loadInlineDocument(t, "STREAM_RELAY_CONFIG")
+	if _, err := readStreamRelayDocument(&cfg); err == nil || err.Error() != "runtime_document_binding_mismatch" {
+		t.Fatalf("inline stream relay document with a wrong digest did not fail startup: %v", err)
+	}
+	t.Setenv("STREAM_RELAY_CONFIG_SHA256", "")
+	if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "STREAM_RELAY_CONFIG_DOCUMENT is set without STREAM_RELAY_CONFIG_SHA256") {
+		t.Fatalf("inline stream relay document without a digest accepted: %v", err)
 	}
 }

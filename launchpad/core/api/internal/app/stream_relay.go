@@ -75,7 +75,7 @@ func (d streamRelayDocument) validate() error {
 // document is not configured, an error when it is partially configured or
 // invalid.
 func readStreamRelayDocument(c *config.Config) (*streamRelayDocument, error) {
-	if c.StreamRelayFile == "" && c.StreamRelaySHA256 == "" {
+	if c.StreamRelayFile == "" && c.StreamRelayDocument == "" && c.StreamRelaySHA256 == "" {
 		return nil, nil
 	}
 	var d streamRelayDocument
@@ -89,12 +89,17 @@ func readStreamRelayDocument(c *config.Config) (*streamRelayDocument, error) {
 }
 
 // connectRuntimeNATS opens the authenticated TLS broker connection both API
-// roles use (NATS_URL tls://, NATS_CREDENTIALS user credentials file).
+// roles use (NATS_URL tls://, user credentials from the NATS_CREDENTIALS
+// file or the inline NATS_CREDENTIALS_CREDS).
 func connectRuntimeNATS(c *config.Config) (*nats.Conn, error) {
-	if c.NATSCredentials == "" || !strings.HasPrefix(c.NATSURL, "tls://") {
+	if (c.NATSCredentials == "" && c.NATSCredentialsCreds == "") || !strings.HasPrefix(c.NATSURL, "tls://") {
 		return nil, errors.New("authenticated TLS broker required")
 	}
-	return nats.Connect(c.NATSURL, nats.UserCredentials(c.NATSCredentials), nats.Timeout(2*time.Second), nats.Name(c.RuntimeInstanceID), nats.MaxReconnects(-1))
+	credentials, err := c.NATSCredentialsOption()
+	if err != nil {
+		return nil, err
+	}
+	return nats.Connect(c.NATSURL, credentials, nats.Timeout(2*time.Second), nats.Name(c.RuntimeInstanceID), nats.MaxReconnects(-1))
 }
 
 // verifyRelayStreams checks, before the relay publishes, that every routed
