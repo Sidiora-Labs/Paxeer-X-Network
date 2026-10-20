@@ -2,7 +2,9 @@ name: Publish off-chain images
 
 # Every push to main that touches an off-chain service builds each row of tools/deploy/offchain-images.sh,
 # pushes it to GHCR as :<12-hex sha> and :<git describe>, and records every pushed digest in one
-# digests.json artifact for the rollout tool.
+# digests.json artifact for the rollout tool. A row that fails its check is reported with an error annotation,
+# left unbuilt and absent from digests.json, so the rollout tool refuses it; the run fails only when no row passes
+# its check or a build fails.
 on:
   push:
     branches: [main]
@@ -27,6 +29,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       images: ${{ steps.plan.outputs.images }}
+      unbuilt: ${{ steps.plan.outputs.unbuilt }}
       sha: ${{ steps.plan.outputs.sha }}
       describe: ${{ steps.plan.outputs.describe }}
     steps:
@@ -37,7 +40,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
-      - name: Turn every row of the off-chain image table into a build matrix entry
+      - name: Turn every row of the off-chain image table that passes its check into a build matrix entry
         id: plan
         env:
           REVIEWED_BUILD_IMAGE: ${{ vars.REVIEWED_BUILD_IMAGE }}
@@ -49,9 +52,8 @@ jobs:
           for var in REVIEWED_BUILD_IMAGE REVIEWED_RUNTIME_IMAGE PERPS_BUILD_IMAGE PERPS_RUNTIME_IMAGE; do
             [[ "${!var}" =~ @sha256:[0-9a-f]{64}$ ]] || { echo "$var must be a base image pinned by digest" >&2; exit 1; }
           done
-          tools/deploy/offchain-images.sh --check
+          tools/deploy/offchain-images.sh --plan >> "$GITHUB_OUTPUT"
           {
-            printf 'images=%s\n' "$(tools/deploy/offchain-images.sh --matrix)"
             printf 'sha=%s\n' "$(git rev-parse --short=12 HEAD)"
             printf 'describe=%s\n' "$(git describe --tags --always --abbrev=12)"
           } >> "$GITHUB_OUTPUT"
@@ -109,19 +111,28 @@ jobs:
           if-no-files-found: error
 
   digests:
-    needs: [images]
+    needs: [plan, images]
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
+    outputs:
+      unbuilt: ${{ steps.merge.outputs.unbuilt }}
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: digest-*
           path: digests
           merge-multiple: true
-      - name: Merge every image digest into digests.json
+      - name: Merge every built image digest into digests.json, leaving each unbuilt row absent
+        id: merge
+        env:
+          UNBUILT: ${{ needs.plan.outputs.unbuilt }}
         run: |
           set -euo pipefail
           cat digests/* | jq -R -s -c '[splits("\n") | select(length > 0) | split("=") | {key: .[0], value: .[1]}] | from_entries' > digests.json
+          jq -e --argjson unbuilt "$UNBUILT" '[keys[] | select(IN($unbuilt[]))] == []' digests.json >/dev/null ||
+            { echo "an unbuilt row has a digest" >&2; exit 1; }
+          printf 'unbuilt=%s\n' "$(jq -c . <<<"$UNBUILT")" >> "$GITHUB_OUTPUT"
+          jq -r '.[] | "- \(.) was not built: no digest in digests.json, so the rollout tool refuses it"' <<<"$UNBUILT" >> "$GITHUB_STEP_SUMMARY"
           cat digests.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
