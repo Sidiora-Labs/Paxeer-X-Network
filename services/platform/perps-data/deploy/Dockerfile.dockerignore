@@ -1,0 +1,10 @@
+*
+!go.mod
+!go.sum
+!consensus/
+!precompiles/perps/
+!precompiles/pricefeed/
+!precompiles/spot/
+!sdk/types/
+!services/platform/perps-data/
+**/node_modules

@@ -1,9 +1,13 @@
 package deploy
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -212,4 +216,127 @@ func TestDockerfile(t *testing.T) {
 			}
 		})
 	}
+}
+
+type ignoreRule struct {
+	negate  bool
+	pattern []string
+}
+
+func parseIgnore(src string) []ignoreRule {
+	var rules []ignoreRule
+	for _, line := range strings.Split(src, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		negate := strings.HasPrefix(line, "!")
+		line = strings.Trim(path.Clean(strings.TrimPrefix(line, "!")), "/")
+		rules = append(rules, ignoreRule{negate: negate, pattern: strings.Split(line, "/")})
+	}
+	return rules
+}
+
+func matchSegments(pattern, name []string) bool {
+	if len(pattern) == 0 {
+		return len(name) == 0
+	}
+	if pattern[0] == "**" {
+		for i := 0; i <= len(name); i++ {
+			if matchSegments(pattern[1:], name[i:]) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(name) == 0 {
+		return false
+	}
+	ok, err := path.Match(pattern[0], name[0])
+	return err == nil && ok && matchSegments(pattern[1:], name[1:])
+}
+
+// included reports whether rel survives the ignore rules: a rule applies when it
+// matches rel or one of its parents, and the last applying rule wins.
+func included(rules []ignoreRule, rel string) bool {
+	segs := strings.Split(rel, "/")
+	keep := true
+	for _, r := range rules {
+		for i := 1; i <= len(segs); i++ {
+			if matchSegments(r.pattern, segs[:i]) {
+				keep = r.negate
+				break
+			}
+		}
+	}
+	return keep
+}
+
+func readIgnore(t *testing.T, name string) []ignoreRule {
+	t.Helper()
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("read %s: %v", name, err)
+	}
+	return parseIgnore(string(raw))
+}
+
+func TestDockerfileContext(t *testing.T) {
+	out, err := exec.Command("go", "env", "GOMOD").Output()
+	if err != nil {
+		t.Fatalf("go env GOMOD: %v", err)
+	}
+	gomod := strings.TrimSpace(string(out))
+	if gomod == "" || gomod == os.DevNull {
+		t.Fatal("not inside a Go module")
+	}
+	root := filepath.Dir(gomod)
+
+	t.Run("service_image", func(t *testing.T) {
+		rules := readIgnore(t, "Dockerfile.dockerignore")
+		cmd := exec.Command("go", "list", "-deps", "-f", "{{.Dir}}", "./services/platform/perps-data/cmd/...")
+		cmd.Dir = root
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("go list: %v: %s", err, stderr.String())
+		}
+		checked := 0
+		for _, dir := range strings.Fields(string(out)) {
+			rel, err := filepath.Rel(root, dir)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+				continue
+			}
+			checked++
+			if !included(rules, filepath.ToSlash(rel)) {
+				t.Errorf("package dir %s is excluded from the build context", rel)
+			}
+		}
+		if checked == 0 {
+			t.Fatal("go list returned no package dirs inside the module")
+		}
+		for _, f := range []string{"go.mod", "go.sum"} {
+			if !included(rules, f) {
+				t.Errorf("%s is excluded from the build context", f)
+			}
+		}
+		for _, p := range []string{"human", "human/apps/x.ts", "launchpad", "launchpad/go.mod", "programs", "programs/Cargo.toml", "services/platform/perps-data/web/node_modules/x/index.js"} {
+			if included(rules, p) {
+				t.Errorf("%s is in the build context", p)
+			}
+		}
+	})
+
+	t.Run("nats_image", func(t *testing.T) {
+		rules := readIgnore(t, filepath.Join("nats", "Dockerfile.dockerignore"))
+		if !included(rules, "services/platform/perps-data/deploy/nats/nats.conf") {
+			t.Error("nats.conf is excluded from the NATS build context")
+		}
+		for _, p := range []string{"go.mod", "services", "services/platform/perps-data/deploy/nats/Dockerfile", "services/platform/perps-data/deploy/Dockerfile", "human", "consensus/x.go"} {
+			if included(rules, p) {
+				t.Errorf("%s is in the NATS build context", p)
+			}
+		}
+	})
 }
