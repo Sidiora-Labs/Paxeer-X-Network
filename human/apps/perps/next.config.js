@@ -59,7 +59,7 @@ const nextConfig = {
   // Standalone output: produces .next/standalone with a minimal
   // node server + only the deps it traced, so the production
   // Docker image stays small (~180 MB vs ~1 GB for a full copy).
-  // See deploy/Dockerfile for how the artifacts get assembled.
+  // See Dockerfile for how the artifacts get assembled.
   output: 'standalone',
   outputFileTracingRoot: __dirname,
   webpack: config => {

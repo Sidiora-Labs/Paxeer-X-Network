@@ -72,7 +72,6 @@ Both containers run on a private Docker bridge network. The app container has no
 
 ```
 deploy/
-├── Dockerfile                # multi-stage build → ~300 MB image
 ├── docker-compose.yml        # app + nginx stack
 ├── .env.production.example   # template (copy to repo-root .env.production)
 ├── README.md                 # this file

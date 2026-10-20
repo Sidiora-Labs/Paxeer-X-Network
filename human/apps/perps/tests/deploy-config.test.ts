@@ -47,11 +47,16 @@ function filesUnder(rel: string): string[] {
 }
 
 function dockerfileEnvBlock(): string[] {
-  const all = lines('deploy/Dockerfile');
+  const all = lines('Dockerfile');
   const start = all.findIndex((line) => line.startsWith('ENV NEXT_PUBLIC_'));
-  assert.notEqual(start, -1, 'deploy/Dockerfile has no NEXT_PUBLIC_ ENV list');
+  assert.notEqual(start, -1, 'Dockerfile has no NEXT_PUBLIC_ ENV list');
   const end = all.findIndex((line, i) => i >= start && !line.trimEnd().endsWith('\\'));
-  return all.slice(start, end + 1).map((line) => line.replace(/^ENV\s+/, '').replace(/\\$/, '').trim());
+  return all.slice(start, end + 1).map((line) =>
+    line
+      .replace(/^ENV\s+/, '')
+      .replace(/\\$/, '')
+      .trim(),
+  );
 }
 
 test('deployFilesDeclareGateway', () => {
@@ -61,8 +66,8 @@ test('deployFilesDeclareGateway', () => {
       lines('deploy/.env.production.example').some((l) => l.startsWith(`${name}=`)),
     'deploy/docker-compose.yml': (name) =>
       lines('deploy/docker-compose.yml').some((l) => l.replace(/^#\s*/, '').trim() === `${name}: \${${name}:-}`),
-    'deploy/Dockerfile ARG': (name) => lines('deploy/Dockerfile').some((l) => l === `ARG ${name}=`),
-    'deploy/Dockerfile ENV': (name) => dockerfileEnvBlock().includes(`${name}=$${name}`),
+    'Dockerfile ARG': (name) => lines('Dockerfile').some((l) => l === `ARG ${name}=`),
+    'Dockerfile ENV': (name) => dockerfileEnvBlock().includes(`${name}=$${name}`),
     'deploy/README.md': (name) => read('deploy/README.md').includes(`\`${name}\``),
   };
   for (const [file, declares] of Object.entries(declarations)) {
@@ -73,16 +78,29 @@ test('deployFilesDeclareGateway', () => {
 
   const railway = JSON.parse(read('railway.json')) as Record<string, Record<string, unknown>>;
   assert.deepEqual(Object.keys(railway).sort(), ['$schema', 'build', 'deploy']);
-  assert.deepEqual(Object.keys(railway.build).sort(), ['buildCommand', 'builder', 'nixpacksPlan']);
-  assert.deepEqual(Object.keys(railway.build.nixpacksPlan as object), ['providers']);
-  assert.equal(/^\[variables\]/m.test(read('nixpacks.toml')), false, 'nixpacks.toml carries a variable list');
-  assert.equal(read('ecosystem.config.js').includes('NEXT_PUBLIC_'), false, 'ecosystem.config.js names a build variable');
+  assert.deepEqual(railway.build, {
+    builder: 'DOCKERFILE',
+    dockerfilePath: 'Dockerfile',
+  });
+  assert.equal(existsSync(path.join(ROOT, 'nixpacks.toml')), false, 'nixpacks.toml still exists');
+  assert.equal(existsSync(path.join(ROOT, 'deploy/Dockerfile')), false, 'deploy/Dockerfile still exists');
+  assert.equal(
+    read('ecosystem.config.js').includes('NEXT_PUBLIC_'),
+    false,
+    'ecosystem.config.js names a build variable',
+  );
 });
 
 test('removedVariablesAbsent', () => {
-  const scanned = [...filesUnder('src/env'), ...filesUnder('deploy'), 'railway.json', 'nixpacks.toml', 'ecosystem.config.js'];
+  const scanned = [
+    ...filesUnder('src/env'),
+    ...filesUnder('deploy'),
+    'railway.json',
+    'Dockerfile',
+    'ecosystem.config.js',
+  ];
   assert.ok(scanned.includes(path.join('src/env', '.env.template')));
-  assert.ok(scanned.includes(path.join('deploy', 'Dockerfile')));
+  assert.ok(scanned.includes(path.join('deploy', 'docker-compose.yml')));
   for (const file of scanned) {
     const text = read(file);
     for (const name of REMOVED) {
@@ -102,11 +120,19 @@ test('imageDockerfileMatchesOffchainImages', () => {
   const all = lines('Dockerfile');
   assert.match(dockerfile, /^ARG NODE_IMAGE=node@sha256:[0-9a-f]{64}$/m);
   assert.match(dockerfile, /NODE_IMAGE must be pinned by digest/);
-  assert.ok(all.includes('ARG CHARTING_IMAGE=ghcr.io/sidiora-labs/hyperpax-charting-library:latest'));
+  assert.ok(
+    all.includes(
+      'ARG CHARTING_IMAGE=ghcr.io/sidiora-labs/hyperpax-charting-library@sha256:4a805ca00668766af6085043670140a8f215ccbd29c169e1bc4978d2984bad74',
+    ),
+  );
+  assert.match(dockerfile, /CHARTING_IMAGE must be pinned by digest/);
   assert.ok(all.includes('FROM ${CHARTING_IMAGE} AS charting'));
   assert.ok(all.includes('COPY --from=charting /charting_library public/static/charting_library'));
   assert.ok(all.includes('COPY --from=charting /datafeeds public/static/datafeeds'));
-  assert.match(dockerfile, /test -f public\/static\/charting_library\/charting_library\.standalone\.js \|\| \{ echo .* exit 1; \}/);
+  assert.match(
+    dockerfile,
+    /test -f public\/static\/charting_library\/charting_library\.standalone\.js \|\| \{ echo .* exit 1; \}/,
+  );
   assert.ok(all.includes('RUN pnpm install --frozen-lockfile'));
   assert.match(dockerfile, /PORT=3000/);
   assert.match(dockerfile, /\/api\/build-id/);
@@ -114,7 +140,12 @@ test('imageDockerfileMatchesOffchainImages', () => {
   const start = all.findIndex((line) => line.startsWith('ENV NEXT_PUBLIC_'));
   assert.notEqual(start, -1, 'Dockerfile has no NEXT_PUBLIC_ ENV list');
   const end = all.findIndex((line, i) => i >= start && !line.trimEnd().endsWith('\\'));
-  const env = all.slice(start, end + 1).map((line) => line.replace(/^ENV\s+/, '').replace(/\\$/, '').trim());
+  const env = all.slice(start, end + 1).map((line) =>
+    line
+      .replace(/^ENV\s+/, '')
+      .replace(/\\$/, '')
+      .trim(),
+  );
   const read_ = new Set(
     filesUnder('src')
       .filter((file) => /\.(ts|tsx|js|jsx)$/.test(file))
@@ -130,11 +161,16 @@ test('imageDockerfileMatchesOffchainImages', () => {
 });
 
 test('railwayHealthcheck', () => {
-  const railway = JSON.parse(read('railway.json')) as { deploy: Record<string, unknown> };
-  assert.equal(railway.deploy.healthcheckPath, '/');
+  const railway = JSON.parse(read('railway.json')) as {
+    deploy: Record<string, unknown>;
+  };
+  assert.equal(railway.deploy.healthcheckPath, '/api/build-id');
   assert.equal(railway.deploy.healthcheckTimeout, 300);
   assert.equal(railway.deploy.restartPolicyType, 'ON_FAILURE');
   assert.equal(read('railway.json').includes('rpcpaxeer.online'), false);
   assert.ok(existsSync(path.join(ROOT, 'src/pages/api/build-id.ts')));
-  assert.match(read('src/pages/api/build-id.ts'), /RAILWAY_GIT_COMMIT_SHA \|\| process\.env\.VERCEL_GIT_COMMIT_SHA \|\| 'development'/);
+  assert.match(
+    read('src/pages/api/build-id.ts'),
+    /RAILWAY_GIT_COMMIT_SHA \|\| process\.env\.VERCEL_GIT_COMMIT_SHA \|\| 'development'/,
+  );
 });

@@ -21,7 +21,7 @@ services:
 # app:
 # build:
 # context: ..
-# dockerfile: deploy/Dockerfile
+# dockerfile: Dockerfile
 # args:
 # Pass through every NEXT_PUBLIC_* var at build time. They get
 # baked into the client bundle and cannot be changed at runtime

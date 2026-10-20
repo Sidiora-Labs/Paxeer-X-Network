@@ -1,13 +1,15 @@
 # syntax=docker/dockerfile:1.7
 ARG NODE_IMAGE=node@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
-ARG CHARTING_IMAGE=ghcr.io/sidiora-labs/hyperpax-charting-library:latest
+ARG CHARTING_IMAGE=ghcr.io/sidiora-labs/hyperpax-charting-library@sha256:4a805ca00668766af6085043670140a8f215ccbd29c169e1bc4978d2984bad74
 
 FROM ${CHARTING_IMAGE} AS charting
 
 FROM ${NODE_IMAGE} AS deps
 ARG NODE_IMAGE
+ARG CHARTING_IMAGE
 RUN set -eu; \
-    case "${NODE_IMAGE}" in *@sha256:????????????????????????????????????????????????????????????????) ;; *) echo "NODE_IMAGE must be pinned by digest" >&2; exit 1 ;; esac
+    case "${NODE_IMAGE}" in *@sha256:????????????????????????????????????????????????????????????????) ;; *) echo "NODE_IMAGE must be pinned by digest" >&2; exit 1 ;; esac; \
+    case "${CHARTING_IMAGE}" in *@sha256:????????????????????????????????????????????????????????????????) ;; *) echo "CHARTING_IMAGE must be pinned by digest" >&2; exit 1 ;; esac
 WORKDIR /app
 RUN apk add --no-cache libc6-compat && corepack enable && corepack prepare pnpm@9 --activate
 COPY package.json pnpm-lock.yaml ./
@@ -43,6 +45,7 @@ ARG NEXT_PUBLIC_RELEASE_SPOT_OPEN=
 ARG NEXT_PUBLIC_SENTRY_DSN=
 ARG NEXT_PUBLIC_SENTRY_ENV=
 ARG NEXT_PUBLIC_SENTRY_TUNNEL=
+ARG NEXT_PUBLIC_STATUS_PAGE_URL=
 ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 ARG NEXT_PUBLIC_SUPABASE_URL=
 ARG NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA=
@@ -68,11 +71,12 @@ ENV NEXT_PUBLIC_AUTH_REDIRECT_URL=$NEXT_PUBLIC_AUTH_REDIRECT_URL \
     NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN \
     NEXT_PUBLIC_SENTRY_ENV=$NEXT_PUBLIC_SENTRY_ENV \
     NEXT_PUBLIC_SENTRY_TUNNEL=$NEXT_PUBLIC_SENTRY_TUNNEL \
+    NEXT_PUBLIC_STATUS_PAGE_URL=$NEXT_PUBLIC_STATUS_PAGE_URL \
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY \
     NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA=$NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA \
     NEXT_PUBLIC_WALLET_IFRAME_ORIGIN=$NEXT_PUBLIC_WALLET_IFRAME_ORIGIN
-RUN pnpm build
+RUN for n in $(env | sed -n 's/^\(NEXT_PUBLIC_[A-Za-z0-9_]*\)=.*/\1/p'); do eval "v=\${$n}"; [ -n "$v" ] || unset "$n"; done; pnpm build
 
 FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
