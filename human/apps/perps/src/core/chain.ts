@@ -7,6 +7,7 @@
 
 import { defineChain } from "viem";
 import { getPaxeerRpcUrls } from "@/core/rpc";
+import { PAXSCAN_BASE_URL } from "@/core/paxscan/config";
 
 // `rpcUrls.default.http` is what wagmi advertises when a wallet adds
 // the Paxeer network for the first time (`wallet_addEthereumChain`).
@@ -23,6 +24,6 @@ export const paxeerChain = defineChain({
     },
   },
   blockExplorers: {
-    default: { name: "PaxScan", url: "https://paxscan.io" },
+    default: { name: "PaxScan", url: PAXSCAN_BASE_URL },
   },
 });
