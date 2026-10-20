@@ -66,14 +66,31 @@ const SAFE_QUERY_VALUE = /^[A-Za-z0-9_\-\.,:\/ ]{0,128}$/;
 const UPSTREAM_TIMEOUT_MS = 8_000;
 
 // Origin header sent upstream. Must be a bare http(s) origin; no default.
-function upstreamOrigin(): string | null {
-  const raw = process.env.MARKET_PROXY_ORIGIN;
-  if (!raw) return null;
+const ORIGIN_ENV = "MARKET_PROXY_ORIGIN";
+
+export function parseMarketProxyOrigin(raw: string | undefined): string {
+  if (!raw) throw new Error(`${ORIGIN_ENV} is not set`);
+  let url: URL;
   try {
-    const url = new URL(raw);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-    return url.origin === raw ? raw : null;
+    url = new URL(raw);
   } catch {
+    throw new Error(`${ORIGIN_ENV} is not a valid URL: ${raw}`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`${ORIGIN_ENV} must use http or https: ${raw}`);
+  }
+  if (url.origin !== raw) throw new Error(`${ORIGIN_ENV} must be a bare origin with no trailing slash: ${raw}`);
+  return raw;
+}
+
+// A set but malformed value refuses to load the route at all.
+if (process.env.MARKET_PROXY_ORIGIN) parseMarketProxyOrigin(process.env.MARKET_PROXY_ORIGIN);
+
+function upstreamOrigin(): string | null {
+  try {
+    return parseMarketProxyOrigin(process.env.MARKET_PROXY_ORIGIN);
+  } catch (err) {
+    console.error("[candle proxy]", err instanceof Error ? err.message : String(err));
     return null;
   }
 }

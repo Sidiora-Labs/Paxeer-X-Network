@@ -1,19 +1,25 @@
 import Link from "next/link";
 import Script from "next/script";
 
-function statusPageUrl(): string | null {
-  const raw = process.env.NEXT_PUBLIC_STATUS_PAGE_URL;
+const STATUS_PAGE_ENV = "NEXT_PUBLIC_STATUS_PAGE_URL";
+
+export function parseStatusPageUrl(raw: string | undefined): string | null {
   if (!raw) return null;
+  let url: URL;
   try {
-    const url = new URL(raw);
-    return url.protocol === "https:" && url.origin === raw ? raw : null;
+    url = new URL(raw);
   } catch {
-    return null;
+    throw new Error(`${STATUS_PAGE_ENV} is not a valid URL: ${raw}`);
   }
+  if (url.protocol !== "https:") throw new Error(`${STATUS_PAGE_ENV} must use https: ${raw}`);
+  if (url.origin !== raw) throw new Error(`${STATUS_PAGE_ENV} must be a bare origin with no trailing slash: ${raw}`);
+  return raw;
 }
 
+const STATUS_PAGE_URL = parseStatusPageUrl(process.env.NEXT_PUBLIC_STATUS_PAGE_URL);
+
 export function Footer() {
-  const statusPage = statusPageUrl();
+  const statusPage = STATUS_PAGE_URL;
   return (
     <>
       <footer className="border-t border-border py-1.5 px-4 flex items-center justify-between text-[10px] text-muted-foreground">

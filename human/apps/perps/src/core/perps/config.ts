@@ -121,8 +121,17 @@ export function marketLogoUrl(symbol: string): string {
   return coinLogoUrl(symbol);
 }
 
+// Logos served from public/market-logos/<symbol>.<ext>, keyed by lowercase symbol.
+export const MARKET_LOGO_FILES: Readonly<Record<string, string>> = Object.freeze({
+  btc: "btc.png", eth: "eth.png", sol: "sol.png", avax: "avax.png", link: "link.png",
+  tsla: "tsla.webp", nvda: "nvda.webp", nas100: "nas100.webp", xau: "xau.jpg", spx500: "spx500.webp",
+  googl: "googl.webp", pax: "pax.png", sid: "sid.png", hype: "hype.jpg", xrp: "xrp.png",
+  aster: "aster.png", trump: "trump.png", bnb: "bnb.png", usdl: "usdl.jpg",
+});
+
 export function coinLogoUrl(symbol: string): string {
-  return `https://raw.githubusercontent.com/Paxeer-Network/Pax-OrbexOpenSourceExchange/refs/heads/main/public/img/crypto/${symbol.toLowerCase()}.webp`;
+  const key = symbol.toLowerCase();
+  return `/market-logos/${MARKET_LOGO_FILES[key] ?? `${key}.png`}`;
 }
 
 // ── ERC20 ABI (minimal for approve/allowance/balanceOf) ──────────────

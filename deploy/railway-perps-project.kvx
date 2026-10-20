@@ -167,3 +167,4 @@ order = 6
 [vars.web]
 PORT = "3000"
 PERPS_GATEWAY_URL = "https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}"
+MARKET_PROXY_ORIGIN = "https://${{RAILWAY_PUBLIC_DOMAIN}}"
