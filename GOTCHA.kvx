@@ -8470,3 +8470,13 @@ detail = "PaymentRequirements::layerx_facts() and is_layerx_network() in model.r
 area = "services/interop/crates/x-websearch"
 summary = "DeliveryRecord::validate still expects the retired settlement form"
 detail = "payment.rs validate checks for lxp:<digest> and sequencer-signed while the seller writes verificationLevel receipted with a 0x transaction; the do_19 step of the x-websearch task in spec/layerx-merge is still open, so a sidecar delivery recorded from a live seller fails validation."
+
+[gotcha.1780]
+area = "sdk/platform/generators"
+summary = "make platform-sdk-generate needs gofmt on PATH"
+detail = "generate_lifecycle.py shells out to gofmt and stops with FileNotFoundError when /usr/local/go/bin is not on PATH; export it before running the generator targets."
+
+[gotcha.1781]
+area = "scripts/ci"
+summary = "xweb-workflow-check mutations anchor on literal workflow text"
+detail = "The mutation step of scripts/ci/xweb-workflow-check.sh finds its edit points by literal lines in the workflow, so an unrelated workflow edit such as a runs-on expression stops the check with 'mutation does not apply'; re-anchor the mutation and leave the assertion intact."

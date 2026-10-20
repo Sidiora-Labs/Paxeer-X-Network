@@ -3,9 +3,9 @@
 # pull requests and pushes to main; it carries one concurrency group per ref with
 # cancel-in-progress; its path filters are exactly the trees the paxeer-x-web
 # feature touches and the trees its legs exercise, each naming a path this
-# repository holds or a path a task of spec/paxeer-x-web/spec.kvx adds; its five jobs are the five legs, each named
-# for the tools it runs, and together they run exactly the commands of the
-# feature's gate task verify_cmd, each from the repository root with a tool the
+# repository holds or a path a task of the retired feature declared; its five jobs are the five legs, each
+# named for the tools it runs, and together they run exactly the commands of the
+# retired feature's gate task verify_cmd, which this script now carries, each from the repository root with a tool the
 # same job installs first at a version this repository already pins; every
 # action is pinned by commit to a pin another workflow in this repository uses;
 # and no continue-on-error or conditional step is present. The check then
@@ -21,8 +21,8 @@ fail() { printf 'xweb-workflow-check: error: %s\n' "$*" >&2; exit 1; }
 
 command -v python3 >/dev/null 2>&1 \
     || fail "python3 is required to parse the workflow"
-python3 -c 'import sys, tomllib, yaml; sys.exit(0)' >/dev/null 2>&1 \
-    || fail "python3 3.11 or later with the yaml module is required to parse the workflow and the spec"
+python3 -c 'import sys, yaml; sys.exit(0)' >/dev/null 2>&1 \
+    || fail "python3 with the yaml module is required to parse the workflow"
 [ -f "$WORKFLOW" ] \
     || fail "$WORKFLOW is missing"
 
@@ -43,12 +43,305 @@ import os
 import re
 import shlex
 import sys
-import tomllib
 
 import yaml
 
 WORKFLOW_PATH = ".github/workflows/xweb-test.yml"
-SPEC_PATH = "spec/paxeer-x-web/spec.kvx"
+SPEC_PATH = "the retired paxeer-x-web feature"
+
+# The retired feature's gate task 3.1 verify_cmd, re-pointed to the services/ tree.
+GATE_VERIFY_CMD = (
+    "timeout 20m sh -c '"
+    'cargo test --locked --manifest-path services/interop/Cargo.toml -p x-websearch && '
+    'go test -count=1 ./modules/xweb/... ./precompiles/xweb/... && '
+    'bash scripts/ci/xweb-forge-libs.sh && '
+    'FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/XWebConsumer.t.sol && '
+    'make test-web-intake test-web-root test-web-adapter test-programs-web-read test-web-program-path && '
+    'cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime --test web_read && '
+    'cargo test --locked --manifest-path services/agent/Cargo.toml -p layerx-mcp --test web && '
+    '(cd services/agent/sdk/typescript && npm ci && npm run build && node dist/test/web-search.test.js) && '
+    'PYTHONPATH=services/agent/sdk/python python3 -m pytest -q tests/agent/sdk/python/test_web_search.py'
+    "'"
+)
+
+# Every touches and tests path of the retired feature's tasks, re-pointed.
+DECLARED_PATHS = [
+    '.github/workflows/xweb-test.yml',
+    'Dockerfile',
+    'Makefile',
+    'cmd/layerxd/lxp_daemon_batch_wal.c',
+    'cmd/layerxd/lxp_daemon_lni.c',
+    'cmd/layerxd/lxp_daemon_process.c',
+    'cmd/layerxd/lxp_daemon_protocol.c',
+    'cmd/layerxd/lxp_daemon_receipt_authority.c',
+    'contracts/src/precompiles/IXWeb.sol',
+    'contracts/src/xweb',
+    'contracts/src/xweb/XWebConsumer.sol',
+    'contracts/test',
+    'contracts/test/CW1155ERC1155PointerTest.t.sol',
+    'contracts/test/CW721ERC721PointerTest.t.sol',
+    'contracts/test/XWebConsumer.t.sol',
+    'docker/docker-compose.yml',
+    'docs/site/docs/protocol/xweb.md',
+    'docs/site/mkdocs.yml',
+    'include/layerx/lx_batch.h',
+    'include/layerx/lx_web.h',
+    'include/layerx/lxp_module.h',
+    'include/layerx/lxp_receipt.h',
+    'include/layerx/programs.h',
+    'modules/xweb',
+    'modules/xweb/ATTESTATION.md',
+    'modules/xweb/keeper',
+    'modules/xweb/keeper/fulfil.go',
+    'modules/xweb/keeper/fulfil_test.go',
+    'modules/xweb/keeper/genesis.go',
+    'modules/xweb/keeper/keeper.go',
+    'modules/xweb/keeper/keeper_test.go',
+    'modules/xweb/keeper/msg_server.go',
+    'modules/xweb/keeper/msg_server_test.go',
+    'modules/xweb/keeper/refund.go',
+    'modules/xweb/keeper/refund_test.go',
+    'modules/xweb/keeper/request.go',
+    'modules/xweb/keeper/request_test.go',
+    'modules/xweb/module.go',
+    'modules/xweb/testutil/attestors.go',
+    'modules/xweb/testutil/store.go',
+    'modules/xweb/types',
+    'modules/xweb/types/attestation.go',
+    'modules/xweb/types/attestation_test.go',
+    'modules/xweb/types/errors.go',
+    'modules/xweb/types/events.go',
+    'modules/xweb/types/expected_keepers.go',
+    'modules/xweb/types/genesis.go',
+    'modules/xweb/types/keys.go',
+    'modules/xweb/types/msgs.go',
+    'modules/xweb/types/msgs_test.go',
+    'modules/xweb/types/state.go',
+    'modules/xweb/types/testdata/preimage-vectors.json',
+    'node/app.go',
+    'node/precompiles.go',
+    'node/tags',
+    'node/upgrades.go',
+    'node/upgrades_test.go',
+    'node/upgrades_xweb_test.go',
+    'precompiles',
+    'precompiles/setup.go',
+    'precompiles/setup_test.go',
+    'precompiles/utils/expected_keepers.go',
+    'precompiles/xweb/XWeb.sol',
+    'precompiles/xweb/abi.json',
+    'precompiles/xweb/setup.go',
+    'precompiles/xweb/versions',
+    'precompiles/xweb/xweb.go',
+    'precompiles/xweb/xweb_test.go',
+    'programs/abi-frozen.sha256',
+    'programs/crates/layerx-programs-registry/src/resolver.rs',
+    'programs/crates/layerx-programs-runtime/src/abi/capability.rs',
+    'programs/crates/layerx-programs-runtime/src/abi/manifest.rs',
+    'programs/crates/layerx-programs-runtime/src/abi/mod.rs',
+    'programs/crates/layerx-programs-runtime/src/abi_policy.rs',
+    'programs/crates/layerx-programs-runtime/src/cache.rs',
+    'programs/crates/layerx-programs-runtime/src/calls.rs',
+    'programs/crates/layerx-programs-runtime/src/engine.rs',
+    'programs/crates/layerx-programs-runtime/src/execute.rs',
+    'programs/crates/layerx-programs-runtime/src/ffi_call.rs',
+    'programs/crates/layerx-programs-runtime/src/host/mod.rs',
+    'programs/crates/layerx-programs-runtime/src/host/web.rs',
+    'programs/crates/layerx-programs-runtime/src/lib.rs',
+    'programs/crates/layerx-programs-runtime/src/qualification.rs',
+    'programs/crates/layerx-programs-runtime/src/validate.rs',
+    'programs/crates/layerx-programs-runtime/tests/abi_linker.rs',
+    'programs/crates/layerx-programs-runtime/tests/web_read.rs',
+    'programs/crates/layerx-programs-sandbox/src/snapshot.rs',
+    'programs/sdk/rust/examples/web-reader',
+    'programs/sdk/rust/examples/web-reader/build.sh',
+    'programs/sdk/rust/lint/src/lib.rs',
+    'programs/sdk/rust/lint/src/main.rs',
+    'programs/sdk/rust/lint/tests',
+    'programs/sdk/rust/src/abi.rs',
+    'programs/sdk/rust/src/host.rs',
+    'programs/sdk/rust/src/lib.rs',
+    'programs/sdk/rust/src/naming.rs',
+    'programs/sdk/rust/src/web.rs',
+    'programs/tests/vectors/abi-v4.hex',
+    'scripts/ci/beta-contract-check.sh',
+    'scripts/ci/no-float-scan.sh',
+    'scripts/ci/xweb-forge-libs.sh',
+    'scripts/ci/xweb-workflow-check.sh',
+    'scripts/programs/generate-abi-vectors.py',
+    'services/agent/crates',
+    'services/agent/crates/layerx-agentd',
+    'services/agent/crates/layerx-agentd/src/read/native.rs',
+    'services/agent/crates/layerx-agentd/src/tenant.rs',
+    'services/agent/crates/layerx-agentd/tests/native_reads_daemon.rs',
+    'services/agent/crates/layerx-client',
+    'services/agent/crates/layerx-client/tests/finality_evidence.rs',
+    'services/agent/crates/layerx-client/tests/session_fee_state_daemon.rs',
+    'services/agent/crates/layerx-mcp/src/binding.rs',
+    'services/agent/crates/layerx-mcp/src/boundary.rs',
+    'services/agent/crates/layerx-mcp/src/catalogue.rs',
+    'services/agent/crates/layerx-mcp/src/server.rs',
+    'services/agent/crates/layerx-mcp/src/tools/mod.rs',
+    'services/agent/crates/layerx-mcp/src/tools/web.rs',
+    'services/agent/crates/layerx-mcp/tests/daemon_bound.rs',
+    'services/agent/crates/layerx-mcp/tests/web.rs',
+    'services/agent/crates/layerx-proof/src/receipt.rs',
+    'services/agent/crates/layerx-types',
+    'services/agent/crates/layerx-types/build.rs',
+    'services/agent/crates/layerx-types/src/guest_abi.rs',
+    'services/agent/crates/layerx-types/src/lib.rs',
+    'services/agent/crates/layerx-types/src/payload.rs',
+    'services/agent/crates/layerx-types/src/program_call.rs',
+    'services/agent/crates/layerx-types/src/program_lifecycle.rs',
+    'services/agent/crates/layerx-types/src/programs_activity.rs',
+    'services/agent/crates/layerx-types/src/programs_module_abi.rs',
+    'services/agent/crates/layerx-types/tests/trading_payload.rs',
+    'services/agent/sdk/python/layerx_sdk/__init__.py',
+    'services/agent/sdk/python/layerx_sdk/__init__.pyi',
+    'services/agent/sdk/python/layerx_sdk/web_search.py',
+    'services/agent/sdk/python/layerx_sdk/web_search.pyi',
+    'services/agent/sdk/python/layerx_sdk/x402.py',
+    'services/agent/sdk/python/layerx_sdk/xweb_api.py',
+    'services/agent/sdk/python/layerx_sdk/xweb_api.pyi',
+    'services/agent/sdk/typescript/package.json',
+    'services/agent/sdk/typescript/src/index.ts',
+    'services/agent/sdk/typescript/src/web-search.ts',
+    'services/agent/sdk/typescript/src/xweb-api.ts',
+    'services/agent/sdk/typescript/test/web-search.test.ts',
+    'services/agent/sdk/typescript/test/xweb-api.test.ts',
+    'services/agent/tools/run-real-node-tests.sh',
+    'services/interop/Cargo.lock',
+    'services/interop/Cargo.toml',
+    'services/interop/crates/layerx-x402/src/buyer.rs',
+    'services/interop/crates/layerx-x402/src/model.rs',
+    'services/interop/crates/layerx-x402/src/seller.rs',
+    'services/interop/crates/layerx-x402/tests/buyer.rs',
+    'services/interop/crates/layerx-x402/tests/seller.rs',
+    'services/interop/crates/x-websearch/Cargo.toml',
+    'services/interop/crates/x-websearch/src/api.rs',
+    'services/interop/crates/x-websearch/src/assets.rs',
+    'services/interop/crates/x-websearch/src/attest.rs',
+    'services/interop/crates/x-websearch/src/canonical.rs',
+    'services/interop/crates/x-websearch/src/config.rs',
+    'services/interop/crates/x-websearch/src/content.rs',
+    'services/interop/crates/x-websearch/src/crawl.rs',
+    'services/interop/crates/x-websearch/src/extract.rs',
+    'services/interop/crates/x-websearch/src/fetch.rs',
+    'services/interop/crates/x-websearch/src/index.rs',
+    'services/interop/crates/x-websearch/src/kernel.rs',
+    'services/interop/crates/x-websearch/src/keys.rs',
+    'services/interop/crates/x-websearch/src/lib.rs',
+    'services/interop/crates/x-websearch/src/main.rs',
+    'services/interop/crates/x-websearch/src/payment.rs',
+    'services/interop/crates/x-websearch/src/robots.rs',
+    'services/interop/crates/x-websearch/src/search.rs',
+    'services/interop/crates/x-websearch/src/server.rs',
+    'services/interop/crates/x-websearch/src/submit.rs',
+    'services/interop/crates/x-websearch/src/watch.rs',
+    'services/interop/crates/x-websearch/tests',
+    'services/interop/crates/x-websearch/tests/api.rs',
+    'services/interop/crates/x-websearch/tests/attest.rs',
+    'services/interop/crates/x-websearch/tests/binary.rs',
+    'services/interop/crates/x-websearch/tests/canonical.rs',
+    'services/interop/crates/x-websearch/tests/config.rs',
+    'services/interop/crates/x-websearch/tests/content.rs',
+    'services/interop/crates/x-websearch/tests/crawl.rs',
+    'services/interop/crates/x-websearch/tests/fetch.rs',
+    'services/interop/crates/x-websearch/tests/fixtures/api',
+    'services/interop/crates/x-websearch/tests/fixtures/api/select-vectors.json',
+    'services/interop/crates/x-websearch/tests/fixtures/binary',
+    'services/interop/crates/x-websearch/tests/fixtures/client-exchange.json',
+    'services/interop/crates/x-websearch/tests/fixtures/config',
+    'services/interop/crates/x-websearch/tests/fixtures/content-vectors.json',
+    'services/interop/crates/x-websearch/tests/fixtures/crawl-site',
+    'services/interop/crates/x-websearch/tests/fixtures/evm',
+    'services/interop/crates/x-websearch/tests/fixtures/evm/already-fulfilled.json',
+    'services/interop/crates/x-websearch/tests/fixtures/evm/lost-race.json',
+    'services/interop/crates/x-websearch/tests/fixtures/evm/submit.json',
+    'services/interop/crates/x-websearch/tests/fixtures/gateway',
+    'services/interop/crates/x-websearch/tests/fixtures/kernel',
+    'services/interop/crates/x-websearch/tests/fixtures/site',
+    'services/interop/crates/x-websearch/tests/kernel.rs',
+    'services/interop/crates/x-websearch/tests/keys.rs',
+    'services/interop/crates/x-websearch/tests/payment.rs',
+    'services/interop/crates/x-websearch/tests/search.rs',
+    'services/interop/crates/x-websearch/tests/server.rs',
+    'services/interop/crates/x-websearch/tests/submit.rs',
+    'services/interop/deploy/x-websearch/Dockerfile',
+    'services/interop/deploy/x-websearch/config.example.json',
+    'services/interop/deploy/x-websearch/tests/dry-run-check.sh',
+    'services/interop/deploy/x-websearch/tests/fixtures/dry-run.json',
+    'services/interop/deploy/x-websearch/tests/fixtures/site',
+    'services/interop/deploy/x-websearch/tests/packaging-check.sh',
+    'services/interop/deploy/x-websearch/x-websearch.service',
+    'services/platform/Cargo.lock',
+    'services/platform/docs/content/beta.md',
+    'services/platform/hosted/core/src/main.rs',
+    'services/platform/hosted/core/tests/boundary.rs',
+    'services/platform/hosted/gateway/openrpc.json',
+    'services/platform/hosted/gateway/src/public_reads.rs',
+    'services/platform/hosted/gateway/src/rpc.rs',
+    'services/platform/hosted/gateway/tests/fixtures',
+    'services/platform/hosted/gateway/tests/local/Cargo.toml',
+    'services/platform/hosted/gateway/tests/local/custody_chain.py',
+    'services/platform/hosted/gateway/tests/local/deposit_recipient.py',
+    'services/platform/hosted/gateway/tests/local/events.rs',
+    'services/platform/hosted/gateway/tests/local/funding.rs',
+    'services/platform/hosted/gateway/tests/local/lifecycle.rs',
+    'spec/402lxp/protocol.md',
+    'spec/paxeer-x-web/qualification.kvx',
+    'src/modules/programs/call.c',
+    'src/modules/programs/deploy.c',
+    'src/modules/web',
+    'src/modules/web/lx_web_attestors.c',
+    'src/modules/web/lx_web_intake.c',
+    'src/network/lx_web_adapter.c',
+    'src/protocol/lxp_genesis.c',
+    'src/protocol/lxp_handover.c',
+    'src/protocol/lxp_kernel.c',
+    'src/protocol/lxp_module_ctx.c',
+    'src/protocol/lxp_receipt.c',
+    'src/sequencer/lx_web_root.c',
+    'storage/common/keys',
+    'tests/agent/sdk/python/test_web_search.py',
+    'tests/agent/sdk/python/test_x402.py',
+    'tests/agent/sdk/python/test_xweb_api.py',
+    'tests/bridge/qualify_credit.py',
+    'tests/daemon/availability-settlement.py',
+    'tests/daemon/lxp_test_program_artifacts.c',
+    'tests/daemon/program-admission.sh',
+    'tests/daemon/withdraw-custody.py',
+    'tests/fixtures/custody',
+    'tests/fixtures/web',
+    'tests/fixtures/web/observation-activity.hex',
+    'tests/modules/test_web_intake.c',
+    'tests/network/test_web_adapter.c',
+    'tests/programs/test_metered_call.c',
+    'tests/programs/test_registration.c',
+    'tests/protocol/lxp_test_dispatch.c',
+    'tests/protocol/lxp_test_kernel.c',
+    'tests/protocol/lxp_test_module_ctx.c',
+    'tests/protocol/lxp_test_receipts.c',
+    'tests/sequencer/test_web_root.c',
+    'tests/storage/lxp_test_finality_evidence.c',
+    'tests/storage/lxp_test_maintenance_publication.c',
+    'tests/test_programs_web_read.c',
+    'tests/test_web_program_path.c',
+    'tests/vectors/finality_evidence_v1.vec',
+]
+
+# The make targets the retired feature's Makefile tasks verified.
+FEATURE_MAKE_TARGETS = [
+    'agent-test',
+    'programs-abi-drift',
+    'test-dispatch',
+    'test-kernel',
+    'test-programs-web-read',
+    'test-web-adapter',
+    'test-web-intake',
+    'test-web-program-path',
+    'test-web-root',
+]
 GATE_TASK = ("3", "1")
 
 FILTERS = [
@@ -197,32 +490,8 @@ def split_top_level(text):
     return parts
 
 
-def load_spec(root):
-    try:
-        return tomllib.loads(read(os.path.join(root, SPEC_PATH)))
-    except (OSError, tomllib.TOMLDecodeError) as error:
-        refuse("%s cannot be read as the feature spec: %s" % (SPEC_PATH, error))
-        return {}
-
-
-def feature_tasks(spec):
-    tasks = []
-    for wave in (spec.get("task") or {}).values():
-        if not isinstance(wave, dict):
-            continue
-        for task in wave.values():
-            if isinstance(task, dict) and "verify_cmd" in task:
-                tasks.append(task)
-    return tasks
-
-
-def declared_paths(spec):
-    paths = set()
-    for task in feature_tasks(spec):
-        for key in ("touches", "tests"):
-            for path in task.get(key) or []:
-                paths.add(str(path).rstrip("/"))
-    return paths
+def declared_paths():
+    return set(DECLARED_PATHS)
 
 
 def is_declared(declared, path):
@@ -244,13 +513,8 @@ def present_or_declared(root, declared, path, what):
         )
 
 
-def gate_commands(spec):
-    wave, task = GATE_TASK
-    block = ((spec.get("task") or {}).get(wave) or {}).get(task) or {}
-    verify = block.get("verify_cmd")
-    if not isinstance(verify, str):
-        refuse("the gate task %s.%s carries no verify_cmd" % GATE_TASK)
-        return []
+def gate_commands():
+    verify = GATE_VERIFY_CMD
     match = GATE_FORM.match(verify)
     if not match:
         refuse(
@@ -486,14 +750,8 @@ def makefile_targets(root):
     return targets
 
 
-def feature_make_targets(spec):
-    targets = set()
-    for task in feature_tasks(spec):
-        if "Makefile" not in (task.get("touches") or []):
-            continue
-        for match in re.finditer(r"\bmake ((?:[A-Za-z0-9_.-]+ ?)+)", str(task["verify_cmd"])):
-            targets.update(match.group(1).split())
-    return targets
+def feature_make_targets():
+    return set(FEATURE_MAKE_TARGETS)
 
 
 def crate_manifests(root):
@@ -507,7 +765,7 @@ def crate_manifests(root):
     return names
 
 
-def check_command_paths(root, spec, declared, job_id, directory, tokens):
+def check_command_paths(root, declared, job_id, directory, tokens):
     """Every path a command names resolves from the repository root."""
     base = directory or ""
     for index, token in enumerate(tokens):
@@ -561,7 +819,7 @@ def check_command_paths(root, spec, declared, job_id, directory, tokens):
     if program == "bash" and arguments:
         present_or_declared(root, declared, os.path.join(base, arguments[0]), "script")
     if program == "make":
-        known = makefile_targets(root) | feature_make_targets(spec)
+        known = makefile_targets(root) | feature_make_targets()
         for target in arguments:
             if target.startswith("-") or "=" in target:
                 refuse("the job %s passes make the option %s" % (job_id, target))
@@ -589,7 +847,7 @@ def check_command_paths(root, spec, declared, job_id, directory, tokens):
                 present_or_declared(root, declared, os.path.join(base, token), "Python test")
 
 
-def check_commands_run_from_the_root(root, spec, declared, document, jobs):
+def check_commands_run_from_the_root(root, declared, document, jobs):
     defaults = document.get("defaults") or {}
     if ((defaults.get("run") or {}).get("working-directory")) != ".":
         refuse("the workflow does not set defaults.run.working-directory to the repository root")
@@ -635,7 +893,7 @@ def check_commands_run_from_the_root(root, spec, declared, document, jobs):
                 if not tokens:
                     refuse("the job %s runs an empty command" % job_id)
                     continue
-                check_command_paths(root, spec, declared, job_id, directory, tokens)
+                check_command_paths(root, declared, job_id, directory, tokens)
 
 
 def check_installers(root, jobs):
@@ -848,9 +1106,8 @@ def main():
     if not isinstance(document, dict):
         sys.stderr.write("xweb-workflow-check: refused: the workflow is not a mapping\n")
         return 2
-    spec = load_spec(root)
-    declared = declared_paths(spec)
-    gate = gate_commands(spec)
+    declared = declared_paths()
+    gate = gate_commands()
     jobs = document.get("jobs") or {}
     if not isinstance(jobs, dict):
         refuse("the workflow carries no job mapping")
@@ -860,7 +1117,7 @@ def main():
     check_filters(root, declared, triggers)
     check_jobs_are_the_legs(jobs, gate)
     check_names_claim_only_what_runs(jobs)
-    check_commands_run_from_the_root(root, spec, declared, document, jobs)
+    check_commands_run_from_the_root(root, declared, document, jobs)
     check_installers(root, jobs)
     check_actions_are_pinned(root, text)
     check_nothing_is_excused(document, jobs, text)
@@ -882,9 +1139,8 @@ import sys
 
 MUTATIONS = {
     "continue-on-error": (
-        "    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n",
-        "    runs-on: ubuntu-24.04\n    continue-on-error: true\n"
         "    timeout-minutes: 30\n",
+        "    continue-on-error: true\n    timeout-minutes: 30\n",
         1,
     ),
     "no-cancel": (
