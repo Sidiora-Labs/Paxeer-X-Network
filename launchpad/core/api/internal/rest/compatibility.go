@@ -283,8 +283,30 @@ func projectionRankings(model *store.AccountingReadModel) http.HandlerFunc {
 			WriteV2APIError(w, r, 503, "DEPENDENCY_UNAVAILABLE")
 			return
 		}
-		writeProjectionEnvelope(w, r, "RankingsResponse", map[string]any{"snapshot": values[0].Payload}, &values[0])
+		writeRankingsProjection(w, r, values[0], rankingsLimit(r))
 	}
+}
+
+// writeRankingsProjection serves the stored ranking snapshot bounded to the
+// first limit items (the projection is published rank-ordered, up to 100),
+// marking it truncated when items were cut.
+func writeRankingsProjection(w http.ResponseWriter, r *http.Request, value store.PublicProjection, limit int) {
+	var snapshot map[string]json.RawMessage
+	var items []json.RawMessage
+	if json.Unmarshal(value.Payload, &snapshot) != nil || json.Unmarshal(snapshot["items"], &items) != nil {
+		WriteV2APIError(w, r, 503, "INTEGRITY_QUARANTINED")
+		return
+	}
+	if len(items) > limit {
+		bounded, err := json.Marshal(items[:limit])
+		if err != nil {
+			WriteV2APIError(w, r, 503, "INTEGRITY_QUARANTINED")
+			return
+		}
+		snapshot["items"] = bounded
+		snapshot["truncated"] = json.RawMessage("true")
+	}
+	writeProjectionEnvelope(w, r, "RankingsResponse", map[string]any{"snapshot": snapshot}, &value)
 }
 func streamSnapshot(o ProductionReadOptions) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
