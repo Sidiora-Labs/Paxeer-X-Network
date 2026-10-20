@@ -119,3 +119,28 @@ func TestFreshBaselineCapturedFromActualCanonicalChain(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestRebuildAcceptsFactoryCreationPath: a wallet inventory rebuild accepts
+// the creation block exactly as SidioraFactory and SidioraERC20 emit it (mint
+// 0x0 -> factory, then factory -> pool) alongside later trading movements, and
+// refuses the former direct-mint rule that no factory-created token satisfies.
+func TestRebuildAcceptsFactoryCreationPath(t *testing.T) {
+	start, hash := int64(33963716), "0xab"+strings.Repeat("0", 62)
+	supply := "1000000000000000"
+	moves := []movement{
+		{TransactionHash: realCreationTx, LogIndex: 2, Height: start, TransactionIndex: 3, BlockHash: hash, From: zeroAddress, To: realMarketFactory, Amount: supply},
+		{TransactionHash: realCreationTx, LogIndex: 10, Height: start, TransactionIndex: 3, BlockHash: hash, From: realMarketFactory, To: realMarketPool, Amount: supply},
+		{TransactionHash: "0x" + strings.Repeat("c", 64), LogIndex: 0, Height: start + 17, TransactionIndex: 0, BlockHash: "0x" + strings.Repeat("d", 64), From: realMarketPool, To: realMarketCreator, Amount: "5"},
+	}
+	if err := rebuildCreationPath(moves, start, hash, realCreationTx, realMarketFactory, realMarketPool); err != nil {
+		t.Fatalf("factory creation path refused: %v", err)
+	}
+	direct := []movement{moves[0], moves[2]}
+	direct[0].To = realMarketPool
+	if err := rebuildCreationPath(direct, start, hash, realCreationTx, realMarketFactory, realMarketPool); !errors.Is(err, ErrBaselineUnavailable) {
+		t.Fatalf("direct mint to pool accepted: %v", err)
+	}
+	if err := rebuildCreationPath(moves, start, "0x"+strings.Repeat("e", 64), realCreationTx, realMarketFactory, realMarketPool); !errors.Is(err, ErrBaselineUnavailable) {
+		t.Fatalf("creation path on another block accepted: %v", err)
+	}
+}

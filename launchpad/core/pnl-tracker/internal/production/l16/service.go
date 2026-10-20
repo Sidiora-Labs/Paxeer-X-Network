@@ -110,8 +110,8 @@ func (s *Service) rebuild(ctx context.Context, wallet, token string, end int64, 
 		return snapshot, err
 	}
 	var start int64
-	var creationHash, pool string
-	if err = tx.QueryRow(bounded, `SELECT height,block_hash,pool FROM indexer.indexer_canonical_creations_v1 WHERE token=$1`, token).Scan(&start, &creationHash, &pool); err != nil {
+	var creationHash, pool, creationTx string
+	if err = tx.QueryRow(bounded, `SELECT height,block_hash,pool,transaction_hash FROM indexer.indexer_canonical_creations_v1 WHERE token=$1`, token).Scan(&start, &creationHash, &pool, &creationTx); err != nil {
 		return snapshot, err
 	}
 	if start <= 0 || end < start || !paged && end-start > 10000 {
@@ -148,14 +148,8 @@ func (s *Service) rebuild(ctx context.Context, wallet, token string, end int64, 
 	if creationReported != creationHash {
 		return snapshot, delivery.ErrIntegrity
 	}
-	minted := false
-	for _, m := range moves {
-		if m.Height == start && m.BlockHash == creationHash && m.From == zeroAddress && m.To == pool && m.Amount != "0" {
-			minted = true
-		}
-	}
-	if !minted {
-		return snapshot, ErrBaselineUnavailable
+	if err = rebuildCreationPath(moves, start, creationHash, creationTx, a.factory, pool); err != nil {
+		return snapshot, err
 	}
 	rows, err := tx.Query(bounded, `SELECT payload,source_fact_digest FROM indexer.indexer_accounting_fills_v1 WHERE (payload->'position'->>'height')::bigint BETWEEN $1 AND $2 AND payload->'token'->>'address'=$3 ORDER BY (payload->'position'->>'height')::bigint,(payload->'position'->>'transactionIndex')::bigint,(payload->'position'->>'logIndex')::bigint`, start, end, token)
 	if err != nil {

@@ -22,6 +22,21 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// rebuildCreationPath requires the creation block of a rebuilt token to hold
+// the same factory creation path fresh baseline capture accepts: the
+// SidioraERC20 constructor mint to the SidioraFactory, then the factory's seed
+// of exactly that supply to the pool, in the indexed creation transaction.
+func rebuildCreationPath(moves []movement, start int64, creationHash, creationTx, factory, pool string) error {
+	creation := make([]movement, 0, 2)
+	for _, m := range moves {
+		if m.Height == start && m.BlockHash == creationHash {
+			creation = append(creation, m)
+		}
+	}
+	_, err := factoryCreationSupply(creation, creationTx, factory, pool)
+	return err
+}
+
 func (s *Service) liveRebuildTx(ctx context.Context, tx pgx.Tx, wallet, token string, end int64) (RebuildSnapshot, error) {
 	paged := true
 	var snapshot RebuildSnapshot
@@ -47,8 +62,8 @@ func (s *Service) liveRebuildTx(ctx context.Context, tx pgx.Tx, wallet, token st
 		return snapshot, err
 	}
 	var start int64
-	var creationHash, pool string
-	if err = tx.QueryRow(bounded, `SELECT height,block_hash,pool FROM indexer.indexer_canonical_creations_v1 WHERE token=$1`, token).Scan(&start, &creationHash, &pool); err != nil {
+	var creationHash, pool, creationTx string
+	if err = tx.QueryRow(bounded, `SELECT height,block_hash,pool,transaction_hash FROM indexer.indexer_canonical_creations_v1 WHERE token=$1`, token).Scan(&start, &creationHash, &pool, &creationTx); err != nil {
 		return snapshot, err
 	}
 	if start <= 0 || end < start || !paged && end-start > 10000 {
@@ -85,14 +100,8 @@ func (s *Service) liveRebuildTx(ctx context.Context, tx pgx.Tx, wallet, token st
 	if creationReported != creationHash {
 		return snapshot, delivery.ErrIntegrity
 	}
-	minted := false
-	for _, m := range moves {
-		if m.Height == start && m.BlockHash == creationHash && m.From == zeroAddress && m.To == pool && m.Amount != "0" {
-			minted = true
-		}
-	}
-	if !minted {
-		return snapshot, ErrBaselineUnavailable
+	if err = rebuildCreationPath(moves, start, creationHash, creationTx, a.factory, pool); err != nil {
+		return snapshot, err
 	}
 	var fills []accounting.FillV1
 	cursorHeight, cursorTx, cursorLog := start-1, int64(-1), int64(-1)
