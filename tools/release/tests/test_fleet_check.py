@@ -173,23 +173,6 @@ class FleetUnitTests(unittest.TestCase):
             with self.assertRaisesRegex(fleet.CheckError, "VERSION_MISMATCH"):
                 fleet.check_version(reported, expected)
 
-    def test_halted_validators_need_halt_height_elsewhere(self):
-        outcome = fleet.Outcome()
-        outcome.receipt.update(nodes_checked=3, nodes_passed=1)
-        fleet.settle_halted(["node 0", "node 2"], True, outcome)
-        self.assertEqual(outcome.errors, [])
-        self.assertEqual(outcome.finish()["nodes_passed"], 3)
-        self.assertEqual(outcome.receipt["result"], "pass")
-        outcome = fleet.Outcome()
-        outcome.receipt.update(nodes_checked=3, nodes_passed=1)
-        fleet.settle_halted(["node 0", "node 2"], False, outcome)
-        self.assertEqual(
-            outcome.errors,
-            ["node 0 status: HTTP_UNAVAILABLE", "node 2 status: HTTP_UNAVAILABLE"],
-        )
-        self.assertEqual(outcome.finish()["nodes_passed"], 1)
-        self.assertEqual(outcome.receipt["result"], "fail")
-
     def test_applied_height_and_sync(self):
         applied = {"header": {"height": "1001"}}
         status = {"sync_info": {"latest_block_height": "1010", "catching_up": False}}
@@ -581,6 +564,27 @@ def readiness_service(upstream, build_id=None):
     return server
 
 
+def snapshot_service(replies):
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            data = json.dumps(
+                {"jsonrpc": "2.0", "id": 1, "result": replies[request["method"]]}
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer((LOOPBACK, 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
 class LocalChainTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -796,9 +800,50 @@ class LocalChainTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(
             errors,
-            ["node 0 status: FROZEN_HEIGHT", "node 1 status: HTTP_UNAVAILABLE"],
+            [
+                "node 0 status: FROZEN_HEIGHT",
+                f"node 1 validator {LOOPBACK} status: HTTP_UNAVAILABLE",
+            ],
         )
         self.assertEqual((value["nodes_checked"], value["nodes_passed"]), (2, 0))
+        self.assertEqual(value["result"], "fail")
+
+    def test_frozen_needs_every_validator_at_halt(self):
+        replies = {
+            method: fleet.rpc(self.consensus_rpc, method, {})
+            for method in ("status", "abci_info")
+        }
+        halt = replies["status"]["sync_info"]["latest_block_height"]
+        full = snapshot_service(replies)
+        self.servers.append(full)
+        full_rpc = f"http://{LOOPBACK}:{full.server_address[1]}"
+        env = self.chain_env()
+        env["HALT_HEIGHT"] = halt
+        Path(env["INVENTORY_FILE"]).write_text(
+            json.dumps(
+                {
+                    "previous_version": LOCAL_VERSION,
+                    "nodes": [
+                        {
+                            "role": "validator",
+                            "consensus_rpc": self.dead_rpc,
+                            "evm_rpc": self.dead_rpc,
+                        },
+                        {
+                            "role": "full",
+                            "consensus_rpc": full_rpc,
+                            "evm_rpc": full_rpc,
+                        },
+                    ],
+                }
+            )
+        )
+        code, value, errors = self.run_main(env, "frozen")
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            errors, [f"node 0 validator {LOOPBACK} status: HTTP_UNAVAILABLE"]
+        )
+        self.assertEqual((value["nodes_checked"], value["nodes_passed"]), (2, 1))
         self.assertEqual(value["result"], "fail")
 
     def test_version_mismatch_on_local_paxd(self):
