@@ -104,6 +104,7 @@ type Hub struct {
 	readLimit  int64
 
 	mu           sync.RWMutex
+	subMu        sync.Mutex
 	poolRooms    map[string]map[*conn]struct{}
 	walletConns  map[string]map[*conn]struct{}
 	poolChanRefs map[string]int
@@ -275,7 +276,7 @@ func (h *Hub) removeConn(c *conn) {
 				if h.poolChanRefs[p] <= 0 {
 					delete(h.poolChanRefs, p)
 					delete(h.poolRooms, p)
-					toUnsubPool = append(toUnsubPool, h.namespace+poolChannelPrefix+p)
+					toUnsubPool = append(toUnsubPool, p)
 				}
 			}
 		}
@@ -296,11 +297,11 @@ func (h *Hub) removeConn(c *conn) {
 	h.mu.Unlock()
 
 	h.metrics.connected.Add(-1)
-	for _, ch := range toUnsubPool {
-		h.redisUnsubscribe(ch)
+	for _, p := range toUnsubPool {
+		h.syncPoolChannel(p)
 	}
 	if toUnsubDM != "" {
-		h.redisUnsubscribe(toUnsubDM)
+		h.syncDMChannel(c.actor)
 	}
 }
 
@@ -327,7 +328,7 @@ func (h *Hub) joinRoom(c *conn, pool string) bool {
 
 	c.addPool(pool)
 	if subscribe {
-		h.redisSubscribe(h.namespace + poolChannelPrefix + pool)
+		h.syncPoolChannel(pool)
 	}
 	return true
 }
@@ -352,7 +353,7 @@ func (h *Hub) leaveRoom(c *conn, pool string) {
 
 	c.removePool(pool)
 	if unsubscribe {
-		h.redisUnsubscribe(h.namespace + poolChannelPrefix + pool)
+		h.syncPoolChannel(pool)
 	}
 }
 
@@ -371,7 +372,33 @@ func (h *Hub) subscribeDMs(c *conn) {
 	}
 	h.mu.Unlock()
 	if subscribe {
-		h.redisSubscribe(h.namespace + dmChannelPrefix + c.actor)
+		h.syncDMChannel(c.actor)
+	}
+}
+
+func (h *Hub) syncPoolChannel(pool string) {
+	h.syncChannel(h.namespace+poolChannelPrefix+pool, func() bool { return h.poolChanRefs[pool] > 0 })
+}
+
+func (h *Hub) syncDMChannel(wallet string) {
+	h.syncChannel(h.namespace+dmChannelPrefix+wallet, func() bool { return h.dmChanRefs[wallet] > 0 })
+}
+
+// syncChannel makes the Redis subscription for channel match the local
+// membership at the time of the call. Every refcount transition is followed by
+// a sync that reads the refcount after that transition, and subMu orders the
+// syncs, so the last one applied always reflects the current membership: a
+// delayed cleanup can no longer unsubscribe a room a newer member has joined.
+func (h *Hub) syncChannel(channel string, live func() bool) {
+	h.subMu.Lock()
+	defer h.subMu.Unlock()
+	h.mu.RLock()
+	subscribed := live()
+	h.mu.RUnlock()
+	if subscribed {
+		h.redisSubscribe(channel)
+	} else {
+		h.redisUnsubscribe(channel)
 	}
 }
 
