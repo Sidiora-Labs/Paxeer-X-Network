@@ -4,7 +4,7 @@ This file is generated from `services/agent/schema/agent-api/v1.kvx`. Do not han
 
 | SDK version | Contract version | Node interface version | Daemon version | Support |
 |---|---|---|---|---|
-| `0.1.x` | `1.x` | `1.x` | `0.1.x` | supported |
+| `0.1.x` | `2.x` | `1.x` | `0.1.x` | supported |
 
 Within a contract major version, schema changes must be additive. A removed or changed declaration requires a contract major-version increment. Every SDK refuses an unsupported contract major instead of guessing compatibility.
 

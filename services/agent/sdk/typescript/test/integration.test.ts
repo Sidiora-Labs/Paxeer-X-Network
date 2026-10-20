@@ -5,8 +5,8 @@ import {
   APPROVAL_EVENT_KINDS,
   APPROVAL_STATES,
   Client,
+  Rung,
   SecretBytes,
-  VerificationLevel,
   layerx_sdk_ts_package,
   parseAmount,
   parseSequence,
@@ -85,7 +85,7 @@ export async function verifyTypeScriptPackage(): Promise<void> {
 
   const read: VerifiedRead<bigint> = {
     value: 10n,
-    achievedVerificationLevel: VerificationLevel.StateProven,
+    achievedVerificationLevel: Rung.Receipted,
     freshness: {
       chainHead: 20n,
       latestBatch: "batch-19",
@@ -93,9 +93,9 @@ export async function verifyTypeScriptPackage(): Promise<void> {
       valueSequence: 17n,
     },
   };
-  assert(requireVerified(VerificationLevel.StateProven, read) === read, "proven read changed");
+  assert(requireVerified(Rung.Receipted, read) === read, "proven read changed");
   expectThrow(
-    () => requireVerified(VerificationLevel.CheckpointFinalised, read),
+    () => requireVerified(Rung.Committed, read),
     "below-requested read accepted",
   );
 

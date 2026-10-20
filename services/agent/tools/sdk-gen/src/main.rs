@@ -24,7 +24,7 @@ struct Scalar {
 struct Model {
     scalars: Vec<Scalar>,
     operations: Vec<String>,
-    levels: Vec<String>,
+    rungs: Vec<String>,
     errors: Vec<String>,
     guarantees: Vec<(String, String, String)>,
     compatibility: Compatibility,
@@ -173,7 +173,7 @@ fn read_schema(schema_root: &Path) -> Result<Model, String> {
         })
         .collect::<BTreeMap<_, _>>();
     validate_lifecycle_schema(&combined)?;
-    let levels = quoted_list(required(&combined, "type.Level.variants")?)?;
+    let rungs = quoted_list(required(&combined, "type.Rung.variants")?)?;
     let errors = quoted_list(required(&combined, "type.ErrorClass.variants")?)?;
     let protocol = unquote(required(
         &combined,
@@ -192,7 +192,7 @@ fn read_schema(schema_root: &Path) -> Result<Model, String> {
     let model = Model {
         scalars,
         operations,
-        levels,
+        rungs,
         errors,
         guarantees: vec![
             (
@@ -409,11 +409,11 @@ fn typescript(model: &Model) -> Result<String, String> {
         )
         .map_err(|_| "format TypeScript scalar".to_owned())?;
     }
-    let levels = model
-        .levels
+    let rungs = model
+        .rungs
         .iter()
         .enumerate()
-        .map(|(rank, level)| format!("  {level} = {rank},"))
+        .map(|(rank, rung)| format!("  {rung} = {rank},"))
         .collect::<Vec<_>>()
         .join("\n");
     let errors = model
@@ -506,7 +506,7 @@ export interface ApprovalLifecycleEvent {{
     );
     Ok(TYPESCRIPT_TEMPLATE
         .replace("{{SCALARS}}", scalars.trim_end())
-        .replace("{{LEVELS}}", &levels)
+        .replace("{{RUNGS}}", &rungs)
         .replace("{{ERRORS}}", &errors)
         .replace("{{OPERATIONS}}", &operations)
         .replace("{{APPROVAL}}", &approval))
@@ -524,11 +524,11 @@ fn python(model: &Model) -> Result<String, String> {
         )
         .map_err(|_| "format Python scalar".to_owned())?;
     }
-    let levels = model
-        .levels
+    let rungs = model
+        .rungs
         .iter()
         .enumerate()
-        .map(|(rank, level)| format!("    {} = {rank}", snake_case(level).to_ascii_uppercase()))
+        .map(|(rank, rung)| format!("    {} = {rank}", snake_case(rung).to_ascii_uppercase()))
         .collect::<Vec<_>>()
         .join("\n");
     let errors = model
@@ -654,7 +654,7 @@ class ApprovalLifecycleEvent:
     );
     Ok(PYTHON_TEMPLATE
         .replace("{{SCALARS}}", scalars.trim_end())
-        .replace("{{LEVELS}}", &levels)
+        .replace("{{RUNGS}}", &rungs)
         .replace("{{ERRORS}}", &errors)
         .replace("{{OPERATIONS}}", &operations)
         .replace("{{APPROVAL}}", &approval))
@@ -671,11 +671,11 @@ fn python_stub(model: &Model) -> Result<String, String> {
         )
         .map_err(|_| "format Python scalar stub".to_owned())?;
     }
-    let levels = model
-        .levels
+    let rungs = model
+        .rungs
         .iter()
         .enumerate()
-        .map(|(rank, level)| format!("    {} = {rank}", snake_case(level).to_ascii_uppercase()))
+        .map(|(rank, rung)| format!("    {} = {rank}", snake_case(rung).to_ascii_uppercase()))
         .collect::<Vec<_>>()
         .join("\n");
     let errors = model
@@ -787,7 +787,7 @@ class ApprovalLifecycleEvent:
     );
     Ok(PYTHON_STUB_TEMPLATE
         .replace("{{SCALARS}}", scalars.trim_end())
-        .replace("{{LEVELS}}", &levels)
+        .replace("{{RUNGS}}", &rungs)
         .replace("{{ERRORS}}", &errors)
         .replace("{{OPERATIONS}}", &operations)
         .replace("{{APPROVAL}}", &approval))

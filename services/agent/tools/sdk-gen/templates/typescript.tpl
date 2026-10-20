@@ -12,8 +12,8 @@ export function layerx_sdk_ts_package(): typeof PACKAGE_METADATA {
 
 {{SCALARS}}
 
-export enum VerificationLevel {
-{{LEVELS}}
+export enum Rung {
+{{RUNGS}}
 }
 
 export type SubmissionState =
@@ -24,12 +24,12 @@ export type SubmissionState =
 
 export interface VerifiedRead<T> {
   value: T;
-  achievedVerificationLevel: VerificationLevel;
+  achievedVerificationLevel: Rung | null;
   freshness: { chainHead: bigint; latestBatch: string; latestCheckpoint: string; valueSequence: bigint };
 }
 
-export function requireVerified<T>(requested: VerificationLevel, read: VerifiedRead<T>): VerifiedRead<T> {
-  if (read.achievedVerificationLevel === VerificationLevel.Unverified) {
+export function requireVerified<T>(requested: Rung, read: VerifiedRead<T>): VerifiedRead<T> {
+  if (read.achievedVerificationLevel === null) {
     throw new Error("unverified_read");
   }
   if (read.achievedVerificationLevel < requested) {

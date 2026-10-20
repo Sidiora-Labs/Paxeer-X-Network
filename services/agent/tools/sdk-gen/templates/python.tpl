@@ -17,8 +17,8 @@ def layerx_sdk_py_package() -> Mapping[str, str | int]:
 
 {{SCALARS}}
 
-class VerificationLevel(IntEnum):
-{{LEVELS}}
+class Rung(IntEnum):
+{{RUNGS}}
 
 ErrorClass = Literal[{{ERRORS}}]
 Operation = Literal[{{OPERATIONS}}]
@@ -223,14 +223,14 @@ _R = TypeVar("_R")
 @dataclass(frozen=True)
 class VerifiedRead(Generic[_R]):
     value: _R
-    achieved_verification_level: VerificationLevel
+    achieved_verification_level: Rung | None
     chain_head: int
     latest_batch: str
     latest_checkpoint: str
     value_sequence: int
 
-def require_verified(requested: VerificationLevel, read: VerifiedRead[_R]) -> VerifiedRead[_R]:
-    if read.achieved_verification_level == VerificationLevel.UNVERIFIED:
+def require_verified(requested: Rung, read: VerifiedRead[_R]) -> VerifiedRead[_R]:
+    if read.achieved_verification_level is None:
         raise ValueError("unverified_read")
     if read.achieved_verification_level < requested:
         raise ValueError(

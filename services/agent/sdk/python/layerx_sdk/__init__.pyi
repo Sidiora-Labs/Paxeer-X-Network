@@ -27,6 +27,7 @@ from .generated.client import ErrorClass as ErrorClass
 from .generated.client import HoldReason as HoldReason
 from .generated.client import IdempotentMutation as IdempotentMutation
 from .generated.client import Operation as Operation
+from .generated.client import Rung as Rung
 from .generated.client import Sequence as Sequence
 from .generated.client import (
     StructuredActivityDisclosure as StructuredActivityDisclosure,
@@ -38,7 +39,6 @@ from .generated.client import SubmissionState as SubmissionState
 from .generated.client import SubmissionUnknown as SubmissionUnknown
 from .generated.client import TimestampSeconds as TimestampSeconds
 from .generated.client import Transport as Transport
-from .generated.client import VerificationLevel as VerificationLevel
 from .generated.client import VerifiedRead as VerifiedRead
 from .generated.client import layerx_sdk_py_package as layerx_sdk_py_package
 from .generated.client import parse_amount as parse_amount

@@ -21,7 +21,7 @@ digest = "709067b1c9d7bf0df896b37d411e74195af9754675b953c194fd5bc5d9e8d4ba"
 
 [generator.agent-sdk-gen]
 root = "services/agent/tools/sdk-gen"
-digest = "49c2686b3f3126115afd3847ed4945eab9f91668fa4a87855f38ce90316e56cd"
+digest = "e4bdca1e49126570a18cdeae37deec44359f7ccb8928700bb53149b969697971"
 
 [generator.human-api-gen]
 root = "human/tools/api-gen"
@@ -82,7 +82,7 @@ language = "typescript"
 root = "services/agent/sdk/typescript/src/generated"
 
 [files.agent-typescript]
-"client.ts" = "49263986a36e3eafef9d4f679e2d990c63062c8858e0dc2fef5852b8a10fca6f"
+"client.ts" = "28f25a34b32c4a00ae550b16d097fa93c851f0811ed05d047b16efcb0aa78c23"
 "guarantees.md" = "7f44042200d4ce72758644fc3aeb9e20b5b4414f1db8412973f6347872d1c7b3"
 "mirror.ts" = "53f5fc3afc8cccd0d27a1bb656d6f5e520e3e21983ee274a44fd74b1ddc6eac1"
 "receipt.ts" = "ee9f7b2dc347a31c673e1bc943a265cbbda2c1b1df9b9656ff27ab4cc94f0d5e"
@@ -93,8 +93,8 @@ root = "services/agent/sdk/python/layerx_sdk/generated"
 
 [files.agent-python]
 "__init__.py" = "5542bf19c9f1b61d1a0a9cb748dc1f0062a9a8df1a3db4b1e525cb8dbd1f6e34"
-"client.py" = "354f58915a4731633eb51db9cc78d82e8abdc57820efd8c5576585111a146fc9"
-"client.pyi" = "457d029569dc7455efacbd25383b4867f853ffa1d9622b8a5212b91a6a7d22e7"
+"client.py" = "8fc58cb805c16fe184e1292cdeec797e89e59c6a5c4b114d0a1bbc80e8cb6ba4"
+"client.pyi" = "38d06a320958ba360a9a5684720a48ecc15836629fd9947bec944defd8608770"
 "guarantees.md" = "7f44042200d4ce72758644fc3aeb9e20b5b4414f1db8412973f6347872d1c7b3"
 "mirror.py" = "c4ca83fb5b195303cf3154da99933fda9d8915140f6e864c6c74df872422843e"
 "mirror.pyi" = "8cc2faef1d16e4768c62b7ce2bf87c4556ea391e3fec92a5704c8917cd154719"
@@ -106,7 +106,7 @@ language = "markdown"
 root = "services/agent/sdk"
 
 [files.agent-compatibility]
-"COMPATIBILITY.md" = "93b08a4cda45c59ddacd394a9138d7c7024589f73edaf9a9665b98a618972ae7"
+"COMPATIBILITY.md" = "9f8c47cd1e1fd96d7774daa145d299e42ebfc6e5ca619bf8ed8b682b95d1305f"
 
 [handwritten.agent-compatibility]
 "python/.gitignore" = "handwritten"

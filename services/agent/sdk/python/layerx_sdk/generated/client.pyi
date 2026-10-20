@@ -18,13 +18,10 @@ def parse_sequence(value: str) -> Sequence: ...
 TimestampSeconds: TypeAlias = int
 def parse_timestamp_seconds(value: str) -> TimestampSeconds: ...
 
-class VerificationLevel(IntEnum):
-    UNVERIFIED = 0
-    SEQUENCER_SIGNED = 1
-    BATCH_INCLUDED = 2
-    STATE_PROVEN = 3
-    CHECKPOINT_FINALISED = 4
-    SETTLEMENT_ANCHORED = 5
+class Rung(IntEnum):
+    SUBMITTED = 0
+    RECEIPTED = 1
+    COMMITTED = 2
 
 ErrorClass: TypeAlias = Literal["TransportFailure", "Deadline", "ProtocolIncompatibility", "UnavailableCapability", "CoreRejection", "VerificationFailure", "PolicyRefusal", "CapabilityRefusal", "BudgetRefusal", "RateLimit", "IdempotencyConflict", "InternalFault"]
 Operation: TypeAlias = Literal["agent.register", "approval.approve", "approval.get", "approval.list", "approval.reject", "availability.fetch", "budget.create", "budget.fund", "budget.list", "budget.reconciliation", "budget.revoke", "budget.state", "capability.attenuate", "capability.create", "capability.list", "capability.revoke", "export.offline", "faucet.claim", "mcp.invoke", "policy.dry_run", "prepare", "program.activity", "program.call", "program.deploy", "program.discover", "program.interface", "program.receipt", "program.simulate", "program.upgrade", "program.wind-down", "project", "read.account", "read.balance", "read.batch", "read.checkpoint", "read.history", "read.module_state", "read.proof_bundle", "session.close", "session.list", "session.open", "session.refresh", "sign", "submit", "subscription.acknowledge", "subscription.create", "subscription.delete", "subscription.health", "subscription.list", "subscription.pause", "subscription.resume", "tenant.readiness", "track", "wait"]
@@ -199,7 +196,7 @@ _R = TypeVar("_R")
 
 class VerifiedRead(Generic[_R]):
     value: _R
-    achieved_verification_level: VerificationLevel
+    achieved_verification_level: Rung | None
     chain_head: int
     latest_batch: str
     latest_checkpoint: str
@@ -207,14 +204,14 @@ class VerifiedRead(Generic[_R]):
     def __init__(
         self,
         value: _R,
-        achieved_verification_level: VerificationLevel,
+        achieved_verification_level: Rung | None,
         chain_head: int,
         latest_batch: str,
         latest_checkpoint: str,
         value_sequence: int,
     ) -> None: ...
 
-def require_verified(requested: VerificationLevel, read: VerifiedRead[_R]) -> VerifiedRead[_R]: ...
+def require_verified(requested: Rung, read: VerifiedRead[_R]) -> VerifiedRead[_R]: ...
 
 class SubmissionUnknown:
     kind: Literal["Unknown"]

@@ -8,8 +8,8 @@ def layerx_sdk_py_package() -> Mapping[str, str | int]: ...
 
 {{SCALARS}}
 
-class VerificationLevel(IntEnum):
-{{LEVELS}}
+class Rung(IntEnum):
+{{RUNGS}}
 
 ErrorClass: TypeAlias = Literal[{{ERRORS}}]
 Operation: TypeAlias = Literal[{{OPERATIONS}}]
@@ -103,7 +103,7 @@ _R = TypeVar("_R")
 
 class VerifiedRead(Generic[_R]):
     value: _R
-    achieved_verification_level: VerificationLevel
+    achieved_verification_level: Rung | None
     chain_head: int
     latest_batch: str
     latest_checkpoint: str
@@ -111,14 +111,14 @@ class VerifiedRead(Generic[_R]):
     def __init__(
         self,
         value: _R,
-        achieved_verification_level: VerificationLevel,
+        achieved_verification_level: Rung | None,
         chain_head: int,
         latest_batch: str,
         latest_checkpoint: str,
         value_sequence: int,
     ) -> None: ...
 
-def require_verified(requested: VerificationLevel, read: VerifiedRead[_R]) -> VerifiedRead[_R]: ...
+def require_verified(requested: Rung, read: VerifiedRead[_R]) -> VerifiedRead[_R]: ...
 
 class SubmissionUnknown:
     kind: Literal["Unknown"]

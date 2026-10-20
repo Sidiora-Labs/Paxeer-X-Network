@@ -37,11 +37,11 @@ from layerx_sdk import (
     ProgramCall,
     ProgramOperations,
     ProgramTrustContext,
+    Rung,
     SdkErrorCode,
     SecretBytes,
     SubmissionFailed,
     SubmissionUnknown,
-    VerificationLevel,
     VerifiedRead,
     layerx_sdk_py_package,
     parse_amount,
@@ -481,25 +481,25 @@ class PythonSdkIntegration(unittest.TestCase):
     def test_reads_require_the_declared_verification_level(self) -> None:
         read = VerifiedRead(
             value=10,
-            achieved_verification_level=VerificationLevel.STATE_PROVEN,
+            achieved_verification_level=Rung.RECEIPTED,
             chain_head=20,
             latest_batch="batch-19",
             latest_checkpoint="checkpoint-18",
             value_sequence=17,
         )
-        self.assertIs(require_verified(VerificationLevel.STATE_PROVEN, read), read)
+        self.assertIs(require_verified(Rung.RECEIPTED, read), read)
         with self.assertRaisesRegex(ValueError, "verification_below_requested"):
-            require_verified(VerificationLevel.CHECKPOINT_FINALISED, read)
+            require_verified(Rung.COMMITTED, read)
         unverified = VerifiedRead(
             value=10,
-            achieved_verification_level=VerificationLevel.UNVERIFIED,
+            achieved_verification_level=None,
             chain_head=20,
             latest_batch="batch-19",
             latest_checkpoint="checkpoint-18",
             value_sequence=17,
         )
         with self.assertRaisesRegex(ValueError, "unverified_read"):
-            require_verified(VerificationLevel.UNVERIFIED, unverified)
+            require_verified(Rung.SUBMITTED, unverified)
 
     def test_unknown_idempotency_and_future_result_codes_remain_lossless(self) -> None:
         unknown = SubmissionUnknown()
