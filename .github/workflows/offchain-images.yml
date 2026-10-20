@@ -40,13 +40,13 @@ jobs:
       - name: Turn every row of the off-chain image table into a build matrix entry
         id: plan
         env:
-          LAUNCHPAD_BUILD_IMAGE: ${{ vars.REVIEWED_BUILD_IMAGE }}
-          LAUNCHPAD_RUNTIME_IMAGE: ${{ vars.REVIEWED_RUNTIME_IMAGE }}
+          REVIEWED_BUILD_IMAGE: ${{ vars.REVIEWED_BUILD_IMAGE }}
+          REVIEWED_RUNTIME_IMAGE: ${{ vars.REVIEWED_RUNTIME_IMAGE }}
           PERPS_BUILD_IMAGE: ${{ vars.PERPS_BUILD_IMAGE }}
           PERPS_RUNTIME_IMAGE: ${{ vars.PERPS_RUNTIME_IMAGE }}
         run: |
           set -euo pipefail
-          for var in LAUNCHPAD_BUILD_IMAGE LAUNCHPAD_RUNTIME_IMAGE PERPS_BUILD_IMAGE PERPS_RUNTIME_IMAGE; do
+          for var in REVIEWED_BUILD_IMAGE REVIEWED_RUNTIME_IMAGE PERPS_BUILD_IMAGE PERPS_RUNTIME_IMAGE; do
             [[ "${!var}" =~ @sha256:[0-9a-f]{64}$ ]] || { echo "$var must be a base image pinned by digest" >&2; exit 1; }
           done
           tools/deploy/offchain-images.sh --check
