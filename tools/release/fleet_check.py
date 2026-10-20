@@ -836,7 +836,7 @@ def load_config(env, phase, rehearsal_path=None):
     if phase in ("preflight", "frozen"):
         require(
             isinstance(previous, str)
-            and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", previous)
+            and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+|[0-9a-f]{7,12}", previous)
             and previous != VERSION,
             "PREVIOUS_VERSION_REQUIRED",
         )
@@ -871,6 +871,14 @@ def load_config(env, phase, rehearsal_path=None):
     return nodes, halt, chain, previous, pools
 
 
+def settle_halted(labels, reached, outcome):
+    for label in labels:
+        if reached:
+            outcome.receipt["nodes_passed"] += 1
+        else:
+            outcome.errors.append(f"{label} status: HTTP_UNAVAILABLE")
+
+
 def run_phase(env, phase, outcome, rehearsal_path=None):
     if phase == "inputs":
         check_inputs(env, outcome, remote=True)
@@ -886,10 +894,20 @@ def run_phase(env, phase, outcome, rehearsal_path=None):
     require(bool(nodes), "INVENTORY_NO_SELECTED_NODES")
     outcome.receipt.update(nodes_checked=len(nodes), nodes_passed=0)
     expected_hash = None
+    halted = []
+    reached = False
     for index, node in enumerate(nodes):
         label = f"node {index}"
         before = len(outcome.errors)
         status = outcome.attempt(label + " status", lambda: node.consensus("status"))
+        if (
+            phase == "frozen"
+            and node.role == "validator"
+            and outcome.errors[before:] == [label + " status: HTTP_UNAVAILABLE"]
+        ):
+            del outcome.errors[before:]
+            halted.append(label)
+            continue
         info = outcome.attempt(
             label + " abci_info", lambda: node.consensus("abci_info")
         )
@@ -904,6 +922,7 @@ def run_phase(env, phase, outcome, rehearsal_path=None):
         if status is not None:
 
             def status_probe():
+                nonlocal reached
                 require(status["node_info"]["network"] == chain, "CHAIN_ID_MISMATCH")
                 height = positive_int(
                     status["sync_info"]["latest_block_height"], "NODE_HEIGHT"
@@ -914,6 +933,7 @@ def run_phase(env, phase, outcome, rehearsal_path=None):
                     require(height < halt, "PREFLIGHT_HEIGHT")
                 elif phase == "frozen":
                     require(height == halt, "FROZEN_HEIGHT")
+                    reached = True
                 else:
                     require(height > halt + 1, "NODE_HEIGHT_NOT_PAST_UPGRADE")
 
@@ -953,13 +973,14 @@ def run_phase(env, phase, outcome, rehearsal_path=None):
                     label + " oracle", lambda: check_oracle(node, views, outcome, label)
                 )
         outcome.receipt["nodes_passed"] += len(outcome.errors) == before
+    settle_halted(halted, reached, outcome)
     return outcome.finish()
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Verify Paxeer X Network rollout phases without changing chain state.",
-        epilog="INVENTORY_FILE is JSON with nodes [{role, consensus_rpc, evm_rpc}] and previous_version for preflight/frozen. Roles: validator, full, archive, edge. Relative paths resolve from the working directory. List env values must be quoted. --check validates local inputs without contacting services, nodes or hosts. --phase inputs needs every key of env/rollout.env.example, the release binaries paxd-v6.12.0-linux-amd64 and price-sidecar-v6.12.0-linux-amd64 in the working directory and ssh BatchMode access to every host. markets/full/post read expected values from --rehearsal when given, otherwise from the env file (POOL_COUNT, RELEASE_SHA256 against BIN_DIR/paxd).",
+        epilog="INVENTORY_FILE is JSON with nodes [{role, consensus_rpc, evm_rpc}] and previous_version for preflight/frozen, either a vX.Y.Z tag or the 7-12 character lowercase hex commit that abci_info reports. In frozen, a validator that stops answering counts as halted only when another node reports height HALT_HEIGHT. Roles: validator, full, archive, edge. Relative paths resolve from the working directory. List env values must be quoted. --check validates local inputs without contacting services, nodes or hosts. --phase inputs needs every key of env/rollout.env.example, the release binaries paxd-v6.12.0-linux-amd64 and price-sidecar-v6.12.0-linux-amd64 in the working directory and ssh BatchMode access to every host. markets/full/post read expected values from --rehearsal when given, otherwise from the env file (POOL_COUNT, RELEASE_SHA256 against BIN_DIR/paxd).",
     )
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--phase", choices=PHASES, default="post")

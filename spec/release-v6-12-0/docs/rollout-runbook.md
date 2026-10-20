@@ -53,6 +53,7 @@ DATA_SERVICE_URLS=      # operations host: base URLs of the four data services
 APP_URL=                # operations host: base URL of the application
 APP_BUILD_ID=           # build id of the application release build
 INVENTORY_FILE=         # operations host: file listing every node by role
+POOL_COUNT=             # operations host: pool count the markets, full and post checks expect when no --rehearsal receipt is given
 RECEIPT_DIR=            # tools/release/rollout/v6.12.0
 ```
 
@@ -141,7 +142,7 @@ Freeze one validator home at a time, so at least three of the four validators st
    sed -i "s/^halt-height = .*/halt-height = $HALT_HEIGHT/" "${V_HOMES[$i]}/config/app.toml"
    grep -x "halt-height = $HALT_HEIGHT" "${V_HOMES[$i]}/config/app.toml"
    systemctl restart "${V_UNITS[$i]}"
-   curl -s "$CONSENSUS_RPC/status" | jq -r .result.sync_info.latest_block_height
+   curl -s "$CONSENSUS_RPC/status" | jq -r .sync_info.latest_block_height
    ```
    Verify: the grep prints the line, and the height printed by the last command rises on two reads a few blocks apart before the next home is frozen.
 2. Wait for H. The halt line is a key=value log line (sdk/baseapp/abci.go:360). On each validator host:
@@ -162,7 +163,7 @@ Freeze one validator home at a time, so at least three of the four validators st
 
 1. Stop every full node once its status reports height H:
    ```sh
-   curl -s "$CONSENSUS_RPC/status" | jq -e --argjson h "$HALT_HEIGHT" '(.result.sync_info.latest_block_height | tonumber) == $h'
+   curl -s "$CONSENSUS_RPC/status" | jq -e --argjson h "$HALT_HEIGHT" '(.sync_info.latest_block_height | tonumber) == $h'
    for u in "${F_UNITS[@]}"; do systemctl stop "$u"; done
    for h in "${F_HOMES[@]}"; do pgrep -a -x paxd | grep -F -- "--home $h" && exit 1; done; echo stopped
    ```

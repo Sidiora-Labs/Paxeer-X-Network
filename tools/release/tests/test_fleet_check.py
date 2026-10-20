@@ -125,6 +125,71 @@ class FleetUnitTests(unittest.TestCase):
         self.assertEqual(outcome.finish()["nodes_passed"], 3)
         self.assertEqual(outcome.receipt["result"], "fail")
 
+    def test_previous_version_forms(self):
+        with tempfile.TemporaryDirectory() as directory:
+            inventory = Path(directory) / "inventory.json"
+            env = {
+                "HALT_HEIGHT": "1000",
+                "CHAIN_ID": CHAIN_ID,
+                "BIN_DIR": directory,
+                "INVENTORY_FILE": str(inventory),
+            }
+            node = {
+                "role": "validator",
+                "consensus_rpc": "http://127.0.0.1:1",
+                "evm_rpc": "http://127.0.0.1:2",
+            }
+            for previous in ("v6.11.0", "ab0ea61", "ab0ea61c8", "ab0ea61c8ab0"):
+                inventory.write_text(
+                    json.dumps({"previous_version": previous, "nodes": [node]})
+                )
+                for phase in ("preflight", "frozen"):
+                    self.assertEqual(fleet.load_config(env, phase)[3], previous)
+            for previous in (
+                None,
+                fleet.VERSION,
+                "6.11.0",
+                "ab0ea6",
+                "ab0ea61c8ab0e",
+                "AB0EA61C8",
+                "ab0ea61g8",
+                "v6.11.0-ab0ea61c8",
+            ):
+                inventory.write_text(
+                    json.dumps({"previous_version": previous, "nodes": [node]})
+                )
+                for phase in ("preflight", "frozen"):
+                    with self.assertRaisesRegex(
+                        fleet.CheckError, "PREVIOUS_VERSION_REQUIRED"
+                    ):
+                        fleet.load_config(env, phase)
+        fleet.check_version("ab0ea61c8", "ab0ea61c8")
+        for reported, expected in (
+            ("ab0ea61c8", "ab0ea61c"),
+            ("ab0ea61c", "ab0ea61c8"),
+            ("v6.11.0", "ab0ea61c8"),
+            ("ab0ea61c8", "v6.11.0"),
+        ):
+            with self.assertRaisesRegex(fleet.CheckError, "VERSION_MISMATCH"):
+                fleet.check_version(reported, expected)
+
+    def test_halted_validators_need_halt_height_elsewhere(self):
+        outcome = fleet.Outcome()
+        outcome.receipt.update(nodes_checked=3, nodes_passed=1)
+        fleet.settle_halted(["node 0", "node 2"], True, outcome)
+        self.assertEqual(outcome.errors, [])
+        self.assertEqual(outcome.finish()["nodes_passed"], 3)
+        self.assertEqual(outcome.receipt["result"], "pass")
+        outcome = fleet.Outcome()
+        outcome.receipt.update(nodes_checked=3, nodes_passed=1)
+        fleet.settle_halted(["node 0", "node 2"], False, outcome)
+        self.assertEqual(
+            outcome.errors,
+            ["node 0 status: HTTP_UNAVAILABLE", "node 2 status: HTTP_UNAVAILABLE"],
+        )
+        self.assertEqual(outcome.finish()["nodes_passed"], 1)
+        self.assertEqual(outcome.receipt["result"], "fail")
+
     def test_applied_height_and_sync(self):
         applied = {"header": {"height": "1001"}}
         status = {"sync_info": {"latest_block_height": "1010", "catching_up": False}}
@@ -657,7 +722,7 @@ class LocalChainTests(unittest.TestCase):
         path.write_text("".join(f'{key}="{value}"\n' for key, value in values.items()))
         return path
 
-    def chain_env(self):
+    def chain_env(self, extra=()):
         inventory = Path(self.work.name) / "inventory.json"
         inventory.write_text(
             json.dumps(
@@ -668,7 +733,8 @@ class LocalChainTests(unittest.TestCase):
                             "role": "validator",
                             "consensus_rpc": self.consensus_rpc,
                             "evm_rpc": self.evm_rpc,
-                        }
+                        },
+                        *extra,
                     ],
                 }
             )
@@ -717,6 +783,23 @@ class LocalChainTests(unittest.TestCase):
                 "result": "pass",
             },
         )
+
+    def test_frozen_before_halt_rejects_silent_nodes(self):
+        silent = [
+            {
+                "role": "validator",
+                "consensus_rpc": self.dead_rpc,
+                "evm_rpc": self.dead_rpc,
+            }
+        ]
+        code, value, errors = self.run_main(self.chain_env(silent), "frozen")
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            errors,
+            ["node 0 status: FROZEN_HEIGHT", "node 1 status: HTTP_UNAVAILABLE"],
+        )
+        self.assertEqual((value["nodes_checked"], value["nodes_passed"]), (2, 0))
+        self.assertEqual(value["result"], "fail")
 
     def test_version_mismatch_on_local_paxd(self):
         code, value, errors = self.run_main(self.chain_env(), "validators")
