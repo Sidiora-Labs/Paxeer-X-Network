@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import http.client
 import json
 import os
@@ -15,6 +16,7 @@ import urllib.request
 
 VERSION = "v6.12.0"
 PHASES = (
+    "inputs",
     "preflight",
     "frozen",
     "validators",
@@ -704,7 +706,111 @@ def check_feed_keys(values, outcome, label):
     outcome.count("feed_keys", keys)
 
 
-def load_config(env, phase):
+def sha256_file(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def template_keys():
+    return list(read_env(Path(__file__).with_name("env") / "rollout.env.example"))
+
+
+def check_inputs(env, outcome, remote):
+    for key in template_keys():
+
+        def present():
+            require(key in env, f"{key} is missing")
+            required(env, key)
+
+        outcome.attempt("inputs", present)
+    if outcome.errors:
+        return
+    outcome.attempt(
+        "inputs",
+        lambda: require(
+            re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", required(env, "RELEASE_ID")),
+            "RELEASE_ID is invalid",
+        ),
+    )
+    outcome.attempt(
+        "inputs",
+        lambda: require(
+            required(env, "RELEASE_TAG") == "paxeer-network/" + VERSION,
+            "RELEASE_TAG must be paxeer-network/" + VERSION,
+        ),
+    )
+    outcome.attempt(
+        "inputs",
+        lambda: positive_int(required(env, "HALT_HEIGHT"), "HALT_HEIGHT is invalid"),
+    )
+    bin_dir = Path(required(env, "BIN_DIR"))
+    outcome.attempt(
+        "inputs",
+        lambda: require(
+            bin_dir.is_absolute()
+            and (bin_dir / "paxd").is_file()
+            and os.access(bin_dir / "paxd", os.X_OK),
+            "BIN_DIR has no executable paxd",
+        ),
+    )
+    for key, name in (
+        ("RELEASE_SHA256", "paxd-" + VERSION + "-linux-amd64"),
+        ("SIDECAR_SHA256", "price-sidecar-" + VERSION + "-linux-amd64"),
+    ):
+
+        def checksum():
+            expected = required(env, key)
+            require(re.fullmatch(r"[0-9a-f]{64}", expected), f"{key} is invalid")
+            require(Path(name).is_file(), f"{name} is missing")
+            require(sha256_file(name) == expected, f"{name} does not match {key}")
+
+        outcome.attempt("inputs", checksum)
+    hosts = []
+    for key in (
+        "VALIDATOR_HOSTS",
+        "FULLNODE_HOSTS",
+        "ARCHIVE_HOST",
+        "EDGE_HOST",
+        "OPS_HOST",
+    ):
+        for host in shlex.split(required(env, key)):
+            if host not in hosts:
+                hosts.append(host)
+    if not remote:
+        return
+    for host in hosts:
+
+        def reach():
+            try:
+                result = subprocess.run(
+                    [
+                        "ssh",
+                        "-o",
+                        "BatchMode=yes",
+                        "-o",
+                        "ConnectTimeout=10",
+                        "--",
+                        host,
+                        "true",
+                    ],
+                    capture_output=True,
+                    timeout=30,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                raise CheckError(f"{host} is not reachable over ssh") from error
+            require(result.returncode == 0, f"{host} is not reachable over ssh")
+
+        outcome.attempt("inputs", reach)
+    outcome.receipt["inputs_sha256"] = env_digest(env)
+
+
+def env_digest(env):
+    return hashlib.sha256(
+        "".join(f"{key}={env[key]}\n" for key in sorted(env)).encode()
+    ).hexdigest()
+
+
+def load_config(env, phase, rehearsal_path=None):
     if phase == "services":
         for url in shlex.split(required(env, "DATA_SERVICE_URLS")):
             validate_url(url)
@@ -735,10 +841,20 @@ def load_config(env, phase):
             "PREVIOUS_VERSION_REQUIRED",
         )
     pools = None
-    if phase in ("markets", "full", "post"):
-        rehearsal = json.loads(
-            (Path(required(env, "RECEIPT_DIR")) / "rehearsal.json").read_text()
+    if phase in ("markets", "full", "post") and rehearsal_path is None:
+        require(
+            sha256_file(binary) == required(env, "RELEASE_SHA256"),
+            "BIN_DIR paxd does not match RELEASE_SHA256",
         )
+        require(
+            bool(env.get("POOL_COUNT", "").strip()),
+            "POOL_COUNT is empty and no --rehearsal was given",
+        )
+        pools = positive_int(
+            required(env, "POOL_COUNT"), "POOL_COUNT_INVALID", allow_zero=True
+        )
+    elif phase in ("markets", "full", "post"):
+        rehearsal = json.loads(Path(rehearsal_path).read_text())
         validate_receipt(rehearsal)
         require(
             rehearsal.get("result") == "pass"
@@ -755,8 +871,11 @@ def load_config(env, phase):
     return nodes, halt, chain, previous, pools
 
 
-def run_phase(env, phase, outcome):
-    config = load_config(env, phase)
+def run_phase(env, phase, outcome, rehearsal_path=None):
+    if phase == "inputs":
+        check_inputs(env, outcome, remote=True)
+        return outcome.finish()
+    config = load_config(env, phase, rehearsal_path)
     if phase == "services":
         check_services(env, outcome)
         return outcome.finish()
@@ -840,12 +959,13 @@ def run_phase(env, phase, outcome):
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Verify Paxeer X Network rollout phases without changing chain state.",
-        epilog="INVENTORY_FILE is JSON with nodes [{role, consensus_rpc, evm_rpc}] and previous_version for preflight/frozen. Roles: validator, full, archive, edge. Relative paths resolve from the working directory. List env values must be quoted. --check validates local inputs without contacting services or nodes.",
+        epilog="INVENTORY_FILE is JSON with nodes [{role, consensus_rpc, evm_rpc}] and previous_version for preflight/frozen. Roles: validator, full, archive, edge. Relative paths resolve from the working directory. List env values must be quoted. --check validates local inputs without contacting services, nodes or hosts. --phase inputs needs every key of env/rollout.env.example, the release binaries paxd-v6.12.0-linux-amd64 and price-sidecar-v6.12.0-linux-amd64 in the working directory and ssh BatchMode access to every host. markets/full/post read expected values from --rehearsal when given, otherwise from the env file (POOL_COUNT, RELEASE_SHA256 against BIN_DIR/paxd).",
     )
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--phase", choices=PHASES, default="post")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--receipt", type=Path)
+    parser.add_argument("--rehearsal", type=Path)
     args = parser.parse_args(argv)
     if args.check and args.receipt:
         parser.error("--check cannot write a qualification receipt")
@@ -853,11 +973,17 @@ def main(argv=None):
 
     def execute():
         env = read_env(args.env_file)
-        if args.check:
-            load_config(env, args.phase)
+        if args.check and args.phase == "inputs":
+            check_inputs(env, outcome, remote=False)
+        elif args.check:
+            load_config(env, args.phase, args.rehearsal)
         else:
-            run_phase(env, args.phase, outcome)
+            run_phase(env, args.phase, outcome, args.rehearsal)
 
+    if args.phase in ("markets", "full", "post") and args.rehearsal is None:
+        print(
+            "fleet_check: no --rehearsal given; expected values come from the env file and rollback_rehearsed is not recorded"
+        )
     outcome.attempt("fleet_check", execute)
     receipt = outcome.finish()
     if args.receipt:
