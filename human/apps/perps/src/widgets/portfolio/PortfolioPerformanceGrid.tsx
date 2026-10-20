@@ -366,7 +366,7 @@ function compactTick(v: number): string {
 
 // ── Series prep helpers ──────────────────────────────────────────────
 
-function sliceByRange(dailyPnl: DailyPnl[], range: PerformanceRange): DailyPnl[] {
+export function sliceByRange(dailyPnl: DailyPnl[], range: PerformanceRange): DailyPnl[] {
   if (!dailyPnl || dailyPnl.length === 0) return [];
   const sorted = [...dailyPnl].sort((a, b) => a.date.localeCompare(b.date));
   if (range === "ALL") return sorted;
@@ -374,7 +374,7 @@ function sliceByRange(dailyPnl: DailyPnl[], range: PerformanceRange): DailyPnl[]
   return sorted.slice(-n);
 }
 
-function buildSeries(dailyPnl: DailyPnl[], range: PerformanceRange): SeriesPoint[] {
+export function buildSeries(dailyPnl: DailyPnl[], range: PerformanceRange): SeriesPoint[] {
   const rows = sliceByRange(dailyPnl, range);
   if (rows.length === 0) return [];
 

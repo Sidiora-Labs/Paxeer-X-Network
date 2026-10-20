@@ -296,6 +296,18 @@ function normalizeSpotTrade(t: unknown): SpotTrade {
   };
 }
 
+/** SPOT order-book listener: the cached book, each frame, and null while the socket is down. */
+export function subscribeSpotOrderbook(symbol: string, cb: (book: SpotOrderbook | null) => void): () => void {
+  const s = ensureSpotStream(symbol);
+  if (!s) return () => {};
+  s.subsOrderbook.add(cb);
+  if (s.orderbook) cb(s.orderbook);
+  return () => {
+    s.subsOrderbook.delete(cb);
+    releaseIfIdle(symbol, s);
+  };
+}
+
 // ── React hooks ───────────────────────────────────────────────────────
 
 /** Subscribe to the SPOT order-book feed. */
@@ -313,11 +325,7 @@ export function useSpotOrderbook(symbol: string | undefined): SpotOrderbook | nu
       return;
     }
     setBook(s.orderbook);
-    s.subsOrderbook.add(setBook);
-    return () => {
-      s.subsOrderbook.delete(setBook);
-      releaseIfIdle(symbol, s);
-    };
+    return subscribeSpotOrderbook(symbol, setBook);
   }, [symbol]);
 
   return book;

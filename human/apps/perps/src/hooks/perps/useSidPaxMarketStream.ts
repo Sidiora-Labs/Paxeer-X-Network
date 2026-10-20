@@ -493,6 +493,18 @@ function parseCandleTuple(raw: unknown): SidPaxCandle | null {
   };
 }
 
+/** Order-book listener for a dedicated stream: the cached book, each frame, and null while the socket is down. */
+export function subscribeOrderbook(symbol: string, cb: (book: SidPaxOrderbook | null) => void): () => void {
+  const s = ensureStream(symbol);
+  if (!s) return () => {};
+  s.subsOrderbook.add(cb);
+  if (s.orderbook) cb(s.orderbook);
+  return () => {
+    s.subsOrderbook.delete(cb);
+    releaseIfIdle(symbol, s);
+  };
+}
+
 // ── React hooks ───────────────────────────────────────────────────────
 /**
  * Subscribe to the dedicated order-book feed for SID or PAX.
@@ -514,11 +526,7 @@ export function useSidPaxOrderbook(symbol: string | undefined): SidPaxOrderbook 
     }
     // Sync any cached value captured before the first render.
     setBook(s.orderbook);
-    s.subsOrderbook.add(setBook);
-    return () => {
-      s.subsOrderbook.delete(setBook);
-      releaseIfIdle(symbol, s);
-    };
+    return subscribeOrderbook(symbol, setBook);
   }, [symbol]);
 
   return book;

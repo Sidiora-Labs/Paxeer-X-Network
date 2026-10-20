@@ -106,6 +106,11 @@ export function SpotOrderbook({
 
   useEffect(() => {
     if (!spotBook) {
+      pendingBookRef.current = null;
+      if (rafIdRef.current !== null && typeof window !== "undefined") {
+        window.cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
       setBook(null);
       return;
     }

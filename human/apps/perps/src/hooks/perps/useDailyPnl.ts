@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect } from "react";
 import { perfdbQuery, perfdbRest } from "@/core/perfdb/client";
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -23,20 +23,40 @@ const USER_DAILY_PNL_QUERY = /* GraphQL */ `
   }
 `;
 
+/** Gateway DailyPnl fields are nullable; a row without a date is unusable. */
+type GatewayDailyPnl = Omit<DailyPnl, "date"> & { date: string | null };
+
 interface DailyPnlQueryResponse {
-  userDailyPnl: DailyPnl[];
+  userDailyPnl: (GatewayDailyPnl | null)[] | null;
 }
 
 interface DailyPnlRestResponse {
-  dailyPnl?: DailyPnl[];
-  data?: DailyPnl[];
+  dailyPnl?: GatewayDailyPnl[];
+  data?: GatewayDailyPnl[];
+}
+
+// Ascending by date so .slice(-7) gives the most recent 7 days.
+function datedAscending(rows: (GatewayDailyPnl | null)[] | null | undefined): DailyPnl[] {
+  return (rows ?? [])
+    .filter((r): r is DailyPnl => typeof r?.date === "string")
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**
  * Fetches a trader's daily PnL history from PerfDB.
- * Tries GraphQL first; falls back to REST if GraphQL fails.
- * No polling — refetches only when address changes.
+ * Tries GraphQL first; falls back to REST if GraphQL fails; throws when both fail.
  */
+export async function fetchDailyPnl(addr: string): Promise<DailyPnl[]> {
+  try {
+    const gqlRes = await perfdbQuery<DailyPnlQueryResponse>(USER_DAILY_PNL_QUERY, { address: addr, limit: 90 });
+    return datedAscending(gqlRes.userDailyPnl);
+  } catch {
+    const restRes = await perfdbRest<DailyPnlRestResponse | GatewayDailyPnl[]>(`/v2/user/${addr}/daily-pnl`);
+    return datedAscending(Array.isArray(restRes) ? restRes : (restRes.dailyPnl ?? restRes.data));
+  }
+}
+
+/** Daily PnL for an address. No polling — refetches only when address changes. */
 export function useDailyPnl(address: string | undefined): {
   dailyPnl: DailyPnl[];
   isLoading: boolean;
@@ -45,63 +65,37 @@ export function useDailyPnl(address: string | undefined): {
   const [dailyPnl, setDailyPnl] = useState<DailyPnl[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(Boolean(address));
   const [error, setError] = useState<Error | null>(null);
-  const mountedRef = useRef<boolean>(true);
-
-  const fetchDailyPnl = useCallback(async (addr: string): Promise<void> => {
-    try {
-      // Try GraphQL first
-      const gqlRes = await perfdbQuery<DailyPnlQueryResponse>(
-        USER_DAILY_PNL_QUERY,
-        { address: addr, limit: 90 }
-      );
-      if (!mountedRef.current) return;
-      // Sort ascending by date so .slice(-7) gives the most recent 7 days
-      const sorted = [...(gqlRes.userDailyPnl ?? [])].sort((a, b) =>
-        a.date.localeCompare(b.date)
-      );
-      setDailyPnl(sorted);
-      setError(null);
-    } catch (gqlErr) {
-      // Fall back to REST
-      try {
-        const restRes = await perfdbRest<DailyPnlRestResponse | DailyPnl[]>(
-          `/v2/user/${addr}/daily-pnl`
-        );
-        if (!mountedRef.current) return;
-        const list: DailyPnl[] = Array.isArray(restRes)
-          ? restRes
-          : (restRes.dailyPnl ?? restRes.data ?? []);
-        const sorted = [...list].sort((a, b) => a.date.localeCompare(b.date));
-        setDailyPnl(sorted);
-        setError(null);
-      } catch (restErr) {
-        if (!mountedRef.current) return;
-        const err =
-          restErr instanceof Error ? restErr : new Error(String(restErr));
-        setError(err);
-        setDailyPnl([]);
-      }
-    } finally {
-      if (mountedRef.current) setIsLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
-    mountedRef.current = true;
     if (!address) {
       setDailyPnl([]);
       setIsLoading(false);
       setError(null);
-      return () => {
-        mountedRef.current = false;
-      };
+      return;
     }
+    // A superseded address's late response must not overwrite the current one.
+    let cancelled = false;
     setIsLoading(true);
-    fetchDailyPnl(address);
+    fetchDailyPnl(address)
+      .then(
+        (rows) => {
+          if (cancelled) return;
+          setDailyPnl(rows);
+          setError(null);
+        },
+        (err: unknown) => {
+          if (cancelled) return;
+          setError(err instanceof Error ? err : new Error(String(err)));
+          setDailyPnl([]);
+        },
+      )
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
     return () => {
-      mountedRef.current = false;
+      cancelled = true;
     };
-  }, [address, fetchDailyPnl]);
+  }, [address]);
 
   return { dailyPnl, isLoading, error };
 }
