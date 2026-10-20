@@ -78,8 +78,7 @@ want="$tmp/want"
 		IDENTITY_SERVICE_URL METADATA_PUBLICATION_AUDIT_KEY METADATA_PUBLICATION_CONFIG_DOCUMENT \
 		METADATA_PUBLICATION_CONFIG_SHA256 PUBLIC_URL; do echo "metadata $n"; done
 	for n in IDENTITY_SERVICE_TOKEN LIVEPEER_API_KEY LIVEPEER_WEBHOOK_SECRET; do echo "livestream $n"; done
-	for n in DATA_API_URL GATEWAY_URL LIVESTREAM_API_URL METADATA_API_URL PNL_API_URL STATS_API_URL \
-		SUPABASE_PUBLISHABLE_KEY SUPABASE_URL WALLETCONNECT_PROJECT_ID WALLET_IFRAME_ORIGIN; do echo "web NEXT_PUBLIC_$n"; done
+	for n in SUPABASE_PUBLISHABLE_KEY SUPABASE_URL WALLETCONNECT_PROJECT_ID WALLET_IFRAME_ORIGIN; do echo "web NEXT_PUBLIC_$n"; done
 } | sort >"$want"
 awk '/^service /{svc=$2} /^  unresolved /{print svc, $2}' "$tmp/plan.out" | sort >"$tmp/got"
 diff -u "$want" "$tmp/got" || fail "unresolved names differ from the reported operator-secret and decision lists"
@@ -91,6 +90,11 @@ grep -q '^  missing METADATA_INGRESS = edge$' "$tmp/plan.out" || fail "metadata 
 grep -q '^  missing MODERATION_SOURCE = database$' "$tmp/plan.out" || fail "edge metadata does not read moderation from the database"
 [ "$(grep -c '^  missing PORT = 8080$' "$tmp/plan.out")" -eq 12 ] || fail "not every Go service binds the container port 8080"
 grep -q '^  missing NEXT_PUBLIC_EXPLORER_API = https://api.paxscan.io/api/v2$' "$tmp/plan.out" || fail "explorer API not taken"
+for kv in DATA_API_URL=https://api.sidiora.fun GATEWAY_URL=https://gateway.sidiora.fun \
+	METADATA_API_URL=https://gateway.sidiora.fun PNL_API_URL=https://pnl.sidiora.fun \
+	STATS_API_URL=https://stats.sidiora.fun LIVESTREAM_API_URL=https://live.sidiora.fun; do
+	grep -qx "  missing NEXT_PUBLIC_${kv%%=*} = ${kv#*=}" "$tmp/plan.out" || fail "web NEXT_PUBLIC_${kv%%=*} is not ${kv#*=}"
+done
 grep -q 'sentinel-railway-token' "$tmp/plan.out" && fail "plan printed the token"
 
 # The web build args carry the same values the web service receives at runtime, and every
@@ -101,10 +105,13 @@ args = json.load(open(sys.argv[1]))["web"]["buildArgs"]
 web = json.load(open(sys.argv[2]))["web"]
 assert all(args.get(k) == v for k, v in web.items()), f"web.buildArgs differs from the web values: {set(web.items()) - set(args.items())}"
 declared = set(re.findall(r"^ARG ((?:NEXT_PUBLIC|WEB)_[A-Z_]+)", open(sys.argv[3]).read(), re.M))
-undecided = {f"NEXT_PUBLIC_{n}" for n in """ANALYTICS_KEY DATA_API_URL GATEWAY_URL LIVESTREAM_API_URL MARKET_SOCIAL_ORIGINS
-    METADATA_API_URL PNL_API_URL PRIVATE_QUALIFICATION_AUTHORITY_PROFILE
-    SENTRY_DSN SENTRY_RELEASE SOCIAL_API_URL STATS_API_URL SUPABASE_PUBLISHABLE_KEY SUPABASE_URL
+undecided = {f"NEXT_PUBLIC_{n}" for n in """ANALYTICS_KEY MARKET_SOCIAL_ORIGINS PRIVATE_QUALIFICATION_AUTHORITY_PROFILE
+    SENTRY_DSN SENTRY_RELEASE SOCIAL_API_URL SUPABASE_PUBLISHABLE_KEY SUPABASE_URL
     USER_API_URL WALLETCONNECT_PROJECT_ID WALLET_IFRAME_ORIGIN""".split()}
+public = {"DATA_API_URL": "https://api.sidiora.fun", "GATEWAY_URL": "https://gateway.sidiora.fun",
+    "METADATA_API_URL": "https://gateway.sidiora.fun", "PNL_API_URL": "https://pnl.sidiora.fun",
+    "STATS_API_URL": "https://stats.sidiora.fun", "LIVESTREAM_API_URL": "https://live.sidiora.fun"}
+assert all(args.get(f"NEXT_PUBLIC_{n}") == v == web.get(f"NEXT_PUBLIC_{n}") for n, v in public.items()), "a public web hostname differs"
 assert set(args) <= declared, f"build args Dockerfile.web does not declare: {set(args) - declared}"
 assert declared - set(args) == undecided, f"unfilled build args differ from the decision list: {(declared - set(args)) ^ undecided}"
 assert all(v and not any(c.isspace() for c in v) for v in args.values()), "a build arg is empty or has whitespace"
