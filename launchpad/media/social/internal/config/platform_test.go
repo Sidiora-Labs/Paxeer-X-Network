@@ -118,6 +118,35 @@ func TestValidatePlatformRejects(t *testing.T) {
 	}
 }
 
+func TestPlatformInlinePEM(t *testing.T) {
+	cases := map[string]struct {
+		file   string
+		inline func(*Config, string)
+		clear  func(*Config)
+	}{
+		"IDENTITY_MTLS_CA_PEM":          {"IDENTITY_MTLS_CA_FILE", func(c *Config, v string) { c.IdentityMTLSCAPEM = v }, func(c *Config) { c.IdentityMTLSCAFile = "" }},
+		"IDENTITY_MTLS_CLIENT_CERT_PEM": {"IDENTITY_MTLS_CLIENT_CERT_FILE", func(c *Config, v string) { c.IdentityMTLSClientCertPEM = v }, func(c *Config) { c.IdentityMTLSClientCertFile = "" }},
+		"SOCIAL_TLS_CERT_PEM":           {"SOCIAL_TLS_CERT_FILE", func(c *Config, v string) { c.PrivateTLSCertPEM = v }, func(c *Config) { c.PrivateTLSCertFile = "" }},
+		"SOCIAL_TLS_CLIENT_CA_PEM":      {"SOCIAL_TLS_CLIENT_CA_FILE", func(c *Config, v string) { c.PrivateTLSClientCAPEM = v }, func(c *Config) { c.PrivateTLSClientCAFile = "" }},
+	}
+	for name, tc := range cases {
+		inline := platformConfig()
+		tc.inline(&inline, "-----BEGIN CERTIFICATE-----")
+		tc.clear(&inline)
+		if err := inline.ValidatePlatform(); err != nil {
+			t.Fatalf("%s alone refused: %v", name, err)
+		}
+		both := platformConfig()
+		tc.inline(&both, "-----BEGIN CERTIFICATE-----")
+		if err := both.ValidatePlatform(); err == nil || !strings.Contains(err.Error(), tc.file+" and "+name) {
+			t.Fatalf("%s with %s accepted or unnamed: %v", name, tc.file, err)
+		}
+	}
+	if got, err := Material("/nonexistent/social.pem", "inline"); err != nil || string(got) != "inline" {
+		t.Fatalf("inline material: %q %v", got, err)
+	}
+}
+
 func TestPlatformSecretsResolveAndValidate(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://kl:kl@localhost:5432/social")
 	t.Setenv("REDIS_URL", "redis://localhost:6379")
@@ -156,5 +185,12 @@ func TestPlatformSecretsResolveAndValidate(t *testing.T) {
 	c2 := platformConfig()
 	if _, _, err = c2.ResolveProductionSecrets(context.Background()); err == nil {
 		t.Fatal("invalid resolved cursor key accepted")
+	}
+}
+
+func TestValidateNamesBothDocumentForms(t *testing.T) {
+	c := Config{SocialRuntimeFile: "/etc/sidiora/social/runtime.json", SocialRuntimeDocument: "e30="}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "SOCIAL_RUNTIME_FILE and SOCIAL_RUNTIME_DOCUMENT are both set") {
+		t.Fatalf("both forms not named: %v", err)
 	}
 }

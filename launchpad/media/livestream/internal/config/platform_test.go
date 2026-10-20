@@ -52,4 +52,34 @@ func TestPlatformProfileRules(t *testing.T) {
 			t.Fatalf("%s accepted", name)
 		}
 	}
+	for name, tc := range map[string]struct {
+		file   string
+		inline func(*Config)
+		clear  func(*Config)
+	}{
+		"LIVESTREAM_TLS_CERT_PEM":      {"LIVESTREAM_TLS_CERT_FILE", func(c *Config) { c.PrivateTLSCertPEM = "-----BEGIN CERTIFICATE-----" }, func(c *Config) { c.PrivateTLSCertFile = "" }},
+		"LIVESTREAM_TLS_CLIENT_CA_PEM": {"LIVESTREAM_TLS_CLIENT_CA_FILE", func(c *Config) { c.PrivateTLSClientCAPEM = "-----BEGIN CERTIFICATE-----" }, func(c *Config) { c.PrivateTLSClientCAFile = "" }},
+	} {
+		inline := c
+		tc.inline(&inline)
+		tc.clear(&inline)
+		if err := inline.ValidatePlatform(); err != nil {
+			t.Fatalf("%s alone refused: %v", name, err)
+		}
+		both := c
+		tc.inline(&both)
+		if err := both.ValidatePlatform(); err == nil || !strings.Contains(err.Error(), tc.file+" and "+name) {
+			t.Fatalf("%s with %s accepted or unnamed: %v", name, tc.file, err)
+		}
+	}
+	if got, err := Material("/nonexistent/livestream.pem", "inline"); err != nil || string(got) != "inline" {
+		t.Fatalf("inline material: %q %v", got, err)
+	}
+}
+
+func TestValidateNamesBothDocumentForms(t *testing.T) {
+	c := Config{BudgetPolicyFile: "/etc/sidiora/livestream/budget.json", BudgetPolicyDocument: "e30="}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "LIVESTREAM_BUDGET_POLICY_FILE and LIVESTREAM_BUDGET_POLICY_DOCUMENT are both set") {
+		t.Fatalf("both forms not named: %v", err)
+	}
 }

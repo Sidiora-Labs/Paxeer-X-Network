@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/Sidiora-Technologies/KindleLaunch/media/livestream/internal/config"
@@ -26,37 +25,27 @@ type platformPrivate struct {
 }
 
 func newPlatformPrivate(cfg config.Config) (*platformPrivate, error) {
-	caPEM, err := readPlatformPEM(cfg.PrivateTLSClientCAFile)
+	caPEM, err := config.Material(cfg.PrivateTLSClientCAFile, cfg.PrivateTLSClientCAPEM)
 	if err != nil {
-		return nil, errors.New("LIVESTREAM_TLS_CLIENT_CA_FILE unavailable")
+		return nil, errors.New("LIVESTREAM_TLS_CLIENT_CA_FILE or LIVESTREAM_TLS_CLIENT_CA_PEM unavailable")
 	}
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(caPEM) {
-		return nil, errors.New("LIVESTREAM_TLS_CLIENT_CA_FILE invalid")
+		return nil, errors.New("LIVESTREAM_TLS_CLIENT_CA_FILE or LIVESTREAM_TLS_CLIENT_CA_PEM invalid")
 	}
-	certPEM, err := readPlatformPEM(cfg.PrivateTLSCertFile)
+	certPEM, err := config.Material(cfg.PrivateTLSCertFile, cfg.PrivateTLSCertPEM)
 	if err != nil {
-		return nil, errors.New("LIVESTREAM_TLS_CERT_FILE unavailable")
+		return nil, errors.New("LIVESTREAM_TLS_CERT_FILE or LIVESTREAM_TLS_CERT_PEM unavailable")
 	}
-	keyPEM := []byte(cfg.PrivateTLSKeyPEM)
-	if cfg.PrivateTLSKeyFile != "" {
-		if keyPEM, err = readPlatformPEM(cfg.PrivateTLSKeyFile); err != nil {
-			return nil, errors.New("LIVESTREAM_TLS_KEY_FILE unavailable")
-		}
+	keyPEM, err := config.Material(cfg.PrivateTLSKeyFile, cfg.PrivateTLSKeyPEM)
+	if err != nil {
+		return nil, errors.New("LIVESTREAM_TLS_KEY_FILE or LIVESTREAM_TLS_KEY_PEM unavailable")
 	}
 	pair, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		return nil, errors.New("livestream private server identity invalid")
 	}
 	return &platformPrivate{address: cfg.PrivateListenAddress, tls: &tls.Config{MinVersion: tls.VersionTLS13, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: roots, Certificates: []tls.Certificate{pair}}, gatewayPin: cfg.GatewayPeerCertSHA256}, nil
-}
-
-func readPlatformPEM(path string) ([]byte, error) {
-	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > 1<<20 {
-		return nil, errors.New("pem file unavailable")
-	}
-	return os.ReadFile(path)
 }
 
 // handler admits only the pinned gateway client certificate.

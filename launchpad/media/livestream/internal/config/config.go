@@ -121,9 +121,11 @@ type Config struct {
 	// PORT listener then serves only health and metrics.
 	PrivateListenAddress   string `env:"LIVESTREAM_PRIVATE_LISTEN_ADDRESS"`
 	PrivateTLSCertFile     string `env:"LIVESTREAM_TLS_CERT_FILE"`
+	PrivateTLSCertPEM      string `env:"LIVESTREAM_TLS_CERT_PEM"`
 	PrivateTLSKeyFile      string `env:"LIVESTREAM_TLS_KEY_FILE"`
 	PrivateTLSKeyPEM       string `env:"LIVESTREAM_TLS_KEY_PEM"`
 	PrivateTLSClientCAFile string `env:"LIVESTREAM_TLS_CLIENT_CA_FILE"`
+	PrivateTLSClientCAPEM  string `env:"LIVESTREAM_TLS_CLIENT_CA_PEM"`
 	GatewayPeerCertSHA256  string `env:"GATEWAY_PEER_CERT_SHA256"`
 }
 
@@ -163,8 +165,11 @@ func (c *Config) ValidatePlatform() error {
 	if host, port, err := net.SplitHostPort(c.PrivateListenAddress); err != nil || port == "" || net.ParseIP(host) == nil || port == strconv.Itoa(c.Port) {
 		errs = append(errs, errors.New("LIVESTREAM_PRIVATE_LISTEN_ADDRESS must be an IP:port distinct from PORT (e.g. [::]:8443)"))
 	}
-	if c.PrivateTLSCertFile == "" || c.PrivateTLSClientCAFile == "" {
-		errs = append(errs, errors.New("LIVESTREAM_TLS_CERT_FILE and LIVESTREAM_TLS_CLIENT_CA_FILE are required"))
+	if (c.PrivateTLSCertFile == "") == (c.PrivateTLSCertPEM == "") {
+		errs = append(errs, errors.New("exactly one of LIVESTREAM_TLS_CERT_FILE and LIVESTREAM_TLS_CERT_PEM is required"))
+	}
+	if (c.PrivateTLSClientCAFile == "") == (c.PrivateTLSClientCAPEM == "") {
+		errs = append(errs, errors.New("exactly one of LIVESTREAM_TLS_CLIENT_CA_FILE and LIVESTREAM_TLS_CLIENT_CA_PEM is required"))
 	}
 	if (c.PrivateTLSKeyFile == "") == (c.PrivateTLSKeyPEM == "") {
 		errs = append(errs, errors.New("exactly one of LIVESTREAM_TLS_KEY_FILE and LIVESTREAM_TLS_KEY_PEM is required"))
@@ -219,8 +224,7 @@ func (c *Config) Validate() error {
 	var errs []error
 	for _, d := range c.boundDocuments() {
 		if d[0] != "" && d[1] != "" {
-			errs = append(errs, errors.New("runtime_document_source_ambiguous"))
-			break
+			errs = append(errs, fmt.Errorf("runtime_document_source_ambiguous: %s_FILE and %s_DOCUMENT are both set", d[3], d[3]))
 		}
 	}
 	unavailable := c.ProviderMode == "unavailable"
@@ -467,11 +471,11 @@ func ReadBoundDocument(path, digest string, out any) error {
 // path resolve the inline sibling; boundBytes still checks the digest.
 var inlineDocuments sync.Map
 
-func (c *Config) boundDocuments() [][3]string {
-	return [][3]string{
-		{c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256},
-		{c.ExpectedSchemaFile, c.ExpectedSchemaDocument, c.ExpectedSchemaSHA256},
-		{c.BudgetPolicyFile, c.BudgetPolicyDocument, c.BudgetPolicySHA256},
+func (c *Config) boundDocuments() [][4]string {
+	return [][4]string{
+		{c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256, "DB_BUDGET"},
+		{c.ExpectedSchemaFile, c.ExpectedSchemaDocument, c.ExpectedSchemaSHA256, "EXPECTED_SCHEMA"},
+		{c.BudgetPolicyFile, c.BudgetPolicyDocument, c.BudgetPolicySHA256, "LIVESTREAM_BUDGET_POLICY"},
 	}
 }
 
@@ -647,4 +651,20 @@ func (c *Config) IdentityAuthority() (sharedauth.RequestIdentityAuthority, error
 		return nil, errors.New("livestream_identity_authority_invalid")
 	}
 	return authority, nil
+}
+
+// Material returns the inline PEM value when it is set, else the bytes of
+// the regular file at path. Either source must hold 1 byte to 1 MiB.
+func Material(path, inline string) ([]byte, error) {
+	if inline != "" {
+		if len(inline) > 1<<20 {
+			return nil, errors.New("inline material too large")
+		}
+		return []byte(inline), nil
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > 1<<20 {
+		return nil, errors.New("material file unavailable")
+	}
+	return os.ReadFile(path)
 }

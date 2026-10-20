@@ -2524,3 +2524,11 @@ exit = 0
 log = "release-8.4.3-fix-verify-1.log"
 observed = "All five cases pass including paths_remapped: cargo path-dependency hashes are pinned through a fixed build symlink and the cgo rpath is replaced by $ORIGIN through an extld wrapper, so two checkouts produce identical SHA256SUMS."
 assumption = "Release builds run one at a time per host under the build lock; paxd resolves libwasmvm beside itself first, then the system copy."
+
+[finding.media-app-db-gated-tests]
+revision = "dc117796e"
+command = "go test ./media/user/internal/app ./media/social/internal/app ./media/livestream/internal/app ./shared/auth"
+exit = 1
+log = "LP-18b-verify2.log"
+observed = "Only tests needing L40_TEST_APP_POSTGRES_DSN, L34_POSTGRES_DSN, L34_LOAD_PLAN, fixture Postgres on 127.0.0.1:25432 or spec/production-system/integration/migrations/registry.json failed; the inline material tests passed."
+assumption = "These integration tests need the database and fixture environment and run at the release gate, not in lane worktrees."

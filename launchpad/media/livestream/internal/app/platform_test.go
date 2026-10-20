@@ -415,3 +415,27 @@ func TestPlatformBootVerifiesCoordinatorSchemaWithoutMigrating(t *testing.T) {
 		t.Fatalf("platform boot created %d relations in an unmigrated database (%v)", relations, err)
 	}
 }
+
+func TestPlatformPrivateFromInlinePEM(t *testing.T) {
+	pki := testpki.New(t)
+	server := pki.Leaf("livestream-server", "livestream.railway.internal")
+	caPEM, err := os.ReadFile(pki.CAFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{PrivateListenAddress: "[::]:8443", PrivateTLSCertPEM: string(server.CertPEM), PrivateTLSKeyPEM: string(server.KeyPEM), PrivateTLSClientCAPEM: string(caPEM), GatewayPeerCertSHA256: strings.Repeat("cd", 32)}
+	private, err := newPlatformPrivate(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(private.tls.Certificates) != 1 || private.tls.ClientCAs == nil || private.tls.ClientAuth != tls.RequireAndVerifyClientCert || private.tls.MinVersion != tls.VersionTLS13 {
+		t.Fatalf("inline private TLS: %+v", private.tls)
+	}
+	if !private.tls.ClientCAs.Equal(pki.Roots()) {
+		t.Fatal("inline client CA not the private CA")
+	}
+	cfg.PrivateTLSClientCAPEM = "not pem"
+	if _, err = newPlatformPrivate(cfg); err == nil {
+		t.Fatal("invalid inline client CA accepted")
+	}
+}

@@ -48,7 +48,7 @@ func TestInlineBoundDocuments(t *testing.T) {
 
 	t.Setenv("GATEWAY_RUNTIME_FILE", "/app/prod/gateway-runtime.json")
 	t.Setenv("GATEWAY_RUNTIME_DOCUMENT", inline)
-	if _, err = Load(); err == nil || !strings.Contains(err.Error(), "runtime_document_source_ambiguous") {
+	if _, err = Load(); err == nil || !strings.Contains(err.Error(), "runtime_document_source_ambiguous") || !strings.Contains(err.Error(), "GATEWAY_RUNTIME_FILE and GATEWAY_RUNTIME_DOCUMENT are both set") {
 		t.Fatalf("both sources set: %v", err)
 	}
 }

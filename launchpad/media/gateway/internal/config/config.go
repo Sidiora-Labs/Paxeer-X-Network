@@ -158,8 +158,7 @@ func (c *Config) Validate() error {
 	var errs []error
 	for _, d := range c.boundDocuments() {
 		if d[0] != "" && d[1] != "" {
-			errs = append(errs, errors.New("runtime_document_source_ambiguous"))
-			break
+			errs = append(errs, fmt.Errorf("runtime_document_source_ambiguous: %s_FILE and %s_DOCUMENT are both set", d[3], d[3]))
 		}
 	}
 
@@ -417,12 +416,12 @@ func ReadBoundDocument(path, digest string, out any) error {
 // path resolve the inline sibling; boundBytes still checks the digest.
 var inlineDocuments sync.Map
 
-func (c *Config) boundDocuments() [][3]string {
-	return [][3]string{
-		{c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256},
-		{c.ExpectedSchemaFile, c.ExpectedSchemaDocument, c.ExpectedSchemaSHA256},
-		{c.IdentityConfigFile, c.IdentityConfigDocument, c.IdentityConfigSHA256},
-		{c.GatewayRuntimeFile, c.GatewayRuntimeDocument, c.GatewayRuntimeSHA256},
+func (c *Config) boundDocuments() [][4]string {
+	return [][4]string{
+		{c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256, "DB_BUDGET"},
+		{c.ExpectedSchemaFile, c.ExpectedSchemaDocument, c.ExpectedSchemaSHA256, "EXPECTED_SCHEMA"},
+		{c.IdentityConfigFile, c.IdentityConfigDocument, c.IdentityConfigSHA256, "IDENTITY_CONFIG"},
+		{c.GatewayRuntimeFile, c.GatewayRuntimeDocument, c.GatewayRuntimeSHA256, "GATEWAY_RUNTIME"},
 	}
 }
 

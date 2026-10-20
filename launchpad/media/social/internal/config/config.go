@@ -61,7 +61,9 @@ type Config struct {
 	// gateway server certificate and the ed25519 request-assertion key whose
 	// public half is the gateway's identityPeers entry for issuer "social".
 	IdentityMTLSCAFile         string `env:"IDENTITY_MTLS_CA_FILE"`
+	IdentityMTLSCAPEM          string `env:"IDENTITY_MTLS_CA_PEM"`
 	IdentityMTLSClientCertFile string `env:"IDENTITY_MTLS_CLIENT_CERT_FILE"`
+	IdentityMTLSClientCertPEM  string `env:"IDENTITY_MTLS_CLIENT_CERT_PEM"`
 	IdentityMTLSClientKeyFile  string `env:"IDENTITY_MTLS_CLIENT_KEY_FILE"`
 	IdentityMTLSClientKeyPEM   string `env:"IDENTITY_MTLS_CLIENT_KEY_PEM"`
 	IdentityMTLSPeerCertSHA256 string `env:"IDENTITY_MTLS_PEER_CERT_SHA256"`
@@ -75,9 +77,11 @@ type Config struct {
 	// then serves only health and metrics.
 	PrivateListenAddress   string `env:"SOCIAL_PRIVATE_LISTEN_ADDRESS"`
 	PrivateTLSCertFile     string `env:"SOCIAL_TLS_CERT_FILE"`
+	PrivateTLSCertPEM      string `env:"SOCIAL_TLS_CERT_PEM"`
 	PrivateTLSKeyFile      string `env:"SOCIAL_TLS_KEY_FILE"`
 	PrivateTLSKeyPEM       string `env:"SOCIAL_TLS_KEY_PEM"`
 	PrivateTLSClientCAFile string `env:"SOCIAL_TLS_CLIENT_CA_FILE"`
+	PrivateTLSClientCAPEM  string `env:"SOCIAL_TLS_CLIENT_CA_PEM"`
 	GatewayPeerCertSHA256  string `env:"GATEWAY_PEER_CERT_SHA256"`
 	AuthorityPeers         string `env:"SOCIAL_AUTHORITY_PEERS"`
 
@@ -163,7 +167,7 @@ func (c *Config) PlatformIdentityClient() (sharedauth.MTLSIdentityClientConfig, 
 	if err != nil {
 		return sharedauth.MTLSIdentityClientConfig{}, err
 	}
-	return sharedauth.MTLSIdentityClientConfig{Endpoint: endpoint, PeerCertSHA256: c.IdentityMTLSPeerCertSHA256, CAFile: c.IdentityMTLSCAFile, ClientCertFile: c.IdentityMTLSClientCertFile, ClientKeyFile: c.IdentityMTLSClientKeyFile, ClientKeyPEM: c.IdentityMTLSClientKeyPEM, Issuer: "social", SigningKey: c.IdentitySigningKey}, nil
+	return sharedauth.MTLSIdentityClientConfig{Endpoint: endpoint, PeerCertSHA256: c.IdentityMTLSPeerCertSHA256, CAFile: c.IdentityMTLSCAFile, CAPEM: c.IdentityMTLSCAPEM, ClientCertFile: c.IdentityMTLSClientCertFile, ClientCertPEM: c.IdentityMTLSClientCertPEM, ClientKeyFile: c.IdentityMTLSClientKeyFile, ClientKeyPEM: c.IdentityMTLSClientKeyPEM, Issuer: "social", SigningKey: c.IdentitySigningKey}, nil
 }
 
 // PlatformAuthorityPeers parses SOCIAL_AUTHORITY_PEERS: comma-separated
@@ -220,8 +224,11 @@ func (c *Config) ValidatePlatform() error {
 	if _, err := c.PlatformIdentityEndpoint(); err != nil {
 		errs = append(errs, err)
 	}
-	if c.IdentityMTLSCAFile == "" || c.IdentityMTLSClientCertFile == "" {
-		errs = append(errs, errors.New("IDENTITY_MTLS_CA_FILE and IDENTITY_MTLS_CLIENT_CERT_FILE are required"))
+	if (c.IdentityMTLSCAFile == "") == (c.IdentityMTLSCAPEM == "") {
+		errs = append(errs, errors.New("exactly one of IDENTITY_MTLS_CA_FILE and IDENTITY_MTLS_CA_PEM is required"))
+	}
+	if (c.IdentityMTLSClientCertFile == "") == (c.IdentityMTLSClientCertPEM == "") {
+		errs = append(errs, errors.New("exactly one of IDENTITY_MTLS_CLIENT_CERT_FILE and IDENTITY_MTLS_CLIENT_CERT_PEM is required"))
 	}
 	if (c.IdentityMTLSClientKeyFile == "") == (c.IdentityMTLSClientKeyPEM == "") {
 		errs = append(errs, errors.New("exactly one of IDENTITY_MTLS_CLIENT_KEY_FILE and IDENTITY_MTLS_CLIENT_KEY_PEM is required"))
@@ -235,8 +242,11 @@ func (c *Config) ValidatePlatform() error {
 	if host, port, err := net.SplitHostPort(c.PrivateListenAddress); err != nil || port == "" || net.ParseIP(host) == nil || port == strconv.Itoa(c.Port) {
 		errs = append(errs, errors.New("SOCIAL_PRIVATE_LISTEN_ADDRESS must be an IP:port distinct from PORT (e.g. [::]:8443)"))
 	}
-	if c.PrivateTLSCertFile == "" || c.PrivateTLSClientCAFile == "" {
-		errs = append(errs, errors.New("SOCIAL_TLS_CERT_FILE and SOCIAL_TLS_CLIENT_CA_FILE are required"))
+	if (c.PrivateTLSCertFile == "") == (c.PrivateTLSCertPEM == "") {
+		errs = append(errs, errors.New("exactly one of SOCIAL_TLS_CERT_FILE and SOCIAL_TLS_CERT_PEM is required"))
+	}
+	if (c.PrivateTLSClientCAFile == "") == (c.PrivateTLSClientCAPEM == "") {
+		errs = append(errs, errors.New("exactly one of SOCIAL_TLS_CLIENT_CA_FILE and SOCIAL_TLS_CLIENT_CA_PEM is required"))
 	}
 	if (c.PrivateTLSKeyFile == "") == (c.PrivateTLSKeyPEM == "") {
 		errs = append(errs, errors.New("exactly one of SOCIAL_TLS_KEY_FILE and SOCIAL_TLS_KEY_PEM is required"))
@@ -297,8 +307,7 @@ func (c *Config) Validate() error {
 	var errs []error
 	for _, d := range c.boundDocuments() {
 		if d[0] != "" && d[1] != "" {
-			errs = append(errs, errors.New("runtime_document_source_ambiguous"))
-			break
+			errs = append(errs, fmt.Errorf("runtime_document_source_ambiguous: %s_FILE and %s_DOCUMENT are both set", d[3], d[3]))
 		}
 	}
 
@@ -526,11 +535,11 @@ func ReadBoundDocument(path, digest string, out any) error {
 // path resolve the inline sibling; boundBytes still checks the digest.
 var inlineDocuments sync.Map
 
-func (c *Config) boundDocuments() [][3]string {
-	return [][3]string{
-		{c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256},
-		{c.ExpectedSchemaFile, c.ExpectedSchemaDocument, c.ExpectedSchemaSHA256},
-		{c.SocialRuntimeFile, c.SocialRuntimeDocument, c.SocialRuntimeSHA256},
+func (c *Config) boundDocuments() [][4]string {
+	return [][4]string{
+		{c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256, "DB_BUDGET"},
+		{c.ExpectedSchemaFile, c.ExpectedSchemaDocument, c.ExpectedSchemaSHA256, "EXPECTED_SCHEMA"},
+		{c.SocialRuntimeFile, c.SocialRuntimeDocument, c.SocialRuntimeSHA256, "SOCIAL_RUNTIME"},
 	}
 }
 
@@ -659,4 +668,20 @@ type VoiceRuntimeBinding struct {
 	RecordingBucket             string `json:"recordingBucket"`
 	RecordingAccessKeyReference string `json:"recordingAccessKeyReference"`
 	RecordingSecretReference    string `json:"recordingSecretReference"`
+}
+
+// Material returns the inline PEM value when it is set, else the bytes of
+// the regular file at path. Either source must hold 1 byte to 1 MiB.
+func Material(path, inline string) ([]byte, error) {
+	if inline != "" {
+		if len(inline) > 1<<20 {
+			return nil, errors.New("inline material too large")
+		}
+		return []byte(inline), nil
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > 1<<20 {
+		return nil, errors.New("material file unavailable")
+	}
+	return os.ReadFile(path)
 }

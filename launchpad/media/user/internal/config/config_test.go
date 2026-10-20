@@ -1,6 +1,10 @@
 package config_test
 
 import (
+	"encoding/base64"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Sidiora-Technologies/KindleLaunch/media/user/internal/config"
@@ -105,5 +109,86 @@ func TestValidate(t *testing.T) {
 				t.Errorf("Validate() err = %v, wantErr %v", err, c.wantErr)
 			}
 		})
+	}
+}
+
+func accountConfig() config.Config {
+	key := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	pin := strings.Repeat("ab", 32)
+	return config.Config{
+		AccountCursorKey: key, AccountExportKey: key, AccountEndpointKey: key, AccountEndpointFingerprintKey: key, AccountAuditKey: key, AccountEndpointProofPublicKey: key, AccountGatewayPublicKey: key, AccountServiceSigningSeed: key,
+		AccountGatewayCertSHA256: pin, NotificationCertSHA256: pin, IdentityCertSHA256: pin, MetadataCertSHA256: pin,
+		AccountDownloadBaseURL: "https://download.example", NotificationServiceURL: "https://notification.example", IdentityURL: "https://identity.example", MetadataServiceURL: "https://metadata.example", S3Endpoint: "https://r2.example.com",
+		S3Bucket: "user-assets", AccountExportBucket: "account-exports", NotificationServiceToken: strings.Repeat("n", 32), NotificationInboundToken: strings.Repeat("i", 32),
+		AccountNATSStream: "ACCOUNT", AccountSubjectsDocument: "e30=", AccountSubjectsSHA256: pin, AccountEnvironment: "production", AccountNATSURL: "tls://nats.example:4222", AccountRPCURL: "https://rpc.example",
+		AccountTLSCertFile: "/etc/sidiora/pki/account.pem", AccountTLSKeyFile: "/etc/sidiora/pki/account.key", AccountTLSCAFile: "/etc/sidiora/pki/ca.pem",
+		AccountNATSCredentialsFile: "/etc/sidiora/nats/account.creds", AccountNATSCAFile: "/etc/sidiora/nats/ca.pem", AccountNATSCertFile: "/etc/sidiora/nats/account.pem", AccountNATSKeyFile: "/etc/sidiora/nats/account.key",
+	}
+}
+
+func TestAccountRuntimeInlineMaterial(t *testing.T) {
+	if err := accountConfig().ValidateAccountRuntime(); err != nil {
+		t.Fatalf("file form refused: %v", err)
+	}
+	for name, set := range map[string]func(*config.Config, string){
+		"ACCOUNT_TLS_CERT_PEM":  func(c *config.Config, v string) { c.AccountTLSCertPEM = v },
+		"ACCOUNT_TLS_KEY_PEM":   func(c *config.Config, v string) { c.AccountTLSKeyPEM = v },
+		"ACCOUNT_TLS_CA_PEM":    func(c *config.Config, v string) { c.AccountTLSCAPEM = v },
+		"ACCOUNT_NATS_CREDS":    func(c *config.Config, v string) { c.AccountNATSCreds = v },
+		"ACCOUNT_NATS_CA_PEM":   func(c *config.Config, v string) { c.AccountNATSCAPEM = v },
+		"ACCOUNT_NATS_CERT_PEM": func(c *config.Config, v string) { c.AccountNATSCertPEM = v },
+		"ACCOUNT_NATS_KEY_PEM":  func(c *config.Config, v string) { c.AccountNATSKeyPEM = v },
+	} {
+		fileVar := strings.TrimSuffix(strings.TrimSuffix(name, "_PEM"), "_CREDS") + "_FILE"
+		if name == "ACCOUNT_NATS_CREDS" {
+			fileVar = "ACCOUNT_NATS_CREDENTIALS_FILE"
+		}
+		both := accountConfig()
+		set(&both, "inline")
+		err := both.ValidateAccountRuntime()
+		if err == nil || !strings.Contains(err.Error(), fileVar) || !strings.Contains(err.Error(), name) {
+			t.Fatalf("%s with its file accepted or unnamed: %v", name, err)
+		}
+		inline := accountConfig()
+		set(&inline, "inline")
+		clearFile(&inline, fileVar)
+		if err := inline.ValidateAccountRuntime(); err != nil {
+			t.Fatalf("%s alone refused: %v", name, err)
+		}
+		neither := accountConfig()
+		clearFile(&neither, fileVar)
+		if err := neither.ValidateAccountRuntime(); err == nil || !strings.Contains(err.Error(), name) {
+			t.Fatalf("neither %s nor %s rejected: %v", fileVar, name, err)
+		}
+	}
+}
+
+func clearFile(c *config.Config, fileVar string) {
+	for name, field := range map[string]*string{"ACCOUNT_TLS_CERT_FILE": &c.AccountTLSCertFile, "ACCOUNT_TLS_KEY_FILE": &c.AccountTLSKeyFile, "ACCOUNT_TLS_CA_FILE": &c.AccountTLSCAFile, "ACCOUNT_NATS_CREDENTIALS_FILE": &c.AccountNATSCredentialsFile, "ACCOUNT_NATS_CA_FILE": &c.AccountNATSCAFile, "ACCOUNT_NATS_CERT_FILE": &c.AccountNATSCertFile, "ACCOUNT_NATS_KEY_FILE": &c.AccountNATSKeyFile} {
+		if name == fileVar {
+			*field = ""
+		}
+	}
+}
+
+func TestMaterialInlineWins(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "material.pem")
+	if err := os.WriteFile(path, []byte("from-file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := config.Material(path, "inline"); err != nil || string(got) != "inline" {
+		t.Fatalf("inline: %q %v", got, err)
+	}
+	if got, err := config.Material(path, ""); err != nil || string(got) != "from-file" {
+		t.Fatalf("file: %q %v", got, err)
+	}
+}
+
+func TestValidateNamesBothDocumentForms(t *testing.T) {
+	c := config.Config{DatabaseURL: "postgres://localhost:5432/db", RedisURL: "redis://localhost:6379", S3Endpoint: "https://r2.example.com", S3Bucket: "b", S3AccessKeyID: "ak", S3SecretAccessKey: "sk", LogLevel: "info", Port: 3000, MaxAvatarSizeBytes: 1, MaxBannerSizeBytes: 1,
+		RuntimeBudgetFile: "/etc/sidiora/budget.json", RuntimeBudgetDocument: "e30=", AccountSubjectsFile: "/etc/sidiora/subjects.json", AccountSubjectsDocument: "e30="}
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "DB_BUDGET_FILE and DB_BUDGET_DOCUMENT are both set") || !strings.Contains(err.Error(), "ACCOUNT_SUBJECTS_FILE and ACCOUNT_SUBJECTS_DOCUMENT are both set") {
+		t.Fatalf("both forms not named: %v", err)
 	}
 }

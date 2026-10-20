@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -75,6 +76,19 @@ func TestMTLSIdentityClientProbe(t *testing.T) {
 		}
 	}
 	status = http.StatusUnprocessableEntity
+	caPEM, err := os.ReadFile(pki.CAFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inline := base
+	inline.CAFile, inline.CAPEM, inline.ClientCertFile, inline.ClientCertPEM = "", string(caPEM), "", string(client.CertPEM)
+	inlineAuthority, err := auth.NewMTLSIdentityClient(inline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = inlineAuthority.Probe(context.Background()); err != nil {
+		t.Fatalf("inline material probe: %v", err)
+	}
 	other := base
 	other.SigningKey = testpki.Ed25519(t).StdBase64
 	rejected, err := auth.NewMTLSIdentityClient(other)
@@ -87,6 +101,9 @@ func TestMTLSIdentityClientProbe(t *testing.T) {
 	}
 	for name, mutate := range map[string]func(*auth.MTLSIdentityClientConfig){
 		"no ca":          func(c *auth.MTLSIdentityClientConfig) { c.CAFile = "" },
+		"two cas":        func(c *auth.MTLSIdentityClientConfig) { c.CAPEM = "-----BEGIN CERTIFICATE-----" },
+		"no client cert": func(c *auth.MTLSIdentityClientConfig) { c.ClientCertFile = "" },
+		"two certs":      func(c *auth.MTLSIdentityClientConfig) { c.ClientCertPEM = string(client.CertPEM) },
 		"missing ca":     func(c *auth.MTLSIdentityClientConfig) { c.CAFile = c.CAFile + ".missing" },
 		"no key":         func(c *auth.MTLSIdentityClientConfig) { c.ClientKeyPEM = "" },
 		"two keys":       func(c *auth.MTLSIdentityClientConfig) { c.ClientKeyFile = client.KeyFile },

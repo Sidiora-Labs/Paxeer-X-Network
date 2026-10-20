@@ -70,6 +70,13 @@ type Config struct {
 	AccountTLSCertFile              string `env:"ACCOUNT_TLS_CERT_FILE"`
 	AccountTLSKeyFile               string `env:"ACCOUNT_TLS_KEY_FILE"`
 	AccountTLSCAFile                string `env:"ACCOUNT_TLS_CA_FILE"`
+	AccountNATSCreds                string `env:"ACCOUNT_NATS_CREDS"`
+	AccountNATSCAPEM                string `env:"ACCOUNT_NATS_CA_PEM"`
+	AccountNATSCertPEM              string `env:"ACCOUNT_NATS_CERT_PEM"`
+	AccountNATSKeyPEM               string `env:"ACCOUNT_NATS_KEY_PEM"`
+	AccountTLSCertPEM               string `env:"ACCOUNT_TLS_CERT_PEM"`
+	AccountTLSKeyPEM                string `env:"ACCOUNT_TLS_KEY_PEM"`
+	AccountTLSCAPEM                 string `env:"ACCOUNT_TLS_CA_PEM"`
 	NotificationServiceURL          string `env:"NOTIFICATION_SERVICE_URL"`
 	NotificationServiceToken        string `env:"NOTIFICATION_SERVICE_TOKEN"`
 	NotificationCertSHA256          string `env:"NOTIFICATION_CERT_SHA256"`
@@ -140,8 +147,7 @@ func (c *Config) Validate() error {
 	var errs []error
 	for _, d := range c.boundDocuments() {
 		if d[0] != "" && d[1] != "" {
-			errs = append(errs, errors.New("runtime_document_source_ambiguous"))
-			break
+			errs = append(errs, fmt.Errorf("runtime_document_source_ambiguous: %s_FILE and %s_DOCUMENT are both set", d[3], d[3]))
 		}
 	}
 
@@ -217,6 +223,15 @@ func (c *Config) ResolveProductionSecrets(ctx context.Context) (func(context.Con
 	bindings["ACCOUNT_AUDIT_KEY"] = &c.AccountAuditKey
 	bindings["NOTIFICATION_SERVICE_TOKEN"] = &c.NotificationServiceToken
 	bindings["NOTIFICATION_D11_TOKEN"] = &c.NotificationInboundToken
+	if c.AccountNATSCredentialsFile == "" {
+		bindings["ACCOUNT_NATS_CREDS"] = &c.AccountNATSCreds
+	}
+	if c.AccountNATSKeyFile == "" {
+		bindings["ACCOUNT_NATS_KEY_PEM"] = &c.AccountNATSKeyPEM
+	}
+	if c.AccountTLSKeyFile == "" {
+		bindings["ACCOUNT_TLS_KEY_PEM"] = &c.AccountTLSKeyPEM
+	}
 	consumed := map[string]string{}
 	for key, target := range bindings {
 		value, err := provider.GetRequired(ctx, key)
@@ -348,11 +363,11 @@ func ReadBoundDocument(path, digest string, out any) error {
 // path resolve the inline sibling; boundBytes still checks the digest.
 var inlineDocuments sync.Map
 
-func (c *Config) boundDocuments() [][3]string {
-	return [][3]string{
-		{c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256},
-		{c.ExpectedSchemaFile, c.ExpectedSchemaDocument, c.ExpectedSchemaSHA256},
-		{c.AccountSubjectsFile, c.AccountSubjectsDocument, c.AccountSubjectsSHA256},
+func (c *Config) boundDocuments() [][4]string {
+	return [][4]string{
+		{c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256, "DB_BUDGET"},
+		{c.ExpectedSchemaFile, c.ExpectedSchemaDocument, c.ExpectedSchemaSHA256, "EXPECTED_SCHEMA"},
+		{c.AccountSubjectsFile, c.AccountSubjectsDocument, c.AccountSubjectsSHA256, "ACCOUNT_SUBJECTS"},
 	}
 }
 
@@ -445,8 +460,13 @@ func (c Config) ValidateAccountRuntime() error {
 			return fmt.Errorf("account_https_endpoint_invalid")
 		}
 	}
-	if c.AccountExportBucket == "" || c.AccountExportBucket == c.S3Bucket || len(c.NotificationServiceToken) < 32 || len(c.NotificationInboundToken) < 32 || c.AccountTLSCertFile == "" || c.AccountTLSKeyFile == "" || c.AccountTLSCAFile == "" || c.AccountNATSCredentialsFile == "" || c.AccountNATSCAFile == "" || c.AccountNATSCertFile == "" || c.AccountNATSKeyFile == "" || c.AccountNATSStream == "" || (c.AccountSubjectsFile == "" && c.AccountSubjectsDocument == "") || len(c.AccountSubjectsSHA256) != 64 || c.AccountEnvironment == "" {
+	if c.AccountExportBucket == "" || c.AccountExportBucket == c.S3Bucket || len(c.NotificationServiceToken) < 32 || len(c.NotificationInboundToken) < 32 || c.AccountNATSStream == "" || (c.AccountSubjectsFile == "" && c.AccountSubjectsDocument == "") || len(c.AccountSubjectsSHA256) != 64 || c.AccountEnvironment == "" {
 		return fmt.Errorf("account_runtime_configuration_missing")
+	}
+	for _, m := range c.accountMaterial() {
+		if (m[2] == "") == (m[3] == "") {
+			return fmt.Errorf("exactly one of %s and %s is required", m[0], m[1])
+		}
 	}
 	n, e := url.Parse(c.AccountNATSURL)
 	if e != nil || n.Scheme != "tls" || n.Host == "" || n.User != nil {
@@ -456,4 +476,34 @@ func (c Config) ValidateAccountRuntime() error {
 		return e
 	}
 	return nil
+}
+
+// accountMaterial pairs each account TLS and NATS file input with its inline
+// sibling: {file variable, inline variable, file path, inline value}.
+func (c Config) accountMaterial() [][4]string {
+	return [][4]string{
+		{"ACCOUNT_TLS_CERT_FILE", "ACCOUNT_TLS_CERT_PEM", c.AccountTLSCertFile, c.AccountTLSCertPEM},
+		{"ACCOUNT_TLS_KEY_FILE", "ACCOUNT_TLS_KEY_PEM", c.AccountTLSKeyFile, c.AccountTLSKeyPEM},
+		{"ACCOUNT_TLS_CA_FILE", "ACCOUNT_TLS_CA_PEM", c.AccountTLSCAFile, c.AccountTLSCAPEM},
+		{"ACCOUNT_NATS_CREDENTIALS_FILE", "ACCOUNT_NATS_CREDS", c.AccountNATSCredentialsFile, c.AccountNATSCreds},
+		{"ACCOUNT_NATS_CA_FILE", "ACCOUNT_NATS_CA_PEM", c.AccountNATSCAFile, c.AccountNATSCAPEM},
+		{"ACCOUNT_NATS_CERT_FILE", "ACCOUNT_NATS_CERT_PEM", c.AccountNATSCertFile, c.AccountNATSCertPEM},
+		{"ACCOUNT_NATS_KEY_FILE", "ACCOUNT_NATS_KEY_PEM", c.AccountNATSKeyFile, c.AccountNATSKeyPEM},
+	}
+}
+
+// Material returns the inline credential or PEM value when it is set, else the bytes of
+// the regular file at path. Either source must hold 1 byte to 1 MiB.
+func Material(path, inline string) ([]byte, error) {
+	if inline != "" {
+		if len(inline) > 1<<20 {
+			return nil, errors.New("inline material too large")
+		}
+		return []byte(inline), nil
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > 1<<20 {
+		return nil, errors.New("material file unavailable")
+	}
+	return os.ReadFile(path)
 }

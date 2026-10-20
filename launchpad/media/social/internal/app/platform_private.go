@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -39,23 +38,21 @@ func newPlatformPrivate(cfg config.Config, pool *pgxpool.Pool) (*platformPrivate
 	if err != nil {
 		return nil, err
 	}
-	caPEM, err := readPlatformPEM(cfg.PrivateTLSClientCAFile)
+	caPEM, err := config.Material(cfg.PrivateTLSClientCAFile, cfg.PrivateTLSClientCAPEM)
 	if err != nil {
-		return nil, errors.New("SOCIAL_TLS_CLIENT_CA_FILE unavailable")
+		return nil, errors.New("SOCIAL_TLS_CLIENT_CA_FILE or SOCIAL_TLS_CLIENT_CA_PEM unavailable")
 	}
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(caPEM) {
-		return nil, errors.New("SOCIAL_TLS_CLIENT_CA_FILE invalid")
+		return nil, errors.New("SOCIAL_TLS_CLIENT_CA_FILE or SOCIAL_TLS_CLIENT_CA_PEM invalid")
 	}
-	certPEM, err := readPlatformPEM(cfg.PrivateTLSCertFile)
+	certPEM, err := config.Material(cfg.PrivateTLSCertFile, cfg.PrivateTLSCertPEM)
 	if err != nil {
-		return nil, errors.New("SOCIAL_TLS_CERT_FILE unavailable")
+		return nil, errors.New("SOCIAL_TLS_CERT_FILE or SOCIAL_TLS_CERT_PEM unavailable")
 	}
-	keyPEM := []byte(cfg.PrivateTLSKeyPEM)
-	if cfg.PrivateTLSKeyFile != "" {
-		if keyPEM, err = readPlatformPEM(cfg.PrivateTLSKeyFile); err != nil {
-			return nil, errors.New("SOCIAL_TLS_KEY_FILE unavailable")
-		}
+	keyPEM, err := config.Material(cfg.PrivateTLSKeyFile, cfg.PrivateTLSKeyPEM)
+	if err != nil {
+		return nil, errors.New("SOCIAL_TLS_KEY_FILE or SOCIAL_TLS_KEY_PEM unavailable")
 	}
 	pair, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
@@ -68,14 +65,6 @@ func newPlatformPrivate(cfg config.Config, pool *pgxpool.Pool) (*platformPrivate
 		peers:      peers,
 		pool:       pool,
 	}, nil
-}
-
-func readPlatformPEM(path string) ([]byte, error) {
-	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > 1<<20 {
-		return nil, errors.New("pem file unavailable")
-	}
-	return os.ReadFile(path)
 }
 
 // verifiedPeer returns the request's verified client leaf, if any.

@@ -25,12 +25,15 @@ type MTLSIdentityClientConfig struct {
 	// PeerCertSHA256 is the lowercase hex sha256 of the gateway server
 	// certificate's DER.
 	PeerCertSHA256 string
-	// CAFile is the PEM bundle of the private CA that issued the gateway
-	// server certificate.
+	// Exactly one of CAFile and CAPEM supplies the PEM bundle of the private
+	// CA that issued the gateway server certificate.
 	CAFile string
-	// ClientCertFile is this peer's PEM client certificate; its DER sha256 is
-	// the identityPeers[].peerCertSHA256 the gateway pins.
+	CAPEM  string
+	// Exactly one of ClientCertFile and ClientCertPEM supplies this peer's PEM
+	// client certificate; its DER sha256 is the identityPeers[].peerCertSHA256
+	// the gateway pins.
 	ClientCertFile string
+	ClientCertPEM  string
 	// Exactly one of ClientKeyFile (a PEM file) and ClientKeyPEM (the PEM
 	// itself, typically a secret) supplies the client private key.
 	ClientKeyFile string
@@ -67,25 +70,31 @@ func DecodeIdentitySigningKey(encoded string) (ed25519.PrivateKey, error) {
 // gateway server certificate, ed25519 request assertions with audience
 // "identity").
 func NewMTLSIdentityClient(c MTLSIdentityClientConfig) (MTLSIdentityAuthority, error) {
-	if c.CAFile == "" || c.ClientCertFile == "" || (c.ClientKeyFile == "") == (c.ClientKeyPEM == "") {
-		return MTLSIdentityAuthority{}, errors.New("identity mTLS requires a CA file, a client certificate file and exactly one client key source")
+	if (c.CAFile == "") == (c.CAPEM == "") || (c.ClientCertFile == "") == (c.ClientCertPEM == "") || (c.ClientKeyFile == "") == (c.ClientKeyPEM == "") {
+		return MTLSIdentityAuthority{}, errors.New("identity mTLS requires exactly one source each for the CA, the client certificate and the client key")
 	}
 	if !tokenPattern.MatchString(c.Issuer) || c.Issuer == "gateway" {
 		return MTLSIdentityAuthority{}, errors.New("identity assertion issuer invalid")
 	}
-	info, err := os.Stat(c.CAFile)
-	if err != nil || !info.Mode().IsRegular() || info.Size() > 1<<20 {
-		return MTLSIdentityAuthority{}, errors.New("identity mTLS CA file unavailable")
-	}
-	rootPEM, err := os.ReadFile(c.CAFile)
-	if err != nil {
-		return MTLSIdentityAuthority{}, errors.New("identity mTLS CA file unavailable")
+	rootPEM := []byte(c.CAPEM)
+	if c.CAFile != "" {
+		info, err := os.Stat(c.CAFile)
+		if err != nil || !info.Mode().IsRegular() || info.Size() > 1<<20 {
+			return MTLSIdentityAuthority{}, errors.New("identity mTLS CA file unavailable")
+		}
+		if rootPEM, err = os.ReadFile(c.CAFile); err != nil {
+			return MTLSIdentityAuthority{}, errors.New("identity mTLS CA file unavailable")
+		}
 	}
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(rootPEM) {
 		return MTLSIdentityAuthority{}, errors.New("identity mTLS CA invalid")
 	}
-	certPEM, err := os.ReadFile(c.ClientCertFile)
+	certPEM := []byte(c.ClientCertPEM)
+	var err error
+	if c.ClientCertFile != "" {
+		certPEM, err = os.ReadFile(c.ClientCertFile)
+	}
 	if err != nil || len(certPEM) > 1<<20 {
 		return MTLSIdentityAuthority{}, errors.New("identity mTLS client certificate unavailable")
 	}

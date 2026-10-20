@@ -25,10 +25,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nkeys"
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -193,7 +193,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			_ = rdb.Close()
 			return nil, err
 		}
-		accountNATS, err = nats.Connect(cfg.AccountNATSURL, nats.Name("userd-"+cfg.RuntimeInstanceID), nats.UserCredentials(cfg.AccountNATSCredentialsFile), nats.RootCAs(cfg.AccountNATSCAFile), nats.ClientCert(cfg.AccountNATSCertFile, cfg.AccountNATSKeyFile), nats.Timeout(2*time.Second), nats.MaxReconnects(-1), nats.ReconnectWait(time.Second))
+		natsAuth, e := accountNATSOptions(cfg)
+		if e != nil {
+			accountRPC.Close()
+			pool.Close()
+			_ = rdb.Close()
+			return nil, e
+		}
+		accountNATS, err = nats.Connect(cfg.AccountNATSURL, append(natsAuth, nats.Name("userd-"+cfg.RuntimeInstanceID), nats.Timeout(2*time.Second), nats.MaxReconnects(-1), nats.ReconnectWait(time.Second))...)
 		if err != nil {
 			accountRPC.Close()
 			pool.Close()
@@ -535,17 +542,9 @@ func runAccountWorkers(ctx context.Context, worker account.Worker, relay deliver
 	}
 }
 func accountTLS(cfg config.Config) (*tls.Config, error) {
-	cert, e := tls.LoadX509KeyPair(cfg.AccountTLSCertFile, cfg.AccountTLSKeyFile)
+	cert, roots, e := materialTLS(cfg.AccountTLSCertFile, cfg.AccountTLSCertPEM, cfg.AccountTLSKeyFile, cfg.AccountTLSKeyPEM, cfg.AccountTLSCAFile, cfg.AccountTLSCAPEM)
 	if e != nil {
 		return nil, e
-	}
-	pem, e := os.ReadFile(cfg.AccountTLSCAFile)
-	if e != nil {
-		return nil, e
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(pem) {
-		return nil, errors.New("account_tls_roots_invalid")
 	}
 	return &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{cert}, RootCAs: roots, ClientCAs: roots, ClientAuth: tls.RequireAndVerifyClientCert}, nil
 }
@@ -1106,3 +1105,62 @@ func accountNotificationAuthority(store account.Store, runtime *account.Runtime,
 	})
 }
 func mustAccountFingerprint(value string) []byte { raw, _ := hex.DecodeString(value); return raw }
+
+// materialTLS loads a certificate, its key and a CA bundle, each from its
+// inline value when set, else from its file.
+func materialTLS(certFile, certPEM, keyFile, keyPEM, caFile, caPEM string) (tls.Certificate, *x509.CertPool, error) {
+	certBytes, e := config.Material(certFile, certPEM)
+	if e != nil {
+		return tls.Certificate{}, nil, errors.New("account_tls_certificate_unavailable")
+	}
+	keyBytes, e := config.Material(keyFile, keyPEM)
+	if e != nil {
+		return tls.Certificate{}, nil, errors.New("account_tls_key_unavailable")
+	}
+	cert, e := tls.X509KeyPair(certBytes, keyBytes)
+	if e != nil {
+		return tls.Certificate{}, nil, e
+	}
+	caBytes, e := config.Material(caFile, caPEM)
+	if e != nil {
+		return tls.Certificate{}, nil, errors.New("account_tls_roots_unavailable")
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caBytes) {
+		return tls.Certificate{}, nil, errors.New("account_tls_roots_invalid")
+	}
+	return cert, roots, nil
+}
+
+// accountNATSOptions returns the account broker's credential and TLS options.
+// File forms keep nats' own loaders (credentials re-read on reconnect); an
+// inline ACCOUNT_NATS_CREDS is parsed once, and any inline TLS material moves
+// the whole client identity into an in-memory tls.Config.
+func accountNATSOptions(cfg config.Config) ([]nats.Option, error) {
+	var options []nats.Option
+	if cfg.AccountNATSCreds == "" {
+		options = append(options, nats.UserCredentials(cfg.AccountNATSCredentialsFile))
+	} else {
+		jwt, e := nkeys.ParseDecoratedJWT([]byte(cfg.AccountNATSCreds))
+		if e != nil {
+			return nil, errors.New("account_nats_credentials_invalid")
+		}
+		pair, e := nkeys.ParseDecoratedUserNKey([]byte(cfg.AccountNATSCreds))
+		if e != nil {
+			return nil, errors.New("account_nats_credentials_invalid")
+		}
+		seed, e := pair.Seed()
+		if e != nil || jwt == "" {
+			return nil, errors.New("account_nats_credentials_invalid")
+		}
+		options = append(options, nats.UserJWTAndSeed(jwt, string(seed)))
+	}
+	if cfg.AccountNATSCAPEM == "" && cfg.AccountNATSCertPEM == "" && cfg.AccountNATSKeyPEM == "" {
+		return append(options, nats.RootCAs(cfg.AccountNATSCAFile), nats.ClientCert(cfg.AccountNATSCertFile, cfg.AccountNATSKeyFile)), nil
+	}
+	cert, roots, e := materialTLS(cfg.AccountNATSCertFile, cfg.AccountNATSCertPEM, cfg.AccountNATSKeyFile, cfg.AccountNATSKeyPEM, cfg.AccountNATSCAFile, cfg.AccountNATSCAPEM)
+	if e != nil {
+		return nil, errors.New("account_nats_tls_invalid")
+	}
+	return append(options, nats.Secure(&tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots, Certificates: []tls.Certificate{cert}})), nil
+}
