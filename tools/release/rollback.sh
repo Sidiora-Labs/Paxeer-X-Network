@@ -192,6 +192,14 @@ import subprocess
 import sys
 import tarfile
 
+STORES = ("data/committer.db", "data/state_commit/memiavl")
+
+
+def store_link(member, name):
+    target = pathlib.PurePosixPath(member.linkname)
+    return (member.issym() and any(name.startswith(f"{root}/") for root in STORES)
+            and member.linkname != "" and not target.is_absolute() and ".." not in target.parts)
+
 
 def halt_proposal(state, halt):
     if (str(state.get("height")) != str(halt + 1) or state.get("round") != 0 or state.get("step") != 1
@@ -227,10 +235,10 @@ with subprocess.Popen(["zstd", "-dc", "--", sys.argv[1]], stdout=subprocess.PIPE
                 name = str(path)
                 if (path.is_absolute() or ".." in path.parts or not path.parts
                         or path.parts[0] != "data" or name in seen
-                        or not (member.isfile() or member.isdir())):
+                        or not (member.isfile() or member.isdir() or store_link(member, name))):
                     raise ValueError("unsafe snapshot member")
                 seen.add(name)
-                if name.startswith("data/application.db/") or name == "data/application.db":
+                if member.isfile() and any(name.startswith(f"{root}/") for root in STORES):
                     store = True
                 if name == "data/priv_validator_state.json" and member.isfile():
                     if member.size > 65536:
@@ -454,7 +462,8 @@ PY
       if [[ $pids =~ ^[0-9]+$ ]]; then
         pid=$pids
         [ "$(sha "/proc/$pid/exe")" = "$previous_sha" ] || fail "running binary checksum mismatch"
-        if after=$(curl --fail --silent --show-error --max-time 3 "$endpoint/status" 2>/dev/null |
+        if after=$(curl --fail --silent --show-error --max-time 3 -H 'Content-Type: application/json' \
+          --data '{"jsonrpc":"2.0","id":1,"method":"status","params":{}}' "$endpoint" 2>/dev/null |
           jq -er '.result.sync_info | select(.catching_up == false) | .latest_block_height | select(test("^[0-9]{1,18}$"))'); then
           if [ -n "$before" ] && [ "$after" -gt "$before" ] && [ "$after" -gt "$halt_height" ]; then break; fi
           if [ -z "$before" ]; then before=$after; fi

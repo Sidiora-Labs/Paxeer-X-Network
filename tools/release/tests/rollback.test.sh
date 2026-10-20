@@ -67,6 +67,10 @@ while True:
 assert length == len(signbytes) - offset and signbytes[offset:offset + 2] == b"\x08\x20", state
 PY
 }
+rpc() {
+  curl -fsS --max-time 3 -H 'Content-Type: application/json' \
+    --data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":$2}" "http://127.0.0.1:$p_rpc"
+}
 invoke() { bash "$rollback" --env-file "$work/rollout.env" --local --service-manager foreground "$@"; }
 wait_halted() {
   local pid=$1 log=$2 height=$3 rule=${4:-exact} attempt
@@ -144,6 +148,11 @@ with open(sys.argv[1]) as handle:
 with open(sys.argv[2]) as handle:
     genesis = json.load(handle)
 evm = genesis["app_state"]["evm"]
+# init-chain.sh deploys a local USDL at the mainnet USDL address; the halt export's USDL replaces it.
+usdl = "0x85fcd13735f4309833a503ee804ea32395851479"
+assert any(entry["address"].lower() == usdl for entry in export["evm"]["codes"])
+evm["codes"] = [entry for entry in evm["codes"] if entry["address"].lower() != usdl]
+evm["states"] = [entry for entry in evm["states"] if entry["address"].lower() != usdl]
 codes = {entry["address"].lower() for entry in evm["codes"]}
 states = {(entry["address"].lower(), entry["key"]) for entry in evm["states"]}
 for entry in export["evm"]["codes"]:
@@ -155,6 +164,7 @@ evm["states"].extend(export["evm"]["states"])
 genesis["app_state"]["launchpad"] = export["launchpad"]
 genesis["app_state"]["launchpad"]["params"]["quote_denom"] = "uusdl"
 del genesis["app_state"]["launchpad"]["params"]["quote_token"]
+genesis["app_state"]["launchpad"]["protocol_fees_pending"] = export["launchpad"]["fee_accounting"]["pending_protocol_fees"]
 with open(sys.argv[2], "w") as handle:
     json.dump(genesis, handle, indent=2)
     handle.write("\n")
@@ -224,12 +234,12 @@ execute_restores_snapshot_and_binary() {
   jq -e '. == {readiness:true, rollback_executed:true, result:"pass"}' "$work/rollback.json" >/dev/null
   local attempt height rc=0
   for ((attempt = 0; attempt < 120; attempt++)); do
-    height=$(curl -fsS --max-time 3 "http://127.0.0.1:$p_rpc/status" | jq -er '.result.sync_info.latest_block_height')
+    height=$(rpc status '{}' | jq -er '.result.sync_info.latest_block_height')
     [ "$height" -gt 22 ] && break
     sleep 1
   done
   [ "$attempt" -lt 120 ]
-  curl -fsS --max-time 3 "http://127.0.0.1:$p_rpc/block?height=20" >"$work/restored-block.json"
+  rpc block '{"height":"20"}' >"$work/restored-block.json"
   jq -e '.result.block.header.height == "20"' "$work/restored-block.json" >/dev/null
   cmp "$work/signing-at-h.json" "$work/validator/.rollback-r1/priv_validator_state.json"
   cmp "$work/signing-after-h.json" "$work/validator/data.v6.12.0-r1/priv_validator_state.json"
