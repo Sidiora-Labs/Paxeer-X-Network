@@ -228,7 +228,7 @@ trap 'rm -rf "$tmp" "$replay_logs"' EXIT
 (
 	unset ROLLOUT_DRY_RUN
 	export ROLLOUT_LOG_DIR="$replay_logs" ROLLOUT_EVIDENCE_ROOT="$replay_logs" ROLLOUT_LEDGER_DIR="$tmp/replay-ledger" ROLLOUT_POLL=0
-	export RAILWAY_API_TOKEN=sentinel-railway-token RAILWAY_PROJECT_ID=p1
+	export RAILWAY_API_TOKEN=sentinel-railway-token RAILWAY_PROJECT_ID=25709f39-612a-5373-86a3-2bc9e4478de1
 	python3 - "$root" "$here/replay.json" "$tmp" <<'PY'
 import contextlib
 import io
