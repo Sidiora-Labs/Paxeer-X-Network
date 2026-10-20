@@ -8416,3 +8416,7 @@ fix = "put such commands in a script file and run it with bash and the file path
 area = "perps-data gates"
 symptom = "a test address given SID by writing the legacy SID ERC-20 storage reads zero after the upgrade, because the migration converts that token only for the holders in its embedded snapshot, and a genesis built by the test helper panics at the second block with missing signing info for the validator"
 fix = "seed a usid bank balance with its supply entry in the throwaway genesis, and add a signing info entry for the validator"
+
+[gotcha.1769]
+symptom = "a Go test binary that links modules/lxphost fails at link time in a fresh worktree with liblayerx_programs_sandbox.a missing, before any test runs"
+fix = "build the sandbox library the way the Makefile does, cargo build --locked --release -p layerx-programs-sandbox --features layerx-programs-sandbox/host-ffi, and point CGO_LDFLAGS at its target directory; a link failure is not a repair cycle"

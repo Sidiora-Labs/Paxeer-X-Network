@@ -2196,3 +2196,11 @@ exit = 101
 log = fleet/logs/release-2.3.1-types-1.log
 observed = The kernel still names the reserve system:paxeer-reserve: the native genesis builder, lx_account_id.c, the proof codec, the exchange genesis kind 11 decoder and its tests, the attestor id parser, the wallet vectors and the real-node custody test all carry the old id, so the hosted core profile check that now expects system:treasury will not match a kernel-produced profile until the kernel moves in one coordinated change.
 assumption = The reserve rename in the kernel, codec, genesis and attestor parser is one task that lands together with regenerated wallet vectors; the four SystemPaxeerReserve checks in the human crates (deposit.rs, router.rs, resolver.rs, movement_provider.rs) rename to SystemTreasury in the same change.
+
+[finding.2.2.19-verified]
+revision = b2c8655f18fc5cc4c576581fc2cc21a05529933d
+command = go test ./precompiles/launchpad/... -run 'SurfaceParity|TestPayFirstSwapSweepsPool|TestPoolTokensStayAtThePool|TestRouterPullsWithAllowanceTo1017|...' -count=1
+exit = 0
+log = fleet/logs/release-2.2.19-verify-8.log
+observed = Resolved per the acceptance text: the precompile already served the generation 1 pool getters, the ordered snapshot ring, the rebuilt cursor 50 and the InsufficientInput revert for an unpaid generation 1 swap, so only surface_parity_test.go changed to expect those four rows from the acceptance text, and the trace comparison now records every divergence instead of stopping at the first, with every later SidioraPool trace matching.
+assumption = req 2011 ac_16 is amended in the same landing to name the rebuilt cursor; the earlier verify-6 and verify-7 runs failed at link time because programs/target lacked the sandbox library built with the host-ffi feature and are not repair cycles.

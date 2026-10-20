@@ -342,6 +342,10 @@ type goldenTranslation struct {
 	effective map[common.Address][2]*big.Int
 	// elapsed is the H+1 block time less the golden timestamp.
 	elapsed int64
+	// snapshots is the golden snapshotIndex and snapshotCount of each pool.
+	snapshots map[common.Address][2]uint64
+	// nextTokenID is the golden nextTokenId of the generation 2 collection.
+	nextTokenID *big.Int
 }
 
 func translation(h *harness, g goldenRecord) goldenTranslation {
@@ -350,7 +354,8 @@ func translation(h *harness, g goldenRecord) goldenTranslation {
 		internal: map[common.Address]bool{h.custody(): true, h.keeper.TreasuryContract(): true},
 		factory:  h.keeper.Generation2().SidioraFactory, legacy: map[string]*goldenCall{},
 		liabilities: new(big.Int), reserves: map[common.Address][2]*big.Int{},
-		effective: map[common.Address][2]*big.Int{}, elapsed: h.ctx().BlockTime().Unix() - int64(g.Timestamp)}
+		effective: map[common.Address][2]*big.Int{}, elapsed: h.ctx().BlockTime().Unix() - int64(g.Timestamp),
+		snapshots: map[common.Address][2]uint64{}, nextTokenID: new(big.Int)}
 	roles := map[int]map[string]common.Address{}
 	pools := map[int][]common.Address{}
 	for _, gen := range g.Generations {
@@ -392,10 +397,25 @@ func translation(h *harness, g goldenRecord) goldenTranslation {
 				case call.Signature == "getEffectiveReserves()" && len(call.Output) == 64:
 					tr.effective[c.Address] = [2]*big.Int{new(big.Int).SetBytes(call.Output[:32]),
 						new(big.Int).SetBytes(call.Output[32:])}
+				case call.Signature == "snapshotIndex()" && len(call.Output) == 32:
+					r := tr.snapshots[c.Address]
+					r[0] = new(big.Int).SetBytes(call.Output).Uint64()
+					tr.snapshots[c.Address] = r
+				case call.Signature == "snapshotCount()" && len(call.Output) == 32:
+					r := tr.snapshots[c.Address]
+					r[1] = new(big.Int).SetBytes(call.Output).Uint64()
+					tr.snapshots[c.Address] = r
 				}
 			}
 		default:
 			if c.Generation != 1 {
+				if c.Role == types.RoleFeeRights {
+					for _, call := range c.Calls {
+						if call.Signature == "nextTokenId()" && !call.Reverted {
+							tr.nextTokenID.SetBytes(call.Output)
+						}
+					}
+				}
 				continue
 			}
 			for _, call := range c.Calls {
@@ -503,6 +523,13 @@ func (tr goldenTranslation) merged(role, signature string, input, out []byte) []
 		if supply != nil && !supply.Reverted {
 			return shifted(out, 0, new(big.Int).SetBytes(supply.Output))
 		}
+	case role == types.RoleFeeRights && signature == "poolIndexMigrationCursor()":
+		// The cursor is rebuilt over the merged ids (2025 ac_1): it stands at
+		// the merged nextTokenId, past every generation 1 id minted again.
+		supply := tr.legacy[role+"/"+hexutil.Bytes(crypto.Keccak256([]byte("totalSupply()"))[:4]).String()]
+		if supply != nil && !supply.Reverted {
+			return bigWord(new(big.Int).Add(tr.nextTokenID, new(big.Int).SetBytes(supply.Output)))
+		}
 	case role == types.RolePoolRegistry && signature == "getPoolCount()":
 		return bigWord(pools)
 	case (role == types.RolePoolRegistry || role == types.RoleQuoter) && signature == "getAllPools(uint256,uint256)":
@@ -568,7 +595,15 @@ func (h *harness) expected(tr goldenTranslation, to common.Address, role string,
 			if signature == "factory()" {
 				return false, false, common.LeftPadBytes(tr.factory.Bytes(), 32)
 			}
+			if reverted && len(out) == 0 {
+				if served, ok := h.generation1Served(to, signature); ok {
+					return false, false, served
+				}
+			}
 			out = tr.movedWords(out)
+		}
+		if !reverted && signature == "getPriceSnapshots()" && len(out) == 32*types.SnapshotSlots {
+			out = tr.ordered(to, out)
 		}
 		if !reverted {
 			out = tr.reserved(to, signature, out)
@@ -577,6 +612,85 @@ func (h *harness) expected(tr goldenTranslation, to common.Address, role string,
 		out = tr.merged(role, signature, input, out)
 	}
 	return false, reverted, out
+}
+
+// generation1Served is the answer of a generation 1 pool to a SidioraPool
+// getter its contract did not declare, which every pool serves (requirement
+// 2003): the contract constants, and the migrated launchpad keeper state for
+// the state getters.
+func (h *harness) generation1Served(pool common.Address, signature string) (hexutil.Bytes, bool) {
+	h.t.Helper()
+	switch signature {
+	case "PAUSER_ROLE()":
+		return crypto.Keccak256([]byte("PAUSER_ROLE")), true
+	case "SNAPSHOT_INTERVAL()":
+		return amountWord(60), true
+	case "SNAPSHOT_MIN_VOLUME_BPS()":
+		return amountWord(1), true
+	}
+	m := h.market(pool)
+	switch signature {
+	case "cumulativeBuyUsdlVolume()":
+		return bigWord(m.CumulativeBuyQuoteVolume.BigInt()), true
+	case "cumulativeSellUsdlVolume()":
+		return bigWord(m.CumulativeSellQuoteVolume.BigInt()), true
+	case "lastSnapshotTimestamp()":
+		return amountWord(m.LastSnapshotTimestamp), true
+	case "emergencyPaused()":
+		if m.Paused {
+			return amountWord(1), true
+		}
+		return amountWord(0), true
+	case "pendingGuardian()":
+		if m.PendingGuardian == "" {
+			return addressWord(common.Address{}), true
+		}
+		return addressWord(testkeeper.EVMTestApp.EvmKeeper.GetEVMAddressOrDefault(h.ctx(),
+			sdk.MustAccAddressFromBech32(m.PendingGuardian))), true
+	case "currentFeeBps()":
+		fee, err := h.keeper.FeeBps(h.ctx(), m)
+		require.NoError(h.t, err, pool.Hex())
+		return bigWord(fee), true
+	}
+	return nil, false
+}
+
+// ordered is the golden raw snapshot ring of pool as getPriceSnapshots
+// returns it (requirement 2003 ac_19, SidioraPool._orderedSnapshots): the
+// snapshotCount prices oldest first, from snapshotIndex once the ring is
+// full, zero after.
+func (tr goldenTranslation) ordered(pool common.Address, ring []byte) []byte {
+	r := tr.snapshots[pool]
+	var start uint64
+	if r[1] == types.SnapshotSlots {
+		start = r[0]
+	}
+	out := make([]byte, len(ring))
+	for i := uint64(0); i < types.SnapshotSlots && i < r[1]; i++ {
+		j := (start + i) % types.SnapshotSlots
+		copy(out[32*i:32*i+32], ring[32*j:32*j+32])
+	}
+	return out
+}
+
+// unpaidSwap reports whether trace is a generation 1 pool swap whose
+// transaction paid no input into the pool: the swap reverts
+// InsufficientInput() there (requirement 2003 ac_34, the pay-first check of
+// SidioraPool.sol:147).
+func (tr goldenTranslation) unpaidSwap(generation int, trace *goldenTrace) bool {
+	if generation != 1 || trace.Signature != "swap(uint256,uint256,bool,address,uint256)" {
+		return false
+	}
+	transfer := crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)"))
+	var logs []goldenLog
+	collectLogs(trace.CallTrace, &logs)
+	for _, log := range logs {
+		if tr.tokens[log.Address] && len(log.Topics) == 3 && log.Topics[0] == transfer &&
+			common.BytesToAddress(log.Topics[2].Bytes()) == trace.To {
+			return false
+		}
+	}
+	return true
 }
 
 // balanceChanges are the net ERC20 balance changes the Transfer logs of the
@@ -707,6 +821,10 @@ func (h *harness) replayTrace(tr goldenTranslation, role string, generation int,
 	t.Helper()
 	retired, reverted, want := h.expected(tr, trace.To, role, generation, trace.CallTrace.Error != "",
 		trace.Signature, trace.Input, trace.CallTrace.Output)
+	unpaid := tr.unpaidSwap(generation, trace)
+	if unpaid {
+		reverted, want = true, errorData("InsufficientInput()")
+	}
 	snapshot := h.stateDB.Snapshot()
 	defer h.stateDB.RevertToSnapshot(snapshot)
 	surface, found, err := h.keeper.GetSurface(h.ctx(), trace.To)
@@ -726,17 +844,17 @@ func (h *harness) replayTrace(tr goldenTranslation, role string, generation int,
 	}
 	start := h.logCount()
 	ret, err := h.send(trace.From, trace.To, trace.Input)
-	require.Equal(t, reverted, err != nil, "%s trace %s", role, trace.Key)
-	require.Equal(t, want, hexutil.Bytes(ret), "%s trace %s", role, trace.Key)
+	assert.Equal(t, reverted, err != nil, "%s trace %s", role, trace.Key)
+	assert.Equal(t, want.String(), hexutil.Bytes(ret).String(), "%s trace %s", role, trace.Key)
 	var golden, got []goldenLog
-	if !retired {
+	if !retired && !unpaid {
 		collectLogs(trace.CallTrace, &golden)
 	}
 	for _, log := range h.stateDB.GetAllLogs()[start:] {
 		got = append(got, goldenLog{Address: log.Address, Topics: log.Topics, Data: log.Data})
 	}
-	same(t, tr.balanceChanges(golden), tr.balanceChanges(got), "%s trace %s balance changes", role, trace.Key)
-	same(t, tr.events(golden, true), tr.events(got, false), "%s trace %s logs", role, trace.Key)
+	assert.Equal(t, tr.balanceChanges(golden), tr.balanceChanges(got), "%s trace %s balance changes", role, trace.Key)
+	assert.Equal(t, tr.events(golden, true), tr.events(got, false), "%s trace %s logs", role, trace.Key)
 }
 
 // collectLogs appends the logs of frame and of its calls that did not fail.
