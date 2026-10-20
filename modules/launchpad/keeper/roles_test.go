@@ -50,9 +50,12 @@ func TestSurfaceRegistry(t *testing.T) {
 
 	t.Run("set_and_get", func(t *testing.T) {
 		e := newEnv(t)
-		_, found, err := e.k.GetSurface(e.ctx, feeAccumulator)
+		// InitGenesis of the fresh chain installed every role surface at
+		// generation 2.
+		installed, found, err := e.k.GetSurface(e.ctx, feeAccumulator)
 		require.NoError(t, err)
-		require.False(t, found)
+		require.True(t, found)
+		require.Equal(t, keeper.Surface{Role: types.RoleFeeAccumulator, Generation: types.Generation2}, installed)
 
 		for role, address := range keeper.Generation2Surfaces {
 			want := keeper.Surface{Role: role, Generation: types.Generation2}
@@ -95,11 +98,21 @@ func TestSurfaceRegistry(t *testing.T) {
 			{"native pool", pool, keeper.Surface{Role: types.RolePool, Generation: types.GenerationNative, Market: "m"}},
 			{"pool generation 3", pool, keeper.Surface{Role: types.RolePool, Generation: 3, Market: "m"}},
 		}
+		roleAt := map[common.Address]string{}
+		for role, address := range keeper.Generation2Surfaces {
+			roleAt[address] = role
+		}
 		for _, tc := range cases {
 			require.ErrorIs(t, e.k.SetSurface(e.ctx, tc.address, tc.surface), types.ErrInvalidParams, tc.name)
-			_, found, err := e.k.GetSurface(e.ctx, tc.address)
+			got, found, err := e.k.GetSurface(e.ctx, tc.address)
 			require.NoError(t, err)
-			require.False(t, found, tc.name)
+			// A refusal leaves the genesis-installed role surface as it was
+			// and writes nothing anywhere else.
+			role, installed := roleAt[tc.address]
+			require.Equal(t, installed, found, tc.name)
+			if installed {
+				require.Equal(t, keeper.Surface{Role: role, Generation: types.Generation2}, got, tc.name)
+			}
 		}
 	})
 

@@ -120,6 +120,8 @@ func (c *custodyEnv) airdropMarket(token common.Address, fees int64, epoch uint6
 	gs := types.DefaultGenesis()
 	gs.Params = c.k.GetParams(c.ctx)
 	gs.Markets = []types.Market{market}
+	gs.FeeHeld = i(fees + airdropBalance)
+	gs.FeeAccounting.TotalLiabilities = i(fees + airdropBalance)
 	c.k.InitGenesis(c.ctx, *gs)
 	require.NoError(c.t, c.k.SetSurface(c.ctx, common.HexToAddress(market.PoolAddress),
 		keeper.Surface{Role: types.RolePool, Generation: types.Generation2, Market: market.Denom}))
@@ -129,8 +131,7 @@ func (c *custodyEnv) airdropMarket(token common.Address, fees int64, epoch uint6
 	require.NoError(c.t, err)
 	require.True(c.t, granted)
 	if held := fees + airdropBalance; held > 0 {
-		c.approve(c.holder, held)
-		c.pull(c.holder, keeper.FeeHeldLedger(roles.FeeAccumulator), held)
+		c.transfer(c.holder, c.k.ModuleEVMAddress(c.ctx), held)
 	}
 	return market
 }

@@ -17,18 +17,12 @@ import (
 	"encoding/json"
 	"math/big"
 	"math/rand"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/launchpadtest"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
-	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
-	tokenfactorytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/cachemulti"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/multiversion"
-	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
@@ -37,7 +31,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
-	dbm "github.com/tendermint/tm-db"
 )
 
 var (
@@ -715,142 +708,6 @@ func TestFeeSplitMatchesFeeAccumulator(t *testing.T) {
 	})
 }
 
-func TestProtocolFeesPerMarket(t *testing.T) {
-	e := newEnv(t)
-	params := e.k.GetParams(e.ctx)
-	params.ProtocolFeeBps = 2000
-	require.NoError(t, e.k.UpdateParams(e.ctx, e.k.Authority(), params))
-	creator := e.account(200_000_000)
-	traders := []sdk.AccAddress{e.account(10_000), e.account(10_000)}
-	markets := []string{e.create(creator, types.FeeStrategyClaim).Denom,
-		e.create(creator, types.FeeStrategyClaim).Denom}
-	key := e.key
-	store := e.ctx.KVStore(key)
-	for index, denom := range markets {
-		fees, err := e.k.GetProtocolFees(e.ctx, denom)
-		require.NoError(t, err)
-		require.Equal(t, sdk.ZeroInt(), fees)
-		require.NoError(t, e.k.AddProtocolFees(e.ctx, denom, sdk.ZeroInt()))
-		require.False(t, store.Has(types.ProtocolFeesKey(denom)))
-		result := e.swap(traders[index], denom, true, 3334)
-		require.Equal(t, b(100), result.FeeAmount)
-		require.Equal(t, b(20), result.ProtocolCut)
-		fees, err = e.k.GetProtocolFees(e.ctx, denom)
-		require.NoError(t, err)
-		require.Equal(t, i(20), fees)
-		require.Equal(t, []byte("20"), store.Get(types.ProtocolFeesKey(denom)))
-	}
-	require.NotEqual(t, types.ProtocolFeesKey(markets[0]), types.ProtocolFeesKey(markets[1]))
-	require.False(t, store.Has(types.ProtocolFeesPrefix))
-	e.solvent()
-	t.Run("bounds", func(t *testing.T) {
-		require.ErrorIs(t, e.k.AddProtocolFees(e.ctx, markets[0], sdk.Int{}), types.ErrOverflow)
-		require.ErrorIs(t, e.k.AddProtocolFees(e.ctx, markets[0], i(-1)), types.ErrOverflow)
-		require.ErrorIs(t, e.k.AddProtocolFees(e.ctx, "", i(1)), types.ErrUnknownMarket)
-		_, err := e.k.GetProtocolFees(e.ctx, "")
-		require.ErrorIs(t, err, types.ErrUnknownMarket)
-		max := sdk.NewIntFromBigInt(types.MaxUint256())
-		require.NoError(t, e.k.AddProtocolFees(e.ctx, markets[0], max.SubRaw(20)))
-		fees, err := e.k.GetProtocolFees(e.ctx, markets[0])
-		require.NoError(t, err)
-		require.Equal(t, max, fees)
-		require.ErrorIs(t, e.k.AddProtocolFees(e.ctx, markets[0], i(1)), types.ErrOverflow)
-		fees, err = e.k.GetProtocolFees(e.ctx, markets[0])
-		require.NoError(t, err)
-		require.Equal(t, max, fees)
-		require.Equal(t, []byte("20"), store.Get(types.ProtocolFeesKey(markets[1])))
-		for _, corrupt := range [][]byte{[]byte("invalid"), []byte("-1"), []byte(new(big.Int).Add(types.MaxUint256(), b(1)).String())} {
-			store.Set(types.ProtocolFeesKey(markets[0]), corrupt)
-			_, err := e.k.GetProtocolFees(e.ctx, markets[0])
-			require.ErrorIs(t, err, types.ErrOverflow)
-			require.ErrorIs(t, e.k.AddProtocolFees(e.ctx, markets[0], i(1)), types.ErrOverflow)
-			require.Equal(t, corrupt, store.Get(types.ProtocolFeesKey(markets[0])))
-		}
-	})
-	t.Run("parallel_market_state", testProtocolFeeMarketStateIsolation)
-}
-
-func testProtocolFeeMarketStateIsolation(t *testing.T) {
-	e := newEnv(t)
-	params := e.k.GetParams(e.ctx)
-	params.ProtocolFeeBps = 2000
-	require.NoError(t, e.k.UpdateParams(e.ctx, e.k.Authority(), params))
-	creator := e.account(200_000_000)
-	traders := []sdk.AccAddress{e.account(10_000), e.account(10_000)}
-	markets := []string{e.create(creator, types.FeeStrategyClaim).Denom,
-		e.create(creator, types.FeeStrategyClaim).Denom}
-	pools := []common.Address{e.pool(markets[0]), e.pool(markets[1])}
-	key := e.key
-	versions := multiversion.NewMultiVersionStore(e.ctx.MultiStore().GetKVStore(key))
-	app := testkeeper.EVMTestApp
-	transactionKeeper := keeper.NewKeeper(key, app.BankKeeper, tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper), &app.EvmKeeper)
-	contexts := make([]sdk.Context, len(markets))
-	transactions := make([]*multiversion.VersionIndexedStore, len(markets))
-	for index := range markets {
-		parents := map[storetypes.StoreKey]storetypes.CacheWrapper{}
-		keys := map[string]storetypes.StoreKey{}
-		for _, parentKey := range e.ctx.MultiStore().StoreKeys() {
-			parents[parentKey] = e.ctx.MultiStore().GetStore(parentKey)
-			keys[parentKey.Name()] = parentKey
-		}
-		parents[key] = e.ctx.MultiStore().GetKVStore(key)
-		keys[key.Name()] = key
-		db := dbm.NewMemDB()
-		t.Cleanup(func() { require.NoError(t, db.Close()) })
-		branch := cachemulti.NewStore(db, parents, keys, nil, nil, nil, 0)
-		transactions[index] = versions.VersionedIndexedStore(index, 0, nil)
-		branch.SetKVStores(func(storeKey storetypes.StoreKey, branchStore storetypes.KVStore) storetypes.CacheWrap {
-			if storeKey == key {
-				return transactions[index]
-			}
-			return branchStore.(storetypes.CacheWrap)
-		})
-		contexts[index] = e.ctx.WithMultiStore(branch).WithEventManager(sdk.NewEventManager()).
-			WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(e.ctx))
-	}
-	results := make([]keeper.SwapResult, len(markets))
-	failures := make([]error, len(markets))
-	var wait sync.WaitGroup
-	for index := range markets {
-		wait.Add(1)
-		go func(index int) {
-			defer wait.Done()
-			ctx := contexts[index]
-			trader := app.EvmKeeper.GetEVMAddressOrDefault(ctx, traders[index])
-			caller := transactionKeeper.ModuleCaller()
-			ctx, _, err := transactionKeeper.PullQuote(ctx, caller, trader, keeper.HeldQuoteLedger(pools[index]), i(3334))
-			if err != nil {
-				failures[index] = err
-				return
-			}
-			_, results[index], failures[index] = transactionKeeper.Swap(ctx, caller, state.NewDBImpl(ctx, &app.EvmKeeper, false),
-				markets[index], true, b(3334), b(0), trader, trader, farDeadline)
-		}(index)
-	}
-	wait.Wait()
-	for index := range markets {
-		require.NoError(t, failures[index])
-		require.Equal(t, b(20), results[index].ProtocolCut)
-		fees, err := transactionKeeper.GetProtocolFees(contexts[index], markets[index])
-		require.NoError(t, err)
-		require.Equal(t, i(20), fees)
-		require.Equal(t, []byte("20"), transactions[index].GetWriteset()[string(types.ProtocolFeesKey(markets[index]))])
-		require.Len(t, transactions[index].GetWriteset(), 2)
-		_, global := transactions[index].GetWriteset()[string(types.ProtocolFeesPrefix)]
-		require.False(t, global)
-		transactions[index].WriteToMultiVersionStore()
-	}
-	for firstKey := range transactions[0].GetWriteset() {
-		_, shared := transactions[1].GetWriteset()[firstKey]
-		require.False(t, shared)
-	}
-	for index := range transactions {
-		valid, conflicts := versions.ValidateTransactionState(index)
-		require.True(t, valid)
-		require.Empty(t, conflicts)
-	}
-}
-
 func TestFeeStrategies(t *testing.T) {
 	e := newEnv(t)
 	creator := e.account(100_000_000)
@@ -907,63 +764,65 @@ func TestFeeStrategies(t *testing.T) {
 	e.solvent()
 }
 
-// TestAirdropSharesByHolding reproduces FeeAccumulator's airdrop vector: a
-// 10 USDL fee leaves 9 USDL for holders and a 60% holder takes 5.4 USDL.
+// TestAirdropSharesByHolding reproduces FeeAccumulator's airdrop vector on the
+// generation 2 path: a 10 USDL fee leaves 9 USDL for the epoch that
+// triggerAirdrop opens, and a holder of 600 of the 768.696993 eligible pool
+// tokens at the snapshot takes 9*600/768.696993 USDL.
 func TestAirdropSharesByHolding(t *testing.T) {
-	e := newEnv(t)
-	gov := authtypes.NewModuleAddress(govtypes.ModuleName).String()
-	params := e.k.GetParams(e.ctx)
-	params.VirtualQuoteDefault = i(1_000_000_000)
-	params.VirtualTokenDefault = i(1_000_000_000)
-	require.NoError(t, e.k.UpdateParams(e.ctx, gov, params))
-	creator := e.account(100_000_000)
-	alice := e.account(4_000_000_000)
-	bob := e.account(0)
-	carol := e.account(0)
-	denom := e.create(creator, types.FeeStrategyAirdrop).Denom
+	h := newHistoryEnv(t)
+	roles := h.k.Generation2()
+	pool := h.pool(h.denom)
+	alice := h.account(4_000_000_000)
+	bob := h.account(0)
+	carol := h.account(0)
 
-	_, err := e.k.ClaimAirdrop(e.ctx, alice, denom)
+	_, err := h.claim(h.evmAddress(alice), 1)
 	require.ErrorIs(t, err, types.ErrAirdropNotTriggered)
-	e.at(mature)
-	result := e.swap(alice, denom, true, 3_333_333_334)
+	result := h.swap(alice, h.denom, true, 3_333_333_334)
 	require.Equal(t, b(30), result.FeeBps)
 	require.Equal(t, b(10_000_000), result.FeeAmount)
 	require.Equal(t, b(768_696_993), result.AmountOut)
-	e.sendToken(e.token(denom), e.evmAddress(alice), e.evmAddress(bob), b(168_696_993))
-	require.Equal(t, i(600_000_000), e.balance(alice, denom))
+	h.transfer(alice, bob, 168_696_993)
+	require.Equal(t, i(600_000_000), h.balance(alice, h.denom))
 
-	_, err = e.k.ExecuteAirdrop(e.ctx, bob, denom)
-	require.ErrorIs(t, err, types.ErrNotFeeRightsHolder)
-	amount, err := e.k.ExecuteAirdrop(e.ctx, creator, denom)
-	require.NoError(t, err)
-	require.Equal(t, i(9_000_000), amount)
-	m := e.market(denom)
+	_, err = h.k.TriggerAirdrop(h.ctx, h.k.ModuleCaller(), h.evmAddress(bob), pool)
+	require.ErrorIs(t, err, types.ErrMissingRole)
+	record := h.trigger()
+	require.Equal(t, i(9_000_000), record.Amount)
+	require.Equal(t, i(768_696_993), record.EligibleSupply)
+	m := h.market(h.denom)
 	require.Equal(t, uint64(1), m.AirdropEpoch)
 	require.Equal(t, i(9_000_000), m.AirdropBalance)
-	require.Equal(t, i(9_000_000), e.k.GetAirdropEpochAmount(e.ctx, denom, 1))
-	_, err = e.k.ExecuteAirdrop(e.ctx, creator, denom)
+	_, err = h.k.TriggerAirdrop(h.ctx, h.k.ModuleCaller(), roles.FeesRouter, pool)
 	require.ErrorIs(t, err, types.ErrNoFeesAccumulated)
 
-	aliceBefore := e.usdlOf(alice)
-	share, err := e.k.ClaimAirdrop(e.ctx, alice, denom)
+	aliceBefore := h.usdlOf(alice)
+	aliceShare, err := h.claim(h.evmAddress(alice), 1)
 	require.NoError(t, err)
-	require.Equal(t, i(5_400_000), share)
-	require.Equal(t, aliceBefore.AddRaw(5_400_000), e.usdlOf(alice))
-	require.True(t, e.k.HasClaimedAirdrop(e.ctx, denom, alice, 1))
-	_, err = e.k.ClaimAirdrop(e.ctx, alice, denom)
+	require.Equal(t, i(7_024_874), aliceShare)
+	require.Equal(t, aliceBefore.AddRaw(7_024_874), h.usdlOf(alice))
+	require.True(t, h.k.HasClaimedPoolAirdrop(h.ctx, pool, h.evmAddress(alice), 1))
+	_, err = h.claim(h.evmAddress(alice), 1)
 	require.ErrorIs(t, err, types.ErrAlreadyClaimed)
-	bobShare, err := e.k.ClaimAirdrop(e.ctx, bob, denom)
+	// Bob is the final eligible claimant and takes the rounding residue.
+	bobShare, err := h.claim(h.evmAddress(bob), 1)
 	require.NoError(t, err)
-	require.Equal(t, i(1_518_272), bobShare)
-	_, err = e.k.ClaimAirdrop(e.ctx, carol, denom)
+	require.Equal(t, i(1_975_126), bobShare)
+	_, err = h.claim(h.evmAddress(carol), 1)
 	require.ErrorIs(t, err, types.ErrZeroAmount)
-	require.Equal(t, i(9_000_000-5_400_000-1_518_272), e.market(denom).AirdropBalance)
-	e.solvent()
+	require.True(t, h.market(h.denom).AirdropBalance.IsZero())
+	sameJSON(t, types.PoolAirdropEpoch{Pool: pool.Hex(), Epoch: 1, Amount: i(9_000_000),
+		SnapshotBlock: record.SnapshotBlock, EligibleSupply: i(768_696_993), Remaining: i(0),
+		ClaimedSupply: i(768_696_993), LegacyRemaining: i(0)}, h.epochRecord(1))
+	h.solvent()
 
-	gs := e.k.ExportGenesis(e.ctx)
+	gs := h.k.ExportGenesis(h.ctx)
 	require.NoError(t, gs.Validate())
-	require.Equal(t, []types.AirdropEpochAmount{{Denom: denom, Epoch: 1, Amount: i(9_000_000)}}, gs.AirdropEpochs)
-	require.Len(t, gs.AirdropClaims, 2)
+	sameJSON(t, []types.PoolAirdropEpoch{h.epochRecord(1)}, gs.FeeAccounting.Epochs)
+	require.ElementsMatch(t, []types.PoolAirdropClaim{
+		{Pool: pool.Hex(), Holder: h.evmAddress(alice).Hex(), Epoch: 1},
+		{Pool: pool.Hex(), Holder: h.evmAddress(bob).Hex(), Epoch: 1},
+	}, gs.FeeAccounting.Claims)
 }
 
 func TestGuardianPause(t *testing.T) {
@@ -1234,192 +1093,175 @@ func TestMsgUpdateParamsRefusals(t *testing.T) {
 	require.Equal(t, before, k.GetParams(ctx))
 }
 
-// airdropPaid is the paid total recorded in an epoch's basis.
-func airdropPaid(t *testing.T, e *env, denom string, epoch uint64) sdk.Int {
-	t.Helper()
-	basis, found, err := e.k.GetAirdropBasis(e.ctx, denom, epoch)
-	require.NoError(t, err)
-	require.True(t, found)
-	return basis.Paid
-}
-
 func TestAirdropEntitlements(t *testing.T) {
 	app := testkeeper.EVMTestApp
-	bank := app.BankKeeper
-	nextEntitlementEpoch := func(h *historyEnv) uint64 {
-		h.t.Helper()
-		h.swap(h.trader, h.denom, true, 100_000_000)
-		amount, err := h.k.ExecuteAirdrop(h.ctx, h.creator, h.denom)
-		require.NoError(h.t, err)
-		require.True(h.t, amount.IsPositive())
-		return h.market(h.denom).AirdropEpoch
-	}
 
 	t.Run("basis", func(t *testing.T) {
 		h := newHistoryEnv(t)
 		a := h.account(0)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
-		require.NoError(t, h.send(bank, h.trader, a, 700_000))
-		supply := bank.GetSupply(h.ctx, h.denom).Amount
-		epoch := nextEntitlementEpoch(h)
-		basis, found, err := h.k.GetAirdropBasis(h.ctx, h.denom, epoch)
+		h.transfer(h.trader, a, 700_000)
+		funded := h.swap(h.trader, h.denom, true, 100_000_000)
+		require.Positive(t, funded.PoolCut.Sign())
+		eligible := h.balance(h.trader, h.denom).Add(h.balance(a, h.denom))
+		record := h.trigger()
+		require.Equal(t, eligible, record.EligibleSupply)
+		require.Equal(t, uint64(h.ctx.BlockHeight()-1), record.SnapshotBlock)
+		require.True(t, record.ClaimedSupply.IsZero())
+		require.Equal(t, record.Amount, record.Remaining)
+		require.Equal(t, i(700_000), h.pastBalance(h.evmAddress(a), record))
+		got, err := h.claim(h.evmAddress(a), record.Epoch)
 		require.NoError(t, err)
-		require.True(t, found)
-		require.Equal(t, supply, basis.Supply)
-		require.Equal(t, common.HexToAddress(h.k.GetParams(h.ctx).QuoteToken).Hex(), basis.PayoutToken)
-		require.Equal(t, h.ctx.BlockHeight(), basis.Height)
-		require.True(t, basis.Paid.IsZero())
-		funded := h.k.GetAirdropEpochAmount(h.ctx, h.denom, epoch)
-		want := funded.Mul(i(700_000)).Quo(supply)
-		got, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, epoch)
-		require.NoError(t, err)
-		require.Equal(t, want, got)
+		require.Equal(t, record.Amount.Mul(i(700_000)).Quo(eligible), got)
 	})
 
 	t.Run("transfer after claim", func(t *testing.T) {
 		h := newHistoryEnv(t)
 		a, b2, c := h.account(0), h.account(0), h.account(0)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
-		require.NoError(t, h.send(bank, h.trader, a, 600_000))
-		require.NoError(t, h.send(bank, h.trader, b2, 400_000))
-		epoch := nextEntitlementEpoch(h)
-		funded := h.k.GetAirdropEpochAmount(h.ctx, h.denom, epoch)
-		supply := bank.GetSupply(h.ctx, h.denom).Amount
-		aShare, err := h.k.ClaimAirdrop(h.ctx, a, h.denom)
+		h.transfer(h.trader, a, 600_000)
+		h.transfer(h.trader, b2, 400_000)
+		record := h.nextEpoch()
+		epoch := record.Epoch
+		traderBalance := h.balance(h.trader, h.denom)
+		aShare, err := h.claim(h.evmAddress(a), epoch)
 		require.NoError(t, err)
-		require.Equal(t, funded.Mul(i(600_000)).Quo(supply), aShare)
-		require.NoError(t, h.send(bank, a, c, 600_000))
-		_, err = h.k.ClaimAirdrop(h.ctx, c, h.denom)
+		require.Equal(t, share(record, i(600_000)), aShare)
+		h.transfer(a, c, 600_000)
+		_, err = h.claim(h.evmAddress(c), epoch)
 		require.ErrorIs(t, err, types.ErrZeroAmount)
-		require.False(t, h.k.HasClaimedAirdrop(h.ctx, h.denom, c, epoch))
+		require.False(t, h.k.HasClaimedPoolAirdrop(h.ctx, h.pool(h.denom), h.evmAddress(c), epoch))
 		// Many transfers among the holders never raise anyone's entitlement.
 		for round := 0; round < 8; round++ {
-			require.NoError(t, h.send(bank, c, b2, 75_000))
-			require.NoError(t, h.send(bank, b2, a, 50_000))
-			require.NoError(t, h.send(bank, a, c, 50_000))
+			h.transfer(c, b2, 75_000)
+			h.transfer(b2, a, 50_000)
+			h.transfer(a, c, 50_000)
 		}
-		_, err = h.k.ClaimAirdrop(h.ctx, a, h.denom)
+		_, err = h.claim(h.evmAddress(a), epoch)
 		require.ErrorIs(t, err, types.ErrAlreadyClaimed)
-		_, err = h.k.ClaimAirdrop(h.ctx, c, h.denom)
+		_, err = h.claim(h.evmAddress(c), epoch)
 		require.ErrorIs(t, err, types.ErrZeroAmount)
-		bShare, err := h.k.ClaimAirdrop(h.ctx, b2, h.denom)
+		bShare, err := h.claim(h.evmAddress(b2), epoch)
 		require.NoError(t, err)
-		require.Equal(t, funded.Mul(i(400_000)).Quo(supply), bShare)
-		traderShare, err := h.k.ClaimAirdrop(h.ctx, h.trader, h.denom)
+		require.Equal(t, share(record, i(400_000)), bShare)
+		// The trader is the final eligible claimant and takes the residue.
+		traderShare, err := h.claim(h.evmAddress(h.trader), epoch)
 		require.NoError(t, err)
-		escrowShare, err := h.k.ClaimAirdrop(h.ctx, h.k.ModuleAddress(), h.denom)
-		require.NoError(t, err)
-		paid := aShare.Add(bShare).Add(traderShare).Add(escrowShare)
-		require.Equal(t, paid, airdropPaid(t, h.env, h.denom, epoch))
-		require.True(t, paid.LTE(funded))
-		require.Equal(t, funded.Sub(paid), h.market(h.denom).AirdropBalance)
+		require.True(t, traderShare.GTE(share(record, traderBalance)))
+		require.Equal(t, record.Amount, aShare.Add(bShare).Add(traderShare))
+		after := h.epochRecord(epoch)
+		require.True(t, after.Remaining.IsZero())
+		require.Equal(t, record.EligibleSupply, after.ClaimedSupply)
+		require.True(t, h.market(h.denom).AirdropBalance.IsZero())
 		h.solvent()
 	})
 
-	t.Run("mint burn after boundary", func(t *testing.T) {
+	t.Run("swaps after boundary", func(t *testing.T) {
 		h := newHistoryEnv(t)
 		a := h.account(0)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
-		require.NoError(t, h.send(bank, h.trader, a, 900_000))
-		epoch := nextEntitlementEpoch(h)
-		before, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, epoch)
+		h.transfer(h.trader, a, 900_000)
+		record := h.nextEpoch()
+		before := h.pastBalance(h.evmAddress(a), record)
+		require.Equal(t, i(900_000), before)
+		supply := h.tokenSupply(h.token(h.denom))
+		// Sells and buys move tokens between the pool and the holders after
+		// the boundary; the snapshot does not follow them.
+		h.swap(a, h.denom, false, 123_456)
+		h.swap(h.trader, h.denom, true, 5_000_000)
+		h.transfer(h.trader, a, 1_000)
+		require.Equal(t, supply, h.tokenSupply(h.token(h.denom)))
+		require.NotEqual(t, before, h.balance(a, h.denom))
+		require.Equal(t, before, h.pastBalance(h.evmAddress(a), record))
+		sameJSON(t, record, h.epochRecord(record.Epoch))
+		got, err := h.claim(h.evmAddress(a), record.Epoch)
 		require.NoError(t, err)
-		tf := tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper)
-		admin := h.k.ModuleAddress().String()
-		_, err = tf.Mint(sdk.WrapSDKContext(h.ctx), tokenfactorytypes.NewMsgMint(admin, sdk.NewCoin(h.denom, i(5_000_000))))
-		require.NoError(t, err)
-		_, err = tf.Burn(sdk.WrapSDKContext(h.ctx), tokenfactorytypes.NewMsgBurn(admin, sdk.NewCoin(h.denom, i(9_000_000))))
-		require.NoError(t, err)
-		require.NoError(t, h.send(bank, h.k.ModuleAddress(), a, 123_456))
-		require.NoError(t, h.send(bank, a, h.trader, 1_000))
-		after, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, epoch)
-		require.NoError(t, err)
-		require.Equal(t, before, after)
-		got, err := h.k.ClaimAirdrop(h.ctx, a, h.denom)
-		require.NoError(t, err)
-		require.Equal(t, before, got)
+		require.Equal(t, share(record, before), got)
 	})
 
 	t.Run("refusals are atomic", func(t *testing.T) {
 		h := newHistoryEnv(t)
 		a := h.account(0)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
-		require.NoError(t, h.send(bank, h.trader, a, 800_000))
-		_, err := h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, 1)
-		require.ErrorIs(t, err, types.ErrInvalidAirdropEpoch)
-		epoch := nextEntitlementEpoch(h)
-		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, 0)
-		require.ErrorIs(t, err, types.ErrInvalidAirdropEpoch)
-		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, epoch+1)
-		require.ErrorIs(t, err, types.ErrInvalidAirdropEpoch)
-		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, "factory/unknown/lp9", epoch)
-		require.ErrorIs(t, err, types.ErrUnknownMarket)
-		want, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, epoch)
-		require.NoError(t, err)
+		h.transfer(h.trader, a, 800_000)
+		_, err := h.claim(h.evmAddress(a), 1)
+		require.ErrorIs(t, err, types.ErrAirdropNotTriggered)
+		record := h.nextEpoch()
+		epoch := record.Epoch
+		_, err = h.claim(h.evmAddress(a), 0)
+		require.ErrorIs(t, err, types.ErrAirdropNotTriggered)
+		_, err = h.claim(h.evmAddress(a), epoch+1)
+		require.ErrorIs(t, err, types.ErrAirdropNotTriggered)
+		_, _, err = h.k.ClaimAirdropEpoch(h.ctx, h.k.ModuleCaller(), address("unregistered pool"), h.evmAddress(a), epoch)
+		require.ErrorIs(t, err, types.ErrAirdropNotTriggered)
+		want := share(record, i(800_000))
 
-		// The escrow cannot pay: the claim fails and consumes nothing.
+		// The custody cannot pay: the claim fails and consumes nothing.
 		custody := h.k.ModuleEVMAddress(h.ctx)
 		held := h.tokenBalance(h.usdl, custody)
 		sink := address("airdrop sink")
 		h.sendToken(h.usdl, custody, sink, held.BigInt())
 		marketBefore := h.market(h.denom)
 		quoteBefore := h.usdlOf(a)
-		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, epoch)
+		_, err = h.claim(h.evmAddress(a), epoch)
 		require.Error(t, err)
-		require.False(t, h.k.HasClaimedAirdrop(h.ctx, h.denom, a, epoch))
-		require.True(t, airdropPaid(t, h.env, h.denom, epoch).IsZero())
+		require.False(t, h.k.HasClaimedPoolAirdrop(h.ctx, h.pool(h.denom), h.evmAddress(a), epoch))
+		sameJSON(t, record, h.epochRecord(epoch))
 		sameJSON(t, marketBefore, h.market(h.denom))
 		require.Equal(t, quoteBefore, h.usdlOf(a))
 		h.sendToken(h.usdl, sink, custody, held.BigInt())
 
-		got, err := h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, epoch)
+		got, err := h.claim(h.evmAddress(a), epoch)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		require.Equal(t, quoteBefore.Add(want), h.usdlOf(a))
-		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, epoch)
+		_, err = h.claim(h.evmAddress(a), epoch)
 		require.ErrorIs(t, err, types.ErrAlreadyClaimed)
-		require.Equal(t, want, airdropPaid(t, h.env, h.denom, epoch))
+		require.Equal(t, record.Remaining.Sub(want), h.epochRecord(epoch).Remaining)
 	})
 
 	t.Run("older epoch", func(t *testing.T) {
 		h := newHistoryEnv(t)
 		a, b2 := h.account(0), h.account(0)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
-		require.NoError(t, h.send(bank, h.trader, a, 500_000))
-		first := nextEntitlementEpoch(h)
-		want, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, first)
-		require.NoError(t, err)
-		require.NoError(t, h.send(bank, a, b2, 500_000))
-		second := nextEntitlementEpoch(h)
-		_, err = h.k.ClaimAirdrop(h.ctx, a, h.denom)
+		h.transfer(h.trader, a, 500_000)
+		first := h.nextEpoch()
+		want := share(first, i(500_000))
+		h.transfer(a, b2, 500_000)
+		second := h.nextEpoch()
+		_, err := h.claim(h.evmAddress(a), second.Epoch)
 		require.ErrorIs(t, err, types.ErrZeroAmount)
-		_, err = h.k.ClaimAirdropForEpoch(h.ctx, b2, h.denom, first)
+		_, err = h.claim(h.evmAddress(b2), first.Epoch)
 		require.ErrorIs(t, err, types.ErrZeroAmount)
-		got, err := h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, first)
+		got, err := h.claim(h.evmAddress(a), first.Epoch)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
-		bShare, err := h.k.ClaimAirdrop(h.ctx, b2, h.denom)
+		bShare, err := h.claim(h.evmAddress(b2), second.Epoch)
 		require.NoError(t, err)
 		require.True(t, bShare.IsPositive())
-		require.True(t, h.k.HasClaimedAirdrop(h.ctx, h.denom, b2, second))
+		require.Equal(t, share(second, i(500_000)), bShare)
+		require.True(t, h.k.HasClaimedPoolAirdrop(h.ctx, h.pool(h.denom), h.evmAddress(b2), second.Epoch))
 		h.solvent()
 	})
 
-	t.Run("genesis reload and legacy epochs", func(t *testing.T) {
+	t.Run("genesis reload", func(t *testing.T) {
 		h := newHistoryEnv(t)
 		a, b2 := h.account(0), h.account(0)
+		pool := h.pool(h.denom)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
-		require.NoError(t, h.send(bank, h.trader, a, 300_000))
-		epoch := nextEntitlementEpoch(h)
-		aShare, err := h.k.ClaimAirdrop(h.ctx, a, h.denom)
+		h.transfer(h.trader, a, 300_000)
+		record := h.nextEpoch()
+		epoch := record.Epoch
+		aShare, err := h.claim(h.evmAddress(a), epoch)
 		require.NoError(t, err)
-		require.NoError(t, h.send(bank, a, b2, 300_000))
+		h.transfer(a, b2, 300_000)
 		gs := h.k.ExportGenesis(h.ctx)
 		require.NoError(t, gs.Validate())
-		require.Len(t, gs.AirdropBases, 1)
-		require.Equal(t, aShare, gs.AirdropBases[0].Paid)
-		require.NotEmpty(t, gs.HoldingHistories)
-		require.NotEmpty(t, gs.HoldingCheckpoints)
+		require.Len(t, gs.FeeAccounting.Epochs, 1)
+		require.Equal(t, record.Remaining.Sub(aShare), gs.FeeAccounting.Epochs[0].Remaining)
+		require.Equal(t, i(300_000), gs.FeeAccounting.Epochs[0].ClaimedSupply)
+		require.Equal(t, []types.PoolAirdropClaim{{Pool: pool.Hex(), Holder: h.evmAddress(a).Hex(), Epoch: epoch}},
+			gs.FeeAccounting.Claims)
 		bz, err := json.Marshal(gs)
 		require.NoError(t, err)
 		var reloaded types.GenesisState
@@ -1431,31 +1273,18 @@ func TestAirdropEntitlements(t *testing.T) {
 		fresh, freshCtx := launchpadtest.NewKeeper(app, cacheCtx)
 		fresh.InitGenesis(freshCtx, reloaded)
 		sameJSON(t, gs, fresh.ExportGenesis(freshCtx))
-		require.True(t, fresh.HasClaimedAirdrop(freshCtx, h.denom, a, epoch))
-		_, err = fresh.ClaimAirdrop(freshCtx, b2, h.denom)
+		require.True(t, fresh.HasClaimedPoolAirdrop(freshCtx, pool, h.evmAddress(a), epoch))
+		_, _, err = fresh.ClaimAirdropEpoch(freshCtx, fresh.ModuleCaller(), pool, h.evmAddress(a), epoch)
+		require.ErrorIs(t, err, types.ErrAlreadyClaimed)
+		_, _, err = fresh.ClaimAirdropEpoch(freshCtx, fresh.ModuleCaller(), pool, h.evmAddress(b2), epoch)
 		require.ErrorIs(t, err, types.ErrZeroAmount)
-		_, err = fresh.ClaimAirdrop(freshCtx, h.trader, h.denom)
+		_, amount, err := fresh.ClaimAirdropEpoch(freshCtx, fresh.ModuleCaller(), pool, h.evmAddress(h.trader), epoch)
 		require.NoError(t, err)
-
-		// A basis-less epoch keeps its funds and markers and refuses claims.
-		legacy := *gs
-		legacy.AirdropBases, legacy.HoldingHistories, legacy.HoldingCheckpoints = nil, nil, nil
-		require.NoError(t, legacy.Validate())
-		legacyCtx, _ := h.ctx.CacheContext()
-		old, oldCtx := launchpadtest.NewKeeper(app, legacyCtx)
-		old.InitGenesis(oldCtx, legacy)
-		market, found := old.GetMarket(oldCtx, h.denom)
-		require.True(t, found)
-		require.Equal(t, h.market(h.denom).AirdropBalance, market.AirdropBalance)
-		require.True(t, old.HasClaimedAirdrop(oldCtx, h.denom, a, epoch))
-		_, err = old.ClaimAirdrop(oldCtx, h.trader, h.denom)
-		require.ErrorIs(t, err, types.ErrLegacyAirdropEpoch)
-		require.False(t, old.HasClaimedAirdrop(oldCtx, h.denom, h.trader, epoch))
-		require.Equal(t, h.market(h.denom).AirdropBalance, func() sdk.Int { m, _ := old.GetMarket(oldCtx, h.denom); return m.AirdropBalance }())
+		require.Equal(t, record.Remaining.Sub(aShare), amount)
 
 		bad := *gs
-		bad.AirdropBases = []types.AirdropEpochBasis{gs.AirdropBases[0]}
-		bad.AirdropBases[0].Paid = gs.AirdropEpochs[0].Amount.AddRaw(1)
+		bad.FeeAccounting.Epochs = []types.PoolAirdropEpoch{gs.FeeAccounting.Epochs[0]}
+		bad.FeeAccounting.Epochs[0].Remaining = gs.FeeAccounting.Epochs[0].Amount.AddRaw(1)
 		require.ErrorIs(t, bad.Validate(), types.ErrInvalidGenesis)
 	})
 }

@@ -1,8 +1,10 @@
 package keeper_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"math/big"
+	"sort"
 	"testing"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
@@ -120,7 +122,18 @@ func TestRoleAdministrationByGovernance(t *testing.T) {
 
 	exported := e.k.ExportGenesis(e.ctx)
 	require.NoError(t, exported.Validate())
-	require.Equal(t, []types.Surface{{Address: accumulator.Hex(), Role: types.RoleFeeAccumulator}}, exported.Surfaces)
+	// InitGenesis installed the nine generation 2 role surfaces of the fresh
+	// chain; the export lists them in address order.
+	installed := []types.Surface{}
+	for role, address := range keeper.Generation2Surfaces {
+		installed = append(installed, types.Surface{Address: address.Hex(), Role: role})
+	}
+	sort.Slice(installed, func(x, y int) bool {
+		return bytes.Compare(common.HexToAddress(installed[x].Address).Bytes(),
+			common.HexToAddress(installed[y].Address).Bytes()) < 0
+	})
+	require.Len(t, installed, 9)
+	require.Equal(t, installed, exported.Surfaces)
 	require.Equal(t, []types.RoleMember{{Contract: accumulator.Hex(), Role: poolRole.Hex(), Account: account.Hex()}},
 		exported.RoleMembers)
 	fresh, ctx := launchpadtest.NewKeeper(testkeeper.EVMTestApp, e.ctx)
@@ -132,16 +145,18 @@ func TestRoleAdministrationByGovernance(t *testing.T) {
 	require.Equal(t, keeper.Surface{Role: types.RoleFeeAccumulator, Generation: types.Generation2}, surface)
 	sameJSON(t, exported, fresh.ExportGenesis(ctx))
 
-	treasury := keeper.Generation2Surfaces[types.RoleTreasury]
+	// Every generation 2 role address is a role surface since genesis; a
+	// grant at an address that is none is refused.
+	nonSurface := address("not a role surface")
 	stray := &types.MsgUpdateParams{Authority: authority, Params: params, RoleGrants: []types.RoleAssignment{
-		{Contract: treasury.Hex(), Role: poolRole.Hex(), Account: account.Hex()}}}
+		{Contract: nonSurface.Hex(), Role: poolRole.Hex(), Account: account.Hex()}}}
 	before = len(e.ctx.EVMEventManager().Events())
 	params.BaseFeeBps = 40
 	stray.Params = params
 	_, err = server.UpdateParams(sdk.WrapSDKContext(e.ctx), stray)
 	require.Error(t, err)
 	require.Equal(t, uint64(30), e.k.GetParams(e.ctx).BaseFeeBps)
-	require.False(t, e.k.HasRole(e.ctx, treasury, poolRole, account))
+	require.False(t, e.k.HasRole(e.ctx, nonSurface, poolRole, account))
 	require.Empty(t, evmLogsSince(e.ctx, before))
 
 	_, err = server.UpdateParams(sdk.WrapSDKContext(e.ctx), revoke)

@@ -2292,3 +2292,11 @@ exit = 1
 log = fleet/logs/release-7.3.5-latency-verify-1.log
 observed = Each fill's tape was read from the database twice, once under the hub lock at about 35 ms prepare plus 17 ms locked per message against a 28 ms budget, and the gateway churned Postgres connections with a two-connection idle pool; with the prefetched items reused, prepare parallel per family and 64 idle connections the p99 frame delay fell from 48.8 s to 2.27 s with zero late checksums, zero gaps and zero server closes, still above 250 ms.
 assumption = The remaining delay is measured from the fill's block time stamped before the trader's own transaction and eighteen serial publishes while the box answered SELECT 1 in 80 ms to 3 s; the gate is rerun once with no other build on the box, and if it still fails the ramp and storm subscribe contention on the hub lock is the next target.
+
+[finding.2.1.13-airdrop-liabilities]
+revision = a3eb18164e7141fbe0d7e28a33c10e99309347ea
+command = go test ./modules/launchpad/keeper/
+exit = 0
+log = fleet/logs/release-2.3.99-keeper-verify-9.log
+observed = Keeper payAirdrop never lowered the fee accumulator's total liabilities, so any airdrop claim would have left liabilities above fee held and failed the export validation, and the task's do_4 to do_6 tests had never been written while the role tests predated the nine genesis-installed surfaces.
+assumption = The keeper airdrop path only goes live with this release, so no existing state needs a liabilities repair; the fix sits in payAirdrop and the do_4 to do_6 tests now cover it.

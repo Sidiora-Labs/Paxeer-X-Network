@@ -8440,3 +8440,8 @@ detail = "After MigrateV6120 on the exported state no outside account holds USDL
 area = "precompiles/launchpad"
 summary = "TestOpticalHooksSeeTheContractCallers needs LAUNCHPAD_CONTRACTS_DIR and SOLC set"
 detail = "Point LAUNCHPAD_CONTRACTS_DIR at launchpad/contracts/contracts and SOLC at a solc binary that satisfies the ^0.8.24 pragma before running go test ./precompiles/launchpad/...; without them the optical hooks test fails as if the hooks were broken."
+
+[gotcha.1774]
+area = "modules/launchpad/keeper"
+summary = "Airdrop keeper fixtures must fund fee held exactly once"
+detail = "InitGenesis writes gs.FeeHeld into the fee held ledger and validation requires FeeHeld >= FeeAccounting.TotalLiabilities, so set both in the genesis and move the backing USDL with a plain ERC20 transfer to the module EVM address; PullQuote credits the ledger a second time and doubles fee held."

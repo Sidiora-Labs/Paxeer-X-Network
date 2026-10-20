@@ -343,6 +343,9 @@ func (k *Keeper) payAirdrop(ctx sdk.Context, caller NestedCaller, market types.M
 	pool := common.HexToAddress(market.PoolAddress)
 	k.store(ctx).Set(poolAirdropClaimKey(pool, holder, epoch), []byte{1})
 	k.setMarket(ctx, market)
+	if err := k.subLedgerAmount(ctx, totalLiabilitiesKey, amount); err != nil {
+		return ctx, sdk.Int{}, err
+	}
 	var err error
 	if amount.IsZero() {
 		ctx, err = callQuote(ctx, caller, k.ModuleEVMAddress(ctx), k.quoteToken(ctx),
