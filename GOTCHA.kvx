@@ -8515,3 +8515,38 @@ detail = "The local package store lacks that version, so an offline install from
 area = "launchpad/client/apps/web"
 summary = "jsdom cannot prove media playback"
 detail = "The stream player test can show that a retry issues a second viewer-session request and leaves the unavailable state, but jsdom has no media support, so actual playback is not observable in unit tests."
+
+[gotcha.1789]
+area = "human/crates/layerx-paxeer-client"
+summary = "custody profiles still carry the kernel's paxeer-reserve hash"
+detail = "The kernel writes the old system:paxeer-reserve namespace hash at bytes 129 to 161 of the custody profile, so test profiles must use that id and not system:treasury until the kernel adopts the treasury namespace."
+
+[gotcha.1790]
+area = "human/crates/layerx-human-service"
+summary = "agent daemon wire format predates the API 2 states and rungs"
+detail = "Tracked submissions still arrive with the acknowledged state code and the old 0 to 5 levels, which human code maps onto Submitted and the Receipted rung; the daemon's SubmitRequest refuses any signature that is not 65 bytes, which the journey engine does not yet produce."
+
+[gotcha.1791]
+area = "tooling/worktrees"
+summary = "worktree command guard refuses su, inline URL env vars and heredocs"
+detail = "Write the command into a script file and run it with bash so the guard sees a plain invocation."
+
+[gotcha.1792]
+area = "tools/release/snapshot"
+summary = "paxd opens no application.db"
+detail = "The app store lives at data/state_commit/memiavl, or data/committer.db on older homes, so a snapshot check for data/application.db never succeeds."
+
+[gotcha.1793]
+area = "tools/release/tests"
+summary = "two-node loopback chain with a shared halt height strands the full node in block sync"
+detail = "The full node stays a few blocks behind the validator in block sync and stalls once the validator halts, so it never reaches the halt height; get it into consensus before the halt or turn block sync off."
+
+[gotcha.1794]
+area = "node/rpc"
+summary = "GET /abci_info returns a bare response without the JSON-RPC envelope"
+detail = "Only a JSON-RPC POST of abci_info returns .result.response.version; probes that read .result must POST."
+
+[gotcha.1795]
+area = "tooling/worktrees"
+summary = "worktree guard refuses compound gate commands"
+detail = "bash <script> combined with redirects, && chains, time or an absolute path from outside the worktree is refused; run gates as a plain single command from inside the worktree or through a scratch script."

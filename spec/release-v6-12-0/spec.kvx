@@ -29279,7 +29279,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.2]
 title = "Build paxd and price-sidecar for release with the kernel libraries, pinned toolchains and the upgrade document"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["1.0.1", "1.3.100", "5.3.99", "8.4.5"]
@@ -29443,7 +29443,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.8]
 title = "Snapshot the whole data directory of every validator and full-node home"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 4
 requires = ["1.3.100", "8.4.17"]

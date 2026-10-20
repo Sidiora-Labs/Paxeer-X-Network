@@ -14,6 +14,10 @@ import tarfile
 import tempfile
 
 
+# Application commit store of storage/common/utils/path.go GetCosmosSCStorePath.
+STORES = ("data/committer.db", "data/state_commit/memiavl")
+
+
 class Refusal(Exception):
     pass
 
@@ -204,10 +208,7 @@ def verify(archive, height, validator):
                     if (
                         member.isfile()
                         and member.size > 0
-                        and (
-                            member.name == "data/application.db"
-                            or member.name.startswith("data/application.db/")
-                        )
+                        and any(member.name.startswith(f"{store}/") for store in STORES)
                     ):
                         store_found = True
             while decoder.stdout.read(1024 * 1024):
@@ -290,7 +291,10 @@ def main():
                     height,
                     i < validator_count,
                 )
-                require((data / "application.db").exists(), "missing application store")
+                require(
+                    any((home / store).is_dir() for store in STORES),
+                    "missing application store",
+                )
             require(
                 not any(os.path.lexists(a) for a in archives),
                 "snapshot already exists; use --verify",

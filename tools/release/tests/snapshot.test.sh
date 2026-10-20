@@ -6,6 +6,7 @@ work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 umask 077
 mkdir "$work/bin"
+if [ -d /usr/local/go/bin ]; then PATH="/usr/local/go/bin:$PATH"; fi
 if ! (cd "$root" && go build -p 2 -o "$work/bin/paxd" ./daemon/paxd); then
     echo 'FAIL archive_holds_whole_data: cannot build real paxd'
     echo 'snapshot: 0 passed, 1 failed'
@@ -36,6 +37,8 @@ receipt = work / "receipt.json"
 processes = []
 reservations = []
 logs = []
+# Far enough past genesis for the full node to leave block sync and receive H by consensus.
+HALT = 50
 
 
 def run(*args, **kwargs):
@@ -72,7 +75,7 @@ def port():
     return reservation.getsockname()[1]
 
 
-def write_env(validators=None, fullnodes=None, directory=None, height="20"):
+def write_env(validators=None, fullnodes=None, directory=None, height=str(HALT)):
     values = {
         "VALIDATOR_HOMES": str(validator) if validators is None else validators,
         "FULLNODE_HOMES": str(fullnode) if fullnodes is None else fullnodes,
@@ -212,14 +215,14 @@ def archive_holds_whole_data():
         logs.append(output)
         processes.append(
             subprocess.Popen(
-                [str(paxd), "start", "--home", str(home), "--halt-height", "20"],
+                [str(paxd), "start", "--home", str(home), "--halt-height", str(HALT)],
                 stdout=output,
                 stderr=output,
             )
         )
     deadline = time.monotonic() + 180
     while not all(
-        (home / "data/application.db").exists() for home in (validator, fullnode)
+        (home / "data/state_commit/memiavl").is_dir() for home in (validator, fullnode)
     ):
         assert all(
             p.poll() is None for p in processes
@@ -234,10 +237,10 @@ def archive_holds_whole_data():
     for home in (validator, fullnode):
         text = (work / f"{home.name}.log").read_text()
         assert re.search(
-            r"halting node per configuration[^\n]*height[=\": ]+20\b", text
+            rf"halting node per configuration[^\n]*height[=\": ]+{HALT}\b", text
         ), text
     state = json.loads((validator / "data/priv_validator_state.json").read_text())
-    assert state["height"] == "20", state
+    assert state["height"] == str(HALT), state
     snapshot(count=2)
     snapshot("--verify", count=2)
     for home in (validator, fullnode):
@@ -262,7 +265,7 @@ def refuses_incomplete_archives():
             "data/priv_validator_state.json",
             "archive lacks data/priv_validator_state.json",
         ),
-        ("data/application.db", "archive lacks application store"),
+        ("data/state_commit", "archive lacks application store"),
     ):
         run(
             "tar",
@@ -288,7 +291,7 @@ def refuses_unsafe_inputs():
     snapshot(expected=1, message="duplicate home archive name", count=0)
     write_env(directory=validator / "data/snapshots")
     snapshot(expected=1, message="SNAPSHOT_DIR must be outside", count=0)
-    write_env(height="19", directory=work / "wrong-height")
+    write_env(height=str(HALT - 1), directory=work / "wrong-height")
     snapshot(
         expected=1, message="validator signing state is not at HALT_HEIGHT", count=0
     )

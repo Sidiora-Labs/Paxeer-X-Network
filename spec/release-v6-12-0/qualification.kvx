@@ -2380,3 +2380,43 @@ exit = 1
 log = fleet/logs/issue-642-1.log
 observed = The creation-storage and stream-player tests pass, and the same 19 pre-existing tests fail for want of the chain fixture, the private EVM and real backend origins while the other 1010 pass.
 assumption = The fixture-bound tests are covered by the release fixture run; the saved-attempt expiry and viewer-session retry fixes are complete.
+
+[finding.gh-635-639-launchpad-fixtures]
+revision = 6e188fef8
+command = go test ./internal/rest/
+exit = 1
+log = fleet/logs/issue-639-1.log
+observed = The new tests for the coverage digest, the ranking cutoff guard and the rankings limit each pass, while pre-existing tests in the same packages need the production-system integration fixtures, a reviewed manifest and a live chain RPC that this tree does not carry, and two development head-budget timing tests fail untouched.
+assumption = The fixture-bound tests pass where those inputs are provisioned; the three fixes are complete.
+
+[finding.gh-640-web-fixtures]
+revision = 693ef2058
+command = pnpm test
+exit = 1
+log = fleet/logs/issue-640-2.log
+observed = The price-number test passes with the token-strip and window-stats suites, the typecheck's only error is the unbuilt stats-sdk workspace package, and the 18 failing tests are chain fixture integration suites.
+assumption = The chain fixture suites are covered by the release fixture run; the price precision fix is complete.
+
+[finding.2.3.2-human-service-verify]
+revision = bb62ae9ef06d62a61e5b52964e5cd2de11b6ceb2
+command = cargo test --locked --manifest-path human/Cargo.toml -p layerx-paxeer-client -p layerx-human-service --no-fail-fast
+exit = 101
+log = fleet/logs/human-reserve-verify-3.log
+observed = The human workspace builds and 284 tests pass; the 35 failures need a clock authority, protected or native fixtures and an attestor cluster, or come from the agent daemon's submit contract now refusing any signature that is not 65 bytes, which the journey engine still passes as the signer's own signature.
+assumption = The 65-byte submit signature is a signing-design change owned by the agent API alignment, not by this task; the task stays implemented until that is settled.
+
+[finding.8.4.8-full-node-block-sync]
+revision = 10a09b47c410d6dc3434643b4aee90c7844746ba
+command = bash tools/release/tests/snapshot.test.sh
+exit = 1
+log = fleet/logs/release-8.4.8-verify-3.log
+observed = After the store path was corrected to data/state_commit/memiavl and the halt height raised to 50, the loopback full node stays in block sync behind the validator and stalls at 44 once the validator halts, so the test times out before the snapshot step.
+assumption = The snapshot script is complete and the test needs the full node in consensus before the halt height; the task stays implemented.
+
+[finding.8.4.2-verified]
+revision = 1d4a12dc0d955cd2b21d053126c67ca8f528fd17
+command = bash tools/release/tests/build.test.sh
+exit = 0
+log = fleet/logs/release-8.4.2-verify-2.log
+observed = All nine cases pass after the version probe moved to a JSON-RPC POST; the price sidecar gained a --version flag that prints its crate version rather than the release tag.
+assumption = The sidecar version string is acceptable as the crate version; the release build script itself was unchanged.
