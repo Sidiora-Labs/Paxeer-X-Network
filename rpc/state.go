@@ -132,7 +132,7 @@ func (a *StateAPI) GetProof(ctx context.Context, address common.Address, storage
 	var block *coretypes.ResultBlock
 	var err error
 	if blockNr, ok := blockNrOrHash.Number(); ok {
-		blockNumber, blockNumErr := getBlockNumber(ctx, a.tmClient, blockNr)
+		blockNumber, blockNumErr := getBlockNumber(ctx, a.tmClient, a.watermarks, blockNr)
 		if blockNumErr != nil {
 			return nil, blockNumErr
 		}

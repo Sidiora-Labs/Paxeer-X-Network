@@ -87,20 +87,19 @@ func GetBlockNumberByNrOrHash(ctx context.Context, tmClient client.LocalClient, 
 		height := block.Block.Height
 		return &height, nil
 	}
-	if *blockNrOrHash.BlockNumber == rpc.PendingBlockNumber {
+	return getBlockNumber(ctx, tmClient, wm, *blockNrOrHash.BlockNumber)
+}
+
+func getBlockNumber(ctx context.Context, tmClient client.LocalClient, wm *WatermarkManager, number rpc.BlockNumber) (*int64, error) {
+	var numberPtr *int64
+	switch number {
+	case rpc.PendingBlockNumber:
 		height, err := wm.resolvePending()
 		if err != nil {
 			return nil, err
 		}
-		return &height, nil
-	}
-	return getBlockNumber(ctx, tmClient, *blockNrOrHash.BlockNumber)
-}
-
-func getBlockNumber(ctx context.Context, tmClient client.LocalClient, number rpc.BlockNumber) (*int64, error) {
-	var numberPtr *int64
-	switch number {
-	case rpc.SafeBlockNumber, rpc.FinalizedBlockNumber, rpc.LatestBlockNumber, rpc.PendingBlockNumber:
+		numberPtr = &height
+	case rpc.SafeBlockNumber, rpc.FinalizedBlockNumber, rpc.LatestBlockNumber:
 		numberPtr = nil // requesting Block with nil means the latest block
 	case rpc.EarliestBlockNumber:
 		if tmClient == nil {

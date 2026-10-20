@@ -227,7 +227,7 @@ func (m *WatermarkManager) ResolveHeight(ctx context.Context, blockNrOrHash rpc.
 		return stateEarliest, nil
 	}
 
-	heightPtr, err := getBlockNumber(ctx, m.tmClient, blockNr)
+	heightPtr, err := getBlockNumber(ctx, m.tmClient, m, blockNr)
 	if err != nil {
 		return 0, err
 	}

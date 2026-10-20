@@ -161,9 +161,9 @@ func countDecodeOnlyEvmTxs(txs tmtypes.Txs, dec sdk.TxDecoder) int {
 }
 
 // TestBlockAPILatestTagResolves verifies that block endpoints accepting
-// "latest"/"safe"/"finalized"/"pending" tags resolve to the safe-latest height
-// rather than returning JSON null. The tag arrives as numberPtr=nil from
-// getBlockNumber; the by-number helper must route it through wm.LatestHeight.
+// "latest"/"safe"/"finalized" tags resolve to the safe-latest height rather
+// than returning JSON null, and that a node without a pending snapshot refuses
+// the "pending" tag.
 func TestBlockAPILatestTagResolves(t *testing.T) {
 	application := app.Setup(t, false, true, false)
 	k := &application.EvmKeeper
@@ -190,7 +190,6 @@ func TestBlockAPILatestTagResolves(t *testing.T) {
 		rpc.LatestBlockNumber,
 		rpc.SafeBlockNumber,
 		rpc.FinalizedBlockNumber,
-		rpc.PendingBlockNumber,
 	}
 	for _, tag := range tags {
 		receipts, err := api.GetBlockReceipts(ctx, rpc.BlockNumberOrHashWithNumber(tag))
@@ -201,4 +200,12 @@ func TestBlockAPILatestTagResolves(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, count, "GetBlockTransactionCountByNumber tag %v must resolve, not null", tag)
 	}
+
+	receipts, err := api.GetBlockReceipts(ctx, rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber))
+	require.ErrorIs(t, err, evmrpc.ErrPendingServedBySequencer)
+	require.Nil(t, receipts)
+
+	count, err := api.GetBlockTransactionCountByNumber(ctx, rpc.PendingBlockNumber)
+	require.ErrorIs(t, err, evmrpc.ErrPendingServedBySequencer)
+	require.Nil(t, count)
 }

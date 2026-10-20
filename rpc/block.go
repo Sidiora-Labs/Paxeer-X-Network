@@ -130,7 +130,7 @@ func (a *BlockAPI) GetBlockTransactionCountByNumber(ctx context.Context, number 
 	defer func() {
 		recordMetricsWithError(ctx, fmt.Sprintf("%s_getBlockTransactionCountByNumber", a.namespace), a.connectionType, startTime, returnErr, recover())
 	}()
-	numberPtr, err := getBlockNumber(ctx, a.tmClient, number)
+	numberPtr, err := getBlockNumber(ctx, a.tmClient, a.watermarks, number)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +225,7 @@ func (a *BlockAPI) getBlockByNumber(
 	if number == rpc.PendingBlockNumber && a.watermarks != nil && a.watermarks.pending != nil {
 		return a.pendingBlock(fullTx)
 	}
-	numberPtr, err := getBlockNumber(ctx, a.tmClient, number)
+	numberPtr, err := getBlockNumber(ctx, a.tmClient, a.watermarks, number)
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +364,7 @@ func (a *BlockAPI) GetBlockReceipts(ctx context.Context, blockNrOrHash rpc.Block
 	} else {
 		var numberPtr *int64
 		if blockNrOrHash.BlockNumber != nil {
-			numberPtr, err = getBlockNumber(ctx, a.tmClient, *blockNrOrHash.BlockNumber)
+			numberPtr, err = getBlockNumber(ctx, a.tmClient, a.watermarks, *blockNrOrHash.BlockNumber)
 		}
 		if err == nil {
 			block, err = blockByNumberOrNullForJSONRPC(ctx, a.tmClient, a.watermarks, numberPtr, 1)

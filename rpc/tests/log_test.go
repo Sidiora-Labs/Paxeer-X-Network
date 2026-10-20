@@ -3,6 +3,8 @@ package tests
 import (
 	"testing"
 
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,10 +37,12 @@ func TestGetLogsRangeTooWide(t *testing.T) {
 
 func TestGetLogIndex(t *testing.T) {
 	cw20 := "pax18cszlvm6pze0x9sz32qnjq4vtd45xehqs8dq7cwy8yhq35wfnn3qcm2ty5" // hardcoded
-	tx0 := signAndEncodeCosmosTx(transferCW20Msg(mnemonic1, cw20), mnemonic1, 7, 0)
+	initializers := []func(sdk.Context, *app.App){mnemonicInitializer(mnemonic1), cw20Initializer(mnemonic1, true), erc20Initializer()}
+	acctN := accountNumberAfterInit(t, mnemonic1, initializers...)
+	tx0 := signAndEncodeCosmosTx(transferCW20Msg(mnemonic1, cw20), mnemonic1, acctN, 0)
 	tx1Bz := signAndEncodeTx(depositErc20(1), erc20DeployerMnemonics)
 	tx2Bz := signAndEncodeTx(sendErc20(2), erc20DeployerMnemonics)
-	SetupTestServer(t, [][][]byte{{tx0, tx1Bz, tx2Bz}}, mnemonicInitializer(mnemonic1), cw20Initializer(mnemonic1, true), erc20Initializer()).Run(
+	SetupTestServer(t, [][][]byte{{tx0, tx1Bz, tx2Bz}}, initializers...).Run(
 		func(port int) {
 			res := sendRequestWithNamespace("eth", port, "getLogs", map[string]interface{}{
 				"toBlock": "latest",

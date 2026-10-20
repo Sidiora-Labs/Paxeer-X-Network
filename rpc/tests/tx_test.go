@@ -5,18 +5,22 @@ import (
 	"strconv"
 	"testing"
 
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGetTransactionByBlockNumberAndIndex(t *testing.T) {
-	tx1 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, 7, 0)
+	initializers := []func(sdk.Context, *app.App){mnemonicInitializer(mnemonic1), cw20Initializer(mnemonic1, true)}
+	acctN := accountNumberAfterInit(t, mnemonic1, initializers...)
+	tx1 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, acctN, 0)
 	cw20 := "pax18cszlvm6pze0x9sz32qnjq4vtd45xehqs8dq7cwy8yhq35wfnn3qcm2ty5" // hardcoded
-	tx2 := signAndEncodeCosmosTx(transferCW20Msg(mnemonic1, cw20), mnemonic1, 7, 1)
+	tx2 := signAndEncodeCosmosTx(transferCW20Msg(mnemonic1, cw20), mnemonic1, acctN, 1)
 	tx3Data := send(0)
 	signedTx3 := signTxWithMnemonic(send(0), mnemonic1)
 	tx3 := encodeEvmTx(tx3Data, signedTx3)
-	SetupTestServer(t, [][][]byte{{tx1, tx2, tx3}}, mnemonicInitializer(mnemonic1), cw20Initializer(mnemonic1, true)).Run(
+	SetupTestServer(t, [][][]byte{{tx1, tx2, tx3}}, initializers...).Run(
 		func(port int) {
 			// if eth_, the first tx should be tx3 since both tx1 and tx2 are non-EVM.
 			res := sendRequestWithNamespace("eth", port, "getTransactionByBlockNumberAndIndex", "0x2", "0x0")
@@ -36,13 +40,15 @@ func TestGetTransactionByBlockNumberAndIndex(t *testing.T) {
 }
 
 func TestGetTransactionByHash(t *testing.T) {
-	tx1 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, 7, 0)
+	initializers := []func(sdk.Context, *app.App){mnemonicInitializer(mnemonic1), cw20Initializer(mnemonic1, true)}
+	acctN := accountNumberAfterInit(t, mnemonic1, initializers...)
+	tx1 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, acctN, 0)
 	cw20 := "pax18cszlvm6pze0x9sz32qnjq4vtd45xehqs8dq7cwy8yhq35wfnn3qcm2ty5" // hardcoded
-	tx2 := signAndEncodeCosmosTx(transferCW20Msg(mnemonic1, cw20), mnemonic1, 7, 1)
+	tx2 := signAndEncodeCosmosTx(transferCW20Msg(mnemonic1, cw20), mnemonic1, acctN, 1)
 	tx3Data := send(0)
 	signedTx3 := signTxWithMnemonic(send(0), mnemonic1)
 	tx3 := encodeEvmTx(tx3Data, signedTx3)
-	SetupTestServer(t, [][][]byte{{tx1, tx2, tx3}}, mnemonicInitializer(mnemonic1), cw20Initializer(mnemonic1, true)).Run(
+	SetupTestServer(t, [][][]byte{{tx1, tx2, tx3}}, initializers...).Run(
 		func(port int) {
 			// if eth_, the first tx should be tx3 since both tx1 and tx2 are non-EVM.
 			res := sendRequestWithNamespace("eth", port, "getTransactionByHash", signedTx3.Hash().Hex())
@@ -68,11 +74,13 @@ func TestGetTransactionByHash(t *testing.T) {
 }
 
 func TestGetTransactionSkipSyntheticIndex(t *testing.T) {
-	tx1 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, 7, 0)
+	initializers := []func(sdk.Context, *app.App){mnemonicInitializer(mnemonic1)}
+	acctN := accountNumberAfterInit(t, mnemonic1, initializers...)
+	tx1 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, acctN, 0)
 	tx2Data := send(0)
 	signedTx2 := signTxWithMnemonic(tx2Data, mnemonic1)
 	tx2 := encodeEvmTx(tx2Data, signedTx2)
-	SetupTestServer(t, [][][]byte{{tx1, tx2}}, mnemonicInitializer(mnemonic1)).Run(
+	SetupTestServer(t, [][][]byte{{tx1, tx2}}, initializers...).Run(
 		func(port int) {
 			res := sendRequestWithNamespace("eth", port, "getTransactionByHash", signedTx2.Hash().Hex())
 			txIdx := res["result"].(map[string]any)["transactionIndex"].(string)
@@ -112,19 +120,21 @@ func TestGetTransactionReceiptFailedTx(t *testing.T) {
 
 // Does not check trace_*, debug_*, and log endpoints
 func TestEVMTransactionIndexResponseCorrectnessAndConsistency(t *testing.T) {
-	cosmosTx1 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, 7, 0)
+	initializers := []func(sdk.Context, *app.App){mnemonicInitializer(mnemonic1)}
+	acctN := accountNumberAfterInit(t, mnemonic1, initializers...)
+	cosmosTx1 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, acctN, 0)
 
 	tx1Data := send(0)
 	signedTx1 := signTxWithMnemonic(tx1Data, mnemonic1)
 	tx1 := encodeEvmTx(tx1Data, signedTx1)
 
-	cosmosTx2 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, 7, 1)
+	cosmosTx2 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, acctN, 1)
 
 	tx2Data := send(1)
 	signedTx2 := signTxWithMnemonic(tx2Data, mnemonic1)
 	tx2 := encodeEvmTx(tx2Data, signedTx2)
 
-	SetupTestServer(t, [][][]byte{{cosmosTx1, tx1, cosmosTx2, tx2}}, mnemonicInitializer(mnemonic1)).Run(
+	SetupTestServer(t, [][][]byte{{cosmosTx1, tx1, cosmosTx2, tx2}}, initializers...).Run(
 		func(port int) {
 			blockNumber := "0x2"
 			numberOfEVMTransactions := 2
@@ -209,20 +219,22 @@ func TestEVMTransactionIndexResponseCorrectnessAndConsistency(t *testing.T) {
 
 func TestEVMTransactionIndexResolutionOnInput(t *testing.T) {
 	t.Run("RegularBehaviour", func(t *testing.T) {
-		cosmosTx1 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, 7, 0)
-		cosmosTx2 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, 7, 1)
+		initializers := []func(sdk.Context, *app.App){mnemonicInitializer(mnemonic1)}
+		acctN := accountNumberAfterInit(t, mnemonic1, initializers...)
+		cosmosTx1 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, acctN, 0)
+		cosmosTx2 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, acctN, 1)
 
 		tx1Data := send(0)
 		signedTx1 := signTxWithMnemonic(tx1Data, mnemonic1)
 		tx1 := encodeEvmTx(tx1Data, signedTx1)
 
-		cosmosTx3 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, 7, 2)
+		cosmosTx3 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, acctN, 2)
 
 		tx2Data := send(1)
 		signedTx2 := signTxWithMnemonic(tx2Data, mnemonic1)
 		tx2 := encodeEvmTx(tx2Data, signedTx2)
 
-		SetupTestServer(t, [][][]byte{{cosmosTx1, cosmosTx2, tx1, cosmosTx3, tx2}}, mnemonicInitializer(mnemonic1)).Run(
+		SetupTestServer(t, [][][]byte{{cosmosTx1, cosmosTx2, tx1, cosmosTx3, tx2}}, initializers...).Run(
 			func(port int) {
 				blockNumber := "0x2"
 
@@ -274,19 +286,21 @@ func TestEVMTransactionIndexResolutionOnInput(t *testing.T) {
 		// If we passed index 1 as Cosmos index, it would point to the first EVM tx
 		// But if we pass index 1 as EVM index, it should point to the second EVM tx
 
-		cosmosTx1 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, 7, 0)
+		initializers := []func(sdk.Context, *app.App){mnemonicInitializer(mnemonic1)}
+		acctN := accountNumberAfterInit(t, mnemonic1, initializers...)
+		cosmosTx1 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, acctN, 0)
 
 		tx1Data := send(0)
 		signedTx1 := signTxWithMnemonic(tx1Data, mnemonic1)
 		tx1 := encodeEvmTx(tx1Data, signedTx1)
 
-		cosmosTx2 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, 7, 2)
+		cosmosTx2 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, acctN, 2)
 
 		tx2Data := send(1)
 		signedTx2 := signTxWithMnemonic(tx2Data, mnemonic1)
 		tx2 := encodeEvmTx(tx2Data, signedTx2)
 
-		SetupTestServer(t, [][][]byte{{cosmosTx1, tx1, cosmosTx2, tx2}}, mnemonicInitializer(mnemonic1)).Run(
+		SetupTestServer(t, [][][]byte{{cosmosTx1, tx1, cosmosTx2, tx2}}, initializers...).Run(
 			func(port int) {
 				blockNumber := "0x2"
 

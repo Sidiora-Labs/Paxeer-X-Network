@@ -62,8 +62,11 @@ func TestGetBlockByNumber(t *testing.T) {
 			blockHash = res["result"].(map[string]interface{})["hash"]
 			require.Equal(t, "0x8ace0b4e9ced0ef792034128d37eb19b9b2b06bf016d51d533216a9afd7c0e8f", blockHash.(string))
 			res = sendRequestWithNamespace("eth", port, "getBlockByNumber", "pending", true)
-			blockHash = res["result"].(map[string]interface{})["hash"]
-			require.Equal(t, "0x8ace0b4e9ced0ef792034128d37eb19b9b2b06bf016d51d533216a9afd7c0e8f", blockHash.(string))
+			errObj, ok := res["error"].(map[string]interface{})
+			require.True(t, ok)
+			require.Equal(t, float64(-32000), errObj["code"])
+			require.Equal(t, "pending served by sequencer", errObj["message"])
+			require.NotContains(t, res, "result")
 			res = sendRequestWithNamespace("eth", port, "getBlockByNumber", "0x2", true)
 			blockHash = res["result"].(map[string]interface{})["hash"]
 			require.Equal(t, "0x6f2168eb453152b1f68874fe32cea6fcb199bfd63836acb72a8eb33e666613fe", blockHash.(string))
@@ -72,9 +75,11 @@ func TestGetBlockByNumber(t *testing.T) {
 }
 
 func TestGetBlockSkipTxIndex(t *testing.T) {
-	tx1 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, 7, 0)
+	initializers := []func(sdk.Context, *app.App){mnemonicInitializer(mnemonic1)}
+	acctN := accountNumberAfterInit(t, mnemonic1, initializers...)
+	tx1 := signAndEncodeCosmosTx(bankSendMsg(mnemonic1), mnemonic1, acctN, 0)
 	tx2 := signAndEncodeTx(send(0), mnemonic1)
-	SetupTestServer(t, [][][]byte{{tx1, tx2}}, mnemonicInitializer(mnemonic1)).Run(
+	SetupTestServer(t, [][][]byte{{tx1, tx2}}, initializers...).Run(
 		func(port int) {
 			res := sendRequestWithNamespace("eth", port, "getBlockByHash", common.HexToHash("0x6f2168eb453152b1f68874fe32cea6fcb199bfd63836acb72a8eb33e666613fe").Hex(), true)
 			txs := res["result"].(map[string]any)["transactions"].([]any)

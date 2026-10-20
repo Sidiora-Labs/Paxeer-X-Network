@@ -8715,3 +8715,13 @@ detail = "accountNumberAfterInit in rpc/tests reads the number after the test's 
 area = "spec/workflow"
 summary = "check git log on a task's touched files before dispatching it"
 detail = "8.4.20 had landed days earlier with its spec status never advanced, so it was claimed twice; a look at the log of its files would have shown the work done."
+
+[gotcha.1829]
+area = "go/tests"
+summary = "Go runs test files in alphabetical order, so a panicking regression_test.go hides every file sorting after it"
+detail = "Use go test -skip on the panicking names to see the rest of the package before judging it green."
+
+[gotcha.1830]
+area = "rpc"
+summary = "the pending block tag is resolved only through the watermark manager's resolvePending"
+detail = "getBlockNumber takes the manager and refuses with ErrPendingServedBySequencer on nodes without a pending snapshot; never map pending to nil/latest again (layerx-merge req.9003 ac_2/ac_3)."

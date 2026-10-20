@@ -224,7 +224,7 @@ func (t *TransactionAPI) GetTransactionByBlockNumberAndIndex(ctx context.Context
 }
 
 func (t *TransactionAPI) getTransactionByBlockNumberAndIndex(ctx context.Context, blockNr rpc.BlockNumber, txIndex uint32) (result *export.RPCTransaction, returnErr error) {
-	blockNumber, err := getBlockNumber(ctx, t.tmClient, blockNr)
+	blockNumber, err := getBlockNumber(ctx, t.tmClient, t.watermarks, blockNr)
 	if err != nil {
 		return nil, err
 	}

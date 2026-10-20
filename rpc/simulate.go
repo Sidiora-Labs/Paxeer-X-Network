@@ -835,7 +835,7 @@ func (b *Backend) getBlockByNumberOrHash(ctx context.Context, blockNrOrHash rpc.
 
 	var blockNumberPtr *int64
 	if blockNrOrHash.BlockNumber != nil {
-		blockNumberPtr, err = getBlockNumber(ctx, b.tmClient, *blockNrOrHash.BlockNumber)
+		blockNumberPtr, err = getBlockNumber(ctx, b.tmClient, b.watermarks, *blockNrOrHash.BlockNumber)
 		if err != nil {
 			return nil, false, err
 		}

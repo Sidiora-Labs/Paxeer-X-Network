@@ -138,11 +138,13 @@ func TestPendingBlockOpenBlock(t *testing.T) {
 	_, err = api.GetBlockByNumber(ctx, rpc.PendingBlockNumber, false)
 	require.ErrorIs(t, err, sequencer.ErrLayerNotOpen)
 
-	// Every other node keeps the latest committed resolution for pending.
-	latest := sendRequestGood(t, "getBlockByNumber", "latest", false)
+	// Every other node refuses pending.
 	pending := sendRequestGood(t, "getBlockByNumber", "pending", false)
-	require.Nil(t, pending["error"])
-	require.Equal(t, latest["result"], pending["result"])
+	errObj, ok := pending["error"].(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, float64(-32000), errObj["code"])
+	require.Equal(t, "pending served by sequencer", errObj["message"])
+	require.NotContains(t, pending, "result")
 }
 
 func TestPendingBlockNumberStaysCommitted(t *testing.T) {
