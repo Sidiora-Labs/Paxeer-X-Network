@@ -148,7 +148,7 @@ writes = [
 created = {"nats-2": ("perps-data-nats", 1, "/healthz", 1), "nats-3": ("perps-data-nats", 1, "/healthz", 1),
            "indexer": ("perps-data-indexer", 2, "/healthz/live", 1), "gateway": ("perps-gateway", 3, "/healthz/ready", 2),
            "explorer": ("perps-explorer", 4, "/healthz/ready", 1), "portal": ("perps-portal", 5, "/healthz/ready", 1),
-           "web": ("perps-web", 6, "/", 1)}
+           "web": ("perps-web", 6, "/api/build-id", 1)}
 for name, (img, n, health, replicas) in created.items():
     sid = f"s-{name}"
     writes += [
