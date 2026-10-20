@@ -29252,7 +29252,7 @@ receipt = "Every receipt uses keys of one set only: version, plan, nodes_checked
 
 [task.8.4.1]
 title = "Set the release identity to v6.12.0 and test it"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["1.0.3", "1.0.5", "8.4.2"]

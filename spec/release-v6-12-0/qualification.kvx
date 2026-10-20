@@ -2420,3 +2420,11 @@ exit = 0
 log = fleet/logs/release-8.4.2-verify-2.log
 observed = All nine cases pass after the version probe moved to a JSON-RPC POST; the price sidecar gained a --version flag that prints its crate version rather than the release tag.
 assumption = The sidecar version string is acceptable as the crate version; the release build script itself was unchanged.
+
+[finding.8.4.1-verified]
+revision = 9fb61fa7f6893bf7ab31fa42543dc426a314600c
+command = bash tools/release/tests/identity.test.sh
+exit = 0
+log = fleet/logs/release-8.4.1-verify-1.log
+observed = All four identity checks pass first time; the version file already named v6.12.0 and only the test's messages and the scratch-repository tag check were aligned to the acceptance text.
+assumption = The release identity is complete.

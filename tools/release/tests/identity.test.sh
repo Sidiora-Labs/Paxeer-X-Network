@@ -16,25 +16,27 @@ newer_than_latest_tag() {
     latest_version=${latest#paxeer-network/}
     greatest=$(printf '%s\n%s\n' "$latest_version" "$version" | sort -V | tail -n 1)
     if [[ "$greatest" != "$version" || "$latest_version" == "$version" ]]; then
+      echo "Paxeer version $version must be newer than $latest_version" >&2
       return 1
     fi
   fi
+  echo "Paxeer release identity is paxeer-network/$version (upgrade $(jq -er '.upgrade' "$version_file"))"
 }
 
 version_and_upgrade_are_v6120() {
   local version upgrade
   version=$(jq -er '.version' "$version_file") || return 1
   upgrade=$(jq -er '.upgrade' "$version_file") || return 1
-  [ "$version" = "$want" ] || { echo "version is $version, want $want" >&2; return 1; }
-  [ "$upgrade" = "$want" ] || { echo "upgrade is $upgrade, want $want" >&2; return 1; }
-  [ "$(jq -er 'keys | join(",")' "$version_file")" = "upgrade,version" ] || { echo "version.json carries keys beyond version and upgrade" >&2; return 1; }
+  [ "$version" = "$want" ] || { echo "$version_file: version is $version, want $want" >&2; return 1; }
+  [ "$upgrade" = "$want" ] || { echo "$version_file: upgrade is $upgrade, want $want" >&2; return 1; }
+  [ "$(jq -er 'keys | join(",")' "$version_file")" = "upgrade,version" ] || { echo "$version_file carries keys beyond version and upgrade" >&2; return 1; }
 }
 
 upgrade_name_is_declared() {
   local upgrade decl
   upgrade=$(jq -er '.upgrade' "$version_file") || return 1
   decl="V6120Upgrade = \"$upgrade\""
-  grep -rqF -- "$decl" "$root/node" "$root/modules" || { echo "no declaration $decl under node/ or modules/" >&2; return 1; }
+  grep -rqF -- "$decl" "$root/node" "$root/modules" || { echo "Upgrade name $upgrade is not declared as V6120Upgrade under node/ or modules/" >&2; return 1; }
   grep -qF -- "const $decl" "$root/node/upgrades_v6120.go" || { echo "node/upgrades_v6120.go lacks const $decl" >&2; return 1; }
 }
 
@@ -49,7 +51,8 @@ version_is_newer_than_latest_tag() {
   [ "$(git -C "$repo" tag --list 'paxeer-network/v*' --sort=-v:refname | head -n 1)" = paxeer-network/v6.10.0 ] ||
     { echo "latest tag is not paxeer-network/v6.10.0" >&2; return 1; }
   newer_than_latest_tag "$repo" "$version" || { echo "$version is not newer than paxeer-network/v6.10.0" >&2; return 1; }
-  if newer_than_latest_tag "$repo" v6.10.0; then echo "the latest version itself was accepted" >&2; return 1; fi
+  if newer_than_latest_tag "$repo" v6.10.0 2>"$work/same.err"; then echo "the latest version itself was accepted" >&2; return 1; fi
+  grep -qxF "Paxeer version v6.10.0 must be newer than v6.10.0" "$work/same.err" || { echo "the refusal of v6.10.0 did not name both versions" >&2; return 1; }
   if newer_than_latest_tag "$repo" v6.9.0; then echo "v6.9.0 was accepted after v6.10.0" >&2; return 1; fi
   if [[ v6.12 =~ $semver_re ]]; then echo "v6.12 matched the semantic version pattern" >&2; return 1; fi
   newer_than_latest_tag "$root" "$version" || { echo "$version is not newer than the latest tag of the repository" >&2; return 1; }
@@ -60,6 +63,10 @@ tag_is_free_and_derived() {
   version=$(jq -er '.version' "$version_file") || return 1
   tag="paxeer-network/$version"
   [ "$tag" = "paxeer-network/$want" ] || { echo "tag is $tag, want paxeer-network/$want" >&2; return 1; }
+  git init -q "$work/free"
+  git -C "$work/free" -c user.name=release-check -c user.email=release-check@invalid commit -q --allow-empty -m base
+  git -C "$work/free" tag paxeer-network/v6.10.0
+  if git -C "$work/free" rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then echo "scratch clone reports $tag present" >&2; return 1; fi
   if git -C "$root" rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then echo "release tag $tag already exists" >&2; return 1; fi
   grep -qF -- '--print-tag' "$root/tools/release/build-paxd.sh" ||
     { echo "build-paxd.sh has no --print-tag, and without it the script runs a full release build" >&2; return 1; }
