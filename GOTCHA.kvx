@@ -8550,3 +8550,13 @@ detail = "Only a JSON-RPC POST of abci_info returns .result.response.version; pr
 area = "tooling/worktrees"
 summary = "worktree guard refuses compound gate commands"
 detail = "bash <script> combined with redirects, && chains, time or an absolute path from outside the worktree is refused; run gates as a plain single command from inside the worktree or through a scratch script."
+
+[gotcha.1796]
+area = "tooling/scratchpad"
+summary = "shared scratchpad scripts collide between lanes"
+detail = "The scratchpad is shared across concurrent lanes, so a gate script with a generic name is overwritten by another lane and runs the wrong worktree; give gate scripts a task-unique directory and name."
+
+[gotcha.1797]
+area = "node/sequencer"
+summary = "receipt tests hard-code the pre-move agent wire crate path"
+detail = "The sequencer receipt tests read ../../agent/crates/layerx-wire/src/receipt.rs, which moved to services/agent, so the four receipt tests fail on a missing file."

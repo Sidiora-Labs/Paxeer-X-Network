@@ -1608,7 +1608,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.3.99]
 title = "Domain completion: run the node and shim package test set once on the wired tree"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 3
 requires = ["1.0.1", "1.0.2", "1.3.100", "1.0.6", "5.3.3"]

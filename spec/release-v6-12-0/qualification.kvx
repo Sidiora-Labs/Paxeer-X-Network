@@ -2436,3 +2436,11 @@ exit = 0
 log = fleet/logs/release-8.4.4-verify-1.log
 observed = All seven workflow checks pass with no file change; both release workflows already install the pinned Rust and C toolchains, check the V6120Upgrade declaration and name the release Paxeer X Network.
 assumption = The workflows are complete; nothing was committed because nothing changed.
+
+[finding.1.3.99-domain-set]
+revision = c9bb60e88
+command = make test-paxd-domain
+exit = 2
+log = fleet/logs/release-1.3.99-verify-1.log
+observed = The lxphost step passes and 13 of 20 Go packages pass; node, node/sequencer, modules/layerxcustody, its client/cli, modules/evm/keeper, rpc and rpc/tests fail on launchpad transfer reverts, a stale agent wire path, an already-completed upgrade name, usage text after refusals, early precompile activation and several RPC value and nil-map assertions.
+assumption = The target is complete and each failing package is fixed in its own follow-up before this gate is rerun.
