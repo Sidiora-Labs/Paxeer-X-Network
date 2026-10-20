@@ -765,3 +765,41 @@ fn clean_restart_does_not_duplicate_last_candle() {
         .collect();
     assert_eq!(stamps, vec![1_000_000_000, 2_000_000_000]);
 }
+
+#[test]
+fn snapshot_recovery_keeps_event_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_config(dir.path());
+
+    {
+        let db = PerfDb::open(config.clone()).unwrap();
+        db.process_event(&make_event(
+            1,
+            Event::PositionOpened {
+                position_id: pid(1),
+                user: addr(1),
+                market_id: 0,
+                is_long: true,
+                size_usd: 1_000_000,
+                leverage: 10,
+                entry_price: 67_000,
+                collateral_token: token(1),
+                collateral_amount: 100_000,
+            },
+        ))
+        .unwrap();
+        assert_eq!(db.events.by_market(0, None, None).len(), 1);
+        assert_eq!(db.events.by_trader(&addr(1), None, None).len(), 1);
+        db.shutdown().unwrap();
+    }
+
+    let db = PerfDb::open(config).unwrap();
+    assert!(db.positions.get(&pid(1)).is_some());
+    assert_eq!(db.trader_stats.get(&addr(1)).unwrap().open_positions, 1);
+    assert_eq!(db.market_state.open_interest(0), (1_000_000, 0));
+    let by_market = db.events.by_market(0, None, None);
+    assert_eq!(by_market.len(), 1);
+    assert_eq!(by_market[0].block_number, 1);
+    assert_eq!(db.events.by_trader(&addr(1), None, None).len(), 1);
+    assert_eq!(db.events.total_count(), 1);
+}

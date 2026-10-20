@@ -597,7 +597,8 @@ impl PerfDb {
     }
 
     /// Replay a single WAL entry into state (used during recovery).
-    /// Indexed events with block_number <= snap_block are skipped (already in snapshot).
+    /// Indexed events with block_number <= snap_block only rebuild the event
+    /// history, which the snapshot does not hold; their state is in the snapshot.
     fn replay_wal_entry(&self, entry: &WalEntry, snap_block: u64) {
         match entry {
             WalEntry::PriceTick {
@@ -627,6 +628,9 @@ impl PerfDb {
             WalEntry::IndexedEvent(indexed) => {
                 if indexed.block_number > snap_block {
                     self.apply_event(indexed);
+                } else {
+                    let (market_id, trader) = extract_event_keys(&indexed.event);
+                    self.events.append(indexed.clone(), market_id, trader);
                 }
             }
 
