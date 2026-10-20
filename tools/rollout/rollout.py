@@ -25,8 +25,9 @@ STRING = r'"((?:[^"\\]|\\.)*)"'
 LINE = re.compile(r"^([a-z_][a-z0-9_]*)\s*=\s*(" + STRING + r"|-?\d+)\s*(?:#.*)?$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 HEALTH = re.compile(r"^(/[A-Za-z0-9._/-]*|tcp:\d{1,5})$")
-TERMINAL = {"SUCCESS": "pass", "FAILED": "fail", "CRASHED": "fail", "REMOVED": "fail",
-            "SKIPPED": "fail", "NEEDS_APPROVAL": "blocked"}
+IN_PROGRESS = {"BUILDING", "DEPLOYING", "INITIALIZING", "QUEUED", "WAITING"}
+TERMINAL = {"SUCCESS": "pass", "SLEEPING": "pass", "FAILED": "fail", "CRASHED": "fail",
+            "REMOVED": "fail", "REMOVING": "fail", "SKIPPED": "fail", "NEEDS_APPROVAL": "blocked"}
 RAILWAY = ("railway", "railway-image")
 
 
@@ -201,7 +202,9 @@ def apply_railway(svc, sha, names, env_id, log):
 def runs(deployment, ref, health):
     meta = deployment.get("meta") or {}
     deploy = (meta.get("serviceManifest") or {}).get("deploy") or {}
-    return (bool(deployment.get("id")) and TERMINAL.get(deployment.get("status")) != "fail"
+    status = deployment.get("status")
+    return (bool(deployment.get("id")) and (status in IN_PROGRESS or status in TERMINAL)
+            and TERMINAL.get(status) != "fail"
             and meta.get("image") == ref and deploy.get("healthcheckPath") == health)
 
 
@@ -243,8 +246,11 @@ def wait_deployment(deployment, log):
             log.write(f"{datetime.datetime.now(datetime.UTC):%FT%TZ} {status}\n")
             log.flush()
             last = status
-        if status in TERMINAL:
-            return TERMINAL[status]
+        if status not in IN_PROGRESS:
+            if status in TERMINAL:
+                return TERMINAL[status]
+            log.write(f"deployment {deployment} has unknown status {status!r}\n")
+            return "fail"
         time.sleep(int(os.environ.get("ROLLOUT_POLL", "10")))
     log.write(f"timeout waiting for deployment {deployment}, last status {last}\n")
     return "fail"

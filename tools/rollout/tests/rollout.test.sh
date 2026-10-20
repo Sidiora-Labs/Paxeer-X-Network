@@ -223,12 +223,11 @@ if "$ledger" "$sha" router box 2026-10-07T10:00:00Z pass 10.1.2.3:/var/log/x >/d
 	fail "ledger accepted evidence outside /root/lx-ops"
 fi
 
-mkdir -p /root/lx-ops/rollout
-replay_logs="$(mktemp -d /root/lx-ops/rollout/replay-test.XXXXXX)"
+replay_logs="$(mktemp -d)"
 trap 'rm -rf "$tmp" "$replay_logs"' EXIT
 (
 	unset ROLLOUT_DRY_RUN
-	export ROLLOUT_LOG_DIR="$replay_logs" ROLLOUT_LEDGER_DIR="$tmp/replay-ledger" ROLLOUT_POLL=0
+	export ROLLOUT_LOG_DIR="$replay_logs" ROLLOUT_EVIDENCE_ROOT="$replay_logs" ROLLOUT_LEDGER_DIR="$tmp/replay-ledger" ROLLOUT_POLL=0
 	export RAILWAY_API_TOKEN=sentinel-railway-token RAILWAY_PROJECT_ID=p1
 	python3 - "$root" "$here/replay.json" "$tmp" <<'PY'
 import contextlib

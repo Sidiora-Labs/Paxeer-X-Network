@@ -14,7 +14,9 @@ sha="$1" svc="$2" target="$3" started="$4" outcome="$5" evidence="$6"
 [[ "$target" =~ ^(railway|box)$ ]] || { echo "bad target $target" >&2; exit 2; }
 [[ "$started" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || { echo "bad started_at $started" >&2; exit 2; }
 [[ "$outcome" =~ ^(pass|fail|blocked)$ ]] || { echo "bad outcome $outcome" >&2; exit 2; }
-[[ "$evidence" =~ ^/root/lx-ops/[A-Za-z0-9._/-]+$ && "$evidence" != *..* ]] || { echo "evidence must be a log path under /root/lx-ops" >&2; exit 2; }
+evidence_root="${ROLLOUT_EVIDENCE_ROOT:-/root/lx-ops}"
+[[ "$evidence_root" =~ ^/[A-Za-z0-9._/-]*[A-Za-z0-9._-]$ && "$evidence_root" != *..* ]] || { echo "bad evidence root $evidence_root" >&2; exit 2; }
+[[ "$evidence" == "$evidence_root"/* && "${evidence#"$evidence_root"/}" =~ ^[A-Za-z0-9._/-]+$ && "$evidence" != *..* ]] || { echo "evidence must be a log path under $evidence_root" >&2; exit 2; }
 
 dir="${ROLLOUT_LEDGER_DIR:-$root/deploy/ledger}"
 file="$dir/${started%%T*}.kvx"
