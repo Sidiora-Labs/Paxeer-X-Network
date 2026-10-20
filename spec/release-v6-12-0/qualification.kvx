@@ -2132,3 +2132,11 @@ exit = 0
 log = fleet/logs/release-7.2.15-verify-1.log
 observed = Resolved on the first run: the nine user routes and the three leaderboards were already on main and registered by the gateway server, and the holdings subtest now also requires exactly one non-zero erc20 entry that is SID; the test account held SID through a usid bank balance seeded in the throwaway chain genesis because the migration converts the legacy SID ERC-20 only for holders in its embedded snapshot.
 assumption = The gate needs PERPS_DATA_TEST_DATABASE_URL and PERPS_DATA_TEST_RPC against a loopback v6.12.0 chain; the genesis helper's empty signing-info list must be filled for the validator or the node panics at the second block.
+
+[finding.7.2.13-verified]
+revision = e6161cff75bb4527b53619f36c290fc8619d0918
+command = go test -count=1 ./services/platform/perps-data/internal/gateway/ -run 'TestGatewayServer'
+exit = 0
+log = fleet/logs/release-7.2.13-verify-1.log
+observed = Resolved on the first run: the gateway process was already wired on main and only the frames-by-family and resyncs metrics were missing, now counted by the hub provider and asserted by the socket paths subtest; a live frame the hub replaces by a fresh snapshot counts as both a frame and a resync.
+assumption = The gate needs PERPS_DATA_TEST_DATABASE_URL on a throwaway cluster and PERPS_DATA_TEST_RPC set to any value, since none of its requests reach the node and the node client connects lazily.

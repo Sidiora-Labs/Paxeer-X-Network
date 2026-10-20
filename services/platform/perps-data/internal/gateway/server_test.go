@@ -484,6 +484,15 @@ func TestGatewayServer(t *testing.T) {
 			conn, _ := dial(t, ts, path)
 			snapshots(t, conn, welcome(t, conn), topics...)
 		}
+		m := metricsText(t, ts)
+		for _, family := range []string{"book", "trade", "stats", "market", "totals", "chain"} {
+			if !strings.Contains(m, `perps_gateway_frames_total{family="`+family+`"} `) {
+				t.Fatalf("/metrics counts no %s frame", family)
+			}
+		}
+		if !strings.Contains(m, "\nperps_gateway_resyncs_total 0\n") {
+			t.Fatal("/metrics counts a resync where every snapshot was a subscribe snapshot")
+		}
 	})
 
 	t.Run("graphql_ws_mounted", func(t *testing.T) {

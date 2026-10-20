@@ -165,7 +165,9 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 	sockets := prometheus.NewGauge(prometheus.GaugeOpts{Name: "perps_gateway_sockets", Help: "Open sockets."})
 	subscriptions := prometheus.NewGauge(prometheus.GaugeOpts{Name: "perps_gateway_subscriptions", Help: "Topic subscriptions held by open sockets."})
 	gqlTime := prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "perps_gateway_graphql_duration_seconds", Help: "GraphQL request duration, by operation.", Buckets: prometheus.DefBuckets}, []string{"operation"})
-	for _, c := range []prometheus.Collector{sockets, subscriptions, gqlTime} {
+	frames := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "perps_gateway_frames_total", Help: "Data frames built for subscribed topics, by topic family."}, []string{"family"})
+	resyncs := prometheus.NewCounter(prometheus.CounterOpts{Name: "perps_gateway_resyncs_total", Help: "Fresh snapshots of subscribed topics outside a subscribe."})
+	for _, c := range []prometheus.Collector{sockets, subscriptions, gqlTime, frames, resyncs} {
 		if err := opts.Metrics.Register(c); err != nil {
 			return nil, fmt.Errorf("gateway metrics: %w", err)
 		}
@@ -179,7 +181,8 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gateway: jetstream: %w", err)
 	}
-	hub, err := ws.NewHub(hubProvider{providers}, opts.Chain, snapshotID, logger)
+	provider := &hubProvider{Providers: providers, frames: frames, resyncs: resyncs, watched: map[string]int{}, expected: map[string]int{}}
+	hub, err := ws.NewHub(provider, opts.Chain, snapshotID, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -245,6 +248,7 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 		return topics
 	}
 	data.OnSubscribe = func(sock *ws.Socket, f ws.ClientFrame) {
+		provider.expect(f.Topic)
 		hub.Subscribe(sock, f)
 		s.hold(sock, sock.Subscriptions())
 	}
@@ -492,20 +496,115 @@ func (s *Server) dataSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 // hubProvider serves the hub from the topic providers, whose frames have the
-// fields of ws.Frame.
-type hubProvider struct{ *feeds.Providers }
+// fields of ws.Frame, and counts the frames of subscribed topics by family
+// and the snapshots the hub rebuilds outside a subscribe.
+// A live frame the hub replaces by a fresh snapshot because its
+// data is stale counts both as a frame and, with that snapshot, as a resync.
+type hubProvider struct {
+	*feeds.Providers
+	frames  *prometheus.CounterVec
+	resyncs prometheus.Counter
 
-func (p hubProvider) Message(ctx context.Context, subject string, env delivery.Envelope) ([]ws.Frame, []string, error) {
+	mu sync.Mutex
+	// watched is the subscriber count of every subscribed topic as the hub
+	// reports it.
+	watched map[string]int
+	// expected counts the subscribe snapshots OnSubscribe announced that are
+	// not built yet; every other snapshot is a resync.
+	expected map[string]int
+}
+
+// expect announces the subscribe snapshot of topic the hub builds next.
+func (p *hubProvider) expect(topic string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.expected[topic]++
+}
+
+func (p *hubProvider) Subscribed(topic string) {
+	p.Providers.Subscribed(topic)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.watched[topic]++
+}
+
+func (p *hubProvider) Unsubscribed(topic string) {
+	p.Providers.Unsubscribed(topic)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.watched[topic] <= 1 {
+		delete(p.watched, topic)
+		return
+	}
+	p.watched[topic]--
+}
+
+func (p *hubProvider) Snapshot(ctx context.Context, topic string) (json.RawMessage, error) {
+	data, err := p.Providers.Snapshot(ctx, topic)
+	p.mu.Lock()
+	if n := p.expected[topic]; n > 1 {
+		p.expected[topic] = n - 1
+	} else if n == 1 {
+		delete(p.expected, topic)
+	} else {
+		p.resyncs.Inc()
+	}
+	p.mu.Unlock()
+	if err == nil {
+		p.frames.WithLabelValues(topicFamily(topic)).Inc()
+	}
+	return data, err
+}
+
+func (p *hubProvider) Message(ctx context.Context, subject string, env delivery.Envelope) ([]ws.Frame, []string, error) {
 	frames, resnap, err := p.Providers.Message(ctx, subject, env)
 	out := make([]ws.Frame, len(frames))
 	for i, f := range frames {
 		out[i] = ws.Frame(f)
+		p.count(f.Topic)
 	}
 	return out, resnap, err
 }
 
-func (p hubProvider) Run(ctx context.Context, emit func(ws.Frame)) error {
-	return p.Providers.Run(ctx, func(f feeds.Frame) { emit(ws.Frame(f)) })
+func (p *hubProvider) Run(ctx context.Context, emit func(ws.Frame)) error {
+	return p.Providers.Run(ctx, func(f feeds.Frame) {
+		p.count(f.Topic)
+		emit(ws.Frame(f))
+	})
+}
+
+// count counts one live frame of topic when the topic has a subscriber; the
+// hub drops the frames of other topics.
+func (p *hubProvider) count(topic string) {
+	p.mu.Lock()
+	watched := p.watched[topic] > 0
+	p.mu.Unlock()
+	if watched {
+		p.frames.WithLabelValues(topicFamily(topic)).Inc()
+	}
+}
+
+// topicFamily is the family of a served topic: book, trade, stats, market,
+// totals or chain.
+func topicFamily(topic string) string {
+	switch topic {
+	case feeds.TopicMarketsAll:
+		return "market"
+	case feeds.TopicMarketsTotals:
+		return "totals"
+	case feeds.TopicChainBlocks, feeds.TopicChainTxs:
+		return "chain"
+	}
+	_, kind, _ := strings.Cut(topic, "@")
+	switch strings.TrimPrefix(kind, "perp_") {
+	case "orderbook":
+		return "book"
+	case "trade":
+		return "trade"
+	case "stats":
+		return "stats"
+	}
+	return "market"
 }
 
 // gated closes new sockets of next with 1013 while the gateway is not ready.
