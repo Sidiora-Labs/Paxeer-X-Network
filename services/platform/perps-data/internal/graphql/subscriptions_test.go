@@ -117,12 +117,15 @@ type subPublisher struct {
 	js      jetstream.JetStream
 	seq     int64
 	applied chan string
+	// epoch keeps the event ids of a Perps-Seq numbering restarted after a
+	// simulated outbox restore apart from the ids before it.
+	epoch int64
 }
 
 func (p *subPublisher) send(t *testing.T, subject string) string {
 	t.Helper()
 	p.seq++
-	id, err := natsdriver.MsgID(fmt.Sprintf("%d:%d:0x%064x:0:%d:0", subChain, p.seq, p.seq, p.seq))
+	id, err := natsdriver.MsgID(fmt.Sprintf("%d:%d:0x%064x:0:%d:0", subChain, p.seq, p.epoch<<32|p.seq, p.seq))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,6 +233,7 @@ func TestSubscriptions(t *testing.T) {
 		pub.applied <- env.EventID
 	})
 	t.Cleanup(stopFeed)
+	t.Cleanup(hub.ListenLoss(feed.Lose))
 	hubDone := make(chan error, 1)
 	go func() { hubDone <- hub.Run(ctx, nc) }()
 	t.Cleanup(func() {
@@ -652,6 +656,31 @@ func TestSubscriptions(t *testing.T) {
 		if resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("plain GET /graphql status %d, want %d", resp.StatusCode, http.StatusNotFound)
 		}
+	})
+
+	t.Run("loss_ends_subscription", func(t *testing.T) {
+		reset(t)
+		c := open(t, "/graphql-ws")
+		query := `subscription { indexerStatusUpdated { lastIndexedBlock } }`
+		c.subscribe(t, "s", query, nil)
+		listeners(t, 1)
+		head(t, 90)
+		publish(t, "chain.block")
+		c.wantNext(t, "s", `{"indexerStatusUpdated":{"lastIndexedBlock":90}}`)
+		// The outbox was restored, so its Perps-Seq starts again below the one
+		// applied last: the hub loses the messages in between and the
+		// subscription ends with an error instead of reading deltas across them.
+		pub.seq, pub.epoch = 0, pub.epoch+1
+		head(t, 91)
+		publish(t, "chain.block")
+		c.wantError(t, "s", errLost.Error())
+		c.quiet(t)
+		listeners(t, 0)
+		c.subscribe(t, "r", query, nil)
+		listeners(t, 1)
+		head(t, 92)
+		publish(t, "chain.block")
+		c.wantNext(t, "r", `{"indexerStatusUpdated":{"lastIndexedBlock":92}}`)
 	})
 }
 

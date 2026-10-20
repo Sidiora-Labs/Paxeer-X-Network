@@ -50,6 +50,16 @@ const (
 	resnapshotWorkers = 8
 )
 
+// The relay publishes a control message on perps.<chain>.control, with
+// headerControl controlSkipped and the Perps-Seq of the outbox row, whenever
+// it quarantines a row for good: the row never reaches the stream, so the
+// hub treats the control message as loss.
+const (
+	controlSubject = "control"
+	headerControl  = "Perps-Control"
+	controlSkipped = "skipped"
+)
+
 // Frame is one live frame of a topic as a Provider produces it.
 type Frame struct {
 	Topic string
@@ -101,10 +111,12 @@ type Hub struct {
 	mu      sync.Mutex
 	topics  map[string]*topicState
 	applied uint64
-	// perpsSeq is the highest Perps-Seq applied, zero until the first
-	// message after an attach of a new stream. It orders and deduplicates
-	// messages only: Perps-Seq is an identity column, so a hole in it is a
-	// rolled back or quarantined outbox row, never a lost message.
+	// perpsSeq is the Perps-Seq of the last applied message, zero until the
+	// first message after an attach of a new stream. Duplicates are the
+	// stream sequence's to show; Perps-Seq is an identity column, so a hole
+	// in it is a rolled back or re-enqueued outbox row, and a Perps-Seq at or
+	// below it on a new stream sequence is an outbox restored or reindexed
+	// onto the existing stream.
 	perpsSeq int64
 	// created is the creation time of the stream the hub resumes on; a
 	// stream created anew is a history the hub cannot resume.
@@ -160,8 +172,10 @@ func (h *Hub) Listen(fn func(subject string, env delivery.Envelope)) (stop func(
 
 // ListenLoss calls lost, outside the hub lock, whenever the hub loses
 // messages a Listen callback may have needed: a stream sequence gap, a
-// stream created anew or gone back, a stream unanswered for OutageAfter and
-// a message the hub cannot decode. The hub closes its own topic sockets
+// stream created anew or gone back, a stream unanswered for OutageAfter, a
+// message the hub cannot decode, an outbox row the relay skipped and a
+// Perps-Seq that went back. A Listen callback sees no message after a loss
+// before its lost has run. The hub closes its own topic sockets
 // then; lost closes the sockets fed through Listen. It holds until stop is
 // called.
 func (h *Hub) ListenLoss(lost func()) (stop func()) {
@@ -445,6 +459,7 @@ type prepared struct {
 	m        *natsdriver.Message
 	env      delivery.Envelope
 	perpsSeq int64
+	control  bool
 	err      error
 	ready    chan struct{}
 }
@@ -456,12 +471,12 @@ type prepared struct {
 // prepare side by side, so a message waits for the reads of its own family
 // only.
 func (h *Hub) prepare(ctx context.Context, m *natsdriver.Message, families map[string]chan struct{}, preparing *sync.WaitGroup) *prepared {
-	env, perpsSeq, err := h.decode(m.Subject, m)
-	p := &prepared{m: m, env: env, perpsSeq: perpsSeq, err: err, ready: make(chan struct{})}
+	env, perpsSeq, control, err := h.decode(m.Subject, m)
+	p := &prepared{m: m, env: env, perpsSeq: perpsSeq, control: control, err: err, ready: make(chan struct{})}
 	h.mu.Lock()
 	applied := h.applied
 	h.mu.Unlock()
-	if err != nil || m.Sequence <= applied {
+	if err != nil || control || m.Sequence <= applied {
 		close(p.ready)
 		return p
 	}
@@ -516,16 +531,21 @@ func (h *Hub) resumeFrom(ctx context.Context, js jetstream.JetStream) (uint64, e
 	return start, nil
 }
 
-// apply applies one message once. The publisher persists the outbox rows
-// one after another in Perps-Seq order onto a stream whose subjects are
-// exactly the filter of the hub, so the stream sequence of the hub is dense:
-// a stream sequence beyond the one after the last applied message is a range
-// the hub cannot fill, every subscribed socket closes with 1013, the loss
-// listeners are signalled and the client resyncs through REST. A message
-// that cannot be decoded is lost to the listeners as well: the subscribed
-// topics resync and the loss listeners are signalled. The topics the
-// message leaves out of date are resynced outside the hub lock before the
-// next message is applied.
+// apply applies one message once. A redelivery carries the stream sequence
+// it was stored at, so a stream sequence at or below the last applied one is
+// a duplicate and is dropped; no other message is. The publisher persists
+// the outbox rows one after another in Perps-Seq order onto a stream whose
+// subjects are exactly the filter of the hub, so the stream sequence of the
+// hub is dense: a stream sequence beyond the one after the last applied
+// message is a range the hub cannot fill. That gap, a control message for an
+// outbox row the relay skipped and a Perps-Seq at or below the one applied
+// last (an outbox restored or reindexed onto the existing stream) are loss:
+// every subscribed socket closes with 1013, the loss listeners are
+// signalled, the client resyncs through REST, and only then does a message
+// with data apply, from its Perps-Seq on. A message that cannot be decoded
+// resyncs the subscribed topics and signals the loss listeners. The topics
+// the message leaves out of date are resynced outside the hub lock before
+// the next message is applied.
 func (h *Hub) apply(ctx context.Context, p *prepared) {
 	seq := p.m.Sequence
 	h.mu.Lock()
@@ -533,44 +553,51 @@ func (h *Hub) apply(ctx context.Context, p *prepared) {
 		h.mu.Unlock()
 		return
 	}
-	var (
-		closing []*Socket
-		losses  []func()
-	)
-	if seq > h.applied+1 {
+	lost := seq > h.applied+1
+	if lost {
 		h.logger.Error("ws: hub stream gap", slog.Uint64("applied", h.applied), slog.Uint64("next", seq))
-		closing, losses = h.dropAllLocked(), h.lossesLocked()
 	}
 	h.applied = seq
-	var resnap []string
-	if p.err != nil {
+	switch {
+	case p.err != nil:
 		h.logger.Error("ws: hub message", slog.Uint64("stream_seq", seq), slog.Any("err", p.err))
-		resnap = h.watchedLocked()
-		if losses == nil {
-			losses = h.lossesLocked()
+		var closing []*Socket
+		if lost {
+			closing = h.dropAllLocked()
 		}
-	} else {
-		resnap = h.messageLocked(ctx, p.m.Subject, p.env, p.perpsSeq)
+		resnap, losses := h.watchedLocked(), h.lossesLocked()
+		h.mu.Unlock()
+		closeLater(closing)
+		signal(losses)
+		h.resnapshot(ctx, resnap)
+		return
+	case p.control:
+		h.logger.Error("ws: hub outbox row skipped", slog.Uint64("stream_seq", seq), slog.Int64("perps_seq", p.perpsSeq))
+		lost = true
+	case h.perpsSeq != 0 && p.perpsSeq <= h.perpsSeq:
+		h.logger.Warn("ws: hub Perps-Seq went back", slog.Int64("applied", h.perpsSeq), slog.Int64("next", p.perpsSeq),
+			slog.Uint64("stream_seq", seq), slog.String("subject", p.m.Subject), slog.String("event", p.env.EventID))
+		lost = true
 	}
+	if lost {
+		closing, losses := h.dropAllLocked(), h.lossesLocked()
+		h.mu.Unlock()
+		closeLater(closing)
+		signal(losses)
+		if p.control {
+			return
+		}
+		h.mu.Lock()
+	}
+	resnap := h.messageLocked(ctx, p.m.Subject, p.env, p.perpsSeq)
 	h.mu.Unlock()
-	closeLater(closing)
-	signal(losses)
 	h.resnapshot(ctx, resnap)
 }
 
 // messageLocked applies one decoded message: it calls the listeners, sends
 // the live frames of the provider and returns the subscribed topics that
-// must resync instead. Loss is the stream sequence's to show; Perps-Seq
-// only orders and deduplicates. A hole in it is an outbox row that was
-// rolled back, re-enqueued onto its existing row or quarantined, so a
-// higher Perps-Seq applies as usual, and a Perps-Seq at or below the highest
-// applied is a message the hub already applied, republished after the
-// broker's duplicate window, and is dropped.
+// must resync instead.
 func (h *Hub) messageLocked(ctx context.Context, subject string, env delivery.Envelope, perpsSeq int64) []string {
-	if perpsSeq <= h.perpsSeq {
-		h.logger.Warn("ws: hub Perps-Seq already applied", slog.Int64("applied", h.perpsSeq), slog.Int64("next", perpsSeq), slog.String("subject", subject), slog.String("event", env.EventID))
-		return nil
-	}
 	h.perpsSeq = perpsSeq
 	for l := range h.listeners {
 		if l.fn != nil {
@@ -609,25 +636,32 @@ func (h *Hub) messageLocked(ctx context.Context, subject string, env delivery.En
 	return slices.Compact(resnap)
 }
 
-// decode reads the delivery envelope of m, checked against its headers.
-func (h *Hub) decode(subject string, m *natsdriver.Message) (delivery.Envelope, int64, error) {
+// decode reads the delivery envelope of m, checked against its headers, or
+// the Perps-Seq of a control message; control reports the latter.
+func (h *Hub) decode(subject string, m *natsdriver.Message) (env delivery.Envelope, perpsSeq int64, control bool, err error) {
 	if !strings.HasPrefix(subject, h.prefix) {
-		return delivery.Envelope{}, 0, fmt.Errorf("ws: subject %q outside %s>", subject, h.prefix)
+		return delivery.Envelope{}, 0, false, fmt.Errorf("ws: subject %q outside %s>", subject, h.prefix)
 	}
 	headers := m.Header
-	perpsSeq, err := strconv.ParseInt(headers.Get(publish.HeaderSeq), 10, 64)
+	perpsSeq, err = strconv.ParseInt(headers.Get(publish.HeaderSeq), 10, 64)
 	if err != nil || perpsSeq <= 0 {
-		return delivery.Envelope{}, 0, fmt.Errorf("ws: invalid %s header %q", publish.HeaderSeq, headers.Get(publish.HeaderSeq))
+		return delivery.Envelope{}, 0, false, fmt.Errorf("ws: invalid %s header %q", publish.HeaderSeq, headers.Get(publish.HeaderSeq))
+	}
+	if subject == h.prefix+controlSubject {
+		if kind := headers.Get(headerControl); kind != controlSkipped {
+			return delivery.Envelope{}, 0, false, fmt.Errorf("ws: invalid %s header %q", headerControl, kind)
+		}
+		return delivery.Envelope{}, perpsSeq, true, nil
 	}
 	policy := delivery.Policy{Subjects: map[string]bool{subject: true}, EventTypes: map[string]bool{headers.Get(publish.HeaderKind): true}}
-	env, err := delivery.Decode(m.Wire, policy, subject)
+	env, err = delivery.Decode(m.Wire, policy, subject)
 	if err != nil {
-		return delivery.Envelope{}, 0, err
+		return delivery.Envelope{}, 0, false, err
 	}
 	if env.EventID != headers.Get(jetstream.MsgIDHeader) || env.SourceOrder.Height != headers.Get(publish.HeaderBlock) {
-		return delivery.Envelope{}, 0, fmt.Errorf("ws: headers of %s differ from its envelope", env.EventID)
+		return delivery.Envelope{}, 0, false, fmt.Errorf("ws: headers of %s differ from its envelope", env.EventID)
 	}
-	return env, perpsSeq, nil
+	return env, perpsSeq, false, nil
 }
 
 // dataTime is the time of the data of env: the block_time of a fact row, the

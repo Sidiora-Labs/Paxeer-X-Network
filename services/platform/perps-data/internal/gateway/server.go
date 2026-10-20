@@ -309,6 +309,8 @@ func (s *Server) Run(ctx context.Context) error {
 	defer s.ready.Store(false)
 	stopFeed := s.hub.Listen(s.feed.Deliver)
 	defer stopFeed()
+	stopFeedLoss := s.hub.ListenLoss(s.feed.Lose)
+	defer stopFeedLoss()
 	stopApplied := s.hub.Listen(func(string, delivery.Envelope) { s.applied.Store(time.Now().UnixNano()) })
 	defer stopApplied()
 	defer s.feedSpotUser(ctx)()

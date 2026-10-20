@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -95,6 +96,8 @@ type wsError struct {
 // so a later subscription reusing the id is never mistaken for it.
 type wsSub struct {
 	stop context.CancelFunc
+	// lost is set when a Feed loss ended the subscription.
+	lost atomic.Bool
 }
 
 type wsSession struct {
@@ -219,6 +222,7 @@ func (s *wsSession) subscribe(ctx context.Context, m wsMessage) bool {
 	}
 	subCtx, stop := context.WithCancel(ctx)
 	sub := &wsSub{stop: stop}
+	subCtx = withLoss(subCtx, &sub.lost)
 	s.subs[m.ID] = sub
 	s.mu.Unlock()
 
@@ -234,7 +238,8 @@ func (s *wsSession) subscribe(ctx context.Context, m wsMessage) bool {
 }
 
 // forward sends the responses of subscription sub under id until it ends; a
-// response without data is the error message ending the subscription.
+// response without data is the error message ending the subscription, and a
+// subscription a Feed loss ended ends with errLost instead of complete.
 func (s *wsSession) forward(ctx context.Context, id string, sub *wsSub, responses <-chan any) {
 	defer s.wg.Done()
 	defer sub.stop()
@@ -248,7 +253,11 @@ func (s *wsSession) forward(ctx context.Context, id string, sub *wsSub, response
 		}
 		if !open {
 			if s.forget(id, sub) {
-				_ = s.write(wsMessage{ID: id, Type: "complete"})
+				if sub.lost.Load() {
+					_ = s.sendErrors(id, []wsError{{Message: errLost.Error()}})
+				} else {
+					_ = s.write(wsMessage{ID: id, Type: "complete"})
+				}
 			}
 			return
 		}

@@ -42,6 +42,7 @@ type listener struct {
 	filters []string
 	wake    chan struct{}
 	rewind  atomic.Bool
+	lost    atomic.Bool
 }
 
 func (l *listener) poke() {
@@ -82,6 +83,29 @@ func (f *Feed) Deliver(subject string, _ delivery.Envelope) {
 			}
 		}
 	}
+}
+
+// Lose ends every subscription with an error, so its client subscribes
+// again from the current state instead of reading deltas across messages
+// the hub lost. It is the (*ws.Hub).ListenLoss callback of the gateway.
+func (f *Feed) Lose() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for l := range f.listeners {
+		l.lost.Store(true)
+		l.poke()
+	}
+}
+
+// errLost is the error a subscription ends with after a Lose.
+var errLost = errors.New("subscription lost stream messages; subscribe again")
+
+type lossKey struct{}
+
+// withLoss returns ctx carrying lost, which run sets when a Lose ends the
+// subscription of ctx.
+func withLoss(ctx context.Context, lost *atomic.Bool) context.Context {
+	return context.WithValue(ctx, lossKey{}, lost)
 }
 
 func (f *Feed) listen(filters []string) (*listener, error) {
@@ -127,14 +151,25 @@ func (r *Resolver) subscriptionFeed(ctx context.Context) (*Feed, *sql.DB, error)
 type step[T any] func(ctx context.Context, rewind bool) (items []T, more bool, err error)
 
 // run registers a listener on filters and sends the items of every wake
-// until ctx ends. A failed wake keeps its cursors and its rewind flag, so the
-// next wake reads the same change again.
+// until ctx ends or a Lose ends the subscription, which it records on the
+// loss flag of ctx. A failed wake keeps its cursors and its rewind flag, so
+// the next wake reads the same change again.
 func run[T any](ctx context.Context, f *Feed, filters []string, next step[T]) (<-chan T, error) {
 	l, err := f.listen(filters)
 	if err != nil {
 		return nil, err
 	}
+	marker, _ := ctx.Value(lossKey{}).(*atomic.Bool)
 	out := make(chan T)
+	lost := func() bool {
+		if !l.lost.Load() {
+			return false
+		}
+		if marker != nil {
+			marker.Store(true)
+		}
+		return true
+	}
 	go func() {
 		defer close(out)
 		defer f.drop(l)
@@ -143,6 +178,9 @@ func run[T any](ctx context.Context, f *Feed, filters []string, next step[T]) (<
 			case <-ctx.Done():
 				return
 			case <-l.wake:
+			}
+			if lost() {
+				return
 			}
 			rewind := l.rewind.Swap(false)
 			items, more, err := next(ctx, rewind)
@@ -157,6 +195,9 @@ func run[T any](ctx context.Context, f *Feed, filters []string, next step[T]) (<
 				continue
 			}
 			for _, item := range items {
+				if lost() {
+					return
+				}
 				select {
 				case out <- item:
 				case <-ctx.Done():

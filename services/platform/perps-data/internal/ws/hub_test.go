@@ -650,23 +650,121 @@ func TestHub(t *testing.T) {
 		if f := c.delta(t, snap.Seq+2); tradeID(t, f) != "3-0" {
 			t.Fatalf("frame after a Perps-Seq hole %+v data %s", f, f.Data)
 		}
-		// A Perps-Seq at or below the highest applied is a message the hub
-		// already applied and is dropped: its fill never reaches the socket.
-		hubFill(t, db, 2)
-		r.pub.seq = 1
-		dup, _ := r.pub.publish(t, "perps.125.0.fill", "fill", 2, blockTime(time.Now()))
-		hubWait(t, "the dropped message", func() bool { return r.applied() == dup })
-		hubFill(t, db, 4)
-		r.pub.seq = 3
-		r.pub.publish(t, "perps.125.0.fill", "fill", 4, blockTime(time.Now()))
-		if f := c.delta(t, snap.Seq+3); tradeID(t, f) != "4-0" {
-			t.Fatalf("frame after a dropped Perps-Seq %+v data %s", f, f.Data)
-		}
 		if n := r.lossCount(); n != 0 {
 			t.Fatalf("a Perps-Seq hole signalled %d losses", n)
 		}
 		spotUserSend(t, spot.conn, "ping", "", "")
 		spotUserExpect(t, spotUserRead(t, spot.conn, 5*time.Second), `{"type":"pong"}`)
+	})
+
+	t.Run("perps_seq_epoch_change_resyncs", func(t *testing.T) {
+		hubReset(t, db)
+		r := newHubRig(t, db, 0)
+		c, snap := r.dial(t, btcTrade)
+		spot := r.spotDial(t)
+		for n := int64(1); n <= 5; n++ {
+			hubFill(t, db, n)
+			r.pub.publish(t, "perps.125.0.fill", "fill", n, blockTime(time.Now()))
+			c.delta(t, snap.Seq+uint64(n))
+		}
+		// The outbox was restored and its identity restarted: Perps-Seq 1 to 3
+		// come again on new stream sequences, carrying new facts. The first is
+		// a loss, never a silent drop, and the ones after it apply.
+		r.pub.seq = 0
+		hubFill(t, db, 6)
+		r.pub.publish(t, "perps.125.0.fill", "fill", 6, blockTime(time.Now()))
+		c.retryAfter(t)
+		spot.retryAfter(t)
+		hubWait(t, "stream sequence 6", func() bool { return r.applied() == 6 })
+		if n := r.lossCount(); n != 1 {
+			t.Fatalf("an epoch change signalled %d losses, want 1", n)
+		}
+		d, snap := r.dial(t, btcTrade)
+		if trades := hubTradesOf(t, snap); len(trades.Trades) != 6 || trades.Trades[0]["id"] != "6-0" {
+			t.Fatalf("snapshot after the epoch change %s", snap.Data)
+		}
+		for n := int64(7); n <= 8; n++ {
+			hubFill(t, db, n)
+			r.pub.publish(t, "perps.125.0.fill", "fill", n, blockTime(time.Now()))
+			if id := tradeID(t, d.delta(t, snap.Seq+uint64(n-6))); id != fmt.Sprintf("%d-0", n) {
+				t.Fatalf("delta %d after the epoch change carried %s", n, id)
+			}
+		}
+		if n := r.lossCount(); n != 1 {
+			t.Fatalf("the new epoch signalled %d losses, want 1", n)
+		}
+	})
+
+	t.Run("redelivery_dropped", func(t *testing.T) {
+		hubReset(t, db)
+		r := newHubRig(t, db, 0)
+		c, snap := r.dial(t, feeds.TopicChainBlocks)
+		spot := r.spotDial(t)
+		hubBlock(t, db, 1)
+		seq, _ := r.pub.publish(t, "perps.125.chain.block", "block", 1, hubBlockRow())
+		c.delta(t, snap.Seq+1)
+		hubWait(t, "stream sequence 1", func() bool { return r.applied() == seq })
+		// The broker delivers the message at the same stream sequence again.
+		ctx := context.Background()
+		consumer, err := natsdriver.NewConsumer(ctx, r.nc, natsdriver.ConsumerConfig{Stream: stream.Name, Subject: "perps.125.>", StartSequence: seq, Batch: 1, FetchWait: time.Second})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer consumer.Close()
+		var again []*natsdriver.Message
+		for len(again) == 0 {
+			if again, err = consumer.Fetch(ctx); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if again[0].Sequence != seq {
+			t.Fatalf("redelivered stream sequence %d, want %d", again[0].Sequence, seq)
+		}
+		var preparing sync.WaitGroup
+		r.hub.apply(ctx, r.hub.prepare(ctx, again[0], map[string]chan struct{}{}, &preparing))
+		preparing.Wait()
+		if got := r.applied(); got != seq {
+			t.Fatalf("applied %d after a redelivery, want %d", got, seq)
+		}
+		hubBlock(t, db, 2)
+		r.pub.publish(t, "perps.125.chain.block", "block", 2, hubBlockRow())
+		c.delta(t, snap.Seq+2)
+		if n := r.lossCount(); n != 0 {
+			t.Fatalf("a redelivery signalled %d losses", n)
+		}
+		spotUserSend(t, spot.conn, "ping", "", "")
+		spotUserExpect(t, spotUserRead(t, spot.conn, 5*time.Second), `{"type":"pong"}`)
+	})
+
+	t.Run("control_skipped_closes_1013", func(t *testing.T) {
+		hubReset(t, db)
+		r := newHubRig(t, db, 0)
+		c, snap := r.dial(t, feeds.TopicChainBlocks)
+		spot := r.spotDial(t)
+		hubBlock(t, db, 1)
+		r.pub.publish(t, "perps.125.chain.block", "block", 1, hubBlockRow())
+		c.delta(t, snap.Seq+1)
+		// The relay quarantined the outbox row of Perps-Seq 2 for good. The
+		// consumer refuses a message without a body, so the control message
+		// carries one; the hub reads its headers only.
+		r.pub.seq++
+		msg := &nats.Msg{Subject: "perps.125.control", Data: []byte(`{}`), Header: nats.Header{}}
+		msg.Header.Set(headerControl, controlSkipped)
+		msg.Header.Set(publish.HeaderSeq, strconv.FormatInt(r.pub.seq, 10))
+		control, err := r.pub.js.PublishMsg(context.Background(), msg, jetstream.WithMsgID("control-"+strconv.FormatInt(r.pub.seq, 10)), jetstream.WithExpectStream(stream.Name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.retryAfter(t)
+		spot.retryAfter(t)
+		hubWait(t, "the control message", func() bool { return r.applied() == control.Sequence })
+		if n := r.lossCount(); n != 1 {
+			t.Fatalf("a skipped row signalled %d losses, want 1", n)
+		}
+		d, snap := r.dial(t, feeds.TopicChainBlocks)
+		hubBlock(t, db, 3)
+		r.pub.publish(t, "perps.125.chain.block", "block", 3, hubBlockRow())
+		d.delta(t, snap.Seq+1)
 	})
 
 	t.Run("undecodable_message_resyncs", func(t *testing.T) {
