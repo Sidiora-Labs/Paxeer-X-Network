@@ -34,7 +34,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/telemetry"
 )
 
-// Admission bounds of one fetch, parity with the origin.
+// Admission bounds of one log and of one Dedup chunk of a fetch.
 const (
 	MaxFieldBytes    = 64 << 10
 	MaxEnvelopeBytes = 1 << 20
@@ -431,39 +431,46 @@ type identity struct {
 	index     uint
 }
 
-// Dedup admits a bounded batch and drops repeated deliveries of one log
-// identity (block hash, tx hash, log index). A repeated identity with other
-// content, a removed log or an invalid identity refuses the batch.
+// Dedup drops repeated deliveries of one log identity (block hash, tx hash,
+// log index). A repeated identity with other content, a removed log or an
+// invalid identity refuses the batch. A block may carry any number of logs:
+// they are admitted in chunks of at most MaxRawBatchLogs logs and
+// MaxRawBatchBytes bytes, and one identity index spans every chunk, so a
+// repeat in a later chunk is still found.
 func Dedup(logs []Log) ([]Log, error) {
-	if len(logs) > MaxRawBatchLogs {
-		return nil, fmt.Errorf("%w: batch exceeds %d logs", ErrInvalidLog, MaxRawBatchLogs)
-	}
-	total := 0
-	for _, l := range logs {
-		if !rawSizeAllowed(l.Log) {
-			return nil, fmt.Errorf("%w: log exceeds envelope limit", ErrInvalidLog)
-		}
-		size := len(l.Data) + 32*len(l.Topics)
-		if size > MaxRawBatchBytes-total {
-			return nil, fmt.Errorf("%w: batch exceeds aggregate byte limit", ErrInvalidLog)
-		}
-		total += size
-		if !validIdentity(l.Log) || l.Removed {
-			return nil, fmt.Errorf("%w: invalid committed log identity", ErrInvalidLog)
-		}
-	}
 	seen := make(map[identity]int, len(logs))
 	out := make([]Log, 0, len(logs))
-	for i, l := range logs {
-		id := identity{l.BlockHash, l.TxHash, l.Index}
-		if prior, ok := seen[id]; ok {
-			if !reflect.DeepEqual(logs[prior], l) {
-				return nil, fmt.Errorf("%w: conflicting log identity %s/%s/%d", ErrInvalidLog, l.BlockHash, l.TxHash, l.Index)
+	for start := 0; start < len(logs); {
+		end, total := start, 0
+		for end < len(logs) && end-start < MaxRawBatchLogs {
+			l := logs[end]
+			if !rawSizeAllowed(l.Log) {
+				return nil, fmt.Errorf("%w: log exceeds envelope limit", ErrInvalidLog)
 			}
-			continue
+			if !validIdentity(l.Log) || l.Removed {
+				return nil, fmt.Errorf("%w: invalid committed log identity", ErrInvalidLog)
+			}
+			// One admitted log is below MaxRawBatchBytes, so a chunk never ends empty.
+			size := len(l.Data) + 32*len(l.Topics)
+			if size > MaxRawBatchBytes-total {
+				break
+			}
+			total += size
+			end++
 		}
-		seen[id] = i
-		out = append(out, l)
+		for i := start; i < end; i++ {
+			l := logs[i]
+			id := identity{l.BlockHash, l.TxHash, l.Index}
+			if prior, ok := seen[id]; ok {
+				if !reflect.DeepEqual(logs[prior], l) {
+					return nil, fmt.Errorf("%w: conflicting log identity %s/%s/%d", ErrInvalidLog, l.BlockHash, l.TxHash, l.Index)
+				}
+				continue
+			}
+			seen[id] = i
+			out = append(out, l)
+		}
+		start = end
 	}
 	return out, nil
 }

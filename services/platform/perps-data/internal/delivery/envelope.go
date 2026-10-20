@@ -92,7 +92,9 @@ func (e Envelope) Validate(p Policy, subject string) error {
 	if e.SchemaVersion != 1 {
 		return ErrSchema
 	}
-	if e.ChainID != 125 {
+	// The chain is the second token of every server-owned subject
+	// (perps.<chain>.…), so the envelope carries the configured chain.
+	if tokens := strings.SplitN(subject, ".", 3); e.ChainID == 0 || len(tokens) < 3 || tokens[1] != strconv.FormatUint(e.ChainID, 10) {
 		return errors.New("delivery: wrong chain")
 	}
 	for _, v := range []string{e.SourceOrder.Height, e.SourceOrder.TransactionIndex, e.SourceOrder.LogIndex} {

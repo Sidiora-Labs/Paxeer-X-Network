@@ -46,9 +46,24 @@ func EnsureStream(ctx context.Context, nc *nats.Conn, chain uint64) error {
 		return err
 	}
 	want := stream.Config(chain)
-	s, err := js.Stream(ctx, want.Name)
-	if errors.Is(err, jetstream.ErrStreamNotFound) {
+	var s jetstream.Stream
+	// A concurrent creator, or a cluster peer whose view lags the stream, makes
+	// CreateStream answer stream name already in use; the live stream is then
+	// read again and held to the same drift check.
+	for range 5 {
+		s, err = js.Stream(ctx, want.Name)
+		if !errors.Is(err, jetstream.ErrStreamNotFound) {
+			break
+		}
 		s, err = js.CreateStream(ctx, want)
+		if !errors.Is(err, jetstream.ErrStreamNameAlreadyInUse) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 	if err != nil {
 		return err
@@ -146,16 +161,16 @@ func New(db *sql.DB, nc *nats.Conn, policy delivery.Policy, cfg Config) (*Publis
 	}, nil
 }
 
-// Run loops delivery.Relay.RunOnce until ctx ends and returns ctx.Err(). A failed
-// pass waits RetryDelay, so a row put back by Retry is available again and is
-// claimed first on the next pass, keeping publication in Perps-Seq order.
+// Run loops delivery.Relay.Pass until ctx ends and returns ctx.Err(). A failed
+// pass waits RetryDelay; a row put back by Retry holds back every later row
+// until it is published, keeping publication in Perps-Seq order.
 func (p *Publisher) Run(ctx context.Context) error {
 	if p == nil || ctx == nil {
 		return errors.New("publish: publisher and context required")
 	}
 	for {
 		wait := p.idle
-		if err := p.relay.RunOnce(ctx); err != nil {
+		if err := p.relay.Pass(ctx); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -172,44 +187,76 @@ func (p *Publisher) Run(ctx context.Context) error {
 	}
 }
 
-// sink is the delivery.BatchPublisher of the Publisher: it pipelines the
-// messages of a batch on one connection, each carrying Nats-Msg-Id, Perps-Seq,
-// Perps-Block and Perps-Kind, and awaits their JetStream persistence
-// acknowledgements. The client never republishes a message on its own, so a
-// failed message is retried by the relay and never lands behind a later one
-// of its batch.
+// sink is the delivery.BatchPublisher of the Publisher: it publishes the
+// first message of a batch and awaits its JetStream persistence
+// acknowledgement, then pipelines the rest on one connection, each carrying
+// Nats-Msg-Id, Perps-Seq, Perps-Block and Perps-Kind. Every pipelined message
+// expects the stream sequence of its predecessor as the last sequence
+// (Nats-Expected-Last-Sequence), so the broker refuses every message behind
+// one that did not persist and none lands out of Perps-Seq order. The first
+// message carries no expectation, so the retry of a message that persisted
+// without its acknowledgement is answered as a duplicate. The client never
+// republishes a message on its own.
 type sink struct {
 	js     jetstream.JetStream
 	policy delivery.Policy
 }
 
+// errPredecessor reports a message held back behind a failed one.
+var errPredecessor = errors.New("publish: earlier message of the batch not persisted")
+
 func (s *sink) PublishBatch(ctx context.Context, leases []delivery.Lease) []delivery.Publication {
 	out := make([]delivery.Publication, len(leases))
+	if len(leases) == 0 {
+		return out
+	}
+	f, err := s.send(leases[0])
+	if err == nil {
+		out[0] = await(ctx, f)
+	} else {
+		out[0].Err = err
+	}
+	if out[0].Err != nil {
+		for i := 1; i < len(out); i++ {
+			out[i].Err = errPredecessor
+		}
+		return out
+	}
 	futures := make([]jetstream.PubAckFuture, len(leases))
-	for i, l := range leases {
-		futures[i], out[i].Err = s.send(l)
+	last := out[0].Ack.Sequence
+	for i := 1; i < len(leases); i++ {
+		if futures[i], out[i].Err = s.send(leases[i], jetstream.WithExpectLastSequence(last+uint64(i)-1)); out[i].Err != nil {
+			// The broker refuses every later message on its expectation;
+			// they are not sent.
+			for j := i + 1; j < len(out); j++ {
+				out[j].Err = errPredecessor
+			}
+			break
+		}
 	}
 	for i, f := range futures {
-		if f == nil {
-			continue
-		}
-		select {
-		case ack := <-f.Ok():
-			if ack == nil || ack.Stream != stream.Name || ack.Sequence == 0 || ack.Sequence > 1<<63-1 {
-				out[i].Err = errors.New("publish: invalid persistence acknowledgement")
-				continue
-			}
-			out[i].Ack = delivery.PersistenceAck{Stream: ack.Stream, Sequence: ack.Sequence}
-		case err := <-f.Err():
-			out[i].Err = classify(err)
-		case <-ctx.Done():
-			out[i].Err = ctx.Err()
+		if f != nil {
+			out[i] = await(ctx, f)
 		}
 	}
 	return out
 }
 
-func (s *sink) send(l delivery.Lease) (jetstream.PubAckFuture, error) {
+func await(ctx context.Context, f jetstream.PubAckFuture) delivery.Publication {
+	select {
+	case ack := <-f.Ok():
+		if ack == nil || ack.Stream != stream.Name || ack.Sequence == 0 || ack.Sequence > 1<<63-1 {
+			return delivery.Publication{Err: errors.New("publish: invalid persistence acknowledgement")}
+		}
+		return delivery.Publication{Ack: delivery.PersistenceAck{Stream: ack.Stream, Sequence: ack.Sequence}}
+	case err := <-f.Err():
+		return delivery.Publication{Err: classify(err)}
+	case <-ctx.Done():
+		return delivery.Publication{Err: ctx.Err()}
+	}
+}
+
+func (s *sink) send(l delivery.Lease, opts ...jetstream.PublishOpt) (jetstream.PubAckFuture, error) {
 	e, err := delivery.Decode(l.Wire, s.policy, l.Subject)
 	if err != nil {
 		return nil, err
@@ -221,7 +268,8 @@ func (s *sink) send(l delivery.Lease) (jetstream.PubAckFuture, error) {
 	msg.Header.Set(HeaderSeq, strconv.FormatInt(l.PerpsSeq, 10))
 	msg.Header.Set(HeaderBlock, e.SourceOrder.Height)
 	msg.Header.Set(HeaderKind, e.EventType)
-	f, err := s.js.PublishMsgAsync(msg, jetstream.WithMsgID(l.EventID), jetstream.WithExpectStream(stream.Name), jetstream.WithRetryAttempts(0))
+	opts = append(opts, jetstream.WithMsgID(l.EventID), jetstream.WithExpectStream(stream.Name), jetstream.WithRetryAttempts(0))
+	f, err := s.js.PublishMsgAsync(msg, opts...)
 	return f, classify(err)
 }
 

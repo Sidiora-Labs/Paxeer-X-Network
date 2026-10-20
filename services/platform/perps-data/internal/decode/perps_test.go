@@ -382,6 +382,51 @@ func TestPerpsDecoders(t *testing.T) {
 		}
 	})
 
+	t.Run("block_over_chunk_bounds", func(t *testing.T) {
+		r, _ := newTestRegistry(t)
+		n := MaxRawBatchLogs + 10
+		logs := make([]Log, 0, n+1)
+		for i := 0; i < n; i++ {
+			logs = append(logs, packLog(t, "CollateralDeposited", uint(i), alice, big.NewInt(5), big.NewInt(int64(i))))
+		}
+		// A repeat of the first log after the first chunk is still dropped.
+		logs = append(logs, logs[0])
+		res, err := r.Decode(context.Background(), nil, logs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Decoded) != n || len(res.Raw) != 0 {
+			t.Fatalf("decoded %d raw %d, want %d and 0", len(res.Decoded), len(res.Raw), n)
+		}
+		for i, d := range res.Decoded {
+			if d.Event.LogIndex != uint(i) {
+				t.Fatalf("decoded %d is log %d, want block order", i, d.Event.LogIndex)
+			}
+		}
+		conflict := packLog(t, "CollateralDeposited", 0, alice, big.NewInt(6), big.NewInt(6))
+		if _, err := Dedup(append(logs[:n:n], conflict)); !errors.Is(err, ErrInvalidLog) {
+			t.Fatalf("conflicting identity after the first chunk: %v", err)
+		}
+
+		// Twenty logs of one envelope each exceed the aggregate byte bound.
+		wide := make([]Log, 20)
+		for i := range wide {
+			wide[i] = packLog(t, "CollateralDeposited", uint(i), alice, big.NewInt(1), big.NewInt(1))
+			wide[i].Data = make([]byte, MaxEnvelopeBytes)
+			wide[i].Data[0] = byte(i)
+		}
+		wide = append(wide, wide[3])
+		unique, err := Dedup(wide)
+		if err != nil || len(unique) != 20 {
+			t.Fatalf("dedup of %d bytes: %d unique, %v", 20*MaxEnvelopeBytes, len(unique), err)
+		}
+		for i, l := range unique {
+			if l.Index != uint(i) {
+				t.Fatalf("unique %d is log %d, want block order", i, l.Index)
+			}
+		}
+	})
+
 	t.Run("account_rule", func(t *testing.T) {
 		r, _ := newTestRegistry(t)
 		dep := decodeOne(t, r, packLog(t, "CollateralDeposited", 1, alice, big.NewInt(5), big.NewInt(5)))

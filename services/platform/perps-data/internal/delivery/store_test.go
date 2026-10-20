@@ -556,6 +556,97 @@ func TestDeliveryStore(t *testing.T) {
 			t.Fatalf("duplicate publish ack = %+v, %v", ack, err)
 		}
 	})
+
+	t.Run("ordered_requeue", func(t *testing.T) {
+		if _, err := db.ExecContext(ctx, `TRUNCATE perps.delivery_outbox`); err != nil {
+			t.Fatal(err)
+		}
+		var envelopes []delivery.Envelope
+		for i := 0; i < 3; i++ {
+			envelopes = append(envelopes, testEnvelope("ordered-"+strconv.Itoa(i), "fill", 700+i))
+		}
+		enqueueCommitted(t, ctx, db, s, fillSubject, envelopes...)
+		leases, err := s.Claim(ctx, relayOwner, 3, 30*time.Second)
+		if err != nil || len(leases) != 3 {
+			t.Fatalf("claim: %d leases, %v", len(leases), err)
+		}
+		if err = s.Retry(ctx, leases[0], delivery.Transient, 2, time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if err = s.ReleaseBatch(ctx, leases[1:]); err != nil {
+			t.Fatal(err)
+		}
+		if err = s.ReleaseBatch(ctx, leases[1:2]); !errors.Is(err, delivery.ErrLease) {
+			t.Fatalf("second release: %v", err)
+		}
+		for _, e := range envelopes[1:] {
+			if r := readOutbox(t, db, e.EventID); r.state != "pending" || r.attempts != 0 || r.availableInMS > 0 {
+				t.Fatalf("released row = %+v", r)
+			}
+		}
+		// The released rows wait behind the row backing off.
+		wantNoClaim(t, ctx, s)
+		first := readOutbox(t, db, envelopes[0].EventID)
+		time.Sleep(time.Duration(first.availableInMS+100) * time.Millisecond)
+		if leases, err = s.Claim(ctx, relayOwner, 3, 30*time.Second); err != nil || len(leases) != 3 {
+			t.Fatalf("reclaim: %d leases, %v", len(leases), err)
+		}
+		for i, l := range leases {
+			if l.EventID != envelopes[i].EventID || l.Attempts != []int{2, 1, 1}[i] {
+				t.Fatalf("reclaim %d = %+v", i, l)
+			}
+		}
+		if err = s.Retry(ctx, leases[0], delivery.Transient, 2, time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if err = s.ReleaseBatch(ctx, leases[1:]); err != nil {
+			t.Fatal(err)
+		}
+		// The exhausted row backs off twice the delay in quarantine.
+		r := readOutbox(t, db, envelopes[0].EventID)
+		if r.state != "quarantined" || r.failureClass != "transient" || r.attempts != 2 || r.availableInMS < 1000 || r.availableInMS > 2000 {
+			t.Fatalf("exhausted row = %+v", r)
+		}
+		if n, err := s.Quarantined(ctx); err != nil || n != 1 {
+			t.Fatalf("quarantined = %d, %v", n, err)
+		}
+		stream0, err := js.Stream(ctx, stream.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		base := streamState(t, ctx, stream0).LastSeq
+		relay := delivery.Relay{Store: s, Publisher: jetStreamPublisher{js: js, stream: stream.Name}, Owner: relayOwner, Batch: 10, LeaseDuration: 30 * time.Second, PublishTimeout: 5 * time.Second, RetryDelay: time.Second, MaxAttempts: 2}
+		// A pass publishes nothing behind the quarantined row still backing off.
+		if err = relay.Pass(ctx); err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range envelopes[1:] {
+			if r := readOutbox(t, db, e.EventID); r.state != "pending" || r.attempts != 0 {
+				t.Fatalf("row behind the quarantined row = %+v", r)
+			}
+		}
+		time.Sleep(time.Duration(r.availableInMS+100) * time.Millisecond)
+		if err = relay.Pass(ctx); err != nil {
+			t.Fatal(err)
+		}
+		for i, e := range envelopes {
+			if r := readOutbox(t, db, e.EventID); r.state != "published" || r.brokerSequence != int64(base)+int64(i)+1 || r.attempts != 1 {
+				t.Fatalf("requeued row %d = %+v", i, r)
+			}
+		}
+		if n, err := s.Quarantined(ctx); err != nil || n != 0 {
+			t.Fatalf("quarantined after requeue = %d, %v", n, err)
+		}
+	})
+}
+
+func streamState(t *testing.T, ctx context.Context, s jetstream.Stream) jetstream.StreamState {
+	t.Helper()
+	info, err := s.Info(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.State
 }
 
 func TestStore(t *testing.T) {

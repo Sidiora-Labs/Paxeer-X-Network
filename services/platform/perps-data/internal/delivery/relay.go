@@ -17,7 +17,9 @@ type PersistentPublisher interface {
 // broker assigns stream sequences in Perps-Seq order, and returns one
 // Publication per lease. Each Publication carries the server JetStream
 // persistence acknowledgement of a message whose Nats-Msg-Id is the lease
-// event id, or the error of that message.
+// event id, or the error of that message. A message must persist only after
+// every earlier message of the batch persisted, so a failed message never
+// lands behind a later one.
 type BatchPublisher interface {
 	PublishBatch(context.Context, []Lease) []Publication
 }
@@ -37,18 +39,47 @@ type Relay struct {
 	MaxAttempts                               int
 }
 
+func (r Relay) valid() error {
+	if r.Store == nil || r.Publisher == nil || !token.MatchString(r.Owner) || r.Batch < 1 || r.Batch > 1000 || r.MaxAttempts < 1 || r.MaxAttempts > 100 || r.PublishTimeout <= 0 || r.PublishTimeout >= r.LeaseDuration || r.RetryDelay < time.Second || r.RetryDelay > time.Hour {
+		return errors.New("delivery: invalid relay configuration")
+	}
+	return nil
+}
+
+// Pass is the relay loop step: it requeues the transient quarantined rows
+// whose backoff elapsed and runs RunOnce over the rows ahead of any transient
+// quarantined row still backing off, so a requeued row is never published
+// behind a later one.
+func (r Relay) Pass(ctx context.Context) error {
+	if err := r.valid(); err != nil {
+		return err
+	}
+	below, err := r.Store.Requeue(ctx)
+	if err != nil {
+		return err
+	}
+	return r.run(ctx, below)
+}
+
 // RunOnce claims up to Batch pending rows in Perps-Seq order, checks their
 // attempt budget, publishes them as one pipelined batch bounded by
 // PublishTimeout and records the acknowledged rows, each step in one
 // transaction. Every lease of the batch outlives PublishTimeout, so no row
 // expires behind a slow publication. A row whose publication failed keeps its
-// attempt count and is put back by Retry; the acknowledged rows of the same
-// batch are recorded. Independent replicas use SKIP LOCKED and fenced leases.
+// attempt count and is put back by Retry with backoff; the unacknowledged
+// rows after it are released without spending an attempt and wait behind it,
+// and the acknowledged rows of the batch are recorded. One relay runs per
+// writer lease; fenced leases refuse a stale one.
 func (r Relay) RunOnce(ctx context.Context) error {
-	if r.Store == nil || r.Publisher == nil || !token.MatchString(r.Owner) || r.Batch < 1 || r.Batch > 1000 || r.MaxAttempts < 1 || r.MaxAttempts > 100 || r.PublishTimeout <= 0 || r.PublishTimeout >= r.LeaseDuration || r.RetryDelay < time.Second || r.RetryDelay > time.Hour {
-		return errors.New("delivery: invalid relay configuration")
+	if err := r.valid(); err != nil {
+		return err
 	}
-	leases, err := r.Store.Claim(ctx, r.Owner, r.Batch, r.LeaseDuration)
+	return r.run(ctx, 0)
+}
+
+// run is RunOnce over the rows below the Perps-Seq below; 0 sets no limit.
+func (r Relay) run(ctx context.Context, below int64) error {
+	leases, err := r.Store.claim(ctx, r.Owner, r.Batch, r.LeaseDuration, below)
 	if err != nil || len(leases) == 0 {
 		return err
 	}
@@ -71,23 +102,30 @@ func (r Relay) RunOnce(ctx context.Context) error {
 		}
 		send = append(send, l)
 	}
-	var published []Lease
+	var published, release []Lease
 	var acks []PersistenceAck
 	if len(send) > 0 {
 		pubctx, cancel := context.WithTimeout(ctx, r.PublishTimeout)
 		results := r.Publisher.PublishBatch(pubctx, send)
 		cancel()
+		// Only the first failed row is a failure; the rows after it that the
+		// broker did not persist wait behind it.
+		blocked := false
 		for i, l := range send {
 			res := Publication{Err: errors.New("delivery: publication result missing")}
 			if i < len(results) {
 				res = results[i]
 			}
-			if res.Err != nil {
+			switch {
+			case res.Err == nil:
+				published, acks = append(published, l), append(acks, res.Ack)
+			case blocked:
+				release = append(release, l)
+			default:
 				retry, classes = append(retry, l), append(classes, publicationFailureClass(res.Err))
 				failure = errors.Join(failure, res.Err)
-				continue
+				blocked = true
 			}
-			published, acks = append(published, l), append(acks, res.Ack)
 		}
 	}
 	if len(published) > 0 {
@@ -105,6 +143,11 @@ func (r Relay) RunOnce(ctx context.Context) error {
 	if len(retry) > 0 {
 		// A crash before this leaves the exact immutable rows reclaimable after lease expiry.
 		if err := r.Store.RetryBatch(ctx, retry, classes, r.MaxAttempts, r.RetryDelay); err != nil {
+			failure = errors.Join(failure, err)
+		}
+	}
+	if len(release) > 0 {
+		if err := r.Store.ReleaseBatch(ctx, release); err != nil {
 			failure = errors.Join(failure, err)
 		}
 	}

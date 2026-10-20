@@ -36,7 +36,10 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/telemetry"
 )
 
-// Bounds of the outbox relay, the HTTP server and the NATS connection.
+// Bounds of the outbox relay, the HTTP server and the NATS connection. A
+// transient failure backs off from publishRetryDelay, doubling up to
+// delivery.MaxRetryDelay, so the attempt budget spans about a quarter hour of
+// broker outage before the row is quarantined and later requeued.
 const (
 	publishBatch        = 100
 	publishMaxAttempts  = 20
@@ -164,7 +167,18 @@ func run(logger *slog.Logger) error {
 	}()
 
 	mux := http.NewServeMux()
-	httpx.RegisterHealth(mux, httpx.HealthDeps{Postgres: db.PingContext, Custom: ix.Checks()})
+	checks := ix.Checks()
+	checks["quarantine"] = func(ctx context.Context) error {
+		n, err := outbox.Quarantined(ctx)
+		if err != nil {
+			return fmt.Errorf("read quarantine: %w", err)
+		}
+		if n > 0 {
+			return fmt.Errorf("%d quarantined outbox rows", n)
+		}
+		return nil
+	}
+	httpx.RegisterHealth(mux, httpx.HealthDeps{Postgres: db.PingContext, Custom: checks})
 	mux.Handle("GET /metrics", metrics)
 	listener, err := net.Listen("tcp", ":"+strconv.FormatUint(uint64(cfg.Port), 10))
 	if err != nil {

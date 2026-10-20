@@ -3,6 +3,7 @@ package publish
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -296,11 +298,43 @@ func padded(t *testing.T, policy delivery.Policy, block uint64, size int) event 
 	return e
 }
 
-func TestPublisher(t *testing.T) {
-	url := os.Getenv(testDatabaseEnv)
-	if url == "" {
+// testDatabase creates a database of its own on the server of
+// PERPS_DATA_TEST_DATABASE_URL and drops it after the test, so the outbox
+// resets of this package never race the tests of another package that share
+// the server.
+func testDatabase(t *testing.T) string {
+	t.Helper()
+	dsn := os.Getenv(testDatabaseEnv)
+	if dsn == "" {
 		t.Fatal("TestPublisher requires " + testDatabaseEnv)
 	}
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		var err error
+		if dsn, err = pq.ParseURL(dsn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	admin, err := store.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "publish_test_" + strings.ToLower(rand.Text())
+	if _, err = admin.Exec("CREATE DATABASE " + pq.QuoteIdentifier(name)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := admin.Exec("DROP DATABASE " + pq.QuoteIdentifier(name)); err != nil {
+			t.Error(err)
+		}
+		if err := admin.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return dsn + " dbname=" + name
+}
+
+func TestPublisher(t *testing.T) {
+	url := testDatabase(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	db, err := store.Open(url)
@@ -586,4 +620,88 @@ func TestPublisher(t *testing.T) {
 			t.Fatalf("refused envelope reached the stream: %d messages, last %d", state.Msgs, state.LastSeq)
 		}
 	})
+
+	t.Run("failed_message_blocks_successors", func(t *testing.T) {
+		reset(t, ctx, db)
+		base := streamState(t, ctx, perps).LastSeq
+		first := fillEvent(t, 700, hashA, 0, 0)
+		refused := padded(t, policy, 701, delivery.MaxEnvelopeBytes)
+		later := []event{fillEvent(t, 702, hashA, 0, 0), fillEvent(t, 703, hashA, 0, 0)}
+		enqueue(t, ctx, db, outboxStore, append([]event{first, refused}, later...)...)
+		runCtx, stop := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() { done <- publisher.Run(runCtx) }()
+		deadline := time.Now().Add(30 * time.Second)
+		for count(t, db, `SELECT count(*) FROM perps.delivery_outbox WHERE state='quarantined'`) != 1 {
+			if time.Now().After(deadline) {
+				stop()
+				t.Fatalf("refused publish was never quarantined; Run = %v", <-done)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		stop()
+		if err := <-done; !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run = %v", err)
+		}
+		rows := outbox(t, db)
+		if len(rows) != 4 || rows[0].state != "published" || rows[0].brokerSequence != int64(base)+1 {
+			t.Fatalf("first row = %+v", rows)
+		}
+		if r := rows[1]; r.state != "quarantined" || r.failure != "transient" || r.attempts != 2 {
+			t.Fatalf("refused row = %+v", r)
+		}
+		for _, r := range rows[2:] {
+			if r.state != "pending" || r.attempts != 0 || r.brokerSequence != 0 {
+				t.Fatalf("row behind the refused row = %+v", r)
+			}
+		}
+		if state := streamState(t, ctx, perps); state.LastSeq != base+1 {
+			t.Fatalf("stream last sequence %d, want %d: a later row overtook the refused one", state.LastSeq, base+1)
+		}
+		if n, err := outboxStore.Quarantined(ctx); err != nil || n != 1 {
+			t.Fatalf("quarantined = %d, %v", n, err)
+		}
+	})
+
+	t.Run("pipelined_batch_in_order", func(t *testing.T) {
+		reset(t, ctx, db)
+		base := streamState(t, ctx, perps).LastSeq
+		leases := make([]delivery.Lease, 0, 20)
+		for i := 0; i < 20; i++ {
+			e := fillEvent(t, 800+uint64(i), hashA, 0, 0)
+			leases = append(leases, delivery.Lease{EventID: e.env.EventID, Subject: e.subject, Wire: wireOf(t, policy, e), PerpsSeq: int64(i + 1)})
+		}
+		s := &sink{js: jsPub(t, nc), policy: policy}
+		// A batch whose first message is already persisted is answered as a
+		// duplicate and the rest follow it.
+		if res := s.PublishBatch(ctx, leases[:1]); res[0].Err != nil || res[0].Ack.Sequence != base+1 {
+			t.Fatalf("first message = %+v", res[0])
+		}
+		for i, res := range s.PublishBatch(ctx, leases) {
+			if res.Err != nil || res.Ack.Sequence != base+uint64(i)+1 {
+				t.Fatalf("message %d = %+v", i, res)
+			}
+		}
+		// A message expected after an unpersisted one is refused.
+		stale := fillEvent(t, 900, hashA, 0, 0)
+		f, err := s.send(delivery.Lease{EventID: stale.env.EventID, Subject: stale.subject, Wire: wireOf(t, policy, stale), PerpsSeq: 21}, jetstream.WithExpectLastSequence(base+19))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res := await(ctx, f); res.Err == nil {
+			t.Fatalf("message expecting sequence %d was persisted at %d", base+19, res.Ack.Sequence)
+		}
+		if state := streamState(t, ctx, perps); state.LastSeq != base+20 {
+			t.Fatalf("stream last sequence %d, want %d", state.LastSeq, base+20)
+		}
+	})
+}
+
+func jsPub(t *testing.T, nc *nats.Conn) jetstream.JetStream {
+	t.Helper()
+	js, err := jetstream.New(nc, jetstream.WithPublishAsyncTimeout(5*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return js
 }

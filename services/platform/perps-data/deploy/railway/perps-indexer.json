@@ -1,7 +1,7 @@
 {
   "service": "perps-data-indexer",
   "image": {
-    "repository": "perps-indexer",
+    "repository": "perps-data-indexer",
     "digest": ""
   },
   "port": "PORT",

@@ -23,8 +23,8 @@ type RailwayConfig struct {
 	Deploy    RailwayDeploy `json:"deploy"`
 }
 
-// RailwayImage is the GHCR repository (one per SERVICE build argument) and
-// the digest placeholder.
+// RailwayImage is the GHCR repository, the services.json name of the service
+// that tools/deploy/offchain-images.sh builds, and the digest placeholder.
 type RailwayImage struct {
 	Repository string `json:"repository"`
 	Digest     string `json:"digest"`
@@ -40,6 +40,8 @@ type RailwayDeploy struct {
 
 const (
 	railwayDir     = "railway"
+	projectFile    = "../../../../deploy/railway-perps-project.kvx"
+	configPrefix   = "services/platform/perps-data/deploy/"
 	livePath       = "/healthz/live"
 	indexerService = "perps-data-indexer"
 )
@@ -73,8 +75,8 @@ func checkRailway(file string, c *RailwayConfig, svc Service) error {
 	if c.Service != svc.Name {
 		return fmt.Errorf("%s: service %q, want %q", file, c.Service, svc.Name)
 	}
-	if c.Image.Repository != svc.Build.Service {
-		return fmt.Errorf("%s: image repository %q, want %q", file, c.Image.Repository, svc.Build.Service)
+	if c.Image.Repository != svc.Name {
+		return fmt.Errorf("%s: image repository %q, want %q", file, c.Image.Repository, svc.Name)
 	}
 	if c.Image.Digest != "" {
 		return fmt.Errorf("%s: image digest %q must stay empty for the rollout tool", file, c.Image.Digest)
@@ -151,6 +153,35 @@ func TestRailwayConfig(t *testing.T) {
 		}
 	}
 
+	t.Run("project images match", func(t *testing.T) {
+		raw, err := os.ReadFile(projectFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		images, err := projectImages(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range paths {
+			image, ok := images[configPrefix+filepath.ToSlash(p)]
+			if !ok {
+				t.Errorf("%s names no service with config %s", projectFile, p)
+				continue
+			}
+			raw, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c, err := decodeRailway(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.Image.Repository != image {
+				t.Errorf("%s: image repository %q, %s pulls %q", p, c.Image.Repository, projectFile, image)
+			}
+		}
+	})
+
 	t.Run("root healthcheck path fails", func(t *testing.T) {
 		raw, err := os.ReadFile(filepath.Join(railwayDir, "perps-gateway.json"))
 		if err != nil {
@@ -165,4 +196,43 @@ func TestRailwayConfig(t *testing.T) {
 			t.Fatal("healthcheckPath / accepted")
 		}
 	})
+}
+
+// projectImages maps the config of every [service.*] section of the Railway
+// project file to its image.
+func projectImages(raw []byte) (map[string]string, error) {
+	out := map[string]string{}
+	var image, config string
+	flush := func() error {
+		if config == "" {
+			return nil
+		}
+		if image == "" {
+			return fmt.Errorf("service with config %s has no image", config)
+		}
+		out[config] = image
+		return nil
+	}
+	inService := false
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") {
+			if err := flush(); err != nil {
+				return nil, err
+			}
+			image, config, inService = "", "", strings.HasPrefix(line, "[service.")
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !inService || !ok {
+			continue
+		}
+		switch strings.TrimSpace(key) {
+		case "image":
+			image = strings.Trim(strings.TrimSpace(value), `"`)
+		case "config":
+			config = strings.Trim(strings.TrimSpace(value), `"`)
+		}
+	}
+	return out, flush()
 }
