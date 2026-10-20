@@ -66,6 +66,7 @@ func TestLaunchpadAirdropEntitlementsSurviveCommitAndReopen(t *testing.T) {
 	var market launchpadtypes.Market
 	var pool, token common.Address
 	block(a, start, func(ctx sdk.Context) {
+		recordV6120Done(a, ctx)
 		launchpadDeployUSDL(t, a, ctx)
 		params := a.LaunchpadKeeper.GetParams(ctx)
 		params.VirtualQuoteDefault = sdk.NewInt(1_000_000_000)

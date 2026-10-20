@@ -8650,3 +8650,18 @@ detail = "A wrong account number fails signature verification silently and shows
 area = "rpc/tests"
 summary = "the debug-trace mock in rpc/setup_test.go overwrites tx1's receipt with a gas-price-0 stub"
 detail = "tx1 therefore never has a standard receipt and is filtered as an ante failure; other tests depend on the stub, so committed-receipt checks use the multi-tx block instead."
+
+[gotcha.1816]
+area = "node/tests"
+summary = "a blanket cleanup wait on the optimistic completion channel hangs the package; gotcha 1810 was wrong"
+detail = "Some tests install a completion channel nothing closes, so waiting in SetupWithDB stalls until the package timeout. Only TestProcessProposalHandler_NewOptimisticProcessing starts a real ProcessBlock and it now waits on its own channel."
+
+[gotcha.1817]
+area = "node/tests"
+summary = "node test logs can end without FAIL lines and still be a timeout"
+detail = "Search the log for 'test timed out' before reading a clean tail as a pass."
+
+[gotcha.1818]
+area = "node/tests"
+summary = "node tests that need post-upgrade launchpad behaviour must record the v6.12.0 done height"
+detail = "A fresh chain without it serves the v6.10 launchpad at 0x1017 and createMarket fails with LXP_LAUNCHPAD_TRANSFER_FAILED; recordV6120Done in node/test_helpers.go sets the done height through the upgrade keeper and refreshes the precompile set."

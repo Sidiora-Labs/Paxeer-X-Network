@@ -193,6 +193,7 @@ func TestLaunchpadGovernanceDispatch(t *testing.T) {
 	var market launchpadtypes.Market
 	var usdl common.Address
 	launchpadGovBlock(t, a, start, func(ctx sdk.Context) {
+		recordV6120Done(a, ctx)
 		usdl = launchpadDeployUSDL(t, a, ctx)
 		creator := launchpadGovFund(t, a, ctx, "launchpad-gov-creator", 1_000_000_000)
 		market = launchpadCreateMarket(t, a, ctx, creator, "Governed Token", "GOVT", launchpadtypes.FeeStrategyBurn)

@@ -129,6 +129,10 @@ func (suite *OptimisticProcessingTestSuite) TestProcessProposalHandler_NewOptimi
 	require.Equal(req.Hash, info.Hash)
 	require.NotNil(info.Completion)
 	require.False(info.Aborted)
+
+	// The ProcessBlock the handler started still writes into the home; wait
+	// for it before the temporary directories are removed.
+	<-info.Completion
 }
 
 // Test ProcessProposalHandler with upgrade plan (should abort)

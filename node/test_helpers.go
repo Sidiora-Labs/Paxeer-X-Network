@@ -194,7 +194,14 @@ func newTestWrapper(tb testing.TB, tm time.Time, valPub cryptotypes.PubKey, enab
 	} else {
 		appPtr = Setup(tb, false, enableEVMCustomPrecompiles, false, baseAppOptions...)
 	}
-	waitOptimisticProcessingOnCleanup(tb, appPtr)
+	// An optimistic ProcessBlock that ProcessProposal started and no
+	// FinalizeBlock consumed still writes into the home; wait for it before the
+	// temporary directories are removed.
+	tb.Cleanup(func() {
+		if completion := appPtr.GetOptimisticProcessingInfo().Completion; completion != nil {
+			<-completion
+		}
+	})
 	ctx := appPtr.NewContext(false, tmproto.Header{Height: 1, ChainID: "pax-test", Time: tm})
 	wrapper := &TestWrapper{
 		App:  appPtr,
@@ -414,16 +421,13 @@ func SetupWithAppOptsAndDefaultHome(isCheckTx bool, appOpts TestAppOpts, enableE
 	return res
 }
 
-// waitOptimisticProcessingOnCleanup waits at test cleanup for an optimistic
-// ProcessBlock that ProcessProposal started and no FinalizeBlock consumed,
-// since it still writes into the home, before the temporary directories are
-// removed.
-func waitOptimisticProcessingOnCleanup(tb testing.TB, app *App) {
-	tb.Cleanup(func() {
-		if completion := app.GetOptimisticProcessingInfo().Completion; completion != nil {
-			<-completion
-		}
-	})
+// recordV6120Done records the v6.12.0 plan as done at the height of ctx
+// through the upgrade keeper and reselects the custom precompile set from that
+// state, as InitChainer and the load path do, so a fixture stands past the
+// plan and stays there through commit and reopen.
+func recordV6120Done(a *App, ctx sdk.Context) {
+	a.UpgradeKeeper.SetDone(ctx, V6120Upgrade)
+	a.RefreshPrecompiles(ctx)
 }
 
 func Setup(tb testing.TB, isCheckTx bool, enableEVMCustomPrecompiles bool, overrideWasmGasMultiplier bool, baseAppOptions ...func(*bam.BaseApp)) (res *App) {
@@ -473,7 +477,6 @@ func SetupWithDB(tb testing.TB, db dbm.DB, isCheckTx bool, enableEVMCustomPrecom
 		options,
 		baseAppOptions...,
 	)
-	waitOptimisticProcessingOnCleanup(tb, res)
 	if !isCheckTx {
 		genesisState := NewDefaultGenesisState(cdc)
 		stateBytes, err := json.MarshalIndent(genesisState, "", " ")
