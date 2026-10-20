@@ -15,6 +15,7 @@
 [meta]
 name = "LayerX rollout manifest"
 kind = "rollout-manifest"
+project = "layerx"
 environment = "beta"
 
 [service.redis-router]

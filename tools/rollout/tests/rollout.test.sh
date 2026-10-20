@@ -204,6 +204,16 @@ done
 grep -qxF "digest map has no digest for: layerx-gateway" "$tmp/no-digest.err" || fail "missing digest returned the wrong refusal"
 grep -qxF -- "--digests is required for railway-image services" "$tmp/no-map.err" || fail "missing --digests returned the wrong refusal"
 
+for shipped in rollout rollout-launchpad rollout-perps; do
+	sed -n 's/^image = "\(.*\)"$/"\1": "'"$digest"'"/p' "$root/deploy/$shipped.kvx" | sort -u | paste -sd, - |
+		sed 's/.*/{&}/' >"$tmp/$shipped-digests.json"
+	status=0
+	ROLLOUT_DRY_RUN=0 ROLLOUT_MANIFEST="$root/deploy/$shipped.kvx" "$rollout" apply --sha "$sha" \
+		--digests "$tmp/$shipped-digests.json" >/dev/null 2>"$tmp/$shipped-apply.err" || status=$?
+	[ "$status" -eq 1 ] && grep -qxF "RAILWAY_PROJECT_ID is not set" "$tmp/$shipped-apply.err" ||
+		fail "deploy/$shipped.kvx apply did not reach the Railway project lookup ($status): $(cat "$tmp/$shipped-apply.err")"
+done
+
 export ROLLOUT_LEDGER_DIR="$tmp/ledger"
 "$ledger" "$sha" router railway 2026-10-07T10:00:00Z pass /root/lx-ops/rollout/2026-10-07/x-router.log
 "$ledger" "$sha" router railway 2026-10-07T10:05:00Z fail /root/lx-ops/rollout/2026-10-07/x-router.log
@@ -314,4 +324,4 @@ print(f"apply replay: {len(record['scenarios'])} scenarios")
 PY
 ) || fail "apply replay against the recorded Railway transcript"
 
-echo "PASS rollout plan (${#want[@]} services), railway-image digests, retired service rejection, manifest rejection, ledger, apply replay"
+echo "PASS rollout plan (${#want[@]} services), railway-image digests, shipped manifests reach the project lookup, retired service rejection, manifest rejection, ledger, apply replay"

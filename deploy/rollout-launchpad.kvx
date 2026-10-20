@@ -3,12 +3,13 @@
 # Same format as deploy/rollout.kvx. Every row is target "railway-image": the
 # Railway service railway_service of project sidiora-launch is pointed at
 # ghcr.io/sidiora-labs/<image>@<digest> from the --digests map and redeployed.
-# health is an HTTP path on $PORT or tcp:<port>. order is the wave.
+# health is an HTTP path on $PORT (Railway runs only HTTP health checks). order is the wave.
 # Stock services (Postgres, Redis, minio, clamav, nats*) are not listed.
 
 [meta]
 name = "Launchpad rollout manifest"
 kind = "rollout-manifest"
+project = "sidiora-launch"
 environment = "production"
 
 [service.api]
