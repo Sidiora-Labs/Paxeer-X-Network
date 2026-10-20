@@ -2140,3 +2140,11 @@ exit = 0
 log = fleet/logs/release-7.2.13-verify-1.log
 observed = Resolved on the first run: the gateway process was already wired on main and only the frames-by-family and resyncs metrics were missing, now counted by the hub provider and asserted by the socket paths subtest; a live frame the hub replaces by a fresh snapshot counts as both a frame and a resync.
 assumption = The gate needs PERPS_DATA_TEST_DATABASE_URL on a throwaway cluster and PERPS_DATA_TEST_RPC set to any value, since none of its requests reach the node and the node client connects lazily.
+
+[finding.7.3.1-verified]
+revision = f14f4fec0c0d6f49606b531f5ff20379fd4d386d
+command = go test -count=1 ./services/platform/perps-data/internal/portal/ -run 'TestPortalPages'
+exit = 0
+log = fleet/logs/release-7.3.1-verify-1.log
+observed = Resolved on the first run: the five pages read only the gateway through a recording proxy, with real rows written through the store and the leaderboard rebuild; the spec says GetLeaderboard covers the all, 30d and 7d windows while the GraphQL leaderboard field takes only limit and offset and serves the all window, so the pages take 30d and 7d from the public REST leaderboard route and both texts are left as written.
+assumption = The GraphQL window argument belongs to the task that owns the GraphQL schema and resolver; TestPortalServer/pages_mounted expected 200 for the five pages before this change and was likely red on main, now served.

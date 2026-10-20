@@ -27605,7 +27605,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.3.1]
 title = "Portal pages for markets, accounts, leaderboard and venue statistics"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["7.2.13"]

@@ -1,0 +1,190 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{.}} - Paxeer X Network</title></head>
+<body>
+<header><nav><a href="/">Markets</a> | <a href="/leaderboard">Leaderboard</a> | <a href="/stats">Statistics</a></nav></header>
+<main>
+<h1>{{.}}</h1>
+{{end}}
+
+{{define "foot"}}</main>
+</body>
+</html>
+{{end}}
+
+{{define "notfound"}}{{template "head" .Title}}<p>The page you asked for is not here. <a href="/">Back to the markets</a>.</p>
+{{template "foot"}}{{end}}
+
+{{define "account_link"}}<a href="/accounts/{{lower .}}">{{.}}</a>{{end}}
+
+{{define "markets"}}{{template "head" .Title}}<section id="totals">
+<h2>Totals</h2>
+<table>
+<tr><th>Trades</th><td>{{.Totals.TotalTrades}}</td></tr>
+<tr><th>Volume 24h (USD)</th><td>{{num .Totals.Volume24h}}</td></tr>
+<tr><th>Volume 7d (USD)</th><td>{{num .Totals.Volume7d}}</td></tr>
+<tr><th>Volume 30d (USD)</th><td>{{num .Totals.Volume30d}}</td></tr>
+<tr><th>Open interest (USD)</th><td>{{num .Totals.TotalOI}}</td></tr>
+</table>
+</section>
+<section id="markets">
+<h2>Markets</h2>
+{{if .Markets}}<table>
+<thead><tr><th>Market</th><th>Name</th><th>Price</th><th>Mark price</th><th>Change 24h</th><th>Volume 24h (USD)</th><th>Open interest (USD)</th><th>Funding 8h</th><th>Trades</th></tr></thead>
+<tbody>
+{{range .Markets}}<tr><td><a href="/markets/{{lower .Symbol}}">{{.Symbol}}</a></td><td>{{.SymbolFull}}</td><td>{{optnum .Price}}</td><td>{{optnum .PerpMarkPrice}}</td><td>{{optnum .Change24h}}</td><td>{{num .Volume24h}}</td><td>{{num .OpenInterest}}</td><td>{{optnum .Funding8h}}</td><td>{{.TradesCount}}</td></tr>
+{{end}}</tbody>
+</table>{{else}}<p class="empty">No markets are listed.</p>{{end}}
+</section>
+{{template "foot"}}{{end}}
+
+{{define "market"}}{{template "head" .Title}}<section id="record">
+<h2>Market record</h2>
+{{with .Market}}<table>
+<tr><th>Symbol</th><td>{{.Symbol}}</td></tr>
+<tr><th>Name</th><td>{{.SymbolFull}}</td></tr>
+<tr><th>Mark price</th><td>{{optnum .PerpMarkPrice}}</td></tr>
+<tr><th>Index price</th><td>{{optnum .PerpIndexPrice}}</td></tr>
+<tr><th>Basis (bps)</th><td>{{optnum .PerpBasisBps}}</td></tr>
+<tr><th>Change 24h</th><td>{{optnum .Change24h}}</td></tr>
+<tr><th>Volume 24h (USD)</th><td>{{num .Volume24h}}</td></tr>
+<tr><th>Volume 7d (USD)</th><td>{{num .Volume7d}}</td></tr>
+<tr><th>Volume 30d (USD)</th><td>{{num .Volume30d}}</td></tr>
+<tr><th>Fill volume 24h (USD)</th><td>{{num .PerpVolume24hUSD}}</td></tr>
+<tr><th>Liquidation volume 24h (USD)</th><td>{{num .PerpLiqVolume24h}}</td></tr>
+<tr><th>Open interest (USD)</th><td>{{num .OpenInterest}}</td></tr>
+<tr><th>Long/short ratio</th><td>{{optnum .PerpLongShortRatio}}</td></tr>
+<tr><th>Funding rate 1h</th><td>{{optnum .EstFundingRate}}</td></tr>
+<tr><th>Funding rate 8h</th><td>{{optnum .Funding8h}}</td></tr>
+<tr><th>Next funding</th><td>{{ms .PerpNextFundingMs}}</td></tr>
+<tr><th>Trades</th><td>{{.TradesCount}}</td></tr>
+</table>{{end}}
+</section>
+<section id="fills">
+<h2>Last fills</h2>
+{{if .Fills}}<table>
+<thead><tr><th>Fill</th><th>Side</th><th>Price</th><th>Contracts</th><th>Notional (USD)</th><th>Liquidation</th><th>Time</th></tr></thead>
+<tbody>
+{{range .Fills}}<tr><td>{{.ID}}</td><td>{{.Side}}</td><td>{{num .Price}}</td><td>{{num .Contracts}}</td><td>{{num .Notional}}</td><td>{{if .Liquidation}}yes{{else}}no{{end}}</td><td>{{ms .TradeTime}}</td></tr>
+{{end}}</tbody>
+</table>{{else}}<p class="empty">No fills yet.</p>{{end}}
+</section>
+<section id="funding">
+<h2>Funding history</h2>
+{{if .Funding}}<table>
+<thead><tr><th>Block</th><th>Rate per second</th><th>Rate 24h</th><th>Time</th><th>Transaction</th></tr></thead>
+<tbody>
+{{range .Funding}}<tr><td>{{.BlockNumber}}</td><td>{{usd .RatePerSecond}}</td><td>{{usd .Rate24h}}</td><td>{{when .BlockTimestamp}}</td><td><a href="{{tx .TxHash}}">{{.TxHash}}</a></td></tr>
+{{end}}</tbody>
+</table>{{else}}<p class="empty">No funding rate updates yet.</p>{{end}}
+</section>
+<section id="snapshots">
+<h2>Hourly snapshots, last 7 days</h2>
+{{if .Snapshots}}<table>
+<thead><tr><th>Hour</th><th>Mark price</th><th>Index price</th><th>Volume 24h (USD)</th></tr></thead>
+<tbody>
+{{range .Snapshots}}<tr><td>{{when .BlockTimestamp}}</td><td>{{usd .MarkPrice}}</td><td>{{usd .IndexPrice}}</td><td>{{usd .Volume24hUsd}}</td></tr>
+{{end}}</tbody>
+</table>{{else}}<p class="empty">No hourly snapshots in the last 7 days.</p>{{end}}
+</section>
+{{template "foot"}}{{end}}
+
+{{define "account"}}{{template "head" .Title}}<section id="positions">
+<h2>Open positions</h2>
+{{if .Positions}}<table>
+<thead><tr><th>Position</th><th>Market</th><th>Side</th><th>Size (USD)</th><th>Leverage</th><th>Entry price</th><th>Collateral (USD)</th><th>Collateral (USDL)</th><th>Opened</th><th>Transaction</th></tr></thead>
+<tbody>
+{{range .Positions}}<tr><td>{{.PositionID}}</td><td>{{with .Market}}<a href="/markets/{{lower .Symbol}}">{{.Symbol}}</a>{{end}}</td><td>{{side .IsLong}}</td><td>{{usd .SizeUsd}}</td><td>{{usd .Leverage}}</td><td>{{usd .EntryPrice}}</td><td>{{usd .CollateralUsd}}</td><td>{{usdl .CollateralAmount}}</td><td>{{when .OpenedAt}}</td><td>{{with .OpenTxHash}}<a href="{{tx .}}">{{.}}</a>{{else}}-{{end}}</td></tr>
+{{end}}</tbody>
+</table>{{else}}<p class="empty">No open positions.</p>{{end}}
+</section>
+<section id="orders">
+<h2>Active orders</h2>
+{{if .Orders}}<table>
+<thead><tr><th>Order</th><th>Market</th><th>Type</th><th>Side</th><th>Trigger price</th><th>Size (USD)</th><th>Status</th><th>Placed</th><th>Transaction</th></tr></thead>
+<tbody>
+{{range .Orders}}<tr><td>{{.OrderID}}</td><td>{{.MarketID}}</td><td>{{with .OrderTypeName}}{{.}}{{else}}-{{end}}</td><td>{{side .IsLong}}</td><td>{{usd .TriggerPrice}}</td><td>{{usd .SizeUsd}}</td><td>{{.Status}}</td><td>{{when .PlacedAt}}</td><td>{{with .PlacedTxHash}}<a href="{{tx .}}">{{.}}</a>{{else}}-{{end}}</td></tr>
+{{end}}</tbody>
+</table>{{else}}<p class="empty">No active orders.</p>{{end}}
+</section>
+<section id="fills">
+<h2>Fills</h2>
+{{if .Fills}}<table>
+<thead><tr><th>Position</th><th>Market</th><th>Type</th><th>Size (USD)</th><th>Execution price</th><th>Gross PnL (USD)</th><th>Fees (USD)</th><th>Funding (USD)</th><th>Time</th><th>Transaction</th></tr></thead>
+<tbody>
+{{range .Fills}}<tr><td>{{.PositionID}}</td><td>{{.MarketID}}</td><td>{{with .TradeTypeName}}{{.}}{{else}}-{{end}}</td><td>{{usd .SizeUsd}}</td><td>{{usd .ExecutionPrice}}</td><td>{{usd .GrossPnl}}</td><td>{{usd .TotalFeesUsd}}</td><td>{{usd .FundingPaidUsd}}</td><td>{{when .BlockTimestamp}}</td><td><a href="{{tx .TxHash}}">{{.TxHash}}</a></td></tr>
+{{end}}</tbody>
+</table>{{else}}<p class="empty">No fills.</p>{{end}}
+</section>
+<section id="funding">
+<h2>Funding payments</h2>
+{{if .Funding}}<table>
+<thead><tr><th>Position</th><th>Market</th><th>Payment (USD)</th><th>New collateral (USD)</th><th>Time</th><th>Transaction</th></tr></thead>
+<tbody>
+{{range .Funding}}<tr><td>{{.PositionID}}</td><td>{{.MarketID}}</td><td>{{usd .FundingPaymentUsd}}</td><td>{{usd .NewCollateralUsd}}</td><td>{{when .BlockTimestamp}}</td><td><a href="{{tx .TxHash}}">{{.TxHash}}</a></td></tr>
+{{end}}</tbody>
+</table>{{else}}<p class="empty">No funding payments.</p>{{end}}
+</section>
+<section id="liquidations">
+<h2>Liquidations</h2>
+{{if .Liquidations}}<table>
+<thead><tr><th>Position</th><th>Market</th><th>Price</th><th>Penalty (USD)</th><th>Keeper</th><th>Time</th><th>Transaction</th></tr></thead>
+<tbody>
+{{range .Liquidations}}<tr><td>{{.PositionID}}</td><td>{{.MarketID}}</td><td>{{usd .Price}}</td><td>{{usd .Penalty}}</td><td>{{.Keeper}}</td><td>{{when .BlockTimestamp}}</td><td><a href="{{tx .TxHash}}">{{.TxHash}}</a></td></tr>
+{{end}}</tbody>
+</table>{{else}}<p class="empty">No liquidations.</p>{{end}}
+</section>
+<section id="collateral">
+<h2>Collateral events</h2>
+{{if .Collateral}}<table>
+<thead><tr><th>Event</th><th>Token</th><th>Amount (USDL)</th><th>Block</th><th>Time</th><th>Transaction</th></tr></thead>
+<tbody>
+{{range .Collateral}}<tr><td>{{.EventType}}</td><td>{{.TokenAddress}}</td><td>{{usdl .Amount}}</td><td>{{.BlockNumber}}</td><td>{{when .BlockTimestamp}}</td><td><a href="{{tx .TxHash}}">{{.TxHash}}</a></td></tr>
+{{end}}</tbody>
+</table>{{else}}<p class="empty">No collateral events.</p>{{end}}
+</section>
+{{template "foot"}}{{end}}
+
+{{define "leaderboard"}}{{template "head" .Title}}{{range .Windows}}<section id="window-{{.Name}}">
+<h2>Window {{.Name}}</h2>
+{{if .Rows}}<table>
+<thead><tr><th>Rank</th><th>Account</th><th>Realized PnL (USD)</th><th>Volume (USD)</th><th>Trades</th><th>Win rate (%)</th></tr></thead>
+<tbody>
+{{range .Rows}}<tr><td>{{.Rank}}</td><td>{{template "account_link" .Address}}</td><td>{{usd .Pnl}}</td><td>{{usd .Volume}}</td><td>{{.Trades}}</td><td>{{num .WinRate}}</td></tr>
+{{end}}</tbody>
+</table>{{else}}<p class="empty">No ranked accounts in this window.</p>{{end}}
+</section>
+{{end}}{{template "foot"}}{{end}}
+
+{{define "stats"}}{{template "head" .Title}}<section id="global">
+<h2>Global statistics</h2>
+{{with .Global}}<table>
+<tr><th>Markets</th><td>{{.TotalMarkets}}</td></tr>
+<tr><th>Positions</th><td>{{.TotalPositions}}</td></tr>
+<tr><th>Open positions</th><td>{{.OpenPositions}}</td></tr>
+<tr><th>Trades</th><td>{{.TotalTrades}}</td></tr>
+<tr><th>Liquidations</th><td>{{.TotalLiquidations}}</td></tr>
+<tr><th>Volume (USD)</th><td>{{usd .TotalVolume}}</td></tr>
+<tr><th>Traders</th><td>{{.TotalUsers}}</td></tr>
+</table>{{else}}<p class="empty">No global statistics yet.</p>{{end}}
+</section>
+<section id="protocol-snapshots">
+<h2>Protocol snapshots</h2>
+{{if .Snapshots}}<table>
+<thead><tr><th>Hour</th><th>Block</th><th>Positions</th><th>Open positions</th><th>Markets</th><th>TVL (USDL)</th><th>Insurance (USDL)</th></tr></thead>
+<tbody>
+{{range .Snapshots}}<tr><td>{{when .BlockTimestamp}}</td><td>{{.BlockNumber}}</td><td>{{.TotalPositions}}</td><td>{{.TotalOpenPositions}}</td><td>{{.TotalMarkets}}</td><td>{{usdl .TvlUsd}}</td><td>{{usdl .InsuranceTotalUsd}}</td></tr>
+{{end}}</tbody>
+</table>{{else}}<p class="empty">No protocol snapshots yet.</p>{{end}}
+</section>
+<section id="indexer">
+<h2>Indexer status</h2>
+{{with .Indexer}}<table>
+<tr><th>Last indexed block</th><td>{{.LastIndexedBlock}}</td></tr>
+<tr><th>Chain head</th><td>{{optint .ChainHead}}</td></tr>
+<tr><th>Blocks scanned</th><td>{{optint .BlocksScanned}}</td></tr>
+<tr><th>Events processed</th><td>{{optint .EventsProcessed}}</td></tr>
+<tr><th>Synced</th><td>{{optbool .IsSynced}}</td></tr>
+</table>{{else}}<p class="empty">The indexer has not committed a block yet.</p>{{end}}
+</section>
+{{template "foot"}}{{end}}
