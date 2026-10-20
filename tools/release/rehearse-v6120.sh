@@ -256,12 +256,13 @@ fi
 mkdir -p "$work"
 work=$(cd "$work" && pwd)
 logs=$work/logs
+evidence=$work/evidence
 bin_dir=$work/bin
 snapshots=$work/snapshots
 credentials=$work/credentials
 receipts=$work/receipts
 rehearsal_env=$work/rehearsal.env
-mkdir -p "$logs" "$bin_dir" "$snapshots" "$credentials" "$receipts"
+mkdir -p "$logs" "$evidence" "$bin_dir" "$snapshots" "$credentials" "$receipts"
 unit_tag=$(printf '%s' "$work" | sha256sum | cut -c1-8)
 
 homes=()
@@ -338,6 +339,7 @@ Description=Paxeer X Network $plan rehearsal node $i
 
 [Service]
 Type=simple
+Environment=HOME=${homes[$i]}
 ExecStart=$bin_dir/paxd start --home ${homes[$i]}$(printf ' %s' "$@")
 StandardOutput=append:$logfile
 StandardError=append:$logfile
@@ -409,13 +411,60 @@ stop_units() {
 	done
 }
 
-# eth_call_at <node> <to> <data> <height>: prints the result hex, or fails on an RPC error.
+# record <path under evidence>: writes stdin to the evidence file, creating its directory.
+record() {
+	mkdir -p "$(dirname "$evidence/$1")"
+	cat >"$evidence/$1"
+}
+
+# rpc_post <node> <method> <params>: the JSON-RPC envelope of a consensus RPC call (a GET of
+# /status or /abci_info answers the bare result).
+rpc_post() {
+	curl -sf --max-time 10 -H 'content-type: application/json' \
+		--data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$2\",\"params\":$3}" "$(rpc_url "$1")"
+}
+
+# abi_call <signature> [word ...]: the calldata of a call whose arguments are static 32-byte words.
+abi_call() {
+	python3 - "$release" "$@" <<'PY'
+import sys
+
+sys.path.insert(0, sys.argv[1])
+from feed_key import keccak256
+
+print("0x" + keccak256(sys.argv[2].encode())[:4].hex()
+      + "".join(word.removeprefix("0x").lower().rjust(64, "0") for word in sys.argv[3:]))
+PY
+}
+
+# evm_address_of <base64 compressed secp256k1 key>: the EVM address of an account key.
+evm_address_of() {
+	python3 - "$release" "$1" <<'PY'
+import base64
+import sys
+
+sys.path.insert(0, sys.argv[1])
+from feed_key import P, keccak256, parse_public_key
+
+raw = parse_public_key(base64.b64decode(sys.argv[2], validate=True).hex())
+x = int.from_bytes(raw[1:], "big")
+y = pow((pow(x, 3, P) + 7) % P, (P + 1) // 4, P)
+if (y & 1) != (raw[0] & 1):
+    y = P - y
+print("0x" + keccak256(x.to_bytes(32, "big") + y.to_bytes(32, "big"))[12:].hex())
+PY
+}
+
+# eth_call_at <node> <to> <data> <height|latest> [evidence path] [from]: prints the result hex, or
+# revert on an RPC error; the raw response goes to the evidence path when one is given.
 eth_call_at() {
-	local body response
-	body=$(jq -cn --arg to "$2" --arg data "$3" --arg block "$(printf '0x%x' "$4")" \
-		'{"jsonrpc":"2.0","id":1,"method":"eth_call","params":[{"to":$to,"data":$data},$block]}')
+	local body response block=$4
+	[ "$block" = latest ] || block=$(printf '0x%x' "$4")
+	body=$(jq -cn --arg to "$2" --arg data "$3" --arg block "$block" --arg from "${6:-}" \
+		'{"jsonrpc":"2.0","id":1,"method":"eth_call","params":[({"to":$to,"data":$data} + (if $from == "" then {} else {"from":$from} end)),$block]}')
 	response=$(curl -sf --max-time 10 -H 'content-type: application/json' --data "$body" "$(evm_url "$1")") \
 		|| fail "eth_call to $2 got no response from node $1"
+	[ -z "${5:-}" ] || record "$5" <<<"$response"
 	if [ "$(jq -r '.error == null' <<<"$response")" != true ]; then
 		echo "revert"
 		return 0
@@ -423,11 +472,41 @@ eth_call_at() {
 	jq -r '.result' <<<"$response"
 }
 
+# get_code_at <node> <address> <height> [evidence path]
 get_code_at() {
-	local body
+	local body response
 	body=$(jq -cn --arg a "$2" --arg block "$(printf '0x%x' "$3")" \
 		'{"jsonrpc":"2.0","id":1,"method":"eth_getCode","params":[$a,$block]}')
-	curl -sf --max-time 10 -H 'content-type: application/json' --data "$body" "$(evm_url "$1")" | jq -r '.result'
+	response=$(curl -sf --max-time 10 -H 'content-type: application/json' --data "$body" "$(evm_url "$1")") \
+		|| fail "eth_getCode of $2 got no response from node $1"
+	[ -z "${4:-}" ] || record "$4" <<<"$response"
+	jq -r '.result' <<<"$response"
+}
+
+# record_abci_at_halt <evidence name> <log name>: runs the four homes in full mode, so none of them
+# signs, and records the abci_info of each at the halt height before stopping them again.
+record_abci_at_halt() {
+	local name=$1 logname=$2 i deadline response
+	for ((i = 0; i < nodes; i++)); do
+		set_toml "${homes[$i]}/config/config.toml" "" mode '"full"'
+		write_unit "$i" "$logs/node$i-$logname.log" --halt-height "$halt_height"
+	done
+	start_units 0 1 2 3
+	for ((i = 0; i < nodes; i++)); do
+		deadline=$((SECONDS + wait_seconds))
+		until response=$(rpc_post "$i" abci_info '{}' 2>/dev/null) \
+			&& [ "$(jq -r '.result.response.last_block_height' <<<"$response")" = "$halt_height" ]; do
+			[ "$SECONDS" -lt "$deadline" ] || fail "node $i did not answer abci_info at $halt_height; see $logs/node$i-$logname.log"
+			systemctl is-active --quiet "${units[$i]}" || fail "node $i stopped in full mode; see $logs/node$i-$logname.log"
+			sleep 1
+		done
+		record "node$i/$name" <<<"$response"
+	done
+	stop_units
+	for ((i = 0; i < nodes; i++)); do
+		set_toml "${homes[$i]}/config/config.toml" "" mode '"validator"'
+		! grep -q panic "$logs/node$i-$logname.log" || fail "the $logname log of node $i carries panic"
+	done
 }
 
 # Programme checks of task 8.4.20: each check_* runs one programme.py scenario against the four
@@ -498,9 +577,14 @@ for file in app.toml config.toml; do
 done
 rm -rf "$export_home/data"
 cp -a --reflink=auto "$source_data" "$export_home/data"
+# The wasm code store lives beside data in the node home; export reopens every stored code.
+if [ -d "$(dirname "$source_data")/wasm" ]; then
+	rm -rf "$export_home/wasm"
+	cp -a --reflink=auto "$(dirname "$source_data")/wasm" "$export_home/wasm"
+fi
 
 export_raw=$work/export.raw
-export_args=(export --home "$export_home")
+export_args=(export --home "$export_home" --chain-id "$chain_id")
 [ -z "$export_height" ] || export_args+=(--height "$export_height")
 log "exporting state with $old_bin ${export_height:+at height $export_height}"
 "$old_bin" "${export_args[@]}" >"$export_raw" 2>&1 || fail "export failed; see $export_raw"
@@ -508,7 +592,7 @@ exported=$work/exported-genesis.json
 grep -E '^\{"app_hash"' "$export_raw" | tail -n 1 >"$exported"
 jq -e --arg chain "$chain_id" '.chain_id == $chain and (.app_state | type == "object")' "$exported" >/dev/null \
 	|| fail "export did not produce a $chain_id genesis; see $export_raw"
-rm -rf "$export_home/data"
+rm -rf "$export_home/data" "$export_home/wasm"
 initial_height=$(jq -r '.initial_height' "$exported")
 [[ "$initial_height" =~ ^[1-9][0-9]{0,15}$ ]] || fail "exported initial height '$initial_height' is not a height"
 if [ -n "$export_height" ]; then
@@ -529,12 +613,17 @@ for ((i = 0; i < nodes; i++)); do
 	jq -e '.pub_key.type == "tendermint/PubKeyEd25519"' "${homes[$i]}/config/priv_validator_key.json" >/dev/null \
 		|| fail "the consensus key of ${homes[$i]} is not Ed25519"
 done
+# Home i takes the consensus key of the i-th bonded operator in address order.
 keys_json=$work/keys.json
 for ((i = 0; i < nodes; i++)); do
 	jq '{address, pub_key}' "${homes[$i]}/config/priv_validator_key.json"
-done | jq -s . >"$keys_json"
+done | jq -s --slurpfile exported "$exported" '. as $keys
+	| [$exported[0].app_state.staking.validators[] | select(.status == "BOND_STATUS_BONDED") | .operator_address] | sort
+	| if length == ($keys | length) then . else error("the export holds \(length) bonded validators, want \($keys | length)") end
+	| [to_entries[] | {key: .value, value: $keys[.key]}] | from_entries' >"$keys_json" \
+	|| fail "the export does not hold $nodes bonded validators"
 genesis=$work/genesis.json
-python3 "$release/rehearsal/rewrite_genesis.py" --export "$exported" --keys "$keys_json" --out "$genesis" \
+python3 "$release/rehearsal/rewrite_genesis.py" "$exported" --keys "$keys_json" --output "$genesis" \
 	>"$logs/rewrite-genesis.log" 2>&1 || fail "rewrite_genesis.py failed; see $logs/rewrite-genesis.log"
 for ((i = 0; i < nodes; i++)); do
 	cp "$genesis" "${homes[$i]}/config/genesis.json"
@@ -588,12 +677,43 @@ for ((i = 0; i < nodes; i++)); do
 done
 start_units 0 1 2 3
 halt_pattern="halting node per configuration.*height=${halt_height}([^0-9]|$)"
-for ((i = 0; i < nodes; i++)); do
-	wait_log "$logs/node$i-old.log" "$halt_pattern" "halting node per configuration at height $halt_height on node $i"
+# A node whose peers halt before their precommits reach it stays at the halt height; one halted peer
+# is started again to gossip the commit of that height to it and stopped once every node halted.
+deadline=$((SECONDS + wait_seconds))
+first_halt=""
+helper=""
+while :; do
+	waiting=()
+	for ((i = 0; i < nodes; i++)); do
+		grep -Eq "$halt_pattern" "$logs/node$i-old.log" 2>/dev/null || waiting+=("$i")
+	done
+	[ "${#waiting[@]}" -gt 0 ] || break
+	[ "$SECONDS" -lt "$deadline" ] \
+		|| fail "no halting node per configuration at height $halt_height on node ${waiting[0]} within ${wait_seconds}s; see $logs/node${waiting[0]}-old.log"
+	if [ "${#waiting[@]}" -lt "$nodes" ]; then
+		[ -n "$first_halt" ] || first_halt=$SECONDS
+		if [ -z "$helper" ] && [ "$((SECONDS - first_halt))" -ge 10 ]; then
+			for ((i = 0; i < nodes; i++)); do
+				[[ " ${waiting[*]} " == *" $i "* ]] && continue
+				systemctl is-active --quiet "${units[$i]}" && continue
+				helper=$i
+				break
+			done
+			if [ -n "$helper" ]; then
+				wait_stopped "$helper"
+				log "node $helper halted before node(s) ${waiting[*]} committed $halt_height; starting it again to gossip that commit"
+				start_units "$helper"
+			fi
+		fi
+	fi
+	sleep 1
 done
+if [ -n "$helper" ]; then
+	systemctl stop "${units[$helper]}" || fail "unit ${units[$helper]} did not stop"
+fi
 for ((i = 0; i < nodes; i++)); do
 	wait_stopped "$i"
-	grep -c panic "$logs/node$i-old.log" | grep -qx 0 || fail "the previous binary log of node $i carries panic"
+	! grep -q panic "$logs/node$i-old.log" || fail "the previous binary log of node $i carries panic"
 done
 log "the four nodes halted at $halt_height"
 [ "$stop_after" != halt ] || { log "stopped after the halt step; work kept in $work"; exit 0; }
@@ -651,6 +771,13 @@ bash "$release/snapshot.sh" --env-file "$rehearsal_env" >"$logs/snapshot.log" 2>
 bash "$release/snapshot.sh" --env-file "$rehearsal_env" --verify >>"$logs/snapshot.log" 2>&1 \
 	|| fail "snapshot.sh --verify failed; see $logs/snapshot.log"
 log "every home archived under $snapshots"
+record_abci_at_halt halt-abci-info.json old-at-halt
+hash_at_halt=$(jq -er '.result.response.last_block_app_hash' "$evidence/node0/halt-abci-info.json")
+for ((i = 1; i < nodes; i++)); do
+	[ "$(jq -r '.result.response.last_block_app_hash' "$evidence/node$i/halt-abci-info.json")" = "$hash_at_halt" ] \
+		|| fail "node $i holds another application hash at $halt_height than node 0"
+done
+log "application hash at $halt_height: $hash_at_halt"
 
 # --- 4. upgrade files, the release candidate and the applied plan ------------------------------
 for ((i = 0; i < nodes; i++)); do
@@ -669,19 +796,7 @@ fi
 for ((i = 0; i < nodes; i++)); do
 	write_unit "$i" "$logs/node$i-new.log"
 done
-# Node 0 alone cannot commit, so its ABCI info holds the committed state of the halt height.
-start_units 0
-deadline=$((SECONDS + wait_seconds))
-hash_at_halt=""
-while [ -z "$hash_at_halt" ]; do
-	[ "$SECONDS" -lt "$deadline" ] || fail "node 0 did not answer abci_info at $halt_height; see $logs/node0-new.log"
-	if [ "$(jget "$(rpc_url 0)/abci_info" '.response.last_block_height')" = "$halt_height" ]; then
-		hash_at_halt=$(jget "$(rpc_url 0)/abci_info" '.response.last_block_app_hash')
-	fi
-	sleep 1
-done
-log "application hash at $halt_height: $hash_at_halt"
-start_units 1 2 3
+start_units 0 1 2 3
 for ((i = 0; i < nodes; i++)); do
 	wait_log "$logs/node$i-new.log" "applying upgrade.*name=${plan//./\\.}([^0-9.]|$)" "applying upgrade on node $i"
 done
@@ -691,6 +806,7 @@ for ((i = 0; i < nodes; i++)); do
 	[ "$count" -eq 1 ] || fail "node $i logged applying upgrade $count times"
 	applied=$("$new_bin" q upgrade applied "$plan" --node "tcp://127.0.0.1:$(rpc_port "$i")" -o json 2>&1) \
 		|| fail "q upgrade applied $plan failed on node $i: $applied"
+	record "node$i/upgrade-applied.json" <<<"$applied"
 	[ "$(jq -r '.header.height' <<<"$applied")" = "$h1" ] || fail "node $i applied $plan at $(jq -r '.header.height' <<<"$applied"), expected $h1"
 	version=$(jget "$(rpc_url "$i")/abci_info" '.response.version')
 	[ "$version" = "$plan" ] || fail "node $i reports ABCI version '$version', expected $plan"
@@ -701,19 +817,21 @@ log "plan $plan applied at $h1 on the four nodes"
 
 # --- 5. presence switch, pool parity and the feed keys -----------------------------------------
 precompiles_served=0
-while IFS=$'\t' read -r address calldata length; do
-	before=$(eth_call_at 0 "$address" "$calldata" "$halt_height")
+while IFS=$'\t' read -r address signature length; do
+	address=$(tr 'A-F' 'a-f' <<<"$address")
+	calldata=$(abi_call "$signature")
+	before=$(eth_call_at 0 "$address" "$calldata" "$halt_height" "precompiles/$halt_height/$address.json")
 	if [ "$address" != "$launchpad" ] && [ "$address" != 0x0000000000000000000000000000000000001015 ]; then
 		[ "$before" = 0x ] || fail "$address answered $before at $halt_height, before activation"
 	fi
-	after=$(eth_call_at 0 "$address" "$calldata" "$h1")
+	after=$(eth_call_at 0 "$address" "$calldata" "$h1" "precompiles/$h1/$address.json")
 	[ "$after" != revert ] || fail "$address reverted its view call at $h1"
 	[ $(((${#after} - 2) / 2)) -eq "$length" ] || fail "$address returned $(((${#after} - 2) / 2)) bytes at $h1, expected $length"
 	precompiles_served=$((precompiles_served + 1))
-done < <(jq -r '.served[] | [.address, .calldata, (.return_length | tostring)] | @tsv' "$release/fleet-views.json")
-for address in $(jq -r '.no_code[]' "$release/fleet-views.json"); do
+done < <(jq -r '.served[] | [.address, .signature, (.return_bytes | tostring)] | @tsv' "$release/fleet-views.json")
+for address in $(jq -r '.no_code[].address' "$release/fleet-views.json" | tr 'A-F' 'a-f'); do
 	for at in "$halt_height" "$h1"; do
-		[ "$(get_code_at 0 "$address" "$at")" = 0x ] || fail "$address carries code at $at"
+		[ "$(get_code_at 0 "$address" "$at" "code/$at/$address.json")" = 0x ] || fail "$address carries code at $at"
 	done
 done
 log "precompiles served at $h1: $precompiles_served"
@@ -738,27 +856,63 @@ for ((i = 0; i < nodes; i++)); do
 	[[ "$pubkey" =~ ^0[23][0-9a-f]{64}$ ]] || fail "feed_key.py printed '$pubkey', not a compressed public key"
 	tx_flags=(--from "${ordered_keys[$i]}" --keyring-backend "$keyring_backend" --keyring-dir "$keyring_dir"
 		--home "${homes[$i]}" --chain-id "$chain_id" --evm-rpc "$(evm_url "$i")")
-	if ! out=$("$new_bin" tx evm associate-address "${tx_flags[@]}" 2>&1); then
-		grep -q 'already associated' <<<"$out" || fail "associate-address failed for ${ordered_keys[$i]}: $out"
-		log "operator ${ordered_keys[$i]} is already associated"
-	fi
-	payload=$(python3 "$release/feed_key.py" payload "$pubkey") || fail "feed_key.py payload failed for node $i"
-	out=$("$new_bin" tx evm call-contract "$pricefeed" "${payload#0x}" "${tx_flags[@]}" 2>&1) \
-		|| fail "registerFeedKey failed for ${ordered_keys[$i]}: $out"
 	validator_hex=$("$new_bin" keys parse "${operators[$i]}" --output json | jq -r '.bytes' | tr 'A-F' 'a-f')
 	[[ "$validator_hex" =~ ^[0-9a-f]{40}$ ]] || fail "operator ${operators[$i]} does not parse to 20 bytes"
+	feedkey_dir=feedkey/0x$validator_hex
+	account_key=$("$new_bin" keys show "${ordered_keys[$i]}" --output json --keyring-backend "$keyring_backend" \
+		--keyring-dir "$keyring_dir" | jq -r '.pubkey | (fromjson? // .) | .key')
+	evm_address=$(evm_address_of "$account_key") || fail "no EVM address for the key ${ordered_keys[$i]}"
+	record "$feedkey_dir/evm-address" <<<"$evm_address"
+	payload=$(python3 "$release/feed_key.py" payload "$pubkey") || fail "feed_key.py payload failed for node $i"
+	payload=0x${payload#0x}
+	# registerFeedKey from the operator's EVM address before the association; its revert reason is
+	# decoded beside the raw response.
+	eth_call_at "$i" "$pricefeed" "$payload" latest "$feedkey_dir/before-association.json" "$evm_address" >/dev/null
+	python3 - "$evidence/$feedkey_dir/before-association.json" <<'PY' | record "$feedkey_dir/before-association.out"
+import json
+import sys
+
+with open(sys.argv[1]) as handle:
+    response = json.load(handle)
+print(json.dumps(response))
+error = response.get("error") or {}
+print(error.get("message", ""))
+data = error.get("data")
+if isinstance(data, str) and data.startswith("0x08c379a0") and len(data) >= 10 + 128:
+    body = bytes.fromhex(data[10:])
+    length = int.from_bytes(body[32:64], "big")
+    print(body[64:64 + length].decode("utf-8", "replace"))
+PY
+	out=$("$new_bin" tx evm associate-address "${tx_flags[@]}" 2>&1) || fail "associate-address failed for ${ordered_keys[$i]}: $out"
+	response=$(sed -n 's/^Response: //p' <<<"$out" | tail -n 1)
+	jq -e 'type == "object"' <<<"$response" >/dev/null 2>&1 || fail "associate-address printed no JSON-RPC response: $out"
+	jq -c '{code: (if .error == null then 0 else (.error.code // 1) end), response: .}' <<<"$response" \
+		| record "$feedkey_dir/associate.json"
+	if [ "$(jq -r '.error == null' <<<"$response")" != true ]; then
+		grep -q 'already associated' <<<"$response" || fail "associate-address failed for ${ordered_keys[$i]}: $response"
+		log "operator ${ordered_keys[$i]} is already associated"
+	fi
+	deadline=$((SECONDS + 120))
+	until [ "$(eth_call_at "$i" "$pricefeed" "$payload" latest "$feedkey_dir/register.json" "$evm_address")" != revert ]; do
+		[ "$SECONDS" -lt "$deadline" ] || fail "registerFeedKey from $evm_address still reverts after the association: $(cat "$evidence/$feedkey_dir/register.json")"
+		sleep 1
+	done
+	out=$("$new_bin" tx evm call-contract "$pricefeed" "${payload#0x}" "${tx_flags[@]}" 2>&1) \
+		|| fail "registerFeedKey failed for ${ordered_keys[$i]}: $out"
 	deadline=$((SECONDS + 120))
 	account=""
 	while [ -z "$account" ]; do
 		[ "$SECONDS" -lt "$deadline" ] || fail "getFeedKey of ${operators[$i]} did not return the registered key"
-		current=$(height 0)
-		result=$(eth_call_at 0 "$pricefeed" "${get_feed_key}000000000000000000000000$validator_hex" "$current")
+		result=$(eth_call_at 0 "$pricefeed" "${get_feed_key}000000000000000000000000$validator_hex" latest \
+			"oracle/getFeedKey-0x$validator_hex.json")
 		if [ "$result" != revert ] && [ "${#result}" -ge $((2 + 64 * 4)) ] && [ "${result:2+64*3:66}" = "$pubkey" ]; then
 			account=${result:2+64+24:40}
 		else
 			sleep 1
 		fi
 	done
+	eth_call_at 0 "$pricefeed" "$(abi_call 'getValidatorByFeedAccount(address)' "$account")" latest \
+		"$feedkey_dir/getValidatorByFeedAccount.json" >/dev/null
 	feed_accounts+=("$account")
 	log "feed key of ${operators[$i]} registered, feed account 0x$account"
 done
@@ -807,23 +961,38 @@ feed_keys=$(jq -r '.feed_keys' "$receipts/oracle.json")
 [ "$feed_keys" = "$nodes" ] || fail "fleet_check.py reports $feed_keys feed keys, expected $nodes"
 oracle_fresh=$(jq -r '.oracle_fresh' "$receipts/oracle.json")
 [ "$oracle_fresh" = true ] || [ "$oracle_fresh" = 18 ] || fail "fleet_check.py reports oracle_fresh $oracle_fresh"
+eth_call_at 0 0x0000000000000000000000000000000000001015 "$(abi_call 'totalMarkets()')" "$h1" markets/totalMarkets.json >/dev/null
+count_word=$(eth_call_at 0 "$pricefeed" "$(abi_call 'getMarketCount()')" "$h1" markets/getMarketCount.json)
+[[ "$count_word" =~ ^0x0{48}[0-9a-f]{16}$ ]] || fail "getMarketCount() of $pricefeed returned $count_word at $h1"
+for ((m = 0; m < 16#${count_word:50}; m++)); do
+	eth_call_at 0 "$pricefeed" "$(abi_call 'getMarket(uint256)' "$(printf '%x' "$m")")" "$h1" "markets/getMarket-$m.json" >/dev/null
+	eth_call_at 0 "$pricefeed" "$(abi_call 'getPrice(uint256)' "$(printf '%x' "$m")")" latest "oracle/getPrice-$m.json" >/dev/null
+done
 
 run_programme_checks || fail "a programme check failed; see $logs/programme-*.log"
 log "programme checks passed"
 
 # --- 7. block hashes, the final height and the logs --------------------------------------------
 final_height=$(wait_height_above 0 "$((halt_height + 10))")
+for ((i = 0; i < nodes; i++)); do
+	wait_height_above "$i" "$((halt_height + 10))" >/dev/null
+	rpc_post "$i" abci_info '{}' | record "node$i/abci-info.json" || fail "node $i did not answer abci_info"
+	[ "$(jq -r '.result.response.version' "$evidence/node$i/abci-info.json")" = "$plan" ] \
+		|| fail "node $i reports ABCI version $(jq -r '.result.response.version' "$evidence/node$i/abci-info.json"), expected $plan"
+done
 for ((h = h1; h <= halt_height + 10; h++)); do
 	first=""
 	for ((i = 0; i < nodes; i++)); do
-		hash=$(jget "$(rpc_url "$i")/block?height=$h" '.block_id.hash')
+		rpc_post "$i" block "{\"height\":\"$h\"}" | record "node$i/block-$h.json" || fail "node $i returned no block at $h"
+		hash=$(jq -r '.result.block_id.hash // empty' "$evidence/node$i/block-$h.json")
 		[ -n "$hash" ] || fail "node $i returned no block hash at $h"
 		[ -n "$first" ] || first=$hash
 		[ "$hash" = "$first" ] || fail "block $h differs between node 0 ($first) and node $i ($hash)"
 	done
 done
 for ((i = 0; i < nodes; i++)); do
-	grep -c panic "$logs/node$i-new.log" | grep -qx 0 || fail "the release candidate log of node $i carries panic"
+	record "node$i/new-bin.log" <"$logs/node$i-new.log"
+	! grep -q panic "$logs/node$i-new.log" || fail "the release candidate log of node $i carries panic"
 done
 log "blocks $h1..$((halt_height + 10)) agree on the four nodes; final height $final_height"
 
@@ -834,23 +1003,34 @@ for pid in "${sidecar_pids[@]}"; do
 done
 sidecar_pids=()
 stop_units
+# rollback.sh --execute runs its prepare, stop, restore and start phases on this host; between
+# restore and start the restored homes run once in full mode so their abci_info at the halt height
+# is read before the previous binary commits the next block.
+for phase in prepare stop restore; do
+	bash "$release/rollback.sh" --env-file "$rehearsal_env" --local --execute --phase "$phase" >>"$logs/rollback.log" 2>&1 \
+		|| fail "rollback.sh --execute --phase $phase failed; see $logs/rollback.log"
+done
+[ "$(sha256sum "$bin_dir/paxd" | cut -d' ' -f1)" = "$old_sha" ] || fail "rollback did not restore the previous binary"
+record_abci_at_halt rollback-abci-info.json restored-at-halt
 for ((i = 0; i < nodes; i++)); do
 	write_unit "$i" "$logs/node$i-rollback.log"
 done
 systemctl daemon-reload
-bash "$release/rollback.sh" --env-file "$rehearsal_env" --execute >"$logs/rollback.log" 2>&1 \
-	|| fail "rollback.sh --execute failed; see $logs/rollback.log"
-[ "$(sha256sum "$bin_dir/paxd" | cut -d' ' -f1)" = "$old_sha" ] || fail "rollback did not restore the previous binary"
+bash "$release/rollback.sh" --env-file "$rehearsal_env" --local --execute --phase start >>"$logs/rollback.log" 2>&1 \
+	|| fail "rollback.sh --execute --phase start failed; see $logs/rollback.log"
 for ((i = 0; i < nodes; i++)); do
 	[ ! -e "${homes[$i]}/data/upgrade-info.json" ] || fail "rollback left ${homes[$i]}/data/upgrade-info.json"
 	[ -d "${homes[$i]}/data.$plan-$release_id" ] || fail "rollback did not set aside the data of ${homes[$i]}"
 	wait_height_above "$i" "$((halt_height + 5))" >/dev/null
+	rpc_post "$i" status '{}' | record "node$i/rollback-status.json" || fail "node $i did not answer status after the rollback"
+	[ "$(jq -r '.result.response.last_block_app_hash' "$evidence/node$i/rollback-abci-info.json")" = "$hash_at_halt" ] \
+		|| fail "node $i restored application hash $(jq -r '.result.response.last_block_app_hash' "$evidence/node$i/rollback-abci-info.json") at $halt_height, recorded $hash_at_halt"
 done
 restored_hash=$(jget "$(rpc_url 0)/block?height=$h1" '.block.header.app_hash')
 [ "$restored_hash" = "$hash_at_halt" ] \
 	|| fail "the restored chain carries application hash $restored_hash at $halt_height, recorded $hash_at_halt"
 for ((i = 0; i < nodes; i++)); do
-	grep -c panic "$logs/node$i-rollback.log" | grep -qx 0 || fail "the restored log of node $i carries panic"
+	! grep -q panic "$logs/node$i-rollback.log" || fail "the restored log of node $i carries panic"
 done
 stop_units
 log "rollback leg passed: application hash at $halt_height restored, chain past $((halt_height + 5)) on the previous binary"

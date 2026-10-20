@@ -29552,7 +29552,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.12]
 title = "Drive the four-node rehearsal from halt to upgraded chain and back through the rollback leg"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 4
 requires = ["8.4.5", "8.4.8", "8.4.9", "8.4.10", "8.4.11", "8.4.17", "8.4.19"]

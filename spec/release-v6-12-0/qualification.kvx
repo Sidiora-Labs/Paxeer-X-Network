@@ -2468,3 +2468,11 @@ exit = 0
 log = fleet/logs/release-8.4.9-verify-6.log
 observed = All three rollback cases pass after the archive check admits the memiavl current symlink, the seeded genesis carries uhpx metadata at exponent 6 and the halt export's evm nonces; the earlier pointer address collision came from the evm module restarting at nonce 0 in the composed genesis, and the halt export itself has empty addresses at the module's nonce 1 and nonce 2 where the uhpx and SID pointers deploy.
 assumption = The halt export fixture matches mainnet state at the halt height; the pointer deploy addresses on mainnet are free.
+
+[finding.8.4.12-rehearsal-input-missing]
+revision = "0bc665b38"
+command = "bash tools/release/tests/rehearse.test.sh"
+exit = 1
+log = "release-8.4.12-verify-2.log"
+observed = "The four cases that run on a build box pass; the ten others need a stopped mainnet data copy with four operator keys, a price sidecar endpoint and trader keys that are not available to the harness."
+assumption = "The driver is complete; the full rehearsal run and its evidence cases qualify once the rehearsal env is filled on a host that holds the keys."

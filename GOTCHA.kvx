@@ -8665,3 +8665,38 @@ detail = "Search the log for 'test timed out' before reading a clean tail as a p
 area = "node/tests"
 summary = "node tests that need post-upgrade launchpad behaviour must record the v6.12.0 done height"
 detail = "A fresh chain without it serves the v6.10 launchpad at 0x1017 and createMarket fails with LXP_LAUNCHPAD_TRANSFER_FAILED; recordV6120Done in node/test_helpers.go sets the done height through the upgrade keeper and refreshes the precompile set."
+
+[gotcha.1819]
+area = "tools/release"
+summary = "paxd export panics without --chain-id and without the home's wasm/ directory beside data/"
+detail = "The rehearsal export step passes --chain-id and copies wasm/ next to the data copy."
+
+[gotcha.1820]
+area = "tools/release"
+summary = "rollback.sh without --local sshes to VALIDATOR_HOSTS"
+detail = "Local rehearsal legs must pass --local or they try to reach the validator hosts."
+
+[gotcha.1821]
+area = "tools/release"
+summary = "associate-address exits 0 even when the RPC returns an error"
+detail = "Parse the Response: JSON for an error field instead of trusting the exit code."
+
+[gotcha.1822]
+area = "tools/release"
+summary = "rewrite_genesis needs exactly four validators of equal power"
+detail = "A one-validator test chain cannot pass the export step; the rehearsal test chain now runs four."
+
+[gotcha.1823]
+area = "systemd"
+summary = "systemd runtime units have no HOME and paxd panics with '$HOME is not defined'"
+detail = "Transient node units set Environment=HOME=<node home>."
+
+[gotcha.1824]
+area = "bash"
+summary = "under pipefail, grep -c pattern | grep -qx 0 fails on a clean file"
+detail = "grep -c exits 1 when it counts zero matches; use ! grep -q pattern for an absence check."
+
+[gotcha.1825]
+area = "tools/release"
+summary = "with --halt-height on four validators one node can be stuck at the halt height"
+detail = "Peers may stop before their votes for the halt height reach the last node; the driver restarts one halted node to pass the commit along, then stops it again."

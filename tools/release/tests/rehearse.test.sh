@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tests of tools/release/rehearse-v6120.sh and tools/release/rehearsal/pool_parity.py.
 #
-# export_step_produces_genesis and nodes_halt_at_rehearsal_height run against a one-validator chain
-# the previous binary (REHEARSE_OLD_BIN, default the paxd on PATH) builds and runs locally.
+# export_step_produces_genesis and nodes_halt_at_rehearsal_height run against a four-validator chain
+# the previous binary (REHEARSE_OLD_BIN, default build/paxd.previous, else the paxd on PATH) runs locally.
 # plan_applied_at_next_block and result_file_keys drive the whole rehearsal from REHEARSAL_ENV_FILE
 # (default .env.rehearsal-v6120), a filled copy of tools/release/env/rehearsal.env.example over a
 # stopped mainnet data copy and the release candidate, unless its WORK already holds a finished run;
@@ -41,11 +41,11 @@ export LC_ALL=C
 driver=$root/tools/release/rehearse-v6120.sh
 parity=$root/tools/release/rehearsal/pool_parity.py
 scratch=$(mktemp -d)
-fixture_pid=""
-trap '[ -z "$fixture_pid" ] || kill "$fixture_pid" 2>/dev/null; rm -rf "$scratch"' EXIT
+fixture_pids=()
+trap '[ ${#fixture_pids[@]} -eq 0 ] || kill "${fixture_pids[@]}" 2>/dev/null; rm -rf "$scratch"' EXIT
 pass=0
 failed=0
-old_bin=${REHEARSE_OLD_BIN:-$(command -v paxd || true)}
+old_bin=${REHEARSE_OLD_BIN:-$([ -x "$root/build/paxd.previous" ] && echo "$root/build/paxd.previous" || command -v paxd || true)}
 rehearse_env=${REHEARSAL_ENV_FILE:-.env.rehearsal-v6120}
 receipt=${REHEARSAL_RECEIPT:-tools/release/rollout/v6.12.0/rehearsal.json}
 port_base=$((20000 + ($$ % 400) * 100))
@@ -164,32 +164,56 @@ need_old_bin() {
 	[ -n "$old_bin" ] && [ -x "$old_bin" ] || { echo "no previous binary: set REHEARSE_OLD_BIN or put paxd on PATH"; return 1; }
 }
 
-# fixture: a one-validator chain run in validator mode by the previous binary to height 8 and stopped.
+# fixture: a chain of four validators of equal power run in validator mode by the previous binary
+# to height 8 and stopped; $scratch/source is the home of validator 0.
 fixture() {
 	[ -d "$scratch/source" ] && return 0
-	local h=$scratch/source address height=""
+	local i j h address height="" peers=() others base
 	need_old_bin || return 1
-	"$old_bin" init fixture --chain-id "$chain" --home "$h" >/dev/null 2>&1 || { echo "init failed"; return 1; }
-	"$old_bin" keys add fixture --keyring-backend test --home "$h" >/dev/null 2>&1 || { echo "keys add failed"; return 1; }
-	address=$("$old_bin" keys show fixture -a --keyring-backend test --home "$h")
-	"$old_bin" add-genesis-account "$address" 1000000000000uhpx --home "$h" >/dev/null 2>&1 || { echo "add-genesis-account failed"; return 1; }
-	"$old_bin" gentx fixture 1000000000uhpx --chain-id "$chain" --keyring-backend test --home "$h" >/dev/null 2>&1 \
-		|| { echo "gentx failed"; return 1; }
-	"$old_bin" collect-gentxs --home "$h" >/dev/null 2>&1 || { echo "collect-gentxs failed"; return 1; }
-	sed -i "0,/^\[/ s|^mode = .*|mode = \"validator\"|; s|^laddr = \"tcp://0.0.0.0:26657\"|laddr = \"tcp://127.0.0.1:$((port_base + 90))\"|; s|^laddr = \"tcp://0.0.0.0:26656\"|laddr = \"tcp://127.0.0.1:$((port_base + 91))\"|" "$h/config/config.toml"
-	sed -i "s|^http_port = .*|http_port = $((port_base + 92))|; s|^ws_port = .*|ws_port = $((port_base + 93))|; s|^address = \"0.0.0.0:9090\"|address = \"127.0.0.1:$((port_base + 94))\"|; s|^address = \"0.0.0.0:9091\"|address = \"127.0.0.1:$((port_base + 95))\"|; s|^address = \"tcp://0.0.0.0:1317\"|address = \"tcp://127.0.0.1:$((port_base + 96))\"|" "$h/config/app.toml"
-	"$old_bin" start --home "$h" >"$scratch/fixture.log" 2>&1 &
-	fixture_pid=$!
+	for i in 0 1 2 3; do
+		h=$scratch/fixture$i
+		"$old_bin" init "fixture-$i" --chain-id "$chain" --home "$h" >/dev/null 2>&1 || { echo "init $i failed"; return 1; }
+		"$old_bin" keys add "fixture-$i" --keyring-backend test --home "$h" >/dev/null 2>&1 || { echo "keys add $i failed"; return 1; }
+		address=$("$old_bin" keys show "fixture-$i" -a --keyring-backend test --home "$h")
+		"$old_bin" add-genesis-account "$address" 1000000000000uhpx --home "$scratch/fixture0" >/dev/null 2>&1 \
+			|| { echo "add-genesis-account $i failed"; return 1; }
+	done
+	for i in 1 2 3; do cp "$scratch/fixture0/config/genesis.json" "$scratch/fixture$i/config/genesis.json"; done
+	for i in 0 1 2 3; do
+		h=$scratch/fixture$i
+		"$old_bin" gentx "fixture-$i" 1000000000uhpx --chain-id "$chain" --keyring-backend test --home "$h" >/dev/null 2>&1 \
+			|| { echo "gentx $i failed"; return 1; }
+		[ "$i" = 0 ] || cp "$h"/config/gentx/*.json "$scratch/fixture0/config/gentx/"
+	done
+	"$old_bin" collect-gentxs --home "$scratch/fixture0" >/dev/null 2>&1 || { echo "collect-gentxs failed"; return 1; }
+	for i in 0 1 2 3; do
+		[ "$i" = 0 ] || cp "$scratch/fixture0/config/genesis.json" "$scratch/fixture$i/config/genesis.json"
+		peers+=("$("$old_bin" tendermint show-node-id --home "$scratch/fixture$i")@127.0.0.1:$((port_base + 80 + 4 * i + 1))")
+	done
+	for i in 0 1 2 3; do
+		h=$scratch/fixture$i
+		base=$((port_base + 80 + 4 * i))
+		others=""
+		for j in 0 1 2 3; do [ "$j" = "$i" ] || others=${others:+$others,}${peers[$j]}; done
+		sed -i "0,/^\[/ s|^mode = .*|mode = \"validator\"|; s|^laddr = \"tcp://0.0.0.0:26657\"|laddr = \"tcp://127.0.0.1:$base\"|; s|^laddr = \"tcp://0.0.0.0:26656\"|laddr = \"tcp://127.0.0.1:$((base + 1))\"|; s|^persistent-peers = .*|persistent-peers = \"$others\"|; s|^allow-duplicate-ip = .*|allow-duplicate-ip = true|; s|^pex = .*|pex = false|" "$h/config/config.toml"
+		sed -i "s|^http_port = .*|http_port = $((base + 2))|; s|^ws_enabled = .*|ws_enabled = false|; s|^address = \"0.0.0.0:9090\"|address = \"127.0.0.1:$((base + 3))\"|; s|^address = \"tcp://0.0.0.0:1317\"|address = \"tcp://127.0.0.1:$((port_base + 99 - i))\"|" "$h/config/app.toml"
+		sed -i "/^\[grpc-web\]/,/^\[/ s|^enable = .*|enable = false|" "$h/config/app.toml"
+		"$old_bin" start --home "$h" >"$scratch/fixture$i.log" 2>&1 &
+		fixture_pids+=("$!")
+	done
 	for _ in $(seq 1 600); do
-		height=$(curl -sf --max-time 2 "http://127.0.0.1:$((port_base + 90))/status" | jq -r '(.result // .).sync_info.latest_block_height' 2>/dev/null || true)
+		height=$(curl -sf --max-time 2 "http://127.0.0.1:$((port_base + 80))/status" | jq -r '(.result // .).sync_info.latest_block_height' 2>/dev/null || true)
 		[[ "$height" =~ ^[0-9]+$ ]] && [ "$height" -ge 8 ] && break
-		kill -0 "$fixture_pid" 2>/dev/null || { echo "fixture node exited: $(tail -n 3 "$scratch/fixture.log")"; return 1; }
+		for i in 0 1 2 3; do
+			kill -0 "${fixture_pids[$i]}" 2>/dev/null || { echo "fixture node $i exited: $(tail -n 3 "$scratch/fixture$i.log")"; return 1; }
+		done
 		sleep 1
 	done
-	kill -TERM "$fixture_pid"
-	wait "$fixture_pid" 2>/dev/null
-	fixture_pid=""
+	kill -TERM "${fixture_pids[@]}" 2>/dev/null
+	wait "${fixture_pids[@]}" 2>/dev/null
+	fixture_pids=()
 	[[ "$height" =~ ^[0-9]+$ ]] && [ "$height" -ge 8 ] || { echo "fixture chain did not reach height 8"; return 1; }
+	mv "$scratch/fixture0" "$scratch/source"
 }
 
 case_check_mode_touches_nothing() {
@@ -287,7 +311,7 @@ case_export_step_produces_genesis() {
 	out=$(bash "$driver" --source-data "$scratch/source/data" --source-genesis "$scratch/source/config/genesis.json" \
 		--old-bin "$old_bin" --new-bin "$old_bin" --work "$work" --port-base "$port_base" --chain-id "$chain" \
 		--export-height 5 --stop-after export 2>&1) || { echo "export step failed: $out"; return 1; }
-	jq -e --arg chain "$chain" '.chain_id == $chain and .initial_height == "6" and (.app_state.staking.validators | length) == 1' \
+	jq -e --arg chain "$chain" '.chain_id == $chain and .initial_height == "6" and (.app_state.staking.validators | length) == 4' \
 		"$work/exported-genesis.json" >/dev/null || { echo "exported genesis: $(jq -c '{chain_id, initial_height}' "$work/exported-genesis.json")"; return 1; }
 	[ ! -e "$work/export-home/data" ] || { echo "the export copy of the data was left behind"; return 1; }
 	[ -d "$scratch/source/data" ] || { echo "the source data was moved"; return 1; }
