@@ -1,0 +1,319 @@
+{
+  "api": {
+    "buildArgs": {
+      "SERVICE": "core/api",
+      "BIN": "apid",
+      "API_ROLE": "rest"
+    },
+    "fixed": {
+      "NODE_ENV": "production",
+      "RUNTIME_PROFILE": "container",
+      "BIND_ADDRESS": "0.0.0.0",
+      "SECRETS_PROVIDER": "env",
+      "API_ROLE": "rest"
+    },
+    "required": [
+      "DATABASE_URL",
+      "REDIS_URL"
+    ]
+  },
+  "api-sockets": {
+    "buildArgs": {
+      "SERVICE": "core/api",
+      "BIN": "apid",
+      "API_ROLE": "sockets"
+    },
+    "fixed": {
+      "NODE_ENV": "production",
+      "RUNTIME_PROFILE": "container",
+      "BIND_ADDRESS": "0.0.0.0",
+      "SECRETS_PROVIDER": "env",
+      "API_ROLE": "sockets"
+    },
+    "required": [
+      "DATABASE_URL",
+      "REDIS_URL"
+    ]
+  },
+  "indexer": {
+    "buildArgs": {
+      "SERVICE": "core/indexer",
+      "BIN": "indexerd"
+    },
+    "fixed": {
+      "NODE_ENV": "production",
+      "RUNTIME_PROFILE": "container",
+      "BIND_ADDRESS": "0.0.0.0",
+      "SECRETS_PROVIDER": "env",
+      "CHAIN_ID": "125",
+      "EVENT_EMITTER_ADDRESS": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+      "POOL_REGISTRY_ADDRESS": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+      "ROUTER_ADDRESS": "0x78FB06f525cD964388f2305A489035263E31C6e4",
+      "FACTORY_ADDRESS": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+      "QUOTER_ADDRESS": "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
+      "PROTOCOL_CONFIG_ADDRESS": "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
+      "FEE_ACCUMULATOR_ADDRESS": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+      "SIDIORA_NFT_ADDRESS": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+      "FEES_ROUTER_ADDRESS": "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
+      "POOL_BEACON_ADDRESS": "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE"
+    },
+    "required": [
+      "DATABASE_URL",
+      "REDIS_BULL_URL",
+      "REDIS_URL",
+      "RPC_URL"
+    ]
+  },
+  "charts": {
+    "buildArgs": {
+      "SERVICE": "core/trading-charts",
+      "BIN": "chartsd"
+    },
+    "fixed": {
+      "NODE_ENV": "production",
+      "RUNTIME_PROFILE": "container",
+      "BIND_ADDRESS": "0.0.0.0",
+      "SECRETS_PROVIDER": "env",
+      "CHAIN_ID": "125",
+      "EVENT_EMITTER_ADDRESS": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+      "POOL_REGISTRY_ADDRESS": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+      "ROUTER_ADDRESS": "0x78FB06f525cD964388f2305A489035263E31C6e4",
+      "FACTORY_ADDRESS": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+      "QUOTER_ADDRESS": "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
+      "PROTOCOL_CONFIG_ADDRESS": "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
+      "FEE_ACCUMULATOR_ADDRESS": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+      "SIDIORA_NFT_ADDRESS": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+      "FEES_ROUTER_ADDRESS": "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
+      "POOL_BEACON_ADDRESS": "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE"
+    },
+    "required": [
+      "DATABASE_URL",
+      "REDIS_BULL_URL",
+      "REDIS_URL",
+      "RPC_URL",
+      "WEBHOOK_HMAC_SECRET"
+    ]
+  },
+  "stats": {
+    "buildArgs": {
+      "SERVICE": "core/stats-workers",
+      "BIN": "statsd"
+    },
+    "fixed": {
+      "NODE_ENV": "production",
+      "RUNTIME_PROFILE": "container",
+      "BIND_ADDRESS": "0.0.0.0",
+      "SECRETS_PROVIDER": "env",
+      "CHAIN_ID": "125",
+      "EVENT_EMITTER_ADDRESS": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+      "POOL_REGISTRY_ADDRESS": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+      "ROUTER_ADDRESS": "0x78FB06f525cD964388f2305A489035263E31C6e4",
+      "FACTORY_ADDRESS": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+      "QUOTER_ADDRESS": "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
+      "PROTOCOL_CONFIG_ADDRESS": "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
+      "FEE_ACCUMULATOR_ADDRESS": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+      "SIDIORA_NFT_ADDRESS": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+      "FEES_ROUTER_ADDRESS": "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
+      "POOL_BEACON_ADDRESS": "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE"
+    },
+    "required": [
+      "DATABASE_URL",
+      "REDIS_BULL_URL",
+      "REDIS_URL",
+      "RPC_URL",
+      "WEBHOOK_HMAC_SECRET"
+    ]
+  },
+  "pnl": {
+    "buildArgs": {
+      "SERVICE": "core/pnl-tracker",
+      "BIN": "pnld"
+    },
+    "fixed": {
+      "NODE_ENV": "production",
+      "RUNTIME_PROFILE": "container",
+      "BIND_ADDRESS": "0.0.0.0",
+      "SECRETS_PROVIDER": "env",
+      "CHAIN_ID": "125",
+      "EVENT_EMITTER_ADDRESS": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+      "POOL_REGISTRY_ADDRESS": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+      "ROUTER_ADDRESS": "0x78FB06f525cD964388f2305A489035263E31C6e4",
+      "FACTORY_ADDRESS": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+      "QUOTER_ADDRESS": "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
+      "PROTOCOL_CONFIG_ADDRESS": "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
+      "FEE_ACCUMULATOR_ADDRESS": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+      "SIDIORA_NFT_ADDRESS": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+      "FEES_ROUTER_ADDRESS": "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
+      "POOL_BEACON_ADDRESS": "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE"
+    },
+    "required": [
+      "DATABASE_URL",
+      "REDIS_BULL_URL",
+      "REDIS_URL",
+      "RPC_URL",
+      "WEBHOOK_HMAC_SECRET"
+    ]
+  },
+  "ranking": {
+    "buildArgs": {
+      "SERVICE": "core/ranking-algo",
+      "BIN": "rankingd"
+    },
+    "fixed": {
+      "NODE_ENV": "production",
+      "RUNTIME_PROFILE": "container",
+      "BIND_ADDRESS": "0.0.0.0",
+      "SECRETS_PROVIDER": "env",
+      "CHAIN_ID": "125",
+      "EVENT_EMITTER_ADDRESS": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+      "POOL_REGISTRY_ADDRESS": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+      "ROUTER_ADDRESS": "0x78FB06f525cD964388f2305A489035263E31C6e4",
+      "FACTORY_ADDRESS": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+      "QUOTER_ADDRESS": "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
+      "PROTOCOL_CONFIG_ADDRESS": "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
+      "FEE_ACCUMULATOR_ADDRESS": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+      "SIDIORA_NFT_ADDRESS": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+      "FEES_ROUTER_ADDRESS": "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
+      "POOL_BEACON_ADDRESS": "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE"
+    },
+    "required": [
+      "DATABASE_URL",
+      "REDIS_BULL_URL",
+      "REDIS_URL",
+      "RPC_URL"
+    ]
+  },
+  "gateway": {
+    "buildArgs": {
+      "SERVICE": "media/gateway",
+      "BIN": "mediagatewayd"
+    },
+    "fixed": {
+      "NODE_ENV": "production",
+      "RUNTIME_PROFILE": "container",
+      "BIND_ADDRESS": "0.0.0.0",
+      "SECRETS_PROVIDER": "env"
+    },
+    "required": [
+      "GATEWAY_JWT_SECRET",
+      "METADATA_UPLOAD_URL",
+      "REDIS_URL",
+      "S3_ACCESS_KEY_ID",
+      "S3_ENDPOINT",
+      "S3_SECRET_ACCESS_KEY",
+      "SOCIAL_HTTP_URL",
+      "SOCIAL_WS_URL"
+    ]
+  },
+  "user": {
+    "buildArgs": {
+      "SERVICE": "media/user",
+      "BIN": "userd"
+    },
+    "fixed": {
+      "NODE_ENV": "production",
+      "RUNTIME_PROFILE": "container",
+      "BIND_ADDRESS": "0.0.0.0",
+      "SECRETS_PROVIDER": "env"
+    },
+    "required": [
+      "DATABASE_URL",
+      "REDIS_URL",
+      "S3_ACCESS_KEY_ID",
+      "S3_BUCKET",
+      "S3_ENDPOINT",
+      "S3_SECRET_ACCESS_KEY"
+    ]
+  },
+  "social": {
+    "buildArgs": {
+      "SERVICE": "media/social",
+      "BIN": "sociald"
+    },
+    "fixed": {
+      "NODE_ENV": "production",
+      "RUNTIME_PROFILE": "container",
+      "BIND_ADDRESS": "0.0.0.0",
+      "SECRETS_PROVIDER": "env"
+    },
+    "required": [
+      "DATABASE_URL",
+      "REDIS_URL"
+    ]
+  },
+  "metadata": {
+    "buildArgs": {
+      "SERVICE": "media/metadata",
+      "BIN": "metadatad"
+    },
+    "fixed": {
+      "NODE_ENV": "production",
+      "RUNTIME_PROFILE": "container",
+      "BIND_ADDRESS": "0.0.0.0",
+      "SECRETS_PROVIDER": "env",
+      "METADATA_INGRESS": "edge",
+      "RASTER_ISOLATION": "rlimit",
+      "RASTER_EXECUTABLE": "/app/app"
+    },
+    "required": [
+      "DATABASE_URL",
+      "REDIS_URL",
+      "S3_ACCESS_KEY_ID",
+      "S3_BUCKET",
+      "S3_ENDPOINT",
+      "S3_SECRET_ACCESS_KEY"
+    ]
+  },
+  "livestream": {
+    "buildArgs": {
+      "SERVICE": "media/livestream",
+      "BIN": "livestreamd"
+    },
+    "fixed": {
+      "NODE_ENV": "production",
+      "RUNTIME_PROFILE": "container",
+      "BIND_ADDRESS": "0.0.0.0",
+      "SECRETS_PROVIDER": "env"
+    },
+    "required": [
+      "DATABASE_URL",
+      "LIVEPEER_API_URL",
+      "REDIS_URL"
+    ]
+  },
+  "web": {
+    "buildArgs": {},
+    "fixed": {
+      "NODE_ENV": "production"
+    },
+    "required": [
+      "NEXT_PUBLIC_ACTION_ENVIRONMENT",
+      "NEXT_PUBLIC_AUTH_REDIRECT_URL",
+      "NEXT_PUBLIC_CANONICAL_ORIGIN",
+      "NEXT_PUBLIC_DATA_API_URL",
+      "NEXT_PUBLIC_EXPLORER_API",
+      "NEXT_PUBLIC_GATEWAY_URL",
+      "NEXT_PUBLIC_LIVESTREAM_API_URL",
+      "NEXT_PUBLIC_METADATA_API_URL",
+      "NEXT_PUBLIC_PAXEER_RPC_URL",
+      "NEXT_PUBLIC_PAXEER_WALLET_API",
+      "NEXT_PUBLIC_PNL_API_URL",
+      "NEXT_PUBLIC_PRIVATE_API_ORIGIN",
+      "NEXT_PUBLIC_PRIVATE_STREAM_ORIGIN",
+      "NEXT_PUBLIC_RPC_URL",
+      "NEXT_PUBLIC_RPC_URL_FALLBACK",
+      "NEXT_PUBLIC_SOCIAL_WRITE_PREFIX",
+      "NEXT_PUBLIC_SOCIAL_WS_PATH",
+      "NEXT_PUBLIC_STATS_API_URL",
+      "NEXT_PUBLIC_STREAM_ORIGIN",
+      "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+      "NEXT_PUBLIC_SUPABASE_URL",
+      "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID",
+      "NEXT_PUBLIC_WALLET_IFRAME_ORIGIN",
+      "WEB_API_UPSTREAM",
+      "WEB_CHARTS_UPSTREAM",
+      "WEB_GATEWAY_UPSTREAM",
+      "WEB_SOCKETS_UPSTREAM"
+    ]
+  }
+}
