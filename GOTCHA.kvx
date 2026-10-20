@@ -8435,3 +8435,8 @@ detail = "The custody and solvency invariants walk the store through every cache
 area = "modules/launchpad/launchpadtest"
 summary = "The halt export holds USDL storage only for launchpad-held balances"
 detail = "After MigrateV6120 on the exported state no outside account holds USDL and the quote token is the real USDL contract, so a trade flow cannot run on the migrated store without fabricated state. Run trade flows on a fresh keeper with a USDL ERC20 deployed in the test EVM and keep the migrated store for reads."
+
+[gotcha.1773]
+area = "precompiles/launchpad"
+summary = "TestOpticalHooksSeeTheContractCallers needs LAUNCHPAD_CONTRACTS_DIR and SOLC set"
+detail = "Point LAUNCHPAD_CONTRACTS_DIR at launchpad/contracts/contracts and SOLC at a solc binary that satisfies the ^0.8.24 pragma before running go test ./precompiles/launchpad/...; without them the optical hooks test fails as if the hooks were broken."

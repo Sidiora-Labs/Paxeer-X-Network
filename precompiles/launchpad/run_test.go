@@ -6,15 +6,24 @@ import (
 	"math/big"
 	"testing"
 
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	ibctransferkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/keeper"
+	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	launchpadkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/keeper"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
+	dbm "github.com/tendermint/tm-db"
 )
 
 const runPoolAddress = "0xCE20Da50F92D21d8BeE497910c782E9Aa25b6263"
@@ -27,9 +36,9 @@ var (
 	runOriginal = common.HexToAddress("0x0000000000000000000000000000000000000B0B")
 )
 
-// runEnv is the launchpad executor over a real keeper on an in-memory store,
-// with the generation 2 Router and PoolRegistry surfaces and one pool surface
-// registered.
+// runEnv is the launchpad executor over a real keeper and a real EVM keeper
+// on an in-memory store, with the generation 2 Router and PoolRegistry
+// surfaces and one pool surface registered.
 type runEnv struct {
 	t        *testing.T
 	ctx      sdk.Context
@@ -41,8 +50,24 @@ type runEnv struct {
 func newRunEnv(t *testing.T) *runEnv {
 	t.Helper()
 	key := sdk.NewKVStoreKey(types.StoreKey)
-	ctx := testutil.DefaultContext(key, sdk.NewTransientStoreKey("transient_"+types.StoreKey))
-	k := launchpadkeeper.NewKeeper(key, nil, nil, nil)
+	evmKey := sdk.NewKVStoreKey("run_evm")
+	transient := sdk.NewTransientStoreKey("run_transient")
+	db := dbm.NewMemDB()
+	cms := store.NewCommitMultiStore(db)
+	cms.MountStoreWithDB(key, sdk.StoreTypeIAVL, db)
+	cms.MountStoreWithDB(evmKey, sdk.StoreTypeIAVL, db)
+	cms.MountStoreWithDB(transient, sdk.StoreTypeTransient, db)
+	require.NoError(t, cms.LoadLatestVersion())
+	ctx := sdk.NewContext(cms, tmproto.Header{}, false)
+	cdc := codec.NewProtoCodec(codectypes.NewInterfaceRegistry())
+	subspace := func(name string) paramtypes.Subspace {
+		return paramtypes.NewSubspace(cdc, codec.NewLegacyAmino(), evmKey, transient, name)
+	}
+	accounts := authkeeper.NewAccountKeeper(cdc, evmKey, subspace("run_auth"), authtypes.ProtoBaseAccount,
+		map[string][]string{authtypes.FeeCollectorName: nil})
+	evm := evmkeeper.NewKeeper(evmKey, transient, subspace("run_evm"), nil, nil, &accounts, nil,
+		ibctransferkeeper.Keeper{}, nil, nil, nil)
+	k := launchpadkeeper.NewKeeper(key, nil, nil, evm)
 
 	holder := sdk.AccAddress(common.HexToAddress("0x00000000000000000000000000000000000C0FFE").Bytes())
 	snapshots := make([]sdk.Int, types.SnapshotSlots)

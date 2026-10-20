@@ -2276,3 +2276,11 @@ exit = 1
 log = fleet/logs/release-2.3.99-verify-5.log
 observed = TestLaunchpadDomainWiring and every test of launchpadtest, types, the v610 legacy keeper and types and the v610 legacy precompile pass; modules/launchpad/keeper fails TestAirdropHoldingHistory with LXP_LAUNCHPAD_INVALID_GENESIS fee account disagrees with market, and precompiles/launchpad fails TestOpticalHooksSeeTheContractCallers and aborts on a nil pointer dereference in TestCallKindRefusals, none of which the task touches.
 assumption = The three failures are fixed in their own packages and the task verify is taken once more on the merged revision before 2.3.99 is marked done.
+
+[finding.2.3.99-precompile-tests-fixed]
+revision = 2ae1f8152
+command = go test ./precompiles/launchpad/...
+exit = 0
+log = fleet/logs/release-2.3.99-precompile-verify-2.log
+observed = TestCallKindRefusals dereferenced nil because the run test env built the keeper without an EVM keeper after InitGenesis began installing the generation 2 role surfaces through it; the env now mounts an EVM store and passes a real EVM keeper as events_test does, and TestOpticalHooksSeeTheContractCallers passes once LAUNCHPAD_CONTRACTS_DIR points at launchpad/contracts/contracts and SOLC at a 0.8.24-compatible solc.
+assumption = Every run of the launchpad precompile tests sets those two variables; the test code is unchanged.
