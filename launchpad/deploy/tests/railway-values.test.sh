@@ -48,9 +48,8 @@ want="$tmp/want"
 	for s in charts stats pnl; do for n in $chain WEBHOOK_HMAC_SECRET; do echo "$s $n"; done; done
 	for n in GATEWAY_JWT_SECRET METADATA_UPLOAD_URL REDIS_URL $s3 SOCIAL_HTTP_URL SOCIAL_WS_URL; do echo "gateway $n"; done
 	for s in user metadata; do for n in $db $s3 S3_BUCKET; do echo "$s $n"; done; done
-	for n in DATA_API_URL GATEWAY_URL LIVESTREAM_API_URL METADATA_API_URL PNL_API_URL PRIVATE_API_ORIGIN \
-		PRIVATE_STREAM_ORIGIN STATS_API_URL STREAM_ORIGIN SUPABASE_PUBLISHABLE_KEY SUPABASE_URL \
-		WALLETCONNECT_PROJECT_ID WALLET_IFRAME_ORIGIN; do echo "web NEXT_PUBLIC_$n"; done
+	for n in DATA_API_URL GATEWAY_URL LIVESTREAM_API_URL METADATA_API_URL PNL_API_URL STATS_API_URL \
+		SUPABASE_PUBLISHABLE_KEY SUPABASE_URL WALLETCONNECT_PROJECT_ID WALLET_IFRAME_ORIGIN; do echo "web NEXT_PUBLIC_$n"; done
 } | sort >"$want"
 awk '/^service /{svc=$2} /^  unresolved /{print svc, $2}' "$tmp/plan.out" | sort >"$tmp/got"
 diff -u "$want" "$tmp/got" || fail "unresolved names differ from the reported operator-secret and decision lists"
@@ -71,8 +70,8 @@ web = json.load(open(sys.argv[2]))["web"]
 assert all(args.get(k) == v for k, v in web.items()), f"web.buildArgs differs from the web values: {set(web.items()) - set(args.items())}"
 declared = set(re.findall(r"^ARG ((?:NEXT_PUBLIC|WEB)_[A-Z_]+)", open(sys.argv[3]).read(), re.M))
 undecided = {f"NEXT_PUBLIC_{n}" for n in """ANALYTICS_KEY DATA_API_URL GATEWAY_URL LIVESTREAM_API_URL MARKET_SOCIAL_ORIGINS
-    METADATA_API_URL PNL_API_URL PRIVATE_API_ORIGIN PRIVATE_QUALIFICATION_AUTHORITY_PROFILE PRIVATE_STREAM_ORIGIN
-    SENTRY_DSN SENTRY_RELEASE SOCIAL_API_URL STATS_API_URL STREAM_ORIGIN SUPABASE_PUBLISHABLE_KEY SUPABASE_URL
+    METADATA_API_URL PNL_API_URL PRIVATE_QUALIFICATION_AUTHORITY_PROFILE
+    SENTRY_DSN SENTRY_RELEASE SOCIAL_API_URL STATS_API_URL SUPABASE_PUBLISHABLE_KEY SUPABASE_URL
     USER_API_URL WALLETCONNECT_PROJECT_ID WALLET_IFRAME_ORIGIN""".split()}
 assert set(args) <= declared, f"build args Dockerfile.web does not declare: {set(args) - declared}"
 assert declared - set(args) == undecided, f"unfilled build args differ from the decision list: {(declared - set(args)) ^ undecided}"

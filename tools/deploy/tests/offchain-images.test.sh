@@ -33,7 +33,8 @@ script="$work/tools/deploy/offchain-images.sh"
 manifest="$work/launchpad/deploy/railway/variables.json"
 pristine=$(cat "$manifest")
 
-run() { env -u REVIEWED_BUILD_IMAGE -u REVIEWED_RUNTIME_IMAGE -u PERPS_BUILD_IMAGE -u PERPS_RUNTIME_IMAGE "$@"; }
+sha=0123456789ab
+run() { env -u REVIEWED_BUILD_IMAGE -u REVIEWED_RUNTIME_IMAGE -u PERPS_BUILD_IMAGE -u PERPS_RUNTIME_IMAGE BUILD_SHA=$sha "$@"; }
 args_of() { jq -r --arg n "$2" '.[] | select(.name == $n) | .build_args' <<<"$1"; }
 
 run bash "$script" --check || fail "--check must pass on a complete tree"
@@ -50,11 +51,13 @@ m=$(run env REVIEWED_BUILD_IMAGE=rb@sha256:1 REVIEWED_RUNTIME_IMAGE=rr@sha256:2 
 [ "$(args_of "$m" kindlelaunch-media-metadata)" = $'SERVICE=media/metadata\nBIN=metadatad\nBUILD_IMAGE=rb@sha256:1\nRUNTIME_IMAGE=rr@sha256:2' ] || fail "metadata args: $(args_of "$m" kindlelaunch-media-metadata)"
 [ "$(args_of "$m" perps-gateway)" = $'SERVICE=perps-gateway\nBUILD_IMAGE=pb@sha256:3' ] || fail "perps args: $(args_of "$m" perps-gateway)"
 
-# the web row carries every NEXT_PUBLIC_* arg with its manifest value
+# the web row carries every NEXT_PUBLIC_* arg with its manifest value, and the build sha as the Sentry release
 web=$(args_of "$m" kindlelaunch-web)
 for n in $names; do
+	[ "$n" = NEXT_PUBLIC_SENTRY_RELEASE ] && continue
 	grep -qx "$n=https://${n,,}.example" <<<"$web" || fail "web row lacks $n"
 done
+grep -qx "NEXT_PUBLIC_SENTRY_RELEASE=$sha" <<<"$web" || fail "web row Sentry release is not the build sha"
 [ "$(wc -l <<<"$web")" -eq "$(wc -w <<<"$names")" ] || fail "web row has extra args"
 
 # a value with a space is refused with exit 2
@@ -66,10 +69,29 @@ set -e
 [ "$rc" -eq 2 ] || fail "a value with a space must exit 2, got $rc"
 
 # a NEXT_PUBLIC_* arg without a manifest value fails --check and is named
-last=$(tail -n1 <<<"$names")
+last=$(grep -vE "SOCIAL_API_URL|USER_API_URL|ANALYTICS_KEY|QUALIFICATION_AUTHORITY_PROFILE|SENTRY_RELEASE" <<<"$names" | tail -n1)
 jq --arg a "$first" --arg b "$last" 'del(.web.buildArgs[$a], .web.buildArgs[$b])' <<<"$pristine" > "$manifest"
 if out=$(run bash "$script" --check 2>&1); then fail "--check must fail on a missing value"; fi
 grep -q "$first" <<<"$out" && grep -q "$last" <<<"$out" || fail "--check must name the missing args: $out"
+
+# the committed web values: the three same-origin origins are set, the four dead or unset-is-production names may be
+# empty, the Sentry release is the sha passed, and a backend host without a value still fails --check
+real="$repo/launchpad/deploy/railway/variables.json"
+for o in NEXT_PUBLIC_PRIVATE_API_ORIGIN=https://sidiora.fun NEXT_PUBLIC_PRIVATE_STREAM_ORIGIN=wss://sidiora.fun \
+	NEXT_PUBLIC_STREAM_ORIGIN=wss://sidiora.fun; do
+	[ "$(jq -r --arg n "${o%%=*}" '.web.buildArgs[$n] // empty' "$real")" = "${o#*=}" ] || fail "committed manifest lacks $o"
+done
+may="NEXT_PUBLIC_SOCIAL_API_URL NEXT_PUBLIC_USER_API_URL NEXT_PUBLIC_ANALYTICS_KEY NEXT_PUBLIC_PRIVATE_QUALIFICATION_AUTHORITY_PROFILE"
+jq --arg may "$may" '.web.buildArgs |= with_entries(select(.key as $k | $may | split(" ") | index($k) | not)) | del(.web.buildArgs.NEXT_PUBLIC_SENTRY_RELEASE)' \
+	<<<"$pristine" > "$manifest"
+run bash "$script" --check || fail "--check must allow the four may-be-empty web names and take the release from the sha"
+[ "$(args_of "$(run bash "$script" --matrix)" kindlelaunch-web | grep '^NEXT_PUBLIC_SENTRY_RELEASE=')" = "NEXT_PUBLIC_SENTRY_RELEASE=$sha" ] ||
+	fail "the Sentry release is not the sha passed"
+jq '.web.buildArgs.NEXT_PUBLIC_DATA_API_URL = ""' <<<"$(cat "$manifest")" > "$manifest.tmp" && mv "$manifest.tmp" "$manifest"
+if out=$(run bash "$script" --check 2>&1); then fail "--check must fail on an empty data API URL"; fi
+grep -q 'kindlelaunch-web: .*NEXT_PUBLIC_DATA_API_URL' <<<"$out" || fail "--check must name the data API URL: $out"
+! grep -qE 'SOCIAL_API_URL|USER_API_URL|ANALYTICS_KEY|QUALIFICATION_AUTHORITY_PROFILE|SENTRY_RELEASE' <<<"$out" ||
+	fail "--check named an allowed web name: $out"
 printf '%s\n' "$pristine" > "$manifest"
 
 # the perps-web row carries exactly the non-empty values of the build args file

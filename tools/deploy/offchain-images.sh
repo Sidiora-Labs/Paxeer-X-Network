@@ -5,6 +5,7 @@
 #             build arg of Dockerfile.web has no value in the web entry of launchpad/deploy/railway/variables.json, or
 #             when a NEXT_PUBLIC_* build arg of the perps Dockerfile without a code fallback has no value in
 #             human/apps/perps/deploy/build-args.production.env
+# The web image's NEXT_PUBLIC_SENTRY_RELEASE is the build commit: BUILD_SHA, else the checkout's 12-character HEAD.
 # Base images come from the environment: REVIEWED_BUILD_IMAGE/REVIEWED_RUNTIME_IMAGE (go1.26.4 builder)
 # and PERPS_BUILD_IMAGE/PERPS_RUNTIME_IMAGE, each pinned by digest; an unset one is left out so the
 # Dockerfile's pinned default holds. Build arg values with whitespace are refused with exit 2.
@@ -44,10 +45,26 @@ next_public_args() {
 }
 # the web image inlines every NEXT_PUBLIC_* arg of Dockerfile.web from the web entry of the Railway variables manifest
 lp_vars="$root/launchpad/deploy/railway/variables.json"
-lp_value() { jq -r --arg n "$1" '(.web.buildArgs // {}) + (.web.fixed // {}) | .[$n] // empty' "$lp_vars"; }
+build_sha=${BUILD_SHA:-$(git -C "$root" rev-parse --short=12 HEAD 2>/dev/null || true)}
+lp_value() {
+	if [ "$1" = NEXT_PUBLIC_SENTRY_RELEASE ]; then
+		echo "$build_sha"
+	else
+		jq -r --arg n "$1" '(.web.buildArgs // {}) + (.web.fixed // {}) | .[$n] // empty' "$lp_vars"
+	fi
+}
+# names the web app treats as unset when empty, so an empty value is allowed
+lp_may_be_empty() {
+	case "${1#NEXT_PUBLIC_}" in
+	SOCIAL_API_URL | USER_API_URL) ;;              # no app source reads them; social and user go through the gateway
+	ANALYTICS_KEY) ;;                              # no analytics provider is wired (src/core/analytics.ts)
+	PRIVATE_QUALIFICATION_AUTHORITY_PROFILE) ;;    # unset is production: authority from /v2/network/authority
+	*) return 1 ;;
+	esac
+}
 web_args="" web_missing=()
 if [ -f "$root/launchpad/deploy/Dockerfile.web" ] && [ -f "$lp_vars" ]; then
-	next_public_args kindlelaunch-web launchpad/deploy/Dockerfile.web lp_value
+	next_public_args kindlelaunch-web launchpad/deploy/Dockerfile.web lp_value lp_may_be_empty
 	web_args=$args web_missing=("${missing[@]}")
 fi
 rows+=("kindlelaunch-web|launchpad|launchpad/deploy/Dockerfile.web||${web_args# }|1")
