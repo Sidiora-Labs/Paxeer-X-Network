@@ -2172,3 +2172,11 @@ exit = 1
 log = fleet/logs/release-7.1.8-verify-4.log
 observed = indexes_venue_block, resumes_from_cursor, readiness_lag and publishes_in_order pass while catch_up_batches times out: decoding takes 1 to 6 ms per block but store.WriteBlock takes 150 to 250 ms because insertFact and put send about 60 single-row statements per block with about 28 ms of server time, so the indexer manages about 2.4 blocks per second against a 200 ms block interval.
 assumption = The fact writers of capability 7.2.4 must batch the inserts of a block; the 7.1.8 commit stays unlanded until that gate passes.
+
+[finding.7.3.2-verified]
+revision = 0637880e68df91a330a9e534bffe5e421142a19b
+command = go test -count=1 ./services/platform/perps-data/internal/portal/ -run 'TestPortalServer'
+exit = 0
+log = fleet/logs/release-7.3.2-requal-1.log
+observed = Resolved with no code change once the 7.3.1 pages and the 7.2.13 gateway were on the base: pages_mounted, readiness_follows_gateway, not_found_page and csp_header pass against a throwaway database and the perps-data build exits 0.
+assumption = The earlier finding.7.3.2 compile failure was only the missing dependencies.
