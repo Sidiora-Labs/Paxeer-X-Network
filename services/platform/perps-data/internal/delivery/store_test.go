@@ -132,6 +132,14 @@ func (p jetStreamPublisher) Publish(ctx context.Context, subject, eventID string
 	return delivery.PersistenceAck{Stream: ack.Stream, Sequence: ack.Sequence}, nil
 }
 
+func (p jetStreamPublisher) PublishBatch(ctx context.Context, leases []delivery.Lease) []delivery.Publication {
+	out := make([]delivery.Publication, len(leases))
+	for i, l := range leases {
+		out[i].Ack, out[i].Err = p.Publish(ctx, l.Subject, l.EventID, l.Wire)
+	}
+	return out
+}
+
 type brokerDelivery struct{ msg jetstream.Msg }
 
 func (d brokerDelivery) Ack(ctx context.Context) error { return d.msg.DoubleAck(ctx) }

@@ -128,24 +128,52 @@ type PersistenceAck struct {
 }
 
 func (s *Store) MarkPublished(ctx context.Context, l Lease, a PersistenceAck) error {
-	if !token.MatchString(a.Stream) || a.Sequence == 0 || a.Sequence > 1<<63-1 {
-		return errors.New("delivery: persistence acknowledgement required")
-	}
-	return s.mutate(ctx, func(tx *sql.Tx) error {
-		return fenced(tx.ExecContext(ctx, "UPDATE "+s.table("delivery_outbox")+" SET acknowledgement_latency_ms=GREATEST(0,EXTRACT(EPOCH FROM (clock_timestamp()-claimed_at))*1000)::bigint,state='published',broker_stream=$4,broker_sequence=$5,published_at=clock_timestamp(),lease_owner=NULL,lease_until=NULL,failure_class=NULL WHERE event_id=$1 AND lease_owner=$2 AND fence=$3 AND lease_until>clock_timestamp() AND state='pending'", l.EventID, l.Owner, l.Fence, a.Stream, int64(a.Sequence)))
-	})
+	return s.MarkPublishedBatch(ctx, []Lease{l}, []PersistenceAck{a})
 }
 
-// fenced reports ErrLease unless the update matched exactly the leased row.
-func fenced(res sql.Result, err error) error {
+// MarkPublishedBatch records acks[i] as the broker position of leases[i] in one
+// transaction. Every row still fenced by its lease is recorded; ErrLease
+// reports that at least one lease no longer matched its row.
+func (s *Store) MarkPublishedBatch(ctx context.Context, leases []Lease, acks []PersistenceAck) error {
+	if len(leases) != len(acks) {
+		return errors.New("delivery: one acknowledgement per lease required")
+	}
+	ids, owners, fences := leaseKeys(leases)
+	streams, sequences := make([]string, len(acks)), make([]int64, len(acks))
+	for i, a := range acks {
+		if !token.MatchString(a.Stream) || a.Sequence == 0 || a.Sequence > 1<<63-1 {
+			return errors.New("delivery: persistence acknowledgement required")
+		}
+		streams[i], sequences[i] = a.Stream, int64(a.Sequence)
+	}
+	return s.fencedUpdate(ctx, len(leases), "UPDATE "+s.table("delivery_outbox")+" o SET acknowledgement_latency_ms=GREATEST(0,EXTRACT(EPOCH FROM (clock_timestamp()-o.claimed_at))*1000)::bigint,state='published',broker_stream=l.stream,broker_sequence=l.seq,published_at=clock_timestamp(),lease_owner=NULL,lease_until=NULL,failure_class=NULL FROM unnest($1::text[],$2::text[],$3::bigint[],$4::text[],$5::bigint[]) AS l(event_id,owner,fence,stream,seq) WHERE o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND o.state='pending'", ids, owners, fences, pq.Array(streams), pq.Array(sequences))
+}
+
+// leaseKeys returns the event ids, owners and fences of leases as arrays.
+func leaseKeys(leases []Lease) (ids, owners, fences any) {
+	i, o, f := make([]string, len(leases)), make([]string, len(leases)), make([]int64, len(leases))
+	for n, l := range leases {
+		i[n], o[n], f[n] = l.EventID, l.Owner, l.Fence
+	}
+	return pq.Array(i), pq.Array(o), pq.Array(f)
+}
+
+// fencedUpdate runs one fenced update of want leased rows in one transaction,
+// commits the rows it matched and reports ErrLease when it matched fewer.
+func (s *Store) fencedUpdate(ctx context.Context, want int, query string, args ...any) error {
+	var n int64
+	err := s.mutate(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, query, args...)
+		if err != nil {
+			return err
+		}
+		n, err = res.RowsAffected()
+		return err
+	})
 	if err != nil {
 		return err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n != 1 {
+	if n != int64(want) {
 		return ErrLease
 	}
 	return nil
@@ -161,39 +189,82 @@ const (
 )
 
 func (s *Store) Retry(ctx context.Context, l Lease, class FailureClass, maxAttempts int, delay time.Duration) error {
+	return s.RetryBatch(ctx, []Lease{l}, []FailureClass{class}, maxAttempts, delay)
+}
+
+// RetryBatch applies Retry to every leases[i] with classes[i] in one
+// transaction; ErrLease reports that at least one lease no longer matched.
+func (s *Store) RetryBatch(ctx context.Context, leases []Lease, classes []FailureClass, maxAttempts int, delay time.Duration) error {
 	if maxAttempts < 1 || maxAttempts > 100 || delay < time.Second || delay > time.Hour {
 		return errors.New("delivery: invalid retry bounds")
 	}
-	switch class {
-	case Transient, SchemaViolation, IntegrityConflict, Authorization:
-	default:
-		return errors.New("delivery: invalid failure class")
+	if len(leases) != len(classes) {
+		return errors.New("delivery: one failure class per lease required")
 	}
+	names := make([]string, len(classes))
+	for i, class := range classes {
+		switch class {
+		case Transient, SchemaViolation, IntegrityConflict, Authorization:
+		default:
+			return errors.New("delivery: invalid failure class")
+		}
+		names[i] = string(class)
+	}
+	ids, owners, fences := leaseKeys(leases)
 	// Exhaustion is based on the row, never the caller's mutable lease snapshot.
-	return s.mutate(ctx, func(tx *sql.Tx) error {
-		return fenced(tx.ExecContext(ctx, "UPDATE "+s.table("delivery_outbox")+" SET state=CASE WHEN attempts >= $4::integer OR $5::text <> 'transient' THEN 'quarantined' ELSE 'pending' END,failure_class=$5::text,available_at=clock_timestamp()+($6::bigint*interval '1 millisecond'),lease_owner=NULL,lease_until=NULL WHERE event_id=$1 AND lease_owner=$2 AND fence=$3 AND lease_until>clock_timestamp() AND state='pending'", l.EventID, l.Owner, l.Fence, maxAttempts, string(class), delay.Milliseconds()))
-	})
+	return s.fencedUpdate(ctx, len(leases), "UPDATE "+s.table("delivery_outbox")+" o SET state=CASE WHEN o.attempts >= $5::integer OR l.class <> 'transient' THEN 'quarantined' ELSE 'pending' END,failure_class=l.class,available_at=clock_timestamp()+($6::bigint*interval '1 millisecond'),lease_owner=NULL,lease_until=NULL FROM unnest($1::text[],$2::text[],$3::bigint[],$4::text[]) AS l(event_id,owner,fence,class) WHERE o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND o.state='pending'", ids, owners, fences, pq.Array(names), maxAttempts, delay.Milliseconds())
 }
 
 // CheckAttemptBudget fences the claim against durable attempts before network
 // publication. Claim increments the attempt counter; maxAttempts claims may
 // publish. A reclaim after that budget preserves the original row in quarantine.
 func (s *Store) CheckAttemptBudget(ctx context.Context, l Lease, maxAttempts int) (bool, error) {
-	if maxAttempts < 1 || maxAttempts > 100 {
-		return false, errors.New("delivery: invalid retry bound")
-	}
-	var exhausted bool
-	err := s.mutate(ctx, func(tx *sql.Tx) error {
-		err := tx.QueryRowContext(ctx, "UPDATE "+s.table("delivery_outbox")+" SET state=CASE WHEN attempts>$4::integer THEN 'quarantined' ELSE state END,failure_class=CASE WHEN attempts>$4::integer THEN 'transient' ELSE failure_class END,lease_owner=CASE WHEN attempts>$4::integer THEN NULL ELSE lease_owner END,lease_until=CASE WHEN attempts>$4::integer THEN NULL ELSE lease_until END WHERE event_id=$1 AND lease_owner=$2 AND fence=$3 AND lease_until>clock_timestamp() AND state='pending' RETURNING attempts>$4::integer", l.EventID, l.Owner, l.Fence, maxAttempts).Scan(&exhausted)
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrLease
-		}
-		return err
-	})
+	allowed, err := s.CheckAttemptBudgetBatch(ctx, []Lease{l}, maxAttempts)
 	if err != nil {
 		return false, err
 	}
-	return !exhausted, nil
+	return len(allowed) == 1, nil
+}
+
+// CheckAttemptBudgetBatch applies CheckAttemptBudget to leases in one
+// transaction and returns, in their order, the leases that may publish.
+// ErrLease reports that at least one lease no longer matched its row; the
+// returned leases and the quarantine of exhausted rows still hold.
+func (s *Store) CheckAttemptBudgetBatch(ctx context.Context, leases []Lease, maxAttempts int) ([]Lease, error) {
+	if maxAttempts < 1 || maxAttempts > 100 {
+		return nil, errors.New("delivery: invalid retry bound")
+	}
+	ids, owners, fences := leaseKeys(leases)
+	exhausted := make(map[string]bool, len(leases))
+	err := s.mutate(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, "UPDATE "+s.table("delivery_outbox")+" o SET state=CASE WHEN o.attempts>$4::integer THEN 'quarantined' ELSE o.state END,failure_class=CASE WHEN o.attempts>$4::integer THEN 'transient' ELSE o.failure_class END,lease_owner=CASE WHEN o.attempts>$4::integer THEN NULL ELSE o.lease_owner END,lease_until=CASE WHEN o.attempts>$4::integer THEN NULL ELSE o.lease_until END FROM unnest($1::text[],$2::text[],$3::bigint[]) AS l(event_id,owner,fence) WHERE o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND o.state='pending' RETURNING o.event_id,o.attempts>$4::integer", ids, owners, fences, maxAttempts)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			var over bool
+			if err = rows.Scan(&id, &over); err != nil {
+				return err
+			}
+			exhausted[id] = over
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	allowed := make([]Lease, 0, len(leases))
+	for _, l := range leases {
+		if over, ok := exhausted[l.EventID]; ok && !over {
+			allowed = append(allowed, l)
+		}
+	}
+	if len(exhausted) != len(leases) {
+		return allowed, ErrLease
+	}
+	return allowed, nil
 }
 
 // Delivery Ack must synchronously acknowledge the durable broker delivery.

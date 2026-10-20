@@ -125,7 +125,9 @@ func New(db *sql.DB, nc *nats.Conn, policy delivery.Policy, cfg Config) (*Publis
 	if err != nil {
 		return nil, err
 	}
-	js, err := jetstream.New(nc)
+	// The acknowledgement timeout frees the pending entry of a message whose
+	// acknowledgement never arrives.
+	js, err := jetstream.New(nc, jetstream.WithPublishAsyncTimeout(cfg.PublishTimeout))
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +135,7 @@ func New(db *sql.DB, nc *nats.Conn, policy delivery.Policy, cfg Config) (*Publis
 	if logger == nil {
 		logger = slog.Default()
 	}
-	sink := &sink{db: db, js: js, policy: policy}
+	sink := &sink{js: js, policy: policy}
 	return &Publisher{
 		relay: delivery.Relay{
 			Store: store, Publisher: sink, Owner: cfg.Owner, Batch: cfg.Batch, MaxAttempts: cfg.MaxAttempts,
@@ -170,45 +172,62 @@ func (p *Publisher) Run(ctx context.Context) error {
 	}
 }
 
-// sink is the delivery.PersistentPublisher of the Publisher: it awaits the
-// JetStream persistence acknowledgement of a message carrying Nats-Msg-Id,
-// Perps-Seq, Perps-Block and Perps-Kind.
+// sink is the delivery.BatchPublisher of the Publisher: it pipelines the
+// messages of a batch on one connection, each carrying Nats-Msg-Id, Perps-Seq,
+// Perps-Block and Perps-Kind, and awaits their JetStream persistence
+// acknowledgements. The client never republishes a message on its own, so a
+// failed message is retried by the relay and never lands behind a later one
+// of its batch.
 type sink struct {
-	db     *sql.DB
 	js     jetstream.JetStream
 	policy delivery.Policy
 }
 
-func (s *sink) Publish(ctx context.Context, subject, eventID string, wire []byte) (delivery.PersistenceAck, error) {
-	var result delivery.PersistenceAck
-	e, err := delivery.Decode(wire, s.policy, subject)
+func (s *sink) PublishBatch(ctx context.Context, leases []delivery.Lease) []delivery.Publication {
+	out := make([]delivery.Publication, len(leases))
+	futures := make([]jetstream.PubAckFuture, len(leases))
+	for i, l := range leases {
+		futures[i], out[i].Err = s.send(l)
+	}
+	for i, f := range futures {
+		if f == nil {
+			continue
+		}
+		select {
+		case ack := <-f.Ok():
+			if ack == nil || ack.Stream != stream.Name || ack.Sequence == 0 || ack.Sequence > 1<<63-1 {
+				out[i].Err = errors.New("publish: invalid persistence acknowledgement")
+				continue
+			}
+			out[i].Ack = delivery.PersistenceAck{Stream: ack.Stream, Sequence: ack.Sequence}
+		case err := <-f.Err():
+			out[i].Err = classify(err)
+		case <-ctx.Done():
+			out[i].Err = ctx.Err()
+		}
+	}
+	return out
+}
+
+func (s *sink) send(l delivery.Lease) (jetstream.PubAckFuture, error) {
+	e, err := delivery.Decode(l.Wire, s.policy, l.Subject)
 	if err != nil {
-		return result, err
+		return nil, err
 	}
-	if e.EventID != eventID {
-		return result, delivery.ErrIntegrity
+	if e.EventID != l.EventID || l.PerpsSeq < 1 {
+		return nil, delivery.ErrIntegrity
 	}
-	var seq int64
-	err = s.db.QueryRowContext(ctx, "SELECT perps_seq FROM "+schema+".delivery_outbox WHERE event_id=$1 AND subject=$2", eventID, subject).Scan(&seq)
-	if errors.Is(err, sql.ErrNoRows) {
-		return result, delivery.ErrIntegrity
-	}
-	if err != nil {
-		return result, err
-	}
-	msg := &nats.Msg{Subject: subject, Data: append([]byte(nil), wire...), Header: nats.Header{}}
-	msg.Header.Set(HeaderSeq, strconv.FormatInt(seq, 10))
+	msg := &nats.Msg{Subject: l.Subject, Data: append([]byte(nil), l.Wire...), Header: nats.Header{}}
+	msg.Header.Set(HeaderSeq, strconv.FormatInt(l.PerpsSeq, 10))
 	msg.Header.Set(HeaderBlock, e.SourceOrder.Height)
 	msg.Header.Set(HeaderKind, e.EventType)
-	ack, err := s.js.PublishMsg(ctx, msg, jetstream.WithMsgID(eventID), jetstream.WithExpectStream(stream.Name))
-	if err != nil {
-		if errors.Is(err, nats.ErrAuthorization) {
-			return result, delivery.ErrAuthorization
-		}
-		return result, err
+	f, err := s.js.PublishMsgAsync(msg, jetstream.WithMsgID(l.EventID), jetstream.WithExpectStream(stream.Name), jetstream.WithRetryAttempts(0))
+	return f, classify(err)
+}
+
+func classify(err error) error {
+	if errors.Is(err, nats.ErrAuthorization) {
+		return delivery.ErrAuthorization
 	}
-	if ack == nil || ack.Stream != stream.Name || ack.Sequence == 0 || ack.Sequence > 1<<63-1 {
-		return result, errors.New("publish: invalid persistence acknowledgement")
-	}
-	return delivery.PersistenceAck{Stream: ack.Stream, Sequence: ack.Sequence}, nil
+	return err
 }
