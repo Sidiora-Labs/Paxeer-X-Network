@@ -1,0 +1,15 @@
+{
+  "service": "perps-gateway",
+  "image": {
+    "repository": "perps-gateway",
+    "digest": ""
+  },
+  "port": "PORT",
+  "variables": ["DATABASE_URL", "NATS_URL", "PERPS_AUTH_SECRET", "PERPS_CHAIN_ID", "PERPS_RPC_URLS", "PORT"],
+  "deploy": {
+    "healthcheckPath": "/healthz/ready",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ALWAYS",
+    "numReplicas": 2
+  }
+}

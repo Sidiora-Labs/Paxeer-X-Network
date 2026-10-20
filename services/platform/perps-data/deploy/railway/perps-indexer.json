@@ -1,0 +1,15 @@
+{
+  "service": "perps-data-indexer",
+  "image": {
+    "repository": "perps-indexer",
+    "digest": ""
+  },
+  "port": "PORT",
+  "variables": ["DATABASE_URL", "NATS_URL", "PERPS_CHAIN_ID", "PERPS_COMET_URLS", "PERPS_RPC_URLS", "PERPS_START_HEIGHT", "PORT"],
+  "deploy": {
+    "healthcheckPath": "/healthz/live",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ALWAYS",
+    "numReplicas": 1
+  }
+}

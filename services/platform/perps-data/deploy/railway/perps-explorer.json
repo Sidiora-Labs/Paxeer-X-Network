@@ -1,0 +1,15 @@
+{
+  "service": "perps-explorer",
+  "image": {
+    "repository": "perps-explorer",
+    "digest": ""
+  },
+  "port": "PORT",
+  "variables": ["DATABASE_URL", "PERPS_CHAIN_ID", "PERPS_EXPLORER_TX_BASE", "PORT"],
+  "deploy": {
+    "healthcheckPath": "/healthz/ready",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ALWAYS",
+    "numReplicas": 1
+  }
+}
