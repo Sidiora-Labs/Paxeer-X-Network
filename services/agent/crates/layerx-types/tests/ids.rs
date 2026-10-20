@@ -49,6 +49,7 @@ fn only_declared_account_namespaces_construct() {
             "system:paxeer-withdrawals",
             AccountNamespace::SystemPaxeerWithdrawals,
         ),
+        ("system:treasury", AccountNamespace::SystemTreasury),
     ];
     for (canonical, namespace) in accepted {
         let Ok(account) = AccountId::parse(canonical) else {
@@ -61,6 +62,7 @@ fn only_declared_account_namespaces_construct() {
         "agent:did:key:alice:stream:salary",
         "system:funding:btc-usd:long",
         "system:mint",
+        "system:treasury:pax",
         "agent::main",
         "agent:did:key:alice:budget:",
     ] {

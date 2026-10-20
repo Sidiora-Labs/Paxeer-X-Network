@@ -351,8 +351,8 @@ fn protocol_three_account_ids_match_native_ledger_vectors() {
             "dbf940aa4c1f587b73f3b65da0dec92760e0bd0187f1f33c659ea043caebdcdf",
         ),
         (
-            "system:paxeer-reserve",
-            "6e0e5cca5cfaa1b20ddd1c6174321eeaf00dd74bce2adcd78b61e15aa9e26f7c",
+            "system:treasury",
+            "6bf40bc6e0f5ac9535582c71001d6460e2bae3da2aa5f2c92cdeaf23f3579cdb",
         ),
     ] {
         let account = AccountId::parse(name).unwrap_or_else(|error| panic!("{error:?}"));

@@ -23,6 +23,8 @@ pub enum AccountNamespace {
     SystemFees,
     /// `system:paxeer-withdrawals`.
     SystemPaxeerWithdrawals,
+    /// `system:treasury`, the treasury module account.
+    SystemTreasury,
 }
 
 /// Account construction failure.
@@ -61,6 +63,8 @@ impl AccountId {
             AccountNamespace::SystemFees
         } else if canonical == "system:paxeer-withdrawals" {
             AccountNamespace::SystemPaxeerWithdrawals
+        } else if canonical == "system:treasury" {
+            AccountNamespace::SystemTreasury
         } else if let Some(market) = canonical.strip_prefix("system:liquidity:") {
             if market.is_empty() {
                 return Err(AccountError::EmptyComponent);
@@ -205,6 +209,10 @@ mod tests {
         assert_eq!(
             AccountId::parse("system:paxeer-withdrawals").map(|a| a.namespace()),
             Ok(AccountNamespace::SystemPaxeerWithdrawals)
+        );
+        assert_eq!(
+            AccountId::parse("system:treasury").map(|a| a.namespace()),
+            Ok(AccountNamespace::SystemTreasury)
         );
     }
 
