@@ -245,7 +245,7 @@ impl PerfDb {
             let mut cs = self.candle_store.lock();
             for output in &outputs {
                 if let CandleOutput::Closed(candle) = output {
-                    cs.append(candle)?;
+                    cs.upsert(candle)?;
                 }
             }
         }
@@ -743,7 +743,7 @@ impl PerfDb {
             let builder = self.candle_builder.lock();
             let mut cs = self.candle_store.lock();
             for candle in builder.flush_all() {
-                cs.append(&candle)?;
+                cs.upsert(&candle)?;
             }
             cs.flush()?;
         }

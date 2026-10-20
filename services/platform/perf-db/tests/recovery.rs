@@ -725,3 +725,43 @@ fn wal_replay_matches_live_position_state() {
     assert_eq!(pos.collateral_amount, live_pos.collateral_amount);
     assert_eq!(db.market_state.open_interest(0), live_oi);
 }
+
+#[test]
+fn clean_restart_does_not_duplicate_last_candle() {
+    use perfdb::core::timeframe::Timeframe;
+
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_config(dir.path());
+
+    {
+        let db = PerfDb::open(config.clone()).unwrap();
+        db.ingest_tick(&make_tick(1_500_000_000, 0, 67_000.0))
+            .unwrap();
+        db.shutdown().unwrap();
+    }
+    {
+        let db = PerfDb::open(config.clone()).unwrap();
+        db.shutdown().unwrap();
+    }
+    {
+        let db = PerfDb::open(config.clone()).unwrap();
+        let candles = db.candles(0, Timeframe::Sec1);
+        assert_eq!(candles.len(), 1);
+        assert_eq!(candles[0].timestamp_ns, 1_000_000_000);
+
+        db.ingest_tick(&make_tick(2_500_000_000, 0, 67_100.0))
+            .unwrap();
+        let candles = db.candles(0, Timeframe::Sec1);
+        assert_eq!(candles.len(), 1);
+        assert_eq!(candles[0].timestamp_ns, 1_000_000_000);
+        db.shutdown().unwrap();
+    }
+
+    let db = PerfDb::open(config).unwrap();
+    let stamps: Vec<u64> = db
+        .candles(0, Timeframe::Sec1)
+        .iter()
+        .map(|c| c.timestamp_ns)
+        .collect();
+    assert_eq!(stamps, vec![1_000_000_000, 2_000_000_000]);
+}
