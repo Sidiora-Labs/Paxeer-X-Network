@@ -753,7 +753,10 @@ fn light_credit(
     proof: &layerx_paxeer_client::DepositProof,
 ) -> layerx_paxeer_client::NativeCustodyCredit {
     let owner = SigningKey::from_bytes(&[0x66; 32]);
-    let reserve = AccountId::parse("system:treasury").unwrap_or_else(|error| panic!("{error:?}"));
+    let mut reserve = Sha256::new();
+    reserve.update(b"LX:ACCOUNT:v1");
+    reserve.update(21_u32.to_be_bytes());
+    reserve.update(b"system:paxeer-reserve");
     let bundle = &LIGHT_CREDIT[layerx_paxeer_client::NATIVE_CUSTODY_CREDIT_HEAD_BYTES..];
     let mut module = Sha256::new();
     module.update(b"LX:CUSTODY:MODULE:v1");
@@ -768,10 +771,7 @@ fn light_credit(
     profile.extend_from_slice(&module.finalize());
     profile.extend_from_slice(&[1; 32]);
     profile.extend_from_slice(&proof.custody().asset.bytes());
-    profile.extend_from_slice(
-        &layerx_paxeer_client::account_address_for_protocol(&reserve, 3)
-            .unwrap_or_else(|error| panic!("{error:?}")),
-    );
+    profile.extend_from_slice(&reserve.finalize());
     profile.extend_from_slice(&1_u64.to_be_bytes());
     profile.extend_from_slice(&comet_chain);
     profile.extend_from_slice(&proof.network_id().to_be_bytes());

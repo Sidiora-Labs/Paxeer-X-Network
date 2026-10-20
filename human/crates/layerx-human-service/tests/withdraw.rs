@@ -793,7 +793,7 @@ impl RealWithdrawalAgent {
                     kind: "sequencer-receipt".to_owned(),
                     digest,
                 }],
-                verification_level: Level::SequencerSigned,
+                rung: layerx_types::rung::Rung::Receipted,
                 transitions: Vec::new(),
             },
             activity_id,

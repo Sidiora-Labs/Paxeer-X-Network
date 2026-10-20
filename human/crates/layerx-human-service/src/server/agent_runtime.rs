@@ -17,6 +17,7 @@ use layerx_proof::receipt::AuthorizedBatch;
 use layerx_sdk::Call;
 use layerx_types::payload::{ActivityType, ModuleId, ModuleRegistration, ModuleRegistry};
 use layerx_types::result::ResultCode;
+use layerx_types::rung::Rung;
 use layerx_types::verify::VerificationLevel;
 use sha2::Digest as _;
 use zeroize::Zeroizing;
@@ -4141,8 +4142,7 @@ fn decode_tracked(reader: &mut Reader) -> Result<TrackedSubmission, AgentBoundar
         0 => SubmissionState::Prepared,
         1 => SubmissionState::Signed,
         2 => SubmissionState::Queued,
-        3 => SubmissionState::Submitted,
-        4 => SubmissionState::Acknowledged,
+        3 | 4 => SubmissionState::Submitted,
         5 => SubmissionState::Unknown,
         6 => SubmissionState::Executed {
             receipt_ref: ReceiptRef::new(reader.text()?)
@@ -4154,7 +4154,7 @@ fn decode_tracked(reader: &mut Reader) -> Result<TrackedSubmission, AgentBoundar
         8 => SubmissionState::Expired,
         _ => return Err(AgentBoundaryError::CorruptResponse),
     };
-    let verification_level = decode_level(reader.u8()?)?;
+    let rung = decode_rung(reader.u8()?)?;
     let evidence_count = usize::from(reader.u8()?);
     if evidence_count > MAX_EVIDENCE {
         return Err(AgentBoundaryError::CorruptResponse);
@@ -4189,7 +4189,7 @@ fn decode_tracked(reader: &mut Reader) -> Result<TrackedSubmission, AgentBoundar
         submission_ref,
         state,
         evidence,
-        verification_level,
+        rung,
         transitions,
     })
 }
@@ -4199,10 +4199,17 @@ fn decode_state_without_data(value: u8) -> Result<SubmissionState, AgentBoundary
         0 => Ok(SubmissionState::Prepared),
         1 => Ok(SubmissionState::Signed),
         2 => Ok(SubmissionState::Queued),
-        3 => Ok(SubmissionState::Submitted),
-        4 => Ok(SubmissionState::Acknowledged),
+        3 | 4 => Ok(SubmissionState::Submitted),
         5 => Ok(SubmissionState::Unknown),
         8 => Ok(SubmissionState::Expired),
+        _ => Err(AgentBoundaryError::CorruptResponse),
+    }
+}
+
+fn decode_rung(value: u8) -> Result<Rung, AgentBoundaryError> {
+    match value {
+        0 => Ok(Rung::Submitted),
+        1..=5 => Ok(Rung::Receipted),
         _ => Err(AgentBoundaryError::CorruptResponse),
     }
 }

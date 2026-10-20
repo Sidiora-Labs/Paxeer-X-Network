@@ -15,6 +15,7 @@ use std::fmt::{Display, Formatter, Write as _};
 use layerx_agent_api::subscription::{EventDelivery, ReceiptReference};
 use layerx_agent_api::track::SubmissionState;
 use layerx_agent_api::verify::Level;
+use layerx_types::rung::Rung;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
@@ -760,19 +761,19 @@ impl Feed {
             InboxState::Approved { tracking } => match &tracking.state {
                 SubmissionState::Prepared | SubmissionState::Signed => ActivityStatus::GettingReady,
                 SubmissionState::Queued | SubmissionState::Submitted => ActivityStatus::Sending,
-                SubmissionState::Acknowledged => ActivityStatus::Processing,
                 SubmissionState::Unknown => ActivityStatus::StillChecking,
-                SubmissionState::Executed { receipt_ref } => {
-                    if tracking.verification_level == Level::Unverified {
+                SubmissionState::Executed { receipt_ref }
+                | SubmissionState::Committed { receipt_ref } => {
+                    if tracking.rung == Rung::Submitted {
                         ActivityStatus::Processing
                     } else {
                         receipts.push(StoredReceipt {
                             reference: receipt_ref.as_str().to_owned(),
-                            level: level_code(tracking.verification_level),
+                            level: level_code(rung_level(tracking.rung)),
                             canonical: None,
                             authority: None,
                         });
-                        if tracking.verification_level >= Level::CheckpointFinalised {
+                        if tracking.rung >= Rung::Committed {
                             ActivityStatus::DoneFinalised
                         } else {
                             ActivityStatus::Done
@@ -1363,6 +1364,14 @@ const fn level_code(level: Level) -> u8 {
         Level::StateProven => 3,
         Level::CheckpointFinalised => 4,
         Level::SettlementAnchored => 5,
+    }
+}
+
+const fn rung_level(rung: Rung) -> Level {
+    match rung {
+        Rung::Submitted => Level::Unverified,
+        Rung::Receipted => Level::SequencerSigned,
+        Rung::Committed => Level::CheckpointFinalised,
     }
 }
 

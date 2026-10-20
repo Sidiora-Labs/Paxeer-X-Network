@@ -182,7 +182,7 @@ impl ApprovalBoundary for AgentdBoundary<'_> {
                 kind: "approval-release".to_owned(),
                 digest: submission_ref,
             }],
-            verification_level: Level::SequencerSigned,
+            rung: layerx_types::rung::Rung::Receipted,
             transitions: Vec::new(),
         })
     }

@@ -742,7 +742,7 @@ impl RealCreditAgent {
                 kind: "sequencer-receipt".to_owned(),
                 digest: receipt_digest,
             }],
-            verification_level: Level::SequencerSigned,
+            rung: layerx_types::rung::Rung::Receipted,
             transitions: Vec::new(),
         }
     }

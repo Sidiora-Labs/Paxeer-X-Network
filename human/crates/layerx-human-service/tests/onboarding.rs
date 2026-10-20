@@ -233,10 +233,10 @@ fn tracked(
     } else {
         Vec::new()
     };
-    let verification_level = if evidence.is_empty() {
-        Level::Unverified
+    let rung = if evidence.is_empty() {
+        layerx_types::rung::Rung::Submitted
     } else {
-        Level::SequencerSigned
+        layerx_types::rung::Rung::Receipted
     };
     layerx_agent_api::track::TrackedSubmission {
         submission_ref: SubmissionRef::new(submission)
@@ -249,7 +249,7 @@ fn tracked(
             other => other,
         },
         evidence,
-        verification_level,
+        rung,
         transitions: Vec::new(),
     }
 }

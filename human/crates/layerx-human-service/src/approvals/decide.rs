@@ -446,7 +446,7 @@ struct StoredTracking<'a> {
     submission_ref: &'a str,
     state: &'static str,
     receipt_ref: Option<&'a str>,
-    verification_level: u8,
+    rung: u8,
     evidence: Vec<StoredAgentEvidence>,
 }
 
@@ -473,17 +473,17 @@ fn decision_evidence(
         submission_ref: value.submission_ref.as_str(),
         state: value.state.name(),
         receipt_ref: match &value.state {
-            SubmissionState::Executed { receipt_ref } => Some(receipt_ref.as_str()),
+            SubmissionState::Executed { receipt_ref }
+            | SubmissionState::Committed { receipt_ref } => Some(receipt_ref.as_str()),
             SubmissionState::Prepared
             | SubmissionState::Signed
             | SubmissionState::Queued
             | SubmissionState::Submitted
-            | SubmissionState::Acknowledged
             | SubmissionState::Unknown
             | SubmissionState::Failed { .. }
             | SubmissionState::Expired => None,
         },
-        verification_level: value.verification_level as u8,
+        rung: value.rung.wire_rank(),
         evidence: value
             .evidence
             .iter()

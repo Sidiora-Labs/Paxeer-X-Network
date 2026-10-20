@@ -1032,9 +1032,10 @@ impl OnboardingJourney {
             | SubmissionState::Signed
             | SubmissionState::Queued
             | SubmissionState::Submitted => record.state = ProtocolState::Sending,
-            SubmissionState::Acknowledged => record.state = ProtocolState::Processing,
             SubmissionState::Unknown => record.state = ProtocolState::StillChecking,
-            SubmissionState::Executed { .. } => return Err(OnboardingError::ReceiptRequired),
+            SubmissionState::Executed { .. } | SubmissionState::Committed { .. } => {
+                return Err(OnboardingError::ReceiptRequired)
+            }
             SubmissionState::Failed { result } => {
                 record.state = ProtocolState::Refused;
                 record.refusal_code = Some(result.raw());

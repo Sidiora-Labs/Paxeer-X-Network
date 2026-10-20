@@ -268,17 +268,17 @@ impl RealAgentLayer {
                 digest,
             }]
         });
-        let verification_level = if evidence.is_empty() {
-            Level::Unverified
+        let rung = if evidence.is_empty() {
+            layerx_types::rung::Rung::Submitted
         } else {
-            Level::SequencerSigned
+            layerx_types::rung::Rung::Receipted
         };
         TrackedSubmission {
             submission_ref: SubmissionRef::new(format!("sub-{}", hex(&key)))
                 .unwrap_or_else(|error| panic!("submission ref: {error:?}")),
             state,
             evidence,
-            verification_level,
+            rung,
             transitions: Vec::new(),
         }
     }
@@ -465,7 +465,7 @@ impl AgentBoundary for RealAgentLayer {
                     )
                     .map_err(|_| AgentBoundaryError::Refused)?;
                 AgentObservation {
-                    submission: Self::tracked(key, SubmissionState::Acknowledged, None),
+                    submission: Self::tracked(key, SubmissionState::Submitted, None),
                     activity_id,
                     receipt: None,
                 }
