@@ -28,7 +28,7 @@ func TestCorrelationRetainsAuthenticCoreReceiptWithoutOptionalEffects(t *testing
 		t.Fatal(err)
 	}
 	var ds []Deployment
-	for key, role := range map[string]string{"eventEmitter": "EventEmitter", "pool": "SidioraPool", "token": "SidioraERC20", "usdl": "SidioraERC20", "accumulator": "FeeAccumulator"} {
+	for key, role := range map[string]string{"eventEmitter": "EventEmitter", "pool": "SidioraPool", "token": "SidioraERC20", "usdl": "SidioraERC20", "accumulator": "FeeAccumulator", "router": "Router"} {
 		d, _ := deployment(t, role, common.HexToAddress(f.Addresses[key]))
 		ds = append(ds, d)
 	}

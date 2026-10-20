@@ -562,3 +562,83 @@ func TestUnknownActionRetainsRawAndCannotCreateEconomicFill(t *testing.T) {
 		t.Fatal("unknown ABI action raw history lost", unknown, err)
 	}
 }
+
+// nodeABI reads an ABI file the launchpad precompile embeds.
+func nodeABI(t *testing.T, name string) abi.ABI {
+	t.Helper()
+	b, err := os.ReadFile("../../../../../precompiles/launchpad/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := abi.JSON(strings.NewReader(string(b)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+// nodeLog encodes a log the way the precompile's emitABIEvent does: indexed
+// inputs as topics after the event ID, the rest packed as data.
+func nodeLog(t *testing.T, ev abi.Event, block uint64, index uint, values ...any) ethtypes.Log {
+	t.Helper()
+	l := ethtypes.Log{Address: LaunchpadPrecompileAddress, Topics: []common.Hash{ev.ID}, BlockNumber: block, TxIndex: 1, Index: index, BlockHash: common.HexToHash("0x777"), TxHash: common.HexToHash("0x888")}
+	var data []any
+	for i, in := range ev.Inputs {
+		if !in.Indexed {
+			data = append(data, values[i])
+			continue
+		}
+		b, err := (abi.Arguments{in}).Pack(values[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		l.Topics = append(l.Topics, common.BytesToHash(b))
+	}
+	var err error
+	if l.Data, err = ev.Inputs.NonIndexed().Pack(data...); err != nil {
+		t.Fatal(err)
+	}
+	return l
+}
+
+func TestPrecompileDecodesRouterAndEventEmitterEvents(t *testing.T) {
+	activation := Order{Block: 71}
+	precompile, _ := deployment(t, "EventEmitter", LaunchpadPrecompileAddress)
+	precompile.Role = LaunchpadPrecompileRole
+	precompile.From = activation
+	router, _ := deployment(t, "Router", common.HexToAddress("0x5E1F"))
+	router.From = activation
+	routerABI, familyABI := nodeABI(t, "abi/Router.json"), nodeABI(t, "abi.json")
+	pool, caller, token := common.HexToAddress("0xA001"), common.HexToAddress("0xB002"), common.HexToAddress("0xC003")
+	usdl := common.HexToAddress("0xD004")
+	in, out := big.NewInt(1_000_000), big.NewInt(42_000)
+	buy := nodeLog(t, routerABI.Events["Buy"], activation.Block, 4, pool, caller, in, out)
+	trade := nodeLog(t, familyABI.Events["RouterTrade"], activation.Block, 5, uint8(0), pool, caller, usdl, token, in, out, new(big.Int), big.NewInt(1_700_000_000), big.NewInt(int64(activation.Block)))
+	granted := nodeLog(t, routerABI.Events["RoleGranted"], activation.Block, 6, [32]byte{1}, caller, caller)
+	wantBuy := map[string]any{"pool": strings.ToLower(pool.Hex()), "buyer": strings.ToLower(caller.Hex()), "usdlIn": "1000000", "tokensOut": "42000"}
+
+	for name, r := range map[string]*Registry{
+		"attested router": registry(t, precompile, router),
+		"catalog router":  registry(t, precompile),
+	} {
+		t.Run(name, func(t *testing.T) {
+			e, err := r.Decode(buy)
+			if err != nil || e.Status != "decoded" || e.EmitterRole != "Router" || e.ABIRevision != router.ABIRevision || e.EventName != "Buy" || e.Family.Family != "amm" || !reflect.DeepEqual(e.Event.Args, wantBuy) {
+				t.Fatal("router Buy at the precompile", e, err)
+			}
+			e, err = r.Decode(trade)
+			if err != nil || e.Status != "decoded" || e.EmitterRole != "Router" || e.ABIRevision != precompile.ABIRevision || e.EventName != "RouterTrade" || e.Event.Args["pool"] != strings.ToLower(pool.Hex()) {
+				t.Fatal("EventEmitter RouterTrade at the precompile", e, err)
+			}
+			e, err = r.Decode(granted)
+			if err != nil || e.Status != "decoded" || e.EmitterRole != LaunchpadPrecompileRole || e.ABIRevision != precompile.ABIRevision {
+				t.Fatal("signature shared by both ABIs resolves to the precompile binding", e, err)
+			}
+			early := buy
+			early.BlockNumber = activation.Block - 1
+			if e, err = r.Decode(early); err == nil || e.FailureReason != "untrusted_emitter" || e.Event != nil {
+				t.Fatal("router Buy before activation", e, err)
+			}
+		})
+	}
+}

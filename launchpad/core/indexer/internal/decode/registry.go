@@ -18,7 +18,9 @@ const MaxFieldBytes = 64 << 10
 const MaxEnvelopeBytes = 1 << 20
 
 // LaunchpadPrecompileRole serves the EventEmitter ABI at the launchpad
-// precompile, the one address several launchpad roles share.
+// precompile, the one address several launchpad roles share. The precompile
+// also executes Router calls made to it directly and emits the Router events
+// at its own address, so NewRegistry binds the Router ABI there as well.
 const LaunchpadPrecompileRole = "LaunchpadPrecompile"
 
 var LaunchpadPrecompileAddress = common.HexToAddress("0x0000000000000000000000000000000000001017")
@@ -215,6 +217,10 @@ func NewRegistry(catalogJSON []byte, deployments []Deployment) (*Registry, error
 			r.known[ev.ID] = true
 		}
 	}
+	deployments, err := precompileRouter(deployments, contracts)
+	if err != nil {
+		return nil, err
+	}
 	for _, input := range deployments {
 		// Deep copy policy maps; caller mutation cannot change authorization.
 		policy, _ := json.Marshal(input)
@@ -283,6 +289,49 @@ func NewRegistry(catalogJSON []byte, deployments []Deployment) (*Registry, error
 		return a.Role+a.ABIRevision+a.Signature < b.Role+b.ABIRevision+b.Signature
 	})
 	return r, nil
+}
+
+// precompileRouter adds a Router epoch at the launchpad precompile for every
+// precompile epoch unless the caller already bound Router there. Router calls
+// made to the precompile emit Buy, Sell, MarketCreated and MultihopSwap with
+// the precompile as emitter. The Router revision is the attested Router
+// deployment's, or the catalog's only Router ABI when none is attested.
+func precompileRouter(deployments []Deployment, contracts map[string]CatalogContract) ([]Deployment, error) {
+	var precompiles []Deployment
+	attested := map[string]bool{}
+	for _, d := range deployments {
+		switch {
+		case d.Role == "Router" && d.Address == LaunchpadPrecompileAddress:
+			return deployments, nil
+		case d.Role == "Router":
+			attested[d.ABIRevision] = true
+		case d.Role == LaunchpadPrecompileRole:
+			precompiles = append(precompiles, d)
+		}
+	}
+	if len(precompiles) == 0 {
+		return deployments, nil
+	}
+	revisions := attested
+	if len(revisions) == 0 {
+		for _, c := range contracts {
+			if c.Name == "Router" {
+				revisions[c.ABIRevision] = true
+			}
+		}
+	}
+	if len(revisions) != 1 {
+		return nil, fmt.Errorf("launchpad precompile requires one Router ABI revision, found %d", len(revisions))
+	}
+	var revision string
+	for r := range revisions {
+		revision = r
+	}
+	out := append([]Deployment(nil), deployments...)
+	for _, p := range precompiles {
+		out = append(out, Deployment{Address: LaunchpadPrecompileAddress, Role: "Router", ABIRevision: revision, From: p.From, Until: p.Until})
+	}
+	return out, nil
 }
 func abiRole(role string) string {
 	if role == LaunchpadPrecompileRole {
