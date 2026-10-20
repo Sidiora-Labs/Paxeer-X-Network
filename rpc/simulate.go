@@ -691,7 +691,17 @@ func (b *Backend) replayTransactionTillIndex(ctx context.Context, block *ethtype
 
 func (b *Backend) StateAtBlock(ctx context.Context, block *ethtypes.Block, reexec uint64, base vm.StateDB, readOnly bool, preferDisk bool) (vm.StateDB, tracers.StateReleaseFunc, error) {
 	emptyRelease := func() {}
-	sdkCtx, _, release, err := b.initializeBlock(ctx, block, b.traceCtxProvider)
+	height := block.Number().Int64()
+	latest, err := b.watermarks.LatestHeight(ctx)
+	if err != nil {
+		return nil, emptyRelease, err
+	}
+	if height >= latest {
+		sdkCtx, release := b.traceCtxProvider(height)
+		return state.NewDBImpl(sdkCtx.WithBlockHeight(height), b.keeper, true), release, nil
+	}
+	next := ethtypes.NewBlockWithHeader(&ethtypes.Header{Number: big.NewInt(height + 1)})
+	sdkCtx, _, release, err := b.initializeBlock(ctx, next, b.traceCtxProvider)
 	if err != nil {
 		return nil, emptyRelease, err
 	}

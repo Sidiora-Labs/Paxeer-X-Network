@@ -8735,3 +8735,8 @@ detail = "An off-by-one that reaches height 0 returns post-block state instead o
 area = "rpc/tests"
 summary = "every regression_test.go case replays upstream-chain transactions that carry a removed oracle message type"
 detail = "Skip them with -skip '^Test(0x[0-9a-f]+|[0-9]+)$' to see the rest of rpc/tests; they cannot pass on this chain until re-recorded or retired."
+
+[gotcha.1833]
+area = "rpc"
+summary = "StateAtBlock returns the state after its argument, per the vendored geth tracer contract"
+detail = "The tracer callers pass the parent block and expect the state the block's transactions start from; the backend runs initializeBlock on x+1 when it exists and otherwise snapshots the tip, never the state before x."
