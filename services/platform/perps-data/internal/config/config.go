@@ -120,13 +120,15 @@ func Load(service Service) (*Config, error) {
 		cfg.GatewayURL = os.Getenv(envGatewayURL)
 	}
 	if u.startHeight {
-		if s := os.Getenv(envStartHeight); s != "" {
-			n, err := strconv.ParseInt(s, 10, 64)
-			if err != nil {
-				return nil, errors.New(envStartHeight + " must be numeric")
-			}
-			cfg.StartHeight = n
+		s := os.Getenv(envStartHeight)
+		if s == "" {
+			return nil, errors.New(envStartHeight + " must be set to the first indexed height (the v6.12.0 activation height on mainnet)")
 		}
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return nil, errors.New(envStartHeight + " must be numeric")
+		}
+		cfg.StartHeight = n
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -176,8 +178,8 @@ func (c *Config) Validate() error {
 			return errors.New(envGatewayURL + " needs http, https, ws or wss")
 		}
 	}
-	if u.startHeight && c.StartHeight < 0 {
-		return errors.New(envStartHeight + " must not be below zero")
+	if u.startHeight && c.StartHeight < 1 {
+		return errors.New(envStartHeight + " must be at least 1")
 	}
 	return nil
 }

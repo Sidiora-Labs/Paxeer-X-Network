@@ -84,12 +84,14 @@ var (
 	serviceOrder  = []string{"perps-data-indexer", "perps-gateway", "perps-explorer", "perps-portal", "perps-replay", "postgres", "nats"}
 	publicOrder   = []string{"perps-gateway", "perps-explorer", "perps-portal"}
 	natsMembers   = []string{"nats-1", "nats-2", "nats-3"}
-	natsVariables = []string{"NATS_MAX_FILE_STORE", "NATS_ROUTES", "PORT"}
+	natsVariables = []string{"NATS_CLUSTER_PASSWORD", "NATS_GATEWAY_PASSWORD", "NATS_INDEXER_PASSWORD", "NATS_MAX_FILE_STORE", "NATS_ROUTES", "PORT"}
 	imageInputs   = []string{"BUILD_IMAGE", "RUNTIME_IMAGE"}
 
 	schemePattern     = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://`)
 	dottedHostPattern = regexp.MustCompile(`[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+`)
 	portPattern       = regexp.MustCompile(`:[0-9]+`)
+	confVarPattern    = regexp.MustCompile(`\$([A-Z][A-Z0-9_]*)`)
+	confQuotedPattern = regexp.MustCompile(`"[^"]*"`)
 )
 
 func decodeServices(raw []byte) (*Services, error) {
@@ -218,6 +220,40 @@ func checkValues(byName map[string]Service) error {
 	return nil
 }
 
+// checkNATSConfVariables requires the $NAME references of nats.conf to be the
+// declared nats variables except PORT, the healthcheck port of the monitoring
+// endpoint. Quoted strings are skipped because NATS does not substitute
+// variables inside them ("$JS.API.>" is a subject), and RAILWAY_SERVICE_NAME is
+// provided by the platform.
+func checkNATSConfVariables(s *Services, conf []byte) error {
+	byName, err := s.byName()
+	if err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	var refs []string
+	for _, m := range confVarPattern.FindAllSubmatch(confQuotedPattern.ReplaceAll(conf, nil), -1) {
+		name := string(m[1])
+		if name == "RAILWAY_SERVICE_NAME" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		refs = append(refs, name)
+	}
+	slices.Sort(refs)
+	var declared []string
+	for k := range byName["nats"].Variables {
+		if k != "PORT" {
+			declared = append(declared, k)
+		}
+	}
+	slices.Sort(declared)
+	if !slices.Equal(refs, declared) {
+		return fmt.Errorf("nats.conf references %v, nats declares %v", refs, declared)
+	}
+	return nil
+}
+
 func checkPublic(s *Services) error {
 	var public []string
 	for _, svc := range s.Services {
@@ -322,7 +358,7 @@ var (
 		"PERPS_AUTH_SECRET":      "0123456789abcdef0123456789abcdef",
 		"PERPS_EXPLORER_TX_BASE": "http://localhost/tx/",
 		"PERPS_GATEWAY_URL":      "http://localhost",
-		"PERPS_START_HEIGHT":     "0",
+		"PERPS_START_HEIGHT":     "1",
 	}
 	refusedValues = map[string]string{
 		"PERPS_CHAIN_ID":         "x",
@@ -412,6 +448,17 @@ func TestServices(t *testing.T) {
 		}
 	})
 
+	natsConf, err := os.ReadFile("nats/nats.conf")
+	if err != nil {
+		t.Fatalf("read nats/nats.conf: %v", err)
+	}
+
+	t.Run("nats_conf_variables", func(t *testing.T) {
+		if err := checkNATSConfVariables(layout, natsConf); err != nil {
+			t.Fatalf("checkNATSConfVariables: %v", err)
+		}
+	})
+
 	t.Run("public_set", func(t *testing.T) {
 		if err := checkPublic(layout); err != nil {
 			t.Fatalf("checkPublic: %v", err)
@@ -482,6 +529,18 @@ func TestServices(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("refuse_nats_conf_undeclared", func(t *testing.T) {
+		s := decodeMutated(t, mutate(t, `"NATS_GATEWAY_PASSWORD": {
+          "source": "input"
+        },
+`, ""))
+		err := checkNATSConfVariables(s, natsConf)
+		want := "nats.conf references [NATS_CLUSTER_PASSWORD NATS_GATEWAY_PASSWORD NATS_INDEXER_PASSWORD NATS_MAX_FILE_STORE NATS_ROUTES], nats declares [NATS_CLUSTER_PASSWORD NATS_INDEXER_PASSWORD NATS_MAX_FILE_STORE NATS_ROUTES]"
+		if err == nil || err.Error() != want {
+			t.Fatalf("checkNATSConfVariables error %v, want %q", err, want)
+		}
+	})
 
 	t.Run("refuse_postgres_public", func(t *testing.T) {
 		s := decodeMutated(t, mutate(t, `"provider": "railway-postgres",

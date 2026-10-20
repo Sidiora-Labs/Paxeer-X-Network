@@ -34,6 +34,7 @@ func baseEnv() map[string]string {
 		envNATSURL:     testNATSURL,
 		envPort:        "8080",
 		envAuthSecret:  testSecret32,
+		envStartHeight: "1",
 	}
 }
 
@@ -167,9 +168,25 @@ func TestConfig(t *testing.T) {
 		setEnv(t, with(baseEnv(), envPort, ""))
 		refuse(t, Indexer, "PORT is required")
 		setEnv(t, with(baseEnv(), envStartHeight, "-1"))
-		refuse(t, Indexer, "PERPS_START_HEIGHT must not be below zero")
+		refuse(t, Indexer, "PERPS_START_HEIGHT must be at least 1")
 		setEnv(t, with(baseEnv(), envStartHeight, "tip"))
 		refuse(t, Indexer, "PERPS_START_HEIGHT must be numeric")
+	})
+
+	t.Run("start_height_required", func(t *testing.T) {
+		setEnv(t, with(baseEnv(), envStartHeight, ""))
+		refuse(t, Indexer, "PERPS_START_HEIGHT must be set to the first indexed height (the v6.12.0 activation height on mainnet)")
+		setEnv(t, with(baseEnv(), envStartHeight, "0"))
+		refuse(t, Indexer, "PERPS_START_HEIGHT must be at least 1")
+		setEnv(t, with(baseEnv(), envStartHeight, "42"))
+		cfg, err := Load(Indexer)
+		if err != nil || cfg.StartHeight != 42 {
+			t.Fatalf("Load(indexer) with PERPS_START_HEIGHT=42 = %v, %v", cfg, err)
+		}
+		setEnv(t, with(baseEnv(), envStartHeight, ""))
+		if _, err := Load(Replay); err != nil {
+			t.Fatalf("replay needs no PERPS_START_HEIGHT: %v", err)
+		}
 	})
 
 	t.Run("auth_secret_rule", func(t *testing.T) {

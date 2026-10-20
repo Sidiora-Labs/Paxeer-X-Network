@@ -225,6 +225,15 @@
         "mount": "/data"
       },
       "variables": {
+        "NATS_CLUSTER_PASSWORD": {
+          "source": "input"
+        },
+        "NATS_GATEWAY_PASSWORD": {
+          "source": "input"
+        },
+        "NATS_INDEXER_PASSWORD": {
+          "source": "input"
+        },
         "NATS_MAX_FILE_STORE": {
           "source": "input"
         },
