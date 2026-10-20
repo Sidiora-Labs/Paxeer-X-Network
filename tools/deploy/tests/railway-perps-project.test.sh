@@ -49,7 +49,8 @@ cat >"$tmp/replay.json" <<JSON
    "volumes": {"edges": [{"node": {"id": "v1", "volumeInstances": {"edges": [
      {"node": {"serviceId": "s-pg", "environmentId": "e1", "mountPath": "/var/lib/postgresql/data"}}]}}}]}}}]}}},
  {"op": "Instance", "variables": {"s": "s-pg", "e": "e1"}, "data": {"serviceInstance": {
-   "source": {"image": "ghcr.io/railwayapp-templates/postgres-ssl:18"}}}},
+   "source": {"image": "ghcr.io/railwayapp-templates/postgres-ssl:18"},
+   "latestDeployment": {"id": "dep-pg-0", "status": "SUCCESS"}}}},
  {"op": "Variables", "variables": {"p": "p1", "e": "e1", "s": "s-pg"}, "data": {"variables": {
    "POSTGRES_USER": "postgres", "POSTGRES_DB": "railway", "POSTGRES_PASSWORD": "sentinel-pg-password-88aa",
    "PGDATA": "/var/lib/postgresql/data/pgdata", "PGHOST": "\${{RAILWAY_PRIVATE_DOMAIN}}", "PGPORT": "5432",
@@ -169,7 +170,37 @@ for name, status in (("crash", "CRASHED"), ("apply", "SUCCESS")):
     out = copy.deepcopy(entries) + [{"op": "DeploymentStatus", "variables": {"id": f"dep-{s}"},
                                      "data": {"deployment": {"status": status if s == "nats" else "SUCCESS"}}}
                                     for s in ["nats", *created]]
+    out.append({"op": "DeploymentStatus", "variables": {"id": "dep-pg-0"}, "data": {"deployment": {"status": "SUCCESS"}}})
     json.dump(out, open(f"{tmp}/{name}-replay.json", "w"))
+
+# Rerun replay: every service already runs the manifest with nothing to
+# change, but the indexer's latest deployment CRASHED and the explorer sleeps.
+node = copy.deepcopy(page2)
+node["services"]["edges"] = [{"node": {"id": "s-pg", "name": "Postgres"}}] + [
+    {"node": {"id": f"s-{n}", "name": n}} for n in ["nats", *created]]
+node["volumes"]["edges"][1]["node"]["volumeInstances"]["edges"][0]["node"]["mountPath"] = "/data"
+node["volumes"]["edges"] += [{"node": {"id": f"v-{n}", "volumeInstances": {"edges": [
+    {"node": {"serviceId": f"s-{n}", "environmentId": "e1", "mountPath": "/data"}}]}}} for n in ("nats-2", "nats-3")]
+rerun = [base[0], copy.deepcopy(base[1]), base[2], base[3]]
+rerun[1]["data"]["projects"]["edges"][0]["node"] = node
+latest = {"nats": "SUCCESS", "nats-2": "SUCCESS", "nats-3": "SUCCESS", "indexer": "CRASHED", "gateway": "SUCCESS",
+          "explorer": "SLEEPING", "portal": "SUCCESS", "web": "SUCCESS"}
+for name, (img, n, health, replicas) in {"nats": ("perps-data-nats", 1, "/healthz", 1), **created}.items():
+    sid, pv = f"s-{name}", {"p": "p1", "e": "e1", "s": f"s-{name}"}
+    instance = {k: v for k, v in inst(img, n, health, replicas).items() if k != "registryCredentials"}
+    instance["latestDeployment"] = {"id": f"dep-{name}-0", "status": latest[name]}
+    rerun += [{"op": "Instance", "variables": {"s": sid, "e": "e1"}, "data": {"serviceInstance": instance}},
+              {"op": "Variables", "variables": pv, "data": {"variables": vars_[name]}}]
+    if name in ("gateway", "explorer", "portal", "web"):
+        rerun.append({"op": "Domains", "variables": pv,
+                      "data": {"domains": {"serviceDomains": [{"domain": f"{name}.up.railway.app"}]}}})
+rerun.append({"op": "Deploy", "variables": {"s": "s-indexer", "e": "e1"}, "data": {"serviceInstanceDeployV2": "dep-indexer-1"}})
+rerun += [{"op": "DeploymentStatus", "variables": {"id": f"dep-{n}-0"}, "data": {"deployment": {"status": latest[n]}}}
+          for n in latest]
+rerun.append({"op": "DeploymentStatus", "variables": {"id": "dep-pg-0"}, "data": {"deployment": {"status": "SUCCESS"}}})
+for name, status in (("rerun-crash", "CRASHED"), ("rerun", "SUCCESS")):
+    json.dump(rerun + [{"op": "DeploymentStatus", "variables": {"id": "dep-indexer-1"},
+                        "data": {"deployment": {"status": status}}}], open(f"{tmp}/{name}-replay.json", "w"))
 PY2
 
 run --plan --digests "$tmp/digests.json" --replay "$tmp/apply-replay.json" --start-height 34800001
@@ -182,6 +213,7 @@ run --apply --digests "$tmp/digests.json" --replay "$tmp/apply-replay.json" --st
 [ "$code" -eq 0 ] || { cat "$tmp/out" "$tmp/err" >&2; fail "apply exited $code"; }
 grep -E '^(applied|deployed|wave) ' "$tmp/out" >"$tmp/applied"
 {
+	echo "wave 1 Postgres SUCCESS"
 	printf 'applied nats %s\n' InstanceUpdate VolumeMount VariablesUpsert Deploy
 	echo "deployed nats deployment=dep-nats"
 	for s in nats-2 nats-3; do
@@ -211,6 +243,36 @@ grep -q '^wave 2 nats CRASHED$' "$tmp/out" || fail "crashed nats deployment not 
 grep -qE '^applied (indexer|gateway|explorer|portal|web) ' "$tmp/out" && fail "a later wave was applied after nats crashed"
 grep -q 'wave 2 failed: nats deployment dep-nats is CRASHED; later waves were not applied' "$tmp/err" ||
 	fail "wave failure not explained"
+
+run --plan --digests "$tmp/digests.json" --replay "$tmp/rerun-replay.json" --start-height 34800001
+[ "$code" -eq 0 ] || { cat "$tmp/err" >&2; fail "rerun plan exited $code"; }
+grep -q '^service 3 indexer image update$' "$tmp/out" || fail "crashed unchanged indexer is not planned"
+grep -q '^  redeploy latest deployment dep-indexer-0 is CRASHED$' "$tmp/out" || fail "indexer redeploy not planned"
+[ "$(grep -c ' unchanged$' "$tmp/out")" -eq 8 ] || fail "rerun plan does not leave the other eight services unchanged"
+
+run --apply --digests "$tmp/digests.json" --replay "$tmp/rerun-replay.json" --start-height 34800001
+[ "$code" -eq 0 ] || { cat "$tmp/out" "$tmp/err" >&2; fail "rerun apply exited $code"; }
+grep -E '^(applied|deployed|wave) ' "$tmp/out" >"$tmp/applied"
+{
+	echo "wave 1 Postgres SUCCESS"
+	printf 'wave 2 %s SUCCESS\n' nats nats-2 nats-3
+	echo "applied indexer Deploy"
+	echo "deployed indexer deployment=dep-indexer-1"
+	echo "wave 3 indexer SUCCESS"
+	echo "wave 4 gateway SUCCESS"
+	echo "wave 5 explorer SLEEPING"
+	echo "wave 5 portal SUCCESS"
+	echo "wave 6 web SUCCESS"
+} >"$tmp/want-applied"
+diff -u "$tmp/want-applied" "$tmp/applied" || fail "rerun did not redeploy only the crashed indexer and gate every wave"
+
+run --apply --digests "$tmp/digests.json" --replay "$tmp/rerun-crash-replay.json" --start-height 34800001
+[ "$code" -eq 1 ] || fail "rerun with an indexer that crashes again exited $code, want 1"
+grep -q '^deployed indexer deployment=dep-indexer-1$' "$tmp/out" || fail "crashed unchanged indexer was not redeployed"
+grep -q '^wave 3 indexer CRASHED$' "$tmp/out" || fail "indexer crashing again not reported"
+grep -qE '^wave [456] ' "$tmp/out" && fail "a later wave passed after the redeployed indexer crashed"
+grep -q 'wave 3 failed: indexer deployment dep-indexer-1 is CRASHED; later waves were not applied' "$tmp/err" ||
+	fail "rerun wave failure not explained"
 
 python3 - "$tmp" <<'PY2'
 import json, sys

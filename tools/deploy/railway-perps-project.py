@@ -19,6 +19,8 @@ KEYS = {
     "image": ({"kind", "image", "railway_service", "order"},
               {"config", "health", "restart", "replicas", "volume", "public"}),
 }
+GATE = dict(TERMINAL, SLEEPING="pass")
+REDEPLOY = ("CRASHED", "FAILED", "REMOVED")
 USAGE = ("usage: railway-perps-project.py --plan|--apply --digests <image-digest-map.json> "
          "[--start-height <n>] [--replay <responses.json>] [--manifest <kvx>]")
 
@@ -168,7 +170,8 @@ def current_state(gql, meta, plan):
         v = {"s": sid, "e": env["id"]}
         pv = {"p": project["id"], "e": env["id"], "s": sid}
         instance = gql("query Instance($s: String!, $e: String!) { serviceInstance(serviceId: $s, environmentId: $e) { "
-                       "source { image } healthcheckPath healthcheckTimeout restartPolicyType numReplicas } }",
+                       "source { image } healthcheckPath healthcheckTimeout restartPolicyType numReplicas "
+                       "latestDeployment { id status } } }",
                        v)["serviceInstance"] or {}
         variables = gql("query Variables($p: String!, $e: String!, $s: String!) { "
                         "variables(projectId: $p, environmentId: $e, serviceId: $s, unrendered: true) }",
@@ -236,6 +239,12 @@ def plan_service(svc, cur, digests, start_height):
         elif have_vars[key] != value:
             steps.append(("var", f"{key} change {shown}"))
             upsert[key] = value
+    if cur is not None and not steps:
+        latest = have.get("latestDeployment") or {}
+        if not latest.get("id"):
+            steps.append(("redeploy", "no deployment"))
+        elif latest.get("status") in REDEPLOY:
+            steps.append(("redeploy", f"latest deployment {latest['id']} is {latest['status']}"))
     return want, diff, steps, upsert
 
 
@@ -285,7 +294,7 @@ def wait_deployment(gql, deployment):
     while True:
         status = gql("query DeploymentStatus($id: String!) { deployment(id: $id) { status } }",
                      {"id": deployment})["deployment"]["status"]
-        if status in TERMINAL:
+        if status in GATE:
             return status
         if time.monotonic() >= deadline:
             return f"TIMEOUT(last {status})"
@@ -388,10 +397,10 @@ def main(argv, transport=None):
                     for svc, want, diff, steps, upsert in rows if svc["order"] == order]
             for svc, deployment in wave:
                 if deployment is None:
-                    continue
+                    deployment = state["services"][svc["railway_service"]]["instance"]["latestDeployment"]["id"]
                 status = wait_deployment(gql, deployment)
                 print(f"wave {order} {svc['railway_service']} {status}")
-                if TERMINAL.get(status) != "pass":
+                if GATE.get(status) != "pass":
                     print(f"wave {order} failed: {svc['railway_service']} deployment {deployment} is {status}; "
                           "later waves were not applied", file=sys.stderr)
                     return 1
