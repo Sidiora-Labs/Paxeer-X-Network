@@ -2211,6 +2211,181 @@
    "exit": 2,
    "err": "Railway runs only HTTP health checks, give an HTTP path for: gateway",
    "calls": []
+  },
+  "invalid-input-error-redacted": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 1,
+   "out": [
+    "fail gateway"
+   ],
+   "calls": [
+    {
+     "op": "Project",
+     "variables": {
+      "id": "25709f39-612a-5373-86a3-2bc9e4478de1"
+     },
+     "data": {
+      "project": {
+       "name": "paxeer-x-perps",
+       "services": {
+        "edges": [
+         {
+          "node": {
+           "id": "20cfb0d6-7a9e-5d1c-bda7-8638ac9d6e52",
+           "name": "gateway"
+          }
+         },
+         {
+          "node": {
+           "id": "81f27026-58f4-5d6a-aacb-8a6328e092d4",
+           "name": "router"
+          }
+         }
+        ]
+       },
+       "environments": {
+        "edges": [
+         {
+          "node": {
+           "id": "0e0fb605-ace1-5b45-88f9-73f312d8a81e",
+           "name": "production"
+          }
+         },
+         {
+          "node": {
+           "id": "1aface22-48bb-555a-bbf7-bb86f9e07dc6",
+           "name": "beta"
+          }
+         }
+        ]
+       }
+      }
+     }
+    },
+    {
+     "op": "Instance",
+     "variables": {
+      "s": "20cfb0d6-7a9e-5d1c-bda7-8638ac9d6e52",
+      "e": "0e0fb605-ace1-5b45-88f9-73f312d8a81e"
+     },
+     "data": {
+      "serviceInstance": {
+       "source": {
+        "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:4df666d1a17d4235d4d9855747037625804ab0dac3470df258ce1da8a49652ee"
+       },
+       "healthcheckPath": "/",
+       "latestDeployment": {
+        "id": "1e116039-a652-5ed4-876b-1b59e63e5536",
+        "status": "SUCCESS",
+        "meta": {
+         "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:4df666d1a17d4235d4d9855747037625804ab0dac3470df258ce1da8a49652ee",
+         "logsV2": true,
+         "reason": "deploy",
+         "patchId": "b90c38d5-00c7-5768-b0be-def6e1176719",
+         "runtime": "V2",
+         "imageDigest": "sha256:4df666d1a17d4235d4d9855747037625804ab0dac3470df258ce1da8a49652ee",
+         "volumeMounts": [],
+         "serviceManifest": {
+          "build": {
+           "builder": "RAILPACK",
+           "buildCommand": null,
+           "nixpacksPlan": null,
+           "watchPatterns": [],
+           "dockerfilePath": null,
+           "buildEnvironment": "V3",
+           "nixpacksConfigPath": null
+          },
+          "deploy": {
+           "region": null,
+           "runtime": "V2",
+           "numReplicas": 1,
+           "cronSchedule": null,
+           "startCommand": null,
+           "limitOverride": null,
+           "overlapSeconds": null,
+           "drainingSeconds": null,
+           "healthcheckPath": "/",
+           "preDeployCommand": null,
+           "sleepApplication": false,
+           "useLegacyStacker": false,
+           "ipv6EgressEnabled": false,
+           "multiRegionConfig": {
+            "us-east4-eqdc4a": {
+             "numReplicas": 1
+            }
+           },
+           "restartPolicyType": "ON_FAILURE",
+           "healthcheckTimeout": null,
+           "registryCredentials": null,
+           "preDeployTimeoutSeconds": null,
+           "restartPolicyMaxRetries": 10
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    {
+     "op": "InstanceUpdate",
+     "variables": {
+      "s": "20cfb0d6-7a9e-5d1c-bda7-8638ac9d6e52",
+      "e": "0e0fb605-ace1-5b45-88f9-73f312d8a81e",
+      "i": {
+       "healthcheckPath": "/healthz"
+      }
+     },
+     "errors": [
+      {
+       "message": "Variable \"$i\" got invalid value {\"healthcheckPath\": \"/healthz\"}; Authorization Bearer sentinel-railway-token",
+       "extensions": {
+        "code": "GRAPHQL_VALIDATION_FAILED"
+       }
+      },
+      {
+       "extensions": {
+        "input": {
+         "token": "sentinel-railway-token",
+         "url": "postgresql://charts:sentinel-rollout-password-5e2d@db:5432/x"
+        }
+       },
+       "detail": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+     ]
+    }
+   ],
+   "secrets": [
+    "sentinel-railway-token",
+    "sentinel-rollout-password-5e2d"
+   ]
   }
  }
 }

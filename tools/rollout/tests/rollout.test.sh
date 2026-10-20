@@ -263,6 +263,8 @@ class Railway(BaseHTTPRequestHandler):
             reply = {"errors": [{"message": "bad token"}]}
         elif want is None or {"op": want["op"], "variables": want["variables"]} != got:
             reply = {"errors": [{"message": f"unexpected request {got}, transcript wants {want}"}]}
+        elif "errors" in want:
+            reply = {"errors": want["errors"]}
         else:
             reply = {"data": want["data"]}
         data = json.dumps(reply).encode()
@@ -309,6 +311,13 @@ for name, case in record["scenarios"].items():
         m = re.match(r"^(pass|fail|blocked) (\S+) evidence=(\S+)$", line)
         if m and not Path(m.group(3)).is_file():
             problems.append(f"evidence {m.group(3)} missing")
+    evidence = "".join(Path(m.group(1)).read_text() for line in lines
+                       if (m := re.match(r"^(?:pass|fail|blocked) \S+ evidence=(\S+)$", line)) and Path(m.group(1)).is_file())
+    for seed in case.get("secrets", []):
+        if seed in out.getvalue() + err.getvalue() + evidence:
+            problems.append(f"printed or logged the secret {seed!r}")
+    if case.get("secrets") and "[redacted]" not in evidence:
+        problems.append("the evidence log does not carry the redacted error")
     if problems:
         failures.append(f"{name}: {'; '.join(problems)}\n  stdout: {out.getvalue()!r}\n  stderr: {err.getvalue()!r}")
 server.shutdown()

@@ -29,6 +29,14 @@ IN_PROGRESS = {"BUILDING", "DEPLOYING", "INITIALIZING", "QUEUED", "WAITING"}
 TERMINAL = {"SUCCESS": "pass", "SLEEPING": "pass", "FAILED": "fail", "CRASHED": "fail",
             "REMOVED": "fail", "REMOVING": "fail", "SKIPPED": "fail", "NEEDS_APPROVAL": "blocked"}
 RAILWAY = ("railway", "railway-image")
+SECRET = re.compile(r"SECRET|TOKEN|PASSWORD|KEY|DSN|URL_WITH_PASSWORD|SEED|MNEMONIC|PRIVATE|SIGNING|CREDENTIAL|JWT|WEBHOOK")
+URL_WITH_PASSWORD = re.compile(r"://[^/@\s]*:[^/@\s]*@")
+URL_PASSWORD = re.compile(r"(://[^/@\s:]*:)[^/@\s]*@")
+BEARER = re.compile(r"(?i)\bbearer\s+[^\s\"']+")
+MASK = "[redacted]"
+ERROR_LIMIT = 512
+MASKED = set()
+SECRET_ENV = ("RAILWAY_API_TOKEN", "GHCR_TOKEN")
 
 
 class Malformed(Exception):
@@ -135,6 +143,43 @@ def describe(svc, sha, digests=None):
             f"host=${host_key(svc['box_role'])} health={svc['health']}")
 
 
+def mask(*values):
+    MASKED.update(v for v in values if isinstance(v, str) and v)
+
+
+def secret_values(node, key=""):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            yield from secret_values(v, str(k))
+    elif isinstance(node, list):
+        for v in node:
+            yield from secret_values(v, key)
+    elif isinstance(node, str) and SECRET.search(key.upper()):
+        yield node
+
+
+def redact(text):
+    text = str(text)
+    values = MASKED | {os.environ[k] for k in SECRET_ENV if os.environ.get(k)}
+    for value in sorted(values, key=len, reverse=True):
+        for form in {value, json.dumps(value)[1:-1], json.dumps(json.dumps(value)[1:-1])[1:-1]}:
+            text = text.replace(form, MASK)
+    return BEARER.sub("Bearer " + MASK, URL_PASSWORD.sub(r"\1" + MASK + "@", text))
+
+
+def graphql_error(errors, variables):
+    mask(*secret_values(variables))
+    if isinstance(errors, list) and errors and all(isinstance(e, dict) and isinstance(e.get("message"), str)
+                                                   for e in errors):
+        text = "; ".join(e["message"] for e in errors)
+    else:
+        text = "unrecognised error payload " + json.dumps(errors, default=str)
+    text = redact(text)
+    if len(text) > ERROR_LIMIT:
+        text = f"{text[:ERROR_LIMIT]}... ({len(text) - ERROR_LIMIT} more characters)"
+    return f"Railway GraphQL error: {text}"
+
+
 def gql(query, variables):
     token = os.environ.get("RAILWAY_API_TOKEN")
     if not token:
@@ -143,9 +188,14 @@ def gql(query, variables):
         API, data=json.dumps({"query": query, "variables": variables}).encode(),
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"})
     with urllib.request.urlopen(req, timeout=30) as resp:
-        body = json.load(resp)
-    if body.get("errors"):
-        raise RuntimeError(json.dumps(body["errors"]))
+        try:
+            body = json.load(resp)
+        except ValueError:
+            raise RuntimeError("Railway returned a response that is not JSON") from None
+    if not isinstance(body, dict):
+        raise RuntimeError(graphql_error(body, variables))
+    if body.get("errors") or not isinstance(body.get("data"), dict):
+        raise RuntimeError(graphql_error(body.get("errors", body), variables))
     return body["data"]
 
 
@@ -401,7 +451,7 @@ def main(argv):
                 else:
                     outcome = apply_box(svc, sha, hosts, log)
             except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
-                log.write(f"error: {e}\n")
+                log.write(f"error: {redact(e)}\n")
                 outcome = "fail"
         target = "railway" if svc["target"] == "railway-image" else svc["target"]
         subprocess.run([str(HERE / "ledger.sh"), sha, svc["name"], target, started,

@@ -8,13 +8,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/rollout"))
+from rollout import SECRET, URL_WITH_PASSWORD, graphql_error, mask, redact  # noqa: E402
 from rollout import gql as http_transport  # noqa: E402
 
 MANIFEST = ROOT / "launchpad/deploy/railway/variables.json"
-SECRET = re.compile(r"SECRET|TOKEN|PASSWORD|KEY|DSN|URL_WITH_PASSWORD|SEED|MNEMONIC|PRIVATE|SIGNING|CREDENTIAL|JWT|WEBHOOK")
-URL_WITH_PASSWORD = re.compile(r"://[^/@\s]*:[^/@\s]*@")
 USAGE = ("usage: railway-apply-variables.py <project-id> <environment> --plan|--apply "
          "[--values <values.json>] [--from-env] [--registry-credentials] [--replay <responses.json>] [--manifest <json>]")
+
+
+def say(*parts, file=None):
+    print(redact(" ".join(str(p) for p in parts)), file=file or sys.stdout)
+
+
+def names(node, prefix=""):
+    if isinstance(node, dict):
+        return [n for k, v in sorted(node.items()) for n in names(v, f"{prefix}{k}.")]
+    return [prefix.rstrip(".")]
 
 
 def replay_transport(path):
@@ -24,8 +33,10 @@ def replay_transport(path):
         op = re.match(r"\s*(?:query|mutation)\s+(\w+)", query).group(1)
         for e in entries:
             if e["op"] == op and e.get("variables", {}) == variables:
+                if "errors" in e:
+                    raise RuntimeError(graphql_error(e["errors"], variables))
                 return e["data"]
-        raise RuntimeError(f"replay has no response for {op} {json.dumps(variables, sort_keys=True)}")
+        raise RuntimeError(f"replay has no response for {op} with variables {', '.join(names(variables))}")
     return call
 
 
@@ -111,18 +122,18 @@ def main(argv, transport=None):
             pos.append(argv[0])
             argv = argv[1:]
         else:
-            print(USAGE, file=sys.stderr)
+            say(USAGE, file=sys.stderr)
             return 2
     if len(pos) != 2 or len(flags & {"--plan", "--apply"}) != 1:
-        print(USAGE, file=sys.stderr)
+        say(USAGE, file=sys.stderr)
         return 2
     project, env_name = pos
     apply = "--apply" in flags
     if not os.environ.get("RAILWAY_API_TOKEN"):
-        print("RAILWAY_API_TOKEN is not set", file=sys.stderr)
+        say("RAILWAY_API_TOKEN is not set", file=sys.stderr)
         return 2
     if apply and "--registry-credentials" in flags and not (os.environ.get("GHCR_USERNAME") and os.environ.get("GHCR_TOKEN")):
-        print("--registry-credentials needs GHCR_USERNAME and GHCR_TOKEN", file=sys.stderr)
+        say("--registry-credentials needs GHCR_USERNAME and GHCR_TOKEN", file=sys.stderr)
         return 2
     try:
         manifest = load_manifest(opts["--manifest"])
@@ -130,35 +141,38 @@ def main(argv, transport=None):
         if not isinstance(values, dict):
             raise ValueError("--values must be a JSON object")
     except (OSError, ValueError, AttributeError) as e:
-        print(f"bad input: {e}", file=sys.stderr)
+        say(f"bad input: {e}", file=sys.stderr)
         return 2
     plan, problems = {}, {}
     for name, svc in manifest.items():
         plan[name], problems[name] = desired(name, svc, values, "--from-env" in flags)
+        # A fixed value is published in the manifest, so it is not redacted.
+        mask(*(v for k, v in plan[name].items() if is_secret(svc, k, v) and svc["fixed"].get(k) != v))
     if apply and any(problems.values()):
         for name, bad in problems.items():
             for p in bad:
-                print(f"refused {name}: {p}", file=sys.stderr)
+                say(f"refused {name}: {p}", file=sys.stderr)
         return 2
 
+    mask(os.environ.get("GHCR_USERNAME"), os.environ.get("GHCR_TOKEN"))
     if transport is None:
         transport = replay_transport(opts["--replay"]) if opts["--replay"] else http_transport
     gql = transport if apply else read_only(transport)
-    print(f"railway-apply-variables {'apply' if apply else 'plan'} project={project} env={env_name}")
+    say(f"railway-apply-variables {'apply' if apply else 'plan'} project={project} env={env_name}")
     try:
         data = gql("query Project($id: String!) { project(id: $id) { "
                    "services { edges { node { id name } } } "
                    "environments { edges { node { id name } } } } }", {"id": project})["project"]
         env = next((e["id"] for e in edges(data["environments"]) if e["name"] == env_name), None)
         if env is None:
-            print(f"environment {env_name} not in project {project}", file=sys.stderr)
+            say(f"environment {env_name} not in project {project}", file=sys.stderr)
             return 1
         ids = {s["name"]: s["id"] for s in edges(data["services"])}
         absent = [name for name in plan if not ids.get(name)]
         for name in absent:
-            print(f"service {name} not in project")
+            say(f"service {name} not in project")
         if apply and absent:
-            print(f"refused: {len(absent)} manifest services are not in project {project}; nothing written",
+            say(f"refused: {len(absent)} manifest services are not in project {project}; nothing written",
                   file=sys.stderr)
             return 1
         writes = []
@@ -170,6 +184,8 @@ def main(argv, transport=None):
             have = gql("query Variables($p: String!, $e: String!, $s: String!) { "
                        "variables(projectId: $p, environmentId: $e, serviceId: $s, unrendered: true) }",
                        pv)["variables"] or {}
+            mask(*(v for k, v in have.items()
+                   if isinstance(v, str) and is_secret(svc, k, v) and svc["fixed"].get(k) != v))
             upsert = {}
             lines = []
             for key in sorted(want):
@@ -184,31 +200,31 @@ def main(argv, transport=None):
                     upsert[key] = want[key]
             extra = set(have) - set(want) - set(svc["needed"])
             lines += [f"  extra {key} (kept)" for key in sorted(extra)]
-            print(f"service {name} {'update' if upsert else 'unchanged'} missing={sum(k not in have for k in upsert)} "
+            say(f"service {name} {'update' if upsert else 'unchanged'} missing={sum(k not in have for k in upsert)} "
                   f"differs={sum(k in have for k in upsert)} extra={len(extra)}")
             lines += [f"  unresolved {p}" for p in problems[name]]
             for line in lines:
-                print(line)
+                say(line)
             if "--registry-credentials" in flags:
-                print("  registry credentials user=$GHCR_USERNAME token=$GHCR_TOKEN")
+                say("  registry credentials user=$GHCR_USERNAME token=$GHCR_TOKEN")
             writes.append((name, sid, upsert))
         if not apply:
             return 1 if absent else 3 if any(problems.values()) else 0
         for name, sid, upsert in writes:
-            print(f"service {name} apply")
+            say(f"service {name} apply")
             if upsert:
                 gql("mutation VariablesUpsert($i: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $i) }",
                     {"i": {"projectId": project, "environmentId": env, "serviceId": sid,
                            "variables": upsert, "skipDeploys": True}})
-                print(f"  applied {len(upsert)} variables")
+                say(f"  applied {len(upsert)} variables")
             if "--registry-credentials" in flags:
                 gql("mutation InstanceUpdate($s: String!, $e: String!, $i: ServiceInstanceUpdateInput!) { "
                     "serviceInstanceUpdate(serviceId: $s, environmentId: $e, input: $i) }",
                     {"s": sid, "e": env, "i": {"registryCredentials": {
                         "username": os.environ["GHCR_USERNAME"], "password": os.environ["GHCR_TOKEN"]}}})
-                print("  applied registry credentials")
+                say("  applied registry credentials")
     except (RuntimeError, OSError, KeyError, TypeError) as e:
-        print(f"railway call failed: {e}", file=sys.stderr)
+        say(f"railway call failed: {e}", file=sys.stderr)
         return 1
     return 0
 
