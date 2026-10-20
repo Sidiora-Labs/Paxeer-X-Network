@@ -42,7 +42,7 @@ from layerx_sdk.x402_rpc import (
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _SIGNATURES_PATH = (
     _REPO_ROOT
-    / "platform"
+    / "sdk"
     / "integrations"
     / "fastapi"
     / "layerx_fastapi"

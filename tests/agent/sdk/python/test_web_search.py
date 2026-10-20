@@ -41,7 +41,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 _FIXTURES = _REPO_ROOT / "services" / "interop" / "crates" / "x-websearch" / "tests" / "fixtures"
 _SIGNATURES_PATH = (
     _REPO_ROOT
-    / "platform"
+    / "sdk"
     / "integrations"
     / "fastapi"
     / "layerx_fastapi"
