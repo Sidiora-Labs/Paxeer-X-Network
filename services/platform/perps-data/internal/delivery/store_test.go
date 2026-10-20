@@ -135,9 +135,28 @@ func (p jetStreamPublisher) Publish(ctx context.Context, subject, eventID string
 func (p jetStreamPublisher) PublishBatch(ctx context.Context, leases []delivery.Lease) []delivery.Publication {
 	out := make([]delivery.Publication, len(leases))
 	for i, l := range leases {
+		if l.Control {
+			out[i].Ack, out[i].Err = p.publishControl(ctx, l)
+			continue
+		}
 		out[i].Ack, out[i].Err = p.Publish(ctx, l.Subject, l.EventID, l.Wire)
 	}
 	return out
+}
+
+func (p jetStreamPublisher) publishControl(ctx context.Context, l delivery.Lease) (delivery.PersistenceAck, error) {
+	subject, id, body, err := delivery.ControlMessage(l)
+	if err != nil {
+		return delivery.PersistenceAck{}, err
+	}
+	msg := &nats.Msg{Subject: subject, Data: body, Header: nats.Header{}}
+	msg.Header.Set(delivery.HeaderControl, delivery.ControlSkipped)
+	msg.Header.Set("Perps-Seq", strconv.FormatInt(l.PerpsSeq, 10))
+	ack, err := p.js.PublishMsg(ctx, msg, jetstream.WithMsgID(id), jetstream.WithExpectStream(p.stream))
+	if err != nil {
+		return delivery.PersistenceAck{}, err
+	}
+	return delivery.PersistenceAck{Stream: ack.Stream, Sequence: ack.Sequence}, nil
 }
 
 type brokerDelivery struct{ msg jetstream.Msg }
@@ -498,6 +517,10 @@ func TestDeliveryStore(t *testing.T) {
 	})
 
 	t.Run("relay_run_once", func(t *testing.T) {
+		// The rows quarantined above hold back every later row of the relay.
+		if _, err := db.ExecContext(ctx, `TRUNCATE perps.delivery_outbox`); err != nil {
+			t.Fatal(err)
+		}
 		publisher := jetStreamPublisher{js: js, stream: stream.Name}
 		relay := delivery.Relay{Store: s, Publisher: publisher, Owner: relayOwner, Batch: 10, LeaseDuration: 30 * time.Second, PublishTimeout: 5 * time.Second, RetryDelay: time.Second, MaxAttempts: 3}
 		invalid := relay
@@ -636,6 +659,156 @@ func TestDeliveryStore(t *testing.T) {
 		}
 		if n, err := s.Quarantined(ctx); err != nil || n != 0 {
 			t.Fatalf("quarantined after requeue = %d, %v", n, err)
+		}
+	})
+
+	perps, err := js.Stream(ctx, stream.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// narrow refuses orderSubject, so an order row enqueued through s fails
+	// to decode in its relay and is quarantined permanently.
+	narrow, err := delivery.NewStore(db, "perps", delivery.Policy{Subjects: map[string]bool{fillSubject: true}, EventTypes: map[string]bool{"fill": true, "order": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replica := func(owner string, store *delivery.Store) delivery.Relay {
+		return delivery.Relay{Store: store, Publisher: jetStreamPublisher{js: js, stream: stream.Name}, Owner: owner, Batch: 10, LeaseDuration: 30 * time.Second, PublishTimeout: 5 * time.Second, RetryDelay: time.Second, MaxAttempts: 2}
+	}
+	const openRows = `SELECT count(*) FROM perps.delivery_outbox WHERE state='pending' OR (state='quarantined' AND failure_class<>'transient' AND broker_sequence IS NULL)`
+
+	t.Run("exhausted_row_holds_batch", func(t *testing.T) {
+		if _, err := db.ExecContext(ctx, `TRUNCATE perps.delivery_outbox`); err != nil {
+			t.Fatal(err)
+		}
+		head, next := testEnvelope("exhausted-0", "fill", 800), testEnvelope("exhausted-1", "fill", 801)
+		enqueueCommitted(t, ctx, db, s, fillSubject, head, next)
+		// The head row was reclaimed past its budget after leases expired.
+		if _, err := db.ExecContext(ctx, `UPDATE perps.delivery_outbox SET attempts=5 WHERE event_id=$1`, head.EventID); err != nil {
+			t.Fatal(err)
+		}
+		base := streamState(t, ctx, perps).LastSeq
+		if err := replica("relay-a", s).RunOnce(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if r := readOutbox(t, db, head.EventID); r.state != "quarantined" || r.failureClass != "transient" || r.attempts != 6 {
+			t.Fatalf("exhausted row = %+v", r)
+		}
+		// Neither this pass nor another replica publishes a row behind it.
+		if err := replica("relay-b", s).Pass(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if r := readOutbox(t, db, next.EventID); r.state != "pending" || r.attempts != 0 || r.published {
+			t.Fatalf("row behind the exhausted row = %+v", r)
+		}
+		if last := streamState(t, ctx, perps).LastSeq; last != base {
+			t.Fatalf("stream last sequence %d, want %d: a row overtook the exhausted one", last, base)
+		}
+	})
+
+	t.Run("skipped_row_control_message", func(t *testing.T) {
+		if _, err := db.ExecContext(ctx, `TRUNCATE perps.delivery_outbox`); err != nil {
+			t.Fatal(err)
+		}
+		first, skipped := testEnvelope("skip-0", "fill", 900), testEnvelope("skip-1", "order", 901)
+		later := []delivery.Envelope{testEnvelope("skip-2", "fill", 902), testEnvelope("skip-3", "fill", 903)}
+		enqueueCommitted(t, ctx, db, s, fillSubject, first)
+		enqueueCommitted(t, ctx, db, s, orderSubject, skipped)
+		enqueueCommitted(t, ctx, db, s, fillSubject, later...)
+		base := streamState(t, ctx, perps).LastSeq
+		a, b := replica("relay-a", narrow), replica("relay-b", narrow)
+		// Two replicas race over the outbox until every row is closed.
+		deadline := time.Now().Add(30 * time.Second)
+		for count(t, db, openRows) != 0 {
+			if time.Now().After(deadline) {
+				t.Fatal("outbox not closed")
+			}
+			errs := make(chan error, 2)
+			for _, r := range []delivery.Relay{a, b} {
+				go func() { errs <- r.Pass(ctx) }()
+			}
+			for range 2 {
+				if err := <-errs; err != nil && !errors.Is(err, delivery.ErrAuthorization) {
+					t.Fatalf("Pass: %v", err)
+				}
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		ids := []string{first.EventID, skipped.EventID, later[0].EventID, later[1].EventID}
+		var skippedSeq int64
+		for i, id := range ids {
+			r := readOutbox(t, db, id)
+			want := "published"
+			if i == 1 {
+				want = "quarantined"
+				if r.failureClass != "schema_violation" || r.published {
+					t.Fatalf("skipped row = %+v", r)
+				}
+			}
+			if r.state != want || r.brokerStream != stream.Name || r.brokerSequence != int64(base)+int64(i)+1 {
+				t.Fatalf("row %d = %+v", i, r)
+			}
+		}
+		if err := db.QueryRow(`SELECT perps_seq FROM perps.delivery_outbox WHERE event_id=$1`, skipped.EventID).Scan(&skippedSeq); err != nil {
+			t.Fatal(err)
+		}
+		msg, err := perps.GetMsg(ctx, base+2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seq := strconv.FormatInt(skippedSeq, 10)
+		if msg.Subject != "perps.125.control" || msg.Header.Get(delivery.HeaderControl) != delivery.ControlSkipped || msg.Header.Get("Perps-Seq") != seq || msg.Header.Get(jetstream.MsgIDHeader) != "control-"+seq {
+			t.Fatalf("control message = %s %v", msg.Subject, msg.Header)
+		}
+		if last := streamState(t, ctx, perps).LastSeq; last != base+4 {
+			t.Fatalf("stream last sequence %d, want %d: one control message and three rows", last, base+4)
+		}
+		if n := count(t, db, `SELECT count(*) FROM perps.delivery_outbox WHERE state='quarantined' AND failure_class='schema_violation'`); n != 1 {
+			t.Fatalf("%d permanently quarantined rows, want 1", n)
+		}
+	})
+
+	t.Run("control_republish_after_lost_lease", func(t *testing.T) {
+		if _, err := db.ExecContext(ctx, `TRUNCATE perps.delivery_outbox`); err != nil {
+			t.Fatal(err)
+		}
+		skipped, next := testEnvelope("lost-0", "order", 1000), testEnvelope("lost-1", "fill", 1001)
+		enqueueCommitted(t, ctx, db, s, orderSubject, skipped)
+		enqueueCommitted(t, ctx, db, s, fillSubject, next)
+		base := streamState(t, ctx, perps).LastSeq
+		if err := replica("relay-a", narrow).RunOnce(ctx); !errors.Is(err, delivery.ErrAuthorization) {
+			t.Fatalf("RunOnce over the undecodable row: %v", err)
+		}
+		if r := readOutbox(t, db, next.EventID); r.state != "pending" || r.attempts != 0 {
+			t.Fatalf("row behind the skipped row = %+v", r)
+		}
+		leases, err := narrow.RelayClaim(ctx, "relay-crashed", 10, time.Second)
+		if err != nil || len(leases) != 2 || !leases[0].Control || leases[0].EventID != skipped.EventID || leases[1].Control {
+			t.Fatalf("relay claim = %+v, %v", leases, err)
+		}
+		// The replica persists the control message and stops before recording it.
+		res := jetStreamPublisher{js: js, stream: stream.Name}.PublishBatch(ctx, leases[:1])
+		if res[0].Err != nil || res[0].Ack.Sequence != base+1 {
+			t.Fatalf("control publication = %+v", res[0])
+		}
+		time.Sleep(1100 * time.Millisecond)
+		if err := replica("relay-b", narrow).Pass(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := narrow.MarkPublished(ctx, leases[0], res[0].Ack); !errors.Is(err, delivery.ErrLease) {
+			t.Fatalf("record by the expired lease: %v", err)
+		}
+		if r := readOutbox(t, db, skipped.EventID); r.state != "quarantined" || r.brokerSequence != int64(base)+1 {
+			t.Fatalf("skipped row = %+v", r)
+		}
+		if r := readOutbox(t, db, next.EventID); r.state != "published" || r.brokerSequence != int64(base)+2 {
+			t.Fatalf("row behind the skipped row = %+v", r)
+		}
+		if last := streamState(t, ctx, perps).LastSeq; last != base+2 {
+			t.Fatalf("stream last sequence %d, want %d: the control message was stored twice", last, base+2)
+		}
+		if n := count(t, db, openRows); n != 0 {
+			t.Fatalf("%d open rows", n)
 		}
 	})
 }

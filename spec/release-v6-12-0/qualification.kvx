@@ -2548,3 +2548,11 @@ exit = 0
 log = "PD-F3-verify-r1.log"
 observed = "TestPublisher/envelope_limit requires a message the broker refuses for size to be quarantined as transient, so under strict Perps-Seq order it is requeued forever and holds back every later row; the test is left intact."
 assumption = "A size refusal should become a permanent failure class that quarantines once; that change needs a ruling because it contradicts the test."
+
+[finding.perps-data-control-message-scope]
+revision = "33fe94b3b"
+command = "go test ./internal/delivery/... ./internal/publish/... (in services/platform/perps-data)"
+exit = 1
+log = "PD-F10-verify-r1.log"
+observed = "Making an attempt-exhausted row permanent with a control message contradicts TestPublisher/envelope_limit and failed_message_blocks_successors, which require it to stay quarantined as transient and hold every later row; the tests are left intact."
+assumption = "Control messages cover rows quarantined for a non-transient class only; a transient exhausted row keeps holding later rows until it is requeued and published."

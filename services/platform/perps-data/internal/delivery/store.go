@@ -5,6 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -92,7 +94,35 @@ type Lease struct {
 	PerpsSeq                int64
 	Fence                   int64
 	Attempts                int
+	// Control marks the lease of a permanently quarantined row: the relay
+	// publishes its control message (ControlMessage) in place of the envelope.
+	Control bool
 }
+
+// Control message headers: a permanently quarantined row is announced in its
+// Perps-Seq place by a message on perps.<chain>.control carrying
+// Perps-Control: skipped and the Perps-Seq of the skipped row.
+const (
+	HeaderControl  = "Perps-Control"
+	ControlSkipped = "skipped"
+)
+
+// ControlMessage returns the subject, Nats-Msg-Id and body of the control
+// message announcing that the row of l was skipped.
+func ControlMessage(l Lease) (subject, msgID string, body []byte, err error) {
+	tokens := strings.SplitN(l.Subject, ".", 3)
+	if len(tokens) != 3 || tokens[0] != "perps" || !decimal.MatchString(tokens[1]) || l.PerpsSeq < 1 || !token.MatchString(l.EventID) {
+		return "", "", nil, ErrIntegrity
+	}
+	seq := strconv.FormatInt(l.PerpsSeq, 10)
+	return "perps." + tokens[1] + ".control", "control-" + seq, []byte(`{"perps_seq":"` + seq + `","event_id":"` + l.EventID + `"}`), nil
+}
+
+// openRow selects, as alias o, the rows still to be put on the stream: a
+// pending row, and a permanently quarantined row whose control message has no
+// broker position yet. The broker position of a quarantined row is that of
+// its control message.
+const openRow = "(o.state='pending' OR (o.state='quarantined' AND o.failure_class<>'transient' AND o.broker_sequence IS NULL))"
 
 // MaxRetryDelay caps the exponential backoff of a transient failure unless
 // the base retry delay is longer; a transient row quarantined by its attempt
@@ -101,32 +131,42 @@ const MaxRetryDelay = time.Minute
 
 // Claim leases up to limit pending rows in Perps-Seq order. It stops before
 // the first pending row that is backing off or leased elsewhere, so no row is
-// claimed ahead of an earlier one that is still to be published.
+// claimed ahead of an earlier pending one. Claim leaves quarantined rows
+// alone; the relay claims through claim, which also stops at them.
 func (s *Store) Claim(ctx context.Context, owner string, limit int, duration time.Duration) ([]Lease, error) {
-	return s.claim(ctx, owner, limit, duration, 0)
+	return s.claim(ctx, owner, limit, duration, false)
 }
 
-// claim is Claim limited to rows below the Perps-Seq below; 0 sets no limit.
-func (s *Store) claim(ctx context.Context, owner string, limit int, duration time.Duration, below int64) ([]Lease, error) {
-	if !token.MatchString(owner) || limit < 1 || limit > 1000 || duration < time.Second || duration > 5*time.Minute || below < 0 {
+// claim is Claim; with relay it also leases the open permanently quarantined
+// rows (openRow) as control leases and stops before every row quarantined as
+// transient, so no row is claimed ahead of an earlier one that is still to be
+// published or announced. Claims are serialised by a transaction advisory
+// lock, so a claim sees every lease of an earlier one and replicas never
+// lease two batches at once.
+func (s *Store) claim(ctx context.Context, owner string, limit int, duration time.Duration, relay bool) ([]Lease, error) {
+	if !token.MatchString(owner) || limit < 1 || limit > 1000 || duration < time.Second || duration > 5*time.Minute {
 		return nil, errors.New("delivery: invalid lease bounds")
 	}
-	if below == 0 {
-		below = 1<<63 - 1
+	open := "o.state='pending'"
+	if relay {
+		open = openRow
 	}
 	out := []Lease{}
 	err := s.mutate(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `WITH barrier AS (SELECT LEAST(min(perps_seq),$4::bigint) AS seq FROM `+s.table("delivery_outbox")+` WHERE state='pending' AND (available_at>clock_timestamp() OR lease_until>clock_timestamp())),
- picked AS (SELECT event_id FROM `+s.table("delivery_outbox")+` WHERE state='pending' AND available_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<=clock_timestamp()) AND perps_seq<(SELECT seq FROM barrier) ORDER BY perps_seq FOR UPDATE SKIP LOCKED LIMIT $1),
- claimed AS (UPDATE `+s.table("delivery_outbox")+` o SET lease_expiry_count=o.lease_expiry_count+CASE WHEN o.lease_until<=clock_timestamp() THEN 1 ELSE 0 END,claimed_at=clock_timestamp(),lease_owner=$2,lease_until=clock_timestamp()+($3::bigint*interval '1 millisecond'),fence=o.fence+1,attempts=o.attempts+1 FROM picked WHERE o.event_id=picked.event_id RETURNING o.event_id,o.subject,o.envelope,o.perps_seq,o.fence,o.attempts)
- SELECT event_id,subject,envelope,perps_seq,fence,attempts FROM claimed ORDER BY perps_seq`, limit, owner, duration.Milliseconds(), below)
+		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtext($1))", s.table("delivery_outbox")); err != nil {
+			return err
+		}
+		rows, err := tx.QueryContext(ctx, `WITH barrier AS (SELECT COALESCE(min(perps_seq),9223372036854775807) AS seq FROM `+s.table("delivery_outbox")+` o WHERE (`+open+` AND (o.available_at>clock_timestamp() OR o.lease_until>clock_timestamp())) OR ($4::boolean AND o.state='quarantined' AND o.failure_class='transient')),
+ picked AS (SELECT event_id FROM `+s.table("delivery_outbox")+` o WHERE `+open+` AND o.available_at<=clock_timestamp() AND (o.lease_until IS NULL OR o.lease_until<=clock_timestamp()) AND o.perps_seq<(SELECT seq FROM barrier) ORDER BY o.perps_seq FOR UPDATE LIMIT $1),
+ claimed AS (UPDATE `+s.table("delivery_outbox")+` o SET lease_expiry_count=o.lease_expiry_count+CASE WHEN o.lease_until<=clock_timestamp() THEN 1 ELSE 0 END,claimed_at=clock_timestamp(),lease_owner=$2,lease_until=clock_timestamp()+($3::bigint*interval '1 millisecond'),fence=o.fence+1,attempts=o.attempts+1 FROM picked WHERE o.event_id=picked.event_id RETURNING o.event_id,o.subject,o.envelope,o.perps_seq,o.fence,o.attempts,o.state='quarantined' AS control)
+ SELECT event_id,subject,envelope,perps_seq,fence,attempts,control FROM claimed ORDER BY perps_seq`, limit, owner, duration.Milliseconds(), relay)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			l := Lease{Owner: owner}
-			if err = rows.Scan(&l.EventID, &l.Subject, &l.Wire, &l.PerpsSeq, &l.Fence, &l.Attempts); err != nil {
+			if err = rows.Scan(&l.EventID, &l.Subject, &l.Wire, &l.PerpsSeq, &l.Fence, &l.Attempts, &l.Control); err != nil {
 				return err
 			}
 			out = append(out, l)
@@ -150,7 +190,9 @@ func (s *Store) MarkPublished(ctx context.Context, l Lease, a PersistenceAck) er
 
 // MarkPublishedBatch records acks[i] as the broker position of leases[i] in one
 // transaction. Every row still fenced by its lease is recorded; ErrLease
-// reports that at least one lease no longer matched its row.
+// reports that at least one lease no longer matched its row. A pending row
+// becomes published; a permanently quarantined row stays quarantined with the
+// broker position of its control message, which closes it.
 func (s *Store) MarkPublishedBatch(ctx context.Context, leases []Lease, acks []PersistenceAck) error {
 	if len(leases) != len(acks) {
 		return errors.New("delivery: one acknowledgement per lease required")
@@ -163,7 +205,7 @@ func (s *Store) MarkPublishedBatch(ctx context.Context, leases []Lease, acks []P
 		}
 		streams[i], sequences[i] = a.Stream, int64(a.Sequence)
 	}
-	return s.fencedUpdate(ctx, len(leases), "UPDATE "+s.table("delivery_outbox")+" o SET acknowledgement_latency_ms=GREATEST(0,EXTRACT(EPOCH FROM (clock_timestamp()-o.claimed_at))*1000)::bigint,state='published',broker_stream=l.stream,broker_sequence=l.seq,published_at=clock_timestamp(),lease_owner=NULL,lease_until=NULL,failure_class=NULL FROM unnest($1::text[],$2::text[],$3::bigint[],$4::text[],$5::bigint[]) AS l(event_id,owner,fence,stream,seq) WHERE o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND o.state='pending'", ids, owners, fences, pq.Array(streams), pq.Array(sequences))
+	return s.fencedUpdate(ctx, len(leases), "UPDATE "+s.table("delivery_outbox")+" o SET acknowledgement_latency_ms=GREATEST(0,EXTRACT(EPOCH FROM (clock_timestamp()-o.claimed_at))*1000)::bigint,state=CASE WHEN o.state='pending' THEN 'published' ELSE o.state END,broker_stream=l.stream,broker_sequence=l.seq,published_at=CASE WHEN o.state='pending' THEN clock_timestamp() END,lease_owner=NULL,lease_until=NULL,failure_class=CASE WHEN o.state='pending' THEN NULL ELSE o.failure_class END FROM unnest($1::text[],$2::text[],$3::bigint[],$4::text[],$5::bigint[]) AS l(event_id,owner,fence,stream,seq) WHERE o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND "+openRow, ids, owners, fences, pq.Array(streams), pq.Array(sequences))
 }
 
 // leaseKeys returns the event ids, owners and fences of leases as arrays.
@@ -212,7 +254,10 @@ func (s *Store) Retry(ctx context.Context, l Lease, class FailureClass, maxAttem
 // RetryBatch applies Retry to every leases[i] with classes[i] in one
 // transaction; ErrLease reports that at least one lease no longer matched.
 // A row becomes available again after delay doubled per earlier attempt,
-// capped at the larger of delay and MaxRetryDelay.
+// capped at the larger of delay and MaxRetryDelay. A row of a non-transient
+// class is quarantined permanently and is at once available to the relay for
+// its control message. A control lease is never exhausted and keeps its class:
+// its control message is retried with backoff until it persists.
 func (s *Store) RetryBatch(ctx context.Context, leases []Lease, classes []FailureClass, maxAttempts int, delay time.Duration) error {
 	if maxAttempts < 1 || maxAttempts > 100 || delay < time.Second || delay > time.Hour {
 		return errors.New("delivery: invalid retry bounds")
@@ -231,7 +276,7 @@ func (s *Store) RetryBatch(ctx context.Context, leases []Lease, classes []Failur
 	}
 	ids, owners, fences := leaseKeys(leases)
 	// Exhaustion is based on the row, never the caller's mutable lease snapshot.
-	return s.fencedUpdate(ctx, len(leases), "UPDATE "+s.table("delivery_outbox")+" o SET state=CASE WHEN o.attempts >= $5::integer OR l.class <> 'transient' THEN 'quarantined' ELSE 'pending' END,failure_class=l.class,available_at=clock_timestamp()+(LEAST($6::bigint*power(2::numeric,LEAST(GREATEST(o.attempts,1),40)-1),$7::bigint)::bigint*interval '1 millisecond'),lease_owner=NULL,lease_until=NULL FROM unnest($1::text[],$2::text[],$3::bigint[],$4::text[]) AS l(event_id,owner,fence,class) WHERE o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND o.state='pending'", ids, owners, fences, pq.Array(names), maxAttempts, delay.Milliseconds(), max(delay, MaxRetryDelay).Milliseconds())
+	return s.fencedUpdate(ctx, len(leases), "UPDATE "+s.table("delivery_outbox")+" o SET state=CASE WHEN o.state='quarantined' OR o.attempts >= $5::integer OR l.class <> 'transient' THEN 'quarantined' ELSE 'pending' END,failure_class=CASE WHEN o.state='quarantined' THEN o.failure_class ELSE l.class END,available_at=CASE WHEN o.state='pending' AND l.class <> 'transient' THEN clock_timestamp() ELSE clock_timestamp()+(LEAST($6::bigint*power(2::numeric,LEAST(GREATEST(o.attempts,1),40)-1),$7::bigint)::bigint*interval '1 millisecond') END,lease_owner=NULL,lease_until=NULL FROM unnest($1::text[],$2::text[],$3::bigint[],$4::text[]) AS l(event_id,owner,fence,class) WHERE o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND "+openRow, ids, owners, fences, pq.Array(names), maxAttempts, delay.Milliseconds(), max(delay, MaxRetryDelay).Milliseconds())
 }
 
 // ReleaseBatch returns leased rows to pending without counting their claim as
@@ -239,22 +284,16 @@ func (s *Store) RetryBatch(ctx context.Context, leases []Lease, classes []Failur
 // ErrLease reports that at least one lease no longer matched.
 func (s *Store) ReleaseBatch(ctx context.Context, leases []Lease) error {
 	ids, owners, fences := leaseKeys(leases)
-	return s.fencedUpdate(ctx, len(leases), "UPDATE "+s.table("delivery_outbox")+" o SET attempts=GREATEST(o.attempts-1,0),lease_owner=NULL,lease_until=NULL FROM unnest($1::text[],$2::text[],$3::bigint[]) AS l(event_id,owner,fence) WHERE o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND o.state='pending'", ids, owners, fences)
+	return s.fencedUpdate(ctx, len(leases), "UPDATE "+s.table("delivery_outbox")+" o SET attempts=GREATEST(o.attempts-1,0),lease_owner=NULL,lease_until=NULL FROM unnest($1::text[],$2::text[],$3::bigint[]) AS l(event_id,owner,fence) WHERE o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND "+openRow, ids, owners, fences)
 }
 
 // Requeue returns to pending, with a fresh attempt budget, every row
-// quarantined as transient whose backoff has elapsed, and reports the lowest
-// Perps-Seq of a transient quarantined row still backing off, or 0. Rows of a
-// permanent failure class stay quarantined.
-func (s *Store) Requeue(ctx context.Context) (int64, error) {
-	var below int64
-	err := s.mutate(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, "UPDATE "+s.table("delivery_outbox")+" SET state='pending',attempts=0 WHERE state='quarantined' AND failure_class='transient' AND available_at<=clock_timestamp()"); err != nil {
-			return err
-		}
-		return tx.QueryRowContext(ctx, "SELECT COALESCE(min(perps_seq),0) FROM "+s.table("delivery_outbox")+" WHERE state='quarantined' AND failure_class='transient'").Scan(&below)
-	})
-	return below, err
+// quarantined as transient whose backoff has elapsed. Rows of a permanent
+// failure class stay quarantined. A transient quarantined row holds back
+// every later row of the relay until it is requeued and published.
+func (s *Store) Requeue(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, "UPDATE "+s.table("delivery_outbox")+" SET state='pending',attempts=0 WHERE state='quarantined' AND failure_class='transient' AND available_at<=clock_timestamp()")
+	return err
 }
 
 // Quarantined counts the quarantined outbox rows.
@@ -277,7 +316,8 @@ func (s *Store) CheckAttemptBudget(ctx context.Context, l Lease, maxAttempts int
 }
 
 // CheckAttemptBudgetBatch applies CheckAttemptBudget to leases in one
-// transaction and returns, in their order, the leases that may publish.
+// transaction and returns, in their order, the leases that may publish. A
+// control lease has no attempt budget.
 // ErrLease reports that at least one lease no longer matched its row; the
 // returned leases and the quarantine of exhausted rows still hold.
 func (s *Store) CheckAttemptBudgetBatch(ctx context.Context, leases []Lease, maxAttempts int) ([]Lease, error) {
@@ -285,9 +325,12 @@ func (s *Store) CheckAttemptBudgetBatch(ctx context.Context, leases []Lease, max
 		return nil, errors.New("delivery: invalid retry bound")
 	}
 	ids, owners, fences := leaseKeys(leases)
+	// overBudget reads the row before the update, as every SET expression does;
+	// RETURNING reads it after, where an exhausted row is quarantined as transient.
+	const overBudget = "(o.state='pending' AND o.attempts>$4::integer)"
 	exhausted := make(map[string]bool, len(leases))
 	err := s.mutate(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, "UPDATE "+s.table("delivery_outbox")+" o SET state=CASE WHEN o.attempts>$4::integer THEN 'quarantined' ELSE o.state END,failure_class=CASE WHEN o.attempts>$4::integer THEN 'transient' ELSE o.failure_class END,available_at=CASE WHEN o.attempts>$4::integer THEN clock_timestamp()+($5::bigint*interval '1 millisecond') ELSE o.available_at END,lease_owner=CASE WHEN o.attempts>$4::integer THEN NULL ELSE o.lease_owner END,lease_until=CASE WHEN o.attempts>$4::integer THEN NULL ELSE o.lease_until END FROM unnest($1::text[],$2::text[],$3::bigint[]) AS l(event_id,owner,fence) WHERE o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND o.state='pending' RETURNING o.event_id,o.attempts>$4::integer", ids, owners, fences, maxAttempts, MaxRetryDelay.Milliseconds())
+		rows, err := tx.QueryContext(ctx, "UPDATE "+s.table("delivery_outbox")+" o SET state=CASE WHEN "+overBudget+" THEN 'quarantined' ELSE o.state END,failure_class=CASE WHEN "+overBudget+" THEN 'transient' ELSE o.failure_class END,available_at=CASE WHEN "+overBudget+" THEN clock_timestamp()+($5::bigint*interval '1 millisecond') ELSE o.available_at END,lease_owner=CASE WHEN "+overBudget+" THEN NULL ELSE o.lease_owner END,lease_until=CASE WHEN "+overBudget+" THEN NULL ELSE o.lease_until END FROM unnest($1::text[],$2::text[],$3::bigint[]) AS l(event_id,owner,fence) WHERE o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND "+openRow+" RETURNING o.event_id,(o.state='quarantined' AND o.failure_class='transient')", ids, owners, fences, maxAttempts, MaxRetryDelay.Milliseconds())
 		if err != nil {
 			return err
 		}

@@ -15,7 +15,8 @@ type PersistentPublisher interface {
 
 // BatchPublisher publishes leases in their order on one connection, so the
 // broker assigns stream sequences in Perps-Seq order, and returns one
-// Publication per lease. Each Publication carries the server JetStream
+// Publication per lease. A control lease is published as its ControlMessage
+// under the Nats-Msg-Id the message names, never as its envelope. Each Publication carries the server JetStream
 // persistence acknowledgement of a message whose Nats-Msg-Id is the lease
 // event id, or the error of that message. A message must persist only after
 // every earlier message of the batch persisted, so a failed message never
@@ -47,62 +48,81 @@ func (r Relay) valid() error {
 }
 
 // Pass is the relay loop step: it requeues the transient quarantined rows
-// whose backoff elapsed and runs RunOnce over the rows ahead of any transient
+// whose backoff elapsed and runs RunOnce, which stops at any transient
 // quarantined row still backing off, so a requeued row is never published
 // behind a later one.
 func (r Relay) Pass(ctx context.Context) error {
 	if err := r.valid(); err != nil {
 		return err
 	}
-	below, err := r.Store.Requeue(ctx)
-	if err != nil {
+	if err := r.Store.Requeue(ctx); err != nil {
 		return err
 	}
-	return r.run(ctx, below)
+	return r.run(ctx)
 }
 
-// RunOnce claims up to Batch pending rows in Perps-Seq order, checks their
-// attempt budget, publishes them as one pipelined batch bounded by
+// RunOnce claims up to Batch open rows in Perps-Seq order, stopping at a row
+// that is backing off, leased elsewhere or quarantined as transient, checks
+// their attempt budget, publishes them as one pipelined batch bounded by
 // PublishTimeout and records the acknowledged rows, each step in one
 // transaction. Every lease of the batch outlives PublishTimeout, so no row
 // expires behind a slow publication. A row whose publication failed keeps its
 // attempt count and is put back by Retry with backoff; the unacknowledged
 // rows after it are released without spending an attempt and wait behind it,
-// and the acknowledged rows of the batch are recorded. One relay runs per
-// writer lease; fenced leases refuse a stale one.
+// and the acknowledged rows of the batch are recorded. A row that exhausted
+// its budget, lost its lease or fails to decode holds back the rest of the
+// batch the same way. A row that fails to decode is quarantined permanently;
+// a later pass publishes its control message in its Perps-Seq place and then
+// the rows behind it. Claims are serialised and stop at every leased row, so
+// replicas publish one batch at a time; fenced leases refuse a stale relay.
 func (r Relay) RunOnce(ctx context.Context) error {
 	if err := r.valid(); err != nil {
 		return err
 	}
-	return r.run(ctx, 0)
+	return r.run(ctx)
 }
 
-// run is RunOnce over the rows below the Perps-Seq below; 0 sets no limit.
-func (r Relay) run(ctx context.Context, below int64) error {
-	leases, err := r.Store.claim(ctx, r.Owner, r.Batch, r.LeaseDuration, below)
-	if err != nil || len(leases) == 0 {
+func (r Relay) run(ctx context.Context) error {
+	claimed, err := r.Store.claim(ctx, r.Owner, r.Batch, r.LeaseDuration, true)
+	if err != nil || len(claimed) == 0 {
 		return err
 	}
-	leases, failure := r.Store.CheckAttemptBudgetBatch(ctx, leases, r.MaxAttempts)
+	allowed, failure := r.Store.CheckAttemptBudgetBatch(ctx, claimed, r.MaxAttempts)
 	if failure != nil && !errors.Is(failure, ErrLease) {
 		return failure
 	}
-	var retry []Lease
+	may := make(map[string]bool, len(allowed))
+	for _, l := range allowed {
+		may[l.EventID] = true
+	}
+	var retry, release []Lease
 	var classes []FailureClass
-	send := make([]Lease, 0, len(leases))
-	for _, l := range leases {
-		if _, err := Decode(l.Wire, r.Store.policy, l.Subject); err != nil {
-			class := SchemaViolation
-			if errors.Is(err, ErrIntegrity) {
-				class = IntegrityConflict
-			}
-			retry, classes = append(retry, l), append(classes, class)
-			failure = errors.Join(failure, err)
+	send := make([]Lease, 0, len(allowed))
+	held := false
+	for _, l := range claimed {
+		if !may[l.EventID] {
+			held = true
 			continue
+		}
+		if held {
+			release = append(release, l)
+			continue
+		}
+		if !l.Control {
+			if _, err := Decode(l.Wire, r.Store.policy, l.Subject); err != nil {
+				class := SchemaViolation
+				if errors.Is(err, ErrIntegrity) {
+					class = IntegrityConflict
+				}
+				retry, classes = append(retry, l), append(classes, class)
+				failure = errors.Join(failure, err)
+				held = true
+				continue
+			}
 		}
 		send = append(send, l)
 	}
-	var published, release []Lease
+	var published []Lease
 	var acks []PersistenceAck
 	if len(send) > 0 {
 		pubctx, cancel := context.WithTimeout(ctx, r.PublishTimeout)

@@ -75,6 +75,14 @@ func EnsureStream(ctx context.Context, nc *nats.Conn, chain uint64) error {
 	return drift(info.Config, want)
 }
 
+// limit is a stream limit as the server reports it: 0 sets no limit, -1.
+func limit(v int64) int64 {
+	if v == 0 {
+		return -1
+	}
+	return v
+}
+
 func drift(have, want jetstream.StreamConfig) error {
 	type field struct {
 		name       string
@@ -92,6 +100,9 @@ func drift(have, want jetstream.StreamConfig) error {
 		{"deny_purge", have.DenyPurge, want.DenyPurge, have.DenyPurge == want.DenyPurge},
 		{"duplicates", have.Duplicates, want.Duplicates, have.Duplicates == want.Duplicates},
 		{"max_msg_size", have.MaxMsgSize, want.MaxMsgSize, have.MaxMsgSize == want.MaxMsgSize},
+		{"max_bytes", have.MaxBytes, limit(want.MaxBytes), have.MaxBytes == limit(want.MaxBytes)},
+		{"max_msgs", have.MaxMsgs, limit(want.MaxMsgs), have.MaxMsgs == limit(want.MaxMsgs)},
+		{"max_msgs_per_subject", have.MaxMsgsPerSubject, limit(want.MaxMsgsPerSubject), have.MaxMsgsPerSubject == limit(want.MaxMsgsPerSubject)},
 	} {
 		if !f.equal {
 			return fmt.Errorf("%w: %s %v want %v", ErrDrift, f.name, f.have, f.want)
@@ -190,7 +201,8 @@ func (p *Publisher) Run(ctx context.Context) error {
 // sink is the delivery.BatchPublisher of the Publisher: it publishes the
 // first message of a batch and awaits its JetStream persistence
 // acknowledgement, then pipelines the rest on one connection, each carrying
-// Nats-Msg-Id, Perps-Seq, Perps-Block and Perps-Kind. Every pipelined message
+// Nats-Msg-Id, Perps-Seq, Perps-Block and Perps-Kind, or, for a control
+// lease, the delivery.ControlMessage with Perps-Control and Perps-Seq. Every pipelined message
 // expects the stream sequence of its predecessor as the last sequence
 // (Nats-Expected-Last-Sequence), so the broker refuses every message behind
 // one that did not persist and none lands out of Perps-Seq order. The first
@@ -257,20 +269,39 @@ func await(ctx context.Context, f jetstream.PubAckFuture) delivery.Publication {
 }
 
 func (s *sink) send(l delivery.Lease, opts ...jetstream.PublishOpt) (jetstream.PubAckFuture, error) {
-	e, err := delivery.Decode(l.Wire, s.policy, l.Subject)
+	msg, id, err := s.message(l)
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, jetstream.WithMsgID(id), jetstream.WithExpectStream(stream.Name), jetstream.WithRetryAttempts(0))
+	f, err := s.js.PublishMsgAsync(msg, opts...)
+	return f, classify(err)
+}
+
+// message builds the broker message of l and its Nats-Msg-Id.
+func (s *sink) message(l delivery.Lease) (*nats.Msg, string, error) {
+	if l.Control {
+		subject, id, body, err := delivery.ControlMessage(l)
+		if err != nil {
+			return nil, "", err
+		}
+		msg := &nats.Msg{Subject: subject, Data: body, Header: nats.Header{}}
+		msg.Header.Set(delivery.HeaderControl, delivery.ControlSkipped)
+		msg.Header.Set(HeaderSeq, strconv.FormatInt(l.PerpsSeq, 10))
+		return msg, id, nil
+	}
+	e, err := delivery.Decode(l.Wire, s.policy, l.Subject)
+	if err != nil {
+		return nil, "", err
+	}
 	if e.EventID != l.EventID || l.PerpsSeq < 1 {
-		return nil, delivery.ErrIntegrity
+		return nil, "", delivery.ErrIntegrity
 	}
 	msg := &nats.Msg{Subject: l.Subject, Data: append([]byte(nil), l.Wire...), Header: nats.Header{}}
 	msg.Header.Set(HeaderSeq, strconv.FormatInt(l.PerpsSeq, 10))
 	msg.Header.Set(HeaderBlock, e.SourceOrder.Height)
 	msg.Header.Set(HeaderKind, e.EventType)
-	opts = append(opts, jetstream.WithMsgID(l.EventID), jetstream.WithExpectStream(stream.Name), jetstream.WithRetryAttempts(0))
-	f, err := s.js.PublishMsgAsync(msg, opts...)
-	return f, classify(err)
+	return msg, l.EventID, nil
 }
 
 func classify(err error) error {

@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"os"
 	"strconv"
@@ -416,6 +418,15 @@ func TestPublisher(t *testing.T) {
 			{"storage", func(c *jetstream.StreamConfig) { c.Storage = jetstream.MemoryStorage }, "stream drift: storage Memory want File"},
 			{"retention", func(c *jetstream.StreamConfig) { c.Retention = jetstream.InterestPolicy }, "stream drift: retention Interest want Limits"},
 			{"subjects", func(c *jetstream.StreamConfig) { c.Subjects = []string{"perps.126.>"} }, "stream drift: subjects [perps.126.>] want [perps.125.>]"},
+			{"max_age", func(c *jetstream.StreamConfig) { c.MaxAge = time.Hour }, "stream drift: max_age 1h0m0s want 72h0m0s"},
+			{"discard", func(c *jetstream.StreamConfig) { c.Discard = jetstream.DiscardOld }, "stream drift: discard DiscardOld want DiscardNew"},
+			{"deny_delete", func(c *jetstream.StreamConfig) { c.DenyDelete = false }, "stream drift: deny_delete false want true"},
+			{"deny_purge", func(c *jetstream.StreamConfig) { c.DenyPurge = false }, "stream drift: deny_purge false want true"},
+			{"duplicates", func(c *jetstream.StreamConfig) { c.Duplicates = time.Minute }, "stream drift: duplicates 1m0s want 2m0s"},
+			{"max_msg_size", func(c *jetstream.StreamConfig) { c.MaxMsgSize = 1024 }, "stream drift: max_msg_size 1024 want 1048576"},
+			{"max_bytes", func(c *jetstream.StreamConfig) { c.MaxBytes = 1 << 30 }, "stream drift: max_bytes 1073741824 want -1"},
+			{"max_msgs", func(c *jetstream.StreamConfig) { c.MaxMsgs = 1000 }, "stream drift: max_msgs 1000 want -1"},
+			{"max_msgs_per_subject", func(c *jetstream.StreamConfig) { c.MaxMsgsPerSubject = 10 }, "stream drift: max_msgs_per_subject 10 want -1"},
 		} {
 			deleteStream(t, ctx, js)
 			cfg := stream.Config(chain)
@@ -660,6 +671,79 @@ func TestPublisher(t *testing.T) {
 		}
 		if n, err := outboxStore.Quarantined(ctx); err != nil || n != 1 {
 			t.Fatalf("quarantined = %d, %v", n, err)
+		}
+	})
+
+	t.Run("skipped_row_control_message", func(t *testing.T) {
+		reset(t, ctx, db)
+		base := streamState(t, ctx, perps).LastSeq
+		fill, _ := subjects(t)
+		// The publishers admit no rewind, so the rewind row fails to decode
+		// and is quarantined permanently.
+		narrow := delivery.Policy{Subjects: map[string]bool{fill: true}, EventTypes: map[string]bool{"fill": true, "rewind": true}}
+		events := []event{fillEvent(t, 950, hashA, 0, 0), newEvent(t, "rewind", 951, hashA, -1, 0, `{"from":951}`), fillEvent(t, 952, hashA, 0, 0), fillEvent(t, 953, hashA, 0, 0)}
+		enqueue(t, ctx, db, outboxStore, events...)
+		runCtx, stop := context.WithCancel(ctx)
+		done := make(chan error, 2)
+		// Two replicas drain the outbox at once.
+		for _, name := range []string{"perps-publisher-a", "perps-publisher-b"} {
+			cfg := testConfig()
+			cfg.Owner = name
+			cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+			p, err := New(db, nc, narrow, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			go func() { done <- p.Run(runCtx) }()
+		}
+		deadline := time.Now().Add(30 * time.Second)
+		for count(t, db, `SELECT count(*) FROM perps.delivery_outbox WHERE state='pending' OR (state='quarantined' AND failure_class<>'transient' AND broker_sequence IS NULL)`) != 0 {
+			if time.Now().After(deadline) {
+				stop()
+				t.Fatalf("outbox not closed; Run = %v", <-done)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		stop()
+		for range 2 {
+			if err := <-done; !errors.Is(err, context.Canceled) {
+				t.Fatalf("Run = %v", err)
+			}
+		}
+		rows := outbox(t, db)
+		if len(rows) != 4 {
+			t.Fatalf("outbox holds %d rows, want 4", len(rows))
+		}
+		for i, r := range rows {
+			want := "published"
+			if i == 1 {
+				want = "quarantined"
+				if r.failure != "schema_violation" {
+					t.Fatalf("skipped row = %+v", r)
+				}
+			}
+			if r.seq != int64(i+1) || r.state != want || r.brokerStream != stream.Name || r.brokerSequence != int64(base)+int64(i)+1 {
+				t.Fatalf("row %d = %+v", i, r)
+			}
+			msg, err := perps.GetMsg(ctx, uint64(r.brokerSequence))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if msg.Header.Get(HeaderSeq) != strconv.Itoa(i+1) {
+				t.Fatalf("message %d carries Perps-Seq %q", r.brokerSequence, msg.Header.Get(HeaderSeq))
+			}
+			if i == 1 {
+				if msg.Subject != "perps.125.control" || msg.Header.Get(delivery.HeaderControl) != delivery.ControlSkipped || msg.Header.Get(jetstream.MsgIDHeader) != "control-2" {
+					t.Fatalf("control message = %s %v", msg.Subject, msg.Header)
+				}
+				continue
+			}
+			if msg.Subject != events[i].subject || msg.Header.Get(jetstream.MsgIDHeader) != events[i].env.EventID || msg.Header.Get(delivery.HeaderControl) != "" {
+				t.Fatalf("message %d = %s %v", r.brokerSequence, msg.Subject, msg.Header)
+			}
+		}
+		if state := streamState(t, ctx, perps); state.LastSeq != base+4 {
+			t.Fatalf("stream last sequence %d, want %d: one control message and three rows", state.LastSeq, base+4)
 		}
 	})
 
