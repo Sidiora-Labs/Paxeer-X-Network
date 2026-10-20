@@ -20,7 +20,7 @@
     "@cosmjs/crypto": "^0.32.4",
     "@cosmjs/encoding": "^0.32.4",
     "@cosmjs/proto-signing": "^0.32.4",
-    "@cosmjs/stargate": "^0.32.4",
+    "@cosmjs/stargate": "^0.39.0",
     "@cosmjs/tendermint-rpc": "^0.32.4",
     "@pax-js/cosmos": "github:Paxeer-Network/pax-js#v1.0.6-pax.1",
     "cosmjs-types": "^0.9.0",
