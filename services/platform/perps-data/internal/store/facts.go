@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"database/sql"
@@ -328,42 +329,151 @@ func setField(f reflect.Value, raw any) error {
 	return nil
 }
 
-var insertCache sync.Map
+// maxParams is the bind parameter limit of one PostgreSQL statement.
+const maxParams = 65535
 
-// insertFact inserts row into perps.table unless its (tx_hash, log_index,
-// sub) key is stored and reports whether it inserted.
-func insertFact(ctx context.Context, tx *sql.Tx, table string, row any) (bool, error) {
-	v := reflect.ValueOf(row)
-	cols := columnsOf(v.Type())
-	cacheKey := table + "/" + v.Type().String()
-	q, ok := insertCache.Load(cacheKey)
-	if !ok {
-		names := make([]string, len(cols))
-		marks := make([]string, len(cols))
-		for i, c := range cols {
-			names[i] = pq.QuoteIdentifier(c.name)
-			marks[i] = "$" + strconv.Itoa(i+1)
-		}
-		q = `INSERT INTO perps.` + pq.QuoteIdentifier(table) + ` (` + strings.Join(names, ", ") + `) VALUES (` + strings.Join(marks, ", ") +
-			`) ON CONFLICT (tx_hash, log_index, sub) DO NOTHING RETURNING row_id`
-		insertCache.Store(cacheKey, q)
+// factRow is one row bound for perps.table at the key of fact.
+type factRow struct {
+	table string
+	fact  decode.Fact
+	row   any
+}
+
+func factKey(table string, f decode.Fact) string {
+	return table + "/" + string(f.TxHash.Bytes()) + "/" + strconv.FormatInt(f.LogIndex, 10) + "/" + strconv.FormatInt(f.Sub, 10)
+}
+
+// insertFacts inserts rows into their perps tables, each unless its (tx_hash,
+// log_index, sub) key is stored or carried by an earlier row of its table, and
+// reports per row whether it inserted. A table takes one multi-row INSERT in
+// the order of its rows, the columns a row type lacks taking their DEFAULT, and
+// the tables of a block go as data-modifying CTEs of one statement up to the
+// parameter limit, so a block takes one round trip.
+func insertFacts(ctx context.Context, tx *sql.Tx, rows []factRow) ([]bool, error) {
+	type group struct {
+		table string
+		cols  []string
+		at    []int
 	}
-	args := make([]any, len(cols))
-	for i, c := range cols {
-		a, err := sqlValue(v.FieldByIndex(c.index))
+	var groups []*group
+	byTable := map[string]*group{}
+	seen := map[string]bool{}
+	for i, r := range rows {
+		k := factKey(r.table, r.fact)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		g := byTable[r.table]
+		if g == nil {
+			g = &group{table: r.table}
+			byTable[r.table] = g
+			groups = append(groups, g)
+		}
+		for _, c := range columnsOf(reflect.TypeOf(r.row)) {
+			if !slices.Contains(g.cols, c.name) {
+				g.cols = append(g.cols, c.name)
+			}
+		}
+		g.at = append(g.at, i)
+	}
+	inserted := make([]bool, len(rows))
+	var (
+		ctes    []string
+		tables  []string
+		members [][]int
+		args    []any
+	)
+	flush := func() error {
+		if len(ctes) == 0 {
+			return nil
+		}
+		sels := make([]string, len(ctes))
+		for i := range ctes {
+			sels[i] = "SELECT * FROM f" + strconv.Itoa(i)
+		}
+		rs, err := tx.QueryContext(ctx, "WITH "+strings.Join(ctes, ", ")+" "+strings.Join(sels, " UNION ALL "), args...)
 		if err != nil {
-			return false, fmt.Errorf("store: %s.%s: %w", table, c.name, err)
+			return fmt.Errorf("store: insert facts: %w", err)
 		}
-		args[i] = a
+		defer rs.Close()
+		got := map[string]bool{}
+		for rs.Next() {
+			var (
+				n        int
+				hash     []byte
+				log, sub int64
+			)
+			if err := rs.Scan(&n, &hash, &log, &sub); err != nil {
+				return fmt.Errorf("store: insert facts: %w", err)
+			}
+			got[factKey(tables[n], decode.Fact{TxHash: common.BytesToHash(hash), LogIndex: log, Sub: sub})] = true
+		}
+		if err := rs.Err(); err != nil {
+			return fmt.Errorf("store: insert facts: %w", err)
+		}
+		for _, at := range members {
+			for _, i := range at {
+				inserted[i] = got[factKey(rows[i].table, rows[i].fact)]
+			}
+		}
+		ctes, tables, members, args = nil, nil, nil, nil
+		return nil
 	}
-	var id int64
-	switch err := tx.QueryRowContext(ctx, q.(string), args...).Scan(&id); {
-	case errors.Is(err, sql.ErrNoRows):
-		return false, nil
-	case err != nil:
-		return false, fmt.Errorf("store: insert perps.%s: %w", table, err)
+	for _, g := range groups {
+		names := make([]string, len(g.cols))
+		for i, c := range g.cols {
+			names[i] = pq.QuoteIdentifier(c)
+		}
+		var (
+			values []string
+			at     []int
+		)
+		end := func() {
+			if len(values) == 0 {
+				return
+			}
+			n := strconv.Itoa(len(ctes))
+			ctes = append(ctes, "f"+n+" AS (INSERT INTO perps."+pq.QuoteIdentifier(g.table)+" ("+strings.Join(names, ", ")+") VALUES "+
+				strings.Join(values, ", ")+" ON CONFLICT (tx_hash, log_index, sub) DO NOTHING RETURNING "+n+", tx_hash, log_index, sub)")
+			tables = append(tables, g.table)
+			members = append(members, at)
+			values, at = nil, nil
+		}
+		for _, i := range g.at {
+			v := reflect.ValueOf(rows[i].row)
+			cols := columnsOf(v.Type())
+			if len(args)+len(cols) > maxParams {
+				end()
+				if err := flush(); err != nil {
+					return nil, err
+				}
+			}
+			marks := make([]string, len(g.cols))
+			for j, name := range g.cols {
+				marks[j] = "DEFAULT"
+				for _, c := range cols {
+					if c.name != name {
+						continue
+					}
+					a, err := sqlValue(v.FieldByIndex(c.index))
+					if err != nil {
+						return nil, fmt.Errorf("store: %s.%s: %w", g.table, c.name, err)
+					}
+					args = append(args, a)
+					marks[j] = "$" + strconv.Itoa(len(args))
+					break
+				}
+			}
+			values = append(values, "("+strings.Join(marks, ", ")+")")
+			at = append(at, i)
+		}
+		end()
 	}
-	return true, nil
+	if err := flush(); err != nil {
+		return nil, err
+	}
+	return inserted, nil
 }
 
 // protocolEvent is a perps.protocol_events row, one per decoded log or block
@@ -405,28 +515,24 @@ func WriteFacts(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Resul
 		}
 		return nil
 	}
-	var inserted []decode.Row
+	var (
+		batch   []factRow
+		decoded []decode.Row
+	)
 	for _, d := range rows.Decoded {
 		for _, row := range d.Rows {
 			if err := check(row.Common()); err != nil {
 				return nil, err
 			}
-			ok, err := insertFact(ctx, tx, row.Table(), row)
-			if err != nil {
-				return nil, err
-			}
-			if ok {
-				inserted = append(inserted, row)
-			}
+			batch = append(batch, factRow{row.Table(), row.Common(), row})
+			decoded = append(decoded, row)
 		}
 	}
 	for _, raw := range rows.Raw {
 		if err := check(raw.Fact); err != nil {
 			return nil, err
 		}
-		if _, err := insertFact(ctx, tx, "raw_logs", raw); err != nil {
-			return nil, err
-		}
+		batch = append(batch, factRow{"raw_logs", raw.Fact, raw})
 	}
 	for _, d := range rows.Decoded {
 		if len(d.Rows) == 0 {
@@ -448,17 +554,23 @@ func WriteFacts(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Resul
 				break
 			}
 		}
-		if _, err := insertFact(ctx, tx, "protocol_events", e); err != nil {
-			return nil, err
-		}
+		batch = append(batch, factRow{"protocol_events", e.Fact, e})
 	}
 	actions, err := txActions(ctx, tx, rows)
 	if err != nil {
 		return nil, err
 	}
 	for _, a := range actions {
-		if _, err := insertFact(ctx, tx, "tx_actions", a); err != nil {
-			return nil, err
+		batch = append(batch, factRow{"tx_actions", a.Fact, a})
+	}
+	ok, err := insertFacts(ctx, tx, batch)
+	if err != nil {
+		return nil, err
+	}
+	var inserted []decode.Row
+	for i, row := range decoded {
+		if ok[i] {
+			inserted = append(inserted, row)
 		}
 	}
 	if err := enqueue(ctx, tx, block, rows, actions); err != nil {
@@ -612,12 +724,19 @@ func eventID(f decode.Fact, hash common.Hash) (string, error) {
 	return natsdriver.MsgID(fmt.Sprintf("%d:%d:%s:%d:%d:%d", chainID, f.Block, strings.ToLower(hash.Hex()), f.TxIndex, f.LogIndex, f.Sub))
 }
 
-func put(ctx context.Context, tx *sql.Tx, policy delivery.Policy, subject, kind, id string, f decode.Fact, body []byte, at time.Time) error {
+// outMsg is one outbox message of a block, encoded under the policy.
+type outMsg struct {
+	subject string
+	e       delivery.Envelope
+	wire    []byte
+}
+
+func put(out *[]outMsg, policy delivery.Policy, subject, kind, id string, f decode.Fact, body []byte, at time.Time) error {
 	txIndex := "0"
 	if f.TxIndex >= 0 {
 		txIndex = strconv.FormatInt(f.TxIndex, 10)
 	}
-	_, err := delivery.EnqueueTx(ctx, tx, outboxSchema, policy, subject, delivery.Envelope{
+	e := delivery.Envelope{
 		EventID:       id,
 		EventType:     kind,
 		SchemaVersion: 1,
@@ -627,11 +746,95 @@ func put(ctx context.Context, tx *sql.Tx, policy delivery.Policy, subject, kind,
 		TraceID:       id,
 		PayloadHash:   delivery.Hash(body),
 		Payload:       body,
-	})
+	}
+	wire, err := e.Encode(policy, subject)
 	if err != nil {
 		return fmt.Errorf("store: enqueue %s: %w", subject, err)
 	}
+	*out = append(*out, outMsg{subject, e, wire})
 	return nil
+}
+
+const outboxCols = 5
+
+// enqueueAll inserts msgs into the outbox in order, as delivery.Store.Enqueue
+// does one at a time, in one statement per parameter limit: a message whose
+// event id is stored or queued earlier is left as it is and must carry the
+// same subject and envelope, else delivery.ErrIntegrity.
+func enqueueAll(ctx context.Context, tx *sql.Tx, msgs []outMsg) error {
+	first := map[string]outMsg{}
+	var fresh []outMsg
+	for _, m := range msgs {
+		if p, ok := first[m.e.EventID]; ok {
+			if p.subject != m.subject || !bytes.Equal(p.wire, m.wire) {
+				return fmt.Errorf("store: enqueue %s: %w", m.subject, delivery.ErrIntegrity)
+			}
+			continue
+		}
+		first[m.e.EventID] = m
+		fresh = append(fresh, m)
+	}
+	for len(fresh) > 0 {
+		chunk := fresh[:min(len(fresh), maxParams/outboxCols)]
+		fresh = fresh[len(chunk):]
+		values := make([]string, len(chunk))
+		args := make([]any, 0, len(chunk)*outboxCols)
+		for i, m := range chunk {
+			n := i * outboxCols
+			values[i] = fmt.Sprintf("($%d, $%d, $%d, $%d, $%d)", n+1, n+2, n+3, n+4, n+5)
+			args = append(args, m.e.EventID, int64(m.e.SchemaVersion), m.subject, m.e.PayloadHash, m.wire)
+		}
+		got, err := eventIDs(ctx, tx, `INSERT INTO perps.delivery_outbox (event_id, schema_version, subject, payload_hash, envelope) VALUES `+
+			strings.Join(values, ", ")+` ON CONFLICT (event_id) DO NOTHING RETURNING event_id, subject, NULL::bytea`, args...)
+		if err != nil {
+			return err
+		}
+		var stored []string
+		for _, m := range chunk {
+			if _, ok := got[m.e.EventID]; !ok {
+				stored = append(stored, m.e.EventID)
+			}
+		}
+		if len(stored) == 0 {
+			continue
+		}
+		old, err := eventIDs(ctx, tx, `SELECT event_id, subject, envelope FROM perps.delivery_outbox WHERE event_id = ANY($1)`, pq.StringArray(stored))
+		if err != nil {
+			return err
+		}
+		for _, id := range stored {
+			m, o := first[id], old[id]
+			if o == nil {
+				return fmt.Errorf("store: enqueue %s: event %s neither inserted nor stored", m.subject, id)
+			}
+			if o.subject != m.subject || !bytes.Equal(o.wire, m.wire) {
+				return fmt.Errorf("store: enqueue %s: %w", m.subject, delivery.ErrIntegrity)
+			}
+		}
+	}
+	return nil
+}
+
+// eventIDs runs q and returns its (event_id, subject, envelope) rows by id.
+func eventIDs(ctx context.Context, tx *sql.Tx, q string, args ...any) (map[string]*outMsg, error) {
+	rs, err := tx.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: enqueue: %w", err)
+	}
+	defer rs.Close()
+	out := map[string]*outMsg{}
+	for rs.Next() {
+		var id string
+		m := &outMsg{}
+		if err := rs.Scan(&id, &m.subject, &m.wire); err != nil {
+			return nil, fmt.Errorf("store: enqueue: %w", err)
+		}
+		out[id] = m
+	}
+	if err := rs.Err(); err != nil {
+		return nil, fmt.Errorf("store: enqueue: %w", err)
+	}
+	return out, nil
 }
 
 // tokensOf returns the spot tokens whose subjects a spot row wakes, the first
@@ -742,6 +945,7 @@ const orderMarketSQL = `SELECT market_id::text FROM perps.orders WHERE order_id 
 // fact row.
 func enqueue(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Result, actions []txAction) error {
 	policy := Policy(chainID)
+	var msgs []outMsg
 	var (
 		pax    common.Address
 		stable map[common.Address]bool
@@ -809,7 +1013,7 @@ func enqueue(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Result, 
 			if err != nil {
 				return err
 			}
-			if err := put(ctx, tx, policy, subject, kind, id, f, body, block.Time); err != nil {
+			if err := put(&msgs, policy, subject, kind, id, f, body, block.Time); err != nil {
 				return err
 			}
 			if len(tokens) <= 1 {
@@ -822,7 +1026,7 @@ func enqueue(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Result, 
 				if id, err = eventID(f, crypto.Keccak256Hash([]byte("perps-spot"), f.BlockHash.Bytes(), token.Bytes())); err != nil {
 					return err
 				}
-				if err := put(ctx, tx, policy, subject, kind, id, f, body, block.Time); err != nil {
+				if err := put(&msgs, policy, subject, kind, id, f, body, block.Time); err != nil {
 					return err
 				}
 			}
@@ -845,7 +1049,7 @@ func enqueue(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Result, 
 	if err != nil {
 		return err
 	}
-	if err := put(ctx, tx, policy, subject, "block", id, blockFact, body, block.Time); err != nil {
+	if err := put(&msgs, policy, subject, "block", id, blockFact, body, block.Time); err != nil {
 		return err
 	}
 	if subject, err = stream.ChainSubject(chainID, "tx"); err != nil {
@@ -861,11 +1065,11 @@ func enqueue(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Result, 
 		if err != nil {
 			return err
 		}
-		if err := put(ctx, tx, policy, subject, "tx", id, a.Fact, body, block.Time); err != nil {
+		if err := put(&msgs, policy, subject, "tx", id, a.Fact, body, block.Time); err != nil {
 			return err
 		}
 	}
-	return nil
+	return enqueueAll(ctx, tx, msgs)
 }
 
 // rebuildTables are the projections Project and Snapshotter write.
