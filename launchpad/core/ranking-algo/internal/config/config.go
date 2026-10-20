@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	runtimedb "github.com/Sidiora-Technologies/KindleLaunch/shared/db"
@@ -27,16 +28,19 @@ import (
 // Config is the parsed ranking-algo environment.
 type Config struct {
 	RankingRuntimeFile        string `env:"RANKING_RUNTIME_FILE"`
+	RankingRuntimeDocument    string `env:"RANKING_RUNTIME_DOCUMENT"`
 	RankingRuntimeSHA256      string `env:"RANKING_RUNTIME_SHA256"`
 	RuntimeZone               string `env:"ZONE"`
 	RuntimeMetricsEnvironment string `env:"METRICS_ENVIRONMENT" envDefault:"production"`
 	RuntimeProfile            string `env:"RUNTIME_PROFILE"`
 	BindAddress               string `env:"BIND_ADDRESS"`
 	RuntimeBudgetFile         string `env:"DB_BUDGET_FILE"`
+	RuntimeBudgetDocument     string `env:"DB_BUDGET_DOCUMENT"`
 	RuntimeBudgetSHA256       string `env:"DB_BUDGET_SHA256"`
 	RuntimePoolID             string `env:"DB_POOL_ID"`
 	RuntimeInstanceID         string `env:"INSTANCE_ID"`
 	ExpectedSchemaFile        string `env:"EXPECTED_SCHEMA_FILE"`
+	ExpectedSchemaDocument    string `env:"EXPECTED_SCHEMA_DOCUMENT"`
 	ExpectedSchemaSHA256      string `env:"EXPECTED_SCHEMA_SHA256"`
 
 	sharedconfig.BaseEnv
@@ -59,6 +63,9 @@ type Config struct {
 func Load() (Config, error) {
 	cfg, err := env.ParseAs[Config]()
 	if err != nil {
+		return Config{}, fmt.Errorf("config: %w", err)
+	}
+	if err = cfg.registerInlineDocuments(); err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
 	if err := cfg.Validate(); err != nil {
@@ -177,14 +184,11 @@ func (c *Config) OpenRuntimePool(ctx context.Context, role string, legacy runtim
 	} else {
 		return nil, fmt.Errorf("runtime_profile_required")
 	}
-	if c.RuntimeBudgetFile == "" || c.RuntimePoolID == "" || c.RuntimeInstanceID == "" {
+	if (c.RuntimeBudgetFile == "" && c.RuntimeBudgetDocument == "") || c.RuntimePoolID == "" || c.RuntimeInstanceID == "" {
 		return nil, fmt.Errorf("runtime_pool_configuration_missing")
 	}
-	data, err := os.ReadFile(c.RuntimeBudgetFile)
+	data, err := boundBytes(c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256)
 	if err != nil {
-		return nil, err
-	}
-	if len(data) > 1048576 || len(c.RuntimeBudgetSHA256) != 64 || fmt.Sprintf("%x", sha256.Sum256(data)) != c.RuntimeBudgetSHA256 {
 		return nil, fmt.Errorf("runtime_budget_binding_mismatch")
 	}
 	budget, err := dbproduction.ParseConnectionBudget(data)
@@ -212,10 +216,10 @@ func (c *Config) CheckRuntimeSchema(ctx context.Context, pool *pgxpool.Pool) err
 	if c.NodeEnv != "production" {
 		return pool.Ping(ctx)
 	}
-	if c.ExpectedSchemaFile == "" || len(c.ExpectedSchemaSHA256) != 64 {
+	if (c.ExpectedSchemaFile == "" && c.ExpectedSchemaDocument == "") || len(c.ExpectedSchemaSHA256) != 64 {
 		return fmt.Errorf("runtime_schema_configuration_missing")
 	}
-	data, err := os.ReadFile(c.ExpectedSchemaFile)
+	data, err := boundBytes(c.ExpectedSchemaFile, c.ExpectedSchemaDocument, c.ExpectedSchemaSHA256)
 	if err != nil {
 		return err
 	}
@@ -229,23 +233,87 @@ func (c *Config) CheckRuntimeSchema(ctx context.Context, pool *pgxpool.Pool) err
 	return dbproduction.CheckReadiness(ctx, pool, want)
 }
 
+// inlineDocuments holds the inline *_DOCUMENT values of the last Load, keyed
+// by their declared sha256, so ReadBoundDocument callers that pass only the
+// file and digest read the inline document when no file is set.
+var (
+	inlineDocumentsMu sync.RWMutex
+	inlineDocuments   = map[string]string{}
+)
+
+func (c *Config) registerInlineDocuments() error {
+	pairs := []struct{ name, file, inline, digest string }{
+		{"DB_BUDGET", c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256},
+		{"EXPECTED_SCHEMA", c.ExpectedSchemaFile, c.ExpectedSchemaDocument, c.ExpectedSchemaSHA256},
+		{"RANKING_RUNTIME", c.RankingRuntimeFile, c.RankingRuntimeDocument, c.RankingRuntimeSHA256},
+	}
+	documents := map[string]string{}
+	for _, p := range pairs {
+		if p.file != "" && p.inline != "" {
+			return fmt.Errorf("%s_FILE and %s_DOCUMENT are both set", p.name, p.name)
+		}
+		if p.inline != "" {
+			documents[p.digest] = p.inline
+		}
+	}
+	inlineDocumentsMu.Lock()
+	inlineDocuments = documents
+	inlineDocumentsMu.Unlock()
+	return nil
+}
+
 func ReadBoundDocument(path, digest string, out any) error {
-	if path == "" || len(digest) != 64 {
-		return fmt.Errorf("runtime_document_binding_missing")
+	inline := ""
+	if path == "" {
+		inlineDocumentsMu.RLock()
+		inline = inlineDocuments[digest]
+		inlineDocumentsMu.RUnlock()
 	}
-	info, err := os.Lstat(path)
-	if err != nil {
-		return err
+	return decodeBoundDocument(path, inline, digest, out)
+}
+
+// boundBytes returns the exact bytes of a digest-bound runtime document,
+// read from the file at path or decoded from inline (standard base64), and
+// verifies them against the sha256 hex digest. Exactly one source may be set.
+func boundBytes(path, inline, digest string) ([]byte, error) {
+	if (path == "") == (inline == "") || len(digest) != 64 {
+		return nil, fmt.Errorf("runtime_document_binding_missing")
 	}
-	if !info.Mode().IsRegular() || info.Size() > 1048576 {
-		return fmt.Errorf("runtime_document_invalid")
+	var raw []byte
+	if path != "" {
+		info, err := os.Lstat(path)
+		if err != nil {
+			return nil, err
+		}
+		if !info.Mode().IsRegular() || info.Size() > 1048576 {
+			return nil, fmt.Errorf("runtime_document_invalid")
+		}
+		if raw, err = os.ReadFile(path); err != nil {
+			return nil, err
+		}
+	} else {
+		if len(inline) > 1398104 {
+			return nil, fmt.Errorf("runtime_document_invalid")
+		}
+		decoded, err := base64.StdEncoding.Strict().DecodeString(inline)
+		if err != nil {
+			return nil, fmt.Errorf("runtime_document_invalid")
+		}
+		raw = decoded
 	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return err
+	if len(raw) == 0 || len(raw) > 1048576 {
+		return nil, fmt.Errorf("runtime_document_invalid")
 	}
 	if fmt.Sprintf("%x", sha256.Sum256(raw)) != digest {
-		return fmt.Errorf("runtime_document_binding_mismatch")
+		return nil, fmt.Errorf("runtime_document_binding_mismatch")
+	}
+	return raw, nil
+}
+
+func decodeBoundDocument(path, inline, digest string, out any) error {
+	raw, err := boundBytes(path, inline, digest)
+	if err != nil {
+		return err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
