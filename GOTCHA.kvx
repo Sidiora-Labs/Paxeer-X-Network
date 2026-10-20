@@ -8505,3 +8505,13 @@ detail = "Compiling a release script with python3 -m py_compile writes an ignore
 area = "spec/release-v6-12-0"
 summary = "a planned-path task can already be landed by an earlier lane"
 detail = "Check git log on the task's touches before writing; when the gates pass with no diff there is nothing to commit, and an empty commit would claim work that did not happen."
+
+[gotcha.1787]
+area = "launchpad/client"
+summary = "offline pnpm install misses @tanstack/react-virtual 3.13.24"
+detail = "The local package store lacks that version, so an offline install from the lockfile fails; a prefer-offline install fetches it from the public registry without changing the lockfile."
+
+[gotcha.1788]
+area = "launchpad/client/apps/web"
+summary = "jsdom cannot prove media playback"
+detail = "The stream player test can show that a retry issues a second viewer-session request and leaves the unavailable state, but jsdom has no media support, so actual playback is not observable in unit tests."

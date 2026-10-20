@@ -310,7 +310,7 @@ export function StreamPlayer(props: StreamPlayerProps) {
             <IconButton label="Play stream" icon={<Play className="size-7" />} variant="on-media" size="lg" onClick={play} />
           ) : null}
           {stopped || !playable ? <p className="text-sm font-bold text-text">{label}</p> : null}
-          {stopped && playable && state === 'failed' ? (
+          {stopped && playable && (state === 'failed' || state === 'unavailable') ? (
             <Button variant="secondary" size="sm" onClick={() => setAttempt(current => current + 1)}>Try again</Button>
           ) : null}
           {stopped ? children : null}

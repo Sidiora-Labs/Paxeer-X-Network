@@ -2364,3 +2364,19 @@ exit = 0
 log = fleet/logs/release-5.3.3-verify-1.log
 observed = All eight live-path tests pass at this revision with no file change; the earlier finding.5.3.3 compile failure no longer reproduces.
 assumption = The sequencer gasless checks are covered through antedecorators.IsTxGasless because importing the sequencer from package app is an import cycle.
+
+[finding.gh-638-fanout-fixtures]
+revision = fa2ece6792a9bd54ab8c6afb498b85e743aca2c7
+command = go test -count=1 ./internal/fanout/
+exit = 1
+log = fleet/logs/issue-638-1.log
+observed = The new stale-room test passes against real Redis, while 18 pre-existing tests read a production-system schema fixture absent from this tree and one needs a NATS URL that is unset.
+assumption = The fixture-bound tests pass where the schema fixture and NATS are provisioned; the fanout refcount fix is complete.
+
+[finding.gh-641-642-web-fixtures]
+revision = 17de9e99ab723300a77f1875d46853f590da90c1
+command = pnpm run test
+exit = 1
+log = fleet/logs/issue-642-1.log
+observed = The creation-storage and stream-player tests pass, and the same 19 pre-existing tests fail for want of the chain fixture, the private EVM and real backend origins while the other 1010 pass.
+assumption = The fixture-bound tests are covered by the release fixture run; the saved-attempt expiry and viewer-session retry fixes are complete.
