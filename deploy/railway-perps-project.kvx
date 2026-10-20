@@ -1,0 +1,169 @@
+# railway-perps-project.kvx — desired shape of the Railway project paxeer-x-perps,
+# read by tools/deploy/railway-perps-project.py.
+#
+# [service.<name>] rows:
+#   kind = "database": Railway's postgres template image, used as-is (public image).
+#   kind = "image": ghcr.io/sidiora-labs/<image>@<digest> from the --digests map,
+#     pulled with registry credentials from $GHCR_USERNAME / $GHCR_TOKEN.
+#     config names a services/platform/perps-data/deploy/railway/*.json file that
+#     supplies healthcheckPath, healthcheckTimeout, restartPolicyType, numReplicas
+#     and the exact variable name set; rows without config carry health, restart
+#     and replicas themselves.
+#   volume is a mount path, public = 1 gives the service a Railway domain.
+#   order is the apply wave.
+# [vars.<name>] rows: VARIABLE = "value". A value is a literal (Railway ${{...}}
+# references allowed), "env:<NAME>" read from the process environment at run
+# time and never printed, or "arg:start-height" for --start-height.
+
+[meta]
+name = "Perps Railway project"
+kind = "railway-project"
+project = "paxeer-x-perps"
+environment = "production"
+
+[service.postgres]
+kind = "database"
+image = "ghcr.io/railwayapp-templates/postgres-ssl:18"
+railway_service = "Postgres"
+volume = "/var/lib/postgresql/data"
+order = 1
+
+[vars.postgres]
+POSTGRES_USER = "postgres"
+POSTGRES_DB = "railway"
+POSTGRES_PASSWORD = "env:PERPS_POSTGRES_PASSWORD"
+PGDATA = "/var/lib/postgresql/data/pgdata"
+PGHOST = "${{RAILWAY_PRIVATE_DOMAIN}}"
+PGPORT = "5432"
+PGUSER = "${{POSTGRES_USER}}"
+PGPASSWORD = "${{POSTGRES_PASSWORD}}"
+PGDATABASE = "${{POSTGRES_DB}}"
+DATABASE_URL = "postgresql://${{PGUSER}}:${{POSTGRES_PASSWORD}}@${{RAILWAY_PRIVATE_DOMAIN}}:5432/${{PGDATABASE}}"
+
+[service.nats]
+kind = "image"
+image = "perps-data-nats"
+railway_service = "nats"
+health = "/healthz"
+restart = "ALWAYS"
+replicas = 1
+volume = "/data"
+order = 2
+
+[vars.nats]
+PORT = "8222"
+NATS_CLUSTER_PASSWORD = "env:PERPS_NATS_CLUSTER_PASSWORD"
+NATS_INDEXER_PASSWORD = "env:PERPS_NATS_INDEXER_PASSWORD"
+NATS_GATEWAY_PASSWORD = "env:PERPS_NATS_GATEWAY_PASSWORD"
+NATS_MAX_FILE_STORE = "8G"
+NATS_ROUTES = "nats-route://perps-route:${{NATS_CLUSTER_PASSWORD}}@${{nats-2.RAILWAY_PRIVATE_DOMAIN}}:6222,nats-route://perps-route:${{NATS_CLUSTER_PASSWORD}}@${{nats-3.RAILWAY_PRIVATE_DOMAIN}}:6222"
+
+[service.nats-2]
+kind = "image"
+image = "perps-data-nats"
+railway_service = "nats-2"
+health = "/healthz"
+restart = "ALWAYS"
+replicas = 1
+volume = "/data"
+order = 2
+
+[vars.nats-2]
+PORT = "8222"
+NATS_CLUSTER_PASSWORD = "env:PERPS_NATS_CLUSTER_PASSWORD"
+NATS_INDEXER_PASSWORD = "env:PERPS_NATS_INDEXER_PASSWORD"
+NATS_GATEWAY_PASSWORD = "env:PERPS_NATS_GATEWAY_PASSWORD"
+NATS_MAX_FILE_STORE = "8G"
+NATS_ROUTES = "nats-route://perps-route:${{NATS_CLUSTER_PASSWORD}}@${{nats.RAILWAY_PRIVATE_DOMAIN}}:6222,nats-route://perps-route:${{NATS_CLUSTER_PASSWORD}}@${{nats-3.RAILWAY_PRIVATE_DOMAIN}}:6222"
+
+[service.nats-3]
+kind = "image"
+image = "perps-data-nats"
+railway_service = "nats-3"
+health = "/healthz"
+restart = "ALWAYS"
+replicas = 1
+volume = "/data"
+order = 2
+
+[vars.nats-3]
+PORT = "8222"
+NATS_CLUSTER_PASSWORD = "env:PERPS_NATS_CLUSTER_PASSWORD"
+NATS_INDEXER_PASSWORD = "env:PERPS_NATS_INDEXER_PASSWORD"
+NATS_GATEWAY_PASSWORD = "env:PERPS_NATS_GATEWAY_PASSWORD"
+NATS_MAX_FILE_STORE = "8G"
+NATS_ROUTES = "nats-route://perps-route:${{NATS_CLUSTER_PASSWORD}}@${{nats.RAILWAY_PRIVATE_DOMAIN}}:6222,nats-route://perps-route:${{NATS_CLUSTER_PASSWORD}}@${{nats-2.RAILWAY_PRIVATE_DOMAIN}}:6222"
+
+[service.indexer]
+kind = "image"
+image = "perps-data-indexer"
+railway_service = "indexer"
+config = "services/platform/perps-data/deploy/railway/perps-indexer.json"
+order = 3
+
+[vars.indexer]
+DATABASE_URL = "${{Postgres.DATABASE_URL}}"
+NATS_URL = "nats://perps-indexer:${{nats.NATS_INDEXER_PASSWORD}}@${{nats.RAILWAY_PRIVATE_DOMAIN}}:4222,nats://perps-indexer:${{nats.NATS_INDEXER_PASSWORD}}@${{nats-2.RAILWAY_PRIVATE_DOMAIN}}:4222,nats://perps-indexer:${{nats.NATS_INDEXER_PASSWORD}}@${{nats-3.RAILWAY_PRIVATE_DOMAIN}}:4222"
+PERPS_CHAIN_ID = "125"
+PERPS_COMET_URLS = "env:PERPS_COMET_URLS"
+PERPS_RPC_URLS = "env:PERPS_RPC_URLS"
+PERPS_START_HEIGHT = "arg:start-height"
+PORT = "8080"
+
+[service.gateway]
+kind = "image"
+image = "perps-gateway"
+railway_service = "gateway"
+config = "services/platform/perps-data/deploy/railway/perps-gateway.json"
+public = 1
+order = 4
+
+[vars.gateway]
+DATABASE_URL = "${{Postgres.DATABASE_URL}}"
+NATS_URL = "nats://perps-gateway:${{nats.NATS_GATEWAY_PASSWORD}}@${{nats.RAILWAY_PRIVATE_DOMAIN}}:4222,nats://perps-gateway:${{nats.NATS_GATEWAY_PASSWORD}}@${{nats-2.RAILWAY_PRIVATE_DOMAIN}}:4222,nats://perps-gateway:${{nats.NATS_GATEWAY_PASSWORD}}@${{nats-3.RAILWAY_PRIVATE_DOMAIN}}:4222"
+PERPS_AUTH_SECRET = "env:PERPS_AUTH_SECRET"
+PERPS_CHAIN_ID = "125"
+PERPS_RPC_URLS = "env:PERPS_RPC_URLS"
+PORT = "8080"
+
+[service.explorer]
+kind = "image"
+image = "perps-explorer"
+railway_service = "explorer"
+config = "services/platform/perps-data/deploy/railway/perps-explorer.json"
+public = 1
+order = 5
+
+[vars.explorer]
+DATABASE_URL = "${{Postgres.DATABASE_URL}}"
+PERPS_CHAIN_ID = "125"
+PERPS_EXPLORER_TX_BASE = "https://paxscan.io/tx/"
+PORT = "8080"
+
+[service.portal]
+kind = "image"
+image = "perps-portal"
+railway_service = "portal"
+config = "services/platform/perps-data/deploy/railway/perps-portal.json"
+public = 1
+order = 5
+
+[vars.portal]
+PERPS_CHAIN_ID = "125"
+PERPS_EXPLORER_TX_BASE = "https://paxscan.io/tx/"
+PERPS_GATEWAY_URL = "http://${{gateway.RAILWAY_PRIVATE_DOMAIN}}:${{gateway.PORT}}"
+PORT = "8080"
+
+[service.web]
+kind = "image"
+image = "perps-web"
+railway_service = "web"
+health = "/"
+restart = "ALWAYS"
+replicas = 1
+public = 1
+order = 6
+
+[vars.web]
+PORT = "3000"
+PERPS_GATEWAY_URL = "https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}"
