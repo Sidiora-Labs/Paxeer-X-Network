@@ -3,7 +3,9 @@ package delivery
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"strconv"
 	"strings"
@@ -108,25 +110,30 @@ const (
 )
 
 // ControlMessage returns the subject, Nats-Msg-Id and body of the control
-// message announcing that the row of l was skipped.
+// message announcing that the row of l was skipped. The Nats-Msg-Id is
+// control-<perps_seq>-<first 32 hex digits of the SHA-256 of the event id>:
+// a restored outbox that skips another event at the same Perps-Seq announces
+// it under a new id, which the broker does not deduplicate against the skip
+// announced before the restore.
 func ControlMessage(l Lease) (subject, msgID string, body []byte, err error) {
 	tokens := strings.SplitN(l.Subject, ".", 3)
 	if len(tokens) != 3 || tokens[0] != "perps" || !decimal.MatchString(tokens[1]) || l.PerpsSeq < 1 || !token.MatchString(l.EventID) {
 		return "", "", nil, ErrIntegrity
 	}
 	seq := strconv.FormatInt(l.PerpsSeq, 10)
-	return "perps." + tokens[1] + ".control", "control-" + seq, []byte(`{"perps_seq":"` + seq + `","event_id":"` + l.EventID + `"}`), nil
+	sum := sha256.Sum256([]byte(l.EventID))
+	return "perps." + tokens[1] + ".control", "control-" + seq + "-" + hex.EncodeToString(sum[:16]), []byte(`{"perps_seq":"` + seq + `","event_id":"` + l.EventID + `"}`), nil
 }
 
 // openRow selects, as alias o, the rows still to be put on the stream: a
 // pending row, and a permanently quarantined row whose control message has no
 // broker position yet. The broker position of a quarantined row is that of
-// its control message.
+// its control message. A row quarantined as transient was left by an earlier
+// release; Requeue returns it to pending.
 const openRow = "(o.state='pending' OR (o.state='quarantined' AND o.failure_class<>'transient' AND o.broker_sequence IS NULL))"
 
 // MaxRetryDelay caps the exponential backoff of a transient failure unless
-// the base retry delay is longer; a transient row quarantined by its attempt
-// budget waits as long before Requeue returns it.
+// the base retry delay is longer.
 const MaxRetryDelay = time.Minute
 
 // Claim leases up to limit pending rows in Perps-Seq order. It stops before
@@ -245,38 +252,95 @@ const (
 	SchemaViolation   FailureClass = "schema_violation"
 	IntegrityConflict FailureClass = "integrity_conflict"
 	Authorization     FailureClass = "authorization"
+	// Oversized marks a row whose message the broker refuses for its size.
+	Oversized FailureClass = "oversized"
+	// Exhausted marks a row whose transient failures spent its attempt budget.
+	Exhausted FailureClass = "exhausted"
 )
 
+// Quarantine names a row that a transition quarantined permanently; the relay
+// announces it by its control message in its Perps-Seq place.
+type Quarantine struct {
+	PerpsSeq int64
+	EventID  string
+	Class    FailureClass
+}
+
+// quarantineReturning reads, after a transition of alias o from snapshot p of
+// the same row, the rows it quarantined permanently.
+const quarantineReturning = " RETURNING o.perps_seq,o.event_id,COALESCE(o.failure_class,''),(p.state='pending' AND o.state='quarantined')"
+
+func scanQuarantines(rows *sql.Rows, each func(id string, quarantined bool)) ([]Quarantine, error) {
+	defer rows.Close()
+	var out []Quarantine
+	for rows.Next() {
+		var q Quarantine
+		var class string
+		var quarantined bool
+		if err := rows.Scan(&q.PerpsSeq, &q.EventID, &class, &quarantined); err != nil {
+			return nil, err
+		}
+		if each != nil {
+			each(q.EventID, quarantined)
+		}
+		if quarantined {
+			q.Class = FailureClass(class)
+			out = append(out, q)
+		}
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) Retry(ctx context.Context, l Lease, class FailureClass, maxAttempts int, delay time.Duration) error {
-	return s.RetryBatch(ctx, []Lease{l}, []FailureClass{class}, maxAttempts, delay)
+	_, err := s.RetryBatch(ctx, []Lease{l}, []FailureClass{class}, maxAttempts, delay)
+	return err
 }
 
 // RetryBatch applies Retry to every leases[i] with classes[i] in one
 // transaction; ErrLease reports that at least one lease no longer matched.
 // A row becomes available again after delay doubled per earlier attempt,
 // capped at the larger of delay and MaxRetryDelay. A row of a non-transient
-// class is quarantined permanently and is at once available to the relay for
-// its control message. A control lease is never exhausted and keeps its class:
-// its control message is retried with backoff until it persists.
-func (s *Store) RetryBatch(ctx context.Context, leases []Lease, classes []FailureClass, maxAttempts int, delay time.Duration) error {
+// class, and a transient row that spent maxAttempts attempts (as Exhausted),
+// is quarantined permanently and is at once available to the relay for its
+// control message. A control lease is never exhausted and keeps its class:
+// its control message is retried with backoff until it persists. RetryBatch
+// returns the rows it quarantined permanently.
+func (s *Store) RetryBatch(ctx context.Context, leases []Lease, classes []FailureClass, maxAttempts int, delay time.Duration) ([]Quarantine, error) {
 	if maxAttempts < 1 || maxAttempts > 100 || delay < time.Second || delay > time.Hour {
-		return errors.New("delivery: invalid retry bounds")
+		return nil, errors.New("delivery: invalid retry bounds")
 	}
 	if len(leases) != len(classes) {
-		return errors.New("delivery: one failure class per lease required")
+		return nil, errors.New("delivery: one failure class per lease required")
 	}
 	names := make([]string, len(classes))
 	for i, class := range classes {
 		switch class {
-		case Transient, SchemaViolation, IntegrityConflict, Authorization:
+		case Transient, SchemaViolation, IntegrityConflict, Authorization, Oversized, Exhausted:
 		default:
-			return errors.New("delivery: invalid failure class")
+			return nil, errors.New("delivery: invalid failure class")
 		}
 		names[i] = string(class)
 	}
 	ids, owners, fences := leaseKeys(leases)
 	// Exhaustion is based on the row, never the caller's mutable lease snapshot.
-	return s.fencedUpdate(ctx, len(leases), "UPDATE "+s.table("delivery_outbox")+" o SET state=CASE WHEN o.state='quarantined' OR o.attempts >= $5::integer OR l.class <> 'transient' THEN 'quarantined' ELSE 'pending' END,failure_class=CASE WHEN o.state='quarantined' THEN o.failure_class ELSE l.class END,available_at=CASE WHEN o.state='pending' AND l.class <> 'transient' THEN clock_timestamp() ELSE clock_timestamp()+(LEAST($6::bigint*power(2::numeric,LEAST(GREATEST(o.attempts,1),40)-1),$7::bigint)::bigint*interval '1 millisecond') END,lease_owner=NULL,lease_until=NULL FROM unnest($1::text[],$2::text[],$3::bigint[],$4::text[]) AS l(event_id,owner,fence,class) WHERE o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND "+openRow, ids, owners, fences, pq.Array(names), maxAttempts, delay.Milliseconds(), max(delay, MaxRetryDelay).Milliseconds())
+	const permanent = "(o.state='pending' AND (l.class <> 'transient' OR o.attempts >= $5::integer))"
+	var out []Quarantine
+	var n int64
+	err := s.mutate(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, "UPDATE "+s.table("delivery_outbox")+" o SET state=CASE WHEN o.state='quarantined' OR "+permanent+" THEN 'quarantined' ELSE 'pending' END,failure_class=CASE WHEN o.state='quarantined' THEN o.failure_class WHEN l.class='transient' AND o.attempts >= $5::integer THEN 'exhausted' ELSE l.class END,available_at=CASE WHEN "+permanent+" THEN clock_timestamp() ELSE clock_timestamp()+(LEAST($6::bigint*power(2::numeric,LEAST(GREATEST(o.attempts,1),40)-1),$7::bigint)::bigint*interval '1 millisecond') END,lease_owner=NULL,lease_until=NULL FROM unnest($1::text[],$2::text[],$3::bigint[],$4::text[]) AS l(event_id,owner,fence,class), "+s.table("delivery_outbox")+" p WHERE p.event_id=l.event_id AND o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND "+openRow+quarantineReturning, ids, owners, fences, pq.Array(names), maxAttempts, delay.Milliseconds(), max(delay, MaxRetryDelay).Milliseconds())
+		if err != nil {
+			return err
+		}
+		out, err = scanQuarantines(rows, func(string, bool) { n++ })
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if n != int64(len(leases)) {
+		return out, ErrLease
+	}
+	return out, nil
 }
 
 // ReleaseBatch returns leased rows to pending without counting their claim as
@@ -288,27 +352,39 @@ func (s *Store) ReleaseBatch(ctx context.Context, leases []Lease) error {
 }
 
 // Requeue returns to pending, with a fresh attempt budget, every row
-// quarantined as transient whose backoff has elapsed. Rows of a permanent
-// failure class stay quarantined. A transient quarantined row holds back
-// every later row of the relay until it is requeued and published.
+// quarantined as transient whose backoff has elapsed. Only an earlier release
+// quarantined a row as transient; such a row holds back every later row of
+// the relay until it is requeued. Rows of a permanent failure class stay
+// quarantined.
 func (s *Store) Requeue(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, "UPDATE "+s.table("delivery_outbox")+" SET state='pending',attempts=0 WHERE state='quarantined' AND failure_class='transient' AND available_at<=clock_timestamp()")
 	return err
 }
 
-// Quarantined counts the quarantined outbox rows.
+// Quarantined counts the quarantined outbox rows not yet announced. A row
+// whose control message persisted (it holds the broker position of that
+// message) is resolved and not counted.
 func (s *Store) Quarantined(ctx context.Context) (int64, error) {
 	var n int64
-	err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM "+s.table("delivery_outbox")+" WHERE state='quarantined'").Scan(&n)
+	err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM "+s.table("delivery_outbox")+" WHERE state='quarantined' AND broker_sequence IS NULL").Scan(&n)
 	return n, err
+}
+
+// HeadAge is the age of the oldest open outbox row: pending, or quarantined
+// and not yet announced. It measures how long the relay has held the head of
+// the outbox; it is zero when no row is open.
+func (s *Store) HeadAge(ctx context.Context) (time.Duration, error) {
+	var ms int64
+	err := s.db.QueryRowContext(ctx, "SELECT COALESCE(EXTRACT(EPOCH FROM clock_timestamp()-min(created_at))*1000,0)::bigint FROM "+s.table("delivery_outbox")+" WHERE state='pending' OR (state='quarantined' AND broker_sequence IS NULL)").Scan(&ms)
+	return time.Duration(ms) * time.Millisecond, err
 }
 
 // CheckAttemptBudget fences the claim against durable attempts before network
 // publication. Claim increments the attempt counter; maxAttempts claims may
-// publish. A reclaim after that budget preserves the original row in
-// quarantine as transient, which Requeue returns after MaxRetryDelay.
+// publish. A reclaim after that budget quarantines the original row
+// permanently as Exhausted, at once available for its control message.
 func (s *Store) CheckAttemptBudget(ctx context.Context, l Lease, maxAttempts int) (bool, error) {
-	allowed, err := s.CheckAttemptBudgetBatch(ctx, []Lease{l}, maxAttempts)
+	allowed, _, err := s.CheckAttemptBudgetBatch(ctx, []Lease{l}, maxAttempts)
 	if err != nil {
 		return false, err
 	}
@@ -316,37 +392,29 @@ func (s *Store) CheckAttemptBudget(ctx context.Context, l Lease, maxAttempts int
 }
 
 // CheckAttemptBudgetBatch applies CheckAttemptBudget to leases in one
-// transaction and returns, in their order, the leases that may publish. A
-// control lease has no attempt budget.
+// transaction and returns, in their order, the leases that may publish, and
+// the rows it quarantined permanently. A control lease has no attempt budget.
 // ErrLease reports that at least one lease no longer matched its row; the
 // returned leases and the quarantine of exhausted rows still hold.
-func (s *Store) CheckAttemptBudgetBatch(ctx context.Context, leases []Lease, maxAttempts int) ([]Lease, error) {
+func (s *Store) CheckAttemptBudgetBatch(ctx context.Context, leases []Lease, maxAttempts int) ([]Lease, []Quarantine, error) {
 	if maxAttempts < 1 || maxAttempts > 100 {
-		return nil, errors.New("delivery: invalid retry bound")
+		return nil, nil, errors.New("delivery: invalid retry bound")
 	}
 	ids, owners, fences := leaseKeys(leases)
-	// overBudget reads the row before the update, as every SET expression does;
-	// RETURNING reads it after, where an exhausted row is quarantined as transient.
+	// overBudget reads the row before the update, as every SET expression does.
 	const overBudget = "(o.state='pending' AND o.attempts>$4::integer)"
 	exhausted := make(map[string]bool, len(leases))
+	var quarantined []Quarantine
 	err := s.mutate(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, "UPDATE "+s.table("delivery_outbox")+" o SET state=CASE WHEN "+overBudget+" THEN 'quarantined' ELSE o.state END,failure_class=CASE WHEN "+overBudget+" THEN 'transient' ELSE o.failure_class END,available_at=CASE WHEN "+overBudget+" THEN clock_timestamp()+($5::bigint*interval '1 millisecond') ELSE o.available_at END,lease_owner=CASE WHEN "+overBudget+" THEN NULL ELSE o.lease_owner END,lease_until=CASE WHEN "+overBudget+" THEN NULL ELSE o.lease_until END FROM unnest($1::text[],$2::text[],$3::bigint[]) AS l(event_id,owner,fence) WHERE o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND "+openRow+" RETURNING o.event_id,(o.state='quarantined' AND o.failure_class='transient')", ids, owners, fences, maxAttempts, MaxRetryDelay.Milliseconds())
+		rows, err := tx.QueryContext(ctx, "UPDATE "+s.table("delivery_outbox")+" o SET state=CASE WHEN "+overBudget+" THEN 'quarantined' ELSE o.state END,failure_class=CASE WHEN "+overBudget+" THEN 'exhausted' ELSE o.failure_class END,available_at=CASE WHEN "+overBudget+" THEN clock_timestamp() ELSE o.available_at END,lease_owner=CASE WHEN "+overBudget+" THEN NULL ELSE o.lease_owner END,lease_until=CASE WHEN "+overBudget+" THEN NULL ELSE o.lease_until END FROM unnest($1::text[],$2::text[],$3::bigint[]) AS l(event_id,owner,fence), "+s.table("delivery_outbox")+" p WHERE p.event_id=l.event_id AND o.event_id=l.event_id AND o.lease_owner=l.owner AND o.fence=l.fence AND o.lease_until>clock_timestamp() AND "+openRow+quarantineReturning, ids, owners, fences, maxAttempts)
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var id string
-			var over bool
-			if err = rows.Scan(&id, &over); err != nil {
-				return err
-			}
-			exhausted[id] = over
-		}
-		return rows.Err()
+		quarantined, err = scanQuarantines(rows, func(id string, over bool) { exhausted[id] = over })
+		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	allowed := make([]Lease, 0, len(leases))
 	for _, l := range leases {
@@ -355,9 +423,9 @@ func (s *Store) CheckAttemptBudgetBatch(ctx context.Context, leases []Lease, max
 		}
 	}
 	if len(exhausted) != len(leases) {
-		return allowed, ErrLease
+		return allowed, quarantined, ErrLease
 	}
-	return allowed, nil
+	return allowed, quarantined, nil
 }
 
 // Delivery Ack must synchronously acknowledge the durable broker delivery.

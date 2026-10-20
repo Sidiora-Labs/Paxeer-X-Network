@@ -38,6 +38,9 @@ type Relay struct {
 	Batch                                     int
 	LeaseDuration, PublishTimeout, RetryDelay time.Duration
 	MaxAttempts                               int
+	// OnQuarantine, when set, is called once for every row the relay
+	// quarantines permanently, after the transition committed.
+	OnQuarantine func(Quarantine)
 }
 
 func (r Relay) valid() error {
@@ -47,10 +50,10 @@ func (r Relay) valid() error {
 	return nil
 }
 
-// Pass is the relay loop step: it requeues the transient quarantined rows
-// whose backoff elapsed and runs RunOnce, which stops at any transient
-// quarantined row still backing off, so a requeued row is never published
-// behind a later one.
+// Pass is the relay loop step: it requeues the rows an earlier release
+// quarantined as transient whose backoff elapsed and runs RunOnce, which
+// stops at any such row still backing off, so a requeued row is never
+// published behind a later one.
 func (r Relay) Pass(ctx context.Context) error {
 	if err := r.valid(); err != nil {
 		return err
@@ -71,9 +74,11 @@ func (r Relay) Pass(ctx context.Context) error {
 // rows after it are released without spending an attempt and wait behind it,
 // and the acknowledged rows of the batch are recorded. A row that exhausted
 // its budget, lost its lease or fails to decode holds back the rest of the
-// batch the same way. A row that fails to decode is quarantined permanently;
-// a later pass publishes its control message in its Perps-Seq place and then
-// the rows behind it. Claims are serialised and stop at every leased row, so
+// batch the same way. A row that fails to decode, that the broker refuses for
+// its size or whose transient failures spent MaxAttempts attempts is
+// quarantined permanently; a later pass publishes its control message in its
+// Perps-Seq place and then the rows behind it, so no row holds the outbox
+// without end. Claims are serialised and stop at every leased row, so
 // replicas publish one batch at a time; fenced leases refuse a stale relay.
 func (r Relay) RunOnce(ctx context.Context) error {
 	if err := r.valid(); err != nil {
@@ -87,10 +92,11 @@ func (r Relay) run(ctx context.Context) error {
 	if err != nil || len(claimed) == 0 {
 		return err
 	}
-	allowed, failure := r.Store.CheckAttemptBudgetBatch(ctx, claimed, r.MaxAttempts)
+	allowed, exhausted, failure := r.Store.CheckAttemptBudgetBatch(ctx, claimed, r.MaxAttempts)
 	if failure != nil && !errors.Is(failure, ErrLease) {
 		return failure
 	}
+	r.quarantined(exhausted)
 	may := make(map[string]bool, len(allowed))
 	for _, l := range allowed {
 		may[l.EventID] = true
@@ -162,9 +168,11 @@ func (r Relay) run(ctx context.Context) error {
 	}
 	if len(retry) > 0 {
 		// A crash before this leaves the exact immutable rows reclaimable after lease expiry.
-		if err := r.Store.RetryBatch(ctx, retry, classes, r.MaxAttempts, r.RetryDelay); err != nil {
+		quarantined, err := r.Store.RetryBatch(ctx, retry, classes, r.MaxAttempts, r.RetryDelay)
+		if err != nil {
 			failure = errors.Join(failure, err)
 		}
+		r.quarantined(quarantined)
 	}
 	if len(release) > 0 {
 		if err := r.Store.ReleaseBatch(ctx, release); err != nil {
@@ -174,7 +182,19 @@ func (r Relay) run(ctx context.Context) error {
 	return failure
 }
 
+func (r Relay) quarantined(rows []Quarantine) {
+	if r.OnQuarantine == nil {
+		return
+	}
+	for _, q := range rows {
+		r.OnQuarantine(q)
+	}
+}
+
 func publicationFailureClass(err error) FailureClass {
+	if errors.Is(err, ErrOversized) {
+		return Oversized
+	}
 	if errors.Is(err, ErrAuthorization) {
 		return Authorization
 	}

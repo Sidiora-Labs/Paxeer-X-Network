@@ -23,9 +23,12 @@ var (
 	ErrSchema        = errors.New("delivery: unsupported envelope version")
 	ErrLease         = errors.New("delivery: stale or expired lease")
 	ErrAuthorization = errors.New("delivery: unapproved subject")
-	token            = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,128}$`)
-	subjectToken     = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
-	decimal          = regexp.MustCompile(`^(0|[1-9][0-9]*)$`)
+	// ErrOversized reports a message the broker refuses for its size; it can
+	// never persist.
+	ErrOversized = errors.New("delivery: message refused for size")
+	token        = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,128}$`)
+	subjectToken = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
+	decimal      = regexp.MustCompile(`^(0|[1-9][0-9]*)$`)
 )
 
 type SourceOrder struct {

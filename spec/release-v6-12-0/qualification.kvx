@@ -2572,3 +2572,11 @@ exit = 1
 log = "HP-01-verify-r4.log"
 observed = "nativeSetIsTheTokenTableNativeEntries asserted the PAX table address equals the zero-address sentinel, while the spot vault moves a native-kind token by bank transfer (modules/spot/keeper/custody.go:283-285) and takes value through depositNative (precompiles/spot/vault.go:86-88)."
 assumption = "Ruled: PAX keeps the uhpx pointer address and the case now asserts the isNative token property the native set is built from; its other assertion is unchanged."
+
+[finding.perps-data-permanent-quarantine-ruling]
+revision = "bd6eb0e47"
+command = "GOFLAGS=-p=1 go test -count=1 -timeout 30m ./internal/delivery/... ./internal/publish/... (in services/platform/perps-data)"
+exit = 0
+log = "PD-F11-verify-r1.log"
+observed = "Ruled: a size refusal and an exhausted attempt budget are permanent classes (oversized, exhausted), quarantined once and announced by a control message so successors proceed; TestPublisher/envelope_limit and failed_message_blocks_successors (now refused_message_skipped_in_order) and the delivery retry_backoff, ordered_requeue and exhausted_row_holds_batch (now exhausted_row_announced) cases were rewritten to assert that, replacing findings perps-data-envelope-limit-transient and perps-data-control-message-scope."
+assumption = "Rows an earlier release quarantined as transient are still requeued by Requeue and then follow the ruled path."

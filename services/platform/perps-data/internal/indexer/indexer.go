@@ -38,8 +38,8 @@ const (
 	IdleJitter   = 10 * time.Millisecond
 	// MaxLagBlocks is the largest lag to the node head of a ready indexer.
 	MaxLagBlocks = 30
-	// MaxOutboxAge is the largest age of the oldest pending outbox row of a
-	// ready indexer.
+	// MaxOutboxAge is the largest age of the oldest open outbox row of a
+	// ready indexer, the MaxHeadAge of its publisher.
 	MaxOutboxAge = 30 * time.Second
 	// LeaseTTL is the validity of one acquisition or renewal of the lease.
 	LeaseTTL = 30 * time.Second
@@ -173,7 +173,7 @@ func New(ctx context.Context, d Deps) (*Indexer, error) {
 		}),
 	}
 	ix.cursor.Store(-1)
-	for _, c := range []prometheus.Collector{ix.headHeight, ix.cursorHeight, ix.lagBlocks, ix.logs, ix.rewinds, ix.outboxPending} {
+	for _, c := range append([]prometheus.Collector{ix.headHeight, ix.cursorHeight, ix.lagBlocks, ix.logs, ix.rewinds, ix.outboxPending}, d.Publisher.Collectors()...) {
 		if err := d.Metrics.Register(c); err != nil {
 			return nil, fmt.Errorf("indexer: register metric: %w", err)
 		}
@@ -246,7 +246,8 @@ func (ix *Indexer) keepLease(ctx context.Context) error {
 
 // Checks returns the readiness checks of the indexer for httpx.HealthDeps:
 // lease (the writer lease is held), lag (the cursor is at most MaxLagBlocks
-// behind the node head) and outbox (no pending row older than MaxOutboxAge).
+// behind the node head) and outbox (the publisher is ready: no open outbox
+// row older than its MaxHeadAge).
 func (ix *Indexer) Checks() map[string]httpx.Check {
 	return map[string]httpx.Check{
 		"lease":  ix.checkLease,
@@ -279,14 +280,10 @@ func (ix *Indexer) checkLag(context.Context) error {
 }
 
 func (ix *Indexer) checkOutbox(ctx context.Context) error {
-	_, oldest, err := ix.observeOutbox(ctx)
-	if err != nil {
+	if _, _, err := ix.observeOutbox(ctx); err != nil {
 		return err
 	}
-	if oldest > MaxOutboxAge {
-		return fmt.Errorf("oldest pending outbox row %s old", oldest)
-	}
-	return nil
+	return ix.publisher.Ready(ctx)
 }
 
 // observeOutbox reads the pending outbox rows and their oldest age and sets

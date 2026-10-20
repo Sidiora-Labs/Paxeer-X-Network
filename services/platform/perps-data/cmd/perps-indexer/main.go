@@ -130,6 +130,7 @@ func run(logger *slog.Logger) error {
 		PublishTimeout: publishTimeout,
 		RetryDelay:     publishRetryDelay,
 		IdleInterval:   publishIdleInterval,
+		MaxHeadAge:     indexer.MaxOutboxAge,
 		Logger:         logger,
 	})
 	if err != nil {

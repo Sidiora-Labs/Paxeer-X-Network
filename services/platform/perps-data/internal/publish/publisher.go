@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/stream"
@@ -118,6 +120,9 @@ type Config struct {
 	LeaseDuration, PublishTimeout, RetryDelay time.Duration
 	// IdleInterval separates two relay passes that both succeeded.
 	IdleInterval time.Duration
+	// MaxHeadAge is the largest age of the oldest open outbox row of a ready
+	// Publisher.
+	MaxHeadAge time.Duration
 	// Logger receives failed passes; nil selects slog.Default.
 	Logger *slog.Logger
 }
@@ -125,7 +130,8 @@ type Config struct {
 func (c Config) validate() error {
 	if !owner.MatchString(c.Owner) || c.Batch < 1 || c.Batch > 1000 || c.MaxAttempts < 1 || c.MaxAttempts > 100 ||
 		c.LeaseDuration < time.Second || c.LeaseDuration > 5*time.Minute || c.PublishTimeout <= 0 || c.PublishTimeout >= c.LeaseDuration ||
-		c.RetryDelay < time.Second || c.RetryDelay > time.Hour || c.IdleInterval < time.Millisecond || c.IdleInterval > time.Minute {
+		c.RetryDelay < time.Second || c.RetryDelay > time.Hour || c.IdleInterval < time.Millisecond || c.IdleInterval > time.Minute ||
+		c.MaxHeadAge < time.Second || c.MaxHeadAge > time.Hour {
 		return errors.New("publish: invalid publisher configuration")
 	}
 	return nil
@@ -133,10 +139,16 @@ func (c Config) validate() error {
 
 // Publisher drains perps.delivery_outbox onto PERPS_V1.
 type Publisher struct {
-	relay  delivery.Relay
-	idle   time.Duration
-	logger *slog.Logger
+	relay       delivery.Relay
+	idle        time.Duration
+	maxHeadAge  time.Duration
+	logger      *slog.Logger
+	headAge     prometheus.GaugeFunc
+	quarantined prometheus.Counter
 }
+
+// headAgeTimeout bounds the outbox read of one scrape of perps_outbox_head_age_seconds.
+const headAgeTimeout = 2 * time.Second
 
 // New builds a Publisher over the outbox of db; policy is the server-owned
 // subject and event type admission of the outbox store.
@@ -162,14 +174,57 @@ func New(db *sql.DB, nc *nats.Conn, policy delivery.Policy, cfg Config) (*Publis
 		logger = slog.Default()
 	}
 	sink := &sink{js: js, policy: policy}
-	return &Publisher{
+	p := &Publisher{
 		relay: delivery.Relay{
 			Store: store, Publisher: sink, Owner: cfg.Owner, Batch: cfg.Batch, MaxAttempts: cfg.MaxAttempts,
 			LeaseDuration: cfg.LeaseDuration, PublishTimeout: cfg.PublishTimeout, RetryDelay: cfg.RetryDelay,
 		},
-		idle:   cfg.IdleInterval,
-		logger: logger,
-	}, nil
+		idle:       cfg.IdleInterval,
+		maxHeadAge: cfg.MaxHeadAge,
+		logger:     logger,
+		quarantined: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "perps_outbox_quarantined_total",
+			Help: "Outbox rows quarantined permanently and announced by a control message.",
+		}),
+	}
+	p.headAge = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "perps_outbox_head_age_seconds",
+		Help: "Age of the oldest outbox row not yet published or announced; NaN when the outbox cannot be read.",
+	}, func() float64 {
+		ctx, cancel := context.WithTimeout(context.Background(), headAgeTimeout)
+		defer cancel()
+		age, err := store.HeadAge(ctx)
+		if err != nil {
+			return math.NaN()
+		}
+		return age.Seconds()
+	})
+	p.relay.OnQuarantine = func(q delivery.Quarantine) {
+		p.quarantined.Inc()
+		p.logger.Error("perps outbox row quarantined permanently", slog.Int64("perps_seq", q.PerpsSeq), slog.String("event_id", q.EventID), slog.String("class", string(q.Class)))
+	}
+	return p, nil
+}
+
+// Collectors returns perps_outbox_head_age_seconds and
+// perps_outbox_quarantined_total for registration by the owning service.
+func (p *Publisher) Collectors() []prometheus.Collector {
+	return []prometheus.Collector{p.headAge, p.quarantined}
+}
+
+// Ready reports an error while the oldest open outbox row, pending or
+// quarantined and not yet announced, is older than MaxHeadAge: the relay is
+// stalled on the head of the outbox. It reports ready again once that row
+// drains.
+func (p *Publisher) Ready(ctx context.Context) error {
+	age, err := p.relay.Store.HeadAge(ctx)
+	if err != nil {
+		return fmt.Errorf("read outbox head: %w", err)
+	}
+	if age > p.maxHeadAge {
+		return fmt.Errorf("oldest open outbox row %s old, bound %s", age, p.maxHeadAge)
+	}
+	return nil
 }
 
 // Run loops delivery.Relay.Pass until ctx ends and returns ctx.Err(). A failed
@@ -304,9 +359,17 @@ func (s *sink) message(l delivery.Lease) (*nats.Msg, string, error) {
 	return msg, l.EventID, nil
 }
 
+// errCodeMessageTooLarge is the JetStream API error code of a message larger
+// than the max_msg_size of the stream.
+const errCodeMessageTooLarge jetstream.ErrorCode = 10054
+
 func classify(err error) error {
 	if errors.Is(err, nats.ErrAuthorization) {
 		return delivery.ErrAuthorization
+	}
+	var api *jetstream.APIError
+	if errors.Is(err, nats.ErrMaxPayload) || (errors.As(err, &api) && api.ErrorCode == errCodeMessageTooLarge) {
+		return fmt.Errorf("%w: %w", delivery.ErrOversized, err)
 	}
 	return err
 }

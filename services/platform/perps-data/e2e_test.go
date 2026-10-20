@@ -609,7 +609,7 @@ func (e *e2e) startIndexer(t *testing.T, holder string, start uint64) *runningIn
 	}
 	publisher, err := publish.New(e.db, e.nc, store.Policy(e.chain), publish.Config{
 		Owner: holder, Batch: 100, MaxAttempts: 20, LeaseDuration: 30 * time.Second,
-		PublishTimeout: 5 * time.Second, RetryDelay: time.Second, IdleInterval: 10 * time.Millisecond,
+		PublishTimeout: 5 * time.Second, RetryDelay: time.Second, IdleInterval: 10 * time.Millisecond, MaxHeadAge: indexer.MaxOutboxAge,
 	})
 	if err != nil {
 		t.Fatalf("publish.New: %v", err)

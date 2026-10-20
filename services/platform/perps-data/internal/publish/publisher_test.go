@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +23,8 @@ import (
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/delivery/natsdriver"
@@ -61,7 +65,50 @@ func testPolicy(t *testing.T) delivery.Policy {
 }
 
 func testConfig() Config {
-	return Config{Owner: "perps-publisher", Batch: 100, MaxAttempts: 2, LeaseDuration: 30 * time.Second, PublishTimeout: 5 * time.Second, RetryDelay: time.Second, IdleInterval: 20 * time.Millisecond}
+	return Config{Owner: "perps-publisher", Batch: 100, MaxAttempts: 2, LeaseDuration: 30 * time.Second, PublishTimeout: 5 * time.Second, RetryDelay: time.Second, IdleInterval: 20 * time.Millisecond, MaxHeadAge: 30 * time.Second}
+}
+
+// openRows counts the outbox rows still to be published or announced.
+const openRows = `SELECT count(*) FROM perps.delivery_outbox WHERE state='pending' OR (state='quarantined' AND broker_sequence IS NULL)`
+
+// controlID is the Nats-Msg-Id of the control message of the row at seq
+// with event id id.
+func controlID(seq int64, id string) string {
+	sum := sha256.Sum256([]byte(id))
+	return "control-" + strconv.FormatInt(seq, 10) + "-" + hex.EncodeToString(sum[:16])
+}
+
+// metricValue reads the value of a counter or gauge collector.
+func metricValue(t *testing.T, m prometheus.Metric) float64 {
+	t.Helper()
+	var out dto.Metric
+	if err := m.Write(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Counter != nil {
+		return out.Counter.GetValue()
+	}
+	return out.Gauge.GetValue()
+}
+
+// drainOpen runs p until no outbox row is open, then stops it.
+func drainOpen(t *testing.T, ctx context.Context, db *sql.DB, p *Publisher) {
+	t.Helper()
+	runCtx, stop := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() { done <- p.Run(runCtx) }()
+	deadline := time.Now().Add(30 * time.Second)
+	for count(t, db, openRows) != 0 {
+		if time.Now().After(deadline) {
+			stop()
+			t.Fatalf("outbox not drained; Run = %v", <-done)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	stop()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run = %v", err)
+	}
 }
 
 type event struct {
@@ -589,87 +636,98 @@ func TestPublisher(t *testing.T) {
 		}
 
 		// An envelope at the limit is stored, but with its headers the broker
-		// refuses it; Retry backs it off until the attempt budget quarantines it.
+		// refuses it for size. That can never succeed: the row is quarantined
+		// permanently on its first attempt and announced in its place.
 		limit := padded(t, policy, 601, delivery.MaxEnvelopeBytes)
-		enqueue(t, ctx, db, outboxStore, limit)
-		runCtx, stop := context.WithCancel(ctx)
-		done := make(chan error, 1)
-		go func() { done <- publisher.Run(runCtx) }()
-		var availableInMS int64
-		deadline := time.Now().Add(30 * time.Second)
-		for {
-			err := db.QueryRowContext(ctx, `SELECT (EXTRACT(EPOCH FROM (available_at-clock_timestamp()))*1000)::bigint FROM perps.delivery_outbox WHERE event_id=$1 AND state='pending' AND failure_class='transient' AND attempts=1`, limit.env.EventID).Scan(&availableInMS)
-			if err == nil {
-				break
-			}
-			if !errors.Is(err, sql.ErrNoRows) {
-				t.Fatal(err)
-			}
-			if time.Now().After(deadline) {
-				t.Fatal("refused publish was not put back for retry")
-			}
-			time.Sleep(5 * time.Millisecond)
+		after := fillEvent(t, 602, hashA, 0, 0)
+		enqueue(t, ctx, db, outboxStore, limit, after)
+		var logs bytes.Buffer
+		cfg := testConfig()
+		cfg.MaxHeadAge = time.Second
+		cfg.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+		p, err := New(db, nc, policy, cfg)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if availableInMS <= 0 || availableInMS > 1000 {
-			t.Fatalf("retry backoff %d ms, want within (0, 1000]", availableInMS)
+		// The head row stuck past the bound turns readiness off.
+		time.Sleep(1100 * time.Millisecond)
+		if err := p.Ready(ctx); err == nil || !strings.Contains(err.Error(), "oldest open outbox row") {
+			t.Fatalf("Ready with a stuck head row = %v", err)
 		}
-		for count(t, db, `SELECT count(*) FROM perps.delivery_outbox WHERE state='pending'`) != 0 {
-			if time.Now().After(deadline) {
-				t.Fatal("refused publish was never quarantined")
-			}
-			time.Sleep(20 * time.Millisecond)
-		}
-		stop()
-		if err = <-done; !errors.Is(err, context.Canceled) {
-			t.Fatalf("Run = %v", err)
-		}
+		drainOpen(t, ctx, db, p)
 		rows := outbox(t, db)
-		if len(rows) != 1 || rows[0].state != "quarantined" || rows[0].failure != "transient" || rows[0].attempts != 2 || rows[0].brokerSequence != 0 || rows[0].brokerStream != "" {
-			t.Fatalf("refused row = %+v", rows)
+		if len(rows) != 2 {
+			t.Fatalf("outbox = %+v", rows)
 		}
-		if state := streamState(t, ctx, perps); state.Msgs != before.Msgs || state.LastSeq != before.LastSeq {
-			t.Fatalf("refused envelope reached the stream: %d messages, last %d", state.Msgs, state.LastSeq)
+		if r := rows[0]; r.eventID != limit.env.EventID || r.state != "quarantined" || r.failure != "oversized" || r.attempts != 2 || r.brokerStream != stream.Name || r.brokerSequence != int64(before.LastSeq)+1 {
+			t.Fatalf("refused row = %+v", r)
+		}
+		if r := rows[1]; r.state != "published" || r.brokerSequence != int64(before.LastSeq)+2 {
+			t.Fatalf("row behind the refused row = %+v", r)
+		}
+		msg, err := perps.GetMsg(ctx, before.LastSeq+1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seq := strconv.FormatInt(rows[0].seq, 10)
+		if msg.Subject != "perps.125.control" || msg.Header.Get(delivery.HeaderControl) != delivery.ControlSkipped || msg.Header.Get(HeaderSeq) != seq || msg.Header.Get(jetstream.MsgIDHeader) != controlID(rows[0].seq, limit.env.EventID) || len(msg.Data) >= delivery.MaxEnvelopeBytes {
+			t.Fatalf("control message = %s %v", msg.Subject, msg.Header)
+		}
+		if state := streamState(t, ctx, perps); state.LastSeq != before.LastSeq+2 {
+			t.Fatalf("stream last sequence %d, want %d: one control message and one row", state.LastSeq, before.LastSeq+2)
+		}
+		// The announced row is resolved: readiness returns once the head drains.
+		if n, err := outboxStore.Quarantined(ctx); err != nil || n != 0 {
+			t.Fatalf("quarantined = %d, %v", n, err)
+		}
+		if err := p.Ready(ctx); err != nil {
+			t.Fatalf("Ready after drain = %v", err)
+		}
+		if n := metricValue(t, p.quarantined); n != 1 {
+			t.Fatalf("perps_outbox_quarantined_total = %v, want 1", n)
+		}
+		if age := metricValue(t, p.headAge); age != 0 {
+			t.Fatalf("perps_outbox_head_age_seconds = %v, want 0", age)
+		}
+		line := logs.String()
+		for _, want := range []string{"level=ERROR", `msg="perps outbox row quarantined permanently"`, "perps_seq=" + seq, limit.env.EventID, "class=oversized"} {
+			if !strings.Contains(line, want) {
+				t.Fatalf("log %q lacks %q", line, want)
+			}
 		}
 	})
 
-	t.Run("failed_message_blocks_successors", func(t *testing.T) {
+	t.Run("refused_message_skipped_in_order", func(t *testing.T) {
 		reset(t, ctx, db)
 		base := streamState(t, ctx, perps).LastSeq
 		first := fillEvent(t, 700, hashA, 0, 0)
 		refused := padded(t, policy, 701, delivery.MaxEnvelopeBytes)
 		later := []event{fillEvent(t, 702, hashA, 0, 0), fillEvent(t, 703, hashA, 0, 0)}
 		enqueue(t, ctx, db, outboxStore, append([]event{first, refused}, later...)...)
-		runCtx, stop := context.WithCancel(ctx)
-		done := make(chan error, 1)
-		go func() { done <- publisher.Run(runCtx) }()
-		deadline := time.Now().Add(30 * time.Second)
-		for count(t, db, `SELECT count(*) FROM perps.delivery_outbox WHERE state='quarantined'`) != 1 {
-			if time.Now().After(deadline) {
-				stop()
-				t.Fatalf("refused publish was never quarantined; Run = %v", <-done)
-			}
-			time.Sleep(20 * time.Millisecond)
-		}
-		stop()
-		if err := <-done; !errors.Is(err, context.Canceled) {
-			t.Fatalf("Run = %v", err)
-		}
+		drainOpen(t, ctx, db, publisher)
 		rows := outbox(t, db)
 		if len(rows) != 4 || rows[0].state != "published" || rows[0].brokerSequence != int64(base)+1 {
 			t.Fatalf("first row = %+v", rows)
 		}
-		if r := rows[1]; r.state != "quarantined" || r.failure != "transient" || r.attempts != 2 {
+		if r := rows[1]; r.state != "quarantined" || r.failure != "oversized" || r.brokerSequence != int64(base)+2 {
 			t.Fatalf("refused row = %+v", r)
 		}
-		for _, r := range rows[2:] {
-			if r.state != "pending" || r.attempts != 0 || r.brokerSequence != 0 {
+		msg, err := perps.GetMsg(ctx, base+2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if msg.Subject != "perps.125.control" || msg.Header.Get(HeaderSeq) != strconv.FormatInt(rows[1].seq, 10) {
+			t.Fatalf("control message = %s %v", msg.Subject, msg.Header)
+		}
+		for i, r := range rows[2:] {
+			if r.state != "published" || r.brokerSequence != int64(base)+int64(i)+3 {
 				t.Fatalf("row behind the refused row = %+v", r)
 			}
 		}
-		if state := streamState(t, ctx, perps); state.LastSeq != base+1 {
-			t.Fatalf("stream last sequence %d, want %d: a later row overtook the refused one", state.LastSeq, base+1)
+		if state := streamState(t, ctx, perps); state.LastSeq != base+4 {
+			t.Fatalf("stream last sequence %d, want %d", state.LastSeq, base+4)
 		}
-		if n, err := outboxStore.Quarantined(ctx); err != nil || n != 1 {
+		if n, err := outboxStore.Quarantined(ctx); err != nil || n != 0 {
 			t.Fatalf("quarantined = %d, %v", n, err)
 		}
 	})
@@ -733,7 +791,7 @@ func TestPublisher(t *testing.T) {
 				t.Fatalf("message %d carries Perps-Seq %q", r.brokerSequence, msg.Header.Get(HeaderSeq))
 			}
 			if i == 1 {
-				if msg.Subject != "perps.125.control" || msg.Header.Get(delivery.HeaderControl) != delivery.ControlSkipped || msg.Header.Get(jetstream.MsgIDHeader) != "control-2" {
+				if msg.Subject != "perps.125.control" || msg.Header.Get(delivery.HeaderControl) != delivery.ControlSkipped || msg.Header.Get(jetstream.MsgIDHeader) != controlID(2, events[1].env.EventID) {
 					t.Fatalf("control message = %s %v", msg.Subject, msg.Header)
 				}
 				continue
