@@ -38,14 +38,19 @@ type Frame struct {
 }
 
 // Provider serves the topic families of the hub (book, trade, stats, market,
-// totals and chain). The hub calls Subscribed before the Snapshot of every
-// subscribe and Unsubscribed when a subscriber leaves, feeds every stream
-// message to Message in stream order and runs Run for the timed frames.
+// totals and chain). The hub calls Subscribed before every subscribe and
+// Unsubscribed when a subscriber leaves, feeds every stream message to
+// Message in stream order and runs Run for the timed frames. Load reads the
+// state of a subscribed topic outside the hub lock and Held answers the
+// subscribe snapshot from it without IO; Snapshot reads a fresh snapshot.
 // Message returns the live frames a message causes and the topics that must
 // send a fresh snapshot instead.
 type Provider interface {
 	Subscribed(topic string)
 	Unsubscribed(topic string)
+	Load(ctx context.Context, topic string) error
+	Held(topic string) (json.RawMessage, bool)
+	Prepare(ctx context.Context, subject string, env delivery.Envelope)
 	Snapshot(ctx context.Context, topic string) (json.RawMessage, error)
 	Message(ctx context.Context, subject string, env delivery.Envelope) ([]Frame, []string, error)
 	Run(ctx context.Context, emit func(Frame)) error
@@ -70,11 +75,10 @@ type Hub struct {
 	prefix     string
 	logger     *slog.Logger
 
-	// mu serialises message application, timed frames and subscribes, so a
-	// snapshot and the deltas after it reach a socket in seq order.
-	// ponytail: one lock over snapshot builds and socket writes, so a slow
-	// socket stalls every topic up to the write deadline; per-socket send
-	// queues if that matters.
+	// mu serialises message application, timed frames and subscribe
+	// snapshots, so a snapshot and the deltas after it reach a socket in seq
+	// order. Socket writes happen under it, so a slow socket stalls every
+	// topic up to the write deadline.
 	mu        sync.Mutex
 	topics    map[string]*topicState
 	applied   uint64
@@ -125,32 +129,61 @@ func (h *Hub) Listen(fn func(subject string, env delivery.Envelope)) (stop func(
 }
 
 // Subscribe sends the snapshot frame of f.Topic to s, carrying the seq of the
-// last broadcast, and registers s for the deltas after it. A snapshot that
-// cannot be built closes s with 1013 so the client resyncs.
+// last broadcast, and registers s for the deltas after it. The provider
+// loads the topic state outside the hub lock, and the snapshot is answered
+// from that state under it; only a load a message raced reads the snapshot
+// under the lock. A snapshot that cannot be built closes s with 1013 so the
+// client resyncs. The socket protocol calls Subscribe, Unsubscribe and Leave
+// of one socket in turn, so s cannot leave while its state loads.
 func (h *Hub) Subscribe(s *Socket, f ClientFrame) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	t := h.topics[f.Topic]
 	if t == nil {
 		t = &topicState{snapshotID: h.snapshotID, subs: map[*Socket]struct{}{}}
 		h.topics[f.Topic] = t
 	}
-	if _, held := t.subs[s]; !held {
+	_, held := t.subs[s]
+	h.mu.Unlock()
+	if !held {
 		h.provider.Subscribed(f.Topic)
-		t.subs[s] = struct{}{}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), snapshotTimeout)
 	defer cancel()
-	data, err := h.provider.Snapshot(ctx, f.Topic)
+	err := h.provider.Load(ctx, f.Topic)
+	h.mu.Lock()
+	_, in := t.subs[s]
+	if held && !in {
+		// A failed write dropped s from every topic and closed it meanwhile.
+		h.mu.Unlock()
+		return
+	}
+	var data json.RawMessage
+	if err == nil {
+		var ok bool
+		if data, ok = h.provider.Held(f.Topic); !ok {
+			data, err = h.provider.Snapshot(ctx, f.Topic)
+		}
+	}
 	if err != nil {
 		h.logger.Error("ws: subscribe snapshot", slog.String("topic", f.Topic), slog.Any("err", err))
+		if !in {
+			h.provider.Unsubscribed(f.Topic)
+		}
 		h.dropLocked(s)
+		h.mu.Unlock()
 		_ = s.CloseRetryAfter()
 		return
 	}
+	t.subs[s] = struct{}{}
+	// The snapshot is queued under the hub lock, ahead of every delta
+	// broadcast after it, and encoded and written by the writer of s.
 	frame := DataFrame{Topic: f.Topic, TS: time.Now().UnixMilli(), SnapshotID: t.snapshotID, Seq: t.seq, Snapshot: true, Data: data}
-	if err := s.SendData(frame); err != nil {
+	queued := s.queue(outFrame{value: frame})
+	if !queued {
 		h.dropLocked(s)
+	}
+	h.mu.Unlock()
+	if !queued {
 		_ = s.conn.Close()
 	}
 }
@@ -282,6 +315,11 @@ func (h *Hub) resumeFrom(ctx context.Context, js jetstream.JetStream) (uint64, e
 // socket closes with 1013 and the client resyncs through REST.
 func (h *Hub) apply(ctx context.Context, m *natsdriver.Message) error {
 	seq := m.Sequence
+	subject := m.Subject
+	env, perpsSeq, err := h.decode(subject, m)
+	if err == nil {
+		h.provider.Prepare(ctx, subject, env)
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if seq <= h.applied {
@@ -292,8 +330,6 @@ func (h *Hub) apply(ctx context.Context, m *natsdriver.Message) error {
 		h.closeAllLocked()
 	}
 	h.applied = seq
-	subject := m.Subject
-	env, perpsSeq, err := h.decode(subject, m)
 	if err != nil {
 		h.logger.Error("ws: hub message", slog.Uint64("stream_seq", seq), slog.Any("err", err))
 		h.resnapshotLocked(ctx, h.watchedLocked(), 0)
@@ -428,12 +464,17 @@ func (h *Hub) resnapshotLocked(ctx context.Context, topics []string, perpsSeq in
 	}
 }
 
-// sendLocked writes frame to every subscriber of t; a socket whose write
-// fails leaves every topic and is closed.
+// sendLocked queues frame, encoded once, to every subscriber of t; a socket
+// that is closed or whose queue is full leaves every topic and is closed.
 func (h *Hub) sendLocked(t *topicState, frame DataFrame) {
+	m, err := PrepareData(frame)
+	if err != nil {
+		h.logger.Error("ws: hub frame", slog.String("topic", frame.Topic), slog.Any("err", err))
+		return
+	}
 	var failed []*Socket
 	for s := range t.subs {
-		if err := s.SendData(frame); err != nil {
+		if !s.queue(outFrame{prepared: m}) {
 			failed = append(failed, s)
 		}
 	}

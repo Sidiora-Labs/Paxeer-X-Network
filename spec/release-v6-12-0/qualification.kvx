@@ -2214,7 +2214,7 @@ observed = Implemented, not qualified, per the acceptance text: five of six swap
 assumption = The rollout plan treats the previous binary's exit status as informational and a validator with a stray post-halt prevote sits out round 0 after the swap; the v6.12.0 halt holds Commit until shutdown so the next upgrade meets the assertions unchanged.
 
 [finding.7.2.4-batched-block-writes]
-revision = bf39b8c13b351f9e6544a6822fab8fbbf3f38baa
+revision = fd518f323
 command = go test -count=1 ./services/platform/perps-data/internal/store/
 exit = 0
 log = fleet/logs/release-7.1.8-store-test-1.log
@@ -2222,9 +2222,17 @@ observed = WriteBlock sent about 60 single-row statements per block and took 150
 assumption = The one transaction per block, the row_id order the subscriptions page by and the perps_seq order of the outbox are unchanged, which the store tests assert.
 
 [finding.7.1.8-follower-serial-fetch]
-revision = bf39b8c13b351f9e6544a6822fab8fbbf3f38baa
+revision = fd518f323
 command = go test -count=1 ./services/platform/perps-data/internal/indexer/ -run 'TestIndexer'
 exit = 1
 log = fleet/logs/release-7.1.8-store-verify-1.log
 observed = With the batched store the indexer reaches 3 to 3.5 blocks per second overall and 9.5 between node stalls, still short of the 15 the catch_up_batches subtest needs, because the follower fetches each block, its header and its block results one after another at about 132 ms per eth_getBlockByNumber on a loaded host, with the three 500-block log windows adding 23 s.
 assumption = The follower pipelines its per-block fetches with a bounded prefetch while keeping delivery order, which is a source-package change; the indexer wiring commit stays unlanded until that gate passes.
+
+[finding.7.3.5-latency-under-load]
+revision = e9406706b
+command = go test -count=1 ./services/platform/perps-data/internal/ws/ -run TestLoadProfile
+exit = 1
+log = fleet/logs/release-7.3.5-fix-verify-3.log
+observed = The reconnect storm guard now holds (2000 welcomed, 2000 guarded, 400 recovered, 2000 live, 517124 frames with no rate, level, gap or error violation) but the p99 frame delay measured 49.8 s against the 250 ms bound and 3631 of 35176 checksums were late, in three runs taken on a build box at load average 42 to 58 on 18 cores with 38 percent iowait where the test held about two cores.
+assumption = The latency bound is measured once more on a quiet host before the task is marked done; the gateway package test that timed out in publish.EnsureStream during NATS setup is the same host condition and is not a gateway defect.

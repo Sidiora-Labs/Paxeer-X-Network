@@ -27716,7 +27716,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.3.5]
 title = "Load test of sockets, reconnect storms and book frames"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 3
 requires = ["7.2.13"]

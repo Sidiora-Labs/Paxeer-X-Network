@@ -144,8 +144,11 @@ func DefaultLimits() Limits {
 const (
 	maxClientFrameBytes = 4096
 	writeWait           = 10 * time.Second
-	retryAfterMin       = 5
-	retryAfterMax       = 30
+	// sendQueue bounds the frames queued for one socket; a socket that
+	// falls this far behind is closed.
+	sendQueue     = 1024
+	retryAfterMin = 5
+	retryAfterMax = 30
 )
 
 // Server upgrades requests to protocol sockets. The hooks run on the reading
@@ -205,11 +208,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	sock := &Socket{conn: conn, server: s, subs: make(map[string]struct{})}
+	sock := &Socket{conn: conn, server: s, subs: make(map[string]struct{}), out: make(chan outFrame, sendQueue), stop: make(chan struct{})}
 	if s.Shedding != nil && s.Shedding() {
 		_ = sock.CloseRetryAfter()
 		return
 	}
+	var writer sync.WaitGroup
+	writer.Go(sock.writeLoop)
+	defer func() {
+		close(sock.stop)
+		writer.Wait()
+	}()
 	conn.SetReadLimit(maxClientFrameBytes)
 	sock.lastPong.Store(s.Now().UnixNano())
 	conn.SetPongHandler(func(string) error {
@@ -254,6 +263,10 @@ type Socket struct {
 	server   *Server
 	writeMu  sync.Mutex
 	lastPong atomic.Int64
+	// out queues every frame of a served socket in write order; writeLoop
+	// writes them until stop is closed.
+	out  chan outFrame
+	stop chan struct{}
 
 	subsMu sync.Mutex
 	subs   map[string]struct{}
@@ -264,6 +277,66 @@ type Socket struct {
 
 // SendData writes one data frame.
 func (s *Socket) SendData(f DataFrame) error { return s.write(f) }
+
+// PrepareData encodes f once, in the bytes SendData writes, for many sockets.
+func PrepareData(f DataFrame) (*websocket.PreparedMessage, error) {
+	b, err := json.Marshal(f)
+	if err != nil {
+		return nil, err
+	}
+	return websocket.NewPreparedMessage(websocket.TextMessage, append(b, '\n'))
+}
+
+// outFrame is one queued frame: a frame encoded by PrepareData or a value
+// written as JSON. done, when set, receives the result of the write.
+type outFrame struct {
+	prepared *websocket.PreparedMessage
+	value    any
+	done     chan error
+}
+
+// errSocketClosed reports a write to a socket whose writer has stopped.
+var errSocketClosed = errors.New("ws: socket closed")
+
+// queue appends f to the send queue of s without waiting; it reports false
+// when the socket is closed or its queue is full.
+func (s *Socket) queue(f outFrame) bool {
+	select {
+	case <-s.stop:
+		return false
+	default:
+	}
+	select {
+	case s.out <- f:
+		return true
+	default:
+		return false
+	}
+}
+
+// writeLoop writes the queued frames in order; a failed write closes the
+// connection, which ends the read loop and the socket.
+func (s *Socket) writeLoop() {
+	for {
+		select {
+		case <-s.stop:
+			return
+		case f := <-s.out:
+			var err error
+			if f.prepared != nil {
+				err = s.direct(func() error { return s.conn.WritePreparedMessage(f.prepared) })
+			} else {
+				err = s.direct(func() error { return s.conn.WriteJSON(f.value) })
+			}
+			if f.done != nil {
+				f.done <- err
+			}
+			if err != nil {
+				_ = s.conn.Close()
+			}
+		}
+	}
+}
 
 // Subscriptions returns the number of topics the socket holds.
 func (s *Socket) Subscriptions() int {
@@ -281,13 +354,33 @@ func (s *Socket) CloseRetryAfter() error {
 	return errors.Join(werr, s.conn.Close())
 }
 
+// write writes v and returns the result; on a served socket it goes through
+// the send queue, behind the frames queued before it.
 func (s *Socket) write(v any) error {
+	if s.out == nil {
+		return s.direct(func() error { return s.conn.WriteJSON(v) })
+	}
+	f := outFrame{value: v, done: make(chan error, 1)}
+	select {
+	case s.out <- f:
+	case <-s.stop:
+		return errSocketClosed
+	}
+	select {
+	case err := <-f.done:
+		return err
+	case <-s.stop:
+		return errSocketClosed
+	}
+}
+
+func (s *Socket) direct(write func() error) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	if err := s.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
 		return err
 	}
-	return s.conn.WriteJSON(v)
+	return write()
 }
 
 func (s *Socket) keepalive(done <-chan struct{}) {

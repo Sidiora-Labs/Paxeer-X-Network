@@ -541,6 +541,21 @@ func (p *hubProvider) Unsubscribed(topic string) {
 
 func (p *hubProvider) Snapshot(ctx context.Context, topic string) (json.RawMessage, error) {
 	data, err := p.Providers.Snapshot(ctx, topic)
+	p.snapshotted(topic, err == nil)
+	return data, err
+}
+
+func (p *hubProvider) Held(topic string) (json.RawMessage, bool) {
+	data, ok := p.Providers.Held(topic)
+	if ok {
+		p.snapshotted(topic, true)
+	}
+	return data, ok
+}
+
+// snapshotted counts one snapshot of topic: a subscribe snapshot OnSubscribe
+// announced, else a resync, and a frame when it was built.
+func (p *hubProvider) snapshotted(topic string, built bool) {
 	p.mu.Lock()
 	if n := p.expected[topic]; n > 1 {
 		p.expected[topic] = n - 1
@@ -550,10 +565,9 @@ func (p *hubProvider) Snapshot(ctx context.Context, topic string) (json.RawMessa
 		p.resyncs.Inc()
 	}
 	p.mu.Unlock()
-	if err == nil {
+	if built {
 		p.frames.WithLabelValues(topicFamily(topic)).Inc()
 	}
-	return data, err
 }
 
 func (p *hubProvider) Message(ctx context.Context, subject string, env delivery.Envelope) ([]ws.Frame, []string, error) {

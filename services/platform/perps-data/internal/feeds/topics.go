@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/bech32"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/decode"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/records"
 )
@@ -86,16 +87,25 @@ type bookState struct {
 	market string
 	marks  marks
 	token  []byte
-	dirty  bool
+	// spotAsks and spotBids are the levels of the last read of the open
+	// spot orders, up to SnapshotLevels per side.
+	spotAsks, spotBids []Level
+	// snap is the encoded subscribe snapshot of the book as it stands, nil
+	// once the book changed.
+	snap  json.RawMessage
+	dirty bool
 	// lastFrame and lastChecksum are the times of the last live frame and
 	// of the last frame that carried checksum.
 	lastFrame, lastChecksum time.Time
 }
 
 // cursor follows a newest-first item list by the id of the newest item
-// already sent.
+// already sent; items is the list as last read, the snapshot of the tape.
 type cursor struct {
-	last string
+	last  string
+	items []item
+	// snap is the encoded subscribe snapshot of items, nil once they changed.
+	snap json.RawMessage
 }
 
 type item struct {
@@ -124,10 +134,12 @@ func (c *cursor) advance(items []item, window int) ([]item, error) {
 }
 
 // Providers serves the book, trade, stats, market, totals and chain topics
-// from schema perps. The hub calls Subscribed before the Snapshot of a
-// subscribe and Unsubscribed when a subscriber leaves, feeds every stream
-// message to Message in stream order and runs Run for the timed frames.
-// State is kept only for topics with a subscriber.
+// from schema perps. The hub calls Subscribed before a subscribe and
+// Unsubscribed when a subscriber leaves, feeds every stream message to
+// Message in stream order and runs Run for the timed frames. A subscribed
+// topic holds its state: Load reads it from the database once, Message and
+// the timed frames keep it current, and Held answers a subscribe snapshot
+// from it without IO. State is kept only for topics with a subscriber.
 type Providers struct {
 	db     *sql.DB
 	symbol *records.Symbol
@@ -137,12 +149,22 @@ type Providers struct {
 	ids     map[string]string
 	order   []string
 
-	// mu serialises Message, Snapshot and the book frames.
-	// ponytail: one lock over IO; per-topic locks if snapshot latency matters.
-	mu         sync.Mutex
-	watched    map[string]int
-	books      map[string]*bookState
-	cursors    map[string]*cursor
+	// mu guards the held state; Message and the book frames read the
+	// database under it, Load and Snapshot read outside it.
+	mu      sync.Mutex
+	watched map[string]int
+	books   map[string]*bookState
+	cursors map[string]*cursor
+	// bodies holds the last body of a subscribed stats, market, markets@all
+	// or markets@totals topic.
+	bodies map[string]json.RawMessage
+	// loading holds the Load in flight of a topic.
+	loading map[string]*load
+	// pre holds the reads Prepare made for the next Message; cur is it while
+	// that Message runs.
+	pre, cur *prefetch
+
+	tokenMu    sync.Mutex
 	spotTokens map[string][]byte
 
 	lastStats, lastMarkets time.Time
@@ -163,7 +185,8 @@ func NewProviders(ctx context.Context, db *sql.DB, logger *slog.Logger) (*Provid
 	p := &Providers{
 		db: db, symbol: symbol, logger: logger,
 		symbols: map[string]string{}, ids: map[string]string{},
-		watched: map[string]int{}, books: map[string]*bookState{}, cursors: map[string]*cursor{}, spotTokens: map[string][]byte{},
+		watched: map[string]int{}, books: map[string]*bookState{}, cursors: map[string]*cursor{}, bodies: map[string]json.RawMessage{},
+		loading: map[string]*load{}, spotTokens: map[string][]byte{},
 	}
 	rows, err := db.QueryContext(ctx, marketsSQL)
 	if err != nil {
@@ -261,95 +284,300 @@ func (p *Providers) Unsubscribed(topic string) {
 		delete(p.watched, topic)
 		delete(p.books, topic)
 		delete(p.cursors, topic)
+		delete(p.bodies, topic)
 		return
 	}
 	p.watched[topic]--
 }
 
-// Snapshot builds the subscribe snapshot of topic. A watched book or tape
-// keeps the state the snapshot was built from, so its live frames continue
-// from it.
-func (p *Providers) Snapshot(ctx context.Context, topic string) (json.RawMessage, error) {
+// held is the state of one topic: the book of a book topic, the cursor of a
+// tape, else the body.
+type held struct {
+	book *bookState
+	tape *cursor
+	body json.RawMessage
+}
+
+func (h held) empty() bool { return h.book == nil && h.tape == nil && h.body == nil }
+
+// load is a Load in flight; stale is set by a message of its topic, or a
+// rewind, applied while it reads.
+type load struct {
+	done  chan struct{}
+	err   error
+	stale bool
+}
+
+// build reads the state of topic from the database.
+func (p *Providers) build(ctx context.Context, topic string) (held, error) {
 	switch topic {
 	case TopicMarketsAll, TopicMarketsTotals:
 		recs, err := p.records(ctx, p.order)
 		if err != nil {
-			return nil, err
+			return held{}, err
 		}
-		if topic == TopicMarketsAll {
-			return json.Marshal(recs)
+		var v any = recs
+		if topic == TopicMarketsTotals {
+			v = totalsOf(recs)
 		}
-		return json.Marshal(totalsOf(recs))
+		body, err := json.Marshal(v)
+		return held{body: body}, err
 	case TopicChainBlocks, TopicChainTxs:
-		p.mu.Lock()
-		defer p.mu.Unlock()
 		items, err := p.chainItems(ctx, topic)
 		if err != nil {
-			return nil, err
+			return held{}, err
 		}
-		p.keepCursor(topic, items)
-		data := make([]json.RawMessage, len(items))
-		for i, it := range items {
-			data[i] = it.data
-		}
-		return json.Marshal(data)
+		return held{tape: tapeOf(items)}, nil
 	}
 	sym, kind, ok := p.parse(topic)
 	if !ok {
-		return nil, fmt.Errorf("feeds: topic %q is not served", topic)
+		return held{}, fmt.Errorf("feeds: topic %q is not served", topic)
 	}
 	switch kind {
 	case kindStats, kindPerpStats:
-		return p.stats(ctx, sym, kind)
+		body, err := p.stats(ctx, sym, kind)
+		return held{body: body}, err
 	case kindMarket:
 		recs, err := p.records(ctx, []string{sym})
 		if err != nil {
-			return nil, err
+			return held{}, err
 		}
-		return json.Marshal(recs[0])
+		body, err := json.Marshal(recs[0])
+		return held{body: body}, err
 	case kindTrade, kindPerpTrade:
-		p.mu.Lock()
-		defer p.mu.Unlock()
 		items, err := p.trades(ctx, sym, kind)
 		if err != nil {
-			return nil, err
+			return held{}, err
 		}
-		p.keepCursor(topic, items)
-		trades := make([]json.RawMessage, len(items))
-		for i, it := range items {
-			trades[i] = it.data
-		}
-		return json.Marshal(struct {
-			Symbol string            `json:"symbol"`
-			Trades []json.RawMessage `json:"trades"`
-		}{sym, trades})
+		return held{tape: tapeOf(items)}, nil
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	b, err := p.loadBook(ctx, sym, kind)
 	if err != nil {
-		return nil, err
+		return held{}, err
 	}
-	data, err := p.bookData(ctx, b, SnapshotLevels, false)
-	if err != nil {
-		return nil, err
+	if b.token != nil {
+		if b.spotAsks, b.spotBids, err = spotLevels(ctx, p.db, b.token, SnapshotLevels); err != nil {
+			return held{}, err
+		}
 	}
-	if p.watched[topic] > 0 {
-		b.lastFrame, b.lastChecksum = time.Time{}, time.Time{}
-		p.books[topic] = b
-	}
-	return data, nil
+	return held{book: b}, nil
 }
 
-func (p *Providers) keepCursor(topic string, items []item) {
-	if p.watched[topic] == 0 {
-		return
-	}
-	c := &cursor{}
+func tapeOf(items []item) *cursor {
+	c := &cursor{items: items}
 	if len(items) > 0 {
 		c.last = items[0].id
 	}
-	p.cursors[topic] = c
+	return c
+}
+
+func (p *Providers) heldLocked(topic string) held {
+	return held{book: p.books[topic], tape: p.cursors[topic], body: p.bodies[topic]}
+}
+
+// installLocked makes h the state of topic; a book starts its live frames
+// and checksums afresh.
+func (p *Providers) installLocked(topic string, h held) {
+	delete(p.books, topic)
+	delete(p.cursors, topic)
+	delete(p.bodies, topic)
+	switch {
+	case h.book != nil:
+		h.book.lastFrame, h.book.lastChecksum = time.Time{}, time.Time{}
+		p.books[topic] = h.book
+	case h.tape != nil:
+		p.cursors[topic] = h.tape
+	default:
+		p.bodies[topic] = h.body
+	}
+}
+
+// touchLocked marks the Load in flight of topic stale: a message of the
+// topic was applied while it read, so its state may miss that message.
+func (p *Providers) touchLocked(topic string) {
+	if l := p.loading[topic]; l != nil {
+		l.stale = true
+	}
+}
+
+// encode writes the snapshot of topic from h without IO.
+// The encoded snapshot of a book or tape is kept until its state changes.
+func encode(topic string, h held) (json.RawMessage, error) {
+	switch {
+	case h.book != nil:
+		if h.book.snap == nil {
+			data, err := bookBody(h.book, SnapshotLevels, false)
+			if err != nil {
+				return nil, err
+			}
+			h.book.snap = data
+		}
+		return h.book.snap, nil
+	case h.tape == nil:
+		return h.body, nil
+	}
+	if h.tape.snap != nil {
+		return h.tape.snap, nil
+	}
+	data := make([]json.RawMessage, len(h.tape.items))
+	for i, it := range h.tape.items {
+		data[i] = it.data
+	}
+	var (
+		body json.RawMessage
+		err  error
+	)
+	if topic == TopicChainBlocks || topic == TopicChainTxs {
+		body, err = json.Marshal(data)
+	} else {
+		sym, _, _ := strings.Cut(topic, "@")
+		body, err = json.Marshal(struct {
+			Symbol string            `json:"symbol"`
+			Trades []json.RawMessage `json:"trades"`
+		}{sym, data})
+	}
+	if err != nil {
+		return nil, err
+	}
+	h.tape.snap = body
+	return body, nil
+}
+
+// Load reads the state of a subscribed topic that holds none, outside the
+// lock Message takes, so a subscribe never stalls the stream. One Load per
+// topic reads at a time; the others wait for it. A state that a message of
+// its topic may have missed while it was read is discarded, and Held stays
+// false.
+func (p *Providers) Load(ctx context.Context, topic string) error {
+	p.mu.Lock()
+	if p.watched[topic] == 0 || !p.heldLocked(topic).empty() {
+		p.mu.Unlock()
+		return nil
+	}
+	if l := p.loading[topic]; l != nil {
+		p.mu.Unlock()
+		select {
+		case <-l.done:
+			return l.err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	l := &load{done: make(chan struct{})}
+	p.loading[topic] = l
+	p.mu.Unlock()
+	h, err := p.build(ctx, topic)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.loading, topic)
+	l.err = err
+	close(l.done)
+	if err == nil && !l.stale && p.watched[topic] > 0 && p.heldLocked(topic).empty() {
+		p.installLocked(topic, h)
+	}
+	return err
+}
+
+// Held returns the subscribe snapshot of topic from the state it holds,
+// without IO. It reports false while the topic holds no state.
+func (p *Providers) Held(topic string) (json.RawMessage, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	h := p.heldLocked(topic)
+	if h.empty() {
+		return nil, false
+	}
+	data, err := encode(topic, h)
+	if err != nil {
+		p.logger.Error("feeds: held snapshot", slog.String("topic", topic), slog.Any("err", err))
+		return nil, false
+	}
+	return data, true
+}
+
+// Snapshot reads the snapshot of topic from the database. A subscribed
+// topic holds the state the snapshot was built from in place of the state it
+// held, so its live frames continue from it.
+func (p *Providers) Snapshot(ctx context.Context, topic string) (json.RawMessage, error) {
+	h, err := p.build(ctx, topic)
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.watched[topic] > 0 {
+		p.installLocked(topic, h)
+	}
+	return encode(topic, h)
+}
+
+// prefetch is what Prepare read for the message eventID: the order rows of
+// its source position by market, the newest items of its tape by topic and
+// the marks of its market by symbol.
+type prefetch struct {
+	eventID string
+	rows    map[string][]decode.Row
+	items   map[string][]item
+	marks   map[string]marks
+}
+
+// Prepare makes, outside the lock under which the hub applies messages, the
+// database reads that Message of the same message makes for the state the
+// topics hold now; Message uses them in place of its own. A read that fails
+// here is left to Message.
+func (p *Providers) Prepare(ctx context.Context, subject string, env delivery.Envelope) {
+	parts := strings.Split(subject, ".")
+	if len(parts) < 4 || parts[0] != "perps" {
+		return
+	}
+	pf := &prefetch{eventID: env.EventID, rows: map[string][]decode.Row{}, items: map[string][]item{}, marks: map[string]marks{}}
+	var book, tape, sym string
+	switch family := parts[2]; {
+	case family == "chain" && len(parts) == 4 && parts[3] == "block":
+		tape = TopicChainBlocks
+	case family == "chain" && len(parts) == 4 && parts[3] == "tx":
+		tape = TopicChainTxs
+	case family == "spot" && len(parts) == 5 && (parts[4] == "order" || parts[4] == "swap"):
+		spot, err := p.spotSymbol(ctx, parts[3])
+		if err != nil || spot == "" {
+			return
+		}
+		tape = spot + "@" + kindTrade
+	case family != "chain" && family != "spot" && family != "user" && len(parts) == 4:
+		var ok bool
+		if sym, ok = p.ids[family]; !ok {
+			return
+		}
+		book = sym + "@" + kindPerpBook
+		if parts[3] == "fill" {
+			tape = sym + "@" + kindPerpTrade
+		}
+	}
+	p.mu.Lock()
+	b, c := p.books[book], p.cursors[tape]
+	p.mu.Unlock()
+	if b != nil {
+		switch parts[3] {
+		case "order", "fill":
+			if pos, err := sourcePos(env.SourceOrder); err == nil {
+				if rows, err := loadOrderRows(ctx, p.db, b.market, pos[0], pos[1], pos[2]); err == nil {
+					pf.rows[b.market] = rows
+				}
+			}
+		case "mark", "index":
+			if m, err := p.marks(ctx, sym); err == nil {
+				pf.marks[sym] = m
+			}
+		}
+	}
+	if c != nil {
+		if items, _, err := p.tapeItems(ctx, tape); err == nil {
+			pf.items[tape] = items
+		}
+	}
+	p.mu.Lock()
+	p.pre = pf
+	p.mu.Unlock()
 }
 
 // Message maps one stream message to the live frames it causes and names the
@@ -363,6 +591,11 @@ func (p *Providers) Message(ctx context.Context, subject string, env delivery.En
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.pre != nil && p.pre.eventID == env.EventID {
+		p.cur = p.pre
+	}
+	p.pre = nil
+	defer func() { p.cur = nil }()
 	switch family := parts[2]; {
 	case family == "chain" && len(parts) == 4:
 		switch parts[3] {
@@ -376,7 +609,10 @@ func (p *Providers) Message(ctx context.Context, subject string, env delivery.En
 				resnap = append(resnap, topic)
 			}
 			slices.Sort(resnap)
-			p.books, p.cursors = map[string]*bookState{}, map[string]*cursor{}
+			p.books, p.cursors, p.bodies = map[string]*bookState{}, map[string]*cursor{}, map[string]json.RawMessage{}
+			for _, l := range p.loading {
+				l.stale = true
+			}
 			return nil, resnap, nil
 		}
 	case family == "spot" && len(parts) == 5:
@@ -384,8 +620,11 @@ func (p *Providers) Message(ctx context.Context, subject string, env delivery.En
 		if err != nil || sym == "" {
 			return nil, nil, err
 		}
-		if b, ok := p.books[sym+"@"+kindBook]; ok && parts[4] == "order" {
-			b.dirty = true
+		if parts[4] == "order" {
+			p.touchLocked(sym + "@" + kindBook)
+			if b, ok := p.books[sym+"@"+kindBook]; ok {
+				b.dirty = true
+			}
 		}
 		if parts[4] == "order" || parts[4] == "swap" {
 			return p.advance(ctx, sym+"@"+kindTrade)
@@ -397,6 +636,7 @@ func (p *Providers) Message(ctx context.Context, subject string, env delivery.En
 			return nil, nil, nil
 		}
 		topic := sym + "@" + kindPerpBook
+		p.touchLocked(topic)
 		b := p.books[topic]
 		switch parts[3] {
 		case "order", "fill":
@@ -410,11 +650,17 @@ func (p *Providers) Message(ctx context.Context, subject string, env delivery.En
 			}
 		case "mark", "index":
 			if b != nil {
-				m, err := p.marks(ctx, sym)
-				if err != nil {
-					return nil, nil, err
+				m, ok := marks{}, false
+				if p.cur != nil {
+					m, ok = p.cur.marks[sym]
 				}
-				b.marks, b.dirty = m, true
+				if !ok {
+					var err error
+					if m, err = p.marks(ctx, sym); err != nil {
+						return nil, nil, err
+					}
+				}
+				b.marks, b.dirty, b.snap = m, true, nil
 			}
 		}
 	}
@@ -422,49 +668,70 @@ func (p *Providers) Message(ctx context.Context, subject string, env delivery.En
 }
 
 func (p *Providers) applyAt(ctx context.Context, b *bookState, at delivery.SourceOrder) error {
-	var pos [3]int64
-	for i, v := range []string{at.Height, at.TransactionIndex, at.LogIndex} {
-		n, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			return fmt.Errorf("feeds: source order %+v: %w", at, err)
-		}
-		pos[i] = n
+	rows, ok := []decode.Row(nil), false
+	if p.cur != nil {
+		rows, ok = p.cur.rows[b.market]
 	}
-	rows, err := loadOrderRows(ctx, p.db, b.market, pos[0], pos[1], pos[2])
-	if err != nil {
-		return err
+	if !ok {
+		pos, err := sourcePos(at)
+		if err != nil {
+			return err
+		}
+		if rows, err = loadOrderRows(ctx, p.db, b.market, pos[0], pos[1], pos[2]); err != nil {
+			return err
+		}
 	}
 	for _, r := range rows {
 		if err := b.perp.Apply(r); err != nil {
 			return err
 		}
 	}
-	b.dirty = b.dirty || len(rows) > 0
+	if len(rows) > 0 {
+		b.dirty, b.snap = true, nil
+	}
 	return nil
+}
+
+// sourcePos parses the height, transaction index and log index of at.
+func sourcePos(at delivery.SourceOrder) ([3]int64, error) {
+	var pos [3]int64
+	for i, v := range []string{at.Height, at.TransactionIndex, at.LogIndex} {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return pos, fmt.Errorf("feeds: source order %+v: %w", at, err)
+		}
+		pos[i] = n
+	}
+	return pos, nil
+}
+
+// tapeItems reads the newest items of a tape and the window its cursor keeps.
+func (p *Providers) tapeItems(ctx context.Context, topic string) ([]item, int, error) {
+	switch topic {
+	case TopicChainBlocks:
+		items, err := p.chainItems(ctx, topic)
+		return items, BlockSnapshot, err
+	case TopicChainTxs:
+		items, err := p.chainItems(ctx, topic)
+		return items, TxSnapshot, err
+	}
+	sym, kind, _ := p.parse(topic)
+	items, err := p.trades(ctx, sym, kind)
+	return items, TradeSnapshot, err
 }
 
 // advance sends the items of a watched tape that are newer than its cursor.
 func (p *Providers) advance(ctx context.Context, topic string) ([]Frame, []string, error) {
+	p.touchLocked(topic)
 	c, ok := p.cursors[topic]
 	if !ok {
 		return nil, nil, nil
 	}
-	var (
-		items  []item
-		window int
-		err    error
-	)
-	switch topic {
-	case TopicChainBlocks, TopicChainTxs:
-		items, err = p.chainItems(ctx, topic)
-		window = BlockSnapshot
-		if topic == TopicChainTxs {
-			window = TxSnapshot
+	items, window, err := p.tapeItems(ctx, topic)
+	if p.cur != nil {
+		if pre, ok := p.cur.items[topic]; ok {
+			items, err = pre, nil
 		}
-	default:
-		sym, kind, _ := p.parse(topic)
-		items, err = p.trades(ctx, sym, kind)
-		window = TradeSnapshot
 	}
 	if err != nil {
 		return nil, nil, err
@@ -473,6 +740,7 @@ func (p *Providers) advance(ctx context.Context, topic string) ([]Frame, []strin
 	if errors.Is(err, ErrGap) {
 		return nil, []string{topic}, nil
 	}
+	c.items, c.snap = items, nil
 	frames := make([]Frame, len(fresh))
 	for i, it := range fresh {
 		frames[i] = Frame{Topic: topic, Data: it.data}
@@ -555,6 +823,8 @@ const spotTokenSQL = `SELECT token FROM perps.spot_token_registry
 
 // spotToken resolves the token of a spot symbol; nil while unregistered.
 func (p *Providers) spotToken(ctx context.Context, sym string) ([]byte, error) {
+	p.tokenMu.Lock()
+	defer p.tokenMu.Unlock()
 	if t, ok := p.spotTokens[sym]; ok {
 		return t, nil
 	}
@@ -614,20 +884,14 @@ type bookFrame struct {
 	Checksum *uint32 `json:"checksum,omitempty"`
 }
 
-// bookData writes depth levels per side of the book, with the CRC32 of its
-// top 20 levels when withChecksum is set.
-func (p *Providers) bookData(ctx context.Context, b *bookState, depth int, withChecksum bool) (json.RawMessage, error) {
+// bookBody writes depth levels per side of the held book, with the CRC32 of
+// its top 20 levels when withChecksum is set.
+func bookBody(b *bookState, depth int, withChecksum bool) (json.RawMessage, error) {
 	f := bookFrame{Symbol: b.symbol, Asks: []Level{}, Bids: []Level{}}
-	var asks, bids []Level
-	switch {
-	case b.perp != nil:
+	asks, bids := b.spotAsks, b.spotBids
+	if b.perp != nil {
 		asks, bids = b.perp.Levels(SnapshotLevels)
 		f.marks = &b.marks
-	case b.token != nil:
-		var err error
-		if asks, bids, err = spotLevels(ctx, p.db, b.token, SnapshotLevels); err != nil {
-			return nil, err
-		}
 	}
 	f.Asks = append(f.Asks, asks[:min(len(asks), depth)]...)
 	f.Bids = append(f.Bids, bids[:min(len(bids), depth)]...)
@@ -641,16 +905,26 @@ func (p *Providers) bookData(ctx context.Context, b *bookState, depth int, withC
 // Run sends the timed frames until ctx ends: book frames at most 10 per
 // second per topic, the top 20 levels, with checksum at least every 5
 // seconds; stats every 30 seconds; markets@all, markets@totals and every
-// watched <SYMBOL>@market every 5 seconds.
+// watched <SYMBOL>@market every 5 seconds. The stats and market bodies are
+// read in a loop of their own, so their reads never delay a book frame.
 func (p *Providers) Run(ctx context.Context, emit func(Frame)) error {
+	var refresh sync.WaitGroup
+	defer refresh.Wait()
+	refresh.Go(func() { p.every(ctx, emit, p.bodyFrames) })
+	p.every(ctx, emit, p.bookFrames)
+	return ctx.Err()
+}
+
+// every emits the frames of next at every BookInterval until ctx ends.
+func (p *Providers) every(ctx context.Context, emit func(Frame), next func(context.Context, time.Time) []Frame) {
 	t := time.NewTicker(BookInterval)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return
 		case now := <-t.C:
-			for _, f := range p.tick(ctx, now) {
+			for _, f := range next(ctx, now) {
 				emit(f)
 			}
 		}
@@ -658,7 +932,13 @@ func (p *Providers) Run(ctx context.Context, emit func(Frame)) error {
 }
 
 func (p *Providers) tick(ctx context.Context, now time.Time) []Frame {
-	frames := p.bookFrames(ctx, now)
+	return append(p.bookFrames(ctx, now), p.bodyFrames(ctx, now)...)
+}
+
+// bodyFrames reads the stats bodies every 30 seconds and the market bodies
+// every 5 seconds, and holds those of the subscribed topics.
+func (p *Providers) bodyFrames(ctx context.Context, now time.Time) []Frame {
+	var bodies []Frame
 	p.mu.Lock()
 	stats := now.Sub(p.lastStats) >= StatsInterval
 	markets := now.Sub(p.lastMarkets) >= MarketInterval
@@ -687,14 +967,21 @@ func (p *Providers) tick(ctx context.Context, now time.Time) []Frame {
 					p.logger.Error("feeds: stats frame", slog.String("symbol", sym), slog.Any("err", err))
 					continue
 				}
-				frames = append(frames, Frame{Topic: sym + "@" + kind, Data: data})
+				bodies = append(bodies, Frame{Topic: sym + "@" + kind, Data: data})
 			}
 		}
 	}
 	if markets {
-		frames = append(frames, p.marketFrames(ctx, watchedMarkets)...)
+		bodies = append(bodies, p.marketFrames(ctx, watchedMarkets)...)
 	}
-	return frames
+	p.mu.Lock()
+	for _, f := range bodies {
+		if p.watched[f.Topic] > 0 {
+			p.bodies[f.Topic] = f.Data
+		}
+	}
+	p.mu.Unlock()
+	return bodies
 }
 
 func (p *Providers) bookFrames(ctx context.Context, now time.Time) []Frame {
@@ -712,7 +999,15 @@ func (p *Providers) bookFrames(ctx context.Context, now time.Time) []Frame {
 		if !withChecksum && (!b.dirty || now.Sub(b.lastFrame) < BookInterval) {
 			continue
 		}
-		data, err := p.bookData(ctx, b, LiveLevels, withChecksum)
+		if b.token != nil && b.dirty {
+			asks, bids, err := spotLevels(ctx, p.db, b.token, SnapshotLevels)
+			if err != nil {
+				p.logger.Error("feeds: book frame", slog.String("topic", topic), slog.Any("err", err))
+				continue
+			}
+			b.spotAsks, b.spotBids, b.snap = asks, bids, nil
+		}
+		data, err := bookBody(b, LiveLevels, withChecksum)
 		if err != nil {
 			p.logger.Error("feeds: book frame", slog.String("topic", topic), slog.Any("err", err))
 			continue
