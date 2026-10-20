@@ -1,0 +1,3952 @@
+{
+  "version": 1,
+  "description": "Standalone JSON instance validation cases. Addresses/hashes are deliberately synthetic shape inputs, not mined transaction evidence. Arithmetic expectations derive current source/spec; schema and semantic expectations independent.",
+  "candidateSpecSha256": "4d9d6687994456745e86e78af40990e16f2471519872708306d8ca9171f9b3f1",
+  "cases": [
+    {
+      "id": "uint256_max",
+      "schema": "UInt256",
+      "schemaRef": "#/$defs/UInt256",
+      "instance": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Exact ABI uint256 maximum accepted",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "uint256_max_plus_one",
+      "schema": "UInt256",
+      "schemaRef": "#/$defs/UInt256",
+      "instance": "115792089237316195423570985008687907853269984665640564039457584007913129639936",
+      "expectedSchemaValidity": false,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "78digits alone insufficient; numeric maximum applies",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "uint256_79digits",
+      "schema": "UInt256",
+      "schemaRef": "#/$defs/UInt256",
+      "instance": "1000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "expectedSchemaValidity": false,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Quantity exceeds uint256",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "uint256_leading_zero",
+      "schema": "UInt256",
+      "schemaRef": "#/$defs/UInt256",
+      "instance": "01",
+      "expectedSchemaValidity": false,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Canonical decimal forbids leading zeros",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "uint256_exponent",
+      "schema": "UInt256",
+      "schemaRef": "#/$defs/UInt256",
+      "instance": "1e6",
+      "expectedSchemaValidity": false,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "No exponent notation",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "uint256_negative",
+      "schema": "UInt256",
+      "schemaRef": "#/$defs/UInt256",
+      "instance": "-1",
+      "expectedSchemaValidity": false,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Unsigned quantity rejects sign",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "uint256_number",
+      "schema": "UInt256",
+      "schemaRef": "#/$defs/UInt256",
+      "instance": 1000000,
+      "expectedSchemaValidity": false,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Raw amounts serialized JSON strings",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "aggregate156",
+      "schema": "AggregateUInt",
+      "schemaRef": "#/$defs/AggregateUInt",
+      "instance": "999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Aggregate bound156digits independent of ABI uint256 maximum",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "aggregate157",
+      "schema": "AggregateUInt",
+      "schemaRef": "#/$defs/AggregateUInt",
+      "instance": "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+      "expectedSchemaValidity": false,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Aggregate bound156digits independent of ABI uint256 maximum",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "aggregate_above_uint256",
+      "schema": "AggregateUInt",
+      "schemaRef": "#/$defs/AggregateUInt",
+      "instance": "115792089237316195423570985008687907853269984665640564039457584007913129639936",
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Accumulated volume may exceed single ABI amount",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "price_component512",
+      "schema": "PriceComponent",
+      "schemaRef": "#/$defs/PriceComponent",
+      "instance": "99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Rational components have separate512digit limit",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "price_component513",
+      "schema": "PriceComponent",
+      "schemaRef": "#/$defs/PriceComponent",
+      "instance": "999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+      "expectedSchemaValidity": false,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Rational components have separate512digit limit",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "price_half_usdl",
+      "schema": "Price",
+      "schemaRef": "#/$defs/Price",
+      "instance": {
+        "numerator": "1",
+        "denominator": "2",
+        "baseAsset": {
+          "kind": "erc20",
+          "chainId": "125",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": null,
+          "decimals": 6
+        },
+        "quoteAsset": {
+          "kind": "erc20",
+          "chainId": "125",
+          "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+          "currencyCode": null,
+          "decimals": 6
+        },
+        "source": {
+          "kind": "gross_execution",
+          "amountBasis": "paid_input",
+          "sourceEventId": "validation-case:fill1",
+          "position": {
+            "chainId": "125",
+            "height": "100",
+            "transactionIndex": "1",
+            "logIndex": "2",
+            "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+            "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          },
+          "providerId": null,
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "sourceReference": null
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "2000000USDLraw/4000000tokenraw, decimals6/6 yields exact1/2",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "price_512digit_numerator",
+      "schema": "Price",
+      "schemaRef": "#/$defs/Price",
+      "instance": {
+        "numerator": "99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+        "denominator": "2",
+        "baseAsset": {
+          "kind": "erc20",
+          "chainId": "125",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": null,
+          "decimals": 6
+        },
+        "quoteAsset": {
+          "kind": "erc20",
+          "chainId": "125",
+          "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+          "currencyCode": null,
+          "decimals": 6
+        },
+        "source": {
+          "kind": "gross_execution",
+          "amountBasis": "paid_input",
+          "sourceEventId": "validation-case:fill1",
+          "position": {
+            "chainId": "125",
+            "height": "100",
+            "transactionIndex": "1",
+            "logIndex": "2",
+            "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+            "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          },
+          "providerId": null,
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "sourceReference": null
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Rational numerator may exceed uint256/aggregate bounds; denominator2 is coprime to odd numerator",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "price_513digit_numerator",
+      "schema": "Price",
+      "schemaRef": "#/$defs/Price",
+      "instance": {
+        "numerator": "999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+        "denominator": "2",
+        "baseAsset": {
+          "kind": "erc20",
+          "chainId": "125",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": null,
+          "decimals": 6
+        },
+        "quoteAsset": {
+          "kind": "erc20",
+          "chainId": "125",
+          "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+          "currencyCode": null,
+          "decimals": 6
+        },
+        "source": {
+          "kind": "gross_execution",
+          "amountBasis": "paid_input",
+          "sourceEventId": "validation-case:fill1",
+          "position": {
+            "chainId": "125",
+            "height": "100",
+            "transactionIndex": "1",
+            "logIndex": "2",
+            "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+            "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          },
+          "providerId": null,
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "sourceReference": null
+        }
+      },
+      "expectedSchemaValidity": false,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Reject rational component beyond512digits",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "price_zero_denominator",
+      "schema": "Price",
+      "schemaRef": "#/$defs/Price",
+      "instance": {
+        "numerator": "1",
+        "denominator": "0",
+        "baseAsset": {
+          "kind": "erc20",
+          "chainId": "125",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": null,
+          "decimals": 6
+        },
+        "quoteAsset": {
+          "kind": "erc20",
+          "chainId": "125",
+          "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+          "currencyCode": null,
+          "decimals": 6
+        },
+        "source": {
+          "kind": "gross_execution",
+          "amountBasis": "paid_input",
+          "sourceEventId": "validation-case:fill1",
+          "position": {
+            "chainId": "125",
+            "height": "100",
+            "transactionIndex": "1",
+            "logIndex": "2",
+            "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+            "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          },
+          "providerId": null,
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "sourceReference": null
+        }
+      },
+      "expectedSchemaValidity": false,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Denominator strictly positive",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "price_unreduced",
+      "schema": "Price",
+      "schemaRef": "#/$defs/Price",
+      "instance": {
+        "numerator": "2",
+        "denominator": "4",
+        "baseAsset": {
+          "kind": "erc20",
+          "chainId": "125",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": null,
+          "decimals": 6
+        },
+        "quoteAsset": {
+          "kind": "erc20",
+          "chainId": "125",
+          "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+          "currencyCode": null,
+          "decimals": 6
+        },
+        "source": {
+          "kind": "gross_execution",
+          "amountBasis": "paid_input",
+          "sourceEventId": "validation-case:fill1",
+          "position": {
+            "chainId": "125",
+            "height": "100",
+            "transactionIndex": "1",
+            "logIndex": "2",
+            "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+            "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          },
+          "providerId": null,
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "sourceReference": null
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Shape-valid2/4 is not canonical gcd-reduced",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "price_unknown_decimals",
+      "schema": "Price",
+      "schemaRef": "#/$defs/Price",
+      "instance": {
+        "numerator": "1",
+        "denominator": "2",
+        "baseAsset": {
+          "kind": "erc20",
+          "chainId": "125",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": null,
+          "decimals": null
+        },
+        "quoteAsset": {
+          "kind": "erc20",
+          "chainId": "125",
+          "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+          "currencyCode": null,
+          "decimals": 6
+        },
+        "source": {
+          "kind": "gross_execution",
+          "amountBasis": "paid_input",
+          "sourceEventId": "validation-case:fill1",
+          "position": {
+            "chainId": "125",
+            "height": "100",
+            "transactionIndex": "1",
+            "logIndex": "2",
+            "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+            "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          },
+          "providerId": null,
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "sourceReference": null
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Human normalized price cannot use unknown decimals",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "price_spot_misbasis",
+      "schema": "Price",
+      "schemaRef": "#/$defs/Price",
+      "instance": {
+        "numerator": "1",
+        "denominator": "2",
+        "baseAsset": {
+          "kind": "erc20",
+          "chainId": "125",
+          "address": "0x1111111111111111111111111111111111111111",
+          "currencyCode": null,
+          "decimals": 6
+        },
+        "quoteAsset": {
+          "kind": "erc20",
+          "chainId": "125",
+          "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+          "currencyCode": null,
+          "decimals": 6
+        },
+        "source": {
+          "kind": "post_swap_spot",
+          "amountBasis": "paid_input",
+          "sourceEventId": "validation-case:fill1",
+          "position": {
+            "chainId": "125",
+            "height": "100",
+            "transactionIndex": "1",
+            "logIndex": "2",
+            "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+            "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          },
+          "providerId": null,
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "sourceReference": null
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Marginal spot requires effective_reserves amount basis",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "pool_virtual_only",
+      "schema": "Pool",
+      "schemaRef": "#/$defs/Pool",
+      "instance": {
+        "chainId": "125",
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "creator": "0x3333333333333333333333333333333333333333",
+        "virtualUsdlReserveRaw": "10000000000",
+        "realUsdlBalanceRaw": "0",
+        "effectivePricingUsdlReserveRaw": "10000000000",
+        "tokenReserveRaw": "1000000000000",
+        "quoteAssetAddress": "0x85fcd13735f4309833a503ee804ea32395851479",
+        "quoteAssetDecimals": 6,
+        "feeBps": 100,
+        "createdPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Positive virtual reserve with zero real backing is valid state; it promises no sell funds",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "pool_effective_sum_wrong",
+      "schema": "Pool",
+      "schemaRef": "#/$defs/Pool",
+      "instance": {
+        "chainId": "125",
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "creator": "0x3333333333333333333333333333333333333333",
+        "virtualUsdlReserveRaw": "10000000000",
+        "realUsdlBalanceRaw": "0",
+        "effectivePricingUsdlReserveRaw": "0",
+        "tokenReserveRaw": "1000000000000",
+        "quoteAssetAddress": "0x85fcd13735f4309833a503ee804ea32395851479",
+        "quoteAssetDecimals": 6,
+        "feeBps": 100,
+        "createdPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Effective pricing sum must include virtual reserve",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "pool_wrong_quote_decimals",
+      "schema": "Pool",
+      "schemaRef": "#/$defs/Pool",
+      "instance": {
+        "chainId": "125",
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "creator": "0x3333333333333333333333333333333333333333",
+        "virtualUsdlReserveRaw": "10000000000",
+        "realUsdlBalanceRaw": "0",
+        "effectivePricingUsdlReserveRaw": "10000000000",
+        "tokenReserveRaw": "1000000000000",
+        "quoteAssetAddress": "0x85fcd13735f4309833a503ee804ea32395851479",
+        "quoteAssetDecimals": 18,
+        "feeBps": 100,
+        "createdPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
+      },
+      "expectedSchemaValidity": false,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Current deployed USDL quote has6decimals, PAX18 is gas only",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "token_metadata_unknown",
+      "schema": "Token",
+      "schemaRef": "#/$defs/Token",
+      "instance": {
+        "address": "0x1111111111111111111111111111111111111111",
+        "name": "Validation input",
+        "symbol": "CASE",
+        "decimals": null,
+        "totalSupplyRaw": null,
+        "decimalsQuality": "unavailable",
+        "supplyQuality": "unavailable",
+        "sourcePosition": null,
+        "metadataRevision": "1",
+        "logoAssetId": null
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Unknown decimals and supply stay null with explicit unavailable quality",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "token_unknown_disguised18",
+      "schema": "Token",
+      "schemaRef": "#/$defs/Token",
+      "instance": {
+        "address": "0x1111111111111111111111111111111111111111",
+        "name": "Validation input",
+        "symbol": "CASE",
+        "decimals": 18,
+        "totalSupplyRaw": null,
+        "decimalsQuality": "unavailable",
+        "supplyQuality": "unavailable",
+        "sourcePosition": null,
+        "metadataRevision": "1",
+        "logoAssetId": null
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Unknown metadata cannot silently default18",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "token_known_without_source",
+      "schema": "Token",
+      "schemaRef": "#/$defs/Token",
+      "instance": {
+        "address": "0x1111111111111111111111111111111111111111",
+        "name": "Validation input",
+        "symbol": "CASE",
+        "decimals": 6,
+        "totalSupplyRaw": null,
+        "decimalsQuality": "verified",
+        "supplyQuality": "unavailable",
+        "sourcePosition": null,
+        "metadataRevision": "1",
+        "logoAssetId": null
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Verified token metadata needs historical committed source position",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "portfolio_known_cost",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "10000000",
+        "knownQuantityRaw": "10000000",
+        "unknownQuantityRaw": "0",
+        "knownRemainingCostUsdlRaw": "4000000",
+        "basisCoverage": {
+          "numerator": "1",
+          "denominator": "1"
+        },
+        "remainingCostUsdlRaw": "4000000",
+        "realizedPnlRaw": "-1000000",
+        "knownRealizedSubtotalUsdlRaw": "-1000000",
+        "unrealizedPnlRaw": "1000000",
+        "basisQuality": "complete",
+        "realizedBasisQuality": "complete",
+        "pricingQuality": "priced",
+        "markPrice": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "10tokens marked0.5USDL=5USDL, remaining cost4USDL => unrealized1USDL",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "portfolio_partial_known_cost",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "10000000",
+        "knownQuantityRaw": "6000000",
+        "unknownQuantityRaw": "4000000",
+        "knownRemainingCostUsdlRaw": "2400000",
+        "basisCoverage": {
+          "numerator": "3",
+          "denominator": "5"
+        },
+        "remainingCostUsdlRaw": null,
+        "realizedPnlRaw": null,
+        "knownRealizedSubtotalUsdlRaw": "-1000000",
+        "unrealizedPnlRaw": null,
+        "basisQuality": "partial",
+        "realizedBasisQuality": "partial",
+        "pricingQuality": "priced",
+        "markPrice": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Known subtotal2.4USDL preserved; unknown basis remains null, coverage3/5",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "portfolio_partial_zero_fabricated",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "10000000",
+        "knownQuantityRaw": "6000000",
+        "unknownQuantityRaw": "4000000",
+        "knownRemainingCostUsdlRaw": "2400000",
+        "basisCoverage": {
+          "numerator": "3",
+          "denominator": "5"
+        },
+        "remainingCostUsdlRaw": "0",
+        "realizedPnlRaw": null,
+        "knownRealizedSubtotalUsdlRaw": "-1000000",
+        "unrealizedPnlRaw": null,
+        "basisQuality": "partial",
+        "realizedBasisQuality": "partial",
+        "pricingQuality": "priced",
+        "markPrice": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Unknown total basis cannot be represented as zero",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "portfolio_partial_realized_fabricated",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "10000000",
+        "knownQuantityRaw": "6000000",
+        "unknownQuantityRaw": "4000000",
+        "knownRemainingCostUsdlRaw": "2400000",
+        "basisCoverage": {
+          "numerator": "3",
+          "denominator": "5"
+        },
+        "remainingCostUsdlRaw": null,
+        "realizedPnlRaw": "0",
+        "knownRealizedSubtotalUsdlRaw": "-1000000",
+        "unrealizedPnlRaw": null,
+        "basisQuality": "partial",
+        "realizedBasisQuality": "partial",
+        "pricingQuality": "priced",
+        "markPrice": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Historical partial realized basis must not claim complete zero PnL",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "portfolio_coverage_wrong",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "10000000",
+        "knownQuantityRaw": "6000000",
+        "unknownQuantityRaw": "4000000",
+        "knownRemainingCostUsdlRaw": "2400000",
+        "basisCoverage": {
+          "numerator": "1",
+          "denominator": "1"
+        },
+        "remainingCostUsdlRaw": null,
+        "realizedPnlRaw": null,
+        "knownRealizedSubtotalUsdlRaw": "-1000000",
+        "unrealizedPnlRaw": null,
+        "basisQuality": "partial",
+        "realizedBasisQuality": "partial",
+        "pricingQuality": "priced",
+        "markPrice": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Coverage must equal known/total quantity",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "portfolio_balance_nonconserved",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "11000000",
+        "knownQuantityRaw": "6000000",
+        "unknownQuantityRaw": "4000000",
+        "knownRemainingCostUsdlRaw": "2400000",
+        "basisCoverage": {
+          "numerator": "3",
+          "denominator": "5"
+        },
+        "remainingCostUsdlRaw": null,
+        "realizedPnlRaw": null,
+        "knownRealizedSubtotalUsdlRaw": "-1000000",
+        "unrealizedPnlRaw": null,
+        "basisQuality": "partial",
+        "realizedBasisQuality": "partial",
+        "pricingQuality": "priced",
+        "markPrice": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Known plus unknown must exactly conserve inventory",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "portfolio_wrong_unrealized",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "10000000",
+        "knownQuantityRaw": "10000000",
+        "unknownQuantityRaw": "0",
+        "knownRemainingCostUsdlRaw": "4000000",
+        "basisCoverage": {
+          "numerator": "1",
+          "denominator": "1"
+        },
+        "remainingCostUsdlRaw": "4000000",
+        "realizedPnlRaw": "-1000000",
+        "knownRealizedSubtotalUsdlRaw": "-1000000",
+        "unrealizedPnlRaw": "1000000000000000000",
+        "basisQuality": "complete",
+        "realizedBasisQuality": "complete",
+        "pricingQuality": "priced",
+        "markPrice": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "PAX18 or rawspot scale must not contaminate USDL6 mark",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "portfolio_current_complete_historical_partial",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "10000000",
+        "knownQuantityRaw": "10000000",
+        "unknownQuantityRaw": "0",
+        "knownRemainingCostUsdlRaw": "4000000",
+        "basisCoverage": {
+          "numerator": "1",
+          "denominator": "1"
+        },
+        "remainingCostUsdlRaw": "4000000",
+        "realizedPnlRaw": null,
+        "knownRealizedSubtotalUsdlRaw": "-1000000",
+        "unrealizedPnlRaw": "1000000",
+        "basisQuality": "complete",
+        "realizedBasisQuality": "partial",
+        "pricingQuality": "priced",
+        "markPrice": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Inventory complete does not erase historic unknown-basis disposals",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "portfolio_unpriced",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "10000000",
+        "knownQuantityRaw": "10000000",
+        "unknownQuantityRaw": "0",
+        "knownRemainingCostUsdlRaw": "4000000",
+        "basisCoverage": {
+          "numerator": "1",
+          "denominator": "1"
+        },
+        "remainingCostUsdlRaw": "4000000",
+        "realizedPnlRaw": "-1000000",
+        "knownRealizedSubtotalUsdlRaw": "-1000000",
+        "unrealizedPnlRaw": null,
+        "basisQuality": "complete",
+        "realizedBasisQuality": "complete",
+        "pricingQuality": "unpriced",
+        "markPrice": null,
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Known cost remains available when mark is unavailable; unrealized stays null",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "trade_optical_buy",
+      "schema": "Trade",
+      "schemaRef": "#/$defs/Trade",
+      "instance": {
+        "eventId": "validation-case:optical-buy",
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "sender": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x1111111111111111111111111111111111111111",
+        "side": "buy",
+        "tokenAmountRaw": "200000000",
+        "usdlAmountRaw": "100000000",
+        "position": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "feeRaw": "990000",
+        "feeAssetAddress": "0x85fcd13735f4309833a503ee804ea32395851479",
+        "feeAssetDecimals": 6,
+        "feeDisposition": "distributed_usdl",
+        "paidInputRaw": "100000000",
+        "pricedInputRaw": "99000000",
+        "ammInputAfterFeeRaw": "98010000",
+        "inputDerivationQuality": "exact",
+        "recipientAttribution": "exact_receipt",
+        "recipientEvidenceRefs": [
+          "validation-case:transfer1"
+        ],
+        "emittingContract": "0x2222222222222222222222222222222222222222",
+        "codeEpoch": "fixture-code-epoch-not-chain-proof"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Paid100USDL,priced99USDL,fee0.99USDL,AMM98.01USDL; real reserve increment99.01USDL",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ],
+      "context": {
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "tokenDecimals": 6,
+        "feeBps": 100
+      }
+    },
+    {
+      "id": "trade_optical_sell",
+      "schema": "Trade",
+      "schemaRef": "#/$defs/Trade",
+      "instance": {
+        "eventId": "validation-case:optical-sell",
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "sender": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x1111111111111111111111111111111111111111",
+        "side": "sell",
+        "tokenAmountRaw": "100000000",
+        "usdlAmountRaw": "45000000",
+        "position": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "feeRaw": "990000",
+        "feeAssetAddress": "0x1111111111111111111111111111111111111111",
+        "feeAssetDecimals": 6,
+        "feeDisposition": "retained_token_reserve",
+        "paidInputRaw": "100000000",
+        "pricedInputRaw": "99000000",
+        "ammInputAfterFeeRaw": "98010000",
+        "inputDerivationQuality": "exact",
+        "recipientAttribution": "exact_receipt",
+        "recipientEvidenceRefs": [
+          "validation-case:transfer1"
+        ],
+        "emittingContract": "0x2222222222222222222222222222222222222222",
+        "codeEpoch": "fixture-code-epoch-not-chain-proof"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Paid100token,priced99token,fee0.99token,AMM98.01token; all100token increase reserve; noUSDlfee liability",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ],
+      "context": {
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "tokenDecimals": 6,
+        "feeBps": 100
+      }
+    },
+    {
+      "id": "trade_sell_fee_wrongasset",
+      "schema": "Trade",
+      "schemaRef": "#/$defs/Trade",
+      "instance": {
+        "eventId": "validation-case:optical-sell",
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "sender": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x1111111111111111111111111111111111111111",
+        "side": "sell",
+        "tokenAmountRaw": "100000000",
+        "usdlAmountRaw": "45000000",
+        "position": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "feeRaw": "990000",
+        "feeAssetAddress": "0x85fcd13735f4309833a503ee804ea32395851479",
+        "feeAssetDecimals": 6,
+        "feeDisposition": "retained_token_reserve",
+        "paidInputRaw": "100000000",
+        "pricedInputRaw": "99000000",
+        "ammInputAfterFeeRaw": "98010000",
+        "inputDerivationQuality": "exact",
+        "recipientAttribution": "exact_receipt",
+        "recipientEvidenceRefs": [
+          "validation-case:transfer1"
+        ],
+        "emittingContract": "0x2222222222222222222222222222222222222222",
+        "codeEpoch": "fixture-code-epoch-not-chain-proof"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Sell fee retained in input token, never USDL",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ],
+      "context": {
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "tokenDecimals": 6,
+        "feeBps": 100
+      }
+    },
+    {
+      "id": "trade_fee_rounding_wrong",
+      "schema": "Trade",
+      "schemaRef": "#/$defs/Trade",
+      "instance": {
+        "eventId": "validation-case:optical-buy",
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "sender": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x1111111111111111111111111111111111111111",
+        "side": "buy",
+        "tokenAmountRaw": "200000000",
+        "usdlAmountRaw": "100000000",
+        "position": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "feeRaw": "990001",
+        "feeAssetAddress": "0x85fcd13735f4309833a503ee804ea32395851479",
+        "feeAssetDecimals": 6,
+        "feeDisposition": "distributed_usdl",
+        "paidInputRaw": "100000000",
+        "pricedInputRaw": "99000000",
+        "ammInputAfterFeeRaw": "98010000",
+        "inputDerivationQuality": "exact",
+        "recipientAttribution": "exact_receipt",
+        "recipientEvidenceRefs": [
+          "validation-case:transfer1"
+        ],
+        "emittingContract": "0x2222222222222222222222222222222222222222",
+        "codeEpoch": "fixture-code-epoch-not-chain-proof"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Fee floor990000 not990001; after-fee must reconcile",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ],
+      "context": {
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "tokenDecimals": 6,
+        "feeBps": 100
+      }
+    },
+    {
+      "id": "trade_priced_above_paid",
+      "schema": "Trade",
+      "schemaRef": "#/$defs/Trade",
+      "instance": {
+        "eventId": "validation-case:optical-buy",
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "sender": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x1111111111111111111111111111111111111111",
+        "side": "buy",
+        "tokenAmountRaw": "200000000",
+        "usdlAmountRaw": "100000000",
+        "position": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "feeRaw": "990000",
+        "feeAssetAddress": "0x85fcd13735f4309833a503ee804ea32395851479",
+        "feeAssetDecimals": 6,
+        "feeDisposition": "distributed_usdl",
+        "paidInputRaw": "100000000",
+        "pricedInputRaw": "101000000",
+        "ammInputAfterFeeRaw": "98010000",
+        "inputDerivationQuality": "exact",
+        "recipientAttribution": "exact_receipt",
+        "recipientEvidenceRefs": [
+          "validation-case:transfer1"
+        ],
+        "emittingContract": "0x2222222222222222222222222222222222222222",
+        "codeEpoch": "fixture-code-epoch-not-chain-proof"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Optical cannot invent prepaid input",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ],
+      "context": {
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "tokenDecimals": 6,
+        "feeBps": 100
+      }
+    },
+    {
+      "id": "trade_exact_missing_input",
+      "schema": "Trade",
+      "schemaRef": "#/$defs/Trade",
+      "instance": {
+        "eventId": "validation-case:optical-buy",
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "sender": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x1111111111111111111111111111111111111111",
+        "side": "buy",
+        "tokenAmountRaw": "200000000",
+        "usdlAmountRaw": "100000000",
+        "position": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "feeRaw": "990000",
+        "feeAssetAddress": "0x85fcd13735f4309833a503ee804ea32395851479",
+        "feeAssetDecimals": 6,
+        "feeDisposition": "distributed_usdl",
+        "paidInputRaw": "100000000",
+        "pricedInputRaw": null,
+        "ammInputAfterFeeRaw": "98010000",
+        "inputDerivationQuality": "exact",
+        "recipientAttribution": "exact_receipt",
+        "recipientEvidenceRefs": [
+          "validation-case:transfer1"
+        ],
+        "emittingContract": "0x2222222222222222222222222222222222222222",
+        "codeEpoch": "fixture-code-epoch-not-chain-proof"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Exact derivation forbids missing priced input",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ],
+      "context": {
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "tokenDecimals": 6,
+        "feeBps": 100
+      }
+    },
+    {
+      "id": "candle_execution_valid",
+      "schema": "Candle",
+      "schemaRef": "#/$defs/Candle",
+      "instance": {
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "interval": "1m",
+        "start": "2026-10-09T12:00:00.000Z",
+        "open": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "high": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "low": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "close": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "volumeUsdlRaw": "100000000",
+        "volumeTokenRaw": "200000000",
+        "buyVolumeUsdlRaw": "100000000",
+        "sellVolumeUsdlRaw": "0",
+        "trades": "1",
+        "revision": "1",
+        "synthetic": false,
+        "coverage": "complete",
+        "firstPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "lastPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "seriesModelVersion": "gross_execution-v1",
+        "snapshotId": "11111111-1111-4111-8111-111111111111",
+        "uniqueTraderCount": "1",
+        "largeTradeCount": "0",
+        "largeTradePolicyId": "usdl500-v1",
+        "largeTradeThresholdUsdlRaw": "500000000"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "One real execution, complete coverage, positive revision, exact volume partition",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "candle_partial_coverage_valid",
+      "schema": "Candle",
+      "schemaRef": "#/$defs/Candle",
+      "instance": {
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "interval": "1m",
+        "start": "2026-10-09T12:00:00.000Z",
+        "open": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "high": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "low": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "close": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "volumeUsdlRaw": "100000000",
+        "volumeTokenRaw": "200000000",
+        "buyVolumeUsdlRaw": "100000000",
+        "sellVolumeUsdlRaw": "0",
+        "trades": "1",
+        "revision": "1",
+        "synthetic": false,
+        "coverage": "partial",
+        "firstPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "lastPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "seriesModelVersion": "gross_execution-v1",
+        "snapshotId": "11111111-1111-4111-8111-111111111111",
+        "uniqueTraderCount": "1",
+        "largeTradeCount": "0",
+        "largeTradePolicyId": "usdl500-v1",
+        "largeTradeThresholdUsdlRaw": "500000000"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Partial data explicitly disclosed; not fabricated complete",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "candle_revision_zero",
+      "schema": "Candle",
+      "schemaRef": "#/$defs/Candle",
+      "instance": {
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "interval": "1m",
+        "start": "2026-10-09T12:00:00.000Z",
+        "open": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "high": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "low": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "close": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "volumeUsdlRaw": "100000000",
+        "volumeTokenRaw": "200000000",
+        "buyVolumeUsdlRaw": "100000000",
+        "sellVolumeUsdlRaw": "0",
+        "trades": "1",
+        "revision": "0",
+        "synthetic": false,
+        "coverage": "complete",
+        "firstPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "lastPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "seriesModelVersion": "gross_execution-v1",
+        "snapshotId": "11111111-1111-4111-8111-111111111111",
+        "uniqueTraderCount": "1",
+        "largeTradeCount": "0",
+        "largeTradePolicyId": "usdl500-v1",
+        "largeTradeThresholdUsdlRaw": "500000000"
+      },
+      "expectedSchemaValidity": false,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Monotonic published entity revision starts1",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "candle_synthetic_forbidden",
+      "schema": "Candle",
+      "schemaRef": "#/$defs/Candle",
+      "instance": {
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "interval": "1m",
+        "start": "2026-10-09T12:00:00.000Z",
+        "open": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "high": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "low": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "close": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "volumeUsdlRaw": "100000000",
+        "volumeTokenRaw": "200000000",
+        "buyVolumeUsdlRaw": "100000000",
+        "sellVolumeUsdlRaw": "0",
+        "trades": "1",
+        "revision": "1",
+        "synthetic": true,
+        "coverage": "complete",
+        "firstPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "lastPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "seriesModelVersion": "gross_execution-v1",
+        "snapshotId": "11111111-1111-4111-8111-111111111111",
+        "uniqueTraderCount": "1",
+        "largeTradeCount": "0",
+        "largeTradePolicyId": "usdl500-v1",
+        "largeTradeThresholdUsdlRaw": "500000000"
+      },
+      "expectedSchemaValidity": false,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Carry bars are separate display adapter and never canonical fills",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "candle_volume_mismatch",
+      "schema": "Candle",
+      "schemaRef": "#/$defs/Candle",
+      "instance": {
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "interval": "1m",
+        "start": "2026-10-09T12:00:00.000Z",
+        "open": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "high": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "low": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "close": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "volumeUsdlRaw": "99999999",
+        "volumeTokenRaw": "200000000",
+        "buyVolumeUsdlRaw": "100000000",
+        "sellVolumeUsdlRaw": "0",
+        "trades": "1",
+        "revision": "1",
+        "synthetic": false,
+        "coverage": "complete",
+        "firstPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "lastPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "seriesModelVersion": "gross_execution-v1",
+        "snapshotId": "11111111-1111-4111-8111-111111111111",
+        "uniqueTraderCount": "1",
+        "largeTradeCount": "0",
+        "largeTradePolicyId": "usdl500-v1",
+        "largeTradeThresholdUsdlRaw": "500000000"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Total volume must equal directional USDL sums",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "candle_week_thursday",
+      "schema": "Candle",
+      "schemaRef": "#/$defs/Candle",
+      "instance": {
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "interval": "1w",
+        "start": "2026-10-09T12:00:00.000Z",
+        "open": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "high": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "low": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "close": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "volumeUsdlRaw": "100000000",
+        "volumeTokenRaw": "200000000",
+        "buyVolumeUsdlRaw": "100000000",
+        "sellVolumeUsdlRaw": "0",
+        "trades": "1",
+        "revision": "1",
+        "synthetic": false,
+        "coverage": "complete",
+        "firstPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "lastPosition": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "seriesModelVersion": "gross_execution-v1",
+        "snapshotId": "11111111-1111-4111-8111-111111111111",
+        "uniqueTraderCount": "1",
+        "largeTradeCount": "0",
+        "largeTradePolicyId": "usdl500-v1",
+        "largeTradeThresholdUsdlRaw": "500000000"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "2026-10-09Friday is not Monday week start",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "ranking_valid",
+      "schema": "RankingSnapshot",
+      "schemaRef": "#/$defs/RankingSnapshot",
+      "instance": {
+        "snapshotId": "11111111-1111-4111-8111-111111111111",
+        "category": "volume",
+        "modelVersion": "volume-v1",
+        "computedAt": "2026-10-09T12:00:00.000Z",
+        "watermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        },
+        "items": [
+          {
+            "poolAddress": "0x2222222222222222222222222222222222222222",
+            "category": "volume",
+            "rank": 1,
+            "score": "100000000",
+            "modelVersion": "volume-v1",
+            "computedAt": "2026-10-09T12:00:00.000Z"
+          }
+        ],
+        "totalEligible": "1",
+        "truncated": false,
+        "replace": true
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Immutable model/category-consistent one-entry replacement",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "ranking_model_mismatch",
+      "schema": "RankingSnapshot",
+      "schemaRef": "#/$defs/RankingSnapshot",
+      "instance": {
+        "snapshotId": "11111111-1111-4111-8111-111111111111",
+        "category": "volume",
+        "modelVersion": "volume-v1",
+        "computedAt": "2026-10-09T12:00:00.000Z",
+        "watermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        },
+        "items": [
+          {
+            "poolAddress": "0x2222222222222222222222222222222222222222",
+            "category": "volume",
+            "rank": 1,
+            "score": "100000000",
+            "modelVersion": "other-v1",
+            "computedAt": "2026-10-09T12:00:00.000Z"
+          }
+        ],
+        "totalEligible": "1",
+        "truncated": false,
+        "replace": true
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Entry model cannot differ from snapshot",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "ranking_nan_score",
+      "schema": "RankingSnapshot",
+      "schemaRef": "#/$defs/RankingSnapshot",
+      "instance": {
+        "snapshotId": "11111111-1111-4111-8111-111111111111",
+        "category": "volume",
+        "modelVersion": "volume-v1",
+        "computedAt": "2026-10-09T12:00:00.000Z",
+        "watermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        },
+        "items": [
+          {
+            "poolAddress": "0x2222222222222222222222222222222222222222",
+            "category": "volume",
+            "rank": 1,
+            "score": "NaN",
+            "modelVersion": "volume-v1",
+            "computedAt": "2026-10-09T12:00:00.000Z"
+          }
+        ],
+        "totalEligible": "1",
+        "truncated": false,
+        "replace": true
+      },
+      "expectedSchemaValidity": false,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Heuristic score is finite decimal string",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "ranking_hidden_truncation",
+      "schema": "RankingSnapshot",
+      "schemaRef": "#/$defs/RankingSnapshot",
+      "instance": {
+        "snapshotId": "11111111-1111-4111-8111-111111111111",
+        "category": "volume",
+        "modelVersion": "volume-v1",
+        "computedAt": "2026-10-09T12:00:00.000Z",
+        "watermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        },
+        "items": [
+          {
+            "poolAddress": "0x2222222222222222222222222222222222222222",
+            "category": "volume",
+            "rank": 1,
+            "score": "100000000",
+            "modelVersion": "volume-v1",
+            "computedAt": "2026-10-09T12:00:00.000Z"
+          }
+        ],
+        "totalEligible": "2",
+        "truncated": false,
+        "replace": true
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Omitted eligible entries require truncated=true",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "ranking_truncated_valid",
+      "schema": "RankingSnapshot",
+      "schemaRef": "#/$defs/RankingSnapshot",
+      "instance": {
+        "snapshotId": "11111111-1111-4111-8111-111111111111",
+        "category": "volume",
+        "modelVersion": "volume-v1",
+        "computedAt": "2026-10-09T12:00:00.000Z",
+        "watermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        },
+        "items": [
+          {
+            "poolAddress": "0x2222222222222222222222222222222222222222",
+            "category": "volume",
+            "rank": 1,
+            "score": "100000000",
+            "modelVersion": "volume-v1",
+            "computedAt": "2026-10-09T12:00:00.000Z"
+          }
+        ],
+        "totalEligible": "2",
+        "truncated": true,
+        "replace": true
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Top view explicitly discloses eligible remainder",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "portfolio_proportional_disposal",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "5000000",
+        "knownQuantityRaw": "3000000",
+        "unknownQuantityRaw": "2000000",
+        "knownRemainingCostUsdlRaw": "1200000",
+        "basisCoverage": {
+          "numerator": "3",
+          "denominator": "5"
+        },
+        "remainingCostUsdlRaw": null,
+        "realizedPnlRaw": null,
+        "knownRealizedSubtotalUsdlRaw": "1800000",
+        "unrealizedPnlRaw": null,
+        "basisQuality": "partial",
+        "realizedBasisQuality": "partial",
+        "pricingQuality": "priced",
+        "markPrice": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "K6tokens,U4tokens,C2.4USDL,dispose5tokensfor5USDL =>K3,U2,C1.2USDL; known proceeds3USDL; realized+1.8USDL. Unknown proceeds2USDL are not zero-cost gain.",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ],
+      "context": {
+        "disposal": {
+          "knownQuantityRaw": "6000000",
+          "unknownQuantityRaw": "4000000",
+          "knownRemainingCostUsdlRaw": "2400000",
+          "disposeQuantityRaw": "5000000",
+          "proceedsUsdlRaw": "5000000",
+          "knownRealizedSubtotalUsdlRaw": "0"
+        }
+      }
+    },
+    {
+      "id": "portfolio_unknown_proceeds_fabricated_gain",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "5000000",
+        "knownQuantityRaw": "3000000",
+        "unknownQuantityRaw": "2000000",
+        "knownRemainingCostUsdlRaw": "1200000",
+        "basisCoverage": {
+          "numerator": "3",
+          "denominator": "5"
+        },
+        "remainingCostUsdlRaw": null,
+        "realizedPnlRaw": null,
+        "knownRealizedSubtotalUsdlRaw": "3800000",
+        "unrealizedPnlRaw": null,
+        "basisQuality": "partial",
+        "realizedBasisQuality": "partial",
+        "pricingQuality": "priced",
+        "markPrice": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Crediting all5USDL against1.2USDL known basis incorrectly books unknown proceeds as profit",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ],
+      "context": {
+        "disposal": {
+          "knownQuantityRaw": "6000000",
+          "unknownQuantityRaw": "4000000",
+          "knownRemainingCostUsdlRaw": "2400000",
+          "disposeQuantityRaw": "5000000",
+          "proceedsUsdlRaw": "5000000",
+          "knownRealizedSubtotalUsdlRaw": "0"
+        }
+      }
+    },
+    {
+      "id": "portfolio_final_disposal_consumes_basis",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "0",
+        "knownQuantityRaw": "0",
+        "unknownQuantityRaw": "0",
+        "knownRemainingCostUsdlRaw": "0",
+        "basisCoverage": {
+          "numerator": "0",
+          "denominator": "1"
+        },
+        "remainingCostUsdlRaw": "0",
+        "realizedPnlRaw": null,
+        "knownRealizedSubtotalUsdlRaw": "3600000",
+        "unrealizedPnlRaw": null,
+        "basisQuality": "complete",
+        "realizedBasisQuality": "partial",
+        "pricingQuality": "priced",
+        "markPrice": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x85fcd13735f4309833a503ee804ea32395851479",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Full disposal consumes all remaining known basis including integer rounding residue; zero inventory coverage canonical0/1.",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ],
+      "context": {
+        "disposal": {
+          "knownQuantityRaw": "6000000",
+          "unknownQuantityRaw": "4000000",
+          "knownRemainingCostUsdlRaw": "2400000",
+          "disposeQuantityRaw": "10000000",
+          "proceedsUsdlRaw": "10000000",
+          "knownRealizedSubtotalUsdlRaw": "0"
+        }
+      }
+    },
+    {
+      "id": "trade_full_reserves_buy",
+      "schema": "Trade",
+      "schemaRef": "#/$defs/Trade",
+      "instance": {
+        "eventId": "validation-case:optical-buy",
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "sender": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x1111111111111111111111111111111111111111",
+        "side": "buy",
+        "tokenAmountRaw": "9705872741",
+        "usdlAmountRaw": "100000000",
+        "position": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "feeRaw": "990000",
+        "feeAssetAddress": "0x85fcd13735f4309833a503ee804ea32395851479",
+        "feeAssetDecimals": 6,
+        "feeDisposition": "distributed_usdl",
+        "paidInputRaw": "100000000",
+        "pricedInputRaw": "99000000",
+        "ammInputAfterFeeRaw": "98010000",
+        "inputDerivationQuality": "exact",
+        "recipientAttribution": "exact_receipt",
+        "recipientEvidenceRefs": [
+          "validation-case:transfer1"
+        ],
+        "emittingContract": "0x2222222222222222222222222222222222222222",
+        "codeEpoch": "fixture-code-epoch-not-chain-proof"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Exact current ReserveLib output and SidioraPool booked reserves; virtual backing never spendable. Mathematical case, not receipt.",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ],
+      "context": {
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "tokenDecimals": 6,
+        "feeBps": 100,
+        "reservesBefore": {
+          "virtualUsdlReserveRaw": "10000000000",
+          "realUsdlBalanceRaw": "0",
+          "tokenReserveRaw": "1000000000000"
+        },
+        "reservesAfter": {
+          "realUsdlBalanceRaw": "99010000",
+          "tokenReserveRaw": "990294127259"
+        }
+      }
+    },
+    {
+      "id": "trade_buy_optical_surplus_misbooked",
+      "schema": "Trade",
+      "schemaRef": "#/$defs/Trade",
+      "instance": {
+        "eventId": "validation-case:optical-buy",
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "sender": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x1111111111111111111111111111111111111111",
+        "side": "buy",
+        "tokenAmountRaw": "9705872741",
+        "usdlAmountRaw": "100000000",
+        "position": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "feeRaw": "990000",
+        "feeAssetAddress": "0x85fcd13735f4309833a503ee804ea32395851479",
+        "feeAssetDecimals": 6,
+        "feeDisposition": "distributed_usdl",
+        "paidInputRaw": "100000000",
+        "pricedInputRaw": "99000000",
+        "ammInputAfterFeeRaw": "98010000",
+        "inputDerivationQuality": "exact",
+        "recipientAttribution": "exact_receipt",
+        "recipientEvidenceRefs": [
+          "validation-case:transfer1"
+        ],
+        "emittingContract": "0x2222222222222222222222222222222222222222",
+        "codeEpoch": "fixture-code-epoch-not-chain-proof"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Real USDL increases paid-fee; pricing reduction is not an external fee liability",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ],
+      "context": {
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "tokenDecimals": 6,
+        "feeBps": 100,
+        "reservesBefore": {
+          "virtualUsdlReserveRaw": "10000000000",
+          "realUsdlBalanceRaw": "0",
+          "tokenReserveRaw": "1000000000000"
+        },
+        "reservesAfter": {
+          "realUsdlBalanceRaw": "98010000",
+          "tokenReserveRaw": "990294127259"
+        }
+      }
+    },
+    {
+      "id": "trade_full_reserves_sell",
+      "schema": "Trade",
+      "schemaRef": "#/$defs/Trade",
+      "instance": {
+        "eventId": "validation-case:optical-sell",
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "sender": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x1111111111111111111111111111111111111111",
+        "side": "sell",
+        "tokenAmountRaw": "100000000",
+        "usdlAmountRaw": "1078004",
+        "position": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "feeRaw": "990000",
+        "feeAssetAddress": "0x1111111111111111111111111111111111111111",
+        "feeAssetDecimals": 6,
+        "feeDisposition": "retained_token_reserve",
+        "paidInputRaw": "100000000",
+        "pricedInputRaw": "99000000",
+        "ammInputAfterFeeRaw": "98010000",
+        "inputDerivationQuality": "exact",
+        "recipientAttribution": "exact_receipt",
+        "recipientEvidenceRefs": [
+          "validation-case:transfer1"
+        ],
+        "emittingContract": "0x2222222222222222222222222222222222222222",
+        "codeEpoch": "fixture-code-epoch-not-chain-proof"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": true,
+      "expectedValidity": true,
+      "invariantReason": "Exact current ReserveLib output and SidioraPool booked reserves; virtual backing never spendable. Mathematical case, not receipt.",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ],
+      "context": {
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "tokenDecimals": 6,
+        "feeBps": 100,
+        "reservesBefore": {
+          "virtualUsdlReserveRaw": "10000000000",
+          "realUsdlBalanceRaw": "1000000000",
+          "tokenReserveRaw": "1000000000000"
+        },
+        "reservesAfter": {
+          "realUsdlBalanceRaw": "998921996",
+          "tokenReserveRaw": "1000100000000"
+        }
+      }
+    },
+    {
+      "id": "trade_sell_retained_fee_misbooked",
+      "schema": "Trade",
+      "schemaRef": "#/$defs/Trade",
+      "instance": {
+        "eventId": "validation-case:optical-sell",
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "sender": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x1111111111111111111111111111111111111111",
+        "side": "sell",
+        "tokenAmountRaw": "100000000",
+        "usdlAmountRaw": "1078004",
+        "position": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "feeRaw": "990000",
+        "feeAssetAddress": "0x1111111111111111111111111111111111111111",
+        "feeAssetDecimals": 6,
+        "feeDisposition": "retained_token_reserve",
+        "paidInputRaw": "100000000",
+        "pricedInputRaw": "99000000",
+        "ammInputAfterFeeRaw": "98010000",
+        "inputDerivationQuality": "exact",
+        "recipientAttribution": "exact_receipt",
+        "recipientEvidenceRefs": [
+          "validation-case:transfer1"
+        ],
+        "emittingContract": "0x2222222222222222222222222222222222222222",
+        "codeEpoch": "fixture-code-epoch-not-chain-proof"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Sell token reserve receives full paid input, not only AMM after-fee input",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ],
+      "context": {
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "tokenDecimals": 6,
+        "feeBps": 100,
+        "reservesBefore": {
+          "virtualUsdlReserveRaw": "10000000000",
+          "realUsdlBalanceRaw": "1000000000",
+          "tokenReserveRaw": "1000000000000"
+        },
+        "reservesAfter": {
+          "realUsdlBalanceRaw": "998921996",
+          "tokenReserveRaw": "1000098010000"
+        }
+      }
+    },
+    {
+      "id": "trade_virtual_only_sell_rejected",
+      "schema": "Trade",
+      "schemaRef": "#/$defs/Trade",
+      "instance": {
+        "eventId": "validation-case:optical-sell",
+        "poolAddress": "0x2222222222222222222222222222222222222222",
+        "sender": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x1111111111111111111111111111111111111111",
+        "side": "sell",
+        "tokenAmountRaw": "100000000",
+        "usdlAmountRaw": "980003",
+        "position": {
+          "chainId": "125",
+          "height": "100",
+          "transactionIndex": "1",
+          "logIndex": "2",
+          "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "feeRaw": "990000",
+        "feeAssetAddress": "0x1111111111111111111111111111111111111111",
+        "feeAssetDecimals": 6,
+        "feeDisposition": "retained_token_reserve",
+        "paidInputRaw": "100000000",
+        "pricedInputRaw": "99000000",
+        "ammInputAfterFeeRaw": "98010000",
+        "inputDerivationQuality": "exact",
+        "recipientAttribution": "exact_receipt",
+        "recipientEvidenceRefs": [
+          "validation-case:transfer1"
+        ],
+        "emittingContract": "0x2222222222222222222222222222222222222222",
+        "codeEpoch": "fixture-code-epoch-not-chain-proof"
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Curve math positive output cannot spend virtual USDL with real balance0; real current contract reverts VirtualFloorBreached",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ],
+      "context": {
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "tokenDecimals": 6,
+        "feeBps": 100,
+        "reservesBefore": {
+          "virtualUsdlReserveRaw": "10000000000",
+          "realUsdlBalanceRaw": "0",
+          "tokenReserveRaw": "1000000000000"
+        },
+        "reservesAfter": {
+          "realUsdlBalanceRaw": "0",
+          "tokenReserveRaw": "1000100000000"
+        }
+      }
+    },
+    {
+      "id": "portfolio_priced_missing_mark",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "10000000",
+        "knownQuantityRaw": "10000000",
+        "unknownQuantityRaw": "0",
+        "knownRemainingCostUsdlRaw": "4000000",
+        "basisCoverage": {
+          "numerator": "1",
+          "denominator": "1"
+        },
+        "remainingCostUsdlRaw": "4000000",
+        "realizedPnlRaw": "-1000000",
+        "knownRealizedSubtotalUsdlRaw": "-1000000",
+        "unrealizedPnlRaw": "1000000",
+        "basisQuality": "complete",
+        "realizedBasisQuality": "complete",
+        "pricingQuality": "priced",
+        "markPrice": null,
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Priced/stale mark must exist and USDL profit must use configured USDL6 quote, never native gas/other asset",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "portfolio_stale_missing_mark",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "10000000",
+        "knownQuantityRaw": "10000000",
+        "unknownQuantityRaw": "0",
+        "knownRemainingCostUsdlRaw": "4000000",
+        "basisCoverage": {
+          "numerator": "1",
+          "denominator": "1"
+        },
+        "remainingCostUsdlRaw": "4000000",
+        "realizedPnlRaw": "-1000000",
+        "knownRealizedSubtotalUsdlRaw": "-1000000",
+        "unrealizedPnlRaw": "1000000",
+        "basisQuality": "complete",
+        "realizedBasisQuality": "complete",
+        "pricingQuality": "stale",
+        "markPrice": null,
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Priced/stale mark must exist and USDL profit must use configured USDL6 quote, never native gas/other asset",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    },
+    {
+      "id": "portfolio_wrong_quote_currency",
+      "schema": "PortfolioPosition",
+      "schemaRef": "#/$defs/PortfolioPosition",
+      "instance": {
+        "positionId": "125:0x3333333333333333333333333333333333333333:0x1111111111111111111111111111111111111111",
+        "chainId": "125",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "tokenAddress": "0x1111111111111111111111111111111111111111",
+        "balanceRaw": "10000000",
+        "knownQuantityRaw": "10000000",
+        "unknownQuantityRaw": "0",
+        "knownRemainingCostUsdlRaw": "4000000",
+        "basisCoverage": {
+          "numerator": "1",
+          "denominator": "1"
+        },
+        "remainingCostUsdlRaw": "4000000",
+        "realizedPnlRaw": "-1000000",
+        "knownRealizedSubtotalUsdlRaw": "-1000000",
+        "unrealizedPnlRaw": "1000000",
+        "basisQuality": "complete",
+        "realizedBasisQuality": "complete",
+        "pricingQuality": "priced",
+        "markPrice": {
+          "numerator": "1",
+          "denominator": "2",
+          "baseAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x1111111111111111111111111111111111111111",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "quoteAsset": {
+            "kind": "erc20",
+            "chainId": "125",
+            "address": "0x4444444444444444444444444444444444444444",
+            "currencyCode": null,
+            "decimals": 6
+          },
+          "source": {
+            "kind": "gross_execution",
+            "amountBasis": "paid_input",
+            "sourceEventId": "validation-case:fill1",
+            "position": {
+              "chainId": "125",
+              "height": "100",
+              "transactionIndex": "1",
+              "logIndex": "2",
+              "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+              "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "providerId": null,
+            "observedAt": "2026-10-09T12:00:00.000Z",
+            "sourceReference": null
+          }
+        },
+        "sourceWatermark": {
+          "chainId": "125",
+          "height": "100",
+          "blockHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "projectionRevision": "1",
+          "observedAt": "2026-10-09T12:00:00.000Z",
+          "integrity": "healthy"
+        }
+      },
+      "expectedSchemaValidity": true,
+      "expectedSemanticValidity": false,
+      "expectedValidity": false,
+      "invariantReason": "Priced/stale mark must exist and USDL profit must use configured USDL6 quote, never native gas/other asset",
+      "evidenceKind": "synthetic_mathematical_validation_case_not_receipt",
+      "sourceRefs": [
+        "spec/production-system/spec.kvx:schema.IF_CONVENTIONS",
+        "../contracts/contracts/core/SidioraPool.sol:195-274",
+        "spec/production-system/spec.kvx:schema.IF_PRICE",
+        "spec/production-system/spec.kvx:schema.IF_PORTFOLIOPOSITION",
+        "spec/production-system/spec.kvx:req.D04_001",
+        "spec/production-system/spec.kvx:req.D06_001"
+      ]
+    }
+  ],
+  "semanticDigestConvention": "Shared materialize.semantic_digest interface-catalog-v1; schema/endpoint/stream/error/interface_freeze/allreq, excluding task/meta and top-level entry lease/status/time metadata. candidateSpecSha256 is provenance only.",
+  "semanticInputSha256": "8aeb6c79952acf4cc662a1c7ddbf8a6d988562b9c8eac164bd6fe3c05890987a"
+}

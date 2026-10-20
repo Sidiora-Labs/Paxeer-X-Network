@@ -11,8 +11,14 @@ import (
 	"github.com/Sidiora-Technologies/KindleLaunch/shared/config"
 )
 
-// ContractAddresses holds the ten launchpad contract addresses parsed from the
-// environment, mirroring the env vars wired in shared/src/chain/contracts.ts.
+// LaunchpadPrecompileAddress is the launchpad precompile, which emits the
+// launchpad family events with the EventEmitter ABI.
+var LaunchpadPrecompileAddress = common.HexToAddress("0x0000000000000000000000000000000000001017")
+
+// ContractAddresses holds the ten launchpad role addresses parsed from the
+// environment, mirroring the env vars wired in shared/src/chain/contracts.ts,
+// and the LaunchpadPrecompile role. A role of kind "surface" is served at its
+// generation 2 address, so it parses like any other role address.
 type ContractAddresses struct {
 	EventEmitter   common.Address
 	PoolRegistry   common.Address
@@ -24,6 +30,8 @@ type ContractAddresses struct {
 	SidioraNFT     common.Address
 	FeesRouter     common.Address
 	PoolBeacon     common.Address
+
+	LaunchpadPrecompile common.Address
 }
 
 // Contracts bundles bound read/event-filter handles for the ten launchpad
@@ -42,6 +50,10 @@ type Contracts struct {
 	SidioraNFT     *bindings.SidioraNFT
 	FeesRouter     *bindings.FeesRouter
 	PoolBeacon     *bindings.PoolBeacon
+
+	// LaunchpadPrecompile is the EventEmitter ABI bound at the launchpad
+	// precompile, where the launchpad family events are emitted.
+	LaunchpadPrecompile *bindings.EventEmitter
 
 	// Addresses are the parsed addresses each handle is bound to.
 	Addresses ContractAddresses
@@ -63,9 +75,11 @@ func parseAddress(name, raw string) (common.Address, error) {
 }
 
 // parseContractAddresses parses all ten env-provided addresses, collecting every
-// validation error so a misconfiguration reports all bad fields at once.
+// validation error so a misconfiguration reports all bad fields at once, and
+// sets the LaunchpadPrecompile role. Roles may share an address, as surface
+// roles served by the precompile do.
 func parseContractAddresses(env *config.BaseEnv) (ContractAddresses, error) {
-	var a ContractAddresses
+	a := ContractAddresses{LaunchpadPrecompile: LaunchpadPrecompileAddress}
 	var errs []error
 	set := func(name, raw string, dst *common.Address) {
 		addr, err := parseAddress(name, raw)
@@ -88,8 +102,9 @@ func parseContractAddresses(env *config.BaseEnv) (ContractAddresses, error) {
 	return a, errors.Join(errs...)
 }
 
-// CreateContracts binds the ten launchpad contracts to the addresses in env,
-// using the client's primary backend. Parity with createContracts (contracts.ts).
+// CreateContracts binds each launchpad role to its generation 2 address in env
+// with its role ABI, and the EventEmitter ABI to the launchpad precompile, using
+// the client's primary backend. Parity with createContracts (contracts.ts).
 func CreateContracts(c *Client, env *config.BaseEnv) (*Contracts, error) {
 	if c == nil || c.Eth() == nil {
 		return nil, fmt.Errorf("chain: CreateContracts needs a dialed client")
@@ -129,6 +144,10 @@ func CreateContracts(c *Client, env *config.BaseEnv) (*Contracts, error) {
 	bindContract("SidioraNFT", func() (e error) { out.SidioraNFT, e = bindings.NewSidioraNFT(addrs.SidioraNFT, backend); return })
 	bindContract("FeesRouter", func() (e error) { out.FeesRouter, e = bindings.NewFeesRouter(addrs.FeesRouter, backend); return })
 	bindContract("PoolBeacon", func() (e error) { out.PoolBeacon, e = bindings.NewPoolBeacon(addrs.PoolBeacon, backend); return })
+	bindContract("LaunchpadPrecompile", func() (e error) {
+		out.LaunchpadPrecompile, e = bindings.NewEventEmitter(addrs.LaunchpadPrecompile, backend)
+		return
+	})
 	if berr != nil {
 		return nil, berr
 	}

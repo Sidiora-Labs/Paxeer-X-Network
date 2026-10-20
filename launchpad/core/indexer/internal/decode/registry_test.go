@@ -201,6 +201,99 @@ func TestProvenanceEpochAndRawPreservation(t *testing.T) {
 	}
 }
 func mustFrozen(t *testing.T) []byte { b, _ := frozen(t); return b }
+func TestPrecompileRolesShareAnAddress(t *testing.T) {
+	activation := Order{Block: 71}
+	precompile, emitterABI := deployment(t, "EventEmitter", LaunchpadPrecompileAddress)
+	precompile.Role = LaunchpadPrecompileRole
+	precompile.From = activation
+	router, routerABI := deployment(t, "Router", LaunchpadPrecompileAddress)
+	router.From = activation
+	fees, feesABI := deployment(t, "FeeAccumulator", LaunchpadPrecompileAddress)
+	fees.From = activation
+	emitter, _ := deployment(t, "EventEmitter", common.HexToAddress("0x622E"))
+	r := registry(t, emitter, precompile, router, fees)
+	at := func(ev abi.Event, address common.Address, block uint64) (ethtypes.Log, map[string]any) {
+		l, want := syntheticLog(t, ev, address)
+		l.BlockNumber = block
+		return l, want
+	}
+	for _, c := range []struct {
+		ev       abi.Event
+		role     string
+		revision string
+		economic bool
+	}{
+		{emitterABI.Events["FeeFlow"], "FeeAccumulator", precompile.ABIRevision, false},
+		{emitterABI.Events["RouterTrade"], "Router", precompile.ABIRevision, false},
+		{emitterABI.Events["Swap"], LaunchpadPrecompileRole, precompile.ABIRevision, true},
+		{emitterABI.Events["RoleGranted"], LaunchpadPrecompileRole, precompile.ABIRevision, false},
+		{routerABI.Events["Buy"], "Router", router.ABIRevision, false},
+		{feesABI.Events["FeesClaimed"], "FeeAccumulator", fees.ABIRevision, false},
+	} {
+		t.Run(c.ev.Name, func(t *testing.T) {
+			l, want := at(c.ev, LaunchpadPrecompileAddress, activation.Block)
+			e, err := r.Decode(l)
+			if err != nil || e.Status != "decoded" || e.EmitterRole != c.role || e.ABIRevision != c.revision || e.EventName != c.ev.Name || e.EventSignature != c.ev.Sig || !reflect.DeepEqual(e.Event.Args, want) || e.Family.EconomicFill != c.economic || !reflect.DeepEqual(e.Raw, rawLog(l)) {
+				t.Fatal(e, err)
+			}
+		})
+	}
+	l, want := at(emitterABI.Events["FeeFlow"], emitter.Address, activation.Block)
+	e, err := r.Decode(l)
+	if err != nil || e.Status != "decoded" || e.EmitterRole != "EventEmitter" || e.ABIRevision != emitter.ABIRevision || !reflect.DeepEqual(e.Event.Args, want) {
+		t.Fatal("generation 2 EventEmitter binding", e, err)
+	}
+	l, _ = at(emitterABI.Events["FeeFlow"], LaunchpadPrecompileAddress, activation.Block-1)
+	e, err = r.Decode(l)
+	if err == nil || e.FailureReason != "untrusted_emitter" || e.Event != nil {
+		t.Fatal("precompile log before activation", e, err)
+	}
+	l, _ = at(emitterABI.Events["FeeFlow"], LaunchpadPrecompileAddress, activation.Block)
+	l.Topics = []common.Hash{common.HexToHash("0xdead")}
+	e, err = r.Decode(l)
+	if err != nil || e.Event != nil || e.EmitterRole != LaunchpadPrecompileRole || e.FailureReason != "unknown_signature" || !e.Opaque {
+		t.Fatal("unknown signature at precompile", e, err)
+	}
+
+	unbound := registry(t, router, fees)
+	l, _ = at(routerABI.Events["Buy"], LaunchpadPrecompileAddress, activation.Block)
+	e, err = unbound.Decode(l)
+	if err != nil || e.EmitterRole != "Router" || e.Status != "decoded" {
+		t.Fatal("topic dispatch without precompile binding", e, err)
+	}
+	l, _ = at(routerABI.Events["RoleGranted"], LaunchpadPrecompileAddress, activation.Block)
+	e, err = unbound.Decode(l)
+	if err == nil || e.Status != "quarantined" || e.FailureReason != "ambiguous_emitter" || e.Event != nil || !reflect.DeepEqual(e.Raw, rawLog(l)) {
+		t.Fatal("shared signature attributed to an arbitrary role", e, err)
+	}
+	l, _ = at(emitterABI.Events["FeeFlow"], LaunchpadPrecompileAddress, activation.Block)
+	e, err = unbound.Decode(l)
+	if err == nil || e.Status != "quarantined" || e.FailureReason != "unauthorized_signature" || e.EmitterRole != "" || e.Event != nil {
+		t.Fatal("launchpad family event without precompile binding", e, err)
+	}
+	l.Topics = []common.Hash{common.HexToHash("0xdead")}
+	e, err = unbound.Decode(l)
+	if err != nil || e.FailureReason != "unknown_signature" || e.EmitterRole != "" || e.Event != nil || !e.Opaque {
+		t.Fatal("unknown signature at a shared address", e, err)
+	}
+
+	misplaced := precompile
+	misplaced.Address = emitter.Address
+	elsewhere := fees
+	elsewhere.Address = common.HexToAddress("0x1018")
+	sharedElsewhere := router
+	sharedElsewhere.Address = elsewhere.Address
+	for name, ds := range map[string][]Deployment{
+		"precompile role off its address":        {misplaced},
+		"optional precompile role":               {func() Deployment { d := precompile; d.Optional = true; return d }()},
+		"same role twice at the precompile":      {router, router},
+		"roles sharing a non-precompile address": {elsewhere, sharedElsewhere},
+	} {
+		if _, err := NewRegistry(mustFrozen(t), ds); err == nil {
+			t.Fatal(name)
+		}
+	}
+}
 func TestExactScalarsAndBoundedBool(t *testing.T) {
 	a, err := abi.JSON(strings.NewReader(`[{"type":"event","name":"Scalars","inputs":[{"name":"u","type":"uint256"},{"name":"i","type":"int256"},{"name":"b","type":"bool"}]}]`))
 	if err != nil {

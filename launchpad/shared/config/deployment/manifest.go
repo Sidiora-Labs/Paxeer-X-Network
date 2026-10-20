@@ -21,6 +21,8 @@ const ChainID = 125
 const CreationFeeRaw = "1000000"
 const SettlementAddress = "0x85FcD13735F4309833A503EE804ea32395851479"
 const MaxManifestBytes = 128 << 10
+const LaunchpadPrecompileRole = "LaunchpadPrecompile"
+const LaunchpadPrecompileAddress = "0x0000000000000000000000000000000000001017"
 
 //go:embed current.json
 var currentJSON []byte
@@ -140,13 +142,19 @@ func (m Manifest) Validate() error {
 		if name == "USDL" && r.Kind != "direct" {
 			add("identity_kind_invalid", name)
 		}
-		if name == "PoolBeacon" && r.Kind != "beacon" {
+		if name == "PoolBeacon" && r.Kind != "beacon" && r.Kind != "surface" {
 			add("identity_kind_invalid", name)
 		}
 		for _, required := range mandatory {
-			if name == required && name != "USDL" && name != "PoolBeacon" && r.Kind != "erc1967" {
+			if name == required && name != "USDL" && name != "PoolBeacon" && r.Kind != "erc1967" && r.Kind != "surface" {
 				add("identity_kind_invalid", name)
 			}
+		}
+		if (name == LaunchpadPrecompileRole) != (r.Kind == "precompile") {
+			add("identity_kind_invalid", name)
+		}
+		if name == LaunchpadPrecompileRole && r.Address != LaunchpadPrecompileAddress {
+			add("precompile_address_invalid", name)
 		}
 		if !versionRE.MatchString(name) {
 			add("role_name_invalid", "")
@@ -161,7 +169,8 @@ func (m Manifest) Validate() error {
 			}
 			seen[a] = name
 		}
-		if !validHash(r.RuntimeHash) {
+		hashExempt := (r.Kind == "surface" || r.Kind == "precompile") && r.RuntimeHash == ""
+		if !hashExempt && !validHash(r.RuntimeHash) {
 			add("runtime_hash_invalid", name)
 		}
 		switch r.Kind {
@@ -172,7 +181,7 @@ func (m Manifest) Validate() error {
 			if r.Kind == "beacon_proxy" && !validAddress(r.BeaconAddress) {
 				add("beacon_identity_missing", name)
 			}
-		case "direct":
+		case "direct", "surface", "precompile":
 			if r.ImplementationAddress != "" || r.ImplementationHash != "" || r.BeaconAddress != "" {
 				add("direct_identity_conflict", name)
 			}

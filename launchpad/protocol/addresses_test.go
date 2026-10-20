@@ -164,3 +164,68 @@ func TestImplementationsPresent(t *testing.T) {
 		}
 	}
 }
+
+func TestActiveAddresses(t *testing.T) {
+	t.Parallel()
+	precompile := common.HexToAddress("0x0000000000000000000000000000000000001017")
+	if ActiveAddresses.Router != precompile {
+		t.Fatalf("active Router = %s, want %s", ActiveAddresses.Router.Hex(), precompile.Hex())
+	}
+	if ActiveAddresses.Precompile != precompile {
+		t.Fatalf("active Precompile = %s, want %s", ActiveAddresses.Precompile.Hex(), precompile.Hex())
+	}
+	if ActiveAddresses.ChainID != ChainID || ActiveAddresses.ActiveFromUpgrade != "v6.12.0" {
+		t.Fatalf("active set = chain %d from %q, want chain %d from v6.12.0", ActiveAddresses.ChainID, ActiveAddresses.ActiveFromUpgrade, ChainID)
+	}
+
+	// Generation 2 role addresses of the deployment manifest.
+	want := map[string]string{
+		"EventEmitter":    "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+		"ProtocolConfig":  "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
+		"Router":          "0x78FB06f525cD964388f2305A489035263E31C6e4",
+		"Quoter":          "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
+		"SidioraFactory":  "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+		"PoolRegistry":    "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+		"FeeAccumulator":  "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+		"SidioraNFT":      "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+		"FeesRouter":      "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
+		"OpticalRegistry": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
+		"PoolBeacon":      "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE",
+		"Treasury":        "0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723",
+		"USDL":            "0x85FcD13735F4309833A503EE804ea32395851479",
+	}
+	if len(ActiveAddresses.Roles) != len(want) {
+		t.Fatalf("active Roles has %d entries, want %d", len(ActiveAddresses.Roles), len(want))
+	}
+	retired := make(map[common.Address]bool, len(literals))
+	for _, hex := range literals {
+		retired[common.HexToAddress(hex)] = true
+	}
+	for name, hex := range want {
+		if got := common.HexToAddress(hex).Hex(); got != hex {
+			t.Errorf("%s: %q is not EIP-55 checksummed (canonical %q)", name, hex, got)
+		}
+		addr, ok := ActiveAddresses.Roles[name]
+		if !ok {
+			t.Errorf("active Roles missing %q", name)
+			continue
+		}
+		if addr.Hex() != hex {
+			t.Errorf("active %s = %s, want %s", name, addr.Hex(), hex)
+		}
+		if name != "USDL" && retired[addr] {
+			t.Errorf("active %s %s is a generation 1 address", name, addr.Hex())
+		}
+	}
+
+	// The generation 1 table stays listed, marked retired from v6.12.0.
+	if PaxeerMainnet.RetiredFromUpgrade != "v6.12.0" {
+		t.Fatalf("PaxeerMainnet.RetiredFromUpgrade = %q, want v6.12.0", PaxeerMainnet.RetiredFromUpgrade)
+	}
+	if got := PaxeerMainnet.Router.Hex(); got != "0xCC7298801112682e10ee14b8a520309caD80336d" {
+		t.Fatalf("generation 1 Router = %s, want 0xCC7298801112682e10ee14b8a520309caD80336d", got)
+	}
+	if got := PaxeerMainnet.BoundContracts()["Router"].Hex(); got != RouterHex {
+		t.Fatalf("generation 1 bound Router = %s, want %s", got, RouterHex)
+	}
+}

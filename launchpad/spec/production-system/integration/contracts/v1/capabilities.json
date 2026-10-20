@@ -1,0 +1,932 @@
+{
+  "schemaVersion": 1,
+  "catalog": {
+    "endpointCount": 108,
+    "schemaCount": 59
+  },
+  "catalogSource": "spec/production-system/spec.kvx",
+  "requiredArtifacts": [
+    "spec/production-system/integration/contracts/v1/schema-definitions.json",
+    "spec/production-system/integration/contracts/v1/openapi.json",
+    "spec/production-system/integration/contracts/v1/asyncapi.json",
+    "spec/production-system/integration/contracts/v1/catalog-map.json",
+    "spec/production-system/integration/contracts/v1/chain/abi-catalog.json",
+    "spec/production-system/integration/contracts/v1/chain/event-authorities.json",
+    "spec/production-system/integration/contracts/v1/chain/golden-fixtures.json",
+    "spec/production-system/integration/contracts/v1/chain/mainnet-attestation.json",
+    "spec/production-system/integration/contracts/v1/chain/files-manifest.json"
+  ],
+  "sources": [
+    {
+      "id": "core-manifest",
+      "authority": "contracts",
+      "path": "deployments/paxeer-x-network-addresses.json",
+      "sha256": "e56081ed7d9aca928e371c2ea357f6d93d2e6461cec49236345d7dea789c8816",
+      "proofKind": "source"
+    },
+    {
+      "id": "readiness",
+      "proofKind": "source",
+      "mode": "frozen_provenance",
+      "record": {
+        "sourceSha256": "0a5c69bb85124f22bb8a71aaffbca917e28184d8080b17767552078c4032d43f",
+        "classification": "historical_read_only_review_not_runtime_qualification",
+        "facts": [
+          "Core recorded pending-beacon-acceptance; optional PECOR manifest absent; WPAX network guard defect."
+        ]
+      },
+      "recordSha256": "eff20864dd2f69fced45b308241dc868d1f832f326359aabb27c8e2929a5b737"
+    },
+    {
+      "id": "wpax-script",
+      "authority": "contracts",
+      "path": "scripts/meta-ag/deploy-pecor-meta-ag.js",
+      "sha256": "ca1d1f83e2e58ba353b9136481d18ed075756db70ae47c8df71bf5f311bd9ad6",
+      "proofKind": "source"
+    },
+    {
+      "id": "orders-source",
+      "authority": "contracts",
+      "path": "contracts/meta-ag/engine/PECOROrders.sol",
+      "sha256": "6c53d9c3507ec38d49a56359e96b920266a331d05b6f6d6a1d462b647ae3a183",
+      "proofKind": "source"
+    },
+    {
+      "id": "vault-source",
+      "authority": "contracts",
+      "path": "contracts/meta-ag/vault/PECORVault.sol",
+      "sha256": "2a4fa3fd5a13528656ac19ebe349743c48e2bea27c9e99eb96501509bab9be1f",
+      "proofKind": "source"
+    },
+    {
+      "id": "fees-source",
+      "authority": "contracts",
+      "path": "contracts/periphery/FeesRouter.sol",
+      "sha256": "347770bffaff4b3d7c0c493719157b5e0a28c94366c81e35142c392dc1ed293a",
+      "proofKind": "source"
+    },
+    {
+      "id": "livepeer-config",
+      "authority": "workspace",
+      "path": "media/livestream/internal/config/config.go",
+      "sha256": "b90d97ec3dc7bbeed2d3fe050f28689c2d7ce3dbd8ca99b3bba776fa5f44febc",
+      "proofKind": "source"
+    },
+    {
+      "id": "external-wallet-client-integration-test-ts",
+      "proofKind": "source",
+      "mode": "frozen_provenance",
+      "record": {
+        "implementationPath": "client/apps/web/src/core/wallet-sdk/client.integration.test.ts",
+        "sourceSha256": "b21c24e0f22ba0ba8e87cd9d29e390a69dce628d0714b19793b848c02a2e6507",
+        "classification": "reviewed_external_wallet_source_not_live_browser_qualification",
+        "facts": [
+          "External EIP1193 wallet; chain125 PAX18; wallet-owned signing keys.",
+          "EIP191 helper is not server authentication or ERC1271 implementation.",
+          "Local Anvil tests are focused evidence only; live extension/mobile/browser paths unqualified."
+        ]
+      },
+      "recordSha256": "2a269b67d29ecebe502b41175069f27242707eda247bc7bd0fbe151c1dc2d438"
+    },
+    {
+      "id": "external-wallet-client-ts",
+      "proofKind": "source",
+      "mode": "frozen_provenance",
+      "record": {
+        "implementationPath": "client/apps/web/src/core/wallet-sdk/client.ts",
+        "sourceSha256": "405b56ab90a16cc24e4640675b3afcb2dbcaf04d113c996b1ad439c30e789134",
+        "classification": "reviewed_external_wallet_source_not_live_browser_qualification",
+        "facts": [
+          "External EIP1193 wallet; chain125 PAX18; wallet-owned signing keys.",
+          "EIP191 helper is not server authentication or ERC1271 implementation.",
+          "Local Anvil tests are focused evidence only; live extension/mobile/browser paths unqualified."
+        ]
+      },
+      "recordSha256": "88cdc27a4928f8474e59ff254641afb64cd7afdb29d2345c0a6db65c1b21a062"
+    },
+    {
+      "id": "external-wallet-index-tsx",
+      "proofKind": "source",
+      "mode": "frozen_provenance",
+      "record": {
+        "implementationPath": "client/apps/web/src/core/wallet-sdk/index.tsx",
+        "sourceSha256": "cce0ed33cef1d65ac2f26f3e1079e4df561cbf6a219418f69e98a8d44ad96295",
+        "classification": "reviewed_external_wallet_source_not_live_browser_qualification",
+        "facts": [
+          "External EIP1193 wallet; chain125 PAX18; wallet-owned signing keys.",
+          "EIP191 helper is not server authentication or ERC1271 implementation.",
+          "Local Anvil tests are focused evidence only; live extension/mobile/browser paths unqualified."
+        ]
+      },
+      "recordSha256": "b87a5fc25c293781c598fec0e024343b428aedbc80d3b21ae92edf84ad2d524d"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "core_market",
+      "requiredForRelease": true,
+      "state": "blocked",
+      "endpointRefs": [
+        "IF_POOL_LIST",
+        "IF_POOL_DETAIL",
+        "IF_TRADES",
+        "IF_CANDLES",
+        "IF_STATS",
+        "IF_STATS_BATCH",
+        "IF_RANKINGS",
+        "IF_SEARCH",
+        "IF_PLATFORM",
+        "IF_HOLDERS",
+        "IF_QUOTE",
+        "IF_TX_STATUS",
+        "IF_DEPLOYMENT",
+        "IF_PORTFOLIO",
+        "IF_PNL_HISTORY",
+        "IF_LEADERBOARDS"
+      ],
+      "schemaRefs": [
+        "IF_POOL",
+        "IF_TRADE",
+        "IF_CANDLE",
+        "IF_POOLSTATS",
+        "IF_RANKINGENTRY",
+        "IF_PORTFOLIOPOSITION",
+        "IF_PORTFOLIOSUMMARY",
+        "IF_QUOTE",
+        "IF_LEADERBOARD",
+        "IF_PORTFOLIO_UPDATE",
+        "IF_RANKING_SNAPSHOT"
+      ],
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified",
+          "sourceRefs": [],
+          "reason": "Source routes/catalog do not establish complete frozen controller implementation."
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "No complete live browser/backend/provider production qualification evidence."
+        },
+        {
+          "id": "core-deployment",
+          "kind": "deployment",
+          "state": "blocked",
+          "sourceRefs": [
+            "core-manifest",
+            "readiness"
+          ],
+          "reason": "Nine core identities observed; beacon ownership acceptance incomplete; require chain/mainnet-attestation.json, not an assumed handoff."
+        }
+      ],
+      "releaseBlockers": [
+        "Source routes/catalog do not establish complete frozen controller implementation.",
+        "No complete live browser/backend/provider production qualification evidence.",
+        "Nine core identities observed; beacon ownership acceptance incomplete; require chain/mainnet-attestation.json, not an assumed handoff."
+      ],
+      "qualificationEvidence": null
+    },
+    {
+      "id": "account_profile",
+      "requiredForRelease": true,
+      "state": "blocked",
+      "endpointRefs": [
+        "IF_CHALLENGE",
+        "IF_LOGIN",
+        "IF_REFRESH",
+        "IF_LOGOUT",
+        "IF_SESSIONS",
+        "IF_PROFILE_GET",
+        "IF_PROFILE_PATCH",
+        "IF_WATCHLIST_GET",
+        "IF_WATCHLIST_PUT",
+        "IF_WATCHLIST_DELETE",
+        "IF_ACCOUNT_EXPORT",
+        "IF_ACCOUNT_EXPORT_STATUS",
+        "IF_ACCOUNT_DELETE",
+        "IF_ACCOUNT_DELETE_STATUS",
+        "IF_PREFERENCES_READ",
+        "IF_PREFERENCES_UPDATE",
+        "IF_WALLET_LINK_CHALLENGE",
+        "IF_WALLET_LINK_VERIFY",
+        "IF_WALLET_LINK_REMOVE",
+        "IF_NARRATIVES",
+        "IF_NARRATIVE_FEED"
+      ],
+      "schemaRefs": [
+        "IF_CONVENTIONS",
+        "IF_TOKEN",
+        "IF_CHAINPOSITION",
+        "IF_PRICE",
+        "IF_AUTHCHALLENGE",
+        "IF_SESSION",
+        "IF_PROFILE",
+        "IF_WATCHLISTENTRY",
+        "IF_CONVERSATION",
+        "IF_ERROR",
+        "IF_CURSOR",
+        "IF_RESPONSE_ENVELOPE",
+        "IF_PREFERENCES",
+        "IF_WALLET_LINK",
+        "IF_NARRATIVE",
+        "IF_HEALTH_SNAPSHOT",
+        "IF_PRICE_SOURCE",
+        "IF_RATIO",
+        "IF_WALLET_PROOF",
+        "IF_RESUME_CURSOR",
+        "IF_SUBSCRIBE"
+      ],
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified",
+          "sourceRefs": [],
+          "reason": "Source routes/catalog do not establish complete frozen controller implementation."
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "No complete live browser/backend/provider production qualification evidence."
+        }
+      ],
+      "releaseBlockers": [
+        "Source routes/catalog do not establish complete frozen controller implementation.",
+        "No complete live browser/backend/provider production qualification evidence."
+      ],
+      "qualificationEvidence": null
+    },
+    {
+      "id": "social",
+      "requiredForRelease": true,
+      "state": "blocked",
+      "endpointRefs": [
+        "IF_COMMENTS_LIST",
+        "IF_COMMENT_CREATE",
+        "IF_COMMENT_EDIT",
+        "IF_COMMENT_DELETE",
+        "IF_COMMENT_LIKE",
+        "IF_COMMENT_UNLIKE",
+        "IF_MESSAGES_LIST",
+        "IF_MESSAGE_SEND",
+        "IF_DM_LIST",
+        "IF_DM_CREATE",
+        "IF_FOLLOW",
+        "IF_UNFOLLOW",
+        "IF_FOLLOWERS",
+        "IF_REPORT_CREATE",
+        "IF_REPORT_LIST",
+        "IF_MODERATE",
+        "IF_SQUAD_CREATE",
+        "IF_SQUAD_READ",
+        "IF_SQUAD_MEMBERSHIP",
+        "IF_CALLOUT_CREATE",
+        "IF_CALLOUT_LIST"
+      ],
+      "schemaRefs": [
+        "IF_MESSAGE",
+        "IF_COMMENT",
+        "IF_REPORT",
+        "IF_MODERATIONACTION",
+        "IF_SQUAD",
+        "IF_CALLOUT"
+      ],
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified",
+          "sourceRefs": [],
+          "reason": "Source routes/catalog do not establish complete frozen controller implementation."
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "No complete live browser/backend/provider production qualification evidence."
+        }
+      ],
+      "releaseBlockers": [
+        "Source routes/catalog do not establish complete frozen controller implementation.",
+        "No complete live browser/backend/provider production qualification evidence."
+      ],
+      "qualificationEvidence": null
+    },
+    {
+      "id": "media_live",
+      "requiredForRelease": true,
+      "state": "blocked",
+      "endpointRefs": [
+        "IF_METADATA_GET",
+        "IF_METADATA_PATCH",
+        "IF_UPLOAD_CREATE",
+        "IF_UPLOAD_COMPLETE",
+        "IF_ASSET_GET",
+        "IF_STREAM_CREATE",
+        "IF_STREAM_START",
+        "IF_STREAM_END",
+        "IF_STREAM_LIST",
+        "IF_STREAM_HEARTBEAT",
+        "IF_LIVE_WEBHOOK"
+      ],
+      "schemaRefs": [
+        "IF_ASSET",
+        "IF_STREAM",
+        "IF_ASSET_REF",
+        "IF_STREAM_EVENT",
+        "IF_STREAM_CONTROL"
+      ],
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified",
+          "sourceRefs": [],
+          "reason": "Source routes/catalog do not establish complete frozen controller implementation."
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "No complete live browser/backend/provider production qualification evidence."
+        },
+        {
+          "id": "external-provider",
+          "kind": "provider",
+          "state": "present_unverified",
+          "sourceRefs": [
+            "livepeer-config"
+          ],
+          "reason": "Provider contract/config exists in spec; live availability, commercial terms, webhooks and browser delivery unqualified."
+        }
+      ],
+      "releaseBlockers": [
+        "Source routes/catalog do not establish complete frozen controller implementation.",
+        "No complete live browser/backend/provider production qualification evidence.",
+        "Provider contract/config exists in spec; live availability, commercial terms, webhooks and browser delivery unqualified."
+      ],
+      "qualificationEvidence": null
+    },
+    {
+      "id": "funding",
+      "requiredForRelease": true,
+      "state": "blocked",
+      "endpointRefs": [
+        "IF_FUNDING_RAILS",
+        "IF_DEPOSIT_INTENT",
+        "IF_FUNDING_STATUS",
+        "IF_WITHDRAW_PREPARE",
+        "IF_WITHDRAW_STATUS"
+      ],
+      "schemaRefs": [
+        "IF_FUNDING_RAIL",
+        "IF_FUNDING_INTENT",
+        "IF_WITHDRAWAL_PREPARATION"
+      ],
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified",
+          "sourceRefs": [],
+          "reason": "Source routes/catalog do not establish complete frozen controller implementation."
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "No complete live browser/backend/provider production qualification evidence."
+        },
+        {
+          "id": "execution-authority",
+          "kind": "deployment",
+          "state": "absent",
+          "sourceRefs": [
+            "readiness"
+          ],
+          "reason": "No admitted funded settlement/scoped automation/bounty controller in core deployment; PECOR vault donations do not create personal withdraw rights."
+        },
+        {
+          "id": "external-provider",
+          "kind": "provider",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "Provider contract/config exists in spec; live availability, commercial terms, webhooks and browser delivery unqualified."
+        }
+      ],
+      "releaseBlockers": [
+        "Source routes/catalog do not establish complete frozen controller implementation.",
+        "No complete live browser/backend/provider production qualification evidence.",
+        "No admitted funded settlement/scoped automation/bounty controller in core deployment; PECOR vault donations do not create personal withdraw rights.",
+        "Provider contract/config exists in spec; live availability, commercial terms, webhooks and browser delivery unqualified."
+      ],
+      "qualificationEvidence": null
+    },
+    {
+      "id": "conditional_orders",
+      "requiredForRelease": true,
+      "state": "blocked",
+      "endpointRefs": [
+        "IF_ORDER_CREATE",
+        "IF_ORDER_LIST",
+        "IF_ORDER_CANCEL"
+      ],
+      "schemaRefs": [
+        "IF_ORDER"
+      ],
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified",
+          "sourceRefs": [],
+          "reason": "Source routes/catalog do not establish complete frozen controller implementation."
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "No complete live browser/backend/provider production qualification evidence."
+        },
+        {
+          "id": "optional-deployment",
+          "kind": "deployment",
+          "state": "absent",
+          "sourceRefs": [
+            "core-manifest",
+            "readiness"
+          ],
+          "reason": "Optional PECOR deployment manifest absent; checked-in source does not enable it."
+        },
+        {
+          "id": "wrapped-native-guard",
+          "kind": "source",
+          "state": "blocked",
+          "sourceRefs": [
+            "wpax-script"
+          ],
+          "reason": "Guard checks paxeer-network, actual paxeer-x-network may deploy MockWETH9."
+        },
+        {
+          "id": "execution",
+          "kind": "source",
+          "state": "present_unverified",
+          "sourceRefs": [
+            "orders-source",
+            "vault-source"
+          ],
+          "reason": "Requires keeper, initialized liabilities, audited vault/oracle and lifecycle qualification; no schedule execution assumption."
+        }
+      ],
+      "releaseBlockers": [
+        "Source routes/catalog do not establish complete frozen controller implementation.",
+        "No complete live browser/backend/provider production qualification evidence.",
+        "Optional PECOR deployment manifest absent; checked-in source does not enable it.",
+        "Guard checks paxeer-network, actual paxeer-x-network may deploy MockWETH9.",
+        "Requires keeper, initialized liabilities, audited vault/oracle and lifecycle qualification; no schedule execution assumption."
+      ],
+      "qualificationEvidence": null
+    },
+    {
+      "id": "automation",
+      "requiredForRelease": true,
+      "state": "blocked",
+      "endpointRefs": [
+        "IF_AUTOMATION_CREATE",
+        "IF_AUTOMATION_STATUS",
+        "IF_AUTOMATION_ACTION",
+        "IF_AUTOMATION_PUBLIC_DISCLOSURE"
+      ],
+      "schemaRefs": [
+        "IF_AUTOMATION_CAMPAIGN"
+      ],
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified",
+          "sourceRefs": [],
+          "reason": "Source routes/catalog do not establish complete frozen controller implementation."
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "No complete live browser/backend/provider production qualification evidence."
+        },
+        {
+          "id": "execution-authority",
+          "kind": "deployment",
+          "state": "absent",
+          "sourceRefs": [
+            "readiness"
+          ],
+          "reason": "No admitted funded settlement/scoped automation/bounty controller in core deployment; PECOR vault donations do not create personal withdraw rights."
+        }
+      ],
+      "releaseBlockers": [
+        "Source routes/catalog do not establish complete frozen controller implementation.",
+        "No complete live browser/backend/provider production qualification evidence.",
+        "No admitted funded settlement/scoped automation/bounty controller in core deployment; PECOR vault donations do not create personal withdraw rights."
+      ],
+      "qualificationEvidence": null
+    },
+    {
+      "id": "bounty",
+      "requiredForRelease": true,
+      "state": "blocked",
+      "endpointRefs": [
+        "IF_BOUNTY_CREATE",
+        "IF_BOUNTY_LIST",
+        "IF_BOUNTY_SUBMIT",
+        "IF_BOUNTY_ACCEPT"
+      ],
+      "schemaRefs": [
+        "IF_BOUNTY",
+        "IF_BOUNTYSUBMISSION"
+      ],
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified",
+          "sourceRefs": [],
+          "reason": "Source routes/catalog do not establish complete frozen controller implementation."
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "No complete live browser/backend/provider production qualification evidence."
+        },
+        {
+          "id": "execution-authority",
+          "kind": "deployment",
+          "state": "absent",
+          "sourceRefs": [
+            "readiness"
+          ],
+          "reason": "No admitted funded settlement/scoped automation/bounty controller in core deployment; PECOR vault donations do not create personal withdraw rights."
+        }
+      ],
+      "releaseBlockers": [
+        "Source routes/catalog do not establish complete frozen controller implementation.",
+        "No complete live browser/backend/provider production qualification evidence.",
+        "No admitted funded settlement/scoped automation/bounty controller in core deployment; PECOR vault donations do not create personal withdraw rights."
+      ],
+      "qualificationEvidence": null
+    },
+    {
+      "id": "rewards",
+      "requiredForRelease": true,
+      "state": "blocked",
+      "endpointRefs": [
+        "IF_REWARDS",
+        "IF_REWARD_CLAIM"
+      ],
+      "schemaRefs": [
+        "IF_REWARD"
+      ],
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified",
+          "sourceRefs": [],
+          "reason": "Source routes/catalog do not establish complete frozen controller implementation."
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "No complete live browser/backend/provider production qualification evidence."
+        },
+        {
+          "id": "core-fee-rights",
+          "kind": "source",
+          "state": "present_unverified",
+          "sourceRefs": [
+            "fees-source"
+          ],
+          "reason": "Fee owner claims/airdrop supported source; strategy and current owner/eligibility checked onchain; extra reward programs require funded settlement."
+        }
+      ],
+      "releaseBlockers": [
+        "Source routes/catalog do not establish complete frozen controller implementation.",
+        "No complete live browser/backend/provider production qualification evidence.",
+        "Fee owner claims/airdrop supported source; strategy and current owner/eligibility checked onchain; extra reward programs require funded settlement."
+      ],
+      "qualificationEvidence": null
+    },
+    {
+      "id": "push",
+      "requiredForRelease": true,
+      "state": "blocked",
+      "endpointRefs": [
+        "IF_NOTIFICATIONS",
+        "IF_NOTIFICATION_READ",
+        "IF_ALERT_CREATE",
+        "IF_ALERT_DELETE",
+        "IF_DEVICE_REGISTER",
+        "IF_DEVICE_REVOKE"
+      ],
+      "schemaRefs": [
+        "IF_NOTIFICATION",
+        "IF_ALERT",
+        "IF_PUSH_DEVICE"
+      ],
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified",
+          "sourceRefs": [],
+          "reason": "Source routes/catalog do not establish complete frozen controller implementation."
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "No complete live browser/backend/provider production qualification evidence."
+        },
+        {
+          "id": "external-provider",
+          "kind": "provider",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "Provider contract/config exists in spec; live availability, commercial terms, webhooks and browser delivery unqualified."
+        }
+      ],
+      "releaseBlockers": [
+        "Source routes/catalog do not establish complete frozen controller implementation.",
+        "No complete live browser/backend/provider production qualification evidence.",
+        "Provider contract/config exists in spec; live availability, commercial terms, webhooks and browser delivery unqualified."
+      ],
+      "qualificationEvidence": null
+    },
+    {
+      "id": "voice",
+      "requiredForRelease": true,
+      "state": "blocked",
+      "endpointRefs": [
+        "IF_VOICE_CREATE",
+        "IF_VOICE_READ",
+        "IF_VOICE_JOIN_TICKET",
+        "IF_VOICE_LEAVE",
+        "IF_VOICE_MODERATE",
+        "IF_VOICE_END"
+      ],
+      "schemaRefs": [
+        "IF_VOICE_ROOM"
+      ],
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified",
+          "sourceRefs": [],
+          "reason": "Source routes/catalog do not establish complete frozen controller implementation."
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "No complete live browser/backend/provider production qualification evidence."
+        },
+        {
+          "id": "external-provider",
+          "kind": "provider",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "Provider contract/config exists in spec; live availability, commercial terms, webhooks and browser delivery unqualified."
+        }
+      ],
+      "releaseBlockers": [
+        "Source routes/catalog do not establish complete frozen controller implementation.",
+        "No complete live browser/backend/provider production qualification evidence.",
+        "Provider contract/config exists in spec; live availability, commercial terms, webhooks and browser delivery unqualified."
+      ],
+      "qualificationEvidence": null
+    },
+    {
+      "id": "operator",
+      "requiredForRelease": true,
+      "state": "blocked",
+      "endpointRefs": [
+        "IF_OPERATOR_DLQ",
+        "IF_OPERATOR_REDRIVE",
+        "IF_OPERATOR_REPLAY",
+        "IF_OPERATOR_JOB_STATUS",
+        "IF_OPERATOR_HEALTH",
+        "IF_OPERATOR_METRICS"
+      ],
+      "schemaRefs": [
+        "IF_ACCOUNT_JOB",
+        "IF_OPERATOR_JOB"
+      ],
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified",
+          "sourceRefs": [],
+          "reason": "Source routes/catalog do not establish complete frozen controller implementation."
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "No complete live browser/backend/provider production qualification evidence."
+        }
+      ],
+      "releaseBlockers": [
+        "Source routes/catalog do not establish complete frozen controller implementation.",
+        "No complete live browser/backend/provider production qualification evidence."
+      ],
+      "qualificationEvidence": null
+    },
+    {
+      "id": "realtime",
+      "requiredForRelease": true,
+      "state": "blocked",
+      "endpointRefs": [
+        "IF_STREAM_TICKET_ISSUE",
+        "IF_TOPIC_SNAPSHOT_READ",
+        "IF_EVENTS_SSE"
+      ],
+      "schemaRefs": [
+        "IF_WATERMARK",
+        "IF_TOPIC_SNAPSHOT"
+      ],
+      "prerequisites": [
+        {
+          "id": "controller",
+          "kind": "controller",
+          "state": "present_unverified",
+          "sourceRefs": [],
+          "reason": "Source routes/catalog do not establish complete frozen controller implementation."
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "No complete live browser/backend/provider production qualification evidence."
+        }
+      ],
+      "releaseBlockers": [
+        "Source routes/catalog do not establish complete frozen controller implementation.",
+        "No complete live browser/backend/provider production qualification evidence."
+      ],
+      "qualificationEvidence": null
+    },
+    {
+      "id": "external_wallet",
+      "requiredForRelease": true,
+      "state": "blocked",
+      "endpointRefs": [
+        "IF_LOGIN",
+        "IF_SESSIONS",
+        "IF_WALLET_LINK_CHALLENGE",
+        "IF_WALLET_LINK_VERIFY",
+        "IF_WALLET_LINK_REMOVE"
+      ],
+      "schemaRefs": [],
+      "prerequisites": [
+        {
+          "id": "external-connection",
+          "kind": "source",
+          "state": "present_unverified",
+          "sourceRefs": [
+            "external-wallet-client-integration-test-ts",
+            "external-wallet-client-ts",
+            "external-wallet-index-tsx"
+          ],
+          "reason": "Published L25 external EIP1193 helpers reviewed; real local Anvil checks do not qualify physical browser connection/auth paths."
+        },
+        {
+          "id": "wallet-authentication",
+          "kind": "controller",
+          "state": "present_unverified",
+          "sourceRefs": [],
+          "reason": "EIP191 challenge and committed-block ERC1271 verification require ownership/domain/nonce/replay/revocation qualification; no service-managed signer or social login prerequisite."
+        },
+        {
+          "id": "qualification",
+          "kind": "qualification",
+          "state": "absent",
+          "sourceRefs": [],
+          "reason": "Real browser external-wallet connect/sign/reject/account-change and external-wallet auth user paths remain unqualified; local EVM fixtures do not qualify live browser."
+        }
+      ],
+      "releaseBlockers": [
+        "External EIP1193 connection and EIP191/ERC1271 authentication complete user-path qualification pending."
+      ],
+      "qualificationEvidence": null
+    }
+  ],
+  "chain": {
+    "chainId": "125",
+    "native": {
+      "symbol": "PAX",
+      "decimals": 18
+    },
+    "settlement": {
+      "symbol": "USDL",
+      "decimals": 6,
+      "address": "0x85FcD13735F4309833A503EE804ea32395851479"
+    },
+    "creationFeeRaw": "1000000",
+    "marketModel": "AMM",
+    "graduation": false,
+    "coreOracleRequired": false,
+    "finality": "Committed block final; missing receipt never becomes success on timer.",
+    "attestationArtifact": "spec/production-system/integration/contracts/v1/chain/mainnet-attestation.json",
+    "attestationOwner": "spec01_protocol",
+    "currentObservedEvidence": "chain/mainnet-attestation.json under explicit fresh evidence root; historical readiness source is not fresh attestation",
+    "status": "pending_beacon_acceptance",
+    "optionalPECORManifest": null,
+    "wpaxGuard": "blocked",
+    "freshAttestationEvidence": "chain/mainnet-attestation.json"
+  },
+  "policy": {
+    "unavailableResponseQualifies": false,
+    "releaseQualified": false,
+    "requiredCapabilitiesMayBeWaived": false,
+    "missingArtifactsFail": true
+  },
+  "proofContract": {
+    "runtimeKinds": [
+      "deployment",
+      "provider",
+      "controller",
+      "qualification"
+    ],
+    "freshness": "--not-before anchors this qualification run; evidence observedAt and file mtime must follow anchor",
+    "runtimeProofFields": [
+      "kind",
+      "capabilityId",
+      "outcome",
+      "checks",
+      "sourceDigest",
+      "observedAt",
+      "command",
+      "exitCode"
+    ],
+    "sourceOnlyCannotQualifyRuntime": true,
+    "chainEvidence": "chain/mainnet-attestation.json",
+    "blockedCapabilitiesPermittedForInterfaceFreezeOnly": true
+  },
+  "wallet": {
+    "mode": "external_web3",
+    "custody": "wallet_owned_keys",
+    "chainId": "125",
+    "requiredConnection": "EIP1193 injected/browser wallet with user-initiated authorization",
+    "authentication": [
+      "EIP191 exact stored domain/purpose/chain/account-bound one-use challenge",
+      "ERC1271 for contract-wallet proof verified at committed block"
+    ],
+    "recovery": "Private keys, seed backup and recovery remain owned by the connected wallet/user; Sidiora cannot restore spending keys. Account/session privacy/export/deletion features remain required.",
+    "walletConnect": {
+      "requiredForCore": false,
+      "availability": "optional_only_when_configured",
+      "projectIdPublicConfig": "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID",
+      "unconfigured": "unavailable; no fake connection or mandatory relay dependency"
+    },
+    "publicConfigNames": [
+      "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID"
+    ],
+    "forbiddenRequiredDependencies": [
+      "Paxport",
+      "Supabase social login",
+      "server key custody",
+      "embedded key recovery/export"
+    ],
+    "liveBrowserQualified": false,
+    "sourceStatus": "L25 active external-only source hashes frozen; integrator verifies copied files"
+  },
+  "scopeRevision": {
+    "reason": "Explicit user direction replaces embedded/provider onboarding with regular external Web3 wallets.",
+    "requiredCapabilityRename": {
+      "from": "embedded_wallet",
+      "to": "external_wallet"
+    },
+    "supersededProviderEvidence": "Excluded from active freeze; prior investigation remains outside source tree."
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "core": {
+    "chainId": 125,
+    "manifestSha256": "a35ff7c6f532d2f92e4ca59e4ef2cf0a105d551ae9ac3eba68b95f79a355df4a",
+    "recordedStatus": "finalized",
+    "router": "0x78FB06f525cD964388f2305A489035263E31C6e4",
+    "quoter": "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
+    "feesRouter": "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
+    "opticalRegistry": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
+    "protocolConfig": "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
+    "factory": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+    "nft": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+    "eventEmitter": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+    "feeAccumulator": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+    "poolRegistry": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+    "poolBeacon": "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE",
+    "usdl": "0x85fcd13735f4309833a503ee804ea32395851479",
+    "nativeSymbol": "PAX",
+    "nativeDecimals": 18,
+    "usdlDecimals": 6,
+    "creationFeeRaw": "1000000"
+  },
+  "optionalCapabilities": {
+    "metaAg": false,
+    "pecorOrders": false
+  },
+  "optionalBlocker": "No verified active optional deployment manifest"
+}

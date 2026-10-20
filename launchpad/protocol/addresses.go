@@ -12,7 +12,7 @@ import "github.com/ethereum/go-ethereum/common"
 // ChainID is the Paxeer Network EVM chain id.
 const ChainID int64 = 125
 
-// Canonical runtime addresses for the ten contracts that services bind via
+// Generation 1 runtime addresses for the ten contracts that services bound via
 // chain.CreateContracts (the proxy address where the contract sits behind an
 // ERC-1967 proxy). Exported as hex so shared/config and tooling can use them as
 // defaults. Keys match the env var names wired in shared/src/chain/contracts.ts.
@@ -28,6 +28,14 @@ const (
 	FeesRouterHex     = "0x02Df12a44F2658080E76fbcF7D6B34Baa97843b6"
 	PoolBeaconHex     = "0xf11f08afe33e020Cab22bCaffBbAfC471c75E9d4"
 )
+
+// V6120Upgrade names the upgrade from whose height the generation 1 addresses
+// are retired and ActiveAddresses is served.
+const V6120Upgrade = "v6.12.0"
+
+// LaunchpadPrecompileHex is the launchpad precompile that serves every
+// generation 2 role from the v6.12.0 height.
+const LaunchpadPrecompileHex = "0x0000000000000000000000000000000000001017"
 
 // Deployment is the typed on-chain address book for a single launchpad
 // deployment. Runtime contract fields hold the proxy address where the contract
@@ -73,10 +81,16 @@ type Deployment struct {
 	Sidiora  common.Address
 	Deployer common.Address
 	Guardian common.Address
+
+	// RetiredFromUpgrade names the upgrade from whose height these addresses
+	// are retired; empty while the deployment is active. Retired deployments
+	// stay listed for historical decoding.
+	RetiredFromUpgrade string
 }
 
-// PaxeerMainnet is the canonical Sidiora launchpad deployment on Paxeer Network
-// (chain id 125), deployed 2026-06-20T06:04:56Z by Deployer.
+// PaxeerMainnet is the generation 1 Sidiora launchpad deployment on Paxeer
+// Network (chain id 125), deployed 2026-06-20T06:04:56Z by Deployer and retired
+// from the v6.12.0 height; it stays listed for historical decoding.
 var PaxeerMainnet = Deployment{
 	ChainID: ChainID,
 
@@ -123,6 +137,51 @@ var PaxeerMainnet = Deployment{
 	Sidiora:  common.HexToAddress("0x21f7b20a555199fa73A238B1a91FD0f549068fEe"),
 	Deployer: common.HexToAddress("0x1255d84066f579E7B7A3df4296e960d59fc05b32"),
 	Guardian: common.HexToAddress("0x1255d84066f579E7B7A3df4296e960d59fc05b32"),
+
+	RetiredFromUpgrade: V6120Upgrade,
+}
+
+// ActiveSet is the launchpad address set served from an upgrade height: the
+// precompile and the generation 2 role addresses it serves as surfaces or
+// retains.
+type ActiveSet struct {
+	ChainID           int64
+	ActiveFromUpgrade string
+
+	// Precompile is the launchpad precompile. Router is the address direct
+	// router calls and USDL allowances target; the precompile resolves the
+	// Router role first, so it is the precompile.
+	Precompile common.Address
+	Router     common.Address
+
+	// Roles maps each generation 2 role name of the deployment manifest to its
+	// address.
+	Roles map[string]common.Address
+}
+
+// ActiveAddresses is the launchpad address set active from the v6.12.0 height.
+var ActiveAddresses = ActiveSet{
+	ChainID:           ChainID,
+	ActiveFromUpgrade: V6120Upgrade,
+
+	Precompile: common.HexToAddress(LaunchpadPrecompileHex),
+	Router:     common.HexToAddress(LaunchpadPrecompileHex),
+
+	Roles: map[string]common.Address{
+		"EventEmitter":    common.HexToAddress("0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6"),
+		"ProtocolConfig":  common.HexToAddress("0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6"),
+		"Router":          common.HexToAddress("0x78FB06f525cD964388f2305A489035263E31C6e4"),
+		"Quoter":          common.HexToAddress("0x793006f4F321b8863F26DBD75b11bAa01DA181dc"),
+		"SidioraFactory":  common.HexToAddress("0x3993D004166738d1069B5C4e0a923f7B9D5D8830"),
+		"PoolRegistry":    common.HexToAddress("0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7"),
+		"FeeAccumulator":  common.HexToAddress("0x7b14808b72f61664cDb79D25E6d1587655571a66"),
+		"SidioraNFT":      common.HexToAddress("0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B"),
+		"FeesRouter":      common.HexToAddress("0x05681dA6f611C2dfFD3E92611F6dE2d247647927"),
+		"OpticalRegistry": common.HexToAddress("0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0"),
+		"PoolBeacon":      common.HexToAddress("0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE"),
+		"Treasury":        common.HexToAddress("0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723"),
+		"USDL":            common.HexToAddress("0x85FcD13735F4309833A503EE804ea32395851479"),
+	},
 }
 
 // BoundContracts returns the ten runtime contracts that chain.CreateContracts

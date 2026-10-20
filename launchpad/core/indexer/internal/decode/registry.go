@@ -17,6 +17,29 @@ import (
 const MaxFieldBytes = 64 << 10
 const MaxEnvelopeBytes = 1 << 20
 
+// LaunchpadPrecompileRole serves the EventEmitter ABI at the launchpad
+// precompile, the one address several launchpad roles share.
+const LaunchpadPrecompileRole = "LaunchpadPrecompile"
+
+var LaunchpadPrecompileAddress = common.HexToAddress("0x0000000000000000000000000000000000001017")
+
+// launchpadOrigin names the role whose contract flow emits each launchpad
+// family event at the precompile.
+var launchpadOrigin = map[string]string{
+	"Swap":               "SidioraPool",
+	"PoolStateUpdated":   "SidioraPool",
+	"TokenDeployed":      "SidioraFactory",
+	"MarketCreated":      "SidioraFactory",
+	"NftMint":            "SidioraNFT",
+	"FeeStrategyChanged": "SidioraNFT",
+	"NftTransfer":        "SidioraNFT",
+	"PoolRegistered":     "PoolRegistry",
+	"RouterTrade":        "Router",
+	"ConfigUpdated":      "ProtocolConfig",
+	"FeeFlow":            "FeeAccumulator",
+	"FeeDistributed":     "FeesRouter",
+}
+
 // Order includes transaction and log index: upgrades can activate within a block.
 type Order struct {
 	Block       uint64 `json:"block"`
@@ -202,7 +225,11 @@ func NewRegistry(catalogJSON []byte, deployments []Deployment) (*Registry, error
 		if optionalRole(d.Role) && !d.Optional {
 			return nil, fmt.Errorf("optional role %s requires explicit capability policy", d.Role)
 		}
-		key := d.Role + "\x00" + d.ABIRevision
+		if d.Role == LaunchpadPrecompileRole && (d.Address != LaunchpadPrecompileAddress || d.Optional) {
+			return nil, fmt.Errorf("invalid deployment %s", d.Role)
+		}
+		abiName := abiRole(d.Role)
+		key := abiName + "\x00" + d.ABIRevision
 		contract, exists := contracts[key]
 		if !exists || contract.ABIRevision != d.ABIRevision || d.Address == (common.Address{}) || (d.Until != nil && !d.From.less(*d.Until)) {
 			return nil, fmt.Errorf("invalid deployment %s", d.Role)
@@ -214,7 +241,7 @@ func NewRegistry(catalogJSON []byte, deployments []Deployment) (*Registry, error
 		for _, ev := range parsed[key].Events {
 			events[ev.ID] = ev
 			state := "required"
-			if d.Role == "EventEmitter" && optionalEvent(ev.Name) && !optionalEnabled(d, ev.Name) {
+			if abiName == "EventEmitter" && optionalEvent(ev.Name) && !optionalEnabled(d, ev.Name) {
 				state = "unsupported"
 			}
 			if d.Optional {
@@ -223,14 +250,15 @@ func NewRegistry(catalogJSON []byte, deployments []Deployment) (*Registry, error
 					state = "unsupported"
 				}
 			}
-			if declaredOnly(d.Role, ev.Name) {
+			if declaredOnly(abiName, ev.Name) {
 				state = "unsupported"
 			}
-			r.coverage = append(r.coverage, Coverage{d.Role, d.ABIRevision, ev.Name, ev.Sig, state, authority(d.Role, ev.Name), eventFamily(d.Role, ev.Name)})
+			r.coverage = append(r.coverage, Coverage{d.Role, d.ABIRevision, ev.Name, ev.Sig, state, authority(abiName, ev.Name), eventFamily(abiName, ev.Name)})
 		}
 		epoch := registryEpoch{d, events}
 		for _, old := range r.epochs[d.Address] {
-			if (old.deployment.Until == nil || d.From.less(*old.deployment.Until)) && (d.Until == nil || old.deployment.From.less(*d.Until)) {
+			// Distinct roles may share only the launchpad precompile address.
+			if (old.deployment.Until == nil || d.From.less(*old.deployment.Until)) && (d.Until == nil || old.deployment.From.less(*d.Until)) && (d.Address != LaunchpadPrecompileAddress || old.deployment.Role == d.Role) {
 				return nil, fmt.Errorf("overlapping deployment epochs for %s", d.Address)
 			}
 		}
@@ -255,6 +283,57 @@ func NewRegistry(catalogJSON []byte, deployments []Deployment) (*Registry, error
 		return a.Role+a.ABIRevision+a.Signature < b.Role+b.ABIRevision+b.Signature
 	})
 	return r, nil
+}
+func abiRole(role string) string {
+	if role == LaunchpadPrecompileRole {
+		return "EventEmitter"
+	}
+	return role
+}
+
+// dispatch selects, among the epochs active at one address, the role whose ABI
+// declares topic0. The precompile binding answers every EventEmitter topic.
+// It returns nil when no role sharing the address declares topic0.
+func dispatch(active []registryEpoch, topics []common.Hash) (*registryEpoch, error) {
+	if len(active) == 1 {
+		return &active[0], nil
+	}
+	var precompile *registryEpoch
+	var matches []registryEpoch
+	for i := range active {
+		if active[i].deployment.Role == LaunchpadPrecompileRole {
+			precompile = &active[i]
+			continue
+		}
+		if len(topics) > 0 {
+			if _, ok := active[i].events[topics[0]]; ok {
+				matches = append(matches, active[i])
+			}
+		}
+	}
+	if precompile != nil {
+		if len(topics) == 0 || len(matches) == 0 {
+			return precompile, nil
+		}
+		if _, ok := precompile.events[topics[0]]; ok {
+			return precompile, nil
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, nil
+	case 1:
+		return &matches[0], nil
+	}
+	return nil, fmt.Errorf("signature %s resolves to %d of %d roles sharing an address", topics[0].Hex(), len(matches), len(active))
+}
+func activeRole(active []registryEpoch, role string) bool {
+	for _, epoch := range active {
+		if epoch.deployment.Role == role {
+			return true
+		}
+	}
+	return false
 }
 func digest(s string) bool { b, e := hex.DecodeString(s); return e == nil && len(b) == 32 }
 func validatePolicies(a abi.ABI, d Deployment) error {
@@ -338,23 +417,36 @@ func (r *Registry) Decode(l ethtypes.Log) (*DecodedEnvelope, error) {
 	if l.Removed {
 		return fail("removed_log", fmt.Errorf("removed log on committed-finality chain"))
 	}
-	var epoch *registryEpoch
+	var active []registryEpoch
 	for _, candidate := range r.epochs[l.Address] {
 		d := candidate.deployment
-		if !e.Raw.Order.less(d.From) && (d.Until == nil || e.Raw.Order.less(*d.Until)) {
-			copy := candidate
-			epoch = &copy
-			break
+		if !e.Raw.Order.less(d.From) && (d.Until == nil || e.Raw.Order.less(*d.Until)) && (!d.Optional || d.Enabled) {
+			active = append(active, candidate)
 		}
 	}
-	if epoch == nil || (epoch.deployment.Optional && !epoch.deployment.Enabled) {
+	if len(active) == 0 {
 		if len(l.Topics) > 0 && r.known[l.Topics[0]] {
 			return fail("untrusted_emitter", fmt.Errorf("known signature from unauthorized emitter %s", l.Address))
 		}
 		e.FailureReason = "untrusted_emitter"
 		return e, nil
 	}
+	epoch, err := dispatch(active, l.Topics)
+	if err != nil {
+		return fail("ambiguous_emitter", err)
+	}
+	if epoch == nil {
+		if len(l.Topics) > 0 {
+			e.EventSignature = l.Topics[0].Hex()
+			if r.known[l.Topics[0]] {
+				return fail("unauthorized_signature", fmt.Errorf("signature not approved for any role at %s", l.Address))
+			}
+		}
+		e.FailureReason = "unknown_signature"
+		return e, nil
+	}
 	d := epoch.deployment
+	abiName := abiRole(d.Role)
 	e.ABIRevision = d.ABIRevision
 	e.EmitterRole = d.Role
 	if len(l.Topics) == 0 {
@@ -371,11 +463,14 @@ func (r *Registry) Decode(l ethtypes.Log) (*DecodedEnvelope, error) {
 		return e, nil
 	}
 	e.EventName = ev.Name
-	if declaredOnly(d.Role, ev.Name) {
+	if origin, ok := launchpadOrigin[ev.Name]; ok && d.Role == LaunchpadPrecompileRole && activeRole(active, origin) {
+		e.EmitterRole = origin
+	}
+	if declaredOnly(abiName, ev.Name) {
 		e.FailureReason = "declared_not_emitted"
 		return e, nil
 	}
-	if d.Role == "EventEmitter" && optionalEvent(ev.Name) && !optionalEnabled(d, ev.Name) {
+	if abiName == "EventEmitter" && optionalEvent(ev.Name) && !optionalEnabled(d, ev.Name) {
 		e.FailureReason = "unsupported_capability"
 		return e, nil
 	}
@@ -391,7 +486,7 @@ func (r *Registry) Decode(l ethtypes.Log) (*DecodedEnvelope, error) {
 	e.Status = "decoded"
 	e.Opaque = strings.HasPrefix(ev.Name, "EventLog")
 	e.Event = &Event{ev.Name, ev.Sig, args, l.BlockNumber, strings.ToLower(l.TxHash.Hex()), l.Index}
-	e.Family = &FamilyDTO{eventFamily(d.Role, ev.Name), args, d.Role == "EventEmitter" && ev.Name == "Swap", authority(d.Role, ev.Name)}
+	e.Family = &FamilyDTO{eventFamily(abiName, ev.Name), args, abiName == "EventEmitter" && ev.Name == "Swap", authority(abiName, ev.Name)}
 	if e.Family.EconomicFill || optionalEconomic(e) {
 		e.Actors = eventActors(e)
 	}

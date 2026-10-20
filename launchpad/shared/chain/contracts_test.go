@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/Sidiora-Technologies/KindleLaunch/protocol"
 	"github.com/Sidiora-Technologies/KindleLaunch/shared/config"
+	"github.com/Sidiora-Technologies/KindleLaunch/shared/config/deployment"
 )
 
 // canonicalEnv builds a BaseEnv whose ten contract addresses come from the real
@@ -197,5 +199,136 @@ func TestCreateContractsRouting(t *testing.T) {
 	}
 	if !strings.EqualFold(gotTo, protocol.PaxeerMainnet.PoolBeacon.Hex()) {
 		t.Errorf("call routed to %s, want PoolBeacon %s", gotTo, protocol.PaxeerMainnet.PoolBeacon.Hex())
+	}
+}
+
+// TestRolesBindToPrecompile sets every role to the launchpad precompile except
+// SidioraNFT and PoolBeacon, which keep their generation 2 addresses, and proves
+// CreateContracts binds each role at its address and the EventEmitter ABI at
+// 0x1017: a Swap log filter on the precompile handle queries 0x1017 and a
+// PoolBeacon read is sent to the generation 2 PoolBeacon.
+func TestRolesBindToPrecompile(t *testing.T) {
+	t.Parallel()
+	precompile := common.HexToAddress("0x0000000000000000000000000000000000001017")
+	if LaunchpadPrecompileAddress != precompile {
+		t.Fatalf("LaunchpadPrecompileAddress = %s, want %s", LaunchpadPrecompileAddress.Hex(), precompile.Hex())
+	}
+	roles := deployment.Current().Roles
+	nft := common.HexToAddress(roles["SidioraNFT"].Address)
+	beacon := common.HexToAddress(roles["PoolBeacon"].Address)
+	impl := common.HexToAddress(roles["PoolBeacon"].ImplementationAddress)
+
+	var mu sync.Mutex
+	var callTo string
+	var logAddrs []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req struct {
+			Method string            `json:"method"`
+			Params []json.RawMessage `json:"params"`
+		}
+		_ = json.Unmarshal(body, &req)
+		w.Header().Set("Content-Type", "application/json")
+		mu.Lock()
+		defer mu.Unlock()
+		switch req.Method {
+		case "eth_call":
+			var call struct {
+				To string `json:"to"`
+			}
+			if len(req.Params) > 0 {
+				_ = json.Unmarshal(req.Params[0], &call)
+			}
+			callTo = call.To
+			ret := common.Bytes2Hex(common.LeftPadBytes(impl.Bytes(), 32))
+			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":"0x`+ret+`"}`)
+		case "eth_getLogs":
+			var q struct {
+				Address []string `json:"address"`
+			}
+			if len(req.Params) > 0 {
+				_ = json.Unmarshal(req.Params[0], &q)
+			}
+			logAddrs = q.Address
+			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":[]}`)
+		default:
+			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":"0x7d"}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := NewClient(context.Background(), srv.URL, "")
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	defer c.Close()
+
+	p := precompile.Hex()
+	env := config.BaseEnv{
+		EventEmitterAddress: p,
+		PoolRegistryAddress: p,
+		FactoryAddress:      p,
+		RouterAddress:       p,
+		QuoterAddress:       p,
+		ProtocolConfigAddr:  p,
+		FeeAccumulatorAddr:  p,
+		SidioraNFTAddress:   nft.Hex(),
+		FeesRouterAddress:   p,
+		PoolBeaconAddress:   beacon.Hex(),
+	}
+	cs, err := CreateContracts(c, &env)
+	if err != nil {
+		t.Fatalf("CreateContracts: %v", err)
+	}
+	if cs.EventEmitter == nil || cs.PoolRegistry == nil || cs.Factory == nil ||
+		cs.Router == nil || cs.Quoter == nil || cs.ProtocolConfig == nil ||
+		cs.FeeAccumulator == nil || cs.SidioraNFT == nil || cs.FeesRouter == nil ||
+		cs.PoolBeacon == nil || cs.LaunchpadPrecompile == nil {
+		t.Fatal("one or more contract handles are nil")
+	}
+	want := ContractAddresses{
+		EventEmitter:        precompile,
+		PoolRegistry:        precompile,
+		Factory:             precompile,
+		Router:              precompile,
+		Quoter:              precompile,
+		ProtocolConfig:      precompile,
+		FeeAccumulator:      precompile,
+		SidioraNFT:          nft,
+		FeesRouter:          precompile,
+		PoolBeacon:          beacon,
+		LaunchpadPrecompile: precompile,
+	}
+	if cs.Addresses != want {
+		t.Errorf("Addresses = %+v, want %+v", cs.Addresses, want)
+	}
+
+	it, err := cs.LaunchpadPrecompile.FilterSwap(&bind.FilterOpts{Context: context.Background()}, nil, nil)
+	if err != nil {
+		t.Fatalf("FilterSwap: %v", err)
+	}
+	if it.Next() {
+		t.Error("FilterSwap returned a log from an empty result")
+	}
+	if err := it.Error(); err != nil {
+		t.Errorf("FilterSwap iterator: %v", err)
+	}
+	_ = it.Close()
+
+	got, err := cs.PoolBeacon.Implementation(&bind.CallOpts{Context: context.Background()})
+	if err != nil {
+		t.Fatalf("Implementation call: %v", err)
+	}
+	if got != impl {
+		t.Errorf("decoded implementation = %s, want %s", got.Hex(), impl.Hex())
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(logAddrs) != 1 || !strings.EqualFold(logAddrs[0], p) {
+		t.Errorf("Swap logs queried at %v, want [%s]", logAddrs, p)
+	}
+	if !strings.EqualFold(callTo, beacon.Hex()) {
+		t.Errorf("call routed to %s, want PoolBeacon %s", callTo, beacon.Hex())
 	}
 }
