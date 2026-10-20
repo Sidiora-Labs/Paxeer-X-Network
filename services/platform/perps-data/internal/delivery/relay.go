@@ -6,6 +6,14 @@ import (
 	"time"
 )
 
+// ErrBrokerDown marks a publication that failed because the broker could not
+// be reached (no connection, no responders, JetStream unavailable, or no
+// acknowledgement before any message of the batch persisted). Such a failure
+// says nothing about the message: the relay puts the row back without
+// spending an attempt and ends the pass. The BatchPublisher wraps its error
+// with it.
+var ErrBrokerDown = errors.New("delivery: broker unreachable")
+
 // PersistentPublisher must await the server JetStream persistence acknowledgement
 // (not socket write completion), set Nats-Msg-Id to eventID, and return the actual
 // stream and sequence. natsdriver.Publisher supplies this contract.
@@ -74,7 +82,9 @@ func (r Relay) Pass(ctx context.Context) error {
 // rows after it are released without spending an attempt and wait behind it,
 // and the acknowledged rows of the batch are recorded. A row that exhausted
 // its budget, lost its lease or fails to decode holds back the rest of the
-// batch the same way. A row that fails to decode, that the broker refuses for
+// batch the same way. A row whose publication failed with ErrBrokerDown is
+// released like the rows behind it: an unreachable broker spends no attempt,
+// and the pass reports the failure. A row that fails to decode, that the broker refuses for
 // its size or whose transient failures spent MaxAttempts attempts is
 // quarantined permanently; a later pass publishes its control message in its
 // Perps-Seq place and then the rows behind it, so no row holds the outbox
@@ -147,6 +157,11 @@ func (r Relay) run(ctx context.Context) error {
 				published, acks = append(published, l), append(acks, res.Ack)
 			case blocked:
 				release = append(release, l)
+			case errors.Is(res.Err, ErrBrokerDown):
+				// The broker was not reached: the row goes back unspent.
+				release = append(release, l)
+				failure = errors.Join(failure, res.Err)
+				blocked = true
 			default:
 				retry, classes = append(retry, l), append(classes, publicationFailureClass(res.Err))
 				failure = errors.Join(failure, res.Err)

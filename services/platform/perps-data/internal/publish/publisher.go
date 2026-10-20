@@ -145,7 +145,14 @@ type Publisher struct {
 	logger      *slog.Logger
 	headAge     prometheus.GaugeFunc
 	quarantined prometheus.Counter
+	brokerDown  prometheus.Gauge
+	// downSince is when the current broker outage was first seen and
+	// downLogged when it was last logged; zero while the broker is reachable.
+	downSince, downLogged time.Time
 }
+
+// brokerDownLogInterval spaces the Warn lines of one broker outage.
+const brokerDownLogInterval = time.Minute
 
 // headAgeTimeout bounds the outbox read of one scrape of perps_outbox_head_age_seconds.
 const headAgeTimeout = 2 * time.Second
@@ -186,6 +193,10 @@ func New(db *sql.DB, nc *nats.Conn, policy delivery.Policy, cfg Config) (*Publis
 			Name: "perps_outbox_quarantined_total",
 			Help: "Outbox rows quarantined permanently and announced by a control message.",
 		}),
+		brokerDown: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "perps_outbox_broker_down",
+			Help: "1 while the last relay pass could not reach the broker, else 0.",
+		}),
 	}
 	p.headAge = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "perps_outbox_head_age_seconds",
@@ -206,10 +217,11 @@ func New(db *sql.DB, nc *nats.Conn, policy delivery.Policy, cfg Config) (*Publis
 	return p, nil
 }
 
-// Collectors returns perps_outbox_head_age_seconds and
-// perps_outbox_quarantined_total for registration by the owning service.
+// Collectors returns perps_outbox_head_age_seconds,
+// perps_outbox_quarantined_total and perps_outbox_broker_down for
+// registration by the owning service.
 func (p *Publisher) Collectors() []prometheus.Collector {
-	return []prometheus.Collector{p.headAge, p.quarantined}
+	return []prometheus.Collector{p.headAge, p.quarantined, p.brokerDown}
 }
 
 // Ready reports an error while the oldest open outbox row, pending or
@@ -229,18 +241,23 @@ func (p *Publisher) Ready(ctx context.Context) error {
 
 // Run loops delivery.Relay.Pass until ctx ends and returns ctx.Err(). A failed
 // pass waits RetryDelay; a row put back by Retry holds back every later row
-// until it is published, keeping publication in Perps-Seq order.
+// until it is published, keeping publication in Perps-Seq order. A pass that
+// could not reach the broker spends no attempt: it sets
+// perps_outbox_broker_down and logs one Warn line per brokerDownLogInterval
+// of the outage, and publishing resumes at the same row once the broker
+// answers.
 func (p *Publisher) Run(ctx context.Context) error {
 	if p == nil || ctx == nil {
 		return errors.New("publish: publisher and context required")
 	}
 	for {
 		wait := p.idle
-		if err := p.relay.Pass(ctx); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			p.logger.Error("perps publisher pass failed", slog.Any("err", err))
+		err := p.relay.Pass(ctx)
+		if err != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		p.observe(err, time.Now())
+		if err != nil {
 			wait = p.relay.RetryDelay
 		}
 		timer := time.NewTimer(wait)
@@ -250,6 +267,31 @@ func (p *Publisher) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-timer.C:
 		}
+	}
+}
+
+// observe records the outcome of one pass: a broker outage sets
+// perps_outbox_broker_down and is logged at Warn when it starts and then at
+// most once per brokerDownLogInterval; any other failure is logged at Error.
+func (p *Publisher) observe(err error, now time.Time) {
+	if !errors.Is(err, delivery.ErrBrokerDown) {
+		if !p.downSince.IsZero() {
+			p.logger.Info("perps publisher reached the broker again", slog.Duration("outage", now.Sub(p.downSince)))
+		}
+		p.brokerDown.Set(0)
+		p.downSince, p.downLogged = time.Time{}, time.Time{}
+		if err != nil {
+			p.logger.Error("perps publisher pass failed", slog.Any("err", err))
+		}
+		return
+	}
+	p.brokerDown.Set(1)
+	if p.downSince.IsZero() {
+		p.downSince = now
+	}
+	if p.downLogged.IsZero() || now.Sub(p.downLogged) >= brokerDownLogInterval {
+		p.downLogged = now
+		p.logger.Warn("perps publisher cannot reach the broker; outbox rows wait without spending attempts", slog.Duration("outage", now.Sub(p.downSince)), slog.Any("err", err))
 	}
 }
 
@@ -279,7 +321,9 @@ func (s *sink) PublishBatch(ctx context.Context, leases []delivery.Lease) []deli
 	}
 	f, err := s.send(leases[0])
 	if err == nil {
-		out[0] = await(ctx, f)
+		// No message of the batch persisted yet: a missing acknowledgement
+		// means the broker was not reached.
+		out[0] = await(ctx, f, false)
 	} else {
 		out[0].Err = err
 	}
@@ -303,13 +347,15 @@ func (s *sink) PublishBatch(ctx context.Context, leases []delivery.Lease) []deli
 	}
 	for i, f := range futures {
 		if f != nil {
-			out[i] = await(ctx, f)
+			out[i] = await(ctx, f, true)
 		}
 	}
 	return out
 }
 
-func await(ctx context.Context, f jetstream.PubAckFuture) delivery.Publication {
+// await reads the acknowledgement of f; acked reports that an earlier message
+// of the same batch persisted, so the broker was reachable.
+func await(ctx context.Context, f jetstream.PubAckFuture, acked bool) delivery.Publication {
 	select {
 	case ack := <-f.Ok():
 		if ack == nil || ack.Stream != stream.Name || ack.Sequence == 0 || ack.Sequence > 1<<63-1 {
@@ -317,9 +363,9 @@ func await(ctx context.Context, f jetstream.PubAckFuture) delivery.Publication {
 		}
 		return delivery.Publication{Ack: delivery.PersistenceAck{Stream: ack.Stream, Sequence: ack.Sequence}}
 	case err := <-f.Err():
-		return delivery.Publication{Err: classify(err)}
+		return delivery.Publication{Err: classify(err, acked)}
 	case <-ctx.Done():
-		return delivery.Publication{Err: ctx.Err()}
+		return delivery.Publication{Err: classify(ctx.Err(), acked)}
 	}
 }
 
@@ -330,7 +376,7 @@ func (s *sink) send(l delivery.Lease, opts ...jetstream.PublishOpt) (jetstream.P
 	}
 	opts = append(opts, jetstream.WithMsgID(id), jetstream.WithExpectStream(stream.Name), jetstream.WithRetryAttempts(0))
 	f, err := s.js.PublishMsgAsync(msg, opts...)
-	return f, classify(err)
+	return f, classify(err, true)
 }
 
 // message builds the broker message of l and its Nats-Msg-Id.
@@ -363,13 +409,36 @@ func (s *sink) message(l delivery.Lease) (*nats.Msg, string, error) {
 // than the max_msg_size of the stream.
 const errCodeMessageTooLarge jetstream.ErrorCode = 10054
 
-func classify(err error) error {
-	if errors.Is(err, nats.ErrAuthorization) {
-		return delivery.ErrAuthorization
+// JetStream API error codes of a broker that cannot serve any message.
+const (
+	errCodeClusterNotAvailable jetstream.ErrorCode = 10008
+	errCodeNotEnabled          jetstream.ErrorCode = 10076
+	errCodeNotEnabledAccount   jetstream.ErrorCode = 10039
+)
+
+// classify is the one place where a NATS or JetStream client error is told
+// apart: a connection-level failure, which says nothing about the message,
+// is wrapped with delivery.ErrBrokerDown; a refusal of this message keeps its
+// class. A timeout is a connection-level failure unless acked reports that an
+// earlier message of the same batch persisted.
+func classify(err error, acked bool) error {
+	if err == nil {
+		return nil
 	}
 	var api *jetstream.APIError
-	if errors.Is(err, nats.ErrMaxPayload) || (errors.As(err, &api) && api.ErrorCode == errCodeMessageTooLarge) {
+	isAPI := errors.As(err, &api)
+	switch {
+	case errors.Is(err, nats.ErrMaxPayload) || (isAPI && api.ErrorCode == errCodeMessageTooLarge):
 		return fmt.Errorf("%w: %w", delivery.ErrOversized, err)
+	case errors.Is(err, nats.ErrPermissionViolation):
+		return fmt.Errorf("%w: %w", delivery.ErrAuthorization, err)
+	case errors.Is(err, nats.ErrConnectionClosed), errors.Is(err, nats.ErrConnectionDraining), errors.Is(err, nats.ErrConnectionReconnecting),
+		errors.Is(err, nats.ErrDisconnected), errors.Is(err, nats.ErrNoServers), errors.Is(err, nats.ErrReconnectBufExceeded),
+		errors.Is(err, nats.ErrStaleConnection), errors.Is(err, nats.ErrAuthorization), errors.Is(err, nats.ErrAuthExpired),
+		errors.Is(err, nats.ErrAuthRevoked), errors.Is(err, nats.ErrNoResponders), errors.Is(err, jetstream.ErrNoStreamResponse),
+		isAPI && (api.ErrorCode == errCodeClusterNotAvailable || api.ErrorCode == errCodeNotEnabled || api.ErrorCode == errCodeNotEnabledAccount),
+		!acked && (errors.Is(err, jetstream.ErrAsyncPublishTimeout) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, nats.ErrTimeout)):
+		return fmt.Errorf("%w: %w", delivery.ErrBrokerDown, err)
 	}
 	return err
 }

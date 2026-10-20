@@ -16,6 +16,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -830,13 +831,251 @@ func TestPublisher(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res := await(ctx, f); res.Err == nil {
+		if res := await(ctx, f, true); res.Err == nil {
 			t.Fatalf("message expecting sequence %d was persisted at %d", base+19, res.Ack.Sequence)
 		}
 		if state := streamState(t, ctx, perps); state.LastSeq != base+20 {
 			t.Fatalf("stream last sequence %d, want %d", state.LastSeq, base+20)
 		}
 	})
+
+	t.Run("broker_outage_spends_no_attempt", func(t *testing.T) {
+		reset(t, ctx, db)
+		base := streamState(t, ctx, perps).LastSeq
+		g := openGate(t, nc.ConnectedAddr())
+		gc, err := nats.Connect("nats://"+g.addr, nats.SetCustomDialer(g), nats.MaxReconnects(-1), nats.ReconnectWait(50*time.Millisecond))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(gc.Close)
+		var logs bytes.Buffer
+		cfg := testConfig()
+		cfg.PublishTimeout = time.Second
+		cfg.MaxHeadAge = time.Second
+		cfg.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+		p, err := New(db, gc, policy, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runCtx, stop := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() { done <- p.Run(runCtx) }()
+		waitFor := func(what string, cond func() bool) {
+			t.Helper()
+			deadline := time.Now().Add(30 * time.Second)
+			for !cond() {
+				if time.Now().After(deadline) {
+					stop()
+					t.Fatalf("%s; Run = %v", what, <-done)
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+		}
+		first := fillEvent(t, 1100, hashA, 0, 0)
+		enqueue(t, ctx, db, outboxStore, first)
+		waitFor("first row not published", func() bool { return count(t, db, openRows) == 0 })
+
+		// The broker port closes and stays closed far longer than the whole
+		// backoff budget of MaxAttempts attempts.
+		g.close()
+		head, next := fillEvent(t, 1101, hashA, 0, 0), fillEvent(t, 1102, hashA, 0, 0)
+		enqueue(t, ctx, db, outboxStore, head, next)
+		waitFor("perps_outbox_broker_down not set", func() bool { return metricValue(t, p.brokerDown) == 1 })
+		time.Sleep(6 * time.Second)
+		if n := count(t, db, `SELECT count(*) FROM perps.delivery_outbox WHERE state<>'pending' AND event_id<>$1 OR failure_class IS NOT NULL`, first.env.EventID); n != 0 {
+			t.Fatalf("%d rows failed during the outage: %+v", n, outbox(t, db))
+		}
+		if err := p.Ready(ctx); err == nil || !strings.Contains(err.Error(), "oldest open outbox row") {
+			t.Fatalf("Ready during the outage = %v", err)
+		}
+		if metricValue(t, p.brokerDown) != 1 {
+			t.Fatal("perps_outbox_broker_down cleared during the outage")
+		}
+
+		// The broker returns: publishing resumes at the head row.
+		g.open(t)
+		waitFor("outbox not drained after the broker returned", func() bool { return count(t, db, openRows) == 0 })
+		waitFor("perps_outbox_broker_down not cleared", func() bool { return metricValue(t, p.brokerDown) == 0 })
+		stop()
+		if err := <-done; !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run = %v", err)
+		}
+		rows := outbox(t, db)
+		if len(rows) != 3 {
+			t.Fatalf("outbox = %+v", rows)
+		}
+		events := []event{first, head, next}
+		for i, r := range rows {
+			// The one attempt of each row is the one that persisted it.
+			if r.eventID != events[i].env.EventID || r.state != "published" || r.failure != "" || r.attempts != 1 || r.brokerSequence != int64(base)+int64(i)+1 {
+				t.Fatalf("row %d = %+v; log %q", i, r, logs.String())
+			}
+			msg, err := perps.GetMsg(ctx, uint64(r.brokerSequence))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if msg.Subject != events[i].subject || msg.Header.Get(delivery.HeaderControl) != "" || msg.Header.Get(jetstream.MsgIDHeader) != events[i].env.EventID {
+				t.Fatalf("message %d = %s %v", r.brokerSequence, msg.Subject, msg.Header)
+			}
+		}
+		if state := streamState(t, ctx, perps); state.LastSeq != base+3 {
+			t.Fatalf("stream last sequence %d, want %d: three rows and no control message", state.LastSeq, base+3)
+		}
+		if n := metricValue(t, p.quarantined); n != 0 {
+			t.Fatalf("perps_outbox_quarantined_total = %v, want 0", n)
+		}
+		line := logs.String()
+		if n := strings.Count(line, "level=WARN"); n != 1 || !strings.Contains(line, "cannot reach the broker") || strings.Contains(line, "level=ERROR") {
+			t.Fatalf("outage logged %d Warn lines, want one and no Error: %q", n, line)
+		}
+	})
+
+	t.Run("refused_message_exhausted", func(t *testing.T) {
+		reset(t, ctx, db)
+		state := streamState(t, ctx, perps)
+		if state.Msgs == 0 {
+			t.Fatal("stream holds no message to fill up to")
+		}
+		base := state.LastSeq
+		// The reachable broker refuses every new message: the stream is full.
+		full := stream.Config(chain)
+		full.MaxMsgs = int64(state.Msgs)
+		if _, err := js.UpdateStream(ctx, full); err != nil {
+			t.Fatal(err)
+		}
+		restored := false
+		restore := func() {
+			if _, err := js.UpdateStream(ctx, stream.Config(chain)); err != nil {
+				t.Fatal(err)
+			}
+			restored = true
+		}
+		defer func() {
+			if !restored {
+				restore()
+			}
+		}()
+		head, next := fillEvent(t, 1200, hashA, 0, 0), fillEvent(t, 1201, hashA, 0, 0)
+		enqueue(t, ctx, db, outboxStore, head, next)
+		var logs bytes.Buffer
+		cfg := testConfig()
+		cfg.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+		p, err := New(db, nc, policy, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runCtx, stop := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() { done <- p.Run(runCtx) }()
+		deadline := time.Now().Add(30 * time.Second)
+		for count(t, db, `SELECT count(*) FROM perps.delivery_outbox WHERE event_id=$1 AND state='quarantined' AND failure_class='exhausted'`, head.env.EventID) != 1 {
+			if time.Now().After(deadline) {
+				stop()
+				t.Fatalf("refused row not exhausted: %+v; Run = %v", outbox(t, db), <-done)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		if metricValue(t, p.brokerDown) != 0 {
+			t.Fatal("a refusal by a reachable broker set perps_outbox_broker_down")
+		}
+		restore()
+		drainOpen(t, ctx, db, p)
+		stop()
+		if err := <-done; !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run = %v", err)
+		}
+		rows := outbox(t, db)
+		if len(rows) != 2 {
+			t.Fatalf("outbox = %+v", rows)
+		}
+		if r := rows[0]; r.eventID != head.env.EventID || r.state != "quarantined" || r.failure != "exhausted" || r.brokerSequence != int64(base)+1 {
+			t.Fatalf("refused row = %+v", r)
+		}
+		if r := rows[1]; r.state != "published" || r.brokerSequence != int64(base)+2 {
+			t.Fatalf("row behind the refused row = %+v", r)
+		}
+		msg, err := perps.GetMsg(ctx, base+1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if msg.Subject != "perps.125.control" || msg.Header.Get(jetstream.MsgIDHeader) != controlID(rows[0].seq, head.env.EventID) {
+			t.Fatalf("control message = %s %v", msg.Subject, msg.Header)
+		}
+		if n := metricValue(t, p.quarantined); n != 1 {
+			t.Fatalf("perps_outbox_quarantined_total = %v, want 1", n)
+		}
+		if line := logs.String(); strings.Contains(line, "cannot reach the broker") {
+			t.Fatalf("a refusal was logged as an outage: %q", line)
+		}
+	})
+}
+
+// gate is a TCP path to one broker whose port can be closed and reopened,
+// so a client meets a broker that is unreachable and then returns. Its
+// Dial, the client dialer, always dials the gate.
+type gate struct {
+	addr, target string
+	mu           sync.Mutex
+	l            net.Listener
+	conns        []net.Conn
+}
+
+func openGate(t *testing.T, target string) *gate {
+	t.Helper()
+	g := &gate{addr: "127.0.0.1:0", target: target}
+	g.open(t)
+	t.Cleanup(g.close)
+	return g
+}
+
+func (g *gate) Dial(network, _ string) (net.Conn, error) {
+	g.mu.Lock()
+	addr := g.addr
+	g.mu.Unlock()
+	return net.Dial(network, addr)
+}
+
+func (g *gate) open(t *testing.T) {
+	t.Helper()
+	l, err := net.Listen("tcp", g.addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.mu.Lock()
+	g.addr, g.l = l.Addr().String(), l
+	g.mu.Unlock()
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			b, err := net.Dial("tcp", g.target)
+			if err != nil {
+				_ = c.Close()
+				continue
+			}
+			g.mu.Lock()
+			g.conns = append(g.conns, c, b)
+			g.mu.Unlock()
+			go func() { _, _ = io.Copy(b, c); _ = b.Close() }()
+			go func() { _, _ = io.Copy(c, b); _ = c.Close() }()
+		}
+	}()
+}
+
+// close closes the gate port and every connection through it.
+func (g *gate) close() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.l != nil {
+		_ = g.l.Close()
+		g.l = nil
+	}
+	for _, c := range g.conns {
+		_ = c.Close()
+	}
+	g.conns = nil
 }
 
 func jsPub(t *testing.T, nc *nats.Conn) jetstream.JetStream {
