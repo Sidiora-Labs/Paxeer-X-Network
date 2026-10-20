@@ -14,7 +14,7 @@ fn migration_v2_connected_runs_authenticated_mapping_and_funded_settlement() {
     );
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
-        .nth(3)
+        .nth(4)
         .unwrap_or_else(|| panic!("repository root unavailable"));
     let output = Command::new("python3")
         .arg(root.join("tools/qualification/paxeer-x/migration-v2.py"))

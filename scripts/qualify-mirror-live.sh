@@ -3,7 +3,7 @@ set -euo pipefail
 
 config_path="${LAYERX_MIRROR_LIVE_CONFIG:?set LAYERX_MIRROR_LIVE_CONFIG}"
 status_url="${LAYERX_MIRROR_STATUS_URL:-http://127.0.0.1:9091/status}"
-publisher_bin="${LAYERX_MIRROR_PUBLISHER_BIN:-interop/target/release/layerx-mirror-publisher}"
+publisher_bin="${LAYERX_MIRROR_PUBLISHER_BIN:-services/interop/target/release/layerx-mirror-publisher}"
 fault_controller="${LAYERX_MIRROR_FAULT_CONTROLLER:?set LAYERX_MIRROR_FAULT_CONTROLLER to the authenticated devnet fault-control executable}"
 evidence_dir="${LAYERX_MIRROR_LIVE_EVIDENCE_DIR:-}"
 if [[ -n "${evidence_dir}" ]]; then

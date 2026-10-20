@@ -70,7 +70,7 @@ fn funded_operator_runs_real_gateway_source_and_independent_funded_receipts() {
     );
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
-        .nth(3)
+        .nth(4)
         .unwrap_or_else(|| panic!("repository root unavailable"));
     let output = Command::new("python3")
         .arg(root.join("tools/qualification/paxeer-x/migration-funded-operator.py"))
