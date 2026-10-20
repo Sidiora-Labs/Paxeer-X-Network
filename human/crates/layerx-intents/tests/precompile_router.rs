@@ -1097,7 +1097,7 @@ fn precompile_decoder_refuses_foreign_or_malformed_logs() {
 }
 
 fn reserve() -> AccountId {
-    checked(AccountId::parse("system:paxeer-reserve"))
+    checked(AccountId::parse("system:treasury"))
 }
 
 fn credit_recipient() -> AccountId {

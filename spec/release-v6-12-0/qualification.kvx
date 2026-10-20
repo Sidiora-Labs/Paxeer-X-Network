@@ -2180,3 +2180,19 @@ exit = 0
 log = fleet/logs/release-7.3.2-requal-1.log
 observed = Resolved with no code change once the 7.3.1 pages and the 7.2.13 gateway were on the base: pages_mounted, readiness_follows_gateway, not_found_page and csp_header pass against a throwaway database and the perps-data build exits 0.
 assumption = The earlier finding.7.3.2 compile failure was only the missing dependencies.
+
+[finding.2.3.1-implemented]
+revision = 348457216056791eb7abceb464d803ca2ec70465
+command = cargo test --locked --manifest-path human/Cargo.toml -p layerx-intents --test precompile_router
+exit = 101
+log = fleet/logs/release-2.3.1-verify-1.log
+observed = Implemented, not qualified: system:treasury is a new account namespace in layerx-types, the custody credit binds only to it, every reserve id in the intents crate, its vectors, the 2.3.2 helper, hosted core and the human service tests moved to it, and 13 of 14 router tests pass; exchange_order_consumes_persisted_keeper_events needs the PAXEER_X_TIF_INGRESS_FILE events file written at run time by the Go keeper qualification, which is harness output and not a fixture of this task.
+assumption = The router gate reruns with the keeper qualification output present; the layerx-types vectors test expecting 53 corpus activities against 58 loaded is a separate pre-existing failure.
+
+[finding.2.3.1-kernel-reserve-id]
+revision = 348457216056791eb7abceb464d803ca2ec70465
+command = cargo test --locked -p layerx-types
+exit = 101
+log = fleet/logs/release-2.3.1-types-1.log
+observed = The kernel still names the reserve system:paxeer-reserve: the native genesis builder, lx_account_id.c, the proof codec, the exchange genesis kind 11 decoder and its tests, the attestor id parser, the wallet vectors and the real-node custody test all carry the old id, so the hosted core profile check that now expects system:treasury will not match a kernel-produced profile until the kernel moves in one coordinated change.
+assumption = The reserve rename in the kernel, codec, genesis and attestor parser is one task that lands together with regenerated wallet vectors; the four SystemPaxeerReserve checks in the human crates (deposit.rs, router.rs, resolver.rs, movement_provider.rs) rename to SystemTreasury in the same change.

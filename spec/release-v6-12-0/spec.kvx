@@ -7534,7 +7534,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.1]
 title = "Decode the new launchpad events in the intents crate"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 3
 requires = ["2.0.4"]
