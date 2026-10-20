@@ -173,11 +173,18 @@ func Attest(ctx context.Context, r Reader, m Manifest, block common.Hash, p Poli
 		id := Identity{Role: name, Address: role.Address}
 		add := func(code string) { id.Issues = append(id.Issues, Issue{code, name}) }
 		addr := common.HexToAddress(role.Address)
-		id.RuntimeHash, err = codeHash(ctx, r, addr, block)
-		if err != nil {
-			add("code_read_failed")
-		} else if !equalHash(id.RuntimeHash, role.RuntimeHash) {
-			add("unknown_runtime_hash")
+		if role.Kind == "precompile" {
+			// Precompile code is not EVM bytecode: the identity is the fixed address.
+			if !validAddress(role.Address) || addr != common.HexToAddress(LaunchpadPrecompileAddress) {
+				add("identity_unverified")
+			}
+		} else {
+			id.RuntimeHash, err = codeHash(ctx, r, addr, block)
+			if err != nil {
+				add("code_read_failed")
+			} else if !equalHash(id.RuntimeHash, role.RuntimeHash) {
+				add("unknown_runtime_hash")
+			}
 		}
 		var impl common.Address
 		if role.Kind == "erc1967" || role.Kind == "beacon_proxy" {
@@ -218,7 +225,7 @@ func Attest(ctx context.Context, r Reader, m Manifest, block common.Hash, p Poli
 				add("identity_unverified")
 			}
 		}
-		if role.Kind != "direct" {
+		if hasImplementation(role.Kind) {
 			id.ImplementationAddress = impl.Hex()
 			if impl != common.HexToAddress(role.ImplementationAddress) {
 				add("implementation_mismatch")
@@ -290,6 +297,18 @@ func Attest(ctx context.Context, r Reader, m Manifest, block common.Hash, p Poli
 	a.Eligible = len(a.Issues) == 0
 	return a, nil
 }
+func hasImplementation(kind string) bool {
+	return kind != "direct" && kind != "surface" && kind != "precompile"
+}
+
+// runtimeIdentity is the positive identity check of an attested role: the
+// runtime hash for EVM code, the fixed precompile address for a precompile.
+func runtimeIdentity(r Role, id Identity) bool {
+	if r.Kind == "precompile" {
+		return id.RuntimeHash == "" && validAddress(r.Address) && common.HexToAddress(r.Address) == common.HexToAddress(LaunchpadPrecompileAddress)
+	}
+	return equalHash(id.RuntimeHash, r.RuntimeHash)
+}
 func equalHash(a, b string) bool {
 	return validHash(a) && validHash(b) && common.HexToHash(a) == common.HexToHash(b)
 }
@@ -318,10 +337,10 @@ func (a ActivationAttestation) ValidateFor(m Manifest, p Policy) error {
 	}
 	for name, r := range m.Roles {
 		id, ok := a.Identities[name]
-		if !ok || !id.Verified || len(id.Issues) > 0 || !validAddress(id.Address) || common.HexToAddress(id.Address) != common.HexToAddress(r.Address) || !equalHash(id.RuntimeHash, r.RuntimeHash) {
+		if !ok || !id.Verified || len(id.Issues) > 0 || !validAddress(id.Address) || common.HexToAddress(id.Address) != common.HexToAddress(r.Address) || !runtimeIdentity(r, id) {
 			return Issue{"identity_unverified", name}
 		}
-		if r.Kind != "direct" && (!validAddress(id.ImplementationAddress) || common.HexToAddress(id.ImplementationAddress) != common.HexToAddress(r.ImplementationAddress) || !equalHash(id.ImplementationHash, r.ImplementationHash)) {
+		if hasImplementation(r.Kind) && (!validAddress(id.ImplementationAddress) || common.HexToAddress(id.ImplementationAddress) != common.HexToAddress(r.ImplementationAddress) || !equalHash(id.ImplementationHash, r.ImplementationHash)) {
 			return Issue{"identity_unverified", name}
 		}
 		if r.Kind == "beacon_proxy" && (!validAddress(id.BeaconAddress) || common.HexToAddress(id.BeaconAddress) != common.HexToAddress(r.BeaconAddress)) {
@@ -379,10 +398,10 @@ func (a ActivationAttestation) ValidateFamilyFor(m Manifest, p Policy, roles []s
 	for _, name := range roles {
 		r, ok := m.Roles[name]
 		id, found := a.Identities[name]
-		if !ok || !found || !id.Verified || len(id.Issues) != 0 || !validAddress(id.Address) || common.HexToAddress(r.Address) != common.HexToAddress(id.Address) || !equalHash(r.RuntimeHash, id.RuntimeHash) {
+		if !ok || !found || !id.Verified || len(id.Issues) != 0 || !validAddress(id.Address) || common.HexToAddress(r.Address) != common.HexToAddress(id.Address) || !runtimeIdentity(r, id) {
 			return Issue{"identity_unverified", name}
 		}
-		if r.Kind != "direct" && (!validAddress(id.ImplementationAddress) || common.HexToAddress(id.ImplementationAddress) != common.HexToAddress(r.ImplementationAddress) || !equalHash(id.ImplementationHash, r.ImplementationHash)) {
+		if hasImplementation(r.Kind) && (!validAddress(id.ImplementationAddress) || common.HexToAddress(id.ImplementationAddress) != common.HexToAddress(r.ImplementationAddress) || !equalHash(id.ImplementationHash, r.ImplementationHash)) {
 			return Issue{"identity_unverified", name}
 		}
 		if r.Kind == "beacon_proxy" && (!validAddress(id.BeaconAddress) || common.HexToAddress(id.BeaconAddress) != common.HexToAddress(r.BeaconAddress)) {
