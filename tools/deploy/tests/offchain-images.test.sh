@@ -150,4 +150,36 @@ rm "$work/launchpad/deploy/Dockerfile.native"
 if out=$(run bash "$script" --check 2>&1); then fail "--check must fail on a missing dockerfile"; fi
 grep -q 'kindlelaunch-media-metadata' <<<"$out" || fail "--check must name the row: $out"
 
+
+# the workflow: the build matrix does not fail fast, and the digests job runs after any image row fails as long as the
+# plan passed and the run was not cancelled
+wf="$repo/.github/workflows/offchain-images.yml"
+job() { python3 -c 'import json,sys,yaml; print(json.dumps(yaml.safe_load(open(sys.argv[1]))["jobs"][sys.argv[2]]))' "$wf" "$1"; }
+[ "$(job images | jq '.strategy["fail-fast"]')" = false ] || fail "the images matrix must keep fail-fast: false"
+[ "$(job digests | jq -r '.if')" = "\${{ !cancelled() && needs.plan.result == 'success' }}" ] ||
+	fail "the digests job must run unless cancelled once the plan passed: $(job digests | jq -r '.if')"
+job digests | jq -r '.steps[] | select(.id == "merge") | .run' > "$work/merge.sh"
+[ -s "$work/merge.sh" ] || fail "the digests job has no merge step"
+
+# the merge step on a fixture: one row pushed, one planned row without a digest, one unbuilt row
+merge() {
+	local d="$work/merge.$1"; shift
+	rm -rf "$d" && mkdir -p "$d/digests" && : > "$d/out" && : > "$d/summary"
+	local f; for f in "$@"; do printf '%s=sha256:%064d\n' "$f" 0 > "$d/digests/$f"; done
+	(cd "$d" && IMAGES='[{"name":"perps-gateway"},{"name":"kindlelaunch-core-api"}]' UNBUILT='["kindlelaunch-web"]' \
+		GITHUB_OUTPUT="$d/out" GITHUB_STEP_SUMMARY="$d/summary" bash "$work/merge.sh" >"$d/log" 2>&1)
+}
+merge partial perps-gateway || fail "the merge must pass when one row pushed: $(cat "$work/merge.partial/log")"
+[ "$(jq -c 'keys' "$work/merge.partial/digests.json")" = '["perps-gateway"]' ] || fail "digests.json: $(cat "$work/merge.partial/digests.json")"
+grep -qx 'failed=\["kindlelaunch-core-api"\]' "$work/merge.partial/out" || fail "failed output: $(cat "$work/merge.partial/out")"
+grep -qx -e '- kindlelaunch-core-api was planned but its build or push failed: .*' "$work/merge.partial/summary" ||
+	fail "the summary must list the failed row: $(cat "$work/merge.partial/summary")"
+grep -qx -e '- kindlelaunch-web was not built: .*' "$work/merge.partial/summary" || fail "the summary must list the unbuilt row"
+! grep -q 'perps-gateway' "$work/merge.partial/summary" || fail "the summary lists the pushed row"
+# nothing pushed fails the job; an unbuilt row with a digest fails it as well
+if merge none; then fail "the merge must fail when digests.json is empty"; fi
+grep -q 'digests.json is empty' "$work/merge.none/log" || fail "empty merge log: $(cat "$work/merge.none/log")"
+grep -c 'build or push failed' "$work/merge.none/summary" | grep -qx 2 || fail "the empty merge must still list both failed rows"
+if merge unbuilt perps-gateway kindlelaunch-web; then fail "the merge must fail when an unbuilt row has a digest"; fi
+grep -q 'an unbuilt row has a digest' "$work/merge.unbuilt/log" || fail "unbuilt merge log: $(cat "$work/merge.unbuilt/log")"
 echo "PASS offchain-images"

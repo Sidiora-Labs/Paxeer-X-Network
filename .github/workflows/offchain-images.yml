@@ -112,28 +112,37 @@ jobs:
 
   digests:
     needs: [plan, images]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     outputs:
       unbuilt: ${{ steps.merge.outputs.unbuilt }}
+      failed: ${{ steps.merge.outputs.failed }}
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: digest-*
           path: digests
           merge-multiple: true
-      - name: Merge every built image digest into digests.json, leaving each unbuilt row absent
+      - name: Merge every pushed image digest into digests.json, leaving each unbuilt or failed row absent
         id: merge
         env:
+          IMAGES: ${{ needs.plan.outputs.images }}
           UNBUILT: ${{ needs.plan.outputs.unbuilt }}
         run: |
           set -euo pipefail
-          cat digests/* | jq -R -s -c '[splits("\n") | select(length > 0) | split("=") | {key: .[0], value: .[1]}] | from_entries' > digests.json
+          shopt -s nullglob
+          files=(digests/*)
+          cat /dev/null "${files[@]}" | jq -R -s -c '[splits("\n") | select(length > 0) | split("=") | {key: .[0], value: .[1]}] | from_entries' > digests.json
           jq -e --argjson unbuilt "$UNBUILT" '[keys[] | select(IN($unbuilt[]))] == []' digests.json >/dev/null ||
             { echo "an unbuilt row has a digest" >&2; exit 1; }
+          failed=$(jq -c --argjson images "$IMAGES" '[$images[].name] - keys' digests.json)
           printf 'unbuilt=%s\n' "$(jq -c . <<<"$UNBUILT")" >> "$GITHUB_OUTPUT"
+          printf 'failed=%s\n' "$failed" >> "$GITHUB_OUTPUT"
           jq -r '.[] | "- \(.) was not built: no digest in digests.json, so the rollout tool refuses it"' <<<"$UNBUILT" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.[] | "- \(.) was planned but its build or push failed: no digest in digests.json, so the rollout tool refuses it"' <<<"$failed" >> "$GITHUB_STEP_SUMMARY"
           cat digests.json
+          jq -e 'length > 0' digests.json >/dev/null || { echo "no image was pushed, digests.json is empty" >&2; exit 1; }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: digests.json
