@@ -2556,3 +2556,19 @@ exit = 1
 log = "PD-F10-verify-r1.log"
 observed = "Making an attempt-exhausted row permanent with a control message contradicts TestPublisher/envelope_limit and failed_message_blocks_successors, which require it to stay quarantined as transient and hold every later row; the tests are left intact."
 assumption = "Control messages cover rows quarantined for a non-transient class only; a transient exhausted row keeps holding later rows until it is requeued and published."
+
+[finding.perps-audit-regression-6.2.2]
+revision = "a3a73c0f3"
+command = "node --test --import tsx tests/audit-regressions.test.ts (human/apps/perps)"
+exit = 1
+log = "HP-01-verify-r2.log"
+observed = "The realtime prices case required usePortfolioStats to call useRealtimePrices gated on open positions, the design task 6.2.2 replaced by reading portfolio totals from getAccount."
+assumption = "Ruled: the case now asserts the 6.2.2 design (totals from getAccount, no useRealtimePrices in usePortfolioStats); its other assertions are unchanged."
+
+[finding.perps-pax-native-property]
+revision = "dcae01167"
+command = "node --test --import tsx tests/spot-approvals.test.ts (human/apps/perps)"
+exit = 1
+log = "HP-01-verify-r4.log"
+observed = "nativeSetIsTheTokenTableNativeEntries asserted the PAX table address equals the zero-address sentinel, while the spot vault moves a native-kind token by bank transfer (modules/spot/keeper/custody.go:283-285) and takes value through depositNative (precompiles/spot/vault.go:86-88)."
+assumption = "Ruled: PAX keeps the uhpx pointer address and the case now asserts the isNative token property the native set is built from; its other assertion is unchanged."

@@ -1,0 +1,39 @@
+@media(forced-colors: active) {
+
+    .button--outlined,
+    .prompt-set__left-related-prompts .related-badges .button-group .button--prompt-badge {
+        border: 1px solid var(--theme-outline-outline)
+    }
+}
+@media(forced-colors: active) {
+
+    .button--outlined:disabled,
+    .prompt-set__left-related-prompts .related-badges .button-group .button--prompt-badge:disabled {
+        border: 1px solid var(--theme-button-states-outlined-disabled)
+    }
+}
+@media(forced-colors: active) {
+    .button--protected {
+        border: 1px solid var(--theme-outline-outline)
+    }
+}
+@media(forced-colors: active) {
+    .button--protected:disabled {
+        border: 1px solid var(--theme-button-states-protected-disabled)
+    }
+}
+@media(forced-colors: active) {
+    .button--hover_outline:hover {
+        border: 1px solid var(--theme-outline-outline)
+    }
+}
+@media(forced-colors: active) {
+    .button--hover_outline:active {
+        border: 1px solid var(--theme-outline-outline)
+    }
+}
+@media(forced-colors: active) {
+    .main-menu__item.active .site-navigation-isolation.glue-header .header-container .header-bar .main-menu__label {
+        border: 1px solid var(--theme-outline-outline)
+    }
+}

@@ -1,10 +1,57 @@
-node_modules/
-.next*/
-**/.next*/
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+/packages
+# testing
+/coverage
+/ui-storybook
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+claude.md
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# local env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production
+.env.production.local
+
+# Deployment artifacts
+deploy/nginx/certs/
+!deploy/nginx/certs/.gitkeep
+
+# vercel
+.vercel
+
+# typescript
 *.tsbuildinfo
-.env*
-!.env.example
-artifacts/
-.codegraph
-# TradingView Advanced Charts is a licensed private distribution; fetch it from the licensed source at deploy time
-apps/web/public/static/charting_library/
+
+# Million Lint
+.million
+/.windsurf
+04302026Z223200.target.dir/
+toolkit
+docs
+/public/static/charting_library/*
+/public/static/datafeeds/
+!/public/static/charting_library/charting_library.d.ts
+!src/env/.env.template
+!deploy/.env.production.example

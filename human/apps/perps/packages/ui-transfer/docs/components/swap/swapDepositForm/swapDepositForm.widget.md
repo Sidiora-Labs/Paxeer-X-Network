@@ -1,3 +1,0 @@
-# swapDepositForm.widget.tsx
-
-SwapDepositFormWidget.

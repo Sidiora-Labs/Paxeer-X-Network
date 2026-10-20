@@ -1,0 +1,15 @@
+@media(min-width: 1025px) {
+    .media-grid {
+        gap: var(--spacer-2xl)
+    }
+}
+@media(min-width: 1025px) {
+    .media-grid--3-up {
+        grid-template-columns: repeat(3, 1fr)
+    }
+}
+@media(min-width: 1025px) {
+    .media-grid--4-up {
+        grid-template-columns: repeat(3, 1fr)
+    }
+}

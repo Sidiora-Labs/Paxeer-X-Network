@@ -1,41 +1,64 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
+    "target": "esnext",
     "lib": [
-      "DOM",
-      "DOM.Iterable",
-      "ES2022"
+      "dom",
+      "dom.iterable",
+      "esnext"
     ],
-    "module": "ESNext",
+    "module": "esnext",
     "moduleResolution": "bundler",
-    "jsx": "preserve",
     "allowJs": true,
-    "noEmit": true,
     "skipLibCheck": true,
     "strict": true,
-    "noImplicitAny": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "incremental": false
+    "jsx": "preserve",
+    "incremental": true,
+    "paths": {
+      "@/types/*": [
+        "./src/types/*"
+      ],
+      "@/core/*": [
+        "./src/core/*"
+      ],
+      "@/hooks/*": [
+        "./src/hooks/*"
+      ],
+      "@/ui/*": [
+        "./src/ui/*"
+      ],
+      "@/widgets/*": [
+        "./src/widgets/*"
+      ],
+      "@/page-modules/*": [
+        "./src/page-modules/*"
+      ],
+      "@/app/*": [
+        "./src/app/*"
+      ],
+      "@/*": [
+        "./src/*"
+      ]
+    },
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
   "include": [
-    "apps/web/next-env.d.ts",
-    "apps/web/src/**/*",
-    "packages/*/src/**/*"
+    "**/*.ts",
+    "**/*.tsx",
+    "next-env.d.ts",
+    ".next/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
-    "**/node_modules",
-    "**/dist",
-    "**/*.test.*",
-    "**/*.stories.*",
-    "packages/cli",
-    "packages/sdk-docs",
-    "packages/storybook-theme-tool",
-    "**/__test__/**",
-    "**/__tests__/**",
-    "**/setupTests.ts",
-    "**/*.example.tsx"
+    "ui-storybook",
+    "src/components/paxeer"
   ]
 }

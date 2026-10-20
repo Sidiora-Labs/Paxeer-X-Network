@@ -1,0 +1,35 @@
+/* paxeer-tokens.css — drop into app/globals.css or import once at the root */
+
+/* ——— Fonts — copy OTFs into /public/Paxeer_Sans_Rounded/ and serve from there ——— */
+@font-face { font-family: "Paxeer Grand Sans"; src: url("/Paxeer_Sans_Rounded/PPPangramSansRounded-Light.otf")           format("opentype"); font-weight: 300; font-style: normal; font-display: swap; }
+@font-face { font-family: "Paxeer Grand Sans"; src: url("/Paxeer_Sans_Rounded/PPPangramSansRounded-Medium.otf")          format("opentype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Paxeer Grand Sans"; src: url("/Paxeer_Sans_Rounded/PPPangramSansRounded-Semibold.otf")        format("opentype"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Paxeer Grand Sans"; src: url("/Paxeer_Sans_Rounded/PPPangramSansRounded-Bold.otf")            format("opentype"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Paxeer Grand Sans Compressed"; src: url("/Paxeer_Sans_Rounded/PPPangramSansRounded-CompressedExtrabold.otf") format("opentype"); font-weight: 800; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: local("JetBrains Mono"), url("https://fonts.gstatic.com/s/jetbrainsmono/v18/tDbY2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKxTOlOV.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+
+:root {
+  /* Colors — Paxeer dark system */
+  --bg:            var(--brand-surface);
+  --bg-subtle:     #121212;
+  --bg-elevated:   #1A1A1A;
+  --fg:            #F3F3F3;
+  --fg-muted:      #B0B0B0;
+  --fg-subtle:     #828282;
+  --border:        rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.16);
+  --accent:        var(--brand-blue);
+  --accent-rgb:    0,76,237;
+  --success:       var(--brand-green);
+  --warning:       var(--brand-orange);
+  --danger:        var(--brand-red);
+  --color-blue-200:#8FA8FF;
+
+  /* Shadows */
+  --shadow-04: 0 12px 32px rgba(0,0,0,0.35);
+  --shadow-06: 0 20px 48px rgba(0,0,0,0.55);
+
+  /* Typography */
+  --font-body: "Paxeer Grand Sans", Inter, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+}

@@ -1,1 +1,0 @@
-export { AffiliatePage } from "./page";

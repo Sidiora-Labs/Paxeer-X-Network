@@ -1,0 +1,20 @@
+@media(prefers-reduced-motion: reduce) {
+
+    .card-group__cards-wrapper,
+    .card-group__cards--card,
+    .card-expand,
+    .card-expand--modal,
+    .card-expand__content,
+    .card-expand__header,
+    .card-expand__media,
+    .card-wire,
+    .card-wire--active {
+        animation: none !important;
+        transition: none !important
+    }
+
+    .card-wire--active {
+        stroke-width: 2;
+        opacity: 1
+    }
+}

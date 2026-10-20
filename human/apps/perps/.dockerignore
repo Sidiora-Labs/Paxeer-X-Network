@@ -1,0 +1,46 @@
+# Keep the Docker build context lean.
+#
+# Without this file, `docker build` ships every byte under the repo
+# root to the daemon — including .git (often huge), node_modules,
+# build artifacts, IDE clutter, etc. Most of that is then ignored by
+# the Dockerfile anyway, but the upload still happens.
+
+# Version control
+.git
+.gitignore
+.gitattributes
+.github
+
+# Node deps + build artifacts (the Dockerfile reinstalls / rebuilds)
+node_modules
+.next
+out
+build
+coverage
+
+# Local-only env files (the Dockerfile takes vars as build args)
+.env
+.env.*
+!.env.production.example
+
+# Editor / OS clutter
+.vscode
+.idea
+.DS_Store
+*.swp
+
+# Test artifacts + docs that don't belong in the image
+docs
+toolkit
+ui-storybook
+*.log
+
+# Agent-rules dirs (workspace-only)
+.windsurf
+.cursor
+.cursorrules
+
+# The deploy dir is COPIED selectively — we don't need certs/scripts
+# inside the image. The Dockerfile only references package.json,
+# pnpm-lock.yaml, source, and public/.
+deploy

@@ -1,0 +1,1498 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Paxeer Sans Rounded";
+  src: url("/Paxeer_Sans_Rounded/PPPangramSansRounded-Medium.otf") format("opentype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Paxeer Sans Rounded";
+  src: url("/Paxeer_Sans_Rounded/PPPangramSansRounded-Semibold.otf") format("opentype");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Paxeer Sans Rounded";
+  src: url("/Paxeer_Sans_Rounded/PPPangramSansRounded-Bold.otf") format("opentype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+/* ─────────────────────────────────────────────────────────
+   PAXEER BRAND TOKENS — v2.0 2026
+   Source: /.md/brand_identity.md
+   Theme-independent. Always accurate.
+   ───────────────────────────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────────
+ * Design tokens: primitives imported verbatim from src/styles/.scss/base.css
+ * (Gemini design system). Semantic tokens below map onto these scales.
+ * ────────────────────────────────────────────────────────────────── */
+:root {
+  --space-0: 0rem;
+  --space-1: 0.25rem;
+  --space-2: 0.25rem;
+  --space-3: 0.75rem;
+  --space-4: 1.25rem;
+  --space-5: 1.5rem;
+  --space-6: 1.75rem;
+  --space-7: 2rem;
+  --space-8: 3rem;
+  --space-9: 3rem;
+  --space-10: 3.5rem;
+  --space-11: 4.5rem;
+  --space-12: 4rem;
+  --space-13: 4.5rem;
+  --space-14: 6rem;
+  --space-15: 9rem;
+  --icon-font-outlined: Google Symbols;
+  --icon-font-fill: Google Symbols;
+  --font-xs: 0.625rem;
+  --font-sm: 0.90625rem;
+  --font-base: 1.09375rem;
+  --font-md: 1.125rem;
+  --font-lg: 1.25rem;
+  --font-xl: 1.375rem;
+  --font-2xl: 1.5rem;
+  --font-3xl: 1.625rem;
+  --font-4xl: 1.75rem;
+  --font-5xl: 1.875rem;
+  --font-6xl: 2rem;
+  --font-7xl: 2.125rem;
+  --font-8xl: 2.25rem;
+  --font-9xl: 2.375rem;
+  --letter-spacing-xs: 0.00917em;
+  --letter-spacing-sm: 0.01143em;
+  --letter-spacing-base: 0.01188em;
+  --letter-spacing-md: -0.00389em;
+  --letter-spacing-lg: -0.00444em;
+  --letter-spacing-xl: -0.0065em;
+  --letter-spacing-2xl: -0.00583em;
+  --letter-spacing-3xl: -0.00867em;
+  --letter-spacing-4xl: -0.00778em;
+  --letter-spacing-5xl: -0.00625em;
+  --letter-spacing-6xl: -0.01067em;
+  --letter-spacing-7xl: -0.00944em;
+  --letter-spacing-8xl: -0.0075em;
+  --letter-spacing-9xl: -0.00594em;
+  --line-height-xs: 1.45;
+  --line-height-sm: 1.45;
+  --line-height-base: 1.45;
+  --line-height-md: 1.3;
+  --line-height-lg: 1.14;
+  --line-height-xl: 1.12;
+  --line-height-2xl: 1.08;
+  --line-height-3xl: 1.08;
+  --line-height-4xl: 1.06;
+  --line-height-5xl: 1.06;
+  --line-height-6xl: 1.06;
+  --line-height-7xl: 1.06;
+  --line-height-8xl: 1.06;
+  --line-height-9xl: 1.06;
+  --icon-xs: 12px;
+  --icon-sm: 18px;
+  --icon-md: 24px;
+  --icon-lg: 36px;
+  --icon-xl: 48px;
+  --icon-2xl: 56px;
+  --icon-3xl: 64px;
+  --icon-4xl: 72px;
+  --icon-5xl: 80px;
+  --icon-6xl: 88px;
+  --icon-7xl: 96px;
+  --icon-8xl: 104px;
+  --icon-9xl: 112px;
+  --icon-10xl: 120px;
+  --icon-25xl: 240px;
+  --shape-corner-none: 0px;
+  --shape-corner-xs: 4px;
+  --shape-corner-sm: 8px;
+  --shape-corner-md: 16px;
+  --shape-corner-lg: 24px;
+  --shape-corner-xl: 36px;
+  --shape-corner-2xl: 48px;
+  --shape-corner-3xl: 60px;
+  --shape-corner-rounded: 9999px;
+  --grey-0: #ffffff;
+  --grey-10: #f8f9fc;
+  --grey-20: #eff2f7;
+  --grey-50: #e6eaf0;
+  --grey-100: #e1e6ec;
+  --grey-125: #ebeef1;
+  --grey-150: #e7e9eb;
+  --grey-175: #e1e3e8;
+  --grey-200: #cdd4dc;
+  --grey-300: #b2bbc5;
+  --grey-400: #bdc1c6;
+  --grey-500: #9aa0a6;
+  --grey-600: #80868b;
+  --grey-650: #4e4f56;
+  --grey-700: #5f6368;
+  --grey-800: #45474d;
+  --grey-825: #2a2b36;
+  --grey-850: #22232b;
+  --grey-875: #1d1e26;
+  --grey-900: #2f3034;
+  --grey-950: #101218;
+  --grey-1000: #212226;
+  --grey-1100: #18191d;
+  --grey-1200: #121317;
+  --grey-1000-40: rgba(33, 34, 38, 0.4);
+  --grey-1000-20: rgba(33, 34, 38, 0.2);
+  --grey-1000-16: rgba(33, 34, 38, 0.16);
+  --grey-1000-12: rgba(33, 34, 38, 0.12);
+  --grey-1000-8: rgba(33, 34, 38, 0.08);
+  --grey-1000-6: rgba(33, 34, 38, 0.06);
+  --grey-1000-4: rgba(33, 34, 38, 0.04);
+  --grey-1000-2: rgba(33, 34, 38, 0.02);
+  --grey-1000-0: rgba(33, 34, 38, 0);
+  --grey-50-20: rgba(230, 234, 240, 0.2);
+  --grey-50-16: rgba(230, 234, 240, 0.16);
+  --grey-50-12: rgba(230, 234, 240, 0.12);
+  --grey-50-8: rgba(230, 234, 240, 0.08);
+  --grey-50-6: rgba(230, 234, 240, 0.06);
+  --grey-50-4: rgba(230, 234, 240, 0.04);
+  --grey-50-2: rgba(230, 234, 240, 0.02);
+  --grey-50-0: rgba(230, 234, 240, 0);
+  --blue-0: #ffffff;
+  --blue-10: #f4faff;
+  --blue-20: #dcf1ff;
+  --blue-50: #bbe2ff;
+  --blue-100: #9dd2ff;
+  --blue-200: #76bbff;
+  --blue-300: #4fa0ff;
+  --blue-400: #3c90ff;
+  --blue-500: #3186ff;
+  --blue-600: #3279f9;
+  --blue-700: #336ef3;
+  --blue-800: #2b4fda;
+  --blue-900: #27329b;
+  --blue-1000: #1e2867;
+  --blue-1100: #181f4f;
+  --blue-1200: #12163a;
+  --red-0: #ffffff;
+  --red-10: #fff7f9;
+  --red-20: #ffeef7;
+  --red-50: #ffdeec;
+  --red-100: #ffacc2;
+  --red-200: #ff7985;
+  --red-300: #ff5a59;
+  --red-400: #ff4c45;
+  --red-500: #fc413d;
+  --red-600: #ed3733;
+  --red-700: #de2d29;
+  --red-800: #be1c1b;
+  --red-900: #990d0e;
+  --red-1000: #7d0304;
+  --red-1100: #5f0404;
+  --red-1200: #3c0202;
+  --yellow-0: #ffffff;
+  --yellow-10: #feffe1;
+  --yellow-20: #fcffad;
+  --yellow-50: #fdfd6d;
+  --yellow-100: #fff350;
+  --yellow-200: #ffe921;
+  --yellow-300: #ffdb0f;
+  --yellow-400: #ffcf03;
+  --yellow-500: #fec700;
+  --yellow-600: #febb00;
+  --yellow-700: #f29900;
+  --yellow-800: #e57e00;
+  --yellow-900: #d05600;
+  --yellow-1000: #9e3d02;
+  --yellow-1100: #7a2b00;
+  --yellow-1200: #652000;
+  --green-0: #ffffff;
+  --green-10: #f6fff0;
+  --green-20: #daf9d4;
+  --green-50: #bff3b9;
+  --green-100: #9be69a;
+  --green-200: #60d673;
+  --green-300: #42c868;
+  --green-400: #0ebc5f;
+  --green-500: #00af57;
+  --green-600: #00a356;
+  --green-700: #009954;
+  --green-800: #008052;
+  --green-900: #00694e;
+  --green-1000: #005143;
+  --green-1100: #003936;
+  --green-1200: #002220;
+  --purple-0: #ffffff;
+  --purple-10: #f0f3ff;
+  --purple-20: #e0e7ff;
+  --purple-50: #d0d9ff;
+  --purple-100: #b8c0ff;
+  --purple-200: #969dff;
+  --purple-300: #8387ff;
+  --purple-400: #7372fe;
+  --purple-500: #6a64fd;
+  --purple-600: #5f54f4;
+  --purple-700: #5746e3;
+  --purple-800: #4d34cf;
+  --purple-900: #3d2898;
+  --purple-1000: #2e1c6d;
+  --purple-1100: #241654;
+  --purple-1200: #1c1041;
+  --pink-0: #ffffff;
+  --pink-10: #ffeff9;
+  --pink-20: #ffdbf5;
+  --pink-50: #ffc6ef;
+  --pink-100: #ffb5e8;
+  --pink-200: #ffa8e3;
+  --pink-300: #ff96da;
+  --pink-400: #ff88d3;
+  --pink-500: #ff69c3;
+  --pink-600: #ff4ebd;
+  --pink-700: #f63bb3;
+  --pink-800: #de249e;
+  --pink-900: #a4006f;
+  --pink-1000: #72004a;
+  --pink-1100: #570037;
+  --pink-1200: #410027;
+  --orange-50: #feefe3;
+  --orange-100: #fedfc8;
+  --orange-200: #fdc69c;
+  --orange-300: #fcad70;
+  --orange-400: #fa903e;
+  --orange-500: #fa7b17;
+  --orange-600: #e8710a;
+  --orange-700: #d56e0c;
+  --orange-800: #c26401;
+  --orange-900: #b06000;
+  --cyan-500: #24c1e0;
+  --ai-brand-blue: #3186ff;
+  --ai-brand-cyan: #2daeb8;
+  --ai-brand-green: #00af57;
+  --ai-brand-orange: #ff902a;
+  --ai-brand-red: #fc413d;
+  --ai-brand-yellow: #fec700;
+  /* Legacy brand aliases now resolve to the imported palette */
+  --brand-blue: var(--blue-500);
+  --brand-blue-dim: var(--blue-600);
+  --brand-blue-rgb: 49 134 255;
+  --brand-black: var(--grey-1200);
+  --brand-surface: var(--grey-1100);
+  --brand-card: var(--grey-1000);
+  --brand-border: var(--grey-900);
+  --brand-mid-dark: var(--grey-800);
+  --brand-mid: var(--grey-600);
+  --brand-subtle: var(--grey-500);
+  --brand-light: var(--grey-100);
+  --brand-white: var(--grey-0);
+  --brand-green: var(--green-400);
+  --brand-red: var(--red-400);
+  --brand-orange: var(--orange-500);
+}
+
+/* Paxeer brand grid — architectural texture overlay */
+.pax-grid-overlay {
+  background-image:
+    linear-gradient(rgba(0, 76, 237, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 76, 237, 0.04) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+.pax-grid-overlay-dense {
+  background-image:
+    linear-gradient(rgba(0, 76, 237, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 76, 237, 0.035) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Section tag — 1px blue bar + uppercase mono */
+.pax-section-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brand-blue);
+}
+
+.pax-section-tag::before {
+  content: "";
+  display: block;
+  width: 24px;
+  height: 1px;
+  background: var(--brand-blue);
+}
+
+/* Mono meta label — JetBrains Mono substitute via Paxeer Sans */
+.pax-meta {
+  font-family: "Paxeer Sans Rounded", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Primary brand button */
+.pax-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px;
+  background: var(--brand-blue);
+  color: var(--brand-white);
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.pax-btn-primary:hover {
+  background: var(--brand-blue-dim);
+}
+
+.pax-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  background: transparent;
+  color: var(--brand-light);
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  transition: color 150ms ease;
+}
+
+.pax-btn-ghost:hover {
+  color: var(--brand-white);
+}
+
+/* Number watermark — used as decorative brand element */
+.pax-watermark {
+  font-family: "Paxeer Sans Rounded", sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  color: var(--brand-blue);
+  line-height: 0.8;
+  user-select: none;
+}
+
+@keyframes price-flash-up {
+  0%   { background-color: rgba(16, 185, 129, 0.25); }
+  100% { background-color: transparent; }
+}
+
+@keyframes price-flash-down {
+  0%   { background-color: rgba(239, 68, 68, 0.25); }
+  100% { background-color: transparent; }
+}
+
+[data-flash="up"]   { animation: price-flash-up   400ms ease-out; }
+[data-flash="down"] { animation: price-flash-down 400ms ease-out; }
+
+/* Default focus ring for keyboard navigation.
+   Only renders with :focus-visible so mouse clicks never show a ring.
+   Components (e.g. shadcn Button) that define their own focus-visible
+   styles override this via specificity. */
+@layer base {
+  :where(button, [role="button"], a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid hsl(var(--ring, 220 13% 70%));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@keyframes twinkle {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(0.95);
+  }
+}
+
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(calc(-100% - 16px));
+  }
+}
+
+@keyframes marquee2 {
+  0% {
+    transform: translateX(calc(100% + 16px));
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes ticker-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(calc(-30px));
+  }
+}
+
+@keyframes pax-ticker-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@layer utilities {
+  .animate-twinkle {
+    animation: twinkle 2s ease-in-out infinite;
+  }
+
+  .animate-ticker-slow {
+    animation: ticker-scroll 3s linear infinite;
+  }
+
+  .rehypothecation-bar {
+    background-size: 200% 200% !important;
+    animation: gradient-shift 8s ease infinite;
+  }
+
+  .rehypothecation-dot {
+    background-size: 200% 200% !important;
+    animation: gradient-shift 8s ease infinite;
+  }
+
+  .rehypothecation-text {
+    background-size: 200% auto !important;
+    animation: gradient-shift 8s ease infinite;
+  }
+
+  /* Utility to hide scrollbars */
+  .scrollbar-hide {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+  }
+
+  /* Safe area for mobile bottom bar */
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Modern scrollbar styling */
+  .scrollbar-custom {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+    display: block;
+    background: transparent;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 3px;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.2);
+    border-radius: 9999px;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.4);
+  }
+
+  /* Hide scrollbar buttons */
+  .scrollbar-custom::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  /* Hide scrollbar corner */
+  .scrollbar-custom::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Slider styling */
+  [type='range'] {
+    &::-webkit-slider-thumb {
+      background-color: hsl(var(--slider-thumb));
+    }
+    
+    &::-webkit-slider-runnable-track {
+      background: linear-gradient(
+        to right,
+        hsl(var(--slider-range)) var(--range-progress, 0%),
+        hsl(var(--slider-track)) var(--range-progress, 0%)
+      );
+    }
+    
+    &::-moz-range-thumb {
+      background-color: hsl(var(--slider-thumb));
+    }
+    
+    &::-moz-range-track {
+      background: linear-gradient(
+        to right,
+        hsl(var(--slider-range)) var(--range-progress, 0%),
+        hsl(var(--slider-track)) var(--range-progress, 0%)
+      );
+    }
+  }
+
+  /* Custom search input styling to prevent white outline flash */
+  .search-input-custom {
+    outline: none !important;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+  }
+  
+  .search-input-custom:focus {
+    outline: none !important;
+    box-shadow: 0 0 0 2px hsl(var(--primary) / 0.5) !important;
+  }
+  
+  .search-input-custom::-webkit-focus-ring-color {
+    color: transparent !important;
+  }
+}
+
+/* Global scrollbar hiding — all elements hide scrollbars by default.
+   Use .scrollbar-custom on elements that need visible themed scrollbars. */
+*,
+*::before,
+*::after {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+*::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Opera */
+}
+
+/* Opt-in visible scrollbar: override the global hide */
+.scrollbar-custom,
+.scrollbar-custom *:not(.scrollbar-hide):not(.scrollbar-hide *) {
+  scrollbar-width: thin;
+}
+.scrollbar-custom::-webkit-scrollbar {
+  display: block !important;
+  width: 5px;
+  height: 5px;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  font-family: "Paxeer Sans Rounded", sans-serif;
+  overflow: hidden;
+  height: 100%;
+}
+
+/* ─────────────────────────────────────────────────────────
+   Theme backdrop — full-bleed PNG mapped per theme via the
+   --theme-bg-image token. The image sits behind every
+   widget while body's bg-background colour acts as fallback.
+   Image source per theme:
+     dark      → /Dark.png
+     greenify  → /Paxify.png   ("Paxify" label in Settings)
+     hotline   → /Hotline.png
+     oled      → /OLED.png
+   ───────────────────────────────────────────────────────── */
+body {
+  background-image: var(--theme-bg-image, none);
+  background-size: cover;
+  background-position: center center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  transition: background-color 250ms ease;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+@layer base {
+  :root {
+    --theme-bg-image: none;
+    --background: 228 12% 8%;
+    --foreground: 225 40% 98%;
+    --component-background: 228 9% 10%;
+    --card: 228 9% 10%;
+    --card-foreground: 225 40% 98%;
+    --popover: 228 7% 14%;
+    --popover-foreground: 225 40% 98%;
+    --primary: 215 100% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 228 7% 14%;
+    --secondary-foreground: 213 22% 90%;
+    --muted: 228 7% 14%;
+    --muted-foreground: 210 6% 63%;
+    --accent: 228 7% 14%;
+    --accent-foreground: 213 22% 90%;
+    --destructive: 2 100% 64%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 228 5% 19%;
+    --input: 228 5% 19%;
+    --ring: 215 100% 60%;
+    --surface-0: 228 12% 8%;
+    --surface-1: 228 9% 10%;
+    --surface-2: 228 7% 14%;
+    --surface-glass: rgba(230, 234, 240, 0.04);
+    --glass-border: rgba(230, 234, 240, 0.08);
+    --radius-sm: var(--shape-corner-sm);
+    --radius-md: 12px;
+    --radius-lg: var(--shape-corner-md);
+    --radius-xl: var(--shape-corner-lg);
+    --radius-pill: var(--shape-corner-rounded);
+    --radius: var(--shape-corner-sm);
+    --chart-1: 148 86% 40%;
+    --chart-2: 2 100% 64%;
+    --chart-3: 49 100% 51%;
+    --chart-4: 215 100% 60%;
+    --chart-5: 240 99% 72%;
+    --color-long: var(--green-400);
+    --color-long-dark: var(--green-600);
+    --color-long-muted: rgba(14, 188, 95, 0.12);
+    --color-short: var(--red-400);
+    --color-short-dark: var(--red-600);
+    --color-short-muted: rgba(255, 76, 69, 0.12);
+    --color-warning: var(--yellow-400);
+    --color-long-short-button: var(--blue-500);
+    --color-long-short-button-hover: var(--blue-600);
+    --main-accent: var(--blue-500);
+    --foreground-accent: #121317;
+    --text-accent: #f8f9fc;
+    --textbox-background: #18191d;
+    --textbox-border: #2f3034;
+    --deposit-card-background: #18191d;
+    --deposit-card-border: #2f3034;
+    --header-button-background: #18191d;
+    --header-button-hover: #212226;
+    --pane-hover: #18191d;
+    --position-cards-background: #18191d;
+    --sidebar-background: 228 12% 8%;
+    --sidebar-foreground: 225 40% 98%;
+    --sidebar-primary: 215 100% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 228 7% 14%;
+    --sidebar-accent-foreground: 213 22% 90%;
+    --sidebar-border: 228 5% 19%;
+    --sidebar-ring: 215 100% 60%;
+    --slider-range: var(--primary);
+    --slider-thumb: var(--primary);
+    --slider-track: var(--border);
+    --rehypothecation-gradient: linear-gradient(135deg, var(--blue-500) 0%, var(--blue-700) 100%);
+    --rehypothecation-hover: linear-gradient(135deg, var(--blue-600) 0%, var(--blue-800) 100%);
+    --fg: #f8f9fc;
+    --fg-muted: #9aa0a6;
+    --fg-subtle: #9aa0a6b3;
+    --bg: #121317;
+    --bg-subtle: #121317;
+    --bg-elevated: #212226;
+    --border-strong: #2f3034;
+    --border-soft: rgba(230, 234, 240, 0.08);
+    --success: var(--green-400);
+    --danger: var(--red-400);
+    --warning: var(--yellow-400);
+    --accent-solid: var(--blue-500);
+    --accent-solid-rgb: 49 134 255;
+    --color-blue-200: var(--blue-200);
+    --brand-blue-deep: var(--blue-1100);
+    --brand-success-soft: var(--green-100);
+    --brand-danger-soft: var(--red-100);
+    /* Typography (Gemini scale) */
+    --font-family-text: "Google Sans Flex", "Paxeer Sans Rounded", Arial, Helvetica, sans-serif;
+    --font-body: var(--font-family-text);
+    --font-display: var(--font-family-text);
+    --font-mono: "Google Sans Flex", "Paxeer Sans Rounded", ui-monospace, monospace;
+    --shadow-04: 0 4px 12px rgba(18, 19, 23, 0.24);
+    --shadow-05: 0 8px 20px -8px rgba(49, 134, 255, 0.4);
+    --shadow-06: 0 20px 40px -20px rgba(49, 134, 255, 0.5);
+    --radius-card: var(--shape-corner-md);
+    --radius-hero: var(--shape-corner-lg);
+    --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .dark {
+    --theme-bg-image: none;
+    --background: 228 12% 8%;
+    --foreground: 225 40% 98%;
+    --component-background: 228 9% 10%;
+    --card: 228 9% 10%;
+    --card-foreground: 225 40% 98%;
+    --popover: 228 7% 14%;
+    --popover-foreground: 225 40% 98%;
+    --primary: 215 100% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 228 7% 14%;
+    --secondary-foreground: 213 22% 90%;
+    --muted: 228 7% 14%;
+    --muted-foreground: 210 6% 63%;
+    --accent: 228 7% 14%;
+    --accent-foreground: 213 22% 90%;
+    --destructive: 2 100% 64%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 228 5% 19%;
+    --input: 228 5% 19%;
+    --ring: 215 100% 60%;
+    --surface-0: 228 12% 8%;
+    --surface-1: 228 9% 10%;
+    --surface-2: 228 7% 14%;
+    --surface-glass: rgba(230, 234, 240, 0.04);
+    --glass-border: rgba(230, 234, 240, 0.08);
+    --radius-sm: var(--shape-corner-sm);
+    --radius-md: 12px;
+    --radius-lg: var(--shape-corner-md);
+    --radius-xl: var(--shape-corner-lg);
+    --radius-pill: var(--shape-corner-rounded);
+    --radius: var(--shape-corner-sm);
+    --chart-1: 148 86% 40%;
+    --chart-2: 2 100% 64%;
+    --chart-3: 49 100% 51%;
+    --chart-4: 215 100% 60%;
+    --chart-5: 240 99% 72%;
+    --color-long: var(--green-400);
+    --color-long-dark: var(--green-600);
+    --color-long-muted: rgba(14, 188, 95, 0.12);
+    --color-short: var(--red-400);
+    --color-short-dark: var(--red-600);
+    --color-short-muted: rgba(255, 76, 69, 0.12);
+    --color-warning: var(--yellow-400);
+    --color-long-short-button: var(--blue-500);
+    --color-long-short-button-hover: var(--blue-600);
+    --main-accent: var(--blue-500);
+    --foreground-accent: #121317;
+    --text-accent: #f8f9fc;
+    --textbox-background: #18191d;
+    --textbox-border: #2f3034;
+    --deposit-card-background: #18191d;
+    --deposit-card-border: #2f3034;
+    --header-button-background: #18191d;
+    --header-button-hover: #212226;
+    --pane-hover: #18191d;
+    --position-cards-background: #18191d;
+    --sidebar-background: 228 12% 8%;
+    --sidebar-foreground: 225 40% 98%;
+    --sidebar-primary: 215 100% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 228 7% 14%;
+    --sidebar-accent-foreground: 213 22% 90%;
+    --sidebar-border: 228 5% 19%;
+    --sidebar-ring: 215 100% 60%;
+    --slider-range: var(--primary);
+    --slider-thumb: var(--primary);
+    --slider-track: var(--border);
+    --rehypothecation-gradient: linear-gradient(135deg, var(--blue-500) 0%, var(--blue-700) 100%);
+    --rehypothecation-hover: linear-gradient(135deg, var(--blue-600) 0%, var(--blue-800) 100%);
+    --fg: #f8f9fc;
+    --fg-muted: #9aa0a6;
+    --fg-subtle: #9aa0a6b3;
+    --bg: #121317;
+    --bg-subtle: #121317;
+    --bg-elevated: #212226;
+    --border-strong: #2f3034;
+    --border-soft: rgba(230, 234, 240, 0.08);
+    --success: var(--green-400);
+    --danger: var(--red-400);
+    --warning: var(--yellow-400);
+    --accent-solid: var(--blue-500);
+    --accent-solid-rgb: 49 134 255;
+    --color-blue-200: var(--blue-200);
+    --brand-blue-deep: var(--blue-1100);
+    --brand-success-soft: var(--green-100);
+    --brand-danger-soft: var(--red-100);
+  }
+  .light {
+    --theme-bg-image: none;
+    --background: 0 0% 100%;
+    --foreground: 228 12% 8%;
+    --component-background: 225 40% 98%;
+    --card: 225 40% 98%;
+    --card-foreground: 228 12% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 228 12% 8%;
+    --primary: 228 12% 8%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 225 40% 98%;
+    --secondary-foreground: 228 12% 8%;
+    --muted: 218 33% 95%;
+    --muted-foreground: 225 5% 29%;
+    --accent: 218 33% 95%;
+    --accent-foreground: 228 12% 8%;
+    --destructive: 1 73% 52%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 213 22% 90%;
+    --input: 213 22% 90%;
+    --ring: 215 100% 60%;
+    --surface-0: 225 40% 98%;
+    --surface-1: 218 33% 95%;
+    --surface-2: 216 25% 92%;
+    --surface-glass: rgba(33, 34, 38, 0.04);
+    --glass-border: rgba(33, 34, 38, 0.08);
+    --radius-sm: var(--shape-corner-sm);
+    --radius-md: 12px;
+    --radius-lg: var(--shape-corner-md);
+    --radius-xl: var(--shape-corner-lg);
+    --radius-pill: var(--shape-corner-rounded);
+    --radius: var(--shape-corner-sm);
+    --chart-1: 148 86% 40%;
+    --chart-2: 2 100% 64%;
+    --chart-3: 49 100% 51%;
+    --chart-4: 215 100% 60%;
+    --chart-5: 240 99% 72%;
+    --color-long: var(--green-400);
+    --color-long-dark: var(--green-700);
+    --color-long-muted: rgba(14, 188, 95, 0.12);
+    --color-short: var(--red-400);
+    --color-short-dark: var(--red-700);
+    --color-short-muted: rgba(255, 76, 69, 0.12);
+    --color-warning: var(--yellow-400);
+    --color-long-short-button: var(--blue-500);
+    --color-long-short-button-hover: var(--blue-600);
+    --main-accent: var(--blue-500);
+    --foreground-accent: #ffffff;
+    --text-accent: #121317;
+    --textbox-background: #eff2f7;
+    --textbox-border: #e1e6ec;
+    --deposit-card-background: #eff2f7;
+    --deposit-card-border: #e1e6ec;
+    --header-button-background: #eff2f7;
+    --header-button-hover: #e6eaf0;
+    --pane-hover: #eff2f7;
+    --position-cards-background: #eff2f7;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 228 12% 8%;
+    --sidebar-primary: 228 12% 8%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 218 33% 95%;
+    --sidebar-accent-foreground: 228 12% 8%;
+    --sidebar-border: 213 22% 90%;
+    --sidebar-ring: 215 100% 60%;
+    --slider-range: var(--primary);
+    --slider-thumb: var(--primary);
+    --slider-track: var(--border);
+    --rehypothecation-gradient: linear-gradient(135deg, var(--blue-500) 0%, var(--blue-700) 100%);
+    --rehypothecation-hover: linear-gradient(135deg, var(--blue-600) 0%, var(--blue-800) 100%);
+    --fg: #121317;
+    --fg-muted: #45474d;
+    --fg-subtle: #45474db3;
+    --bg: #ffffff;
+    --bg-subtle: #f8f9fc;
+    --bg-elevated: #e6eaf0;
+    --border-strong: #e1e6ec;
+    --border-soft: rgba(33, 34, 38, 0.08);
+    --success: var(--green-400);
+    --danger: var(--red-400);
+    --warning: var(--yellow-400);
+    --accent-solid: var(--blue-500);
+    --accent-solid-rgb: 49 134 255;
+    --color-blue-200: var(--blue-200);
+    --brand-blue-deep: var(--blue-1100);
+    --brand-success-soft: var(--green-100);
+    --brand-danger-soft: var(--red-100);
+  }
+  .greenify {
+    --theme-bg-image: url("/Paxify.png");
+--background: 220 40% 5%;
+    --foreground: 215 18% 75%;
+    --component-background: 220 30% 7%;
+    --card: 220 30% 7%;
+    --card-foreground: 215 18% 75%;
+    --popover: 220 30% 9%;
+    --popover-foreground: 215 18% 75%;
+    --primary: 221 100% 46%;
+    --primary-foreground: 220 40% 5%;
+    --secondary: 221 50% 18%;
+    --secondary-foreground: 215 18% 75%;
+    --muted: 221 50% 18%;
+    --muted-foreground: 218 14% 55%;
+    --accent: 221 100% 46%;
+    --accent-foreground: 220 40% 5%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 215 18% 75%;
+    --border: 220 40% 5%;
+    --input: 220 30% 7%;
+    --ring: 221 100% 46%;
+    --surface-0: 220 40% 5%;
+    --surface-1: 220 30% 7%;
+    --surface-2: 220 30% 9%;
+    --surface-glass: rgba(0, 76, 237, 0.04);
+    --glass-border: transparent;
+    --border-soft: transparent;
+    --border-strong: transparent;
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 24px;
+    --radius-pill: 9999px;
+    --chart-1: 221 100% 46%;
+    --chart-2: 221 50% 18%;
+    --chart-3: 218 14% 55%;
+    --chart-4: 215 18% 75%;
+    --chart-5: 221 80% 36%;
+    --color-long: var(--brand-green);
+    --color-long-dark: #04A85B;
+    --color-long-muted: rgba(5, 193, 104, 0.12);
+    --color-short: var(--brand-red);
+    --color-short-dark: #DE4F58;
+    --color-short-muted: rgba(255, 90, 101, 0.12);
+    --color-long-short-button: #142d6b;
+    --color-long-short-button-hover: #1a3a85;
+    --main-accent: #07194a;
+    --foreground-accent: #142d6b;
+    --text-accent: #9fa8bc;
+    --textbox-background: #0a0f1c;
+    --textbox-border: transparent;
+    --deposit-card-background: #0a0e18;
+    --deposit-card-border: transparent;
+    --header-button-background: #0a0f1c;
+    --header-button-hover: #0d1424;
+    --pane-hover: #0a0f1c;
+    --position-cards-background: #060a14;
+    --nextui-dropdown-background: #060a14;
+    --nextui-background: #060a14;
+    --sidebar-background: 220 40% 5%;
+    --sidebar-foreground: 215 18% 75%;
+    --sidebar-primary: 221 100% 46%;
+    --sidebar-primary-foreground: 220 40% 5%;
+    --sidebar-accent: 221 50% 18%;
+    --sidebar-accent-foreground: 215 18% 75%;
+    --sidebar-border: 220 40% 5%;
+    --sidebar-ring: 221 100% 46%;
+    --slider-range: var(--primary);
+    --slider-thumb: var(--primary);
+    --slider-track: var(--border);
+    --rehypothecation-gradient: linear-gradient(135deg, var(--brand-blue) 0%, #0035a8 100%);
+    --rehypothecation-hover: linear-gradient(135deg, #1a5cff 0%, var(--brand-blue) 100%);
+  }
+  .hotline {
+    --theme-bg-image: url("/Hotline.png");
+    --background: 247 59% 11%;
+    --foreground: 0 0% 98%;
+    --component-background: 248 58% 11%;
+    --card: 248 58% 11%;
+    --card-foreground: 0 0% 98%;
+    --popover: 248 58% 14%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 249 88% 69%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 70% 25%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 242 25% 74%;
+    --muted-foreground: 242 25% 74%;
+    --accent: 240 70% 25%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 70% 25%;
+    --input: 252 72% 10%;
+    --ring: 187 83% 20%;
+    --surface-0: 247 59% 11%;
+    --surface-1: 248 58% 11%;
+    --surface-2: 248 58% 14%;
+    --surface-glass: rgba(139, 92, 246, 0.06);
+    --glass-border: rgba(139, 92, 246, 0.10);
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 24px;
+    --radius-pill: 9999px;
+    --chart-1: 187 83% 20%;
+    --chart-2: 251 71% 19%;
+    --chart-3: 251 71% 35%;
+    --chart-4: 0 0% 98%;
+    --chart-5: 187 63% 15%;
+    --color-long: var(--brand-green);
+    --color-long-dark: #04A85B;
+    --color-long-muted: rgba(5, 193, 104, 0.12);
+    --color-short: var(--brand-red);
+    --color-short-dark: #DE4F58;
+    --color-short-muted: rgba(255, 90, 101, 0.12);
+    --color-long-short-button: #1b0e53;
+    --color-long-short-button-hover: #190e46;
+    --main-accent: #220c61;
+    --foreground-accent: #1b0e53;
+    --text-accent: #e4d6ff;
+    --textbox-background: #0e072b;
+    --textbox-border: #13136d;
+    --deposit-card-background: #0f0b29;
+    --deposit-card-border: #1b0e53;
+    --header-button-background: #0f0b29;
+    --header-button-hover: #0e072b;
+    --pane-hover: #0f0b29;
+    --position-cards-background: #0e072b;
+    --nextui-dropdown-background: #0e072b;
+    --nextui-background: #0e072b;
+    --sidebar-background: 247 59% 11%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 187 83% 20%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 251 71% 19%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 251 71% 19%;
+    --sidebar-ring: 187 83% 20%;
+    --slider-range: var(--primary);
+    --slider-thumb: var(--primary);
+    --slider-track: var(--border);
+    --rehypothecation-gradient: linear-gradient(135deg, var(--brand-blue-dim) 0%, #0035a8 100%);
+    --rehypothecation-hover: linear-gradient(135deg, var(--brand-blue-dim) 0%, #0035a8 100%);
+  }
+  .oled {
+    --theme-bg-image: url("/OLED.png");
+    --background: 0 0% 0%;
+    --foreground: 0 0% 98%;
+    --component-background: 0 0% 3%;
+    --card: 0 0% 3%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 5%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 253 84% 66%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: var(--brand-blue);
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 3.7% 15.9%;
+    --surface-0: 0 0% 0%;
+    --surface-1: 0 0% 3%;
+    --surface-2: 0 0% 5%;
+    --surface-glass: rgba(255, 255, 255, 0.03);
+    --glass-border: rgba(255, 255, 255, 0.05);
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 24px;
+    --radius-pill: 9999px;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --color-long: var(--brand-green);
+    --color-long-dark: #04A85B;
+    --color-long-muted: rgba(5, 193, 104, 0.12);
+    --color-short: var(--brand-red);
+    --color-short-dark: #DE4F58;
+    --color-short-muted: rgba(255, 90, 101, 0.12);
+    --color-long-short-button: #032f8f;
+    --color-long-short-button-hover: #04266f;
+    --main-accent: #0035a8;
+    --foreground-accent: #02194a;
+    --text-accent: #e4d6ff;
+    --textbox-background: #000000;
+    --textbox-border: #1a1a1a;
+    --deposit-card-background: #000000;
+    --deposit-card-border: #1a1a1a;
+    --header-button-background: #000000;
+    --header-button-hover: #0a0a0a;
+    --pane-hover: #0a0a0a;
+    --position-cards-background: #000000;
+    --nextui-dropdown-background: #000000;
+    --nextui-background: #000000;
+    --sidebar-background: 0 0% 0%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: var(--brand-blue);
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+    --slider-range: var(--primary);
+    --slider-thumb: var(--primary);
+    --slider-track: var(--border);
+    --rehypothecation-gradient: linear-gradient(135deg, var(--brand-blue-dim) 0%, #0035a8 100%);
+    --rehypothecation-hover: linear-gradient(135deg, var(--brand-blue-dim) 0%, #0035a8 100%);
+  }
+}
+
+/* Panel and tab transition animations */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+@keyframes slide-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fade-in 150ms ease-out;
+}
+.animate-slide-in-left {
+  animation: slide-in-left 200ms ease-out;
+}
+.animate-slide-in-up {
+  animation: slide-in-up 150ms ease-out;
+}
+
+/* Resize handle active state during drag */
+.resize-active > div:last-child {
+  background-color: hsl(var(--primary) / 0.5) !important;
+  width: 2px !important;
+}
+.resize-active[class*="cursor-row-resize"] > div:last-child {
+  width: revert !important;
+  height: 2px !important;
+}
+
+/* Add these styles to remove number input spinners */
+.no-spinners::-webkit-inner-spin-button,
+.no-spinners::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.no-spinners {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+/* Add this to remove outline for mouse users but keep it for keyboard navigation */
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+*:focus-visible {
+  outline: none;
+  ring-color: hsl(var(--ring));
+  ring-offset-color: hsl(var(--background));
+}
+
+.font-mono {
+  font-family: "Paxeer Sans Rounded", sans-serif !important;
+}
+
+.text-emerald-500 {
+  color: var(--brand-green) !important;
+}
+
+.text-emerald-400 {
+  color: var(--brand-green) !important;
+}
+
+.text-red-500 {
+  color: var(--brand-red) !important;
+}
+
+.text-red-400 {
+  color: var(--brand-red) !important;
+}
+
+.text-amber-500 {
+  color: var(--brand-orange) !important;
+}
+
+.text-amber-400 {
+  color: var(--brand-orange) !important;
+}
+
+.text-blue-400 {
+  color: var(--brand-blue) !important;
+}
+
+.bg-emerald-500\/10 {
+  background-color: rgba(5, 193, 104, 0.1) !important;
+}
+
+.bg-red-500\/10 {
+  background-color: rgba(255, 90, 101, 0.1) !important;
+}
+
+.bg-amber-500\/10 {
+  background-color: rgba(255, 158, 44, 0.1) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Trading UI — Ported design tokens & utility classes
+   Derived from @paxify/trading-ui visual system
+   ═══════════════════════════════════════════════════════════ */
+
+/* Trading panel: grid-structured panels with left+top borders */
+.glass {
+  background: var(--surface-glass);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  /* Apple-style specular hairline — lit edge from above, soft
+     shadow inside the bottom edge. Falls back gracefully when
+     apple-ui.css hasn't loaded yet. */
+  box-shadow: var(
+    --au-specular,
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18)
+  );
+}
+
+.trading-panel {
+  border: none;
+  border-radius: var(--radius-lg);
+  background: hsl(var(--surface-1));
+}
+
+/* OrderBook row: mono, 12px, tight line-height */
+.order-book-row {
+  font-family: "Paxeer Sans Rounded", sans-serif;
+  font-size: 12px;
+  line-height: 22px;
+  padding: 1px 8px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Depth bars: bid/ask background fills */
+.depth-bar-bid {
+  background-color: rgba(5, 193, 104, 0.12);
+}
+
+.depth-bar-ask {
+  background-color: rgba(255, 90, 101, 0.12);
+}
+
+/* Trade form inputs: bottom-border only, transparent bg */
+.trade-form-input {
+  border: none;
+  border-bottom: 1px solid hsl(var(--border));
+  border-radius: 0;
+  background: transparent;
+  font-family: "Paxeer Sans Rounded", sans-serif;
+  font-size: 13px;
+  padding: 8px 10px;
+  color: hsl(var(--foreground));
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  transition: border-color 0.15s ease;
+}
+
+.trade-form-input:focus {
+  border-bottom-color: hsl(var(--primary));
+  outline: none;
+}
+
+.trade-form-input::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+.trade-form-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Trade buttons: semantic long/short colors */
+.trade-button {
+  font-family: "Paxeer Sans Rounded", sans-serif;
+  font-weight: 600;
+  border-radius: 0.375rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.trade-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Tabular numbers utility */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Trading tab: underline-style active indicator */
+.trading-tab {
+  position: relative;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: color 0.15s ease;
+  white-space: nowrap;
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.trading-tab:hover {
+  color: hsl(var(--foreground));
+}
+
+.trading-tab[data-active="true"] {
+  color: hsl(var(--foreground));
+}
+
+.trading-tab[data-active="true"]::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: hsl(var(--primary));
+}
+
+/* Trading tab count badge */
+.trading-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.trading-tab-badge[data-active="true"] {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.trading-tab-badge[data-active="false"] {
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+}
+
+/* Leverage slider: gradient fill track */
+.leverage-slider {
+  width: 100%;
+  height: 6px;
+  border-radius: 9999px;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  outline: none;
+}
+
+.leverage-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.leverage-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.leverage-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+  cursor: pointer;
+  border: none;
+}
+
+/* Loading spinner for trade buttons */
+@keyframes trade-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.trade-spinner {
+  animation: trade-spin 0.75s linear infinite;
+}
+
+/* Mobile bottom nav */
+.mobile-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  height: 3.5rem;
+  background: var(--surface-glass);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-top: 1px solid var(--glass-border);
+  z-index: 50;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.mobile-bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 12px;
+  font-size: 0.625rem;
+  font-weight: 500;
+  transition: color 0.15s ease;
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.mobile-bottom-nav-item[data-active="true"] {
+  color: hsl(var(--primary));
+}
+
+.mobile-bottom-nav-item:hover {
+  color: hsl(var(--foreground));
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+

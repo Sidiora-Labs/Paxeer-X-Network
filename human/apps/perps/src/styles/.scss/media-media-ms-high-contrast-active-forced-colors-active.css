@@ -1,0 +1,21 @@
+@media(-ms-high-contrast: active), (forced-colors: active) {
+    .glue-jumplinks__link {
+        color: linkText
+    }
+}
+@media(-ms-high-contrast: active), (forced-colors: active) {
+    .glue-jumplinks__link.glue-jumplinks__link--active {
+        forced-color-adjust: none;
+        background: linkText;
+        color: window
+    }
+
+    .glue-jumplinks__link.glue-jumplinks__link--active:focus {
+        outline: 2px solid highlight
+    }
+}
+@media(-ms-high-contrast: active), (forced-colors: active) {
+    .glue-jumplinks__button .glue-icon {
+        fill: windowText
+    }
+}

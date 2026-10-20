@@ -1,0 +1,5 @@
+@media(min-width: 380px) {
+    .card-group--expand .card-group__cards--card {
+        flex: 0 0 calc(50% - .5rem)
+    }
+}

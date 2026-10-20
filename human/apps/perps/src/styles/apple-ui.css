@@ -1,0 +1,610 @@
+/* ============================================================
+   apple-ui.css
+   Liquid-glass primitives in the spirit of iOS 26 / visionOS.
+   Buttons, cards, containers, pills, inputs — drop-in, no deps.
+
+   Usage:
+     <link rel="stylesheet" href="apple-ui.css" />
+     <button class="au-button au-button--primary">Continue</button>
+     <div class="au-card">…</div>
+
+   Pair with the squircle SVG filter (included in demo.html) for
+   true continuous corner curvature: add class `au-squircle`.
+   ============================================================ */
+
+/* -----------------------------------------------------------
+   1. Design tokens
+   ----------------------------------------------------------- */
+:root {
+  /* Glass surfaces (dark mode defaults — see prefers-color-scheme below) */
+  --au-surface-1:        rgba(255, 255, 255, 0.06);
+  --au-surface-2:        rgba(255, 255, 255, 0.10);
+  --au-surface-3:        rgba(255, 255, 255, 0.16);
+  --au-surface-elevated: rgba(255, 255, 255, 0.22);
+
+  /* Hairline borders (lighter on top, darker on bottom for "lit from above") */
+  --au-border:        rgba(255, 255, 255, 0.12);
+  --au-border-strong: rgba(255, 255, 255, 0.20);
+  --au-hairline-top:    rgba(255, 255, 255, 0.22);
+  --au-hairline-bottom: rgba(0, 0, 0, 0.18);
+
+  /* Text */
+  --au-text-1: rgba(255, 255, 255, 0.96);
+  --au-text-2: rgba(255, 255, 255, 0.62);
+  --au-text-3: rgba(255, 255, 255, 0.38);
+
+  /* System accents (calibrated to Apple's iOS palette) */
+  --au-blue:    #0A84FF;
+  --au-blue-2:  #409CFF;
+  --au-green:   #30D158;
+  --au-red:     #FF453A;
+  --au-orange:  #FF9F0A;
+  --au-yellow:  #FFD60A;
+  --au-purple:  #BF5AF2;
+  --au-pink:    #FF375F;
+  --au-teal:    #40C8E0;
+
+  /* Radii — Apple uses larger radii than people expect */
+  --au-r-xs:   6px;
+  --au-r-sm:   10px;
+  --au-r-md:   14px;
+  --au-r-lg:   20px;
+  --au-r-xl:   28px;
+  --au-r-2xl:  36px;
+  --au-r-full: 9999px;
+
+  /* Elevation — layered shadows for real depth */
+  --au-shadow-1:
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    0 2px 6px rgba(0, 0, 0, 0.10);
+  --au-shadow-2:
+    0 4px 12px rgba(0, 0, 0, 0.22),
+    0 1px 3px rgba(0, 0, 0, 0.14);
+  --au-shadow-3:
+    0 18px 40px rgba(0, 0, 0, 0.30),
+    0 6px 12px rgba(0, 0, 0, 0.18);
+  --au-shadow-4:
+    0 32px 64px rgba(0, 0, 0, 0.36),
+    0 12px 24px rgba(0, 0, 0, 0.20);
+
+  /* The "specular highlight" — what makes glass read as glass */
+  --au-specular:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.10);
+
+  /* Glass blur & saturation — the two knobs that make it feel iOS */
+  --au-blur:     28px;
+  --au-blur-lg:  44px;
+  --au-saturate: 180%;
+
+  /* Motion */
+  --au-ease:   cubic-bezier(0.4, 0, 0.2, 1);
+  --au-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --au-fast:   140ms;
+  --au-med:    220ms;
+  --au-slow:   420ms;
+
+  /* Typography stack */
+  --au-font:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Helvetica Neue", "Inter", system-ui, sans-serif;
+  --au-font-mono:
+    "SF Mono", "JetBrains Mono", ui-monospace, "Menlo", monospace;
+}
+
+/* Light-mode token overrides */
+@media (prefers-color-scheme: light) {
+  :root {
+    --au-surface-1:        rgba(255, 255, 255, 0.55);
+    --au-surface-2:        rgba(255, 255, 255, 0.70);
+    --au-surface-3:        rgba(255, 255, 255, 0.82);
+    --au-surface-elevated: rgba(255, 255, 255, 0.92);
+
+    --au-border:        rgba(0, 0, 0, 0.08);
+    --au-border-strong: rgba(0, 0, 0, 0.14);
+    --au-hairline-top:    rgba(255, 255, 255, 0.90);
+    --au-hairline-bottom: rgba(0, 0, 0, 0.06);
+
+    --au-text-1: rgba(0, 0, 0, 0.92);
+    --au-text-2: rgba(0, 0, 0, 0.58);
+    --au-text-3: rgba(0, 0, 0, 0.34);
+
+    --au-specular:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.04);
+  }
+}
+
+/* Manual theme overrides — add `data-theme="dark"` or `="light"` to <html> */
+[data-theme="light"] {
+  --au-surface-1:        rgba(255, 255, 255, 0.55);
+  --au-surface-2:        rgba(255, 255, 255, 0.70);
+  --au-surface-3:        rgba(255, 255, 255, 0.82);
+  --au-surface-elevated: rgba(255, 255, 255, 0.92);
+  --au-border:        rgba(0, 0, 0, 0.08);
+  --au-border-strong: rgba(0, 0, 0, 0.14);
+  --au-hairline-top:    rgba(255, 255, 255, 0.90);
+  --au-hairline-bottom: rgba(0, 0, 0, 0.06);
+  --au-text-1: rgba(0, 0, 0, 0.92);
+  --au-text-2: rgba(0, 0, 0, 0.58);
+  --au-text-3: rgba(0, 0, 0, 0.34);
+  --au-specular:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.04);
+}
+
+
+/* -----------------------------------------------------------
+   2. Base glass primitive
+   ----------------------------------------------------------- */
+.au-glass {
+  background: var(--au-surface-1);
+  backdrop-filter: blur(var(--au-blur)) saturate(var(--au-saturate));
+  -webkit-backdrop-filter: blur(var(--au-blur)) saturate(var(--au-saturate));
+  border: 1px solid var(--au-border);
+  box-shadow: var(--au-shadow-2), var(--au-specular);
+  color: var(--au-text-1);
+}
+
+.au-glass--strong {
+  background: var(--au-surface-3);
+  backdrop-filter: blur(var(--au-blur-lg)) saturate(var(--au-saturate));
+  -webkit-backdrop-filter: blur(var(--au-blur-lg)) saturate(var(--au-saturate));
+  box-shadow: var(--au-shadow-3), var(--au-specular);
+}
+
+
+/* -----------------------------------------------------------
+   3. Cards
+   ----------------------------------------------------------- */
+.au-card {
+  position: relative;
+  padding: 20px 22px;
+  border-radius: var(--au-r-lg);
+  background: var(--au-surface-1);
+  backdrop-filter: blur(var(--au-blur)) saturate(var(--au-saturate));
+  -webkit-backdrop-filter: blur(var(--au-blur)) saturate(var(--au-saturate));
+  border: 1px solid var(--au-border);
+  box-shadow: var(--au-shadow-2), var(--au-specular);
+  color: var(--au-text-1);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* The subtle top hairline — fakes a lit edge from above */
+.au-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    180deg,
+    var(--au-hairline-top) 0%,
+    transparent 30%,
+    transparent 70%,
+    var(--au-hairline-bottom) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+}
+
+.au-card--elevated {
+  background: var(--au-surface-3);
+  box-shadow: var(--au-shadow-3), var(--au-specular);
+}
+
+.au-card--interactive {
+  cursor: pointer;
+  transition:
+    transform var(--au-med) var(--au-spring),
+    box-shadow var(--au-med) var(--au-ease),
+    background var(--au-med) var(--au-ease);
+}
+
+.au-card--interactive:hover {
+  transform: translateY(-2px);
+  background: var(--au-surface-2);
+  box-shadow: var(--au-shadow-3), var(--au-specular);
+}
+
+.au-card--interactive:active {
+  transform: scale(0.99) translateY(0);
+  transition-duration: var(--au-fast);
+}
+
+
+/* -----------------------------------------------------------
+   4. Panels & containers
+   ----------------------------------------------------------- */
+
+/* Big rounded glass panel (sidebars, modals, sheets) */
+.au-panel {
+  padding: 24px;
+  border-radius: var(--au-r-xl);
+  background: var(--au-surface-2);
+  backdrop-filter: blur(var(--au-blur-lg)) saturate(var(--au-saturate));
+  -webkit-backdrop-filter: blur(var(--au-blur-lg)) saturate(var(--au-saturate));
+  border: 1px solid var(--au-border);
+  box-shadow: var(--au-shadow-3), var(--au-specular);
+  color: var(--au-text-1);
+}
+
+/* Pill-shaped toolbar / Dynamic-Island-style container */
+.au-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: var(--au-r-full);
+  background: var(--au-surface-2);
+  backdrop-filter: blur(var(--au-blur-lg)) saturate(var(--au-saturate));
+  -webkit-backdrop-filter: blur(var(--au-blur-lg)) saturate(var(--au-saturate));
+  border: 1px solid var(--au-border);
+  box-shadow: var(--au-shadow-2), var(--au-specular);
+  color: var(--au-text-1);
+}
+
+/* Sectioned list group (iOS Settings-style grouped table) */
+.au-group {
+  background: var(--au-surface-1);
+  backdrop-filter: blur(var(--au-blur)) saturate(var(--au-saturate));
+  -webkit-backdrop-filter: blur(var(--au-blur)) saturate(var(--au-saturate));
+  border: 1px solid var(--au-border);
+  border-radius: var(--au-r-md);
+  box-shadow: var(--au-shadow-1), var(--au-specular);
+  overflow: hidden;
+}
+.au-group > * + * { border-top: 1px solid var(--au-border); }
+.au-group__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  color: var(--au-text-1);
+  font: 500 14px/1.3 var(--au-font);
+}
+
+
+/* -----------------------------------------------------------
+   5. Buttons
+   ----------------------------------------------------------- */
+.au-button {
+  --au-btn-bg:     var(--au-surface-2);
+  --au-btn-bg-hov: var(--au-surface-3);
+  --au-btn-fg:     var(--au-text-1);
+  --au-btn-bd:     var(--au-border);
+  --au-btn-shadow: var(--au-shadow-1);
+
+  appearance: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 18px;
+  font: 600 14px/1 var(--au-font);
+  letter-spacing: -0.01em;
+  color: var(--au-btn-fg);
+  background: var(--au-btn-bg);
+  backdrop-filter: blur(var(--au-blur)) saturate(var(--au-saturate));
+  -webkit-backdrop-filter: blur(var(--au-blur)) saturate(var(--au-saturate));
+  border: 1px solid var(--au-btn-bd);
+  border-radius: var(--au-r-md);
+  box-shadow: var(--au-btn-shadow), var(--au-specular);
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    transform var(--au-med) var(--au-spring),
+    background var(--au-med) var(--au-ease),
+    box-shadow var(--au-med) var(--au-ease),
+    border-color var(--au-med) var(--au-ease);
+}
+
+/* Specular sweep on hover — the "wet glass" feel */
+.au-button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.14) 50%,
+    transparent 70%
+  );
+  transform: translateX(-110%);
+  transition: transform var(--au-slow) var(--au-ease);
+  pointer-events: none;
+}
+.au-button:hover::before { transform: translateX(110%); }
+
+.au-button:hover {
+  background: var(--au-btn-bg-hov);
+  transform: translateY(-1px);
+  box-shadow: var(--au-shadow-2), var(--au-specular);
+}
+
+.au-button:active {
+  transform: scale(0.96);
+  transition-duration: 90ms;
+}
+
+.au-button:focus-visible {
+  outline: none;
+  box-shadow:
+    var(--au-shadow-2),
+    var(--au-specular),
+    0 0 0 3px color-mix(in srgb, var(--au-blue) 35%, transparent);
+}
+
+.au-button:disabled,
+.au-button[aria-disabled="true"] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* --- Variants --- */
+
+.au-button--primary {
+  --au-btn-bg:     var(--au-blue);
+  --au-btn-bg-hov: var(--au-blue-2);
+  --au-btn-fg:     #fff;
+  --au-btn-bd:     rgba(255, 255, 255, 0.20);
+  --au-btn-shadow:
+    0 6px 18px color-mix(in srgb, var(--au-blue) 50%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.20);
+}
+
+.au-button--destructive {
+  --au-btn-bg:     var(--au-red);
+  --au-btn-bg-hov: color-mix(in srgb, var(--au-red) 88%, white);
+  --au-btn-fg:     #fff;
+  --au-btn-bd:     rgba(255, 255, 255, 0.20);
+  --au-btn-shadow:
+    0 6px 18px color-mix(in srgb, var(--au-red) 45%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.20);
+}
+
+.au-button--success {
+  --au-btn-bg:     var(--au-green);
+  --au-btn-bg-hov: color-mix(in srgb, var(--au-green) 88%, white);
+  --au-btn-fg:     #001a06;
+  --au-btn-bd:     rgba(255, 255, 255, 0.25);
+  --au-btn-shadow:
+    0 6px 18px color-mix(in srgb, var(--au-green) 45%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.20);
+}
+
+.au-button--ghost {
+  --au-btn-bg:     transparent;
+  --au-btn-bg-hov: var(--au-surface-1);
+  --au-btn-bd:     transparent;
+  --au-btn-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.au-button--ghost:hover { border-color: var(--au-border); }
+
+/* Shapes */
+.au-button--pill  { border-radius: var(--au-r-full); padding: 10px 20px; }
+.au-button--icon  { width: 38px; height: 38px; padding: 0; border-radius: var(--au-r-md); }
+.au-button--icon.au-button--pill { border-radius: var(--au-r-full); }
+
+/* Sizes */
+.au-button--sm { padding: 7px 13px; font-size: 12.5px; border-radius: var(--au-r-sm); }
+.au-button--lg { padding: 14px 24px; font-size: 15.5px; border-radius: var(--au-r-lg); }
+
+
+/* -----------------------------------------------------------
+   6. Inputs
+   ----------------------------------------------------------- */
+.au-input {
+  appearance: none;
+  width: 100%;
+  padding: 11px 14px;
+  font: 500 14px/1.2 var(--au-font);
+  color: var(--au-text-1);
+  background: var(--au-surface-1);
+  backdrop-filter: blur(var(--au-blur)) saturate(var(--au-saturate));
+  -webkit-backdrop-filter: blur(var(--au-blur)) saturate(var(--au-saturate));
+  border: 1px solid var(--au-border);
+  border-radius: var(--au-r-md);
+  box-shadow: var(--au-specular);
+  outline: none;
+  transition:
+    border-color var(--au-med) var(--au-ease),
+    box-shadow var(--au-med) var(--au-ease),
+    background var(--au-med) var(--au-ease);
+}
+.au-input::placeholder { color: var(--au-text-3); }
+.au-input:hover  { background: var(--au-surface-2); }
+.au-input:focus  {
+  border-color: var(--au-blue);
+  box-shadow:
+    var(--au-specular),
+    0 0 0 3px color-mix(in srgb, var(--au-blue) 28%, transparent);
+}
+
+
+/* -----------------------------------------------------------
+   7. Pills, tags, badges
+   ----------------------------------------------------------- */
+.au-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font: 600 12px/1.2 var(--au-font);
+  letter-spacing: 0.01em;
+  color: var(--au-text-2);
+  background: var(--au-surface-1);
+  border: 1px solid var(--au-border);
+  border-radius: var(--au-r-full);
+  box-shadow: var(--au-specular);
+}
+.au-pill--blue   { color: var(--au-blue);   border-color: color-mix(in srgb, var(--au-blue)   30%, transparent); background: color-mix(in srgb, var(--au-blue)   14%, transparent); }
+.au-pill--green  { color: var(--au-green);  border-color: color-mix(in srgb, var(--au-green)  30%, transparent); background: color-mix(in srgb, var(--au-green)  14%, transparent); }
+.au-pill--red    { color: var(--au-red);    border-color: color-mix(in srgb, var(--au-red)    30%, transparent); background: color-mix(in srgb, var(--au-red)    14%, transparent); }
+.au-pill--orange { color: var(--au-orange); border-color: color-mix(in srgb, var(--au-orange) 30%, transparent); background: color-mix(in srgb, var(--au-orange) 14%, transparent); }
+
+
+/* -----------------------------------------------------------
+   8. Segmented control (iOS-style)
+   ----------------------------------------------------------- */
+.au-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--au-surface-1);
+  border: 1px solid var(--au-border);
+  border-radius: var(--au-r-md);
+  box-shadow: var(--au-specular);
+}
+.au-segmented__option {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 7px 14px;
+  font: 600 13px/1 var(--au-font);
+  color: var(--au-text-2);
+  border-radius: calc(var(--au-r-md) - 4px);
+  cursor: pointer;
+  transition: background var(--au-fast) var(--au-ease), color var(--au-fast) var(--au-ease);
+}
+.au-segmented__option:hover { color: var(--au-text-1); }
+.au-segmented__option[aria-selected="true"] {
+  background: var(--au-surface-3);
+  color: var(--au-text-1);
+  box-shadow: var(--au-shadow-1), var(--au-specular);
+}
+
+
+/* -----------------------------------------------------------
+   9. Squircle utility (needs the SVG filter in markup)
+   ----------------------------------------------------------- */
+.au-squircle { filter: url(#SquiCircleFilter); }
+
+
+/* -----------------------------------------------------------
+   10. Typography helpers
+   ----------------------------------------------------------- */
+.au-text          { font-family: var(--au-font); color: var(--au-text-1); letter-spacing: -0.01em; }
+.au-text-mono     { font-family: var(--au-font-mono); }
+.au-title         { font: 700 22px/1.2 var(--au-font); letter-spacing: -0.02em; color: var(--au-text-1); }
+.au-title--large  { font-size: 34px; letter-spacing: -0.03em; }
+.au-subtitle      { font: 500 14px/1.4 var(--au-font); color: var(--au-text-2); }
+.au-caption       { font: 500 12px/1.3 var(--au-font); color: var(--au-text-3); letter-spacing: 0.01em; }
+
+
+/* -----------------------------------------------------------
+   11. Divider
+   ----------------------------------------------------------- */
+.au-divider {
+  height: 1px;
+  width: 100%;
+  background: var(--au-border);
+  border: 0;
+}
+
+
+/* -----------------------------------------------------------
+   12. Reduced motion
+   ----------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .au-button,
+  .au-card--interactive,
+  .au-input { transition: none; }
+  .au-button::before { display: none; }
+}
+
+
+/* -----------------------------------------------------------
+   13. App theme integration (next-themes, attribute="class")
+   ------------------------------------------------------------
+   The next-themes provider sets the theme name as a class on
+   <html>. Force the dark glass token set across every dark
+   theme so that prefers-color-scheme can't flip the
+   primitives out from under the app, and tint the system
+   accent so au-button--primary etc. feels native per theme.
+   ----------------------------------------------------------- */
+html.dark,
+html.greenify,
+html.hotline,
+html.oled {
+  --au-surface-1:        rgba(255, 255, 255, 0.06);
+  --au-surface-2:        rgba(255, 255, 255, 0.10);
+  --au-surface-3:        rgba(255, 255, 255, 0.16);
+  --au-surface-elevated: rgba(255, 255, 255, 0.22);
+
+  --au-border:           rgba(255, 255, 255, 0.12);
+  --au-border-strong:    rgba(255, 255, 255, 0.20);
+  --au-hairline-top:     rgba(255, 255, 255, 0.22);
+  --au-hairline-bottom:  rgba(0, 0, 0, 0.18);
+
+  --au-text-1: rgba(255, 255, 255, 0.96);
+  --au-text-2: rgba(255, 255, 255, 0.62);
+  --au-text-3: rgba(255, 255, 255, 0.38);
+
+  --au-specular:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.10);
+
+  /* Apple system accent → app primary (per-theme). */
+  --au-blue:   hsl(var(--primary));
+  --au-blue-2: color-mix(in srgb, hsl(var(--primary)) 80%, white);
+}
+
+/* Greenify (Paxify) — Paxeer brand blue accent. */
+html.greenify {
+  --au-blue:   var(--brand-blue);
+  --au-blue-2: var(--brand-blue-dim);
+}
+
+/* Hotline — violet-tinted glass + violet accent. */
+html.hotline {
+  --au-surface-1: rgba(139, 92, 246, 0.06);
+  --au-surface-2: rgba(139, 92, 246, 0.12);
+  --au-surface-3: rgba(139, 92, 246, 0.18);
+  --au-border:    rgba(139, 92, 246, 0.20);
+  --au-border-strong: rgba(139, 92, 246, 0.30);
+  --au-blue:   hsl(249 88% 69%);
+  --au-blue-2: hsl(249 88% 78%);
+}
+
+/* OLED — minimal glass, pure black surfaces. */
+html.oled {
+  --au-surface-1: rgba(255, 255, 255, 0.03);
+  --au-surface-2: rgba(255, 255, 255, 0.06);
+  --au-surface-3: rgba(255, 255, 255, 0.10);
+  --au-border:    rgba(255, 255, 255, 0.08);
+  --au-border-strong: rgba(255, 255, 255, 0.14);
+  --au-blue:   var(--brand-blue);
+  --au-blue-2: #1F66FF;
+}
+
+/* Light — used when next-themes resolves to "light". */
+html.light {
+  --au-surface-1:        rgba(255, 255, 255, 0.55);
+  --au-surface-2:        rgba(255, 255, 255, 0.70);
+  --au-surface-3:        rgba(255, 255, 255, 0.82);
+  --au-surface-elevated: rgba(255, 255, 255, 0.92);
+
+  --au-border:        rgba(0, 0, 0, 0.08);
+  --au-border-strong: rgba(0, 0, 0, 0.14);
+  --au-hairline-top:    rgba(255, 255, 255, 0.90);
+  --au-hairline-bottom: rgba(0, 0, 0, 0.06);
+
+  --au-text-1: rgba(0, 0, 0, 0.92);
+  --au-text-2: rgba(0, 0, 0, 0.58);
+  --au-text-3: rgba(0, 0, 0, 0.34);
+
+  --au-specular:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.04);
+}

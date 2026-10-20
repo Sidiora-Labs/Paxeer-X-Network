@@ -1,3 +1,9 @@
 packages:
-  - "apps/*"
-  - "packages/*"
+  - '.'
+allowBuilds:
+  '@sentry/cli': true
+  bufferutil: true
+  esbuild: true
+  keccak: true
+  sharp: true
+  utf-8-validate: true

@@ -1,0 +1,7 @@
+@media(max-width: 1440px) {
+    .block-cover_carousel .carousel__pagination {
+        padding-left: var(--grid-margin);
+        padding-right: var(--grid-margin);
+        max-width: 100%
+    }
+}

@@ -1,0 +1,6 @@
+@media(hover: none) {
+    .glue-jumplinks__link {
+        background-color: none;
+        color: #5f6368
+    }
+}

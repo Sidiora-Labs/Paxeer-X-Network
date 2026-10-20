@@ -1,0 +1,6 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "vulnerabilityAlerts": { "enabled": true },
+  "packageRules": [{ "matchPackageNames": ["next", "sharp"], "groupName": "image pipeline security", "automerge": false }]
+}

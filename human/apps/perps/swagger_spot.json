@@ -1,0 +1,2716 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Hyperpax Spot API",
+        "description": "REST API for Hyperpax the Flagship trading platform of Paxeer Network.",
+        "version": "1.0.0",
+        "contact": {
+            "name": "PaxLabs Inc",
+            "url": "https://hyperpaxeer.com"
+        }
+    },
+    "components": {
+        "schemas": {}
+    },
+    "paths": {
+        "/healthz": {
+            "get": {
+                "tags": [
+                    "Health"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "status",
+                                        "service"
+                                    ],
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "ok",
+                                                "ready"
+                                            ]
+                                        },
+                                        "service": {
+                                            "type": "string",
+                                            "enum": [
+                                                "api"
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/readyz": {
+            "get": {
+                "tags": [
+                    "Health"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "status",
+                                        "service"
+                                    ],
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "ok",
+                                                "ready"
+                                            ]
+                                        },
+                                        "service": {
+                                            "type": "string",
+                                            "enum": [
+                                                "api"
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/users/{address}/identity": {
+            "get": {
+                "summary": "Identity dossier for an address",
+                "tags": [
+                    "Users"
+                ],
+                "description": "PAXSCAN identity (first/last seen, txCount, gas, contracts deployed, native PAX balance) merged with our derived trading stats (lifetime trade count, USD volume, PoFQ, 24h slice) and the most recent PnL snapshot.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^0x[a-f0-9]{40}$"
+                        },
+                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc",
+                        "in": "path",
+                        "name": "address",
+                        "required": true,
+                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix)."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "address",
+                                        "paxscan",
+                                        "nativeBalance",
+                                        "trading",
+                                        "latestSnapshot"
+                                    ],
+                                    "properties": {
+                                        "address": {
+                                            "type": "string",
+                                            "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                            "pattern": "^0x[a-f0-9]{40}$",
+                                            "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                        },
+                                        "paxscan": {
+                                            "description": "Identity dossier sourced from the Paxeer block explorer (PAXSCAN).",
+                                            "oneOf": [
+                                                {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "coinBalance",
+                                                        "firstSeenAt",
+                                                        "lastSeenAt",
+                                                        "txCount",
+                                                        "totalGasUsed",
+                                                        "contractsDeployed"
+                                                    ],
+                                                    "properties": {
+                                                        "coinBalance": {
+                                                            "type": "string",
+                                                            "description": "Native PAX balance (1e18 raw).",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "firstSeenAt": {
+                                                            "oneOf": [
+                                                                {
+                                                                    "type": "string",
+                                                                    "format": "date-time",
+                                                                    "description": "ISO-8601 timestamp."
+                                                                },
+                                                                {
+                                                                    "type": "null"
+                                                                }
+                                                            ]
+                                                        },
+                                                        "lastSeenAt": {
+                                                            "oneOf": [
+                                                                {
+                                                                    "type": "string",
+                                                                    "format": "date-time",
+                                                                    "description": "ISO-8601 timestamp."
+                                                                },
+                                                                {
+                                                                    "type": "null"
+                                                                }
+                                                            ]
+                                                        },
+                                                        "txCount": {
+                                                            "type": "integer",
+                                                            "minimum": 0
+                                                        },
+                                                        "totalGasUsed": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "contractsDeployed": {
+                                                            "type": "integer",
+                                                            "minimum": 0
+                                                        }
+                                                    }
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        },
+                                        "nativeBalance": {
+                                            "type": "string",
+                                            "description": "Live native PAX balance from eth_getBalance (1e18 raw).",
+                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                        },
+                                        "trading": {
+                                            "type": "object",
+                                            "required": [
+                                                "tradeCount",
+                                                "totalVolumeUsd",
+                                                "firstTradeAt",
+                                                "lastTradeAt",
+                                                "pofqScore",
+                                                "pofqFills",
+                                                "openPositions",
+                                                "last24h"
+                                            ],
+                                            "properties": {
+                                                "tradeCount": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "totalVolumeUsd": {
+                                                    "type": "string",
+                                                    "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                    "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                },
+                                                "firstTradeAt": {
+                                                    "oneOf": [
+                                                        {
+                                                            "type": "string",
+                                                            "format": "date-time",
+                                                            "description": "ISO-8601 timestamp."
+                                                        },
+                                                        {
+                                                            "type": "null"
+                                                        }
+                                                    ]
+                                                },
+                                                "lastTradeAt": {
+                                                    "oneOf": [
+                                                        {
+                                                            "type": "string",
+                                                            "format": "date-time",
+                                                            "description": "ISO-8601 timestamp."
+                                                        },
+                                                        {
+                                                            "type": "null"
+                                                        }
+                                                    ]
+                                                },
+                                                "pofqScore": {
+                                                    "type": "string",
+                                                    "description": "Proof-of-Fill-Quality score (6-decimal). Higher is better.",
+                                                    "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                },
+                                                "pofqFills": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "openPositions": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "last24h": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "volumeUsd",
+                                                        "trades"
+                                                    ],
+                                                    "properties": {
+                                                        "volumeUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "trades": {
+                                                            "type": "integer",
+                                                            "minimum": 0
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "latestSnapshot": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "snapshotAt",
+                                                        "realizedPnlUsd",
+                                                        "unrealizedPnlUsd",
+                                                        "totalPnlUsd",
+                                                        "positionsValueUsd",
+                                                        "openPositionCount"
+                                                    ],
+                                                    "properties": {
+                                                        "snapshotAt": {
+                                                            "type": "string",
+                                                            "format": "date-time",
+                                                            "description": "ISO-8601 timestamp."
+                                                        },
+                                                        "realizedPnlUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "unrealizedPnlUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "totalPnlUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "positionsValueUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "openPositionCount": {
+                                                            "type": "integer",
+                                                            "minimum": 0
+                                                        }
+                                                    }
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "error"
+                                    ],
+                                    "properties": {
+                                        "error": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": true
+                                                }
+                                            ]
+                                        },
+                                        "validation": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/users/{address}/holdings": {
+            "get": {
+                "summary": "Live portfolio (native + ERC-20) for an address",
+                "tags": [
+                    "Users"
+                ],
+                "description": "Live PAXSCAN-truthed portfolio: every non-zero ERC-20 balance with cache-hydrated symbol/decimals, plus the native PAX balance.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^0x[a-f0-9]{40}$"
+                        },
+                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc",
+                        "in": "path",
+                        "name": "address",
+                        "required": true,
+                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix)."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "address",
+                                        "native",
+                                        "erc20"
+                                    ],
+                                    "properties": {
+                                        "address": {
+                                            "type": "string",
+                                            "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                            "pattern": "^0x[a-f0-9]{40}$",
+                                            "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                        },
+                                        "native": {
+                                            "type": "object",
+                                            "required": [
+                                                "symbol",
+                                                "decimals",
+                                                "balance"
+                                            ],
+                                            "properties": {
+                                                "symbol": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "PAX"
+                                                    ]
+                                                },
+                                                "decimals": {
+                                                    "type": "integer",
+                                                    "enum": [
+                                                        18
+                                                    ]
+                                                },
+                                                "balance": {
+                                                    "type": "string",
+                                                    "description": "Native PAX balance (1e18 raw).",
+                                                    "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                }
+                                            }
+                                        },
+                                        "erc20": {
+                                            "type": "array",
+                                            "description": "Every non-zero ERC-20 balance from PAXSCAN, joined with the local token cache.",
+                                            "items": {
+                                                "type": "object",
+                                                "required": [
+                                                    "token",
+                                                    "balance",
+                                                    "blockNumber",
+                                                    "symbol",
+                                                    "name",
+                                                    "decimals",
+                                                    "holderCount",
+                                                    "type"
+                                                ],
+                                                "properties": {
+                                                    "token": {
+                                                        "type": "string",
+                                                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                                        "pattern": "^0x[a-f0-9]{40}$",
+                                                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                                    },
+                                                    "balance": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "blockNumber": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ],
+                                                        "description": "Block at which PAXSCAN reported the balance."
+                                                    },
+                                                    "symbol": {
+                                                        "type": [
+                                                            "null",
+                                                            "string"
+                                                        ]
+                                                    },
+                                                    "name": {
+                                                        "type": [
+                                                            "null",
+                                                            "string"
+                                                        ]
+                                                    },
+                                                    "decimals": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "integer",
+                                                                "minimum": 0,
+                                                                "maximum": 36
+                                                            },
+                                                            {
+                                                                "type": "string"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "holderCount": {
+                                                        "type": [
+                                                            "null",
+                                                            "integer"
+                                                        ]
+                                                    },
+                                                    "type": {
+                                                        "type": "string",
+                                                        "description": "Always \"ERC-20\" today; reserved for future asset classes."
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "error"
+                                    ],
+                                    "properties": {
+                                        "error": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": true
+                                                }
+                                            ]
+                                        },
+                                        "validation": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/users/{address}/positions": {
+            "get": {
+                "summary": "Open or historical positions joined with live PAXSCAN balance",
+                "tags": [
+                    "Users"
+                ],
+                "description": "Our derived weighted-average-cost positions joined with the live PAXSCAN ERC-20 balance per token. Surfaces `externalActivity:true` when the on-chain balance differs from the qty we attributed via trade events.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "all",
+                                "open"
+                            ],
+                            "default": "all"
+                        },
+                        "in": "query",
+                        "name": "status",
+                        "required": false,
+                        "description": "Filter to currently-open positions (qty > 0) or return everything."
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^0x[a-f0-9]{40}$"
+                        },
+                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc",
+                        "in": "path",
+                        "name": "address",
+                        "required": true,
+                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix)."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "address",
+                                        "count",
+                                        "items"
+                                    ],
+                                    "properties": {
+                                        "address": {
+                                            "type": "string",
+                                            "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                            "pattern": "^0x[a-f0-9]{40}$",
+                                            "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                        },
+                                        "count": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                        },
+                                        "items": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "required": [
+                                                    "token",
+                                                    "symbol",
+                                                    "name",
+                                                    "decimals",
+                                                    "isStablecoin",
+                                                    "derived",
+                                                    "paxscan",
+                                                    "externalActivity",
+                                                    "externalQtyDelta"
+                                                ],
+                                                "properties": {
+                                                    "token": {
+                                                        "type": "string",
+                                                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                                        "pattern": "^0x[a-f0-9]{40}$",
+                                                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                                    },
+                                                    "symbol": {
+                                                        "type": [
+                                                            "null",
+                                                            "string"
+                                                        ]
+                                                    },
+                                                    "name": {
+                                                        "type": [
+                                                            "null",
+                                                            "string"
+                                                        ]
+                                                    },
+                                                    "decimals": {
+                                                        "type": [
+                                                            "null",
+                                                            "integer"
+                                                        ],
+                                                        "minimum": 0,
+                                                        "maximum": 36
+                                                    },
+                                                    "isStablecoin": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "derived": {
+                                                        "type": "object",
+                                                        "required": [
+                                                            "qty",
+                                                            "avgEntryPrice",
+                                                            "avgExitPrice",
+                                                            "totalBought",
+                                                            "totalSold",
+                                                            "totalCostBasis",
+                                                            "totalProceeds",
+                                                            "realizedPnl",
+                                                            "realizedPnlUsd",
+                                                            "tradeCount",
+                                                            "firstTradeAt",
+                                                            "lastTradeAt"
+                                                        ],
+                                                        "properties": {
+                                                            "qty": {
+                                                                "type": "string",
+                                                                "description": "Derived qty from trade attribution (token raw 1e18).",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            "avgEntryPrice": {
+                                                                "type": "string",
+                                                                "description": "WAC entry price (stable per token, 1e18 scaled).",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            "avgExitPrice": {
+                                                                "oneOf": [
+                                                                    {
+                                                                        "type": "string",
+                                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                                    },
+                                                                    {
+                                                                        "type": "null"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "totalBought": {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            "totalSold": {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            "totalCostBasis": {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            "totalProceeds": {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            "realizedPnl": {
+                                                                "type": "string",
+                                                                "description": "Realized PnL in stable raw units.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            "realizedPnlUsd": {
+                                                                "type": "string",
+                                                                "description": "Realized PnL in 6-decimal USD.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            "tradeCount": {
+                                                                "type": "integer",
+                                                                "minimum": 0
+                                                            },
+                                                            "firstTradeAt": {
+                                                                "oneOf": [
+                                                                    {
+                                                                        "type": "string",
+                                                                        "format": "date-time",
+                                                                        "description": "ISO-8601 timestamp."
+                                                                    },
+                                                                    {
+                                                                        "type": "null"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "lastTradeAt": {
+                                                                "oneOf": [
+                                                                    {
+                                                                        "type": "string",
+                                                                        "format": "date-time",
+                                                                        "description": "ISO-8601 timestamp."
+                                                                    },
+                                                                    {
+                                                                        "type": "null"
+                                                                    }
+                                                                ]
+                                                            }
+                                                        }
+                                                    },
+                                                    "paxscan": {
+                                                        "type": "object",
+                                                        "required": [
+                                                            "qty"
+                                                        ],
+                                                        "properties": {
+                                                            "qty": {
+                                                                "type": "string",
+                                                                "description": "Live PAXSCAN balance (token raw).",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            }
+                                                        }
+                                                    },
+                                                    "externalActivity": {
+                                                        "type": "boolean",
+                                                        "description": "True when live PAXSCAN qty differs from derived qty (transfer in/out we did not index)."
+                                                    },
+                                                    "externalQtyDelta": {
+                                                        "type": "string",
+                                                        "description": "Signed live qty minus derived qty (token raw).",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "error"
+                                    ],
+                                    "properties": {
+                                        "error": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": true
+                                                }
+                                            ]
+                                        },
+                                        "validation": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/users/{address}/pnl": {
+            "get": {
+                "summary": "Realized + unrealized PnL series for an address",
+                "tags": [
+                    "Users"
+                ],
+                "description": "Daily realized PnL series, lifetime totals (PnL, trade count, win/loss/win-rate), the most recent hourly snapshot (which carries the unrealized side), and the hourly snapshot series across the requested window.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 365,
+                            "default": 30
+                        },
+                        "in": "query",
+                        "name": "days",
+                        "required": false,
+                        "description": "Window for daily + hourly series, in days."
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^0x[a-f0-9]{40}$"
+                        },
+                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc",
+                        "in": "path",
+                        "name": "address",
+                        "required": true,
+                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix)."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "address",
+                                        "sinceDays",
+                                        "lifetime",
+                                        "latestSnapshot",
+                                        "dailySeries",
+                                        "hourlySeries"
+                                    ],
+                                    "properties": {
+                                        "address": {
+                                            "type": "string",
+                                            "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                            "pattern": "^0x[a-f0-9]{40}$",
+                                            "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                        },
+                                        "sinceDays": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 365
+                                        },
+                                        "lifetime": {
+                                            "type": "object",
+                                            "required": [
+                                                "realizedPnlUsd",
+                                                "tradeCount",
+                                                "winningTrades",
+                                                "losingTrades",
+                                                "winRatePct"
+                                            ],
+                                            "properties": {
+                                                "realizedPnlUsd": {
+                                                    "type": "string",
+                                                    "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                    "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                },
+                                                "tradeCount": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "winningTrades": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "losingTrades": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "winRatePct": {
+                                                    "type": [
+                                                        "null",
+                                                        "number"
+                                                    ],
+                                                    "minimum": 0,
+                                                    "maximum": 100
+                                                }
+                                            }
+                                        },
+                                        "latestSnapshot": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "user",
+                                                        "snapshotAt",
+                                                        "realizedPnlUsd",
+                                                        "unrealizedPnlUsd",
+                                                        "totalPnlUsd",
+                                                        "positionsValueUsd",
+                                                        "openPositionCount",
+                                                        "trades24h",
+                                                        "volume24hUsd"
+                                                    ],
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "integer"
+                                                        },
+                                                        "user": {
+                                                            "type": "string",
+                                                            "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                                            "pattern": "^0x[a-f0-9]{40}$",
+                                                            "examples": [
+                                                                "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                                            ]
+                                                        },
+                                                        "snapshotAt": {
+                                                            "type": "string",
+                                                            "format": "date-time",
+                                                            "description": "ISO-8601 timestamp."
+                                                        },
+                                                        "realizedPnlUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "unrealizedPnlUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "totalPnlUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "positionsValueUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "openPositionCount": {
+                                                            "type": "integer",
+                                                            "minimum": 0
+                                                        },
+                                                        "trades24h": {
+                                                            "type": "integer",
+                                                            "minimum": 0
+                                                        },
+                                                        "volume24hUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        }
+                                                    },
+                                                    "additionalProperties": true
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        },
+                                        "dailySeries": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "required": [
+                                                    "user",
+                                                    "day",
+                                                    "realizedPnl",
+                                                    "realizedPnlUsd",
+                                                    "volumeUsd",
+                                                    "tradeCount",
+                                                    "winningTrades",
+                                                    "losingTrades",
+                                                    "updatedAt"
+                                                ],
+                                                "properties": {
+                                                    "user": {
+                                                        "type": "string",
+                                                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                                        "pattern": "^0x[a-f0-9]{40}$",
+                                                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                                    },
+                                                    "day": {
+                                                        "type": "string",
+                                                        "format": "date"
+                                                    },
+                                                    "realizedPnl": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "realizedPnlUsd": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "volumeUsd": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "tradeCount": {
+                                                        "type": "integer",
+                                                        "minimum": 0
+                                                    },
+                                                    "winningTrades": {
+                                                        "type": "integer",
+                                                        "minimum": 0
+                                                    },
+                                                    "losingTrades": {
+                                                        "type": "integer",
+                                                        "minimum": 0
+                                                    },
+                                                    "updatedAt": {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "description": "ISO-8601 timestamp."
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "hourlySeries": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "required": [
+                                                    "snapshotAt",
+                                                    "totalPnlUsd",
+                                                    "realizedPnlUsd",
+                                                    "unrealizedPnlUsd",
+                                                    "positionsValueUsd"
+                                                ],
+                                                "properties": {
+                                                    "snapshotAt": {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "description": "ISO-8601 timestamp."
+                                                    },
+                                                    "totalPnlUsd": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "realizedPnlUsd": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "unrealizedPnlUsd": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "positionsValueUsd": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "error"
+                                    ],
+                                    "properties": {
+                                        "error": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": true
+                                                }
+                                            ]
+                                        },
+                                        "validation": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/users/{address}/pnl/summary": {
+            "get": {
+                "summary": "Compact PnL summary for dashboards",
+                "tags": [
+                    "Users"
+                ],
+                "description": "Returns just the most recent PnL snapshot and current open-position count. Designed for portfolio cards that re-poll frequently.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^0x[a-f0-9]{40}$"
+                        },
+                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc",
+                        "in": "path",
+                        "name": "address",
+                        "required": true,
+                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix)."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "address",
+                                        "latestSnapshot",
+                                        "openPositions"
+                                    ],
+                                    "properties": {
+                                        "address": {
+                                            "type": "string",
+                                            "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                            "pattern": "^0x[a-f0-9]{40}$",
+                                            "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                        },
+                                        "latestSnapshot": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "id",
+                                                        "user",
+                                                        "snapshotAt",
+                                                        "realizedPnlUsd",
+                                                        "unrealizedPnlUsd",
+                                                        "totalPnlUsd",
+                                                        "positionsValueUsd",
+                                                        "openPositionCount",
+                                                        "trades24h",
+                                                        "volume24hUsd"
+                                                    ],
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "integer"
+                                                        },
+                                                        "user": {
+                                                            "type": "string",
+                                                            "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                                            "pattern": "^0x[a-f0-9]{40}$",
+                                                            "examples": [
+                                                                "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                                            ]
+                                                        },
+                                                        "snapshotAt": {
+                                                            "type": "string",
+                                                            "format": "date-time",
+                                                            "description": "ISO-8601 timestamp."
+                                                        },
+                                                        "realizedPnlUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "unrealizedPnlUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "totalPnlUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "positionsValueUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "openPositionCount": {
+                                                            "type": "integer",
+                                                            "minimum": 0
+                                                        },
+                                                        "trades24h": {
+                                                            "type": "integer",
+                                                            "minimum": 0
+                                                        },
+                                                        "volume24hUsd": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        }
+                                                    },
+                                                    "additionalProperties": true
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        },
+                                        "openPositions": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "error"
+                                    ],
+                                    "properties": {
+                                        "error": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": true
+                                                }
+                                            ]
+                                        },
+                                        "validation": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/users/{address}/trades": {
+            "get": {
+                "summary": "Reverse-chronological trade tape (keyset paginated)",
+                "tags": [
+                    "Users"
+                ],
+                "description": "Newest-first trades for the address. Use the returned `nextCursor` (afterBlock, afterIndex) to fetch the next page.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200,
+                            "default": 50
+                        },
+                        "in": "query",
+                        "name": "limit",
+                        "required": false
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^\\d+$"
+                        },
+                        "in": "query",
+                        "name": "afterBlock",
+                        "required": false,
+                        "description": "Keyset cursor: pass `nextCursor.afterBlock` from the previous page."
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "in": "query",
+                        "name": "afterIndex",
+                        "required": false,
+                        "description": "Keyset cursor: pass `nextCursor.afterIndex` from the previous page."
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^0x[a-f0-9]{40}$"
+                        },
+                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc",
+                        "in": "path",
+                        "name": "address",
+                        "required": true,
+                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix)."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "address",
+                                        "count",
+                                        "limit",
+                                        "items",
+                                        "nextCursor"
+                                    ],
+                                    "properties": {
+                                        "address": {
+                                            "type": "string",
+                                            "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                            "pattern": "^0x[a-f0-9]{40}$",
+                                            "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                        },
+                                        "count": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                        },
+                                        "limit": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 200
+                                        },
+                                        "items": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "required": [
+                                                    "id",
+                                                    "txHash",
+                                                    "logIndex",
+                                                    "blockNumber",
+                                                    "blockTimestamp",
+                                                    "user",
+                                                    "tokenIn",
+                                                    "tokenOut",
+                                                    "amountIn",
+                                                    "amountOut",
+                                                    "executionPrice",
+                                                    "volumeUsd",
+                                                    "source",
+                                                    "contract",
+                                                    "createdAt"
+                                                ],
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "txHash": {
+                                                        "type": "string",
+                                                        "description": "32-byte transaction hash.",
+                                                        "pattern": "^0x[a-fA-F0-9]{64}$"
+                                                    },
+                                                    "logIndex": {
+                                                        "type": "integer",
+                                                        "minimum": 0
+                                                    },
+                                                    "blockNumber": {
+                                                        "type": "string",
+                                                        "description": "Block number (decimal string).",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "blockTimestamp": {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "description": "ISO-8601 timestamp."
+                                                    },
+                                                    "user": {
+                                                        "type": "string",
+                                                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                                        "pattern": "^0x[a-f0-9]{40}$",
+                                                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                                    },
+                                                    "tokenIn": {
+                                                        "type": "string",
+                                                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                                        "pattern": "^0x[a-f0-9]{40}$",
+                                                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                                    },
+                                                    "tokenOut": {
+                                                        "type": "string",
+                                                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                                        "pattern": "^0x[a-f0-9]{40}$",
+                                                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                                    },
+                                                    "amountIn": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "amountOut": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "executionPrice": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "volumeUsd": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "feeBps": {
+                                                        "type": [
+                                                            "null",
+                                                            "integer"
+                                                        ],
+                                                        "minimum": 0,
+                                                        "maximum": 100000
+                                                    },
+                                                    "feeAmount": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "priceImpactBps": {
+                                                        "type": [
+                                                            "null",
+                                                            "integer"
+                                                        ]
+                                                    },
+                                                    "priceImpactAmount": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "twapPrice": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "contract": {
+                                                        "type": [
+                                                            "null",
+                                                            "string"
+                                                        ]
+                                                    },
+                                                    "routeAdapterId": {
+                                                        "type": [
+                                                            "null",
+                                                            "string"
+                                                        ]
+                                                    },
+                                                    "hops": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "additionalProperties": true
+                                                                }
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "source": {
+                                                        "type": "string",
+                                                        "description": "Where the trade was sourced from (e.g. swap_settled, native_swap, simple_swap)."
+                                                    },
+                                                    "createdAt": {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "description": "ISO-8601 timestamp."
+                                                    }
+                                                },
+                                                "additionalProperties": true
+                                            }
+                                        },
+                                        "nextCursor": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "afterBlock",
+                                                        "afterIndex"
+                                                    ],
+                                                    "properties": {
+                                                        "afterBlock": {
+                                                            "type": "string",
+                                                            "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                            "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                        },
+                                                        "afterIndex": {
+                                                            "type": "integer",
+                                                            "minimum": 0
+                                                        }
+                                                    }
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "error"
+                                    ],
+                                    "properties": {
+                                        "error": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": true
+                                                }
+                                            ]
+                                        },
+                                        "validation": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/users/{address}/trades/stats": {
+            "get": {
+                "summary": "Trade counters broken down by source and contract",
+                "tags": [
+                    "Users"
+                ],
+                "description": "Count + USD volume aggregated by `(source, contract)`. Useful to see which router/path the user actually trades through.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^0x[a-f0-9]{40}$"
+                        },
+                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc",
+                        "in": "path",
+                        "name": "address",
+                        "required": true,
+                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix)."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "address",
+                                        "breakdown"
+                                    ],
+                                    "properties": {
+                                        "address": {
+                                            "type": "string",
+                                            "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                            "pattern": "^0x[a-f0-9]{40}$",
+                                            "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                        },
+                                        "breakdown": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "required": [
+                                                    "source",
+                                                    "contract",
+                                                    "count",
+                                                    "volumeUsd"
+                                                ],
+                                                "properties": {
+                                                    "source": {
+                                                        "type": "string"
+                                                    },
+                                                    "contract": {
+                                                        "type": [
+                                                            "null",
+                                                            "string"
+                                                        ]
+                                                    },
+                                                    "count": {
+                                                        "type": "integer",
+                                                        "minimum": 0
+                                                    },
+                                                    "volumeUsd": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "error"
+                                    ],
+                                    "properties": {
+                                        "error": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": true
+                                                }
+                                            ]
+                                        },
+                                        "validation": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/users/{address}/closed-legs": {
+            "get": {
+                "summary": "Realized PnL legs, keyset paginated",
+                "tags": [
+                    "Users"
+                ],
+                "description": "One row per realized (qty, entryPrice, exitPrice) leg with PnL in stable raw units and 6-decimal USD, plus holding time and source tx.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200,
+                            "default": 50
+                        },
+                        "in": "query",
+                        "name": "limit",
+                        "required": false
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "in": "query",
+                        "name": "afterId",
+                        "required": false
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^0x[a-f0-9]{40}$"
+                        },
+                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc",
+                        "in": "path",
+                        "name": "address",
+                        "required": true,
+                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix)."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "address",
+                                        "count",
+                                        "limit",
+                                        "items",
+                                        "nextCursor"
+                                    ],
+                                    "properties": {
+                                        "address": {
+                                            "type": "string",
+                                            "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                            "pattern": "^0x[a-f0-9]{40}$",
+                                            "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                        },
+                                        "count": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                        },
+                                        "limit": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 200
+                                        },
+                                        "items": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "required": [
+                                                    "id",
+                                                    "token",
+                                                    "qty",
+                                                    "entryPrice",
+                                                    "exitPrice",
+                                                    "pnl",
+                                                    "pnlUsd",
+                                                    "closedAt",
+                                                    "closeTxHash",
+                                                    "fullyClosed"
+                                                ],
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "token": {
+                                                        "type": "string",
+                                                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                                        "pattern": "^0x[a-f0-9]{40}$",
+                                                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                                    },
+                                                    "qty": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "entryPrice": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "exitPrice": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "pnl": {
+                                                        "type": "string",
+                                                        "description": "PnL in stable raw units.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "pnlUsd": {
+                                                        "type": "string",
+                                                        "description": "PnL in 6-decimal USD.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "pnlPct": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "holdingSeconds": {
+                                                        "type": [
+                                                            "null",
+                                                            "integer",
+                                                            "string"
+                                                        ]
+                                                    },
+                                                    "openedAt": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "format": "date-time",
+                                                                "description": "ISO-8601 timestamp."
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "closedAt": {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "description": "ISO-8601 timestamp."
+                                                    },
+                                                    "closeTxHash": {
+                                                        "type": "string",
+                                                        "description": "32-byte transaction hash.",
+                                                        "pattern": "^0x[a-fA-F0-9]{64}$"
+                                                    },
+                                                    "fullyClosed": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "symbol": {
+                                                        "type": [
+                                                            "null",
+                                                            "string"
+                                                        ]
+                                                    },
+                                                    "name": {
+                                                        "type": [
+                                                            "null",
+                                                            "string"
+                                                        ]
+                                                    },
+                                                    "decimals": {
+                                                        "type": [
+                                                            "null",
+                                                            "integer"
+                                                        ]
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "nextCursor": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "afterId"
+                                                    ],
+                                                    "properties": {
+                                                        "afterId": {
+                                                            "type": "integer"
+                                                        }
+                                                    }
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "error"
+                                    ],
+                                    "properties": {
+                                        "error": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": true
+                                                }
+                                            ]
+                                        },
+                                        "validation": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/users/{address}/orders": {
+            "get": {
+                "summary": "On-chain limit/stop orders placed by an address",
+                "tags": [
+                    "Users"
+                ],
+                "description": "Every limit, stop-limit and stop-loss order ever placed by this address. `?status=open` filters to currently-open and activated orders only.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "open",
+                                "all"
+                            ],
+                            "default": "all"
+                        },
+                        "in": "query",
+                        "name": "status",
+                        "required": false,
+                        "description": "Filter to currently-open (and activated) orders or return full history."
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 500,
+                            "default": 100
+                        },
+                        "in": "query",
+                        "name": "limit",
+                        "required": false
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^0x[a-f0-9]{40}$"
+                        },
+                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc",
+                        "in": "path",
+                        "name": "address",
+                        "required": true,
+                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix)."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "address",
+                                        "count",
+                                        "items"
+                                    ],
+                                    "properties": {
+                                        "address": {
+                                            "type": "string",
+                                            "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                            "pattern": "^0x[a-f0-9]{40}$",
+                                            "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                        },
+                                        "count": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                        },
+                                        "items": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "required": [
+                                                    "id",
+                                                    "orderId",
+                                                    "type",
+                                                    "status"
+                                                ],
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "orderId": {
+                                                        "type": "string"
+                                                    },
+                                                    "type": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "limit",
+                                                            "stop_limit",
+                                                            "stop_loss"
+                                                        ]
+                                                    },
+                                                    "status": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "open",
+                                                            "executed",
+                                                            "cancelled",
+                                                            "activated"
+                                                        ]
+                                                    },
+                                                    "token": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                                                "pattern": "^0x[a-f0-9]{40}$",
+                                                                "examples": [
+                                                                    "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                                                ]
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "stablecoin": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                                                "pattern": "^0x[a-f0-9]{40}$",
+                                                                "examples": [
+                                                                    "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                                                ]
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "amount": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "targetPrice": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "stopPrice": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "limitPrice": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "triggerPrice": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "executionPrice": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                                "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "isBuy": {
+                                                        "type": [
+                                                            "null",
+                                                            "boolean"
+                                                        ]
+                                                    },
+                                                    "placedAt": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "format": "date-time",
+                                                                "description": "ISO-8601 timestamp."
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "executedAt": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "format": "date-time",
+                                                                "description": "ISO-8601 timestamp."
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "cancelledAt": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "format": "date-time",
+                                                                "description": "ISO-8601 timestamp."
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "placedTxHash": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "32-byte transaction hash.",
+                                                                "pattern": "^0x[a-fA-F0-9]{64}$"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "executedTxHash": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string",
+                                                                "description": "32-byte transaction hash.",
+                                                                "pattern": "^0x[a-fA-F0-9]{64}$"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "symbol": {
+                                                        "type": [
+                                                            "null",
+                                                            "string"
+                                                        ]
+                                                    },
+                                                    "decimals": {
+                                                        "type": [
+                                                            "null",
+                                                            "integer"
+                                                        ]
+                                                    }
+                                                },
+                                                "additionalProperties": true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "error"
+                                    ],
+                                    "properties": {
+                                        "error": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": true
+                                                }
+                                            ]
+                                        },
+                                        "validation": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/leaderboards/pnl": {
+            "get": {
+                "summary": "Top realized PnL (USD) over a period",
+                "tags": [
+                    "Leaderboards"
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "24h",
+                                "7d",
+                                "30d",
+                                "lifetime"
+                            ],
+                            "default": "7d"
+                        },
+                        "in": "query",
+                        "name": "period",
+                        "required": false
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200,
+                            "default": 50
+                        },
+                        "in": "query",
+                        "name": "limit",
+                        "required": false
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "period",
+                                        "rank"
+                                    ],
+                                    "properties": {
+                                        "period": {
+                                            "type": "string",
+                                            "enum": [
+                                                "24h",
+                                                "7d",
+                                                "30d",
+                                                "lifetime"
+                                            ]
+                                        },
+                                        "rank": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "required": [
+                                                    "rank",
+                                                    "user",
+                                                    "realizedPnlUsd",
+                                                    "tradeCount",
+                                                    "volumeUsd"
+                                                ],
+                                                "properties": {
+                                                    "rank": {
+                                                        "type": "integer",
+                                                        "minimum": 1
+                                                    },
+                                                    "user": {
+                                                        "type": "string",
+                                                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                                        "pattern": "^0x[a-f0-9]{40}$",
+                                                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                                    },
+                                                    "realizedPnlUsd": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "tradeCount": {
+                                                        "type": "integer",
+                                                        "minimum": 0
+                                                    },
+                                                    "volumeUsd": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "error"
+                                    ],
+                                    "properties": {
+                                        "error": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": true
+                                                }
+                                            ]
+                                        },
+                                        "validation": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/leaderboards/volume": {
+            "get": {
+                "summary": "Top traded USD volume over a period",
+                "tags": [
+                    "Leaderboards"
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "24h",
+                                "7d",
+                                "30d",
+                                "lifetime"
+                            ],
+                            "default": "7d"
+                        },
+                        "in": "query",
+                        "name": "period",
+                        "required": false
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200,
+                            "default": 50
+                        },
+                        "in": "query",
+                        "name": "limit",
+                        "required": false
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "period",
+                                        "rank"
+                                    ],
+                                    "properties": {
+                                        "period": {
+                                            "type": "string",
+                                            "enum": [
+                                                "24h",
+                                                "7d",
+                                                "30d",
+                                                "lifetime"
+                                            ]
+                                        },
+                                        "rank": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "required": [
+                                                    "rank",
+                                                    "user",
+                                                    "volumeUsd",
+                                                    "tradeCount",
+                                                    "realizedPnlUsd"
+                                                ],
+                                                "properties": {
+                                                    "rank": {
+                                                        "type": "integer",
+                                                        "minimum": 1
+                                                    },
+                                                    "user": {
+                                                        "type": "string",
+                                                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                                        "pattern": "^0x[a-f0-9]{40}$",
+                                                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                                    },
+                                                    "volumeUsd": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "tradeCount": {
+                                                        "type": "integer",
+                                                        "minimum": 0
+                                                    },
+                                                    "realizedPnlUsd": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "error"
+                                    ],
+                                    "properties": {
+                                        "error": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": true
+                                                }
+                                            ]
+                                        },
+                                        "validation": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/leaderboards/win-rate": {
+            "get": {
+                "summary": "Top win-rate (filtered to users with at least N decided trades)",
+                "tags": [
+                    "Leaderboards"
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "24h",
+                                "7d",
+                                "30d",
+                                "lifetime"
+                            ],
+                            "default": "7d"
+                        },
+                        "in": "query",
+                        "name": "period",
+                        "required": false
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200,
+                            "default": 50
+                        },
+                        "in": "query",
+                        "name": "limit",
+                        "required": false
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 5
+                        },
+                        "in": "query",
+                        "name": "minDecided",
+                        "required": false,
+                        "description": "Minimum decided (win + loss) trades for a user to appear on the leaderboard."
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "period",
+                                        "minDecided",
+                                        "rank"
+                                    ],
+                                    "properties": {
+                                        "period": {
+                                            "type": "string",
+                                            "enum": [
+                                                "24h",
+                                                "7d",
+                                                "30d",
+                                                "lifetime"
+                                            ]
+                                        },
+                                        "minDecided": {
+                                            "type": "integer",
+                                            "minimum": 1
+                                        },
+                                        "rank": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "required": [
+                                                    "rank",
+                                                    "user",
+                                                    "winningTrades",
+                                                    "losingTrades",
+                                                    "decided",
+                                                    "winRatePct",
+                                                    "realizedPnlUsd"
+                                                ],
+                                                "properties": {
+                                                    "rank": {
+                                                        "type": "integer",
+                                                        "minimum": 1
+                                                    },
+                                                    "user": {
+                                                        "type": "string",
+                                                        "description": "EVM address. Always returned lower-cased (40 hex chars after the 0x prefix).",
+                                                        "pattern": "^0x[a-f0-9]{40}$",
+                                                        "example": "0xf263ab36de550bda08b52d43eb253b3c0387e2bc"
+                                                    },
+                                                    "winningTrades": {
+                                                        "type": "integer",
+                                                        "minimum": 0
+                                                    },
+                                                    "losingTrades": {
+                                                        "type": "integer",
+                                                        "minimum": 0
+                                                    },
+                                                    "decided": {
+                                                        "type": "integer",
+                                                        "minimum": 0
+                                                    },
+                                                    "winRatePct": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    },
+                                                    "realizedPnlUsd": {
+                                                        "type": "string",
+                                                        "description": "Signed decimal string. Used for token raw amounts and full-precision USD values.",
+                                                        "pattern": "^-?\\d+(\\.\\d+)?$"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "error"
+                                    ],
+                                    "properties": {
+                                        "error": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": true
+                                                }
+                                            ]
+                                        },
+                                        "validation": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "servers": [
+        {
+            "url": "https://api.hyperpax.xyz",
+            "description": "Production"
+        },
+        {
+            "url": "http://localhost:8080",
+            "description": "Local development"
+        }
+    ],
+    "tags": [
+        {
+            "name": "Users",
+            "description": "Per-address identity, holdings, positions, PnL, trades, orders."
+        },
+        {
+            "name": "Leaderboards",
+            "description": "Rankings derived from `user_daily_pnl` rollups."
+        },
+        {
+            "name": "Health",
+            "description": "Liveness / readiness probes."
+        }
+    ]
+}
