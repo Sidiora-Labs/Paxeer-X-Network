@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { perfdbQuery, perfdbRest } from "@/core/perfdb/client";
+import { parseWei } from "@/ui/utils/format";
 
 // ── Types ────────────────────────────────────────────────────────────
 export interface DailyPnl {
@@ -23,52 +24,82 @@ const USER_DAILY_PNL_QUERY = /* GraphQL */ `
   }
 `;
 
-/** Gateway DailyPnl fields are nullable; a row without a date is unusable. */
-type GatewayDailyPnl = Omit<DailyPnl, "date"> & { date: string | null };
+/** Every gateway DailyPnl field is nullable. */
+type GatewayDailyPnl = { [K in keyof DailyPnl]: DailyPnl[K] | null };
 
 interface DailyPnlQueryResponse {
   userDailyPnl: (GatewayDailyPnl | null)[] | null;
 }
 
 interface DailyPnlRestResponse {
-  dailyPnl?: GatewayDailyPnl[];
-  data?: GatewayDailyPnl[];
+  dailyPnl?: (GatewayDailyPnl | null)[] | null;
+  data?: (GatewayDailyPnl | null)[] | null;
 }
 
-// Ascending by date so .slice(-7) gives the most recent 7 days.
-function datedAscending(rows: (GatewayDailyPnl | null)[] | null | undefined): DailyPnl[] {
-  return (rows ?? [])
-    .filter((r): r is DailyPnl => typeof r?.date === "string")
-    .sort((a, b) => a.date.localeCompare(b.date));
+export interface DailyPnlResult {
+  /** Complete rows, ascending by date. */
+  rows: DailyPnl[];
+  /** Rows dropped for a missing date or a null/unparseable pnl, volume or trades. */
+  skippedDays: number;
+}
+
+function isExactWei(v: unknown): v is string {
+  if (typeof v !== "string") return false;
+  try {
+    parseWei(v);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isComplete(r: GatewayDailyPnl | null): r is DailyPnl {
+  return (
+    typeof r?.date === "string" &&
+    isExactWei(r.pnl) &&
+    isExactWei(r.volume) &&
+    typeof r.trades === "number" &&
+    Number.isFinite(r.trades)
+  );
+}
+
+/** A null or missing list is a failed read, not an empty history. */
+function completeAscending(list: (GatewayDailyPnl | null)[] | null | undefined, source: string): DailyPnlResult {
+  if (!Array.isArray(list)) throw new Error(`PerfDB ${source} returned no daily PnL list`);
+  const rows = list.filter(isComplete).sort((a, b) => a.date.localeCompare(b.date));
+  return { rows, skippedDays: list.length - rows.length };
 }
 
 /**
  * Fetches a trader's daily PnL history from PerfDB.
- * Tries GraphQL first; falls back to REST if GraphQL fails; throws when both fail.
+ * Tries GraphQL first; falls back to REST if GraphQL fails or returns no list; throws when both fail.
  */
-export async function fetchDailyPnl(addr: string): Promise<DailyPnl[]> {
+export async function fetchDailyPnl(addr: string): Promise<DailyPnlResult> {
   try {
     const gqlRes = await perfdbQuery<DailyPnlQueryResponse>(USER_DAILY_PNL_QUERY, { address: addr, limit: 90 });
-    return datedAscending(gqlRes.userDailyPnl);
+    return completeAscending(gqlRes?.userDailyPnl, "GraphQL");
   } catch {
-    const restRes = await perfdbRest<DailyPnlRestResponse | GatewayDailyPnl[]>(`/v2/user/${addr}/daily-pnl`);
-    return datedAscending(Array.isArray(restRes) ? restRes : (restRes.dailyPnl ?? restRes.data));
+    const restRes = await perfdbRest<DailyPnlRestResponse | (GatewayDailyPnl | null)[] | null>(`/v2/user/${addr}/daily-pnl`);
+    return completeAscending(Array.isArray(restRes) ? restRes : (restRes?.dailyPnl ?? restRes?.data), "REST");
   }
 }
 
 /** Daily PnL for an address. No polling — refetches only when address changes. */
 export function useDailyPnl(address: string | undefined): {
   dailyPnl: DailyPnl[];
+  skippedDays: number;
   isLoading: boolean;
   error: Error | null;
 } {
   const [dailyPnl, setDailyPnl] = useState<DailyPnl[]>([]);
+  const [skippedDays, setSkippedDays] = useState(0);
   const [isLoading, setIsLoading] = useState<boolean>(Boolean(address));
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     if (!address) {
       setDailyPnl([]);
+      setSkippedDays(0);
       setIsLoading(false);
       setError(null);
       return;
@@ -78,15 +109,17 @@ export function useDailyPnl(address: string | undefined): {
     setIsLoading(true);
     fetchDailyPnl(address)
       .then(
-        (rows) => {
+        (result) => {
           if (cancelled) return;
-          setDailyPnl(rows);
+          setDailyPnl(result.rows);
+          setSkippedDays(result.skippedDays);
           setError(null);
         },
         (err: unknown) => {
           if (cancelled) return;
           setError(err instanceof Error ? err : new Error(String(err)));
           setDailyPnl([]);
+          setSkippedDays(0);
         },
       )
       .finally(() => {
@@ -97,5 +130,5 @@ export function useDailyPnl(address: string | undefined): {
     };
   }, [address]);
 
-  return { dailyPnl, isLoading, error };
+  return { dailyPnl, skippedDays, isLoading, error };
 }

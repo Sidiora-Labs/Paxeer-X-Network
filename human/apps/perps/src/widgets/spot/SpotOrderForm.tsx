@@ -18,6 +18,7 @@ import { useSpotPortfolio } from "@/hooks/spot/useSpotPortfolio";
 import { dStrToToken } from "@/core/spot/api";
 import { erc20Abi } from "@/core/perps/config";
 import { WEI_PER_UHPX } from "@/core/spot/calls";
+import { toPlainDecimal } from "@/ui/utils/format";
 import { readContract } from "@/hooks/perps/useContract";
 import {
   type SpotMarket,
@@ -83,6 +84,36 @@ import {
    ══════════════════════════════════════════════════════════════════════ */
 
 type SizeMode = "BASE" | "USD";
+
+const PRICE_SCALE = 10n ** 18n;
+
+/**
+ * Exact base and quote units for an order. `amount` is in `sizeMode`'s
+ * unit and `price` is quote per base ("" when there is no reference).
+ * The amount is parsed at its own token's decimals and the price at the
+ * 18 price decimals, both straight from their decimal strings (scientific
+ * notation included); the converted side is scaled in bigint and floored,
+ * so a buy never spends more than the size implies.
+ */
+export function spotOrderUnits(p: {
+  sizeMode: SizeMode;
+  amount: string;
+  price: string;
+  baseDecimals: number;
+  quoteDecimals: number;
+}): { baseUnits: bigint; quoteUnits: bigint } {
+  const priceUnits = p.price.trim() === "" ? 0n : parsePrice(toPlainDecimal(p.price));
+  const baseScale = 10n ** BigInt(p.baseDecimals);
+  const quoteScale = 10n ** BigInt(p.quoteDecimals);
+  if (p.sizeMode === "BASE") {
+    const baseUnits = parseTokenAmount(toPlainDecimal(p.amount), p.baseDecimals);
+    if (priceUnits <= 0n) return { baseUnits, quoteUnits: 0n };
+    return { baseUnits, quoteUnits: (baseUnits * priceUnits * quoteScale) / (baseScale * PRICE_SCALE) };
+  }
+  const quoteUnits = parseTokenAmount(toPlainDecimal(p.amount), p.quoteDecimals);
+  if (priceUnits <= 0n) return { baseUnits: 0n, quoteUnits };
+  return { baseUnits: (quoteUnits * baseScale * PRICE_SCALE) / (priceUnits * quoteScale), quoteUnits };
+}
 
 const ORDER_TYPE_LABELS: Record<SpotOrderType, string> = {
   market: "Market",
@@ -449,8 +480,18 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
     const decimalsStable = quoteDecimals(SPOT_STABLECOINS);
     const rail = spotOrderRail(orderType, tif, postOnly);
     const atLimit = orderType === "limit";
+    const conversionPrice =
+      orderType === "limit" && limitNum > 0 ? limitPrice : refPrice > 0 ? String(refPrice) : "";
 
     try {
+      const { baseUnits, quoteUnits } = spotOrderUnits({
+        sizeMode,
+        amount,
+        price: conversionPrice,
+        baseDecimals: decimalsBase,
+        quoteDecimals: decimalsStable,
+      });
+
       // PAX trades as the uhpx pointer the market rail reports.
       const tokenAddr = isNativeBase ? await getPaxPointer() : market.baseAddress;
       if (rail === "market") {
@@ -458,10 +499,7 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
         //    output set to `limitMinOut` and zero slippage, so the call's
         //    minimum output is the limit bound. ──
         if (side === "BUY") {
-          const stablecoinAmount = parseTokenAmount(
-            quoteAmount.toString(),
-            decimalsStable,
-          );
+          const stablecoinAmount = quoteUnits;
           const selection = selectStableForBuy({
             amountUsd: stablecoinAmount,
             balances: stableBalanceMap,
@@ -503,16 +541,13 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
           setSubmitSuccess(`Bought ${baseAmount.toFixed(6)} ${market.symbol}`);
         } else {
           // SELL — pick the stable with the deepest vault liquidity.
-          const tokenAmount = parseTokenAmount(
-            baseAmount.toString(),
-            decimalsBase,
-          );
+          const tokenAmount = baseUnits;
           const liquidity = await getAllLiquidityInfo();
           const vaultLiquidity = buildStableAmountMap(
             liquidity.map((r) => ({ address: r.token, amount: r.reserve })),
           );
           const selection = selectStableForSell({
-            expectedUsd: parseTokenAmount(quoteAmount.toString(), decimalsStable),
+            expectedUsd: quoteUnits,
             vaultLiquidity,
           });
           let precomputedQuote: SpotQuoteResult | undefined;
@@ -553,12 +588,9 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
         }
       } else if (rail === "limit") {
         // ── Limit rail (GTC and post-only; IOC/FOK handled above) ──
-        const targetPrice = parsePrice(limitNum.toString());
+        const targetPrice = parsePrice(toPlainDecimal(limitPrice));
         if (side === "BUY") {
-          const stablecoinAmount = parseTokenAmount(
-            quoteAmount.toString(),
-            decimalsStable,
-          );
+          const stablecoinAmount = quoteUnits;
           const selection = selectStableForBuy({
             amountUsd: stablecoinAmount,
             balances: stableBalanceMap,
@@ -576,16 +608,13 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
             user: address as `0x${string}`,
           });
         } else {
-          const tokenAmount = parseTokenAmount(
-            baseAmount.toString(),
-            decimalsBase,
-          );
+          const tokenAmount = baseUnits;
           const liquidity = await getAllLiquidityInfo();
           const vaultLiquidity = buildStableAmountMap(
             liquidity.map((r) => ({ address: r.token, amount: r.reserve })),
           );
           const selection = selectStableForSell({
-            expectedUsd: parseTokenAmount(quoteAmount.toString(), decimalsStable),
+            expectedUsd: quoteUnits,
             vaultLiquidity,
           });
           await execPlaceLimitSell({
@@ -598,13 +627,10 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
         }
         setSubmitSuccess(`Limit ${side === "BUY" ? "buy" : "sell"} placed @ $${limitNum}`);
       } else {
-        const stopPriceBig = parsePrice(stopNum.toString());
-        const limitPriceBig = parsePrice(limitNum.toString());
+        const stopPriceBig = parsePrice(toPlainDecimal(stopPrice));
+        const limitPriceBig = parsePrice(toPlainDecimal(limitPrice));
         if (side === "BUY") {
-          const stablecoinAmount = parseTokenAmount(
-            quoteAmount.toString(),
-            decimalsStable,
-          );
+          const stablecoinAmount = quoteUnits;
           const selection = selectStableForBuy({
             amountUsd: stablecoinAmount,
             balances: stableBalanceMap,
@@ -623,16 +649,13 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
             user: address as `0x${string}`,
           });
         } else {
-          const tokenAmount = parseTokenAmount(
-            baseAmount.toString(),
-            decimalsBase,
-          );
+          const tokenAmount = baseUnits;
           const liquidity = await getAllLiquidityInfo();
           const vaultLiquidity = buildStableAmountMap(
             liquidity.map((r) => ({ address: r.token, amount: r.reserve })),
           );
           const selection = selectStableForSell({
-            expectedUsd: parseTokenAmount(quoteAmount.toString(), decimalsStable),
+            expectedUsd: quoteUnits,
             vaultLiquidity,
           });
           await execPlaceStopLimitSell({

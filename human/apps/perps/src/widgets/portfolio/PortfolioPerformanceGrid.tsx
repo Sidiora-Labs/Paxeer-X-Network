@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import { ChevronDown } from "lucide-react";
 import type { DailyPnl } from "@/hooks/perps/useDailyPnl";
-import { parse18, fmtUsdCompact as fmtUsd } from "@/ui/utils/format";
+import { parseWei, weiToNumber, fmtUsdCompact as fmtUsd } from "@/ui/utils/format";
 import { cn } from "@/ui/utils/cn";
 
 export type PerformanceRange = "7D" | "30D" | "90D" | "ALL";
@@ -23,6 +23,10 @@ export type PerformanceRange = "7D" | "30D" | "90D" | "ALL";
 interface Props {
   dailyPnl: DailyPnl[];
   isLoading?: boolean;
+  /** Set when both PerfDB reads failed; the grid shows an error, never an empty chart. */
+  error?: Error | null;
+  /** Days PerfDB returned without a usable pnl, volume or trades value. */
+  skippedDays?: number;
   className?: string;
 }
 
@@ -45,20 +49,13 @@ interface SeriesPoint {
  *
  * All four charts share a single time-range dropdown.
  */
-export function PortfolioPerformanceGrid({ dailyPnl, isLoading, className }: Props) {
+export function PortfolioPerformanceGrid({ dailyPnl, isLoading, error, skippedDays = 0, className }: Props) {
   const [range, setRange] = useState<PerformanceRange>("7D");
   const series = useMemo(() => buildSeries(dailyPnl, range), [dailyPnl, range]);
-
-  const sums = useMemo(() => {
-    const pnl = series.reduce((s, p) => s + p.pnl, 0);
-    const volume = series.reduce((s, p) => s + p.volume, 0);
-    const trades = sliceByRange(dailyPnl, range).reduce(
-      (s, d) => s + (d.trades ?? 0),
-      0,
-    );
-    const roi = volume > 0 ? (pnl / volume) * 100 : null;
-    return { pnl, volume, trades, roi };
-  }, [series, dailyPnl, range]);
+  const totals = useMemo(() => windowTotals(sliceByRange(dailyPnl, range)), [dailyPnl, range]);
+  const failed = Boolean(error);
+  const roi = totals?.roiHundredthsPct ?? null;
+  const rangeLabel = range === "ALL" ? "All-time" : range;
 
   return (
     <section
@@ -78,41 +75,51 @@ export function PortfolioPerformanceGrid({ dailyPnl, isLoading, className }: Pro
         <RangePicker value={range} onChange={setRange} />
       </header>
 
+      {failed ? (
+        <div role="alert" className="text-[11px] text-red-400">
+          Performance history is unavailable right now.
+        </div>
+      ) : skippedDays > 0 ? (
+        <div role="status" className="text-[11px] text-amber-400">
+          {skippedDays} {skippedDays === 1 ? "day" : "days"} skipped: PerfDB returned incomplete values.
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <KpiCard
-          label={`${range === "ALL" ? "All-time" : range} PNL`}
-          value={sums.pnl}
-          colorBySign
+          label={`${rangeLabel} PNL`}
+          value={totals && !failed ? weiToNumber(totals.pnlWei) : "—"}
+          colorBySign={Boolean(totals) && !failed}
         />
         <KpiCard
-          label={`${range === "ALL" ? "All-time" : range} Volume`}
-          value={sums.volume}
-          subtitle={`${sums.trades.toLocaleString()} trades`}
+          label={`${rangeLabel} Volume`}
+          value={totals && !failed ? weiToNumber(totals.volumeWei) : "—"}
+          subtitle={totals && !failed ? `${totals.trades.toLocaleString()} trades` : undefined}
         />
         <KpiCard
-          label={`${range === "ALL" ? "All-time" : range} ROI`}
-          value={sums.roi !== null ? `${sums.roi >= 0 ? "+" : ""}${sums.roi.toFixed(2)}%` : "—"}
-          colorBySign={sums.roi !== null && sums.roi !== 0}
-          rawForColor={sums.roi ?? 0}
+          label={`${rangeLabel} ROI`}
+          value={roi !== null && !failed ? `${roi >= 0n ? "+" : "-"}${formatHundredths(roi < 0n ? -roi : roi)}%` : "—"}
+          colorBySign={roi !== null && roi !== 0n && !failed}
+          rawForColor={roi !== null && roi < 0n ? -1 : 1}
           subtitle="As % of notional"
         />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <ChartPanel title="Daily PnL" isLoading={isLoading} empty={series.length === 0}>
+        <ChartPanel title="Daily PnL" isLoading={isLoading} failed={failed} empty={series.length === 0}>
           <DailyPnlBars series={series} />
         </ChartPanel>
-        <ChartPanel title="Cumulative PnL" isLoading={isLoading} empty={series.length === 0}>
+        <ChartPanel title="Cumulative PnL" isLoading={isLoading} failed={failed} empty={series.length === 0}>
           <CumulativeArea
             series={series}
             valueKey="cumPnl"
             positive={(series.at(-1)?.cumPnl ?? 0) >= 0}
           />
         </ChartPanel>
-        <ChartPanel title="Daily Volume" isLoading={isLoading} empty={series.length === 0}>
+        <ChartPanel title="Daily Volume" isLoading={isLoading} failed={failed} empty={series.length === 0}>
           <DailyVolumeBars series={series} />
         </ChartPanel>
-        <ChartPanel title="Cumulative Volume" isLoading={isLoading} empty={series.length === 0}>
+        <ChartPanel title="Cumulative Volume" isLoading={isLoading} failed={failed} empty={series.length === 0}>
           <CumulativeArea series={series} valueKey="cumVolume" positive />
         </ChartPanel>
       </div>
@@ -205,11 +212,13 @@ function ChartPanel({
   title,
   children,
   isLoading,
+  failed,
   empty,
 }: {
   title: string;
   children: React.ReactNode;
   isLoading?: boolean;
+  failed?: boolean;
   empty?: boolean;
 }) {
   return (
@@ -218,6 +227,10 @@ function ChartPanel({
       <div className="h-44 md:h-48">
         {isLoading && empty ? (
           <div className="h-full w-full rounded bg-white/[0.02] animate-pulse" />
+        ) : failed ? (
+          <div className="h-full flex items-center justify-center text-[11px] text-red-400">
+            Could not load data
+          </div>
         ) : empty ? (
           <div className="h-full flex items-center justify-center text-[11px] text-muted-foreground">
             No data yet
@@ -366,31 +379,67 @@ function compactTick(v: number): string {
 
 // ── Series prep helpers ──────────────────────────────────────────────
 
-export function sliceByRange(dailyPnl: DailyPnl[], range: PerformanceRange): DailyPnl[] {
+const RANGE_DAYS: Record<Exclude<PerformanceRange, "ALL">, number> = { "7D": 7, "30D": 30, "90D": 90 };
+const DAY_MS = 86_400_000;
+
+/** UTC day key (YYYY-MM-DD) N days before `now`, the gateway's day boundary. */
+export function windowStartKey(range: Exclude<PerformanceRange, "ALL">, now: Date = new Date()): string {
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return new Date(todayUtc - RANGE_DAYS[range] * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** Rows whose UTC day is on or after today minus N days; ALL keeps every row. */
+export function sliceByRange(dailyPnl: DailyPnl[], range: PerformanceRange, now: Date = new Date()): DailyPnl[] {
   if (!dailyPnl || dailyPnl.length === 0) return [];
   const sorted = [...dailyPnl].sort((a, b) => a.date.localeCompare(b.date));
   if (range === "ALL") return sorted;
-  const n = range === "7D" ? 7 : range === "30D" ? 30 : 90;
-  return sorted.slice(-n);
+  const start = windowStartKey(range, now);
+  return sorted.filter((d) => d.date.slice(0, 10) >= start);
 }
 
-export function buildSeries(dailyPnl: DailyPnl[], range: PerformanceRange): SeriesPoint[] {
-  const rows = sliceByRange(dailyPnl, range);
+export interface WindowTotals {
+  pnlWei: bigint;
+  volumeWei: bigint;
+  trades: number;
+  /** PnL as a percentage of volume in hundredths of a percent, truncated toward zero; null without volume. */
+  roiHundredthsPct: bigint | null;
+}
+
+/** Exact sums over the 18-decimal strings; null for an empty window. */
+export function windowTotals(rows: DailyPnl[]): WindowTotals | null {
+  if (rows.length === 0) return null;
+  let pnlWei = 0n;
+  let volumeWei = 0n;
+  let trades = 0;
+  for (const d of rows) {
+    pnlWei += parseWei(d.pnl);
+    volumeWei += parseWei(d.volume);
+    trades += d.trades;
+  }
+  return { pnlWei, volumeWei, trades, roiHundredthsPct: volumeWei > 0n ? (pnlWei * 10_000n) / volumeWei : null };
+}
+
+function formatHundredths(v: bigint): string {
+  return `${v / 100n}.${(v % 100n).toString().padStart(2, "0")}`;
+}
+
+export function buildSeries(dailyPnl: DailyPnl[], range: PerformanceRange, now: Date = new Date()): SeriesPoint[] {
+  const rows = sliceByRange(dailyPnl, range, now);
   if (rows.length === 0) return [];
 
-  let cumPnl = 0;
-  let cumVol = 0;
+  let cumPnl = 0n;
+  let cumVol = 0n;
   return rows.map((d) => {
-    const pnl = parse18(d.pnl);
-    const volume = parse18(d.volume);
+    const pnl = parseWei(d.pnl);
+    const volume = parseWei(d.volume);
     cumPnl += pnl;
     cumVol += volume;
     return {
       date: d.date.length >= 10 ? d.date.slice(5, 10) : d.date,
-      pnl,
-      cumPnl,
-      volume,
-      cumVolume: cumVol,
+      pnl: weiToNumber(pnl),
+      cumPnl: weiToNumber(cumPnl),
+      volume: weiToNumber(volume),
+      cumVolume: weiToNumber(cumVol),
     };
   });
 }

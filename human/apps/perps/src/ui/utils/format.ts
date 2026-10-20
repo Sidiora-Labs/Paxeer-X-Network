@@ -87,27 +87,50 @@ export function shortAddr(a: string): string {
 }
 
 /**
- * Parse an 18-decimal wei string to a JS number.
- * Returns 0 on null/undefined/unparseable.
+ * Rewrite a decimal string, including scientific notation such as
+ * "1000e+20" or "-5e-3" that PerfDB emits for PSQL NUMERIC values, as a
+ * plain decimal ("100000...000", "-0.005") without going through a float.
+ * Throws on anything that is not a finite decimal.
+ */
+export function toPlainDecimal(v: string): string {
+  const m = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(v.trim());
+  if (!m || (m[2] === "" && (m[3] ?? "") === "")) throw new Error(`Invalid decimal: ${v}`);
+  const exp = m[4] ? Number(m[4]) : 0;
+  if (Math.abs(exp) > 1000) throw new Error(`Decimal exponent out of range: ${v}`);
+  const frac = m[3] ?? "";
+  const digits = m[2] + frac;
+  const point = m[2].length + exp;
+  const padded = point <= 0 ? "0".repeat(1 - point) + digits : point > digits.length ? digits.padEnd(point, "0") : digits;
+  const at = Math.max(point, 1);
+  const intPart = padded.slice(0, at).replace(/^0+(?=\d)/, "");
+  const fracPart = padded.slice(at).replace(/0+$/, "");
+  const body = fracPart ? `${intPart}.${fracPart}` : intPart;
+  return m[1] === "-" && /[1-9]/.test(body) ? `-${body}` : body;
+}
+
+/** Exact integer wei from an 18-decimal string; sub-wei digits truncate toward zero. */
+export function parseWei(v: string): bigint {
+  return BigInt(toPlainDecimal(v).split(".")[0]);
+}
+
+const WEI = 10n ** 18n;
+
+/** Display edge: wei bigint to a JS number of whole units. Never feed the result back into sums. */
+export function weiToNumber(wei: bigint): number {
+  return Number(wei / WEI) + Number(wei % WEI) / 1e18;
+}
+
+/**
+ * Display-only: an 18-decimal wei string as a JS number, 0 on
+ * null/undefined/unparseable. Sum wei with parseWei, not with this.
  */
 export function parse18(v: string | null | undefined): number {
   if (!v) return 0;
-  // PerfDB sometimes returns PSQL NUMERIC values serialised in scientific
-  // notation (e.g. "1000e+20", "-5e-3"). BigInt rejects those, so take the
-  // float path whenever an exponent is present.
-  if (/[eE]/.test(v)) {
-    const n = parseFloat(v);
-    return isNaN(n) ? 0 : n / 1e18;
+  try {
+    return weiToNumber(parseWei(v));
+  } catch {
+    return 0;
   }
-  if (!v.includes(".")) {
-    try {
-      return Number(BigInt(v)) / 1e18;
-    } catch {
-      return 0;
-    }
-  }
-  const n = parseFloat(v);
-  return isNaN(n) ? 0 : n / 1e18;
 }
 
 // ── Token-style formatters (merged from src/lib/ui-design/format.ts in B5b) ─
