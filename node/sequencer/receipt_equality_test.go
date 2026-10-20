@@ -100,7 +100,7 @@ func receiptWord(b ...byte) [32]byte {
 // wireVector reads a shared receipt vector from the layerx-wire crate.
 func wireVector(t *testing.T, name string) []byte {
 	t.Helper()
-	src, err := os.ReadFile(filepath.Join("..", "..", "agent", "crates", "layerx-wire", "src", "receipt.rs"))
+	src, err := os.ReadFile(filepath.Join("..", "..", "services", "agent", "crates", "layerx-wire", "src", "receipt.rs"))
 	require.NoError(t, err)
 	m := regexp.MustCompile(`const ` + name + `: &str =\s*"([0-9a-f]+)"`).FindSubmatch(src)
 	require.NotNil(t, m, name)
