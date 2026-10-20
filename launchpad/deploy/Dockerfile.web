@@ -1,6 +1,6 @@
 ARG NODE_IMAGE=node@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
 FROM ${NODE_IMAGE} AS build
-RUN apk add --no-cache gcompat=1.1.0-r4 python3=3.14.8-r0 make=4.4.1-r4 g++=15.2.0-r5 && npm install -g pnpm@9.15.0
+RUN apk add --no-cache gcompat python3 make g++ && apk info -v gcompat python3 make g++ && npm install -g pnpm@9.15.0
 WORKDIR /src/client
 ENV NEXT_TELEMETRY_DISABLED=1 CI=1
 COPY security/control/cap-admission.ts /src/security/control/cap-admission.ts

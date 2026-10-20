@@ -24,4 +24,12 @@ grep -qxF 'COPY deploy/web-build-env.sh /src/web-build-env.sh' "$dockerfile" || 
 grep -qxF 'RUN . /src/web-build-env.sh && pnpm --filter @sidiora/web build' "$dockerfile" || fail "web build does not source web-build-env.sh"
 [ "$(grep -cE '^ARG (NEXT_PUBLIC|WEB)_' "$dockerfile")" -eq 37 ] || fail "NEXT_PUBLIC_/WEB_ ARG count changed"
 
+grep -qE '^ARG NODE_IMAGE=[^[:space:]@]+@sha256:[0-9a-f]{64}$' "$dockerfile" || fail "NODE_IMAGE base is not digest-pinned"
+while read -r _ image _; do
+  [ "$image" = '${NODE_IMAGE}' ] || grep -qE '@sha256:[0-9a-f]{64}$' <<<"$image" || fail "FROM $image is not digest-pinned"
+done < <(grep -E '^FROM ' "$dockerfile")
+apk_add=$(grep -oE 'apk add [^&]*' "$dockerfile") || fail "apk add line missing"
+! grep -qE '[[:alnum:]+]=[^[:space:]]' <<<"$apk_add" || fail "apk packages must not carry =<version> pins: $apk_add"
+grep -qF 'apk add --no-cache gcompat python3 make g++ && apk info -v gcompat python3 make g++ &&' "$dockerfile" || fail "apk info -v line missing after apk add"
+
 echo "ok"
