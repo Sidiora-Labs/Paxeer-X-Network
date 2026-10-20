@@ -101,6 +101,12 @@ func (r *CanonicalInputReader) ReadRankingUniverseTx(ctx context.Context, tx pgx
 	if !visibility.Complete || visibility.Revision == "" || visibility.ObservedAt.IsZero() || visibility.ObservedAt.After(time.Now()) || time.Since(visibility.ObservedAt) > 60*time.Second {
 		return in, ranker.ErrUnavailable
 	}
+	// The snapshot admits only moderation observed at or before the cutoff and
+	// at most 60 s before it; an observation outside that window would exclude
+	// every candidate, so the run fails and the previous heads stay current.
+	if observed := visibility.ObservedAt.Unix(); observed > cutoff.Unix() || cutoff.Unix()-observed > 60 {
+		return in, ranker.ErrUnavailable
+	}
 	var raw, typed int64
 	var alive bool
 	err = tx.QueryRow(ctx, "SELECT w.raw_complete_height,w.typed_complete_height,l.expires_at>clock_timestamp() FROM "+r.source("indexer_ingest_watermarks_v1")+" w JOIN "+r.source("indexer_ingest_leases_v1")+" l USING(chain_id,stream_id) WHERE w.chain_id=125 AND w.stream_id=$1", r.SourceStream).Scan(&raw, &typed, &alive)
