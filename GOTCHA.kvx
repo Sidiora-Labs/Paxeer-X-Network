@@ -8560,3 +8560,23 @@ detail = "The scratchpad is shared across concurrent lanes, so a gate script wit
 area = "node/sequencer"
 summary = "receipt tests hard-code the pre-move agent wire crate path"
 detail = "The sequencer receipt tests read ../../agent/crates/layerx-wire/src/receipt.rs, which moved to services/agent, so the four receipt tests fail on a missing file."
+
+[gotcha.1798]
+area = "services/platform/perps-data"
+summary = "the perps indexer cannot start mid-chain once a position exists"
+detail = "A follower started above the height where a position was opened fails on the next hourly funding settlement with 'store: projection row missing: position N'; start it from activation."
+
+[gotcha.1799]
+area = "services/platform/perps-data"
+summary = "loopback chain quirks for the perps end-to-end test"
+detail = "PendingNonceAt fails because pending is served by the sequencer, so use NonceAt at latest; self-trade prevention cancels a resting maker owned by the taker, so a fill needs two accounts; the order enums are LIMIT 0 and GTC 0."
+
+[gotcha.1800]
+area = "tools/release/rollback"
+summary = "memiavl stores carry a current symlink"
+detail = "data/state_commit/memiavl/current is a symlink to the latest snapshot directory, so an archive check that allows only regular files and directories refuses every real snapshot; allow a relative symlink inside the store directory only."
+
+[gotcha.1801]
+area = "tools/release/init-chain"
+summary = "init-chain genesis lacks the uhpx exponent 6 unit"
+detail = "The v6.12.0 upgrade pointer check panics with 'uhpx exponent 0, want 6' on a chain seeded by init-chain.sh, because the seeded denom metadata has only the exponent 0 unit."
