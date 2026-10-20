@@ -5,16 +5,17 @@ import { cn } from "@/ui/utils/cn";
 import { Button } from "@/ui/atoms/button";
 import { X, Download, Share2, Check, Loader2 } from "lucide-react";
 import { coinLogoUrl } from "@/core/perps/config";
-import type { PositionPnl } from "@/core/perps/pnlHelpers";
-import { fmtUsd as _fmtUsd, fmtPrice, fmtDate } from "@/ui/utils/format";
-const fmtUsd = (v: number) => _fmtUsd(Math.abs(v));
+import { formatPnlPercent, formatWadFixed, wadToDecimal, type PositionPnl } from "@/core/perps/pnlHelpers";
+import { fmtUsd as _fmtUsd, fmtPrice as _fmtPrice, fmtDate, weiToNumber } from "@/ui/utils/format";
+const fmtUsd = (v: bigint) => _fmtUsd(wadToDecimal(v < 0n ? -v : v));
+const fmtPrice = (v: bigint) => _fmtPrice(weiToNumber(v));
 
 export interface PnlCardData {
   symbol: string;
   isLong: boolean;
-  leverage: number;
-  entryPrice: number;
-  size: number;
+  leverage: bigint;   // 18-dec
+  entryPrice: bigint; // 18-dec USD
+  size: bigint;       // 18-dec USD
   pnl: PositionPnl;
   openedAt?: string;
 }
@@ -30,7 +31,7 @@ export function PnlShareCard({ data, onClose }: PnlShareCardProps) {
   const [copied, setCopied] = useState(false);
 
   const { symbol, isLong, leverage, entryPrice, size, pnl, openedAt } = data;
-  const isProfit = pnl.unrealizedPnl >= 0;
+  const isProfit = pnl.unrealizedPnl >= 0n;
 
   const captureCard = useCallback(async (): Promise<Blob | null> => {
     if (!cardRef.current) return null;
@@ -81,7 +82,7 @@ export function PnlShareCard({ data, onClose }: PnlShareCardProps) {
         const file = new File([blob], `hyperpax-pnl-${symbol}.png`, { type: "image/png" });
         const shareData = {
           title: `${symbol}/USD ${isLong ? "Long" : "Short"} — HyperPax`,
-          text: `${isLong ? "Long" : "Short"} ${symbol}/USD ${leverage}x | PnL: ${isProfit ? "+" : "-"}${fmtUsd(pnl.unrealizedPnl)} (${pnl.roe >= 0 ? "+" : ""}${pnl.roe.toFixed(2)}%)`,
+          text: `${isLong ? "Long" : "Short"} ${symbol}/USD ${formatWadFixed(leverage, 0)}x | PnL: ${isProfit ? "+" : "-"}${fmtUsd(pnl.unrealizedPnl)} (${formatPnlPercent(pnl.roe)})`,
           files: [file],
         };
         if (navigator.canShare(shareData)) {
@@ -160,7 +161,7 @@ export function PnlShareCard({ data, onClose }: PnlShareCardProps) {
                       isLong ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"
                     )}
                   >
-                    {isLong ? "LONG" : "SHORT"} {leverage.toFixed(0)}x
+                    {isLong ? "LONG" : "SHORT"} {formatWadFixed(leverage, 0)}x
                   </span>
                 </div>
                 {openedAt && (
@@ -190,7 +191,7 @@ export function PnlShareCard({ data, onClose }: PnlShareCardProps) {
                   isProfit ? "text-emerald-400/70" : "text-red-400/70"
                 )}
               >
-                {pnl.roe >= 0 ? "+" : ""}{pnl.roe.toFixed(2)}%
+                {formatPnlPercent(pnl.roe)}
               </span>
             </div>
           </div>
@@ -200,8 +201,8 @@ export function PnlShareCard({ data, onClose }: PnlShareCardProps) {
             <div className="grid grid-cols-3 gap-3">
               {[
                 { label: "Entry Price", value: `$${fmtPrice(entryPrice)}` },
-                { label: "Mark Price", value: pnl.markPrice > 0 ? `$${fmtPrice(pnl.markPrice)}` : "\u2014" },
-                { label: "Liq. Price", value: pnl.liqPrice > 0 ? `$${fmtPrice(pnl.liqPrice)}` : "\u2014" },
+                { label: "Mark Price", value: pnl.markPrice > 0n ? `$${fmtPrice(pnl.markPrice)}` : "\u2014" },
+                { label: "Liq. Price", value: pnl.liqPrice > 0n ? `$${fmtPrice(pnl.liqPrice)}` : "\u2014" },
                 { label: "Size", value: fmtUsd(size) },
                 { label: "Collateral", value: fmtUsd(pnl.initialCollateral) },
                 { label: "Net Value", value: fmtUsd(pnl.netValue) },

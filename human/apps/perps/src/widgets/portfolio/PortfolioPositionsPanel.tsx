@@ -2,9 +2,9 @@
 
 import { useMemo } from "react";
 import { cn } from "@/ui/utils/cn";
-import { fmtUsdCompact as fmtUsd, parse18 } from "@/ui/utils/format";
+import { fmtUsdCompact as fmtUsd, weiToNumber } from "@/ui/utils/format";
 import { coinLogoUrl, PERPS_MARKETS } from "@/core/perps/config";
-import { computePositionPnl, type ParsedPosition } from "@/core/perps/pnlHelpers";
+import { computePositionPnl, formatWadFixed, markPriceWad, parsePositionRow, pctWad, wadToDecimal } from "@/core/perps/pnlHelpers";
 import { useRealtimePrices } from "@/hooks/perps/useRealtimePrices";
 import { SectionCard, EmptyState, ConnectGate } from "./PortfolioPrimitives";
 
@@ -30,12 +30,12 @@ interface PositionRow {
   id: string;
   symbol: string;
   side: "long" | "short";
-  size: number;
-  leverage: number;
-  entryPrice: number;
-  markPrice: number;
-  unrealizedPnl: number;
-  pnlPct: number;
+  size: bigint;          // 18-dec USD
+  leverage: bigint;      // 18-dec
+  entryPrice: bigint;    // 18-dec USD
+  markPrice: number;     // ticker value, display only
+  unrealizedPnl: bigint; // 18-dec USD
+  pnlPct: bigint;        // 18-dec percent of indexed collateral
 }
 
 export function PortfolioPositionsPanel({
@@ -51,35 +51,20 @@ export function PortfolioPositionsPanel({
       const sym =
         PERPS_MARKETS.find((m) => m.marketId === Number(pos.marketId))?.symbol ??
         `MKT-${pos.marketId}`;
-      const parsed: ParsedPosition = {
-        positionId: BigInt(pos.positionId),
-        marketId: Number(pos.marketId),
-        symbol: sym,
-        isLong: pos.isLong,
-        size: parse18(pos.sizeUsd),
-        collateral: parse18(pos.collateralUsd),
-        leverage: parse18(pos.leverage),
-        entryPrice: parse18(pos.entryPrice),
-        collateralToken: pos.collateralToken ?? "",
-        collateralAmount: parse18(pos.collateralAmount),
-        openedAt: pos.openedAt,
-        openTxHash: pos.openTxHash,
-      };
+      const parsed = parsePositionRow(pos, sym);
       const markPrice = tickers[sym]?.mark_price ?? 0;
-      const pnlData = markPrice > 0 ? computePositionPnl(parsed, markPrice) : null;
+      const mark = markPriceWad(markPrice);
+      const pnlData = mark > 0n ? computePositionPnl(parsed, mark) : null;
       return {
         id: String(pos.positionId),
         symbol: sym,
         side: pos.isLong ? "long" : "short",
-        size: parsed.size,
+        size: parsed.sizeUsd,
         leverage: parsed.leverage,
         entryPrice: parsed.entryPrice,
         markPrice,
-        unrealizedPnl: pnlData?.unrealizedPnl ?? 0,
-        pnlPct:
-          pnlData && parsed.collateral > 0
-            ? (pnlData.unrealizedPnl / parsed.collateral) * 100
-            : 0,
+        unrealizedPnl: pnlData?.unrealizedPnl ?? 0n,
+        pnlPct: pnlData ? pctWad(pnlData.unrealizedPnl, parsed.collateralUsd) : 0n,
       };
     });
   }, [positions, tickers]);
@@ -161,7 +146,7 @@ function PositionRowItem({ row: r }: { row: PositionRow }) {
             {r.symbol}
           </div>
           <div className="text-[10px] font-mono text-muted-foreground md:hidden">
-            {r.side === "long" ? "Long" : "Short"} · {r.leverage.toFixed(1)}x
+            {r.side === "long" ? "Long" : "Short"} · {formatWadFixed(r.leverage, 1)}x
           </div>
         </div>
       </div>
@@ -174,14 +159,14 @@ function PositionRowItem({ row: r }: { row: PositionRow }) {
             : "bg-red-500/10 text-red-400",
         )}
       >
-        {r.side} {r.leverage.toFixed(0)}x
+        {r.side} {formatWadFixed(r.leverage, 0)}x
       </span>
 
       <span className="hidden md:block text-right font-mono tabular-nums text-xs">
-        {fmtUsd(r.size)}
+        {fmtUsd(wadToDecimal(r.size))}
       </span>
       <span className="hidden md:block text-right font-mono tabular-nums text-xs">
-        ${r.entryPrice.toLocaleString("en-US", { maximumFractionDigits: 4 })}
+        ${weiToNumber(r.entryPrice).toLocaleString("en-US", { maximumFractionDigits: 4 })}
       </span>
       <span className="hidden md:block text-right font-mono tabular-nums text-xs text-muted-foreground">
         {r.markPrice > 0
@@ -193,20 +178,20 @@ function PositionRowItem({ row: r }: { row: PositionRow }) {
         <span
           className={cn(
             "font-mono tabular-nums text-xs font-semibold",
-            r.unrealizedPnl >= 0 ? "text-emerald-400" : "text-red-400",
+            r.unrealizedPnl >= 0n ? "text-emerald-400" : "text-red-400",
           )}
         >
-          {r.unrealizedPnl >= 0 ? "+" : ""}
-          {fmtUsd(r.unrealizedPnl)}
+          {r.unrealizedPnl >= 0n ? "+" : ""}
+          {fmtUsd(wadToDecimal(r.unrealizedPnl))}
         </span>
         <span
           className={cn(
             "text-[10px] font-mono tabular-nums",
-            r.unrealizedPnl >= 0 ? "text-emerald-400/70" : "text-red-400/70",
+            r.unrealizedPnl >= 0n ? "text-emerald-400/70" : "text-red-400/70",
           )}
         >
-          {r.pnlPct >= 0 ? "+" : ""}
-          {r.pnlPct.toFixed(2)}%
+          {r.pnlPct >= 0n ? "+" : ""}
+          {formatWadFixed(r.pnlPct, 2)}%
         </span>
       </div>
     </div>

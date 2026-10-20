@@ -14,7 +14,7 @@ import { usePerpsOrders } from "@/hooks/perps/usePerpsOrders";
 import { useQuoter } from "@/hooks/perps/useQuoter";
 import { writeContract, waitForTx } from "@/hooks/perps/useContract";
 import { PARTIAL_CLOSE_BPS, partialCloseAction, unitsFromIndexed } from "@/core/perps/positionActions";
-import { computePositionPnl, type ParsedPosition } from "@/core/perps/pnlHelpers";
+import { computePositionPnl, WAD, formatWadFixed, markPriceWad, parsePositionRow, wadToDecimal } from "@/core/perps/pnlHelpers";
 import {
   subgraphQuery,
   CLOSED_POSITIONS_QUERY,
@@ -29,7 +29,7 @@ import { ExternalLink, MoreHorizontal } from "lucide-react";
 import { IcoExclamation, IcoShare } from "@/ui/atoms/custom-icon";
 import { PnlShareCard, type PnlCardData } from "./PnlShareCard";
 import { PriceFlash } from "@/ui/atoms/PriceFlash";
-import { fmtUsdCompact as formatUsd, fmtDate as formatDate, fmtPrice as formatPrice, parse18 } from "@/ui/utils/format";
+import { fmtUsdCompact as formatUsd, fmtDate as formatDate, fmtPrice as formatPrice, parse18, weiToNumber } from "@/ui/utils/format";
 import { SetTpSlModal } from "./modals/SetTpSlModal";
 import { AdjustCollateralModal } from "./modals/AdjustCollateralModal";
 import { TopUpPositionModal } from "./modals/TopUpPositionModal";
@@ -93,33 +93,12 @@ const MobilePositionCard = React.memo(function MobilePositionCard({ pos, markPri
   onClose: (id: string) => void; isClosing: boolean;
 }) {
   const symbol = getMarketSymbol(pos.marketId);
-  const entryPrice = parse18(pos.entryPrice);
-  const sizeUsd = parse18(pos.sizeUsd);
-  const leverage = parse18(pos.leverage);
-  const parsed: import("@/core/perps/pnlHelpers").ParsedPosition = {
-    positionId: BigInt(pos.positionId),
-    marketId: pos.marketId,
-    symbol,
-    isLong: pos.isLong,
-    size: sizeUsd,
-    collateral: parse18(pos.collateralUsd),
-    leverage,
-    entryPrice,
-    collateralToken: pos.collateralToken ?? "",
-    collateralAmount: parse18(pos.collateralAmount),
-    openedAt: pos.openedAt,
-    openTxHash: pos.openTxHash,
-  };
-  const pnlData = computePositionPnl(parsed, markPrice);
-  const pnlColor = pnlData.unrealizedPnl >= 0 ? "var(--success)" : "var(--danger)";
+  const parsed = parsePositionRow(pos, symbol);
+  const pnlData = computePositionPnl(parsed, markPriceWad(markPrice));
+  const pnlColor = pnlData.unrealizedPnl >= 0n ? "var(--success)" : "var(--danger)";
 
-  // Liquidation safety: 0 = dead, 1 = safe. Distance from mark to liq
-  // normalised by the distance between entry and liq on that side.
-  const range = Math.abs(entryPrice - pnlData.liqPrice) || 1;
-  const rawDanger = pos.isLong
-    ? (markPrice - pnlData.liqPrice) / range
-    : (pnlData.liqPrice - markPrice) / range;
-  const safety = Math.max(0, Math.min(1, markPrice > 0 && pnlData.liqPrice > 0 ? rawDanger : 1));
+  // Liquidation safety: 0 = dead, 1 = safe (bigint bps, display ratio only).
+  const safety = Number(pnlData.liqSafetyBps) / 10_000;
 
   return (
     <div
@@ -155,7 +134,7 @@ const MobilePositionCard = React.memo(function MobilePositionCard({ pos, markPri
                 textTransform: "uppercase",
               }}
             >
-              {pos.isLong ? "Long" : "Short"} · {leverage.toFixed(0)}×
+              {pos.isLong ? "Long" : "Short"} · {formatWadFixed(parsed.leverage, 0)}×
             </span>
           </div>
           <div
@@ -167,7 +146,7 @@ const MobilePositionCard = React.memo(function MobilePositionCard({ pos, markPri
               letterSpacing: "0.04em",
             }}
           >
-            {formatUsd(sizeUsd)} · {formatDate(pos.openedAt)}
+            {formatUsd(wadToDecimal(parsed.sizeUsd))} · {formatDate(pos.openedAt)}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -181,8 +160,8 @@ const MobilePositionCard = React.memo(function MobilePositionCard({ pos, markPri
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            {pnlData.unrealizedPnl >= 0 ? "+" : ""}
-            {formatUsd(pnlData.unrealizedPnl)}
+            {pnlData.unrealizedPnl >= 0n ? "+" : ""}
+            {formatUsd(wadToDecimal(pnlData.unrealizedPnl))}
           </div>
           <div
             style={{
@@ -193,7 +172,7 @@ const MobilePositionCard = React.memo(function MobilePositionCard({ pos, markPri
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            {pnlData.roe >= 0 ? "▲" : "▼"} {Math.abs(pnlData.roe).toFixed(2)}%
+            {pnlData.roe >= 0n ? "▲" : "▼"} {formatWadFixed(pnlData.roe < 0n ? -pnlData.roe : pnlData.roe, 2)}%
           </div>
         </div>
       </div>
@@ -204,7 +183,7 @@ const MobilePositionCard = React.memo(function MobilePositionCard({ pos, markPri
           className="flex justify-between"
           style={{ ...PX_META_LABEL, fontSize: 9, marginBottom: 6 }}
         >
-          <span>Liq {pnlData.liqPrice > 0 ? `$${formatPrice(pnlData.liqPrice)}` : "—"}</span>
+          <span>Liq {pnlData.liqPrice > 0n ? `$${formatPrice(weiToNumber(pnlData.liqPrice))}` : "—"}</span>
           <span>safety · {(safety * 100).toFixed(0)}%</span>
           <span>Mark {markPrice > 0 ? `$${formatPrice(markPrice)}` : "—"}</span>
         </div>
@@ -252,15 +231,15 @@ const MobilePositionCard = React.memo(function MobilePositionCard({ pos, markPri
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, paddingTop: 4 }}>
         <div>
           <div style={PX_META_LABEL}>Entry</div>
-          <div style={{ ...PX_MONO, fontSize: 12, marginTop: 3 }}>${formatPrice(entryPrice)}</div>
+          <div style={{ ...PX_MONO, fontSize: 12, marginTop: 3 }}>${formatPrice(weiToNumber(parsed.entryPrice))}</div>
         </div>
         <div>
           <div style={PX_META_LABEL}>Net value</div>
-          <div style={{ ...PX_MONO, fontSize: 12, marginTop: 3 }}>{formatUsd(pnlData.netValue)}</div>
+          <div style={{ ...PX_MONO, fontSize: 12, marginTop: 3 }}>{formatUsd(wadToDecimal(pnlData.netValue))}</div>
         </div>
         <div>
           <div style={PX_META_LABEL}>Collateral</div>
-          <div style={{ ...PX_MONO, fontSize: 12, marginTop: 3 }}>{formatUsd(pnlData.initialCollateral)}</div>
+          <div style={{ ...PX_MONO, fontSize: 12, marginTop: 3 }}>{formatUsd(wadToDecimal(pnlData.initialCollateral))}</div>
         </div>
       </div>
 
@@ -344,33 +323,20 @@ const DesktopPositionRow = React.memo(function DesktopPositionRow({
   onShare, onSetTpsl, onAdjust, onTopUp, onClose, onPartialClose,
 }: DesktopPositionRowProps) {
   const symbol = getMarketSymbol(pos.marketId);
-  const entryPrice = parse18(pos.entryPrice);
-  const sizeUsd = parse18(pos.sizeUsd);
-  const leverage = parse18(pos.leverage);
-  const collateralUsd = parse18(pos.collateralUsd);
-
-  const parsed: ParsedPosition = {
-    positionId: BigInt(pos.positionId),
-    marketId: pos.marketId,
-    symbol,
-    isLong: pos.isLong,
-    size: sizeUsd,
-    collateral: collateralUsd,
-    leverage,
-    entryPrice,
-    collateralToken: pos.collateralToken ?? "",
-    collateralAmount: parse18(pos.collateralAmount),
-    openedAt: pos.openedAt,
-    openTxHash: pos.openTxHash,
-  };
-  const pnlData = computePositionPnl(parsed, markPrice);
-  const marginPct = sizeUsd > 0 ? (pnlData.remainingCollateral / sizeUsd) * 100 : 0;
+  const parsed = parsePositionRow(pos, symbol);
+  const pnlData = computePositionPnl(parsed, markPriceWad(markPrice));
+  const marginPct = pnlData.marginPct;
+  // The TP/SL and adjust modals take display numbers; the PnL math above stays in bigint.
+  const entryPrice = weiToNumber(parsed.entryPrice);
+  const sizeUsd = weiToNumber(parsed.sizeUsd);
+  const leverage = weiToNumber(parsed.leverage);
+  const collateralUsd = weiToNumber(parsed.collateralUsd);
 
   const sideColor = pos.isLong ? "var(--success)" : "var(--danger)";
-  const pnlColor = pnlData.unrealizedPnl >= 0 ? "var(--success)" : "var(--danger)";
-  const roeColor = pnlData.roe >= 0 ? "var(--success)" : "var(--danger)";
+  const pnlColor = pnlData.unrealizedPnl >= 0n ? "var(--success)" : "var(--danger)";
+  const roeColor = pnlData.roe >= 0n ? "var(--success)" : "var(--danger)";
   const marginColor =
-    marginPct > 10 ? "var(--success)" : marginPct > 5 ? "var(--warning)" : "var(--danger)";
+    marginPct > 10n * WAD ? "var(--success)" : marginPct > 5n * WAD ? "var(--warning)" : "var(--danger)";
 
   const cellBase: React.CSSProperties = {
     padding: "8px 12px",
@@ -407,21 +373,21 @@ const DesktopPositionRow = React.memo(function DesktopPositionRow({
             {symbol}/USD
           </span>
           <span style={{ color: "var(--fg-subtle)", fontSize: 9, letterSpacing: "0.04em" }}>
-            {leverage.toFixed(0)}×
+            {formatWadFixed(parsed.leverage, 0)}×
           </span>
         </div>
       </td>
       <td style={{ ...cellBase, color: sideColor, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, fontSize: 10 }}>
         {pos.isLong ? "Long" : "Short"}
       </td>
-      <td style={cellRight}>{formatUsd(sizeUsd)}</td>
+      <td style={cellRight}>{formatUsd(wadToDecimal(parsed.sizeUsd))}</td>
       <td style={cellRight}>
-        <div>{formatUsd(pnlData.initialCollateral)}</div>
+        <div>{formatUsd(wadToDecimal(pnlData.initialCollateral))}</div>
         <div style={{ fontSize: 9, color: "var(--fg-subtle)", letterSpacing: "0.04em" }}>
           {tokenSymbol(pos.collateralToken)}
         </div>
       </td>
-      <td style={cellRight}>${formatPrice(entryPrice)}</td>
+      <td style={cellRight}>${formatPrice(weiToNumber(parsed.entryPrice))}</td>
       <td style={cellRight}>
         {markPrice > 0 ? (
           <PriceFlash value={markPrice}>{`$${formatPrice(markPrice)}`}</PriceFlash>
@@ -430,18 +396,18 @@ const DesktopPositionRow = React.memo(function DesktopPositionRow({
         )}
       </td>
       <td style={{ ...cellRight, color: "var(--danger)" }}>
-        {pnlData.liqPrice > 0 ? `$${formatPrice(pnlData.liqPrice)}` : "—"}
+        {pnlData.liqPrice > 0n ? `$${formatPrice(weiToNumber(pnlData.liqPrice))}` : "—"}
       </td>
       <td style={{ ...cellRight, color: pnlColor, fontWeight: 600 }}>
-        {pnlData.unrealizedPnl >= 0 ? "+" : ""}
-        {formatUsd(pnlData.unrealizedPnl)}
+        {pnlData.unrealizedPnl >= 0n ? "+" : ""}
+        {formatUsd(wadToDecimal(pnlData.unrealizedPnl))}
       </td>
       <td style={{ ...cellRight, color: roeColor }}>
-        {pnlData.roe >= 0 ? "+" : ""}
-        {pnlData.roe.toFixed(2)}%
+        {pnlData.roe >= 0n ? "+" : ""}
+        {formatWadFixed(pnlData.roe, 2)}%
       </td>
-      <td style={cellRight}>{formatUsd(pnlData.netValue)}</td>
-      <td style={{ ...cellRight, color: marginColor }}>{marginPct.toFixed(2)}%</td>
+      <td style={cellRight}>{formatUsd(wadToDecimal(pnlData.netValue))}</td>
+      <td style={{ ...cellRight, color: marginColor }}>{formatWadFixed(marginPct, 2)}%</td>
       <td style={{ ...cellBase, textAlign: "center" }}>
         {tpsl ? (
           <div
@@ -465,9 +431,9 @@ const DesktopPositionRow = React.memo(function DesktopPositionRow({
               onShare({
                 symbol,
                 isLong: pos.isLong,
-                leverage,
-                entryPrice,
-                size: sizeUsd,
+                leverage: parsed.leverage,
+                entryPrice: parsed.entryPrice,
+                size: parsed.sizeUsd,
                 pnl: pnlData,
                 openedAt: pos.openedAt,
               })

@@ -8,7 +8,7 @@ import { usePerfdbBalances, type PerfdbBalance } from "@/hooks/perps/usePerfdbBa
 import { useFundingPayments } from "@/hooks/perps/useFundingPayments";
 import { useTradeSettlements } from "@/hooks/perps/useAnalytics";
 import { useRealtimePrices } from "@/hooks/perps/useRealtimePrices";
-import { computePositionPnl, type ParsedPosition } from "@/core/perps/pnlHelpers";
+import { computePositionPnl, formatPnlPercent, formatWadFixed, markPriceWad, parsePositionRow, wadToDecimal } from "@/core/perps/pnlHelpers";
 import {
   subgraphQuery,
   ORDERS_QUERY,
@@ -26,6 +26,7 @@ import {
   fmtPrice,
   parse18,
   shortAddr,
+  weiToNumber,
 } from "@/ui/utils/format";
 import type { TradeSettlement, FundingPayment } from "@/types/perps";
 
@@ -307,28 +308,10 @@ function PositionsTab() {
 }
 
 function PositionCard({ pos, symbol, markPrice }: { pos: any; symbol: string; markPrice: number }) {
-  const entryPrice = parse18(pos.entryPrice);
-  const sizeUsd = parse18(pos.sizeUsd);
-  const leverage = parse18(pos.leverage);
-  const collateralUsd = parse18(pos.collateralUsd);
-
-  const parsed: ParsedPosition = {
-    positionId: BigInt(pos.positionId),
-    marketId: Number(pos.marketId),
-    symbol,
-    isLong: pos.isLong,
-    size: sizeUsd,
-    collateral: collateralUsd,
-    leverage,
-    entryPrice,
-    collateralToken: pos.collateralToken ?? "",
-    collateralAmount: parse18(pos.collateralAmount),
-    openedAt: pos.openedAt,
-    openTxHash: pos.openTxHash,
-  };
-
-  const pnlData = markPrice > 0 ? computePositionPnl(parsed, markPrice) : null;
-  const pnlColor = (pnlData?.unrealizedPnl ?? 0) >= 0 ? "var(--success)" : "var(--danger)";
+  const parsed = parsePositionRow(pos, symbol);
+  const mark = markPriceWad(markPrice);
+  const pnlData = mark > 0n ? computePositionPnl(parsed, mark) : null;
+  const pnlColor = (pnlData?.unrealizedPnl ?? 0n) >= 0n ? "var(--success)" : "var(--danger)";
   const sideColor = pos.isLong ? "var(--success)" : "var(--danger)";
 
   return (
@@ -355,16 +338,16 @@ function PositionCard({ pos, symbol, markPrice }: { pos: any; symbol: string; ma
               background: pos.isLong ? "rgba(5,193,104,0.12)" : "rgba(255,90,101,0.12)",
             }}
           >
-            {pos.isLong ? "Long" : "Short"} {leverage.toFixed(0)}x
+            {pos.isLong ? "Long" : "Short"} {formatWadFixed(parsed.leverage, 0)}x
           </span>
         </div>
         {pnlData && (
           <div className="text-right">
             <div style={{ ...MONO, fontSize: 13, fontWeight: 600, color: pnlColor }}>
-              {pnlData.unrealizedPnl >= 0 ? "+" : ""}{fmtUsd(pnlData.unrealizedPnl)}
+              {pnlData.unrealizedPnl >= 0n ? "+" : ""}{fmtUsd(wadToDecimal(pnlData.unrealizedPnl))}
             </div>
             <div style={{ ...MONO, fontSize: 9, color: pnlColor }}>
-              {pnlData.roe >= 0 ? "+" : ""}{pnlData.roe.toFixed(2)}%
+              {formatPnlPercent(pnlData.roe)}
             </div>
           </div>
         )}
@@ -372,8 +355,8 @@ function PositionCard({ pos, symbol, markPrice }: { pos: any; symbol: string; ma
 
       {/* Metrics */}
       <div className="grid grid-cols-3 gap-2 mt-1">
-        <MetricCell label="Size" value={fmtUsdCompact(sizeUsd)} />
-        <MetricCell label="Entry" value={`$${fmtPrice(entryPrice)}`} />
+        <MetricCell label="Size" value={fmtUsdCompact(wadToDecimal(parsed.sizeUsd))} />
+        <MetricCell label="Entry" value={`$${fmtPrice(weiToNumber(parsed.entryPrice))}`} />
         <MetricCell label="Mark" value={markPrice > 0 ? `$${fmtPrice(markPrice)}` : "\u2014"} />
       </div>
 
@@ -381,10 +364,10 @@ function PositionCard({ pos, symbol, markPrice }: { pos: any; symbol: string; ma
         <div className="grid grid-cols-2 gap-2 mt-2 pt-2" style={{ borderTop: "1px solid var(--border-soft)" }}>
           <MetricCell
             label="Liq. Price"
-            value={pnlData.liqPrice > 0 ? `$${fmtPrice(pnlData.liqPrice)}` : "\u2014"}
+            value={pnlData.liqPrice > 0n ? `$${fmtPrice(weiToNumber(pnlData.liqPrice))}` : "\u2014"}
             color="var(--danger)"
           />
-          <MetricCell label="Collateral" value={fmtUsd(pnlData.initialCollateral)} />
+          <MetricCell label="Collateral" value={fmtUsd(wadToDecimal(pnlData.initialCollateral))} />
         </div>
       )}
     </div>
