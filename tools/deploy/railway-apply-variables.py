@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "tools/rollout"))
 from rollout import gql as http_transport  # noqa: E402
 
 MANIFEST = ROOT / "launchpad/deploy/railway/variables.json"
-SECRET = re.compile(r"SECRET|TOKEN|PASSWORD|KEY|DSN|URL_WITH_PASSWORD")
+SECRET = re.compile(r"SECRET|TOKEN|PASSWORD|KEY|DSN|URL_WITH_PASSWORD|SEED|MNEMONIC|PRIVATE|SIGNING|CREDENTIAL|JWT|WEBHOOK")
 URL_WITH_PASSWORD = re.compile(r"://[^/@\s]*:[^/@\s]*@")
 USAGE = ("usage: railway-apply-variables.py <project-id> <environment> --plan|--apply "
          "[--values <values.json>] [--from-env] [--registry-credentials] [--replay <responses.json>] [--manifest <json>]")
@@ -54,15 +54,20 @@ def load_manifest(path):
             if not all(isinstance(n, str) for n in value):
                 raise ValueError(f"{name}: {key} must list names")
             needed += [n for n in value if n not in fixed and n not in needed]
-        marked = svc.get("secret", svc.get("secrets"))
-        out[name] = {"fixed": fixed, "needed": needed, "secrets": None if marked is None else set(marked)}
+        marked = svc.get("secret", svc.get("secrets", []))
+        if not isinstance(marked, list) or not all(isinstance(n, str) for n in marked):
+            raise ValueError(f"{name}: secrets must list names")
+        # The explicit list is the authority; a name the pattern flags but the list omits is refused.
+        unlisted = [n for n in [*fixed, *needed] if SECRET.search(n) and n not in marked]
+        if unlisted:
+            raise ValueError(f"{name}: {', '.join(unlisted)} match the secret name pattern "
+                             "but are not in the service's secrets list")
+        out[name] = {"fixed": fixed, "needed": needed, "secrets": set(marked)}
     return out
 
 
 def is_secret(svc, name, value):
-    if svc["secrets"] is not None:
-        return name in svc["secrets"]
-    return bool(SECRET.search(name) or URL_WITH_PASSWORD.search(value or ""))
+    return name in svc["secrets"] or bool(SECRET.search(name) or URL_WITH_PASSWORD.search(value or ""))
 
 
 def show(svc, name, value):

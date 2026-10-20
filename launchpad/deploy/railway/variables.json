@@ -35,6 +35,14 @@
       "STATS_SERVICE_URL",
       "STREAM_SIGNING_KEY",
       "ZONE"
+    ],
+    "secrets": [
+      "DATABASE_URL",
+      "IDENTITY_CLIENT_KEY_FILE",
+      "IDENTITY_SIGNING_KEY",
+      "REDIS_URL",
+      "SECRETS_PROVIDER",
+      "STREAM_SIGNING_KEY"
     ]
   },
   "api-sockets": {
@@ -74,6 +82,16 @@
       "STREAM_CONSUMER_CONFIG_SHA256",
       "STREAM_SIGNING_KEY",
       "ZONE"
+    ],
+    "secrets": [
+      "DATABASE_URL",
+      "IDENTITY_CLIENT_KEY_FILE",
+      "IDENTITY_SIGNING_KEY",
+      "NATS_CREDENTIALS",
+      "NATS_URL",
+      "REDIS_URL",
+      "SECRETS_PROVIDER",
+      "STREAM_SIGNING_KEY"
     ]
   },
   "indexer": {
@@ -119,6 +137,14 @@
       "REDIS_URL",
       "RPC_URL",
       "ZONE"
+    ],
+    "secrets": [
+      "DATABASE_URL",
+      "NATS_CREDENTIALS",
+      "NATS_URL",
+      "REDIS_BULL_URL",
+      "REDIS_URL",
+      "SECRETS_PROVIDER"
     ]
   },
   "charts": {
@@ -163,6 +189,15 @@
       "RPC_URL",
       "WEBHOOK_HMAC_SECRET",
       "ZONE"
+    ],
+    "secrets": [
+      "DATABASE_URL",
+      "NATS_CREDENTIALS",
+      "NATS_URL",
+      "REDIS_BULL_URL",
+      "REDIS_URL",
+      "SECRETS_PROVIDER",
+      "WEBHOOK_HMAC_SECRET"
     ]
   },
   "stats": {
@@ -213,6 +248,19 @@
       "STATS_CURSOR_KEY",
       "WEBHOOK_HMAC_SECRET",
       "ZONE"
+    ],
+    "secrets": [
+      "DATABASE_URL",
+      "IDENTITY_ASSERTION_SIGNING_KEY",
+      "IDENTITY_MTLS_CLIENT_KEY_PEM",
+      "NATS_CREDENTIALS",
+      "NATS_URL",
+      "REDIS_BULL_URL",
+      "REDIS_URL",
+      "SECRETS_PROVIDER",
+      "STATS_AUDIT_KEY",
+      "STATS_CURSOR_KEY",
+      "WEBHOOK_HMAC_SECRET"
     ]
   },
   "pnl": {
@@ -256,6 +304,15 @@
       "RPC_URL_FALLBACK",
       "WEBHOOK_HMAC_SECRET",
       "ZONE"
+    ],
+    "secrets": [
+      "DATABASE_URL",
+      "NATS_CREDENTIALS",
+      "NATS_URL",
+      "REDIS_BULL_URL",
+      "REDIS_URL",
+      "SECRETS_PROVIDER",
+      "WEBHOOK_HMAC_SECRET"
     ]
   },
   "ranking": {
@@ -295,6 +352,12 @@
       "REDIS_URL",
       "RPC_URL",
       "ZONE"
+    ],
+    "secrets": [
+      "DATABASE_URL",
+      "REDIS_BULL_URL",
+      "REDIS_URL",
+      "SECRETS_PROVIDER"
     ]
   },
   "gateway": {
@@ -336,6 +399,17 @@
       "SOCIAL_HTTP_URL",
       "SOCIAL_WS_URL",
       "ZONE"
+    ],
+    "secrets": [
+      "DATABASE_URL",
+      "GATEWAY_JWT_SECRET",
+      "IDENTITY_LIMITER_KEY",
+      "IDENTITY_SERVICE_TOKEN",
+      "IDENTITY_SIGNING_SECRET",
+      "REDIS_URL",
+      "S3_ACCESS_KEY_ID",
+      "S3_SECRET_ACCESS_KEY",
+      "SECRETS_PROVIDER"
     ]
   },
   "user": {
@@ -395,6 +469,27 @@
       "S3_ENDPOINT",
       "S3_SECRET_ACCESS_KEY",
       "ZONE"
+    ],
+    "secrets": [
+      "ACCOUNT_AUDIT_KEY",
+      "ACCOUNT_CURSOR_KEY",
+      "ACCOUNT_ENDPOINT_FINGERPRINT_KEY",
+      "ACCOUNT_ENDPOINT_KEY",
+      "ACCOUNT_ENDPOINT_PROOF_PUBLIC_KEY",
+      "ACCOUNT_EXPORT_KEY",
+      "ACCOUNT_GATEWAY_PUBLIC_KEY",
+      "ACCOUNT_NATS_CREDENTIALS_FILE",
+      "ACCOUNT_NATS_KEY_FILE",
+      "ACCOUNT_NATS_URL",
+      "ACCOUNT_SERVICE_SIGNING_SEED",
+      "ACCOUNT_TLS_KEY_FILE",
+      "DATABASE_URL",
+      "NOTIFICATION_D11_TOKEN",
+      "NOTIFICATION_SERVICE_TOKEN",
+      "REDIS_URL",
+      "S3_ACCESS_KEY_ID",
+      "S3_SECRET_ACCESS_KEY",
+      "SECRETS_PROVIDER"
     ]
   },
   "social": {
@@ -421,6 +516,11 @@
       "SOCIAL_RUNTIME_DOCUMENT",
       "SOCIAL_RUNTIME_SHA256",
       "ZONE"
+    ],
+    "secrets": [
+      "DATABASE_URL",
+      "REDIS_URL",
+      "SECRETS_PROVIDER"
     ]
   },
   "metadata": {
@@ -464,6 +564,15 @@
       "S3_QUARANTINE_BUCKET",
       "S3_SECRET_ACCESS_KEY",
       "ZONE"
+    ],
+    "secrets": [
+      "DATABASE_URL",
+      "IDENTITY_SERVICE_TOKEN",
+      "METADATA_PUBLICATION_AUDIT_KEY",
+      "REDIS_URL",
+      "S3_ACCESS_KEY_ID",
+      "S3_SECRET_ACCESS_KEY",
+      "SECRETS_PROVIDER"
     ]
   },
   "livestream": {
@@ -492,6 +601,14 @@
       "LIVEPEER_WEBHOOK_SECRET",
       "REDIS_URL",
       "ZONE"
+    ],
+    "secrets": [
+      "DATABASE_URL",
+      "IDENTITY_SERVICE_TOKEN",
+      "LIVEPEER_API_KEY",
+      "LIVEPEER_WEBHOOK_SECRET",
+      "REDIS_URL",
+      "SECRETS_PROVIDER"
     ]
   },
   "web": {
@@ -554,6 +671,11 @@
       "WEB_CHARTS_UPSTREAM",
       "WEB_GATEWAY_UPSTREAM",
       "WEB_SOCKETS_UPSTREAM"
+    ],
+    "secrets": [
+      "NEXT_PUBLIC_PRIVATE_API_ORIGIN",
+      "NEXT_PUBLIC_PRIVATE_STREAM_ORIGIN",
+      "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
     ]
   }
 }
