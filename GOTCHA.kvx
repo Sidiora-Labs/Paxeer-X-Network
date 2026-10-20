@@ -8585,3 +8585,13 @@ detail = "The v6.12.0 upgrade pointer check panics with 'uhpx exponent 0, want 6
 area = "tools/release/tests"
 summary = "reproducible.test.sh runs three full release builds"
 detail = "The reproducibility test takes well over thirty minutes and deletes its release directories on exit, so the SHA256SUMS listings printed in the log are the only record of which artifacts differed."
+
+[gotcha.1803]
+area = "modules/evm/keeper"
+summary = "plan-keyed precompile versions gate an address whichever activation entry names it"
+detail = "An address whose versions are keyed to an activation plan, such as the exchange and launchpad addresses through the v6.12.0 version switches, is withheld below that plan's done height even when a test's synthetic split lists it under another entry."
+
+[gotcha.1804]
+area = "Makefile"
+summary = "make paxd-native-libs needs cargo on PATH"
+detail = "Without ~/.cargo/bin on PATH the liblayerx.a step builds but the programs sandbox step exits 127, and every Go test that links liblayerx_programs_sandbox then fails at link time."

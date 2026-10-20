@@ -158,10 +158,14 @@ func TestCustomPrecompilesWithheldUntilEachEntryPlanIsApplied(t *testing.T) {
 	ctx := testApp.GetContextForDeliverTx([]byte{}).WithBlockHeight(8).WithBlockTime(time.Now())
 	k := &testApp.EvmKeeper
 	fork := forkPrecompileAddresses()
+	// The exchange and launchpad addresses carry versions keyed to the
+	// activation plan, so their version history withholds them below its done
+	// height whichever entry names them; both stay in the activation entry.
+	fork[1], fork[5] = fork[5], fork[1]
 	modules := [][]string{
-		{layerxanchortypes.ModuleName}, {layerxcustodytypes.ModuleName},
+		{layerxanchortypes.ModuleName}, {launchpadtypes.ModuleName},
 		{layerxanchortypes.ModuleName}, {layerxexchangetypes.ModuleName},
-		{layerxbridgetypes.ModuleName}, {launchpadtypes.ModuleName},
+		{layerxbridgetypes.ModuleName}, {layerxcustodytypes.ModuleName},
 		{layerxbridgetypes.ModuleName}, {xwebtypes.ModuleName},
 	}
 	first, second := fork[:4], fork[4:]
