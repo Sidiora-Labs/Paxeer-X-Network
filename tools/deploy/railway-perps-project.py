@@ -3,12 +3,13 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/rollout"))
-from rollout import API, GHCR, Malformed, load_digests  # noqa: E402
+from rollout import API, GHCR, TERMINAL, Malformed, load_digests  # noqa: E402
 
 MANIFEST = ROOT / "deploy/railway-perps-project.kvx"
 NAME = r"[a-z0-9][a-z0-9-]*"
@@ -133,12 +134,22 @@ def edges(conn):
 
 
 def current_state(gql, meta, plan):
-    projects = edges(gql("query Projects { projects { edges { node { id name "
-                         "environments { edges { node { id name } } } "
-                         "services { edges { node { id name } } } "
-                         "volumes { edges { node { id volumeInstances { edges { node { serviceId environmentId mountPath } } } } } } "
-                         "} } } }", {})["projects"])
-    project = next((p for p in projects if p["name"] == meta["project"]), None)
+    projects, after = [], None
+    while True:
+        page = gql("query Projects($w: String!, $a: String) { projects(workspaceId: $w, first: 50, after: $a) { "
+                   "pageInfo { hasNextPage endCursor } edges { node { id name "
+                   "environments { edges { node { id name } } } "
+                   "services { edges { node { id name } } } "
+                   "volumes { edges { node { id volumeInstances { edges { node { serviceId environmentId mountPath } } } } } } "
+                   "} } } }", {"w": meta["workspace"], "a": after})["projects"]
+        projects += edges(page)
+        if not page["pageInfo"]["hasNextPage"]:
+            break
+        after = page["pageInfo"]["endCursor"]
+    named = [p for p in projects if p["name"] == meta["project"]]
+    if len(named) > 1:
+        raise RuntimeError(f"workspace {meta['workspace']} has {len(named)} projects named {meta['project']}")
+    project = named[0] if named else None
     state = {"project": project, "env": None, "services": {}}
     if not project:
         return state
@@ -149,7 +160,7 @@ def current_state(gql, meta, plan):
     for vol in edges(project["volumes"]):
         for vi in edges(vol["volumeInstances"]):
             if env and vi["environmentId"] == env["id"]:
-                mounts[vi["serviceId"]] = vi["mountPath"]
+                mounts[vi["serviceId"]] = {"id": vol["id"], "path": vi["mountPath"]}
     for svc in plan:
         sid = ids.get(svc["railway_service"])
         if not sid or not env:
@@ -206,8 +217,11 @@ def plan_service(svc, cur, digests, start_height):
             steps.append(("setting", f"{k}={settings[k]}"))
     elif "source" in diff and cur is not None:
         steps.append(("image", f"{have.get('source', {}).get('image')} -> {want['source']['image']}"))
-    if svc.get("volume") and (cur is None or cur.get("volume") != svc["volume"]):
+    vol = (cur or {}).get("volume")
+    if svc.get("volume") and not vol:
         steps.append(("volume", svc["volume"]))
+    elif svc.get("volume") and vol["path"] != svc["volume"]:
+        steps.append(("mount", f"{vol['path']} -> {svc['volume']}"))
     if svc.get("public") and (cur is None or not cur.get("domains")):
         steps.append(("domain", "railway-provided"))
     have_vars = (cur or {}).get("variables") or {}
@@ -228,7 +242,13 @@ def plan_service(svc, cur, digests, start_height):
 def apply_service(gql, svc, state, want, diff, steps, upsert):
     project, env = state["project"]["id"], state["env"]["id"]
     cur = state["services"].get(svc["railway_service"])
-    sid = cur["id"] if cur else gql(
+
+    def write(query, variables):
+        data = gql(query, variables)
+        op = re.match(r"mutation (\w+)", query).group(1)
+        print(f"applied {svc['railway_service']} {op}")
+        return data
+    sid = cur["id"] if cur else write(
         "mutation ServiceCreate($i: ServiceCreateInput!) { serviceCreate(input: $i) { id } }",
         {"i": {"projectId": project, "name": svc["railway_service"], "source": want["source"]}})["serviceCreate"]["id"]
     ids = {"s": sid, "e": env}
@@ -237,21 +257,39 @@ def apply_service(gql, svc, state, want, diff, steps, upsert):
     if "registry" in kinds:
         update["registryCredentials"] = {"username": os.environ["GHCR_USERNAME"], "password": os.environ["GHCR_TOKEN"]}
     if update:
-        gql("mutation InstanceUpdate($s: String!, $e: String!, $i: ServiceInstanceUpdateInput!) { "
-            "serviceInstanceUpdate(serviceId: $s, environmentId: $e, input: $i) }", dict(ids, i=update))
+        write("mutation InstanceUpdate($s: String!, $e: String!, $i: ServiceInstanceUpdateInput!) { "
+              "serviceInstanceUpdate(serviceId: $s, environmentId: $e, input: $i) }", dict(ids, i=update))
     if "volume" in kinds:
-        gql("mutation VolumeCreate($i: VolumeCreateInput!) { volumeCreate(input: $i) { id } }",
-            {"i": {"projectId": project, "environmentId": env, "serviceId": sid, "mountPath": svc["volume"]}})
+        write("mutation VolumeCreate($i: VolumeCreateInput!) { volumeCreate(input: $i) { id } }",
+              {"i": {"projectId": project, "environmentId": env, "serviceId": sid, "mountPath": svc["volume"]}})
+    if "mount" in kinds:
+        write("mutation VolumeMount($v: String!, $e: String!, $i: VolumeInstanceUpdateInput!) { "
+              "volumeInstanceUpdate(volumeId: $v, environmentId: $e, input: $i) }",
+              {"v": cur["volume"]["id"], "e": env, "i": {"mountPath": svc["volume"]}})
     if upsert:
-        gql("mutation VariablesUpsert($i: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $i) }",
-            {"i": {"projectId": project, "environmentId": env, "serviceId": sid, "variables": upsert, "skipDeploys": True}})
+        write("mutation VariablesUpsert($i: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $i) }",
+              {"i": {"projectId": project, "environmentId": env, "serviceId": sid, "variables": upsert, "skipDeploys": True}})
     if "domain" in kinds:
-        gql("mutation DomainCreate($i: ServiceDomainCreateInput!) { serviceDomainCreate(input: $i) { domain } }",
-            {"i": {"serviceId": sid, "environmentId": env}})
+        write("mutation DomainCreate($i: ServiceDomainCreateInput!) { serviceDomainCreate(input: $i) { domain } }",
+              {"i": {"serviceId": sid, "environmentId": env}})
     if steps:
-        deployment = gql("mutation Deploy($s: String!, $e: String!) { serviceInstanceDeployV2(serviceId: $s, environmentId: $e) }",
-                         ids)["serviceInstanceDeployV2"]
+        deployment = write("mutation Deploy($s: String!, $e: String!) { serviceInstanceDeployV2(serviceId: $s, environmentId: $e) }",
+                           ids)["serviceInstanceDeployV2"]
         print(f"deployed {svc['railway_service']} deployment={deployment}")
+        return deployment
+    return None
+
+
+def wait_deployment(gql, deployment):
+    deadline = time.monotonic() + int(os.environ.get("ROLLOUT_TIMEOUT", "1800"))
+    while True:
+        status = gql("query DeploymentStatus($id: String!) { deployment(id: $id) { status } }",
+                     {"id": deployment})["deployment"]["status"]
+        if status in TERMINAL:
+            return status
+        if time.monotonic() >= deadline:
+            return f"TIMEOUT(last {status})"
+        time.sleep(int(os.environ.get("ROLLOUT_POLL", "10")))
 
 
 def main(argv, transport=None):
@@ -272,6 +310,10 @@ def main(argv, transport=None):
     if not token:
         print("RAILWAY_API_TOKEN is not set", file=sys.stderr)
         return 2
+    workspace = os.environ.get("RAILWAY_WORKSPACE_ID")
+    if not workspace:
+        print("RAILWAY_WORKSPACE_ID is not set (the workspace that owns the project)", file=sys.stderr)
+        return 2
     start_height = opts["--start-height"]
     if start_height is not None and not re.fullmatch(r"[1-9][0-9]*", start_height):
         print("--start-height must be a positive integer (the upgrade height plus one)", file=sys.stderr)
@@ -281,6 +323,7 @@ def main(argv, transport=None):
         return 2
     try:
         meta, plan = load(opts["--manifest"])
+        meta["workspace"] = workspace
     except (Malformed, OSError, KeyError, ValueError) as e:
         print(f"malformed manifest: {e}", file=sys.stderr)
         return 2
@@ -317,7 +360,11 @@ def main(argv, transport=None):
             print(f"  {kind} {text}")
         rows.append((svc, want, diff, steps, upsert))
     print(f"services={len(plan)}")
+    unresolved = sum(1 for _, _, _, steps, _ in rows for kind, text in steps if kind == "var" and text.endswith(" missing"))
     if mode == "plan":
+        if unresolved:
+            print(f"plan has {unresolved} unresolved variables", file=sys.stderr)
+            return 3
         return 0
 
     needed = {"GHCR_USERNAME", "GHCR_TOKEN"} | {v[4:] for s in plan for v in s["vars"].values() if v.startswith("env:")}
@@ -329,14 +376,25 @@ def main(argv, transport=None):
         if not state["project"]:
             created = gql("mutation ProjectCreate($i: ProjectCreateInput!) { projectCreate(input: $i) { "
                           "id environments { edges { node { id name } } } } }",
-                          {"i": {"name": meta["project"], "defaultEnvironmentName": meta["environment"]}})["projectCreate"]
+                          {"i": {"name": meta["project"], "workspaceId": workspace,
+                                 "defaultEnvironmentName": meta["environment"]}})["projectCreate"]
             state["project"] = created
             state["env"] = next((e for e in edges(created["environments"]) if e["name"] == meta["environment"]), None)
         if not state["env"]:
             state["env"] = gql("mutation EnvironmentCreate($i: EnvironmentCreateInput!) { environmentCreate(input: $i) { id } }",
                                {"i": {"projectId": state["project"]["id"], "name": meta["environment"]}})["environmentCreate"]
-        for svc, want, diff, steps, upsert in rows:
-            apply_service(gql, svc, state, want, diff, steps, upsert)
+        for order in sorted({svc["order"] for svc, *_ in rows}):
+            wave = [(svc, apply_service(gql, svc, state, want, diff, steps, upsert))
+                    for svc, want, diff, steps, upsert in rows if svc["order"] == order]
+            for svc, deployment in wave:
+                if deployment is None:
+                    continue
+                status = wait_deployment(gql, deployment)
+                print(f"wave {order} {svc['railway_service']} {status}")
+                if TERMINAL.get(status) != "pass":
+                    print(f"wave {order} failed: {svc['railway_service']} deployment {deployment} is {status}; "
+                          "later waves were not applied", file=sys.stderr)
+                    return 1
     except (RuntimeError, OSError, KeyError, TypeError) as e:
         print(f"railway write failed: {e}", file=sys.stderr)
         return 1

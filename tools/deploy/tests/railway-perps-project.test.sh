@@ -21,6 +21,8 @@ python3 -c 'import json, sys; m = json.load(open(sys.argv[1])); del m["perps-web
 	"$tmp/digests.json" >"$tmp/short.json"
 
 export RAILWAY_API_TOKEN=sentinel-railway-token-7f3a
+export RAILWAY_WORKSPACE_ID=ws-perps
+export ROLLOUT_POLL=0
 export GHCR_USERNAME=sentinel-ghcr-user-1c9e
 export GHCR_TOKEN=sentinel-ghcr-token-5b2d
 export PERPS_POSTGRES_PASSWORD=sentinel-pg-password-88aa
@@ -31,13 +33,16 @@ export PERPS_AUTH_SECRET=sentinel-auth-secret-44
 export PERPS_RPC_URLS=sentinel-rpc-urls-45
 export PERPS_COMET_URLS=sentinel-comet-urls-46
 
-# Recorded GraphQL responses: the project and environment exist, Postgres runs
-# with its full variable set and volume, nats runs on an older image; the other
-# seven services are missing.
+# Recorded GraphQL responses: the workspace lists the project on its second
+# page, the environment exists, Postgres runs with its full variable set and
+# volume, nats runs on an older image; the other seven services are missing.
 cat >"$tmp/replay.json" <<JSON
 [
- {"op": "Projects", "variables": {}, "data": {"projects": {"edges": [
-  {"node": {"id": "p-other", "name": "unrelated", "environments": {"edges": []}, "services": {"edges": []}, "volumes": {"edges": []}}},
+ {"op": "Projects", "variables": {"w": "ws-perps", "a": null}, "data": {"projects": {
+  "pageInfo": {"hasNextPage": true, "endCursor": "c1"}, "edges": [
+  {"node": {"id": "p-other", "name": "unrelated", "environments": {"edges": []}, "services": {"edges": []}, "volumes": {"edges": []}}}]}}},
+ {"op": "Projects", "variables": {"w": "ws-perps", "a": "c1"}, "data": {"projects": {
+  "pageInfo": {"hasNextPage": false, "endCursor": "c2"}, "edges": [
   {"node": {"id": "p1", "name": "paxeer-x-perps",
    "environments": {"edges": [{"node": {"id": "e1", "name": "production"}}]},
    "services": {"edges": [{"node": {"id": "s-pg", "name": "Postgres"}}, {"node": {"id": "s-nats", "name": "nats"}}]},
@@ -90,6 +95,135 @@ grep -q '^  setting healthcheckPath=/healthz/live$' "$tmp/plan" || fail "indexer
 grep -q '^  setting numReplicas=2$' "$tmp/plan" || fail "gateway replicas not from its railway json"
 grep -q '^  var DATABASE_URL add \${{Postgres.DATABASE_URL}}$' "$tmp/plan" || fail "Postgres reference missing"
 grep -q '^  registry credentials user=\$GHCR_USERNAME token=\$GHCR_TOKEN$' "$tmp/plan" || fail "registry credentials not planned"
+
+(unset PERPS_AUTH_SECRET; run --plan --digests "$tmp/digests.json" --replay "$tmp/replay.json"; echo "$code" >"$tmp/code")
+[ "$(cat "$tmp/code")" -eq 3 ] || fail "plan with unresolved values exited $(cat "$tmp/code"), want 3"
+grep -q '^  var PERPS_AUTH_SECRET <env PERPS_AUTH_SECRET> missing$' "$tmp/out" || fail "unset env source not listed"
+grep -q '^  var PERPS_START_HEIGHT <--start-height not given> missing$' "$tmp/out" || fail "missing start height not listed"
+grep -q '^services=9$' "$tmp/out" || fail "plan with unresolved values is incomplete"
+grep -q 'plan has 2 unresolved variables' "$tmp/err" || fail "unresolved count not reported"
+
+(unset RAILWAY_WORKSPACE_ID; run --plan --digests "$tmp/digests.json" --replay "$tmp/replay.json" --start-height 34800001
+	echo "$code" >"$tmp/code")
+[ "$(cat "$tmp/code")" -eq 2 ] || fail "missing workspace exited $(cat "$tmp/code"), want 2"
+grep -q 'RAILWAY_WORKSPACE_ID is not set' "$tmp/err" || fail "missing workspace not named"
+
+# Apply replay: the same project, but nats already has its volume mounted at
+# /nats. Every write the apply makes must match a recorded request body
+# exactly; there is no ProjectCreate, and no VolumeCreate for nats.
+python3 - "$tmp" "$root/deploy/railway-perps-project.kvx" <<'PY2'
+import copy, json, os, re, sys
+tmp, manifest = sys.argv[1], sys.argv[2]
+base = json.load(open(f"{tmp}/replay.json"))
+page2 = base[1]["data"]["projects"]["edges"][0]["node"]
+page2["volumes"]["edges"].append({"node": {"id": "v2", "volumeInstances": {"edges": [
+    {"node": {"serviceId": "s-nats", "environmentId": "e1", "mountPath": "/nats"}}]}}})
+vars_, cur = {}, None
+for line in open(manifest):
+    m = re.fullmatch(r"\[vars\.([a-z0-9-]+)\]\s*", line)
+    if m:
+        cur = vars_.setdefault(m.group(1), {})
+    elif line.startswith("["):
+        cur = None
+    elif cur is not None and (m := re.fullmatch(r'([A-Z_0-9]+) = "(.*)"\s*', line)):
+        v = m.group(2)
+        cur[m.group(1)] = os.environ[v[4:]] if v.startswith("env:") else "34800001" if v == "arg:start-height" else v
+creds = {"username": os.environ["GHCR_USERNAME"], "password": os.environ["GHCR_TOKEN"]}
+d = lambda n: "sha256:%064d" % n
+ref = lambda img, n: {"image": f"ghcr.io/sidiora-labs/{img}@{d(n)}"}
+def inst(img, n, health, replicas):
+    return {"source": ref(img, n), "healthcheckPath": health, "healthcheckTimeout": 300,
+            "restartPolicyType": "ALWAYS", "numReplicas": replicas, "registryCredentials": creds}
+nats_upsert = {k: v for k, v in vars_["nats"].items() if k != "PORT"}
+assert sorted(nats_upsert) == ["NATS_CLUSTER_PASSWORD", "NATS_GATEWAY_PASSWORD", "NATS_INDEXER_PASSWORD",
+                               "NATS_MAX_FILE_STORE", "NATS_ROUTES"], sorted(nats_upsert)
+writes = [
+    ("InstanceUpdate", {"s": "s-nats", "e": "e1", "i": {"source": ref("perps-data-nats", 1), "registryCredentials": creds}},
+     {"serviceInstanceUpdate": True}),
+    ("VolumeMount", {"v": "v2", "e": "e1", "i": {"mountPath": "/data"}}, {"volumeInstanceUpdate": True}),
+    ("VariablesUpsert", {"i": {"projectId": "p1", "environmentId": "e1", "serviceId": "s-nats",
+                               "variables": nats_upsert, "skipDeploys": True}}, {"variableCollectionUpsert": True}),
+]
+created = {"nats-2": ("perps-data-nats", 1, "/healthz", 1), "nats-3": ("perps-data-nats", 1, "/healthz", 1),
+           "indexer": ("perps-data-indexer", 2, "/healthz/live", 1), "gateway": ("perps-gateway", 3, "/healthz/ready", 2),
+           "explorer": ("perps-explorer", 4, "/healthz/ready", 1), "portal": ("perps-portal", 5, "/healthz/ready", 1),
+           "web": ("perps-web", 6, "/", 1)}
+for name, (img, n, health, replicas) in created.items():
+    sid = f"s-{name}"
+    writes += [
+        ("ServiceCreate", {"i": {"projectId": "p1", "name": name, "source": ref(img, n)}}, {"serviceCreate": {"id": sid}}),
+        ("InstanceUpdate", {"s": sid, "e": "e1", "i": inst(img, n, health, replicas)}, {"serviceInstanceUpdate": True}),
+        ("VariablesUpsert", {"i": {"projectId": "p1", "environmentId": "e1", "serviceId": sid,
+                                   "variables": vars_[name], "skipDeploys": True}}, {"variableCollectionUpsert": True}),
+    ]
+    if name.startswith("nats"):
+        writes.append(("VolumeCreate", {"i": {"projectId": "p1", "environmentId": "e1", "serviceId": sid, "mountPath": "/data"}},
+                       {"volumeCreate": {"id": f"v-{name}"}}))
+    if name in ("gateway", "explorer", "portal", "web"):
+        writes.append(("DomainCreate", {"i": {"serviceId": sid, "environmentId": "e1"}},
+                       {"serviceDomainCreate": {"domain": f"{name}.up.railway.app"}}))
+for name in ["nats", *created]:
+    writes.append(("Deploy", {"s": f"s-{name}", "e": "e1"}, {"serviceInstanceDeployV2": f"dep-{name}"}))
+entries = base + [{"op": op, "variables": v, "data": data} for op, v, data in writes]
+for name, status in (("crash", "CRASHED"), ("apply", "SUCCESS")):
+    out = copy.deepcopy(entries) + [{"op": "DeploymentStatus", "variables": {"id": f"dep-{s}"},
+                                     "data": {"deployment": {"status": status if s == "nats" else "SUCCESS"}}}
+                                    for s in ["nats", *created]]
+    json.dump(out, open(f"{tmp}/{name}-replay.json", "w"))
+PY2
+
+run --plan --digests "$tmp/digests.json" --replay "$tmp/apply-replay.json" --start-height 34800001
+[ "$code" -eq 0 ] || { cat "$tmp/err" >&2; fail "plan over the moved volume exited $code"; }
+sed -n '/^service 2 nats image/,/^service /p' "$tmp/out" >"$tmp/nats-plan"
+grep -q '^  mount /nats -> /data$' "$tmp/nats-plan" || fail "changed nats mount path not planned as a mount update"
+grep -q '^  volume ' "$tmp/nats-plan" && fail "changed nats mount path planned as a new volume"
+
+run --apply --digests "$tmp/digests.json" --replay "$tmp/apply-replay.json" --start-height 34800001
+[ "$code" -eq 0 ] || { cat "$tmp/out" "$tmp/err" >&2; fail "apply exited $code"; }
+grep -E '^(applied|deployed|wave) ' "$tmp/out" >"$tmp/applied"
+{
+	printf 'applied nats %s\n' InstanceUpdate VolumeMount VariablesUpsert Deploy
+	echo "deployed nats deployment=dep-nats"
+	for s in nats-2 nats-3; do
+		printf "applied $s %s\n" ServiceCreate InstanceUpdate VolumeCreate VariablesUpsert Deploy
+		echo "deployed $s deployment=dep-$s"
+	done
+	printf 'wave 2 %s SUCCESS\n' nats nats-2 nats-3
+	printf 'applied indexer %s\n' ServiceCreate InstanceUpdate VariablesUpsert Deploy
+	echo "deployed indexer deployment=dep-indexer"
+	echo "wave 3 indexer SUCCESS"
+	for w in "4 gateway" "5 explorer portal" "6 web"; do
+		set -- $w
+		n="$1"
+		shift
+		for s in "$@"; do
+			printf "applied $s %s\n" ServiceCreate InstanceUpdate VariablesUpsert DomainCreate Deploy
+			echo "deployed $s deployment=dep-$s"
+		done
+		for s in "$@"; do echo "wave $n $s SUCCESS"; done
+	done
+} >"$tmp/want-applied"
+diff -u "$tmp/want-applied" "$tmp/applied" || fail "apply writes or wave order differ"
+
+run --apply --digests "$tmp/digests.json" --replay "$tmp/crash-replay.json" --start-height 34800001
+[ "$code" -eq 1 ] || fail "apply with a crashed nats exited $code, want 1"
+grep -q '^wave 2 nats CRASHED$' "$tmp/out" || fail "crashed nats deployment not reported"
+grep -qE '^applied (indexer|gateway|explorer|portal|web) ' "$tmp/out" && fail "a later wave was applied after nats crashed"
+grep -q 'wave 2 failed: nats deployment dep-nats is CRASHED; later waves were not applied' "$tmp/err" ||
+	fail "wave failure not explained"
+
+python3 - "$tmp" <<'PY2'
+import json, sys
+r = json.load(open(f"{sys.argv[1]}/replay.json"))
+dup = json.loads(json.dumps(r[1]["data"]["projects"]["edges"][0]))
+dup["node"]["id"] = "p2"
+r[1]["data"]["projects"]["edges"].append(dup)
+json.dump(r, open(f"{sys.argv[1]}/dup-replay.json", "w"))
+PY2
+run --apply --digests "$tmp/digests.json" --replay "$tmp/dup-replay.json" --start-height 34800001
+[ "$code" -eq 1 ] || fail "two same-named projects exited $code, want 1"
+grep -q 'has 2 projects named paxeer-x-perps' "$tmp/err" || fail "duplicate project not refused"
+grep -q '^applied ' "$tmp/out" && fail "apply wrote with an ambiguous project"
 
 run --apply --digests "$tmp/digests.json" --replay "$tmp/replay.json"
 [ "$code" -eq 2 ] || fail "--apply without --start-height exited $code, want 2"
