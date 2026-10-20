@@ -22,9 +22,7 @@ use crate::state::positions::PositionTable;
 use crate::state::pubsub::{Channel, PubSubBus, PubSubMessage};
 use crate::storage::candle_store::CandleStore;
 use crate::storage::event_store::EventStore;
-use crate::storage::snapshot::{
-    self, DailyStatsEntry, SnapshotMarketState, StateSnapshot,
-};
+use crate::storage::snapshot::{self, DailyStatsEntry, SnapshotMarketState, StateSnapshot};
 use crate::storage::tick_store::TickStore;
 use crate::storage::wal::{WalConfig, WalEntry, WalWriter};
 
@@ -170,32 +168,6 @@ impl PerfDb {
 
         let wal_writer = WalWriter::open(config.wal.clone())?;
 
-        let wal_dir = config.wal.dir.clone();
-        let replay_count = crate::storage::wal::replay(&wal_dir, |entry| {
-            replay_wal_entry(
-                &entry,
-                snap_block,
-                &market_state,
-                &positions,
-                &orders,
-                &balances,
-                &users,
-                &checkpoint,
-                &trader_stats,
-                &daily_stats,
-                &events,
-            );
-            Ok(())
-        })?;
-
-        if replay_count > 0 {
-            tracing::info!(
-                replay_count,
-                from_block = snap_block,
-                "WAL entries replayed"
-            );
-        }
-
         let mut builder = candle_builder;
         for mid in 0..crate::core::market::MARKET_COUNT as MarketId {
             for tf in Timeframe::ALL {
@@ -205,7 +177,7 @@ impl PerfDb {
             }
         }
 
-        Ok(Self {
+        let db = Self {
             config,
             tick_store: Mutex::new(tick_store),
             candle_store: Mutex::new(candle_store),
@@ -226,7 +198,23 @@ impl PerfDb {
             api_keys,
             competitions,
             wal: Mutex::new(wal_writer),
-        })
+        };
+
+        let wal_dir = db.config.wal.dir.clone();
+        let replay_count = crate::storage::wal::replay(&wal_dir, |entry| {
+            db.replay_wal_entry(&entry, snap_block);
+            Ok(())
+        })?;
+
+        if replay_count > 0 {
+            tracing::info!(
+                replay_count,
+                from_block = snap_block,
+                "WAL entries replayed"
+            );
+        }
+
+        Ok(db)
     }
 
     /// Ingest a raw price tick from the price feed.
@@ -283,6 +271,13 @@ impl PerfDb {
             .lock()
             .append(&WalEntry::IndexedEvent(indexed.clone()))?;
 
+        self.apply_event(indexed);
+        Ok(())
+    }
+
+    /// Apply an indexed event to every store. Shared by live processing and
+    /// WAL replay so recovery reconstructs exactly the live state.
+    fn apply_event(&self, indexed: &IndexedEvent) {
         let (market_id, trader) = extract_event_keys(&indexed.event);
 
         self.events.append(indexed.clone(), market_id, trader);
@@ -380,11 +375,9 @@ impl PerfDb {
 
                 if let Some(pos) = self.positions.get(position_id) {
                     if pos.is_long {
-                        self.market_state
-                            .add_long_oi(*market_id, -closed_size_usd);
+                        self.market_state.add_long_oi(*market_id, -closed_size_usd);
                     } else {
-                        self.market_state
-                            .add_short_oi(*market_id, -closed_size_usd);
+                        self.market_state.add_short_oi(*market_id, -closed_size_usd);
                     }
 
                     self.pubsub.publish(
@@ -446,10 +439,8 @@ impl PerfDb {
                 self.orders.insert(order.clone());
                 self.users.ensure(*user, indexed.block_timestamp);
 
-                self.pubsub.publish(
-                    Channel::Orders,
-                    PubSubMessage::OrderUpdate(Box::new(order)),
-                );
+                self.pubsub
+                    .publish(Channel::Orders, PubSubMessage::OrderUpdate(Box::new(order)));
             }
 
             Event::OrderExecuted {
@@ -463,19 +454,15 @@ impl PerfDb {
                     *position_id,
                     indexed.block_timestamp,
                 ) {
-                    self.pubsub.publish(
-                        Channel::Orders,
-                        PubSubMessage::OrderUpdate(Box::new(order)),
-                    );
+                    self.pubsub
+                        .publish(Channel::Orders, PubSubMessage::OrderUpdate(Box::new(order)));
                 }
             }
 
             Event::OrderCancelled { order_id, .. } => {
                 if let Some(order) = self.orders.cancel(order_id) {
-                    self.pubsub.publish(
-                        Channel::Orders,
-                        PubSubMessage::OrderUpdate(Box::new(order)),
-                    );
+                    self.pubsub
+                        .publish(Channel::Orders, PubSubMessage::OrderUpdate(Box::new(order)));
                 }
             }
 
@@ -525,8 +512,11 @@ impl PerfDb {
                 new_rate_per_second,
                 funding_rate_24h,
             } => {
-                self.market_state
-                    .set_funding_rate(*market_id, *new_rate_per_second, *funding_rate_24h);
+                self.market_state.set_funding_rate(
+                    *market_id,
+                    *new_rate_per_second,
+                    *funding_rate_24h,
+                );
 
                 self.pubsub.publish(
                     Channel::Funding,
@@ -547,8 +537,13 @@ impl PerfDb {
                 let existing = self.balances.get(user, token);
                 let new_amount = existing.as_ref().map_or(*amount, |b| b.amount + *amount);
                 let new_locked = existing.as_ref().map_or(0, |b| b.locked);
-                self.balances
-                    .set_raw(*user, *token, new_amount, new_locked, new_amount - new_locked);
+                self.balances.set_raw(
+                    *user,
+                    *token,
+                    new_amount,
+                    new_locked,
+                    new_amount - new_locked,
+                );
 
                 if let Some(bal) = self.balances.get(user, token) {
                     self.pubsub.publish(
@@ -566,8 +561,13 @@ impl PerfDb {
                 let existing = self.balances.get(user, token);
                 let new_amount = existing.as_ref().map_or(0, |b| (b.amount - *amount).max(0));
                 let new_locked = existing.as_ref().map_or(0, |b| b.locked);
-                self.balances
-                    .set_raw(*user, *token, new_amount, new_locked, (new_amount - new_locked).max(0));
+                self.balances.set_raw(
+                    *user,
+                    *token,
+                    new_amount,
+                    new_locked,
+                    (new_amount - new_locked).max(0),
+                );
 
                 if let Some(bal) = self.balances.get(user, token) {
                     self.pubsub.publish(
@@ -594,8 +594,44 @@ impl PerfDb {
         }
 
         self.checkpoint.advance_block(indexed.block_number);
+    }
 
-        Ok(())
+    /// Replay a single WAL entry into state (used during recovery).
+    /// Indexed events with block_number <= snap_block are skipped (already in snapshot).
+    fn replay_wal_entry(&self, entry: &WalEntry, snap_block: u64) {
+        match entry {
+            WalEntry::PriceTick {
+                market_id,
+                price,
+                timestamp_ns,
+            } => {
+                self.market_state
+                    .set_price(*market_id, *price, *timestamp_ns);
+            }
+
+            WalEntry::Checkpoint { block_number } => {
+                self.checkpoint.advance_block(*block_number);
+            }
+
+            WalEntry::BalanceUpdate {
+                user,
+                token,
+                amount,
+                locked,
+                available,
+            } => {
+                self.balances
+                    .set_raw(*user, *token, *amount, *locked, *available);
+            }
+
+            WalEntry::IndexedEvent(indexed) => {
+                if indexed.block_number > snap_block {
+                    self.apply_event(indexed);
+                }
+            }
+
+            WalEntry::CandleUpdate { .. } | WalEntry::BatchEnd => {}
+        }
     }
 
     /// Update the checkpoint to a specific block (called at batch boundaries).
@@ -827,232 +863,6 @@ fn restore_snapshot(
     }
 }
 
-/// Replay a single WAL entry into state (used during recovery).
-/// Entries with block_number <= snap_block are skipped (already in snapshot).
-fn replay_wal_entry(
-    entry: &WalEntry,
-    snap_block: u64,
-    market_state: &MarketStateTable,
-    positions: &PositionTable,
-    orders: &OrderTable,
-    balances: &BalanceCache,
-    users: &UserStore,
-    checkpoint: &CheckpointStore,
-    trader_stats: &TraderStatsStore,
-    daily_stats: &DailyStatsStore,
-    events: &EventStore,
-) {
-    match entry {
-        WalEntry::PriceTick {
-            market_id, price, timestamp_ns,
-        } => {
-            market_state.set_price(*market_id, *price, *timestamp_ns);
-        }
-
-        WalEntry::Checkpoint { block_number } => {
-            checkpoint.advance_block(*block_number);
-        }
-
-        WalEntry::BalanceUpdate {
-            user,
-            token,
-            amount,
-            locked,
-            available,
-        } => {
-            balances.set_raw(*user, *token, *amount, *locked, *available);
-        }
-
-        WalEntry::IndexedEvent(indexed) => {
-            if indexed.block_number <= snap_block {
-                return;
-            }
-
-            let (mid, trader) = extract_event_keys(&indexed.event);
-            events.append(indexed.clone(), mid, trader);
-
-            match &indexed.event {
-                Event::PositionOpened {
-                    position_id,
-                    user,
-                    market_id,
-                    is_long,
-                    size_usd,
-                    leverage,
-                    collateral_token,
-                    collateral_amount,
-                    ..
-                } => {
-                    let pos = Position {
-                        position_id: *position_id,
-                        user_address: *user,
-                        market_id: *market_id,
-                        is_long: *is_long,
-                        size_usd: *size_usd,
-                        collateral_usd: *size_usd / (*leverage).max(1),
-                        collateral_token: *collateral_token,
-                        collateral_amount: *collateral_amount,
-                        entry_price: 0,
-                        exit_price: None,
-                        realized_pnl: None,
-                        leverage: *leverage,
-                        status: PositionStatus::Open,
-                        open_tx: indexed.tx_hash,
-                        close_tx: None,
-                        open_block: indexed.block_number,
-                        close_block: None,
-                        opened_at: indexed.block_timestamp,
-                        closed_at: None,
-                    };
-                    positions.insert(pos);
-                    users.ensure(*user, indexed.block_timestamp);
-                    trader_stats.ensure(*user);
-                    trader_stats.increment_open_positions(user);
-                }
-
-                Event::PositionClosed {
-                    position_id,
-                    user,
-                    closed_size_usd,
-                    exit_price,
-                    realized_pnl,
-                    is_full_close,
-                    ..
-                } => {
-                    positions.update(position_id, |p| {
-                        p.exit_price = Some(*exit_price);
-                        p.realized_pnl = Some(*realized_pnl);
-                        if *is_full_close {
-                            p.status = PositionStatus::Closed;
-                        } else {
-                            p.size_usd -= *closed_size_usd;
-                        }
-                    });
-                    trader_stats.ensure(*user);
-                    trader_stats.increment_trade(
-                        user,
-                        *closed_size_usd,
-                        *realized_pnl,
-                        0,
-                        *realized_pnl > 0,
-                        false,
-                        indexed.block_timestamp,
-                    );
-                    if *is_full_close {
-                        trader_stats.decrement_open_positions(user);
-                    }
-                    let date = timestamp_to_date(indexed.block_timestamp);
-                    daily_stats.accumulate_trade(*user, date, *closed_size_usd, *realized_pnl, 0);
-                }
-
-                Event::Liquidation {
-                    position_id,
-                    user,
-                    liquidation_price,
-                    penalty,
-                    ..
-                } => {
-                    positions.update(position_id, |p| {
-                        p.status = PositionStatus::Liquidated;
-                        p.exit_price = Some(*liquidation_price);
-                    });
-                    trader_stats.ensure(*user);
-                    let neg_penalty = -(*penalty);
-                    trader_stats.increment_trade(
-                        user,
-                        0,
-                        neg_penalty,
-                        0,
-                        false,
-                        true,
-                        indexed.block_timestamp,
-                    );
-                    trader_stats.decrement_open_positions(user);
-                }
-
-                Event::OrderPlaced {
-                    order_id,
-                    user,
-                    market_id,
-                    order_type,
-                    is_long,
-                    trigger_price,
-                    size_usd,
-                } => {
-                    let order = Order {
-                        order_id: *order_id,
-                        user_address: *user,
-                        market_id: *market_id,
-                        is_long: *is_long,
-                        order_type: OrderType::from(*order_type),
-                        trigger_price: *trigger_price,
-                        limit_price: None,
-                        size_usd: *size_usd,
-                        leverage: 0,
-                        collateral_token: [0u8; 20],
-                        collateral_amount: 0,
-                        status: OrderStatus::Active,
-                        execution_price: None,
-                        position_id: None,
-                        tx_hash: indexed.tx_hash,
-                        block_number: indexed.block_number,
-                        created_at: indexed.block_timestamp,
-                        executed_at: None,
-                    };
-                    orders.insert(order);
-                    users.ensure(*user, indexed.block_timestamp);
-                }
-
-                Event::OrderExecuted {
-                    order_id,
-                    position_id,
-                    execution_price,
-                } => {
-                    orders.execute(order_id, *execution_price, *position_id, indexed.block_timestamp);
-                }
-
-                Event::OrderCancelled { order_id, .. } => {
-                    orders.cancel(order_id);
-                }
-
-                Event::CollateralDeposited { user, token, amount } => {
-                    users.ensure(*user, indexed.block_timestamp);
-                    let existing = balances.get(user, token);
-                    let new_amount = existing.as_ref().map_or(*amount, |b| b.amount + *amount);
-                    let new_locked = existing.as_ref().map_or(0, |b| b.locked);
-                    balances.set_raw(*user, *token, new_amount, new_locked, new_amount - new_locked);
-                }
-
-                Event::CollateralWithdrawn { user, token, amount } => {
-                    let existing = balances.get(user, token);
-                    let new_amount = existing.as_ref().map_or(0, |b| (b.amount - *amount).max(0));
-                    let new_locked = existing.as_ref().map_or(0, |b| b.locked);
-                    balances.set_raw(*user, *token, new_amount, new_locked, (new_amount - new_locked).max(0));
-                }
-
-                Event::VaultCreated { user, vault } => {
-                    users.ensure(*user, indexed.block_timestamp);
-                    users.set_vault(user, *vault);
-                }
-
-                Event::FundingRateUpdated { market_id, new_rate_per_second, funding_rate_24h } => {
-                    market_state.set_funding_rate(*market_id, *new_rate_per_second, *funding_rate_24h);
-                }
-
-                Event::MarketPaused { market_id } => {
-                    market_state.set_paused(*market_id, true);
-                }
-
-                _ => {}
-            }
-
-            checkpoint.advance_block(indexed.block_number);
-        }
-
-        WalEntry::CandleUpdate { .. } | WalEntry::BatchEnd => {}
-    }
-}
-
 /// Convert a unix timestamp (seconds) to YYYYMMDD u32.
 fn timestamp_to_date(ts: u64) -> u32 {
     // civil_from_days algorithm: https://howardhinnant.github.io/date_algorithms.html
@@ -1181,8 +991,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = PerfDb::open(test_config(dir.path())).unwrap();
 
-        db.ingest_tick(&make_tick(500_000_000, 0, 67_000.0)).unwrap();
-        let outputs = db.ingest_tick(&make_tick(1_500_000_000, 0, 67_100.0)).unwrap();
+        db.ingest_tick(&make_tick(500_000_000, 0, 67_000.0))
+            .unwrap();
+        let outputs = db
+            .ingest_tick(&make_tick(1_500_000_000, 0, 67_100.0))
+            .unwrap();
 
         let closed: Vec<_> = outputs
             .iter()
@@ -1479,9 +1292,11 @@ mod tests {
         let db = PerfDb::open(test_config(dir.path())).unwrap();
 
         db.trader_stats.ensure(addr(1));
-        db.trader_stats.increment_trade(&addr(1), 10_000, 5_000, 100, true, false, 100);
+        db.trader_stats
+            .increment_trade(&addr(1), 10_000, 5_000, 100, true, false, 100);
         db.trader_stats.ensure(addr(2));
-        db.trader_stats.increment_trade(&addr(2), 20_000, -1_000, 200, false, false, 200);
+        db.trader_stats
+            .increment_trade(&addr(2), 20_000, -1_000, 200, false, false, 200);
 
         db.rebuild_leaderboard(1000);
 
@@ -1500,8 +1315,10 @@ mod tests {
         {
             let db = PerfDb::open(test_config(dir.path())).unwrap();
 
-            db.ingest_tick(&make_tick(1_000_000_000, 0, 67_000.0)).unwrap();
-            db.ingest_tick(&make_tick(2_000_000_000, 0, 67_100.0)).unwrap();
+            db.ingest_tick(&make_tick(1_000_000_000, 0, 67_000.0))
+                .unwrap();
+            db.ingest_tick(&make_tick(2_000_000_000, 0, 67_100.0))
+                .unwrap();
 
             db.process_event(&make_indexed_event(
                 100,

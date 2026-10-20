@@ -6,7 +6,6 @@ use perfdb::engine::PerfDbConfig;
 use perfdb::storage::wal::{SyncPolicy, WalConfig};
 use perfdb::PerfDb;
 
-
 fn test_config(dir: &std::path::Path) -> PerfDbConfig {
     PerfDbConfig {
         data_dir: dir.to_path_buf(),
@@ -64,12 +63,10 @@ fn make_event(block: u64, event: Event) -> IndexedEvent {
     }
 }
 
-
 #[test]
 fn wal_only_recovery_restores_events() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_config(dir.path());
-
 
     {
         let db = PerfDb::open(config.clone()).unwrap();
@@ -111,78 +108,64 @@ fn wal_only_recovery_restores_events() {
         .unwrap();
 
         db.sync_wal().unwrap();
-
     }
-
 
     {
         let db = PerfDb::open(config).unwrap();
 
-
-
-
         let bal = db.balances.get(&addr(1), &token(1));
         assert!(bal.is_some(), "balance not recovered from WAL");
         assert_eq!(bal.unwrap().amount, 5_000_000);
-
 
         assert!(db.positions.get(&pid(1)).is_some());
         let pos = db.positions.get(&pid(1)).unwrap();
         assert!(matches!(pos.status, PositionStatus::Open));
         assert_eq!(pos.size_usd, 1_000_000);
 
-
         assert!(db.users.contains(&addr(1)));
 
-
         assert_eq!(db.market_state.funding_rate(0), 500);
-
 
         assert_eq!(db.checkpoint.last_block(), 3);
     }
 }
-
 
 #[test]
 fn wal_recovery_restores_market_prices() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_config(dir.path());
 
-
     {
         let db = PerfDb::open(config.clone()).unwrap();
 
-        db.ingest_tick(&make_tick(1_000_000_000, 0, 67_000.0)).unwrap();
-        db.ingest_tick(&make_tick(2_000_000_000, 0, 67_100.0)).unwrap();
-        db.ingest_tick(&make_tick(1_000_000_000, 1, 3_500.0)).unwrap();
+        db.ingest_tick(&make_tick(1_000_000_000, 0, 67_000.0))
+            .unwrap();
+        db.ingest_tick(&make_tick(2_000_000_000, 0, 67_100.0))
+            .unwrap();
+        db.ingest_tick(&make_tick(1_000_000_000, 1, 3_500.0))
+            .unwrap();
 
         db.sync_wal().unwrap();
     }
 
-
     {
         let db = PerfDb::open(config).unwrap();
 
-
         assert_eq!(db.latest_price(0), 67_100.0);
         assert_eq!(db.latest_price(1), 3_500.0);
-
 
         assert_eq!(db.tick_count(0), 2);
         assert_eq!(db.tick_count(1), 1);
     }
 }
 
-
 #[test]
 fn snapshot_plus_wal_recovery() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_config(dir.path());
 
-
     {
         let db = PerfDb::open(config.clone()).unwrap();
-
 
         db.process_event(&make_event(
             100,
@@ -202,7 +185,6 @@ fn snapshot_plus_wal_recovery() {
 
         db.save_checkpoint(100, "0xblock100".to_string(), 1200);
         db.snapshot().unwrap();
-
 
         db.process_event(&make_event(
             101,
@@ -264,13 +246,10 @@ fn snapshot_plus_wal_recovery() {
         .unwrap();
 
         db.sync_wal().unwrap();
-
     }
-
 
     {
         let db = PerfDb::open(config).unwrap();
-
 
         let pos1 = db.positions.get(&pid(1)).unwrap();
         assert!(
@@ -279,22 +258,17 @@ fn snapshot_plus_wal_recovery() {
         );
         assert_eq!(pos1.exit_price, Some(68_000));
 
-
         let pos2 = db.positions.get(&pid(2)).unwrap();
         assert!(matches!(pos2.status, PositionStatus::Open));
         assert_eq!(pos2.market_id, 1);
 
-
         let bal = db.balances.get(&addr(3), &token(1)).unwrap();
         assert_eq!(bal.amount, 2_000_000);
 
-
         assert_eq!(db.market_state.funding_rate(0), 300);
-
 
         let user2 = db.users.get(&addr(2)).unwrap();
         assert_eq!(user2.vault_address, Some(addr(50)));
-
 
         let stats1 = db.trader_stats.get(&addr(1)).unwrap();
         assert_eq!(stats1.total_pnl, 15_000);
@@ -302,12 +276,10 @@ fn snapshot_plus_wal_recovery() {
     }
 }
 
-
 #[test]
 fn truncated_wal_recovers_valid_entries() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_config(dir.path());
-
 
     {
         let db = PerfDb::open(config.clone()).unwrap();
@@ -341,18 +313,12 @@ fn truncated_wal_recovers_valid_entries() {
         db.sync_wal().unwrap();
     }
 
-
     let wal_dir = dir.path().join("wal");
     let entries: Vec<_> = fs::read_dir(&wal_dir)
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.file_name()
-                .to_string_lossy()
-                .starts_with("wal_")
-        })
+        .filter(|e| e.file_name().to_string_lossy().starts_with("wal_"))
         .collect();
-
 
     let mut seg_files: Vec<_> = entries.iter().map(|e| e.path()).collect();
     seg_files.sort();
@@ -365,25 +331,20 @@ fn truncated_wal_recovers_valid_entries() {
         f.flush().unwrap();
     }
 
-
     {
         let db = PerfDb::open(config).unwrap();
 
-
         assert!(db.positions.get(&pid(1)).is_some());
-
 
         let bal = db.balances.get(&addr(2), &token(1)).unwrap();
         assert_eq!(bal.amount, 3_000_000);
     }
 }
 
-
 #[test]
 fn corrupted_crc_stops_replay_at_corruption() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_config(dir.path());
-
 
     {
         let db = PerfDb::open(config.clone()).unwrap();
@@ -433,16 +394,11 @@ fn corrupted_crc_stops_replay_at_corruption() {
         db.sync_wal().unwrap();
     }
 
-
     let wal_dir = dir.path().join("wal");
     let mut seg_files: Vec<_> = fs::read_dir(&wal_dir)
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.file_name()
-                .to_string_lossy()
-                .starts_with("wal_")
-        })
+        .filter(|e| e.file_name().to_string_lossy().starts_with("wal_"))
         .map(|e| e.path())
         .collect();
     seg_files.sort();
@@ -451,7 +407,6 @@ fn corrupted_crc_stops_replay_at_corruption() {
     {
         let data = fs::read(seg_path).unwrap();
         let mut modified = data.clone();
-
 
         let first_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
         let second_offset = 8 + first_len;
@@ -463,22 +418,18 @@ fn corrupted_crc_stops_replay_at_corruption() {
         fs::write(seg_path, &modified).unwrap();
     }
 
-
     {
         let db = PerfDb::open(config).unwrap();
-
 
         assert!(
             db.positions.get(&pid(1)).is_some(),
             "position 1 should be recovered (before corruption)"
         );
 
-
         assert!(
             db.positions.get(&pid(2)).is_none(),
             "position 2 should NOT be recovered (corrupted CRC)"
         );
-
 
         let bal = db.balances.get(&addr(3), &token(1));
         assert!(
@@ -488,7 +439,6 @@ fn corrupted_crc_stops_replay_at_corruption() {
     }
 }
 
-
 #[test]
 fn empty_wal_recovery() {
     let dir = tempfile::tempdir().unwrap();
@@ -496,7 +446,6 @@ fn empty_wal_recovery() {
 
     {
         let _db = PerfDb::open(config.clone()).unwrap();
-
     }
 
     {
@@ -507,12 +456,10 @@ fn empty_wal_recovery() {
     }
 }
 
-
 #[test]
 fn multiple_reopens_accumulate_state() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_config(dir.path());
-
 
     {
         let db = PerfDb::open(config.clone()).unwrap();
@@ -535,10 +482,8 @@ fn multiple_reopens_accumulate_state() {
         db.shutdown().unwrap();
     }
 
-
     {
         let db = PerfDb::open(config.clone()).unwrap();
-
 
         assert!(db.positions.get(&pid(1)).is_some());
 
@@ -561,13 +506,11 @@ fn multiple_reopens_accumulate_state() {
         db.shutdown().unwrap();
     }
 
-
     {
         let db = PerfDb::open(config.clone()).unwrap();
         assert!(db.positions.get(&pid(1)).is_some());
         assert!(db.positions.get(&pid(2)).is_some());
         assert_eq!(db.checkpoint.last_block(), 2);
-
 
         db.process_event(&make_event(
             3,
@@ -603,7 +546,6 @@ fn multiple_reopens_accumulate_state() {
         db.shutdown().unwrap();
     }
 
-
     {
         let db = PerfDb::open(config).unwrap();
         assert!(matches!(
@@ -622,12 +564,10 @@ fn multiple_reopens_accumulate_state() {
     }
 }
 
-
 #[test]
 fn wal_replay_deduplicates_with_snapshot() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_config(dir.path());
-
 
     {
         let db = PerfDb::open(config.clone()).unwrap();
@@ -647,7 +587,6 @@ fn wal_replay_deduplicates_with_snapshot() {
         db.save_checkpoint(5, "0x5".to_string(), 60);
         db.snapshot().unwrap();
 
-
         for i in 6..=10u64 {
             db.process_event(&make_event(
                 i,
@@ -663,19 +602,12 @@ fn wal_replay_deduplicates_with_snapshot() {
         db.sync_wal().unwrap();
     }
 
-
-
     {
         let db = PerfDb::open(config).unwrap();
 
-
         for i in 1..=10u8 {
             let bal = db.balances.get(&addr(i), &token(1));
-            assert!(
-                bal.is_some(),
-                "balance for user {} not found",
-                i
-            );
+            assert!(bal.is_some(), "balance for user {} not found", i);
 
             assert_eq!(
                 bal.unwrap().amount,
@@ -687,7 +619,6 @@ fn wal_replay_deduplicates_with_snapshot() {
     }
 }
 
-
 #[test]
 fn recovery_after_heavy_workload() {
     let dir = tempfile::tempdir().unwrap();
@@ -695,7 +626,6 @@ fn recovery_after_heavy_workload() {
 
     let num_ticks = 10_000u64;
     let num_events = 100u64;
-
 
     {
         let db = PerfDb::open(config.clone()).unwrap();
@@ -729,20 +659,69 @@ fn recovery_after_heavy_workload() {
         db.sync_wal().unwrap();
     }
 
-
     {
         let db = PerfDb::open(config).unwrap();
-
 
         let total_ticks: u64 = (0..5).map(|mid| db.tick_count(mid)).sum();
         assert_eq!(total_ticks, num_ticks);
 
-
         assert_eq!(db.checkpoint.last_block(), num_events);
-
 
         for mid in 0..5u16 {
             assert!(db.latest_price(mid) > 0.0);
         }
     }
+}
+
+#[test]
+fn wal_replay_matches_live_position_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_config(dir.path());
+
+    let live = {
+        let db = PerfDb::open(config.clone()).unwrap();
+        db.process_event(&make_event(
+            1,
+            Event::PositionOpened {
+                position_id: pid(1),
+                user: addr(1),
+                market_id: 0,
+                is_long: true,
+                size_usd: 1_000_000,
+                leverage: 10,
+                entry_price: 67_000,
+                collateral_token: token(1),
+                collateral_amount: 100_000,
+            },
+        ))
+        .unwrap();
+        db.process_event(&make_event(
+            2,
+            Event::PositionModified {
+                position_id: pid(1),
+                new_size_usd: 1_500_000,
+                new_collateral_usd: 150_000,
+                new_collateral_amount: 150_000,
+            },
+        ))
+        .unwrap();
+        db.sync_wal().unwrap();
+        (
+            db.positions.get(&pid(1)).unwrap(),
+            db.market_state.open_interest(0),
+        )
+    };
+
+    let (live_pos, live_oi) = live;
+    assert_eq!(live_pos.entry_price, 67_000);
+    assert_eq!(live_pos.size_usd, 1_500_000);
+    assert_eq!(live_oi, (1_000_000, 0));
+
+    let db = PerfDb::open(config).unwrap();
+    let pos = db.positions.get(&pid(1)).unwrap();
+    assert_eq!(pos.entry_price, live_pos.entry_price);
+    assert_eq!(pos.size_usd, live_pos.size_usd);
+    assert_eq!(pos.collateral_usd, live_pos.collateral_usd);
+    assert_eq!(pos.collateral_amount, live_pos.collateral_amount);
+    assert_eq!(db.market_state.open_interest(0), live_oi);
 }
