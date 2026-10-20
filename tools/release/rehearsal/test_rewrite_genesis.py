@@ -41,9 +41,12 @@ func exportFixture(home, output string) error {
 		return err
 	}
 	opts := viper.New()
+	opts.SetConfigFile(filepath.Join(home, "config", "app.toml"))
+	if err := opts.ReadInConfig(); err != nil {
+		return err
+	}
 	opts.Set("home", home)
 	opts.Set("chain-id", doc.ChainID)
-	opts.Set(app.FlagSCEnable, false)
 	opts.Set(app.FlagSSEnable, false)
 	opts.Set("evm.http_enabled", false)
 	opts.Set("evm.ws_enabled", false)
