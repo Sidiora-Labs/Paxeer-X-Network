@@ -18,6 +18,15 @@ railway_service = "api"
 health = "/health/ready"
 order = 1
 
+# API_ROLE=sockets is a per-service variable; the manifest has no variables
+# key, so it is set from launchpad/deploy/railway/variables.json.
+[service.api-sockets]
+target = "railway-image"
+image = "kindlelaunch-core-api"
+railway_service = "api-sockets"
+health = "/health/ready"
+order = 1
+
 [service.indexer]
 target = "railway-image"
 image = "kindlelaunch-core-indexer"
@@ -92,5 +101,5 @@ order = 3
 target = "railway-image"
 image = "kindlelaunch-web"
 railway_service = "web"
-health = "/"
+health = "/api/health"
 order = 4
