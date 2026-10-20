@@ -8620,3 +8620,8 @@ detail = "A test that schedules or applies the v6.12.0 plan, or expects custody 
 area = "node/upgrades"
 summary = "applying v6.12.0 on a clean test app panics in the launchpad step"
 detail = "The full v6.12.0 migration needs seeded release state and fails with LXP_LAUNCHPAD_INVALID_PARAMS quote token is the zero address; a module test outside package node can only record the done height through the upgrade keeper."
+
+[gotcha.1810]
+area = "node/tests"
+summary = "the optimistic ProcessBlock goroutine outlives a test unless cleanup waits on it"
+detail = "ProcessProposalHandler starts ProcessBlock in the background writing under the app home, so a test app torn down before FinalizeBlock consumes it hits 'directory not empty'; SetupWithDB now registers a cleanup that waits on the completion channel."

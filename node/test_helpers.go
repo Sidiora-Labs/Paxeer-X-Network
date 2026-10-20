@@ -194,14 +194,7 @@ func newTestWrapper(tb testing.TB, tm time.Time, valPub cryptotypes.PubKey, enab
 	} else {
 		appPtr = Setup(tb, false, enableEVMCustomPrecompiles, false, baseAppOptions...)
 	}
-	// An optimistic ProcessBlock that ProcessProposal started and no
-	// FinalizeBlock consumed still writes into the home; wait for it before the
-	// temporary directories are removed.
-	tb.Cleanup(func() {
-		if completion := appPtr.GetOptimisticProcessingInfo().Completion; completion != nil {
-			<-completion
-		}
-	})
+	waitOptimisticProcessingOnCleanup(tb, appPtr)
 	ctx := appPtr.NewContext(false, tmproto.Header{Height: 1, ChainID: "pax-test", Time: tm})
 	wrapper := &TestWrapper{
 		App:  appPtr,
@@ -421,6 +414,18 @@ func SetupWithAppOptsAndDefaultHome(isCheckTx bool, appOpts TestAppOpts, enableE
 	return res
 }
 
+// waitOptimisticProcessingOnCleanup waits at test cleanup for an optimistic
+// ProcessBlock that ProcessProposal started and no FinalizeBlock consumed,
+// since it still writes into the home, before the temporary directories are
+// removed.
+func waitOptimisticProcessingOnCleanup(tb testing.TB, app *App) {
+	tb.Cleanup(func() {
+		if completion := app.GetOptimisticProcessingInfo().Completion; completion != nil {
+			<-completion
+		}
+	})
+}
+
 func Setup(tb testing.TB, isCheckTx bool, enableEVMCustomPrecompiles bool, overrideWasmGasMultiplier bool, baseAppOptions ...func(*bam.BaseApp)) (res *App) {
 	db := dbm.NewMemDB()
 	return SetupWithDB(tb, db, isCheckTx, enableEVMCustomPrecompiles, overrideWasmGasMultiplier, baseAppOptions...)
@@ -468,6 +473,7 @@ func SetupWithDB(tb testing.TB, db dbm.DB, isCheckTx bool, enableEVMCustomPrecom
 		options,
 		baseAppOptions...,
 	)
+	waitOptimisticProcessingOnCleanup(tb, res)
 	if !isCheckTx {
 		genesisState := NewDefaultGenesisState(cdc)
 		stateBytes, err := json.MarshalIndent(genesisState, "", " ")
