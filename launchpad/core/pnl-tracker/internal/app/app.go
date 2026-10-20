@@ -234,7 +234,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		}
 	}
 	var journeys *pnlJourneys
-	if cfg.JourneyConfigFile != "" {
+	if JourneysEnabled(cfg) {
 		if cfg.NodeEnv != "production" || baselineAuthority == nil || accountingConsumer == nil || nc == nil || rpc == nil {
 			return nil, errors.New("pnl: production inventory runtime required for journeys")
 		}
@@ -668,6 +668,10 @@ type pnlJourneys struct {
 	pool         *pgxpool.Pool
 	guard        func(context.Context, pgx.Tx) error
 	schema       string
+}
+
+func JourneysEnabled(cfg config.Config) bool {
+	return cfg.JourneyConfigFile != "" || cfg.JourneyConfigDocument != ""
 }
 
 func newPnLJourneys(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, rdb *goredis.Client, rpc *ethclient.Client, nc *nats.Conn, baseline *inventory.BaselineAuthority, accounting *inventory.AccountingConsumer) (*pnlJourneys, error) {

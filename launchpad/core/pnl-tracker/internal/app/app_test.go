@@ -133,3 +133,12 @@ func hmacHeaders(secret string, body []byte) map[string]string {
 		"X-Sidiora-Signature": auth.SignWebhook(secret, ts, string(body)),
 	}
 }
+
+func TestJourneysEnabledBySource(t *testing.T) {
+	if !app.JourneysEnabled(config.Config{JourneyConfigDocument: "eyJ2IjoxfQ==", JourneyConfigSHA256: "0000000000000000000000000000000000000000000000000000000000000000"}) {
+		t.Fatal("inline journey document must enable journeys")
+	}
+	if app.JourneysEnabled(config.Config{}) {
+		t.Fatal("journeys enabled with neither file nor document")
+	}
+}
