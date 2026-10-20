@@ -75,6 +75,9 @@ sandbox_library_built_first() {
   [ "${finished_line:-0}" -gt 0 ] || { echo "the sandbox release build did not finish" >&2; return 1; }
   [ "$finished_line" -lt "$go_line" ] || { echo "the sandbox release build finished at log line $finished_line, after the go build at $go_line" >&2; return 1; }
   [ -f programs/target/release/liblayerx_programs_sandbox.a ] || { echo "the release sandbox library is missing" >&2; return 1; }
+  [ ! -e programs/target/debug ] || { echo "programs/target/debug exists after the release build" >&2; return 1; }
+  [ -x "$out/$paxd_name" ] || { echo "$paxd_name did not link" >&2; return 1; }
+  if ldd "$out/$paxd_name" | grep -F liblayerx; then echo "$paxd_name links a liblayerx shared object" >&2; return 1; fi
 }
 
 rust_pin_enforced() {
@@ -107,6 +110,8 @@ native_library_sums_recorded() {
   want=$(sha256sum "${native_libs[@]}")
   [ "$(cat "$out/native-libs.sha256")" = "$want" ] || { echo "native-libs.sha256 differs from the libraries: $(cat "$out/native-libs.sha256")" >&2; return 1; }
   [ "$(wc -l < "$out/native-libs.sha256")" -eq 2 ] || { echo "native-libs.sha256 does not hold exactly two lines" >&2; return 1; }
+  sha256sum --check --strict "$out/native-libs.sha256" || { echo "native-libs.sha256 does not verify from the repository root" >&2; return 1; }
+  [ "$(grep -c native-libs.sha256 "$out/SHA256SUMS")" -eq 1 ] || { echo "SHA256SUMS does not hold one native-libs.sha256 line" >&2; return 1; }
   listed=$(awk '$2 == "native-libs.sha256" { print $1 }' "$out/SHA256SUMS")
   [ "$listed" = "$(sha256sum "$out/native-libs.sha256" | cut -d' ' -f1)" ] || { echo "SHA256SUMS does not list native-libs.sha256" >&2; return 1; }
 }
@@ -118,6 +123,8 @@ sidecar_artifact_listed() {
   cmp -s "$target/release/price-sidecar" "$out/$sidecar_name" || { echo "$sidecar_name is not the cargo release price-sidecar" >&2; return 1; }
   listed=$(awk -v name="$sidecar_name" '$2 == name { print $1 }' "$out/SHA256SUMS")
   [ "$listed" = "$(sha256sum "$out/$sidecar_name" | cut -d' ' -f1)" ] || { echo "SHA256SUMS does not list $sidecar_name" >&2; return 1; }
+  (cd "$out" && grep -F "  $sidecar_name" SHA256SUMS | sha256sum --check --strict) || { echo "$sidecar_name does not verify against SHA256SUMS" >&2; return 1; }
+  "$out/$sidecar_name" --version || { echo "$sidecar_name --version failed" >&2; return 1; }
 }
 
 release_directory_contents() {
@@ -153,6 +160,8 @@ epoch_after_last_write() {
 binary_reports_v6120() {
   local paxd=$out/$paxd_name home=$work/chain ports rpc p_evm p_ws p_p2p p_grpc p_web node_pid i version
   [ -x "$paxd" ] || { echo "$paxd_name was not built" >&2; return 1; }
+  version=$("$paxd" version 2>&1)
+  [ "$version" = "$want_version" ] || { echo "$paxd_name version prints '$version', want $want_version" >&2; return 1; }
   # Every port is reserved together and released only once all are chosen.
   ports=$(python3 -c '
 import socket
@@ -171,7 +180,8 @@ for x in s: x.close()')
   version=
   for i in $(seq 1 180); do
     kill -0 "$node_pid" 2>/dev/null || break
-    version=$(curl -fsS --max-time 2 "http://127.0.0.1:$rpc/abci_info" 2>/dev/null | jq -r '.result.response.version // empty' 2>/dev/null || true)
+    version=$(curl -fsS --max-time 2 -H 'content-type: application/json' \
+      -d '{"jsonrpc":"2.0","id":1,"method":"abci_info","params":{}}' "http://127.0.0.1:$rpc/" 2>/dev/null | jq -r '.result.response.version // empty' 2>/dev/null || true)
     [ -n "$version" ] && break
     sleep 1
   done

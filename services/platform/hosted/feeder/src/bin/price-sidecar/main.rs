@@ -224,8 +224,12 @@ fn main() {
     let check_config = match args.as_slice() {
         [] => false,
         [flag] if flag == "--check-config" => true,
+        [flag] if flag == "--version" => {
+            println!("price-sidecar {}", env!("CARGO_PKG_VERSION"));
+            return;
+        }
         _ => {
-            eprintln!("usage: price-sidecar [--check-config]");
+            eprintln!("usage: price-sidecar [--check-config | --version]");
             std::process::exit(2);
         }
     };
