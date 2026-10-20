@@ -17,6 +17,18 @@ names=$(sed -n 's/^ARG \(NEXT_PUBLIC_[A-Z0-9_]*\).*/\1/p' "$repo/launchpad/deplo
 [ -n "$names" ] || fail "Dockerfile.web declares no NEXT_PUBLIC_* args"
 jq --arg names "$names" '.web.buildArgs = ([$names | splits("\n") | {key: ., value: "https://\(. | ascii_downcase).example"}] | from_entries)' \
 	"$repo/launchpad/deploy/railway/variables.json" > "$work/launchpad/deploy/railway/variables.json"
+# the perps frontend Dockerfile (until it lands, one ARG per name of the committed build args file) and the committed
+# values with the gateway origin filled in
+mkdir -p "$work/human/apps/perps/deploy"
+perps_src="$repo/human/apps/perps/deploy/build-args.production.env"
+perps_env="$work/human/apps/perps/deploy/build-args.production.env"
+if [ -f "$repo/human/apps/perps/Dockerfile" ]; then
+	cp "$repo/human/apps/perps/Dockerfile" "$work/human/apps/perps/"
+else
+	sed -n 's/^\(NEXT_PUBLIC_[A-Z0-9_]*\)=.*/ARG \1=/p' "$perps_src" > "$work/human/apps/perps/Dockerfile"
+fi
+sed 's|^NEXT_PUBLIC_PERPS_GATEWAY_URL=$|NEXT_PUBLIC_PERPS_GATEWAY_URL=https://gateway.example|' "$perps_src" > "$perps_env"
+perps_pristine=$(cat "$perps_env")
 script="$work/tools/deploy/offchain-images.sh"
 manifest="$work/launchpad/deploy/railway/variables.json"
 pristine=$(cat "$manifest")
@@ -59,6 +71,25 @@ jq --arg a "$first" --arg b "$last" 'del(.web.buildArgs[$a], .web.buildArgs[$b])
 if out=$(run bash "$script" --check 2>&1); then fail "--check must fail on a missing value"; fi
 grep -q "$first" <<<"$out" && grep -q "$last" <<<"$out" || fail "--check must name the missing args: $out"
 printf '%s\n' "$pristine" > "$manifest"
+
+# the perps-web row carries exactly the non-empty values of the build args file
+want=$(grep -E '^NEXT_PUBLIC_[A-Z0-9_]+=.' "$perps_env" | sort)
+[ "$(args_of "$(run bash "$script" --matrix)" perps-web | sort)" = "$want" ] || fail "perps-web args differ from the build args file"
+grep -qx 'NEXT_PUBLIC_PAXSCAN_BASE_URL=https://paxscan.io' <<<"$want" || fail "perps-web lacks the explorer URL"
+
+# an empty value without a code fallback fails --check and is named; an empty fallback value does not
+sed -i 's|^NEXT_PUBLIC_PERPS_GATEWAY_URL=.*|NEXT_PUBLIC_PERPS_GATEWAY_URL=|' "$perps_env"
+if out=$(run bash "$script" --check 2>&1); then fail "--check must fail on an empty perps gateway"; fi
+grep -q 'perps-web: .*NEXT_PUBLIC_PERPS_GATEWAY_URL' <<<"$out" || fail "--check must name the perps gateway: $out"
+! grep -q 'NEXT_PUBLIC_PAXSCAN_API_URL' <<<"$out" || fail "--check must allow the empty paxscan API URL: $out"
+
+# a perps value with a space is refused with exit 2
+printf '%s\n' "$perps_pristine" | sed 's|^NEXT_PUBLIC_LOG_LEVEL=.*|NEXT_PUBLIC_LOG_LEVEL=warn x|' > "$perps_env"
+set +e
+run bash "$script" --matrix >/dev/null 2>&1; rc=$?
+set -e
+[ "$rc" -eq 2 ] || fail "a perps value with a space must exit 2, got $rc"
+printf '%s\n' "$perps_pristine" > "$perps_env"
 
 # a missing Dockerfile of a required row fails --check
 rm "$work/launchpad/deploy/Dockerfile.native"
