@@ -31,6 +31,10 @@ const (
 	MaxChain = 24 * time.Hour
 	// MinSecretLen is the shortest accepted PERPS_AUTH_SECRET.
 	MinSecretLen = 32
+	// ClockSkew is how far in the future a token's iat may be: replicas behind
+	// one edge never share a clock exactly, and a token issued by one must
+	// verify on the next.
+	ClockSkew = 30 * time.Second
 
 	nonceLen     = 32
 	maxBodyBytes = 4096
@@ -189,6 +193,12 @@ func (s *Service) Refresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, errChainExpired.Error())
 		return
 	}
+	if origin.After(now) {
+		// A sign-in stamped by a replica whose clock runs ahead: the chain
+		// starts no later than this clock, so the new token's origin never
+		// follows its own iat.
+		origin = now
+	}
 	s.issue(w, c.Subject, origin, now)
 }
 
@@ -213,8 +223,8 @@ func (s *Service) sign(sub string, origin, now time.Time) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString(s.secret)
 }
 
-// parse validates an HS256 token against the secret and the Service clock and
-// returns its claims.
+// parse validates an HS256 token against the secret and the Service clock,
+// accepting an iat up to ClockSkew ahead of it, and returns its claims.
 func (s *Service) parse(token string, now time.Time) (*claims, error) {
 	var c claims
 	parser := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithoutClaimsValidation())
@@ -225,7 +235,7 @@ func (s *Service) parse(token string, now time.Time) (*claims, error) {
 		return nil, errInvalidToken
 	}
 	iat, exp := c.IssuedAt.Unix(), c.ExpiresAt.Unix()
-	if c.OriginIAT > iat || iat > now.Unix() || now.Unix() >= exp {
+	if c.OriginIAT > iat || iat > now.Add(ClockSkew).Unix() || now.Unix() >= exp {
 		return nil, errInvalidToken
 	}
 	if addr, ok := parseAddress(c.Subject); !ok || lower(addr) != c.Subject {

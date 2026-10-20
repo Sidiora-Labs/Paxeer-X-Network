@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
@@ -34,8 +36,24 @@ type SpotNode interface {
 // SpotUsers serves the spot user routes and the spot leaderboards of
 // contracts/data-services.md section 25 from schema perps and the node.
 type SpotUsers struct {
-	db   *sql.DB
-	node SpotNode
+	db    *sql.DB
+	node  SpotNode
+	board spotBoard
+}
+
+// spotBoardTTL is how long one fold of every account serves the leaderboards.
+const spotBoardTTL = 30 * time.Second
+
+// spotBoard is the last fold of every account's legs, ranked for each
+// leaderboard and cut to maxLimit. It is rebuilt at most once per
+// spotBoardTTL however many requests arrive; requests that find it stale
+// wait for the one rebuild in flight.
+// ponytail: one in-process full fold per TTL; move to a store projection
+// when folding every leg takes a sizeable share of the TTL.
+type spotBoard struct {
+	mu    sync.Mutex
+	at    time.Time
+	ranks map[string][]spotRankJSON
 }
 
 // NewSpotUsers returns the spot user routes reading db and node.
@@ -327,7 +345,10 @@ type spotTrader struct {
 }
 
 // fold folds the legs of user, or of every account when user is nil, through
-// pnl.Fold. A leg the fold refuses answers 422 with the refusal.
+// pnl.Fold. For one user a leg the fold refuses answers 422 with the refusal.
+// Folding every account, an account whose legs cannot be folded (a sell of
+// tokens it received by transfer) is logged and left out; it never fails the
+// fold of the others.
 func (s *SpotUsers) fold(ctx context.Context, user *common.Address) (map[common.Address]*spotTrader, error) {
 	var arg any
 	if user != nil {
@@ -339,6 +360,7 @@ func (s *SpotUsers) fold(ctx context.Context, user *common.Address) (map[common.
 	}
 	defer rows.Close()
 	traders := map[common.Address]*spotTrader{}
+	refused := map[common.Address]bool{}
 	for rows.Next() {
 		var (
 			account, token, tx []byte
@@ -352,13 +374,21 @@ func (s *SpotUsers) fold(ctx context.Context, user *common.Address) (map[common.
 			return nil, err
 		}
 		a := common.BytesToAddress(account)
+		if refused[a] {
+			continue
+		}
 		tr := traders[a]
 		if tr == nil {
 			tr = &spotTrader{volume: new(big.Int)}
 			traders[a] = tr
 		}
 		if err := tr.apply(common.BytesToAddress(token), buy, usdl, tok, common.BytesToHash(tx), at, block, logIndex); err != nil {
-			return nil, err
+			if user != nil {
+				return nil, err
+			}
+			slog.Warn("spot fold: account left out", "account", spotHex(a), "block", block, "log_index", logIndex, "reason", err.Error())
+			refused[a] = true
+			delete(traders, a)
 		}
 	}
 	return traders, rows.Err()
@@ -1218,47 +1248,69 @@ func (s *SpotUsers) leaderboard(w http.ResponseWriter, r *http.Request) {
 
 func (s *SpotUsers) rank(ctx context.Context, kind string, limit int) (spotLeaderboardBody, error) {
 	body := spotLeaderboardBody{Kind: kind, Items: []spotRankJSON{}}
+	s.board.mu.Lock()
+	defer s.board.mu.Unlock()
+	if s.board.ranks == nil || time.Since(s.board.at) >= spotBoardTTL {
+		ranks, err := s.rankAll(ctx)
+		if err != nil {
+			return body, err
+		}
+		s.board.ranks, s.board.at = ranks, time.Now()
+	}
+	items := s.board.ranks[kind]
+	body.Items = append(body.Items, items[:min(len(items), limit)]...)
+	return body, nil
+}
+
+// rankAll folds the legs of every account once and ranks the traders for
+// each leaderboard, highest first, ties by address.
+func (s *SpotUsers) rankAll(ctx context.Context) (map[string][]spotRankJSON, error) {
 	traders, err := s.fold(ctx, nil)
 	if err != nil {
-		return body, err
+		return nil, err
 	}
 	type entry struct {
 		account common.Address
 		value   *big.Rat
 		text    string
 	}
-	entries := make([]entry, 0, len(traders))
-	for account, tr := range traders {
-		e := entry{account: account}
-		switch kind {
-		case "pnl":
-			realized, err := tr.realized()
-			if err != nil {
-				return body, err
+	ranks := map[string][]spotRankJSON{}
+	for _, kind := range spotLeaderboards {
+		entries := make([]entry, 0, len(traders))
+		for account, tr := range traders {
+			e := entry{account: account}
+			switch kind {
+			case "pnl":
+				realized, err := tr.realized()
+				if err != nil {
+					return nil, err
+				}
+				e.value, e.text = new(big.Rat).SetInt(realized), realized.String()
+			case "volume":
+				e.value, e.text = new(big.Rat).SetInt(tr.volume), tr.volume.String()
+			default:
+				decided := tr.wins + tr.losses
+				if decided == 0 {
+					continue
+				}
+				e.value = big.NewRat(int64(tr.wins)*100, int64(decided))
+				e.text = e.value.FloatString(4)
 			}
-			e.value, e.text = new(big.Rat).SetInt(realized), realized.String()
-		case "volume":
-			e.value, e.text = new(big.Rat).SetInt(tr.volume), tr.volume.String()
-		default:
-			decided := tr.wins + tr.losses
-			if decided == 0 {
-				continue
+			entries = append(entries, e)
+		}
+		slices.SortFunc(entries, func(a, b entry) int {
+			if c := b.value.Cmp(a.value); c != 0 {
+				return c
 			}
-			e.value = big.NewRat(int64(tr.wins)*100, int64(decided))
-			e.text = e.value.FloatString(4)
+			return bytes.Compare(a.account.Bytes(), b.account.Bytes())
+		})
+		items := make([]spotRankJSON, 0, min(len(entries), maxLimit))
+		for i, e := range entries[:min(len(entries), maxLimit)] {
+			items = append(items, spotRankJSON{Rank: i + 1, Address: spotHex(e.account), Value: e.text})
 		}
-		entries = append(entries, e)
+		ranks[kind] = items
 	}
-	slices.SortFunc(entries, func(a, b entry) int {
-		if c := b.value.Cmp(a.value); c != 0 {
-			return c
-		}
-		return bytes.Compare(a.account.Bytes(), b.account.Bytes())
-	})
-	for i, e := range entries[:min(len(entries), limit)] {
-		body.Items = append(body.Items, spotRankJSON{Rank: i + 1, Address: spotHex(e.account), Value: e.text})
-	}
-	return body, nil
+	return ranks, nil
 }
 
 // SpotStreamItem is one data frame of the spot user socket: the stream, the

@@ -423,7 +423,7 @@ func TestPnl(t *testing.T) {
 		opened(t, tx, factKey{5, 2, 0, 0}, at(5), accountA3, 8, false, e18(200), e18(100))
 		settled(t, tx, factKey{5, 0, 1, 0}, at(5), accountA1, 7, 0, e18(200), "0", "0", "0")
 
-		entries, err := pnl.History(ctx, tx, accountA1, 0, 10, nil)
+		entries, err := pnl.History(ctx, tx, accountA1, 0, pnl.Through(10), nil, pnl.MaxHistoryRows)
 		if err != nil {
 			t.Fatalf("History: %v", err)
 		}
@@ -458,19 +458,53 @@ func TestPnl(t *testing.T) {
 			t.Fatalf("margin entry receipt %q time %v, want tx %v", entries[2].ReceiptKind, entries[2].BlockTime, at(4))
 		}
 
-		margin, err := pnl.History(ctx, tx, accountA1, 0, 10, []pnl.Kind{pnl.KindMargin})
+		margin, err := pnl.History(ctx, tx, accountA1, 0, pnl.Through(10), []pnl.Kind{pnl.KindMargin}, pnl.MaxHistoryRows)
 		if err != nil || len(margin) != 1 || margin[0].Kind != pnl.KindMargin {
 			t.Fatalf("History margin = %+v, %v; want the deposit only", margin, err)
 		}
-		recent, err := pnl.History(ctx, tx, accountA1, 5, 5, nil)
+		recent, err := pnl.History(ctx, tx, accountA1, 5, pnl.Through(5), nil, pnl.MaxHistoryRows)
 		if err != nil || len(recent) != 2 || recent[0].Kind != pnl.KindFill || recent[1].Kind != pnl.KindPosition {
 			t.Fatalf("History block 5 = %+v, %v; want the fill then the open", recent, err)
 		}
-		if _, err := pnl.History(ctx, tx, accountA1, 0, 10, []pnl.Kind{"settlement"}); !errors.Is(err, pnl.ErrUnknownKind) {
+		if _, err := pnl.History(ctx, tx, accountA1, 0, pnl.Through(10), []pnl.Kind{"settlement"}, pnl.MaxHistoryRows); !errors.Is(err, pnl.ErrUnknownKind) {
 			t.Fatalf("unknown kind error %v, want ErrUnknownKind", err)
 		}
-		if _, err := pnl.History(ctx, tx, accountA1, 6, 5, nil); !errors.Is(err, pnl.ErrRange) {
+		if _, err := pnl.History(ctx, tx, accountA1, 6, pnl.Through(5), nil, pnl.MaxHistoryRows); !errors.Is(err, pnl.ErrRange) {
 			t.Fatalf("reversed range error %v, want ErrRange", err)
+		}
+		for _, bad := range []int{0, pnl.MaxHistoryRows + 1} {
+			if _, err := pnl.History(ctx, tx, accountA1, 0, pnl.Through(10), nil, bad); !errors.Is(err, pnl.ErrLimit) {
+				t.Fatalf("limit %d error %v, want ErrLimit", bad, err)
+			}
+		}
+
+		// A limited read keeps a key's sub rows together and pages by key.
+		insertFact(t, tx, "fills", factKey{5, 1, 0, 1}, at(5), "fill", accountA2, map[string]any{
+			"market_id": 0, "maker_order_id": 2, "taker_order_id": 6, "maker": accountA1.Bytes(), "taker": accountA2.Bytes(),
+			"taker_is_long": true, "price": e18(100), "size_usd": e18(100), "maker_fee_usd": "0", "taker_fee_usd": "0",
+		})
+		keys := func(entries []pnl.Entry) []factKey {
+			out := []factKey{}
+			for _, e := range entries {
+				out = append(out, factKey{e.Block, e.TxIndex, e.LogIndex, e.Sub})
+			}
+			return out
+		}
+		for _, c := range []struct {
+			below pnl.Key
+			limit int
+			want  []factKey
+		}{
+			{pnl.Through(10), 1, []factKey{{5, 1, 0, 1}, {5, 1, 0, 0}}},
+			{pnl.Through(10), 2, []factKey{{5, 1, 0, 1}, {5, 1, 0, 0}}},
+			{pnl.Through(10), 3, []factKey{{5, 1, 0, 1}, {5, 1, 0, 0}, {5, 0, 0, 0}}},
+			{pnl.Key{Block: 5, TxIndex: 1, LogIndex: 0}, 1, []factKey{{5, 0, 0, 0}}},
+			{pnl.Key{Block: 5, TxIndex: 0, LogIndex: 0}, 5, []factKey{{4, 9, 9, 0}}},
+		} {
+			page, err := pnl.History(ctx, tx, accountA1, 0, c.below, nil, c.limit)
+			if err != nil || !slices.Equal(keys(page), c.want) {
+				t.Fatalf("History below %+v limit %d = %v, %v; want %v", c.below, c.limit, keys(page), err, c.want)
+			}
 		}
 	})
 }

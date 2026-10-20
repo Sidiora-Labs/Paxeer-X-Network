@@ -204,6 +204,14 @@ func TestAccountV2(t *testing.T) {
 		if string(body["dailyPnl"]) != "[]" {
 			t.Fatal("empty account did not return []")
 		}
+		busy := common.HexToAddress("0x00000000000000000000000000000000000000a2")
+		accountExec(t, db, `INSERT INTO perps.user_pnl_daily (account, day, trading_pnl, fees, funding, realized_pnl, volume, trades)
+            SELECT $1, $2::date - g, 0, 0, 0, 0, 0, 1 FROM generate_series(0, $3::int) g`, busy.Bytes(), day, maxDailyPnlDays)
+		days := field[[]dailyPnlRow](t, accountResponse(t, request("GET", "/v2/user/"+busy.Hex()+"/daily-pnl", "", ""), 200), "dailyPnl")
+		if len(days) != maxDailyPnlDays || days[0].Date != day.AddDate(0, 0, 1-maxDailyPnlDays).Format(time.DateOnly) ||
+			days[len(days)-1].Date != day.Format(time.DateOnly) {
+			t.Fatalf("busy daily pnl %d days from %v, want the latest %d oldest first", len(days), days[:1], maxDailyPnlDays)
+		}
 		accountError(t, request("GET", "/v2/user/invalid/daily-pnl", "", ""), 400, "invalid address")
 	})
 

@@ -528,27 +528,33 @@ func (e *Explorer) AccountHistory(ctx context.Context, account common.Address, c
 			return Page[HistoryItem]{}, fmt.Errorf("explorer: read latest block: %w", err)
 		}
 	}
+	// Each read takes only the rows the page still needs, strictly below the
+	// cursor or the last row read; a full read means its window may hold more.
+	below := pnl.Key{Block: c.Block, TxIndex: c.TxIndex, LogIndex: c.LogIndex}
 	var got []pnl.Entry
-	for span := int64(historyWindow); hi >= 0; span *= 2 {
+	span := int64(historyWindow)
+	for hi >= 0 {
 		lo := int64(0)
 		if hi >= span {
 			lo = hi - span + 1
 		}
-		entries, err := pnl.History(ctx, e.db, account, lo, hi, nil)
+		need := max(n+1-len(got), 1)
+		entries, err := pnl.History(ctx, e.db, account, lo, below, nil, need)
 		if err != nil {
 			return Page[HistoryItem]{}, fmt.Errorf("explorer: %w", err)
 		}
-		for _, en := range entries {
-			if c.after(entryKey(en)) {
-				got = append(got, en)
-			}
-		}
+		got = append(got, entries...)
 		if cut := groupCut(got, n); cut < len(got) {
 			page.NextCursor = entryKey(got[cut-1]).String()
 			got = got[:cut]
 			break
 		}
-		hi = lo - 1
+		if len(entries) >= need {
+			last := entries[len(entries)-1]
+			below = pnl.Key{Block: last.Block, TxIndex: last.TxIndex, LogIndex: last.LogIndex}
+			continue
+		}
+		hi, below, span = lo-1, pnl.Through(lo-1), span*2
 	}
 	for _, en := range got {
 		page.Items = append(page.Items, HistoryItem{

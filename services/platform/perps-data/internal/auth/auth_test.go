@@ -356,6 +356,28 @@ func TestAuth(t *testing.T) {
 		wantError(t, call(t, http.HandlerFunc(svc.Refresh), http.MethodPost, "/v2/auth/refresh", nil, nil), http.StatusUnauthorized, "missing bearer token")
 	})
 
+	t.Run("iat_clock_skew", func(t *testing.T) {
+		sub := strings.ToLower(addrOf(newKey(t)).Hex())
+		for _, c := range []struct {
+			ahead time.Duration
+			ok    bool
+		}{{ClockSkew, true}, {ClockSkew + time.Second, false}} {
+			issued := clock.now().Add(c.ahead)
+			token, err := svc.sign(sub, issued, issued)
+			if err != nil {
+				t.Fatalf("sign: %v", err)
+			}
+			r := f.refresh(t, token)
+			if c.ok {
+				next := wantToken(t, r)
+				wantClaims(t, next, sub, clock.unix(), clock.unix())
+				wantToken(t, f.refresh(t, next))
+			} else {
+				wantError(t, r, http.StatusUnauthorized, "invalid token")
+			}
+		}
+	})
+
 	t.Run("middleware_401", func(t *testing.T) {
 		mux := http.NewServeMux()
 		mux.Handle("POST /v2/alerts", Middleware(svc, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

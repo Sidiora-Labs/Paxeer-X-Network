@@ -49,6 +49,10 @@ func (s *AccountV2) Register(mux *http.ServeMux) {
 	}
 }
 
+// maxDailyPnlDays bounds a daily-pnl read to the most recent ten years of
+// days, oldest first.
+const maxDailyPnlDays = 3660
+
 type dailyPnlRow struct {
 	Date   string `json:"date"`
 	Pnl    string `json:"pnl"`
@@ -62,9 +66,10 @@ func (s *AccountV2) dailyPnl(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid address")
 		return
 	}
-	rows, err := s.db.QueryContext(r.Context(), `SELECT to_char(day, 'YYYY-MM-DD'),
-        trunc(realized_pnl)::text, trunc(volume)::text, trades
-        FROM perps.user_pnl_daily WHERE account = $1 ORDER BY day`, common.HexToAddress(raw).Bytes())
+	rows, err := s.db.QueryContext(r.Context(), `SELECT to_char(day, 'YYYY-MM-DD'), pnl, volume, trades FROM (
+        SELECT day, trunc(realized_pnl)::text AS pnl, trunc(volume)::text AS volume, trades
+        FROM perps.user_pnl_daily WHERE account = $1 ORDER BY day DESC LIMIT $2) d ORDER BY day`,
+		common.HexToAddress(raw).Bytes(), maxDailyPnlDays)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return

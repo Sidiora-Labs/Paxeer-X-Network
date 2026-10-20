@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"regexp"
 	"strings"
@@ -29,8 +30,10 @@ var (
 	ErrZeroExitPrice = errors.New("pnl: zero exit price")
 	// ErrUnknownKind reports a history kind outside the six of History.
 	ErrUnknownKind = errors.New("pnl: unknown history kind")
-	// ErrRange reports a history block range with from above to or below 0.
+	// ErrRange reports a history range below block 0 or with no row in it.
 	ErrRange = errors.New("pnl: invalid block range")
+	// ErrLimit reports a history limit outside 1 to MaxHistoryRows.
+	ErrLimit = errors.New("pnl: invalid history limit")
 )
 
 // Querier reads stored facts; *sql.DB and *sql.Tx satisfy it.
@@ -546,13 +549,46 @@ type Entry struct {
 	Args        json.RawMessage
 }
 
+// MaxHistoryRows is the largest limit one History read takes.
+const MaxHistoryRows = 1000
+
+// Key is the (block, tx_index, log_index) of a history row; the rows of one
+// key are its sub rows and are never split across History reads.
+type Key struct {
+	Block    int64
+	TxIndex  int
+	LogIndex int
+}
+
+// Through is the Key just above every row of block, the bound that makes a
+// History read include the whole block.
+func Through(block int64) Key {
+	return Key{Block: block + 1, TxIndex: math.MinInt32, LogIndex: math.MinInt32}
+}
+
+func (k Key) less(o Key) bool {
+	if k.Block != o.Block {
+		return k.Block < o.Block
+	}
+	if k.TxIndex != o.TxIndex {
+		return k.TxIndex < o.TxIndex
+	}
+	return k.LogIndex < o.LogIndex
+}
+
 // History returns the position, order, fill, funding, liquidation and margin
-// rows of account in blocks from to to inclusive, as one list ordered by
-// (block, tx_index, log_index) descending. kinds selects the row kinds; an
-// empty kinds selects all six. A fill belongs to both its taker and its maker.
-func History(ctx context.Context, q Querier, account common.Address, from, to int64, kinds []Kind) ([]Entry, error) {
-	if from < 0 || from > to {
-		return nil, fmt.Errorf("%w: %d to %d", ErrRange, from, to)
+// rows of account from block from up to, excluding, key below, as one list
+// ordered by (block, tx_index, log_index, sub) descending. It returns the first
+// limit rows, extended by the remaining sub rows of the last one's key so that
+// a key is never split: fewer than limit rows means the range is exhausted.
+// kinds selects the row kinds; an empty kinds selects all six. A fill belongs
+// to both its taker and its maker.
+func History(ctx context.Context, q Querier, account common.Address, from int64, below Key, kinds []Kind, limit int) ([]Entry, error) {
+	if from < 0 || !Through(from-1).less(below) {
+		return nil, fmt.Errorf("%w: %d below %d:%d:%d", ErrRange, from, below.Block, below.TxIndex, below.LogIndex)
+	}
+	if limit < 1 || limit > MaxHistoryRows {
+		return nil, fmt.Errorf("%w: %d", ErrLimit, limit)
 	}
 	known := map[Kind]bool{}
 	for _, h := range historyKinds {
@@ -565,16 +601,34 @@ func History(ctx context.Context, q Querier, account common.Address, from, to in
 		}
 		want[k] = true
 	}
-	var parts []string
-	for _, h := range historyKinds {
-		if len(kinds) > 0 && !want[h.kind] {
-			continue
+	union := func(where string) string {
+		var parts []string
+		for _, h := range historyKinds {
+			if len(kinds) > 0 && !want[h.kind] {
+				continue
+			}
+			parts = append(parts, fmt.Sprintf(`SELECT '%s' AS hkind, kind, block, tx_index, log_index, sub, tx_hash, receipt_kind, block_time,
+        to_jsonb(t) - %s AS args FROM perps.%s t WHERE %s AND %s`, h.kind, historyCommon, h.table, h.match, where))
 		}
-		parts = append(parts, fmt.Sprintf(`SELECT '%s' AS hkind, kind, block, tx_index, log_index, sub, tx_hash, receipt_kind, block_time,
-        to_jsonb(t) - %s AS args FROM perps.%s t WHERE %s AND block BETWEEN $2 AND $3`, h.kind, historyCommon, h.table, h.match))
+		return strings.Join(parts, "\nUNION ALL\n")
 	}
-	query := strings.Join(parts, "\nUNION ALL\n") + "\nORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC"
-	rows, err := q.QueryContext(ctx, query, account.Bytes(), from, to)
+	out, err := readHistory(ctx, q, union("block >= $2 AND (block, tx_index, log_index) < ($3, $4, $5)")+
+		"\nORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT $6",
+		account.Bytes(), from, below.Block, below.TxIndex, below.LogIndex, limit)
+	if err != nil || len(out) < limit {
+		return out, err
+	}
+	last := out[len(out)-1]
+	rest, err := readHistory(ctx, q, union("block = $2 AND tx_index = $3 AND log_index = $4 AND sub < $5")+"\nORDER BY sub DESC",
+		account.Bytes(), last.Block, last.TxIndex, last.LogIndex, last.Sub)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, rest...), nil
+}
+
+func readHistory(ctx context.Context, q Querier, query string, args ...any) ([]Entry, error) {
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("pnl: read history: %w", err)
 	}

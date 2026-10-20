@@ -370,8 +370,15 @@ SELECT 900, $1, hash, time + interval '1 second', proposer, 0 FROM perps.blocks 
 		if rec.Code != http.StatusTooManyRequests || body["error"] != "rate limit exceeded" || rec.Header().Get("Retry-After") != "60" {
 			t.Fatalf("third request: %d %v Retry-After %q", rec.Code, body, rec.Header().Get("Retry-After"))
 		}
-		if rec, _ := srvGet(t, limited, "/api/explorer/health", http.Header{"X-Api-Key": {"client-b"}}); rec.Code != http.StatusOK {
-			t.Fatalf("other client key: status %d", rec.Code)
+		if rec, _ := srvGet(t, limited, "/api/explorer/health", http.Header{"X-Api-Key": {"client-b"}}); rec.Code != http.StatusTooManyRequests {
+			t.Fatalf("same client with another api key: status %d, want 429", rec.Code)
+		}
+		other := httptest.NewRequest(http.MethodGet, "/api/explorer/health", nil)
+		other.RemoteAddr = "198.51.100.7:4321"
+		otherRec := httptest.NewRecorder()
+		limited.ServeHTTP(otherRec, other)
+		if otherRec.Code != http.StatusOK {
+			t.Fatalf("other client address: status %d", otherRec.Code)
 		}
 	})
 }

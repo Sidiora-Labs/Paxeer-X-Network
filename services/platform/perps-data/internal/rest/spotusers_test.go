@@ -509,6 +509,44 @@ func TestSpotUsersREST(t *testing.T) {
 		})
 	}
 
+	t.Run("leaderboard_survives_unfoldable_account", func(t *testing.T) {
+		seedTraders(t)
+		// An oversell (a sell of tokens received by transfer) cannot be folded;
+		// that account is left off and everyone else is still ranked.
+		oversold := addr(0xc4, 0x00)
+		spotMarket(t, db, 400, base.Add(400*time.Second), oversold, synthetic.usdl, paxToken, false, "50", "5")
+		users := &SpotUsers{db: db}
+		mux := spotMux(users)
+		want := spotLeaderboardBody{Kind: "pnl", Items: []spotRankJSON{
+			{Rank: 1, Address: spotHexOf(traders[0]), Value: e6(t, "20")},
+			{Rank: 2, Address: spotHexOf(traders[1]), Value: e6(t, "2")},
+			{Rank: 3, Address: spotHexOf(traders[2]), Value: e6(t, "-15")},
+		}}
+		var body spotLeaderboardBody
+		spotGet(t, mux, "/v1/leaderboards/pnl", http.StatusOK, &body)
+		spotEqual(t, "pnl with an unfoldable account", body, want)
+		spotRefused(t, mux, "/v1/users/"+spotHexOf(oversold)+"/pnl/summary", http.StatusUnprocessableEntity,
+			"pnl: oversell attribution anomaly; reconcile unknown inventory")
+
+		// Within the TTL the board is served from the last fold; past it the
+		// next request folds again.
+		late := addr(0xc5, 0x00)
+		spotMarket(t, db, 410, base.Add(410*time.Second), late, synthetic.usdl, paxToken, true, "10", "10")
+		spotMarket(t, db, 411, base.Add(411*time.Second), late, synthetic.usdl, paxToken, false, "110", "10")
+		body = spotLeaderboardBody{}
+		spotGet(t, mux, "/v1/leaderboards/pnl", http.StatusOK, &body)
+		spotEqual(t, "pnl within the TTL", body, want)
+		users.board.at = users.board.at.Add(-spotBoardTTL)
+		body = spotLeaderboardBody{}
+		spotGet(t, mux, "/v1/leaderboards/pnl", http.StatusOK, &body)
+		rebuilt := spotLeaderboardBody{Kind: "pnl", Items: []spotRankJSON{{Rank: 1, Address: spotHexOf(late), Value: e6(t, "100")}}}
+		for _, it := range want.Items {
+			it.Rank++
+			rebuilt.Items = append(rebuilt.Items, it)
+		}
+		spotEqual(t, "pnl past the TTL", body, rebuilt)
+	})
+
 	t.Run("unknown_kind_404", func(t *testing.T) {
 		spotRefused(t, dbOnly, "/v1/leaderboards/streak", http.StatusNotFound, "unknown leaderboard streak")
 	})
