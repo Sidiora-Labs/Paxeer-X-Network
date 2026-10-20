@@ -1,17 +1,22 @@
 package source
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"math/big"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -204,6 +209,76 @@ func TestFollower(t *testing.T) {
 		}
 		if len(rec.blocks) != n {
 			t.Fatalf("write saw %d blocks, want %d", len(rec.blocks), n)
+		}
+	})
+
+	t.Run("prefetch_keeps_height_order", func(t *testing.T) {
+		h := newHarness(t)
+		base := h.base(t)
+		// The proxy answers eth_getBlockByNumber of a height later the lower
+		// its last digit, so later heights of one read-ahead overtake earlier ones.
+		var inFlight, peak atomic.Int64
+		proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			var req struct {
+				Method string            `json:"method"`
+				Params []json.RawMessage `json:"params"`
+			}
+			if json.Unmarshal(body, &req) == nil && req.Method == "eth_getBlockByNumber" && len(req.Params) > 0 {
+				var tag string
+				if json.Unmarshal(req.Params[0], &tag) == nil {
+					if height, err := strconv.ParseUint(strings.TrimPrefix(tag, "0x"), 16, 64); err == nil {
+						n := inFlight.Add(1)
+						defer inFlight.Add(-1)
+						for p := peak.Load(); n > p && !peak.CompareAndSwap(p, n); p = peak.Load() {
+						}
+						time.Sleep(time.Duration(10-height%10) * 15 * time.Millisecond)
+					}
+				}
+			}
+			resp, err := http.Post(h.rpcURL, "application/json", bytes.NewReader(body))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadGateway)
+				return
+			}
+			defer resp.Body.Close()
+			w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+			w.WriteHeader(resp.StatusCode)
+			_, _ = io.Copy(w, resp.Body)
+		}))
+		defer proxy.Close()
+		pool, err := NewRPC(h.ctx, RPCOptions{URLs: []string{proxy.URL}})
+		if err != nil {
+			t.Fatalf("rpc: %v", err)
+		}
+		defer pool.Close()
+		h.rpc = pool
+		rec := &recorder{}
+		f := h.follower(t, base, rec)
+		n := h.follow(t, f)
+		if n < 11 {
+			t.Fatalf("stored %d blocks, want at least 11", n)
+		}
+		if got := peak.Load(); got < 2 || got > int64(pool.receiptConcurrency) {
+			t.Fatalf("peak eth_getBlockByNumber in flight %d, want between 2 and %d", got, pool.receiptConcurrency)
+		}
+		if len(rec.blocks) != n {
+			t.Fatalf("write saw %d blocks, want %d", len(rec.blocks), n)
+		}
+		for i, b := range rec.blocks {
+			if b.Number != base+uint64(i) {
+				t.Fatalf("write %d got block %d, want %d", i, b.Number, base+uint64(i))
+			}
+			if i > 0 && b.ParentHash != rec.blocks[i-1].Hash {
+				t.Fatalf("block %d parent %s, written block before it is %s", b.Number, b.ParentHash.Hex(), rec.blocks[i-1].Hash.Hex())
+			}
+		}
+		if got := h.cursor(t); got != base+uint64(n)-1 {
+			t.Fatalf("cursor %d, want %d", got, base+uint64(n)-1)
 		}
 	})
 

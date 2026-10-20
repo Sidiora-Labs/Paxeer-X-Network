@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -248,6 +250,12 @@ func (f *Follower) Step(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 	to := min(head, next+MaxLogRange-1)
+	fetchCtx, cancel := context.WithCancel(ctx)
+	take, wait := f.prefetch(fetchCtx, next, to)
+	defer func() {
+		cancel()
+		wait()
+	}()
 	logs, err := f.fetchLogs(ctx, next, to)
 	if err != nil {
 		return 0, err
@@ -258,15 +266,18 @@ func (f *Follower) Step(ctx context.Context) (int, error) {
 	}
 	stored := 0
 	for h := next; h <= to; h++ {
-		evm, err := f.opts.RPC.Block(ctx, h)
-		if err != nil {
-			return stored, err
+		p := take(h)
+		if p.evmErr != nil {
+			return stored, p.evmErr
 		}
-		rewound, err := f.continuity(ctx, evm)
+		rewound, err := f.continuity(ctx, p.evm)
 		if err != nil || rewound {
 			return stored, err
 		}
-		b, err := f.assemble(ctx, evm, byBlock[h])
+		if p.cometErr != nil {
+			return stored, p.cometErr
+		}
+		b, err := f.assemble(p.evm, p.header, p.results, byBlock[h])
 		if err != nil {
 			var mismatch *SyntheticMismatchError
 			if errors.As(err, &mismatch) {
@@ -282,6 +293,74 @@ func (f *Follower) Step(ctx context.Context) (int, error) {
 	return stored, nil
 }
 
+// fetched is the node data of one height, read ahead of the commit loop.
+type fetched struct {
+	evm      *EVMBlock
+	evmErr   error
+	header   *CometHeader
+	results  *CometResults
+	cometErr error
+}
+
+// prefetch reads the EVM block, consensus header and block results of every
+// height of [from, to] concurrently, with at most the RPC receipt concurrency
+// of heights fetching or waiting to be taken. take(h) blocks for height h,
+// whose result has its own channel, so the caller takes them strictly in
+// height order, and frees its slot. wait returns once every fetch has ended,
+// at once after ctx is cancelled.
+func (f *Follower) prefetch(ctx context.Context, from, to uint64) (take func(uint64) fetched, wait func()) {
+	out := make([]chan fetched, to-from+1)
+	for i := range out {
+		out[i] = make(chan fetched, 1)
+	}
+	slots := make(chan struct{}, f.opts.RPC.receiptConcurrency)
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for i := range out {
+			select {
+			case slots <- struct{}{}:
+			case <-ctx.Done():
+				for _, rest := range out[i:] {
+					rest <- fetched{evmErr: ctx.Err()}
+				}
+				return
+			}
+			wg.Go(func() { out[i] <- f.fetchHeight(ctx, from+uint64(i)) })
+		}
+	})
+	take = func(h uint64) fetched {
+		p := <-out[h-from]
+		select {
+		case <-slots:
+		default: // a height never dispatched after ctx ended holds no slot
+		}
+		return p
+	}
+	return take, wg.Wait
+}
+
+func (f *Follower) fetchHeight(ctx context.Context, h uint64) fetched {
+	evm, err := f.opts.RPC.Block(ctx, h)
+	if err != nil {
+		return fetched{evmErr: err}
+	}
+	header, results, err := f.consensus(ctx, h)
+	return fetched{evm: evm, header: header, results: results, cometErr: err}
+}
+
+// consensus reads the consensus header and block results of height h.
+func (f *Follower) consensus(ctx context.Context, h uint64) (*CometHeader, *CometResults, error) {
+	header, err := f.opts.Comet.Header(ctx, int64(h))
+	if err != nil {
+		return nil, nil, err
+	}
+	results, err := f.opts.Comet.BlockResults(ctx, int64(h))
+	if err != nil {
+		return nil, nil, err
+	}
+	return header, results, nil
+}
+
 // Fetch reads height h from the node exactly as Step does, without the
 // continuity check and without storing it; a replay rewrites a stored height
 // from it.
@@ -294,21 +373,17 @@ func (f *Follower) Fetch(ctx context.Context, h uint64) (*Block, error) {
 	if err != nil {
 		return nil, err
 	}
-	return f.assemble(ctx, evm, logs)
+	header, results, err := f.consensus(ctx, h)
+	if err != nil {
+		return nil, err
+	}
+	return f.assemble(evm, header, results, logs)
 }
 
 // assemble joins the EVM block, its logs and the consensus header and block
 // results of its height into a Block.
-func (f *Follower) assemble(ctx context.Context, evm *EVMBlock, logs []ethtypes.Log) (*Block, error) {
+func (f *Follower) assemble(evm *EVMBlock, header *CometHeader, results *CometResults, logs []ethtypes.Log) (*Block, error) {
 	h := evm.Number
-	header, err := f.opts.Comet.Header(ctx, int64(h))
-	if err != nil {
-		return nil, err
-	}
-	results, err := f.opts.Comet.BlockResults(ctx, int64(h))
-	if err != nil {
-		return nil, err
-	}
 	for _, l := range logs {
 		if l.BlockHash != evm.Hash {
 			return nil, fmt.Errorf("source: height %d: log %d of block hash %s, block is %s", h, l.Index, l.BlockHash.Hex(), evm.Hash.Hex())
@@ -349,13 +424,13 @@ func (f *Follower) addresses(extra map[common.Address]struct{}) []string {
 // logs of 0x1025 created, from their creation block.
 func (f *Follower) fetchLogs(ctx context.Context, from, to uint64) ([]ethtypes.Log, error) {
 	catchUp := to > from
-	first, err := f.opts.RPC.Logs(ctx, FetchOptions{MonitoredAddresses: f.addresses(f.pointers), FromBlock: int64(from), ToBlock: int64(to), Historical: catchUp})
+	first, err := f.windowLogs(ctx, f.addresses(f.pointers), from, to, catchUp)
 	if err != nil {
 		return nil, err
 	}
 	created := map[common.Address]uint64{}
 	lowest := to
-	for _, l := range first.Logs {
+	for _, l := range first {
 		if l.Address != SpotVault || len(l.Topics) != 3 || l.Topics[0] != shareTokenCreatedTopic {
 			continue
 		}
@@ -368,7 +443,7 @@ func (f *Follower) fetchLogs(ctx context.Context, from, to uint64) ([]ethtypes.L
 			lowest = min(lowest, l.BlockNumber)
 		}
 	}
-	logs := first.Logs
+	logs := first
 	if len(created) == 0 {
 		return logs, nil
 	}
@@ -378,11 +453,11 @@ func (f *Follower) fetchLogs(ctx context.Context, from, to uint64) ([]ethtypes.L
 		fresh[p] = struct{}{}
 		pass = append(pass, strings.ToLower(p.Hex()))
 	}
-	second, err := f.opts.RPC.Logs(ctx, FetchOptions{MonitoredAddresses: pass, FromBlock: int64(lowest), ToBlock: int64(to), Historical: catchUp})
+	second, err := f.windowLogs(ctx, pass, lowest, to, catchUp)
 	if err != nil {
 		return nil, err
 	}
-	for _, l := range second.Logs {
+	for _, l := range second {
 		if l.BlockNumber >= created[l.Address] {
 			logs = append(logs, l)
 		}
@@ -390,6 +465,40 @@ func (f *Follower) fetchLogs(ctx context.Context, from, to uint64) ([]ethtypes.L
 	for p := range fresh {
 		f.pointers[p] = struct{}{}
 	}
+	return logs, nil
+}
+
+// windowLogs is eth_getLogs of addresses over [from, to] in (block, log
+// index) order, halved on a size refusal. It skips RPC.Logs' per-block
+// timestamp and sender reads: the follower takes both from its own block
+// fetch.
+func (f *Follower) windowLogs(ctx context.Context, addresses []string, from, to uint64, historical bool) ([]ethtypes.Log, error) {
+	rpc := f.opts.RPC
+	timeout := rpc.timeout
+	if historical {
+		timeout = bulkTimeout
+	}
+	wire, err := rpc.getLogs(ctx, timeout, addresses, from, to)
+	if err != nil {
+		return nil, err
+	}
+	logs := make([]ethtypes.Log, 0, len(wire))
+	for _, w := range wire {
+		l, err := w.toLog()
+		if err != nil {
+			return nil, err
+		}
+		if l.BlockNumber < from || l.BlockNumber > to {
+			return nil, fmt.Errorf("source: log of block %d outside %d-%d", l.BlockNumber, from, to)
+		}
+		logs = append(logs, l)
+	}
+	sort.Slice(logs, func(i, j int) bool {
+		if logs[i].BlockNumber != logs[j].BlockNumber {
+			return logs[i].BlockNumber < logs[j].BlockNumber
+		}
+		return logs[i].Index < logs[j].Index
+	})
 	return logs, nil
 }
 

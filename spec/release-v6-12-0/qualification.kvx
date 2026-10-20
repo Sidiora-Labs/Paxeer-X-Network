@@ -2244,3 +2244,19 @@ exit = 101
 log = fleet/logs/release-2.3.2-verify-1.log
 observed = The twelve launchpad events, the FeeDistributed strategy map for 0 to 3 with the refusal for 4 and 255 and the computed topics are covered by the existing launchpad decode, intent map and declared-topic tests and pass; the one failing case is the exchange keeper replay, which needs the PAXEER_X_TIF_INGRESS_FILE written by the exchange time-in-force qualification whose runtime fixture needs the full daemon chain.
 assumption = The router test is qualified as the rust-router component of the exchange time-in-force qualification at release, the same gap recorded for 2.3.1, and the hosted core custody profile check is back on the paxeer-reserve id until the kernel rename after the upgrade.
+
+[finding.7.1.8-verified]
+revision = 5e4195600
+command = go test -count=1 -v ./services/platform/perps-data/internal/indexer/ -run TestIndexer
+exit = 0
+log = fleet/logs/release-7.1.8-follower-verify-1.log
+observed = All five TestIndexer subtests pass against the loopback chain; the follower now prefetches the EVM block, consensus header and block results of up to ten heights ahead while committing strictly in height order, the log windows no longer refetch every block for unused timestamps, and catch-up rose from 3 to 3.5 blocks per second to 11.4 (1200 blocks in 105 s) with the store write of about 58 ms per block now the largest share.
+assumption = None.
+
+[finding.7.1.8-follower-two-pass-pointers]
+revision = 5e4195600
+command = go test -count=1 ./services/platform/perps-data/internal/source/ -run TestFollower
+exit = 1
+log = fleet/logs/release-7.1.8-follower-1.log
+observed = Ten of eleven follower subtests pass including the new prefetch ordering test; two_pass_pointers fails at its own precondition search for a ShareTokenCreated log with a same-block Transfer because the throwaway chain was never seeded with a share token, before any follower code runs.
+assumption = The subtest is run once on a chain seeded with a share token at the wave gate; the follower test harness is not part of the task verify.
