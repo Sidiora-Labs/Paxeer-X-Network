@@ -252,6 +252,12 @@ fn recorded<'a>(exchange: &'a [Value], incoming: &Incoming, target: &str) -> Opt
     })
 }
 
+fn served_resource(mut required: Value, incoming: &Incoming) -> Value {
+    let host = header(incoming, "Host").unwrap_or_else(|| panic!("request Host"));
+    required["resource"]["url"] = json!(format!("http://{host}{}", incoming.target));
+    required
+}
+
 fn answer(mut stream: TcpStream, exchange: &[Value], script: &Script, signatures: &AtomicU32) {
     let Some(incoming) = read_request(&stream) else {
         return;
@@ -264,8 +270,11 @@ fn answer(mut stream: TcpStream, exchange: &[Value], script: &Script, signatures
                     && entry["response"]["status"] == 402
             })
             .unwrap_or_else(|| panic!("recorded challenge"));
-        let required = &challenge["response"]["headers"]["PAYMENT-REQUIRED"];
-        let headers = [("PAYMENT-REQUIRED".to_owned(), encode(required))];
+        let required = served_resource(
+            challenge["response"]["headers"]["PAYMENT-REQUIRED"].clone(),
+            &incoming,
+        );
+        let headers = [("PAYMENT-REQUIRED".to_owned(), encode(&required))];
         let body = json!({ "error": "payment_required", "paymentRequired": required });
         respond(&mut stream, 402, &headers, body.to_string().as_bytes());
         return;
@@ -314,6 +323,9 @@ fn answer(mut stream: TcpStream, exchange: &[Value], script: &Script, signatures
     let mut headers = Vec::new();
     for (name, value) in response["headers"].as_object().into_iter().flatten() {
         let mut value = value.clone();
+        if name == "PAYMENT-REQUIRED" {
+            value = served_resource(value, &incoming);
+        }
         if name == "PAYMENT-RESPONSE" && script.tamper_payer {
             value["payer"] = json!(TAMPERED_PAYER);
         }
@@ -653,7 +665,8 @@ fn paid_metered_search_settles_and_releases_untrusted_results() {
     );
     assert_eq!(
         evidence["settlement"]["transaction"],
-        format!("lxp:{SEARCH_RECEIPT_DIGEST}")
+        fixture("client-exchange.json")["exchange"][1]["response"]["headers"]["PAYMENT-RESPONSE"]
+            ["transaction"]
     );
     assert!(registry
         .ticket(metered_key())

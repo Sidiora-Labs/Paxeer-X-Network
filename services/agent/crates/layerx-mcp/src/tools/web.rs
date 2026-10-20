@@ -737,7 +737,9 @@ fn offer_facts(
     offer: &PaymentRequirements,
 ) -> Result<OfferFacts, WebToolError> {
     let terms = offer.layerx_terms().map_err(WebToolError::Payment)?;
-    let (asset, pay_to) = offer.layerx_facts().map_err(WebToolError::Payment)?;
+    let (asset, pay_to) = unhex32(&offer.asset)
+        .zip(unhex32(&offer.pay_to))
+        .ok_or(WebToolError::Protocol("payment_required_malformed"))?;
     if terms.currency != call.currency.code() {
         return Err(WebToolError::OfferMismatch("currency"));
     }
