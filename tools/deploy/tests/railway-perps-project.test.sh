@@ -274,6 +274,51 @@ grep -qE '^wave [456] ' "$tmp/out" && fail "a later wave passed after the redepl
 grep -q 'wave 3 failed: indexer deployment dep-indexer-1 is CRASHED; later waves were not applied' "$tmp/err" ||
 	fail "rerun wave failure not explained"
 
+# Status replays built from the passing rerun: an unchanged indexer whose
+# latest deployment is SKIPPED or REMOVING is redeployed like a crashed one,
+# and a deployment status outside the known set fails the wave at once.
+python3 - "$tmp" <<'PY2'
+import json, sys
+tmp = sys.argv[1]
+base = json.load(open(f"{tmp}/rerun-replay.json"))
+def variant(name, latest, new):
+    out = json.loads(json.dumps(base))
+    for e in out:
+        if e["op"] == "Instance" and e["variables"]["s"] == "s-indexer":
+            e["data"]["serviceInstance"]["latestDeployment"]["status"] = latest
+        if e["op"] == "DeploymentStatus" and e["variables"]["id"] == "dep-indexer-1":
+            e["data"]["deployment"]["status"] = new
+    json.dump(out, open(f"{tmp}/{name}-replay.json", "w"))
+variant("rerun-skipped", "SKIPPED", "SUCCESS")
+variant("rerun-removing", "REMOVING", "SUCCESS")
+variant("rerun-unknown", "CRASHED", "SOMETHING_NEW")
+PY2
+
+for st in skipped removing; do
+	ST="$(echo "$st" | tr a-z A-Z)"
+	run --plan --digests "$tmp/digests.json" --replay "$tmp/rerun-$st-replay.json" --start-height 34800001
+	[ "$code" -eq 0 ] || { cat "$tmp/err" >&2; fail "rerun plan with a $ST indexer exited $code"; }
+	grep -q "^  redeploy latest deployment dep-indexer-0 is $ST$" "$tmp/out" || fail "$ST indexer redeploy not planned"
+	run --apply --digests "$tmp/digests.json" --replay "$tmp/rerun-$st-replay.json" --start-height 34800001
+	[ "$code" -eq 0 ] || { cat "$tmp/out" "$tmp/err" >&2; fail "rerun apply with a $ST indexer exited $code"; }
+	grep -q '^deployed indexer deployment=dep-indexer-1$' "$tmp/out" || fail "$ST unchanged indexer was not redeployed"
+	grep -q '^wave 3 indexer SUCCESS$' "$tmp/out" || fail "redeployed $ST indexer did not pass wave 3"
+	grep -q '^wave 5 explorer SLEEPING$' "$tmp/out" || fail "sleeping explorer did not pass wave 5"
+	grep -q '^wave 6 web SUCCESS$' "$tmp/out" || fail "rerun with a $ST indexer did not reach wave 6"
+done
+
+set +e
+ROLLOUT_TIMEOUT=1800 timeout 60 python3 "$tool" --apply --digests "$tmp/digests.json" --replay "$tmp/rerun-unknown-replay.json" \
+	--start-height 34800001 >"$tmp/out" 2>"$tmp/err"
+code=$?
+set -e
+cat "$tmp/out" "$tmp/err" >>"$tmp/all"
+[ "$code" -eq 1 ] || fail "unknown deployment status exited $code, want 1 at once"
+grep -q "^wave 3 indexer unknown status 'SOMETHING_NEW'$" "$tmp/out" || fail "unknown status not reported"
+grep -qE '^wave [456] ' "$tmp/out" && fail "a later wave passed after an unknown status"
+grep -q "wave 3 failed: indexer deployment dep-indexer-1 is unknown status 'SOMETHING_NEW'; later waves were not applied" "$tmp/err" ||
+	fail "unknown status failure does not name the service and status"
+
 python3 - "$tmp" <<'PY2'
 import json, sys
 r = json.load(open(f"{sys.argv[1]}/replay.json"))

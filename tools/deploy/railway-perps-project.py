@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/rollout"))
-from rollout import API, GHCR, TERMINAL, Malformed, load_digests  # noqa: E402
+from rollout import API, GHCR, IN_PROGRESS, TERMINAL, Malformed, load_digests  # noqa: E402
 
 MANIFEST = ROOT / "deploy/railway-perps-project.kvx"
 NAME = r"[a-z0-9][a-z0-9-]*"
@@ -19,8 +19,8 @@ KEYS = {
     "image": ({"kind", "image", "railway_service", "order"},
               {"config", "health", "restart", "replicas", "volume", "public"}),
 }
-GATE = dict(TERMINAL, SLEEPING="pass")
-REDEPLOY = ("CRASHED", "FAILED", "REMOVED")
+SUCCESS = {s for s, v in TERMINAL.items() if v == "pass"}
+REDEPLOY = {s for s, v in TERMINAL.items() if v == "fail"}
 USAGE = ("usage: railway-perps-project.py --plan|--apply --digests <image-digest-map.json> "
          "[--start-height <n>] [--replay <responses.json>] [--manifest <kvx>]")
 
@@ -294,8 +294,8 @@ def wait_deployment(gql, deployment):
     while True:
         status = gql("query DeploymentStatus($id: String!) { deployment(id: $id) { status } }",
                      {"id": deployment})["deployment"]["status"]
-        if status in GATE:
-            return status
+        if status not in IN_PROGRESS:
+            return status if status in TERMINAL else f"unknown status {status!r}"
         if time.monotonic() >= deadline:
             return f"TIMEOUT(last {status})"
         time.sleep(int(os.environ.get("ROLLOUT_POLL", "10")))
@@ -400,7 +400,7 @@ def main(argv, transport=None):
                     deployment = state["services"][svc["railway_service"]]["instance"]["latestDeployment"]["id"]
                 status = wait_deployment(gql, deployment)
                 print(f"wave {order} {svc['railway_service']} {status}")
-                if GATE.get(status) != "pass":
+                if status not in SUCCESS:
                     print(f"wave {order} failed: {svc['railway_service']} deployment {deployment} is {status}; "
                           "later waves were not applied", file=sys.stderr)
                     return 1
