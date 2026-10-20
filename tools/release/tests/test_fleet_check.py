@@ -397,29 +397,28 @@ class FleetUnitTests(unittest.TestCase):
                 fleet.main(["--env-file", "unused", "--check", "--receipt", "unused"])
         self.assertEqual(exit_code.exception.code, 2)
 
-    def run_inputs(self, directory, values):
+    def run_inputs(self, directory, values, check=False):
         env = Path(directory) / "inputs.env"
         env.write_text("".join(f'{key}="{value}"\n' for key, value in values.items()))
         receipt = Path(directory) / "halt-height.json"
         stderr = io.StringIO()
+        stdout = io.StringIO()
         cwd = os.getcwd()
         os.chdir(directory)
         try:
-            with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(
-                io.StringIO()
-            ):
+            with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(stdout):
                 code = fleet.main(
-                    [
-                        "--env-file",
-                        str(env),
-                        "--phase",
-                        "inputs",
-                        "--receipt",
-                        str(receipt),
-                    ]
+                    ["--env-file", str(env), "--phase", "inputs"]
+                    + (["--check"] if check else ["--receipt", str(receipt)])
                 )
         finally:
             os.chdir(cwd)
+        if check:
+            self.assertEqual(
+                stdout.getvalue().splitlines()[-1],
+                "fleet_check: " + ("fail" if code else "inputs valid"),
+            )
+            return code, None, stderr.getvalue().splitlines()
         return code, json.loads(receipt.read_text()), stderr.getvalue().splitlines()
 
     def inputs_env(self, directory):
@@ -449,8 +448,15 @@ class FleetUnitTests(unittest.TestCase):
             HALT_HEIGHT="34800000",
             CHAIN_ID="hyperpax_125-1",
             BIN_DIR=str(bin_dir),
+            POOL_COUNT="449",
         )
         return values
+
+    def test_inputs_complete_env_is_valid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = self.inputs_env(directory)
+            code, _, errors = self.run_inputs(directory, values, check=True)
+            self.assertEqual((code, errors), (0, []))
 
     def test_inputs_phase_complete_env_passes(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -459,6 +465,51 @@ class FleetUnitTests(unittest.TestCase):
             self.assertEqual((code, errors), (0, []))
             self.assertEqual(receipt["result"], "pass")
             self.assertRegex(receipt["inputs_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_inputs_accept_documented_empty_keys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = self.inputs_env(directory)
+            for key in fleet.MAY_BE_EMPTY:
+                values[key] = ""
+            code, _, errors = self.run_inputs(directory, values, check=True)
+            self.assertEqual((code, errors), (0, []))
+            values.update(
+                FULLNODE_HOMES="/var/lib/a /var/lib/b",
+                FULLNODE_UNITS="paxd-a.service",
+                POOL_COUNT="many",
+            )
+            code, _, errors = self.run_inputs(directory, values, check=True)
+            self.assertEqual(code, 1)
+            self.assertEqual(
+                errors,
+                [
+                    "inputs: FULLNODE_HOMES, FULLNODE_UNITS differ in length",
+                    "inputs: POOL_COUNT is invalid",
+                ],
+            )
+            del values["VALIDATOR_HOMES"]
+            code, _, errors = self.run_inputs(directory, values, check=True)
+            self.assertEqual(
+                (code, errors), (1, ["inputs: VALIDATOR_HOMES is missing"])
+            )
+
+    def test_inputs_phase_unreachable_host_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = self.inputs_env(directory)
+            host = f"ssh://{LOOPBACK}:{free_port(set())}"
+            for key in (
+                "VALIDATOR_HOSTS",
+                "FULLNODE_HOSTS",
+                "ARCHIVE_HOST",
+                "EDGE_HOST",
+                "OPS_HOST",
+            ):
+                values[key] = host
+            code, receipt, errors = self.run_inputs(directory, values)
+            self.assertEqual(code, 1)
+            self.assertEqual(errors, [f"inputs: {host} is not reachable over ssh"])
+            self.assertEqual(receipt["result"], "fail")
+            self.assertNotIn("inputs_sha256", receipt)
 
     def test_inputs_phase_names_each_missing_key(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -476,12 +527,76 @@ class FleetUnitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             values = self.inputs_env(directory)
             values["RELEASE_SHA256"] = "0" * 64
-            code, _, errors = self.run_inputs(directory, values)
+            code, _, errors = self.run_inputs(directory, values, check=True)
             self.assertEqual(code, 1)
             self.assertEqual(
                 errors,
                 ["inputs: paxd-v6.12.0-linux-amd64 does not match RELEASE_SHA256"],
             )
+
+    def test_market_phases_read_rehearsal_receipt_by_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            inventory = directory / "inventory.json"
+            inventory.write_text(
+                json.dumps(
+                    {
+                        "nodes": [
+                            {
+                                "role": "validator",
+                                "consensus_rpc": "http://127.0.0.1:1",
+                                "evm_rpc": "http://127.0.0.1:2",
+                            }
+                        ]
+                    }
+                )
+            )
+            (directory / "paxd").write_bytes(b"release paxd")
+            digest = hashlib.sha256(b"release paxd").hexdigest()
+            env = {
+                "HALT_HEIGHT": "1000",
+                "CHAIN_ID": CHAIN_ID,
+                "BIN_DIR": str(directory),
+                "INVENTORY_FILE": str(inventory),
+                "RECEIPT_DIR": str(directory),
+                "RELEASE_SHA256": digest,
+                "POOL_COUNT": "",
+            }
+            rehearsal = directory / "rehearsal.json"
+            for phase in ("markets", "full", "post"):
+                with self.assertRaisesRegex(
+                    fleet.CheckError,
+                    "^RECEIPT_DIR has no rehearsal.json; give --rehearsal or --no-rehearsal$",
+                ):
+                    fleet.load_config(env, phase)
+                with self.assertRaisesRegex(
+                    fleet.CheckError,
+                    "^POOL_COUNT is empty and --no-rehearsal was given$",
+                ):
+                    fleet.load_config(env, phase, no_rehearsal=True)
+            receipt = {
+                "result": "pass",
+                "rollback_rehearsed": True,
+                "new_bin_sha256": digest,
+                "pools": 7,
+            }
+            rehearsal.write_text(json.dumps(receipt))
+            for phase in ("markets", "full", "post"):
+                self.assertEqual(fleet.load_config(env, phase)[4], 7)
+            rehearsal.write_text(json.dumps(dict(receipt, rollback_rehearsed=False)))
+            with self.assertRaisesRegex(fleet.CheckError, "^REHEARSAL_NOT_PASSED$"):
+                fleet.load_config(env, "post")
+            explicit = directory / "other.json"
+            explicit.write_text(json.dumps(dict(receipt, pools=9)))
+            self.assertEqual(fleet.load_config(env, "post", explicit)[4], 9)
+            env["POOL_COUNT"] = "5"
+            self.assertEqual(fleet.load_config(env, "post", no_rehearsal=True)[4], 5)
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as exit_code:
+                fleet.main(
+                    ["--env-file", "unused", "--rehearsal", "r.json", "--no-rehearsal"]
+                )
+        self.assertEqual(exit_code.exception.code, 2)
 
     def test_count_aggregation_retains_worst_node(self):
         outcome = fleet.Outcome()
@@ -750,7 +865,7 @@ class LocalChainTests(unittest.TestCase):
             "INVENTORY_FILE": str(inventory),
         }
 
-    def run_main(self, env, phase):
+    def run_main(self, env, phase, extra=()):
         receipt = Path(self.work.name) / f"{phase}.json"
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(
@@ -764,6 +879,7 @@ class LocalChainTests(unittest.TestCase):
                     phase,
                     "--receipt",
                     str(receipt),
+                    *extra,
                 ]
             )
         text = receipt.read_text()
@@ -854,26 +970,26 @@ class LocalChainTests(unittest.TestCase):
         self.assertEqual((value["nodes_checked"], value["nodes_passed"]), (1, 0))
         self.assertEqual(value["result"], "fail")
 
-    def test_full_phase_reads_env_without_rehearsal(self):
+    def test_full_phase_reads_env_with_no_rehearsal(self):
         env = self.chain_env()
         env["RELEASE_SHA256"] = hashlib.sha256(
             (self.bin_dir / "paxd").read_bytes()
         ).hexdigest()
         env["POOL_COUNT"] = "0"
-        code, value, errors = self.run_main(env, "full")
+        code, value, errors = self.run_main(env, "full", ["--no-rehearsal"])
         self.assertEqual(code, 1)
         self.assertFalse(any(line.startswith("fleet_check:") for line in errors))
         self.assertIn("node 0 version: VERSION_MISMATCH", errors)
         self.assertEqual(value["result"], "fail")
         del env["POOL_COUNT"]
-        code, value, errors = self.run_main(env, "full")
+        code, value, errors = self.run_main(env, "full", ["--no-rehearsal"])
         self.assertEqual(
             (code, errors),
-            (1, ["fleet_check: POOL_COUNT is empty and no --rehearsal was given"]),
+            (1, ["fleet_check: POOL_COUNT is empty and --no-rehearsal was given"]),
         )
         env["POOL_COUNT"] = "0"
         env["RELEASE_SHA256"] = "0" * 64
-        code, value, errors = self.run_main(env, "full")
+        code, value, errors = self.run_main(env, "full", ["--no-rehearsal"])
         self.assertEqual(
             (code, errors),
             (1, ["fleet_check: BIN_DIR paxd does not match RELEASE_SHA256"]),

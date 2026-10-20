@@ -14,12 +14,14 @@ fail() {
 }
 
 # The charts service from the real manifest; every name it needs gets a sentinel
-# value from --values, except RPC_URL, which comes from the environment.
+# value from --values, except RPC_URL, which comes from the environment under --from-env.
 python3 - "$root/launchpad/deploy/railway/variables.json" "$tmp" "$replay" <<'PY'
 import json, sys
 m = json.load(open(sys.argv[1]))
 charts = m["charts"]
 json.dump({"charts": charts}, open(f"{sys.argv[2]}/manifest.json", "w"))
+# charts first, then a service the project does not have: apply must refuse before writing charts.
+json.dump({"charts": charts, "ghost": {"fixed": {"NODE_ENV": "production"}}}, open(f"{sys.argv[2]}/ghost.json", "w"))
 needed = [n for k, v in charts.items() if isinstance(v, list) and k not in ("secret", "secrets")
           for n in v if n not in charts.get("fixed", {})]
 values = {n: f"sentinel-value-{i:02d}" for i, n in enumerate(needed) if n != "RPC_URL"}
@@ -50,7 +52,7 @@ export RAILWAY_API_TOKEN=sentinel-railway-token-2b61
 export RPC_URL=https://rpc.sentinel.invalid
 run() { python3 "$tool" proj-test production --manifest "$tmp/manifest.json" --replay "$replay" "$@"; }
 
-run --plan --values "$tmp/values.json" --registry-credentials >"$tmp/plan.out" 2>&1 || fail "plan exited $?: $(cat "$tmp/plan.out")"
+run --plan --values "$tmp/values.json" --from-env --registry-credentials >"$tmp/plan.out" 2>&1 || fail "plan exited $?: $(cat "$tmp/plan.out")"
 cat "$tmp/plan.out"
 for name in EVENT_EMITTER_ADDRESS POOL_BEACON_ADDRESS REDIS_BULL_URL WEBHOOK_HMAC_SECRET; do
 	grep -q "^  missing $name = " "$tmp/plan.out" || fail "plan does not list missing $name"
@@ -74,13 +76,21 @@ code=$?
 run --apply --values "$tmp/newline.json" >"$tmp/newline.out" 2>&1
 nl=$?
 env -u RPC_URL python3 "$tool" proj-test production --manifest "$tmp/manifest.json" --replay "$replay" \
-	--plan --values "$tmp/values.json" >"$tmp/unset.out" 2>&1
+	--plan --values "$tmp/values.json" --from-env >"$tmp/unset.out" 2>&1
 unset_code=$?
 env -u RPC_URL python3 "$tool" proj-test production --manifest "$tmp/manifest.json" --replay "$replay" \
-	--apply --values "$tmp/values.json" >"$tmp/unset-apply.out" 2>&1
+	--apply --values "$tmp/values.json" --from-env >"$tmp/unset-apply.out" 2>&1
 unset_apply=$?
+run --plan --values "$tmp/values.json" >"$tmp/noenv.out" 2>&1
+noenv=$?
+run --apply --values "$tmp/values.json" >"$tmp/noenv-apply.out" 2>&1
+noenv_apply=$?
 GHCR_USERNAME=sentinel-ghcr-user-4a1f GHCR_TOKEN=sentinel-ghcr-token-8c3e python3 "$tool" proj-test production \
-	--manifest "$tmp/manifest.json" --replay "$tmp/apply-replay.json" --apply --values "$tmp/values.json" \
+	--manifest "$tmp/ghost.json" --replay "$tmp/apply-replay.json" --apply --values "$tmp/values.json" --from-env \
+	--registry-credentials >"$tmp/ghost.out" 2>&1
+ghost=$?
+GHCR_USERNAME=sentinel-ghcr-user-4a1f GHCR_TOKEN=sentinel-ghcr-token-8c3e python3 "$tool" proj-test production \
+	--manifest "$tmp/manifest.json" --replay "$tmp/apply-replay.json" --apply --values "$tmp/values.json" --from-env \
 	--registry-credentials >"$tmp/apply.out" 2>&1
 apply_code=$?
 set -e
@@ -94,6 +104,18 @@ grep -q '^  missing WEBHOOK_HMAC_SECRET = \*\*\*\*$' "$tmp/unset.out" || fail "p
 grep -q 'extra RPC_URL' "$tmp/unset.out" && fail "unresolved name reported as extra"
 [ "$unset_apply" -eq 2 ] || fail "apply with an unresolved name exited $unset_apply, want 2"
 grep -q 'refused charts: RPC_URL has no value' "$tmp/unset-apply.out" || fail "no apply refusal message"
+# RPC_URL is exported, but without --from-env the shell environment is never a value source.
+[ "$noenv" -eq 3 ] || fail "plan without --from-env exited $noenv, want 3"
+grep -q '^  unresolved RPC_URL has no value (manifest, --values; --from-env not given)$' "$tmp/noenv.out" ||
+	fail "plan without --from-env took RPC_URL from the environment"
+grep -q 'rpc.sentinel.invalid' "$tmp/noenv.out" && fail "plan without --from-env printed the environment value"
+[ "$noenv_apply" -eq 2 ] || fail "apply without --from-env exited $noenv_apply, want 2"
+grep -q 'refused charts: RPC_URL has no value' "$tmp/noenv-apply.out" || fail "apply without --from-env not refused"
+[ "$ghost" -eq 1 ] || fail "apply with a service missing from the project exited $ghost, want 1"
+grep -q '^service ghost not in project$' "$tmp/ghost.out" || fail "missing service not named"
+grep -q 'refused: 1 manifest services are not in project proj-test; nothing written' "$tmp/ghost.out" ||
+	fail "no refusal for the missing service"
+grep -q 'applied' "$tmp/ghost.out" && fail "apply wrote to charts before refusing the missing service"
 [ "$apply_code" -eq 0 ] || fail "apply exited $apply_code: $(cat "$tmp/apply.out")"
 grep -q '^  applied registry credentials$' "$tmp/apply.out" || fail "registry credentials not applied to a service without an image read"
 grep -q "^  applied $(cat "$tmp/upsert-count") variables$" "$tmp/apply.out" || fail "apply did not upsert the changed variables"

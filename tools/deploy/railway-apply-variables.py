@@ -14,7 +14,7 @@ MANIFEST = ROOT / "launchpad/deploy/railway/variables.json"
 SECRET = re.compile(r"SECRET|TOKEN|PASSWORD|KEY|DSN|URL_WITH_PASSWORD")
 URL_WITH_PASSWORD = re.compile(r"://[^/@\s]*:[^/@\s]*@")
 USAGE = ("usage: railway-apply-variables.py <project-id> <environment> --plan|--apply "
-         "[--values <values.json>] [--registry-credentials] [--replay <responses.json>] [--manifest <json>]")
+         "[--values <values.json>] [--from-env] [--registry-credentials] [--replay <responses.json>] [--manifest <json>]")
 
 
 def replay_transport(path):
@@ -73,15 +73,15 @@ def show(svc, name, value):
     return value
 
 
-def desired(name, svc, values):
+def desired(name, svc, values, from_env):
     scoped = values.get(name) if isinstance(values.get(name), dict) else {}
     want, problems = dict(svc["fixed"]), []
     for key in svc["needed"]:
         value = scoped.get(key, values.get(key) if isinstance(values.get(key), str) else None)
-        if value is None:
+        if value is None and from_env:
             value = os.environ.get(key)
         if value is None:
-            problems.append(f"{key} has no value (manifest, --values or environment)")
+            problems.append(f"{key} has no value (manifest, --values{' or environment' if from_env else '; --from-env not given'})")
             continue
         want[key] = value
     for key, value in want.items():
@@ -97,7 +97,7 @@ def edges(conn):
 def main(argv, transport=None):
     pos, opts, flags = [], {"--values": None, "--replay": None, "--manifest": str(MANIFEST)}, set()
     while argv:
-        if argv[0] in ("--plan", "--apply", "--registry-credentials"):
+        if argv[0] in ("--plan", "--apply", "--registry-credentials", "--from-env"):
             flags.add(argv[0])
             argv = argv[1:]
         elif argv[0] in opts and len(argv) > 1:
@@ -129,7 +129,7 @@ def main(argv, transport=None):
         return 2
     plan, problems = {}, {}
     for name, svc in manifest.items():
-        plan[name], problems[name] = desired(name, svc, values)
+        plan[name], problems[name] = desired(name, svc, values, "--from-env" in flags)
     if apply and any(problems.values()):
         for name, bad in problems.items():
             for p in bad:
@@ -149,14 +149,18 @@ def main(argv, transport=None):
             print(f"environment {env_name} not in project {project}", file=sys.stderr)
             return 1
         ids = {s["name"]: s["id"] for s in edges(data["services"])}
-        failed = False
+        absent = [name for name in plan if not ids.get(name)]
+        for name in absent:
+            print(f"service {name} not in project")
+        if apply and absent:
+            print(f"refused: {len(absent)} manifest services are not in project {project}; nothing written",
+                  file=sys.stderr)
+            return 1
+        writes = []
         for name, want in plan.items():
-            svc = manifest[name]
-            sid = ids.get(name)
-            if not sid:
-                print(f"service {name} not in project")
-                failed = True
+            if name in absent:
                 continue
+            svc, sid = manifest[name], ids[name]
             pv = {"p": project, "e": env, "s": sid}
             have = gql("query Variables($p: String!, $e: String!, $s: String!) { "
                        "variables(projectId: $p, environmentId: $e, serviceId: $s, unrendered: true) }",
@@ -182,8 +186,11 @@ def main(argv, transport=None):
                 print(line)
             if "--registry-credentials" in flags:
                 print("  registry credentials user=$GHCR_USERNAME token=$GHCR_TOKEN")
-            if not apply:
-                continue
+            writes.append((name, sid, upsert))
+        if not apply:
+            return 1 if absent else 3 if any(problems.values()) else 0
+        for name, sid, upsert in writes:
+            print(f"service {name} apply")
             if upsert:
                 gql("mutation VariablesUpsert($i: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $i) }",
                     {"i": {"projectId": project, "environmentId": env, "serviceId": sid,
@@ -198,9 +205,7 @@ def main(argv, transport=None):
     except (RuntimeError, OSError, KeyError, TypeError) as e:
         print(f"railway call failed: {e}", file=sys.stderr)
         return 1
-    if failed:
-        return 1
-    return 3 if any(problems.values()) else 0
+    return 0
 
 
 if __name__ == "__main__":
