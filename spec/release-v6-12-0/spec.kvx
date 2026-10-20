@@ -29416,7 +29416,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.7]
 title = "Swap the binary atomically against a real local chain"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 4
 requires = ["8.4.5", "8.4.17"]

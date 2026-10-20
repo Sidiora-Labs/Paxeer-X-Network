@@ -2204,3 +2204,11 @@ exit = 0
 log = fleet/logs/release-2.2.19-verify-8.log
 observed = Resolved per the acceptance text: the precompile already served the generation 1 pool getters, the ordered snapshot ring, the rebuilt cursor 50 and the InsufficientInput revert for an unpaid generation 1 swap, so only surface_parity_test.go changed to expect those four rows from the acceptance text, and the trace comparison now records every divergence instead of stopping at the first, with every later SidioraPool trace matching.
 assumption = req 2011 ac_16 is amended in the same landing to name the rebuilt cursor; the earlier verify-6 and verify-7 runs failed at link time because programs/target lacked the sandbox library built with the host-ffi feature and are not repair cycles.
+
+[finding.8.4.7-halt-race-accepted]
+revision = 04b1d4d5589db2caf2763959642390e8152ae85b
+command = bash tools/release/tests/swap.test.sh
+exit = 1
+log = fleet/logs/release-8.4.7.log
+observed = Implemented, not qualified, per the acceptance text: five of six swap scenarios pass on staged release binaries; the previous binary's halt self-signals and lets consensus continue, so it intermittently exits non-zero mid-shutdown or signs one prevote at the height after the halt before stopping, and the exit-0 and no-prevote assertions stay as written.
+assumption = The rollout plan treats the previous binary's exit status as informational and a validator with a stray post-halt prevote sits out round 0 after the swap; the v6.12.0 halt holds Commit until shutdown so the next upgrade meets the assertions unchanged.
