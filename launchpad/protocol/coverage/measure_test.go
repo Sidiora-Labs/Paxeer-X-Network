@@ -44,6 +44,22 @@ func TestMeasurementBurstRejectsMissingHistoricalReceiptCorpus(t *testing.T) {
 		t.Fatal("empty corpus manufactured a rate result")
 	}
 }
+func TestCompiledMeasurementSourcesIncludeTheMeasureCommand(t *testing.T) {
+	sources, err := CompiledMeasurementSourceSHA256()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile("cmd/measure/main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sources["protocol/coverage/cmd/measure/main.go"]; got != measurementDigest(raw) {
+		t.Fatalf("compiled provenance digest of the measurement command = %q, want %s", got, measurementDigest(raw))
+	}
+	if sources["protocol/coverage/measure.go"] == "" {
+		t.Fatal("compiled provenance lacks protocol/coverage/measure.go")
+	}
+}
 func TestRealReviewedHistoricalDecoderMeasurement(t *testing.T) {
 	manifestPath := os.Getenv("L02_MEASUREMENT_MANIFEST")
 	review := os.Getenv("L02_MEASUREMENT_MANIFEST_SHA256")
