@@ -149,7 +149,7 @@ export function DesktopSidebar() {
       {!collapsed && (
         <div className="px-3 pb-3 shrink-0">
           <a
-            href="https://hyperpaxeer.com"
+            href="https://paxeer.network"
             target="blank"
             rel="noopener noreferrer"
             className="block rounded-lg overflow-hidden opacity-80 hover:opacity-100 transition-opacity"

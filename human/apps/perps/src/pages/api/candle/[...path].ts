@@ -65,6 +65,19 @@ const SAFE_QUERY_VALUE = /^[A-Za-z0-9_\-\.,:\/ ]{0,128}$/;
 
 const UPSTREAM_TIMEOUT_MS = 8_000;
 
+// Origin header sent upstream. Must be a bare http(s) origin; no default.
+function upstreamOrigin(): string | null {
+  const raw = process.env.MARKET_PROXY_ORIGIN;
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return url.origin === raw ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
 // Rolling 1-minute window token bucket per IP. 120 req/min is well
 // above what a single TradingView session needs (~one per resolution
 // switch + one per visible candle bar), but low enough that a
@@ -113,6 +126,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.setHeader("Allow", "GET, HEAD");
     return res.status(405).json({ error: "Method not allowed" });
   }
+
+  const origin = upstreamOrigin();
+  if (!origin) return res.status(503).json({ error: "MARKET_PROXY_ORIGIN is not configured" });
 
   const ip = clientIp(req);
   if (!checkRateLimit(ip)) {
@@ -170,7 +186,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (symbols.length > 18 || symbols.some(s => !PROXIED_SYMBOLS.has(s))) return res.status(400).json({ error: "Invalid quote symbols" });
       const batches = await Promise.all(symbols.map(async symbol => {
         const response = await fetch(`${getUpstream(symbol)}/quotes?symbols=${encodeURIComponent(symbol)}`, {
-          headers: { Accept: "application/json", Origin: "https://app.hyperpax.xyz" }, signal: abort.signal,
+          headers: { Accept: "application/json", Origin: origin }, signal: abort.signal,
         });
         if (!response.ok) throw new Error(`Quote upstream HTTP ${response.status}`);
         const body = await response.json();
@@ -183,7 +199,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       method,
       headers: {
         Accept: "application/json",
-        Origin: "https://app.hyperpax.xyz",
+        Origin: origin,
       },
       signal: abort.signal,
     });

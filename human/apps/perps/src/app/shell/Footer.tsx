@@ -1,15 +1,28 @@
 import Link from "next/link";
 import Script from "next/script";
 
+function statusPageUrl(): string | null {
+  const raw = process.env.NEXT_PUBLIC_STATUS_PAGE_URL;
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" && url.origin === raw ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
 export function Footer() {
+  const statusPage = statusPageUrl();
   return (
     <>
       <footer className="border-t border-border py-1.5 px-4 flex items-center justify-between text-[10px] text-muted-foreground">
         {/* StatusPage.io live indicator — script populates .statuspage-status-description
             and sets a colour class on .statuspage-indicator. Falls back to Operational
             until the script resolves. */}
+        {statusPage ? (
         <a
-          href="https://hyperpaxstatus.statuspage.io"
+          href={statusPage}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 hover:text-foreground transition-colors"
@@ -17,6 +30,9 @@ export function Footer() {
           <span className="statuspage-indicator inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
           <span className="statuspage-status-description">Operational</span>
         </a>
+        ) : (
+          <span />
+        )}
 
         <div className="flex items-center gap-3 flex-wrap justify-end">
           <a
@@ -44,10 +60,9 @@ export function Footer() {
         </div>
       </footer>
 
-      <Script
-        src="https://hyperpaxstatus.statuspage.io/embed/script.js"
-        strategy="afterInteractive"
-      />
+      {statusPage && (
+        <Script src={`${statusPage}/embed/script.js`} strategy="afterInteractive" />
+      )}
     </>
   );
 }

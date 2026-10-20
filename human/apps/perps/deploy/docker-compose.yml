@@ -60,6 +60,7 @@ services:
 # HOSTNAME: 0.0.0.0
 # PERPS_CANDLE_URL: ${PERPS_CANDLE_URL:-}
 # MARKET_PROXY_HOST: ${MARKET_PROXY_HOST:-data.feed.chainflowtrading.com}
+# MARKET_PROXY_ORIGIN: ${MARKET_PROXY_ORIGIN:-}
 # VERCEL_GIT_COMMIT_SHA: ${BUILD_COMMIT_SHA:-development}
 # networks:
 #  - internal
