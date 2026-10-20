@@ -14,7 +14,7 @@ import (
 
 func main() {
 	if err := app.Run(context.Background()); err != nil {
-		slog.Error("metadata service exited with error", slog.String("reason", "startup_or_runtime_failure"))
+		app.LogStartupFailure(slog.Default(), err)
 		os.Exit(1)
 	}
 }

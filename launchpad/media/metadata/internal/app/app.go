@@ -37,6 +37,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -90,7 +91,7 @@ type App struct {
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, error) {
 	secretCheck, secretStop, err := cfg.ResolveProductionSecrets(ctx)
 	if err != nil {
-		return nil, err
+		return nil, startupStage("secrets_resolve", err)
 	}
 	owned := false
 	defer func() {
@@ -99,7 +100,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		}
 	}()
 	if err = cfg.ValidateMediaRuntime(); err != nil {
-		return nil, err
+		return nil, startupStage("runtime_validate", err)
 	}
 	tracker := process.NewTracker()
 	var metrics *telemetry.Metrics
@@ -120,7 +121,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	}
 	pool, err := cfg.OpenRuntimePool(ctx, "metadatad", shareddb.PoolOptions{})
 	if err != nil {
-		return nil, err
+		return nil, startupStage("db_connect", err)
 	}
 	defer func() {
 		if !owned {
@@ -129,7 +130,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	}()
 	rdb, err := sharedredis.NewClient(cfg.RedisURL)
 	if err != nil {
-		return nil, err
+		return nil, startupStage("redis_connect", err)
 	}
 	defer func() {
 		if !owned {
@@ -156,7 +157,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		if !edge {
 			serverTLS, err = metadataServerTLS(cfg)
 			if err != nil {
-				return nil, err
+				return nil, startupStage("tls_load", err)
 			}
 		}
 		if pool.Config().MaxConns < 3 {
@@ -164,7 +165,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		}
 		chainClient, e := gethrpc.DialContext(ctx, cfg.RPCURL)
 		if e != nil {
-			return nil, fmt.Errorf("metadata_rpc_unavailable")
+			return nil, startupStage("rpc_connect", fmt.Errorf("metadata_rpc_unavailable"))
 		}
 		rpc = ethclient.NewClient(chainClient)
 		defer func() {
@@ -176,7 +177,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		defer cancel()
 		chain, e := rpc.ChainID(startup)
 		if e != nil || chain == nil || chain.Cmp(big.NewInt(125)) != 0 {
-			return nil, fmt.Errorf("metadata_chain_authority_unavailable")
+			return nil, startupStage("rpc_connect", fmt.Errorf("metadata_chain_authority_unavailable"))
 		}
 		// Paxeer reports CometBFT-derived block hashes, so every
 		// block-pinned read goes through the node-reported hash.
@@ -273,7 +274,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		}
 		publicationRuntime, auditKey, e := cfg.ReadPublicationRuntime()
 		if e != nil {
-			return nil, e
+			return nil, startupStage("runtime_document_read", e)
 		}
 		committed := metadata.ReportedCommittedProofVerifier{RPC: chainClient, Blocks: sharedauth.PostgresCommittedBlockProvider{Pool: pool}}
 		operations := sharedauth.OperationAuthorizer{Ledger: sharedauth.Ledger{Pool: pool, Environment: publicationRuntime.Environment, AuditKey: auditKey}, Verifier: committed, Transport: sharedauth.OperationTransport{EnvelopeHeader: publicationRuntime.EnvelopeHeader, SignatureHeader: publicationRuntime.SignatureHeader}}
@@ -590,7 +591,7 @@ func (a *App) Close() {
 func Run(parent context.Context) error {
 	cfg, err := config.Load()
 	if err != nil {
-		return err
+		return startupStage("config_load", err)
 	}
 	logger := sharedlog.New("metadata", cfg.LogLevel)
 	logger.Info("starting metadata service")
@@ -600,7 +601,7 @@ func Run(parent context.Context) error {
 
 	app, err := New(ctx, cfg, logger)
 	if err != nil {
-		return err
+		return startupStage("app_init", err)
 	}
 	defer app.Close()
 
@@ -622,7 +623,7 @@ func Run(parent context.Context) error {
 			err = srv.ListenAndServe()
 		}
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serveErr <- err
+			serveErr <- startupStage("http_listen", err)
 			cancel()
 		}
 	}()
@@ -963,4 +964,50 @@ func metadataPinnedClient(config *tls.Config, pin string) *http.Client {
 		return nil
 	}
 	return &http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{TLSClientConfig: cloned}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
+// StartupError tags a Run failure with the operation that failed.
+type StartupError struct {
+	Op  string
+	Err error
+}
+
+func (e *StartupError) Error() string { return e.Op + ": " + e.Err.Error() }
+func (e *StartupError) Unwrap() error { return e.Err }
+
+// startupStage keeps the innermost operation when err is already tagged.
+func startupStage(op string, err error) error {
+	var tagged *StartupError
+	if errors.As(err, &tagged) {
+		return err
+	}
+	return &StartupError{Op: op, Err: err}
+}
+
+var stableErrorCode = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)+$`)
+
+// StartupFailure returns the failing operation and the stable snake_case
+// error code. Raw messages are never returned: wrapped driver or dial errors
+// can carry connection strings or tokens, so they collapse to
+// unclassified_failure.
+func StartupFailure(err error) (op, code string) {
+	op, code = "runtime", "unclassified_failure"
+	var tagged *StartupError
+	if errors.As(err, &tagged) {
+		op = tagged.Op
+	}
+	for _, line := range strings.Split(err.Error(), "\n") {
+		for _, part := range strings.Split(line, ": ") {
+			if stableErrorCode.MatchString(part) && part != op {
+				return op, part
+			}
+		}
+	}
+	return op, code
+}
+
+// LogStartupFailure logs the operation and stable code of a Run failure.
+func LogStartupFailure(logger *slog.Logger, err error) {
+	op, code := StartupFailure(err)
+	logger.Error("metadata service exited with error", slog.String("op", op), slog.String("reason", code))
 }
