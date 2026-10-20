@@ -8700,3 +8700,13 @@ detail = "grep -c exits 1 when it counts zero matches; use ! grep -q pattern for
 area = "tools/release"
 summary = "with --halt-height on four validators one node can be stuck at the halt height"
 detail = "Peers may stop before their votes for the halt height reach the last node; the driver restarts one halted node to pass the commit along, then stops it again."
+
+[gotcha.1826]
+area = "rpc/tests"
+summary = "the internal rpc test package cannot import the node or the test keeper"
+detail = "Import cycle; a test that needs a real keeper lives in the external evmrpc_test package and uses app.Setup."
+
+[gotcha.1827]
+area = "rpc/tests"
+summary = "read account numbers from the harness keeper, never hard-code them"
+detail = "accountNumberAfterInit in rpc/tests reads the number after the test's setup steps; the numbers shift whenever a module account is added."

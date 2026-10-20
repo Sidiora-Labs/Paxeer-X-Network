@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"testing"
 
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
@@ -13,11 +14,12 @@ import (
 func TestGetTransactionReceiptWithMixedLogs(t *testing.T) {
 	cw20 := "pax18cszlvm6pze0x9sz32qnjq4vtd45xehqs8dq7cwy8yhq35wfnn3qcm2ty5" // hardcoded
 	testerPaxAddress := sdk.AccAddress(mixedLogTesterAddr.Bytes())
-	tx0 := signAndEncodeCosmosTx(transferCW20MsgTo(mnemonic1, cw20, testerPaxAddress), mnemonic1, 9, 0)
+	initializers := []func(sdk.Context, *app.App){mixedLogTesterInitializer(), mnemonicInitializer(mnemonic1), cw20Initializer(mnemonic1, false)}
+	tx0 := signAndEncodeCosmosTx(transferCW20MsgTo(mnemonic1, cw20, testerPaxAddress), mnemonic1, accountNumberAfterInit(t, mnemonic1, initializers...), 0)
 	txData := mixedLogTesterTransfer(0, getAddrWithMnemonic(mnemonic1))
 	signedTx := signTxWithMnemonic(txData, mnemonic1)
 	txBz := encodeEvmTx(txData, signedTx)
-	SetupTestServer(t, [][][]byte{{tx0}, {txBz}}, mixedLogTesterInitializer(), mnemonicInitializer(mnemonic1), cw20Initializer(mnemonic1, false)).Run(
+	SetupTestServer(t, [][][]byte{{tx0}, {txBz}}, initializers...).Run(
 		func(port int) {
 			cwTxHash := common.Hash(sha256.Sum256(tx0))
 

@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"testing"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
@@ -35,6 +36,22 @@ func signTxWithMnemonic(txData ethtypes.TxData, mnemonic string) *ethtypes.Trans
 		panic(err)
 	}
 	return tx
+}
+
+func accountNumberAfterInit(t *testing.T, mnemonic string, initializer ...func(sdk.Context, *app.App)) uint64 {
+	addr := getPaxAddrWithMnemonic(mnemonic)
+	var number uint64
+	found := false
+	read := func(ctx sdk.Context, a *app.App) {
+		if acc := a.AccountKeeper.GetAccount(ctx, addr); acc != nil {
+			number, found = acc.GetAccountNumber(), true
+		}
+	}
+	initializeApp(t, "pax-test", append(append([]func(sdk.Context, *app.App){}, initializer...), read)...)
+	if !found {
+		t.Fatalf("account %s does not exist after the initializers", addr)
+	}
+	return number
 }
 
 func signCosmosTxWithMnemonic(msg sdk.Msg, mnemonic string, accountNumber uint64, sequenceNumber uint64) (sdk.Tx, error) {

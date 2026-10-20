@@ -28,8 +28,9 @@ func TestGetBlockByHash(t *testing.T) {
 func TestGetPaxBlockByHash(t *testing.T) {
 	cw20 := "pax18cszlvm6pze0x9sz32qnjq4vtd45xehqs8dq7cwy8yhq35wfnn3qcm2ty5" // hardcoded
 	tx1 := signAndEncodeTx(registerCW20Pointer(0, cw20), mnemonic1)
-	tx2 := signAndEncodeCosmosTx(transferCW20Msg(mnemonic1, cw20), mnemonic1, 19, 0)
-	SetupTestServer(t, [][][]byte{{tx1}, {tx2}}, mnemonicInitializer(mnemonic1), cw20Initializer(mnemonic1, true)).Run(
+	initializers := []func(sdk.Context, *app.App){mnemonicInitializer(mnemonic1), cw20Initializer(mnemonic1, true)}
+	tx2 := signAndEncodeCosmosTx(transferCW20Msg(mnemonic1, cw20), mnemonic1, accountNumberAfterInit(t, mnemonic1, initializers...), 0)
+	SetupTestServer(t, [][][]byte{{tx1}, {tx2}}, initializers...).Run(
 		func(port int) {
 			res := sendRequestWithNamespace("pax", port, "getBlockByHash", common.HexToHash("0x9dd3e6c427b6936f973b240cd5780b8ee4bf8fab0c8d281afb28089db51bb4af").Hex(), true)
 			txs := res["result"].(map[string]interface{})["transactions"]
@@ -188,8 +189,9 @@ func TestBlockBloom(t *testing.T) {
 	tx1 := encodeEvmTx(txdata1, signedTx1)
 	tx2 := encodeEvmTx(txdata2, signedTx2)
 	cw20 := "pax18cszlvm6pze0x9sz32qnjq4vtd45xehqs8dq7cwy8yhq35wfnn3qcm2ty5" // hardcoded
-	tx3 := signAndEncodeCosmosTx(transferCW20Msg(mnemonic1, cw20), mnemonic1, 9, 0)
-	SetupTestServer(t, [][][]byte{{tx1, tx2, tx3}}, erc20Initializer(), mnemonicInitializer(mnemonic1), cw20Initializer(mnemonic1, true)).Run(
+	initializers := []func(sdk.Context, *app.App){erc20Initializer(), mnemonicInitializer(mnemonic1), cw20Initializer(mnemonic1, true)}
+	tx3 := signAndEncodeCosmosTx(transferCW20Msg(mnemonic1, cw20), mnemonic1, accountNumberAfterInit(t, mnemonic1, initializers...), 0)
+	SetupTestServer(t, [][][]byte{{tx1, tx2, tx3}}, initializers...).Run(
 		func(port int) {
 			res := sendRequestWithNamespace("eth", port, "getBlockByNumber", "0x2", false)
 			blockBloomString := res["result"].(map[string]interface{})["logsBloom"]

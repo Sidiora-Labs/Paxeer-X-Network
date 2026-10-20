@@ -159,3 +159,46 @@ func countDecodeOnlyEvmTxs(txs tmtypes.Txs, dec sdk.TxDecoder) int {
 	}
 	return n
 }
+
+// TestBlockAPILatestTagResolves verifies that block endpoints accepting
+// "latest"/"safe"/"finalized"/"pending" tags resolve to the safe-latest height
+// rather than returning JSON null. The tag arrives as numberPtr=nil from
+// getBlockNumber; the by-number helper must route it through wm.LatestHeight.
+func TestBlockAPILatestTagResolves(t *testing.T) {
+	application := app.Setup(t, false, true, false)
+	k := &application.EvmKeeper
+	sdkCtx := application.GetContextForDeliverTx(nil).WithBlockHeight(parityTestHeight)
+	ctxProvider := func(h int64) sdk.Context {
+		if h == evmrpc.LatestCtxHeight {
+			return sdkCtx
+		}
+		return sdkCtx.WithBlockHeight(h)
+	}
+	txConfigProvider := func(int64) client.TxConfig { return TxConfig }
+	tm := &parityTxCountTMClient{block: &coretypes.ResultBlock{
+		BlockID: MockBlockID,
+		Block: &tmtypes.Block{
+			Header:     mockBlockHeader(parityTestHeight),
+			LastCommit: &tmtypes.Commit{Height: parityTestHeight - 1},
+		},
+	}}
+	watermarks := evmrpc.NewWatermarkManager(tm, ctxProvider, nil, nil)
+	api := evmrpc.NewBlockAPI(tm, k, ctxProvider, txConfigProvider, evmrpc.ConnectionTypeHTTP, watermarks, evmrpc.NewBlockCache(3000), &sync.Mutex{})
+	ctx := context.Background()
+
+	tags := []rpc.BlockNumber{
+		rpc.LatestBlockNumber,
+		rpc.SafeBlockNumber,
+		rpc.FinalizedBlockNumber,
+		rpc.PendingBlockNumber,
+	}
+	for _, tag := range tags {
+		receipts, err := api.GetBlockReceipts(ctx, rpc.BlockNumberOrHashWithNumber(tag))
+		require.NoError(t, err)
+		require.NotNil(t, receipts, "GetBlockReceipts tag %v must resolve, not null", tag)
+
+		count, err := api.GetBlockTransactionCountByNumber(ctx, tag)
+		require.NoError(t, err)
+		require.NotNil(t, count, "GetBlockTransactionCountByNumber tag %v must resolve, not null", tag)
+	}
+}

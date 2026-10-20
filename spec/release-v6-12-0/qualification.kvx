@@ -2476,3 +2476,11 @@ exit = 1
 log = "release-8.4.12-verify-2.log"
 observed = "The four cases that run on a build box pass; the ten others need a stopped mainnet data copy with four operator keys, a price sidecar endpoint and trader keys that are not available to the harness."
 assumption = "The driver is complete; the full rehearsal run and its evidence cases qualify once the rehearsal env is filled on a host that holds the keys."
+
+[finding.rpc-sei-replay-fixtures]
+revision = "c75481eee"
+command = "go test -count=1 ./rpc/ ./rpc/tests/"
+exit = 1
+log = "domain-fix-d-verify-5.log"
+observed = "Two regression tests in rpc/tests/regression_test.go replay transactions recorded on the upstream chain and fail on an oracle message type and a wasm capability this chain does not register."
+assumption = "The replay fixtures predate the fork and cannot pass on this chain; they need re-recording against this chain's transactions or a decision to retire them, which is outside the domain gate."
