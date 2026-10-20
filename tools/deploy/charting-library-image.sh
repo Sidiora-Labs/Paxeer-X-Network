@@ -3,7 +3,7 @@
 set -euo pipefail
 
 image=ghcr.io/sidiora-labs/hyperpax-charting-library
-source_dir=/root/lx-lanes/hyperpax
+source_dir="$(cd "$(dirname "$0")/../.." && pwd)/human/apps/perps/apps/web"
 push=0
 
 while [ $# -gt 0 ]; do

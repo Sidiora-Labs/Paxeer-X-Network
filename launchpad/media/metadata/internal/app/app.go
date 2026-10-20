@@ -37,12 +37,15 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/caarlos0/env/v11"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	goredis "github.com/redis/go-redis/v9"
@@ -986,10 +989,44 @@ func startupStage(op string, err error) error {
 
 var stableErrorCode = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)+$`)
 
+// configVariables is the set of environment variable names the metadata
+// config reads. Names are public; values never are.
+var configVariables = func() map[string]struct{} {
+	names := map[string]struct{}{}
+	t := reflect.TypeOf(config.Config{})
+	for i := 0; i < t.NumField(); i++ {
+		if name, _, _ := strings.Cut(t.Field(i).Tag.Get("env"), ","); name != "" {
+			names[name] = struct{}{}
+		}
+	}
+	return names
+}()
+
+// StartupVariables returns the sorted config variable names an error names.
+// Only tokens that are known variable names are kept, so a value quoted in
+// the error can never be returned.
+func StartupVariables(err error) []string {
+	seen := map[string]struct{}{}
+	for _, token := range strings.FieldsFunc(err.Error(), func(r rune) bool {
+		return !(r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_')
+	}) {
+		if _, ok := configVariables[token]; ok {
+			seen[token] = struct{}{}
+		}
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // StartupFailure returns the failing operation and the stable snake_case
 // error code. Raw messages are never returned: wrapped driver or dial errors
 // can carry connection strings or tokens, so they collapse to
-// unclassified_failure.
+// unclassified_failure. A config error without a code is classified as
+// required_variable_missing or variable_invalid by the variables it names.
 func StartupFailure(err error) (op, code string) {
 	op, code = "runtime", "unclassified_failure"
 	var tagged *StartupError
@@ -1003,11 +1040,20 @@ func StartupFailure(err error) (op, code string) {
 			}
 		}
 	}
+	if len(StartupVariables(err)) > 0 {
+		var unset env.VarIsNotSetError
+		var empty env.EmptyVarError
+		if errors.As(err, &unset) || errors.As(err, &empty) || strings.Contains(err.Error(), " is required") {
+			return op, "required_variable_missing"
+		}
+		return op, "variable_invalid"
+	}
 	return op, code
 }
 
 // LogStartupFailure logs the operation and stable code of a Run failure.
 func LogStartupFailure(logger *slog.Logger, err error) {
 	op, code := StartupFailure(err)
-	logger.Error("metadata service exited with error", slog.String("op", op), slog.String("reason", code))
+	logger.Error("metadata service exited with error", slog.String("op", op), slog.String("reason", code),
+		slog.String("variables", strings.Join(StartupVariables(err), ",")))
 }

@@ -7,6 +7,9 @@
       "/launchpad/media/social/**",
       "/launchpad/shared/**",
       "/launchpad/protocol/**",
+      "/launchpad/core/discovery/**",
+      "/launchpad/core/notifications/**",
+      "/launchpad/security/supplychain/**",
       "/launchpad/deploy/Dockerfile.svc"
     ]
   },

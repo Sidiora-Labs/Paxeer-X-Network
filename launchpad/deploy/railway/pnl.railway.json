@@ -7,6 +7,7 @@
       "/launchpad/core/pnl-tracker/**",
       "/launchpad/shared/**",
       "/launchpad/protocol/**",
+      "/launchpad/security/supplychain/**",
       "/launchpad/deploy/Dockerfile.svc"
     ]
   },
