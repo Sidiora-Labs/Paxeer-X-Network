@@ -29470,7 +29470,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.9]
 title = "Roll back by halting, restoring the snapshot and restarting the previous binary"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["8.4.7", "8.4.8"]

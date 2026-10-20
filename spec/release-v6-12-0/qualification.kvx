@@ -2460,3 +2460,11 @@ exit = 1
 log = fleet/logs/release-8.4.3-verify-1.log
 observed = Two builds from the same checkout are identical and the clean native rebuild matches, but a build from a checkout at a different path differs in every built artifact starting with the native library sums, so paths_remapped fails.
 assumption = The release build script's path remapping does not yet cover the native library build; it is fixed in the build script in a follow-up and this gate rerun.
+
+[finding.8.4.9-verified]
+revision = cc5ced1cf5b707bd2fe194979f422adeee8e596b
+command = bash tools/release/tests/rollback.test.sh
+exit = 0
+log = fleet/logs/release-8.4.9-verify-6.log
+observed = All three rollback cases pass after the archive check admits the memiavl current symlink, the seeded genesis carries uhpx metadata at exponent 6 and the halt export's evm nonces; the earlier pointer address collision came from the evm module restarting at nonce 0 in the composed genesis, and the halt export itself has empty addresses at the module's nonce 1 and nonce 2 where the uhpx and SID pointers deploy.
+assumption = The halt export fixture matches mainnet state at the halt height; the pointer deploy addresses on mainnet are free.

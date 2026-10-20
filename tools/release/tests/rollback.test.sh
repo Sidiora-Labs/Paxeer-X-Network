@@ -161,6 +161,12 @@ for entry in export["evm"]["states"]:
     assert (entry["address"].lower(), entry["key"]) not in states, (entry["address"], entry["key"])
 evm["codes"].extend(export["evm"]["codes"])
 evm["states"].extend(export["evm"]["states"])
+# The seeded codes include contracts the evm module deployed, so its exported nonce comes with them,
+# or its next CREATE (the v6.12.0 uhpx pointer) lands on the contract it deployed at nonce 0.
+nonces = {entry["address"].lower() for entry in evm.get("nonces") or []}
+for entry in export["evm"]["nonces"]:
+    assert entry["address"].lower() not in nonces, entry["address"]
+evm["nonces"] = (evm.get("nonces") or []) + export["evm"]["nonces"]
 genesis["app_state"]["launchpad"] = export["launchpad"]
 genesis["app_state"]["launchpad"]["params"]["quote_denom"] = "uusdl"
 del genesis["app_state"]["launchpad"]["params"]["quote_token"]

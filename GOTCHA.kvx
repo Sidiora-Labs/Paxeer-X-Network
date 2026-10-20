@@ -8595,3 +8595,18 @@ detail = "An address whose versions are keyed to an activation plan, such as the
 area = "Makefile"
 summary = "make paxd-native-libs needs cargo on PATH"
 detail = "Without ~/.cargo/bin on PATH the liblayerx.a step builds but the programs sandbox step exits 127, and every Go test that links liblayerx_programs_sandbox then fails at link time."
+
+[gotcha.1805]
+area = "tools/release/tests"
+summary = "a genesis composed from a halt export must carry the evm nonces"
+detail = "Copying the export's evm codes and states without its nonces resets the evm module account to nonce 0, so the next pointer CREATE in the v6.12.0 upgrade collides with the contract that account created at nonce 0."
+
+[gotcha.1806]
+area = "tools/release/tests"
+summary = "the previous binary expects a top-level launchpad protocol_fees_pending"
+detail = "The pre-upgrade binary refuses a genesis whose launchpad state only carries fee_accounting.pending_protocol_fees; fill the top-level field from it when seeding a chain the previous binary must validate."
+
+[gotcha.1807]
+area = "tooling/worktrees"
+summary = "worktree guard refuses lx-commit with a long inline message"
+detail = "Run the commit from a scratch script when the message is long."
