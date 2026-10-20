@@ -74,8 +74,10 @@ func NewRootCmd() (*cobra.Command, params.EncodingConfig) {
 		WithViper("PAX")
 
 	rootCmd := &cobra.Command{
-		Use:   "paxd",
-		Short: "Start Paxeer app",
+		Use:           "paxd",
+		Short:         "Start Paxeer app",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			// set the default command outputs
 			cmd.SetOut(cmd.OutOrStdout())

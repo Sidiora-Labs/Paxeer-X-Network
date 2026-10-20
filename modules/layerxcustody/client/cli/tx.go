@@ -58,9 +58,11 @@ func GetTxCmd() *cobra.Command {
 // the proposer the standard transaction flags name.
 func NewSubmitCustodyProposalCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "custody [proposal-file]",
-		Args:  cobra.ExactArgs(1),
-		Short: "Submit a custody proposal file",
+		Use:           "custody [proposal-file]",
+		Args:          cobra.ExactArgs(1),
+		Short:         "Submit a custody proposal file",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		Long: "Submit a custody governance proposal.\n" +
 			"E.g. $ paxd tx " + types.ModuleName + " submit-proposal custody proposal.json --from [key]\n" +
 			"The file carries title, description, deposit and messages; every message is a custody\n" +

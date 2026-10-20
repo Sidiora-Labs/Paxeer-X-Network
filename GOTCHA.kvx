@@ -8625,3 +8625,13 @@ detail = "The full v6.12.0 migration needs seeded release state and fails with L
 area = "node/tests"
 summary = "the optimistic ProcessBlock goroutine outlives a test unless cleanup waits on it"
 detail = "ProcessProposalHandler starts ProcessBlock in the background writing under the app home, so a test app torn down before FinalizeBlock consumes it hits 'directory not empty'; SetupWithDB now registers a cleanup that waits on the completion channel."
+
+[gotcha.1811]
+area = "daemon/cli"
+summary = "cobra prints errors and usage from the command Execute was called on"
+detail = "A test that executes a subcommand directly needs SilenceUsage and SilenceErrors on that command, not only on the root; paxd root and the custody proposal command carry both and main prints the error once."
+
+[gotcha.1812]
+area = "modules/tests"
+summary = "applying v6.12.0 on a fresh test app outside package node panics in the launchpad step"
+detail = "Only package node can bind the nil launchpad hooks, so tests elsewhere record the done height through the upgrade keeper's SetDone instead of running the migration."

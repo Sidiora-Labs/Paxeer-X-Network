@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/daemon/paxd/cmd"
@@ -14,6 +15,7 @@ func main() {
 	params.SetAddressPrefixes()
 	rootCmd, _ := cmd.NewRootCmd()
 	if err := svrcmd.Execute(rootCmd, app.DefaultNodeHome); err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 }
