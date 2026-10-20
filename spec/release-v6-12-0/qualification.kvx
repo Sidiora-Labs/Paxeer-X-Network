@@ -2260,3 +2260,19 @@ exit = 1
 log = fleet/logs/release-7.1.8-follower-1.log
 observed = Ten of eleven follower subtests pass including the new prefetch ordering test; two_pass_pointers fails at its own precondition search for a ShareTokenCreated log with a same-block Transfer because the throwaway chain was never seeded with a share token, before any follower code runs.
 assumption = The subtest is run once on a chain seeded with a share token at the wave gate; the follower test harness is not part of the task verify.
+
+[finding.7.3.5-latency-on-quiet-host]
+revision = 956321582
+command = go test -count=1 ./services/platform/perps-data/loadtest/ -run 'TestLoadProfile'
+exit = 1
+log = fleet/logs/release-7.3.5-fix-verify-4.log
+observed = On a host at load average 11 on 18 cores the storm guard held again but the p99 frame delay measured 48.8 s against the 250 ms bound with late checksums, so the remaining failure is a code defect of the frame path and not host load.
+assumption = The earlier host-load assumption is withdrawn; the frame path is profiled and fixed before 7.3.5 is marked done.
+
+[finding.2.3.99-pre-existing-failures]
+revision = 82e5ab6bc
+command = go test ./modules/launchpad/... ./precompiles/launchpad/...
+exit = 1
+log = fleet/logs/release-2.3.99-verify-5.log
+observed = TestLaunchpadDomainWiring and every test of launchpadtest, types, the v610 legacy keeper and types and the v610 legacy precompile pass; modules/launchpad/keeper fails TestAirdropHoldingHistory with LXP_LAUNCHPAD_INVALID_GENESIS fee account disagrees with market, and precompiles/launchpad fails TestOpticalHooksSeeTheContractCallers and aborts on a nil pointer dereference in TestCallKindRefusals, none of which the task touches.
+assumption = The three failures are fixed in their own packages and the task verify is taken once more on the merged revision before 2.3.99 is marked done.

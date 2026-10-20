@@ -8425,3 +8425,13 @@ fix = "build the sandbox library the way the Makefile does, cargo build --locked
 area = "services/platform/perps-data"
 summary = "The follower two_pass_pointers subtest needs a chain that already has a ShareTokenCreated log with a Transfer in the same block"
 detail = "On a fresh single-node chain the subtest fails in its precondition search before exercising any follower code. Seed a share token through the launchpad surfaces before running TestFollower, or expect that one subtest to fail on an unseeded chain."
+
+[gotcha.1771]
+area = "modules/launchpad/launchpadtest"
+summary = "Iterating the launchpad store through a state DB context after many EVM calls does not finish until the state DB is finalized"
+detail = "The custody and solvency invariants walk the store through every cachekv snapshot layer the EVM calls left behind and a ten-minute timeout is not enough after a migration plus trades. Call Finalize on the state DB first so the layers are written through, then run the invariants on the context the state DB was opened on; the package then completes in about twenty seconds."
+
+[gotcha.1772]
+area = "modules/launchpad/launchpadtest"
+summary = "The halt export holds USDL storage only for launchpad-held balances"
+detail = "After MigrateV6120 on the exported state no outside account holds USDL and the quote token is the real USDL contract, so a trade flow cannot run on the migrated store without fabricated state. Run trade flows on a fresh keeper with a USDL ERC20 deployed in the test EVM and keep the migrated store for reads."

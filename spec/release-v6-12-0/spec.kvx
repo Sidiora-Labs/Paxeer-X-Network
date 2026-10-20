@@ -7778,7 +7778,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.99]
 title = "Domain completion: run the launchpad package set"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 3
 requires = ["2.2.1", "2.2.2", "2.2.3", "2.2.4", "2.2.5", "2.2.6", "2.2.7", "2.2.8", "2.2.9", "2.2.10", "2.2.11", "2.2.12", "2.2.13", "2.2.14", "2.2.15", "2.2.16", "2.2.17", "2.2.18", "2.2.19", "2.2.20", "2.2.21", "2.2.22", "2.2.23", "2.2.24", "2.3.2", "2.3.3", "2.3.4", "2.3.6", "2.3.7", "2.3.8", "2.3.9"]
