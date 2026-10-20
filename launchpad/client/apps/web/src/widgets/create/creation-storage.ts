@@ -24,18 +24,20 @@ export function validateCreationDraft(draft: CreationDraftV2, now = Date.now()) 
  if(draft.stagedMedia!==undefined){const reason=validateStagedMediaDescriptor(draft.stagedMedia);if(reason)errors.stagedMedia=reason;}
  return errors;
 }
-function validStoredDraft(draft:CreationDraftV2,creator:string) {
- if(!draft||draft.version!==2||draft.chainId!==125||address(draft.creator)!==address(creator)||!draft.draftId||!Number.isSafeInteger(draft.updatedAt)||draft.updatedAt>Date.now()||Date.now()-draft.updatedAt>30*86400000||!Number.isInteger(draft.feeStrategy)||draft.feeStrategy<0||draft.feeStrategy>3)throw new Error('Saved draft expired or is invalid.');
+/** `editable` applies the 30-day editing window; a launch attempt's reviewed draft is immutable history and only keeps its identity checks. */
+function validStoredDraft(draft:CreationDraftV2,creator:string,editable=true) {
+ if(!draft||draft.version!==2||draft.chainId!==125||address(draft.creator)!==address(creator)||!draft.draftId||!Number.isSafeInteger(draft.updatedAt)||draft.updatedAt>Date.now()||editable&&Date.now()-draft.updatedAt>30*86400000||!Number.isInteger(draft.feeStrategy)||draft.feeStrategy<0||draft.feeStrategy>3)throw new Error('Saved draft expired or is invalid.');
  for(const value of [draft.name,draft.symbol,draft.description,draft.opticalSelection])if(typeof value!=='string'||value.length>8192)throw new Error('Saved draft text is invalid.');
  for(const values of [draft.tags,draft.socialLinks,draft.uploadRefs])if(!Array.isArray(values)||values.length>10||values.some(value=>typeof value!=='string'||value.length>8192))throw new Error('Saved draft list is invalid.');
  if(draft.stagedMedia!==undefined&&validateStagedMediaDescriptor(draft.stagedMedia))throw new Error('Saved draft media fingerprint is invalid.');
  raw(draft.firstBuyRaw);
 }
-function checkedAttempt(value: LaunchAttempt, creator: string): LaunchAttempt {
+/** `fresh` is for an intent about to enter signing: its reviewed draft must still be inside the editing window. Saved attempts are checked without it. */
+export function checkedAttempt(value: LaunchAttempt, creator: string, fresh = false): LaunchAttempt {
  if (!value || value.chainId !== 125 || address(value.creator) !== address(creator) || !value.intentId || !value.draftId || value.draftId !== value.draft?.draftId || address(value.draft.creator) !== address(creator) || value.draft.chainId !== 125 || !value.reviewedSnapshot || value.reviewedSnapshot.length > 131072 || !value.deploymentRevision || !Number.isSafeInteger(value.createdAt)) throw new Error('Invalid saved launch attempt.');
  if (!['signing_locked','outcome_unknown','submitted','resolved','reverted'].includes(value.state) || !['metadata_pending','published'].includes(value.metadataStatus) || !['not_requested','review_required','signing_locked','outcome_unknown','submitted','confirmed','failed','skipped'].includes(value.purchaseState)) throw new Error('Invalid saved launch state.');
- validStoredDraft(value.draft,creator);
- if(Object.keys(validateCreationDraft(value.draft)).length)throw new Error('Saved launch fields are invalid.');
+ validStoredDraft(value.draft,creator,fresh);
+ if(Object.keys(validateCreationDraft(value.draft,fresh?Date.now():value.draft.updatedAt)).length)throw new Error('Saved launch fields are invalid.');
  const snapshot=JSON.parse(value.reviewedSnapshot) as {intentId:string;draft:CreationDraftV2;cost:Cost;optical:{presetId:string;registryRevision:string;opticalAddress:string;initializationData:string}};
  if(snapshot.intentId!==value.intentId||JSON.stringify(snapshot.draft)!==JSON.stringify(value.draft)||snapshot.cost.manifestRevision!==value.deploymentRevision||snapshot.optical.registryRevision!==value.deploymentRevision||snapshot.optical.presetId!==value.draft.opticalSelection||snapshot.optical.opticalAddress!=='0x0000000000000000000000000000000000000000'||snapshot.optical.initializationData!=='0x'||value.cost.manifestRevision!==value.deploymentRevision||value.cost.optionalInitialBuyRaw!==value.draft.firstBuyRaw||snapshot.cost.optionalInitialBuyRaw!==value.draft.firstBuyRaw)throw new Error('Saved reviewed creation identity changed.');
  for(const cost of [snapshot.cost,value.cost]){if(cost.protocolFeeRaw!=='1000000')throw new Error('Saved creation fee changed.');address(cost.protocolFeeAssetRef);address(cost.approvalSpender);address(cost.factory);raw(cost.gasEstimatePaxRaw);}
@@ -99,6 +101,7 @@ export class CreationStorage {
    const request=store.get(this.key(attempt.intentId));
    request.onsuccess=()=>{try{
     const prior=request.result?.value as LaunchAttempt|undefined;
+    if(!prior)checkedAttempt(attempt,this.creator,true);
     if(prior){checkedAttempt(prior,this.creator);if(prior.reviewedSnapshot!==attempt.reviewedSnapshot||JSON.stringify(prior.draft)!==JSON.stringify(attempt.draft)||prior.draftId!==attempt.draftId||prior.deploymentRevision!==attempt.deploymentRevision||prior.createdAt!==attempt.createdAt||prior.createTxHash&&prior.createTxHash!==attempt.createTxHash||prior.purchaseTxHash&&prior.purchaseTxHash!==attempt.purchaseTxHash||prior.state==='resolved'&&(attempt.state!=='resolved'||prior.poolAddress!==attempt.poolAddress||prior.tokenAddress!==attempt.tokenAddress)||prior.metadataContentHash&&prior.metadataContentHash!==attempt.metadataContentHash||prior.metadataPatch&&prior.metadataPatch!==attempt.metadataPatch||prior.metadataPublicationBody&&prior.metadataPublicationBody!==attempt.metadataPublicationBody||prior.metadataStatus==='published'&&attempt.metadataStatus!=='published'||prior.metadataRevision&&prior.metadataRevision!==attempt.metadataRevision||prior.metadataOperationId&&prior.metadataOperationId!==attempt.metadataOperationId||attempt.metadataAttemptCount<prior.metadataAttemptCount)throw new Error('Saved launch identity or signing fence changed.');}
     store.put({key:this.key(attempt.intentId),value:attempt});
    }catch(error){reject(error);tx.abort();}};
@@ -120,7 +123,7 @@ export class CreationStorage {
   });
  }
  async admit(attempt:LaunchAttempt):Promise<void> {
-  checkedAttempt(attempt,this.creator);if(attempt.state!=='signing_locked'||attempt.createTxHash)throw new Error('Only an unsent reviewed intent may enter signing.');
+  checkedAttempt(attempt,this.creator,true);if(attempt.state!=='signing_locked'||attempt.createTxHash)throw new Error('Only an unsent reviewed intent may enter signing.');
   const db=await this.db;
   await new Promise<void>((resolve,reject)=>{
    const tx=db.transaction('attempts','readwrite'),store=tx.objectStore('attempts'),request=store.getAll();
