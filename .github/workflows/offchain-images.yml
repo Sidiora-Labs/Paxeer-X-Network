@@ -1,0 +1,130 @@
+name: Publish off-chain images
+
+# Every push to main that touches an off-chain service builds each row of tools/deploy/offchain-images.sh,
+# pushes it to GHCR as :<12-hex sha> and :<git describe>, and records every pushed digest in one
+# digests.json artifact for the rollout tool.
+on:
+  push:
+    branches: [main]
+    paths:
+      - launchpad/**
+      - services/platform/perps-data/**
+      - human/apps/perps/**
+      - tools/deploy/**
+      - .github/workflows/offchain-images.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: offchain-images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    outputs:
+      images: ${{ steps.plan.outputs.images }}
+      sha: ${{ steps.plan.outputs.sha }}
+      describe: ${{ steps.plan.outputs.describe }}
+    steps:
+      - name: Check out the pushed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - name: Turn every row of the off-chain image table into a build matrix entry
+        id: plan
+        env:
+          LAUNCHPAD_BUILD_IMAGE: ${{ vars.REVIEWED_BUILD_IMAGE }}
+          LAUNCHPAD_RUNTIME_IMAGE: ${{ vars.REVIEWED_RUNTIME_IMAGE }}
+          PERPS_BUILD_IMAGE: ${{ vars.PERPS_BUILD_IMAGE }}
+          PERPS_RUNTIME_IMAGE: ${{ vars.PERPS_RUNTIME_IMAGE }}
+        run: |
+          set -euo pipefail
+          for var in LAUNCHPAD_BUILD_IMAGE LAUNCHPAD_RUNTIME_IMAGE PERPS_BUILD_IMAGE PERPS_RUNTIME_IMAGE; do
+            [[ "${!var}" =~ @sha256:[0-9a-f]{64}$ ]] || { echo "$var must be a base image pinned by digest" >&2; exit 1; }
+          done
+          tools/deploy/offchain-images.sh --check
+          {
+            printf 'images=%s\n' "$(tools/deploy/offchain-images.sh --matrix)"
+            printf 'sha=%s\n' "$(git rev-parse --short=12 HEAD)"
+            printf 'describe=%s\n' "$(git describe --tags --always --abbrev=12)"
+          } >> "$GITHUB_OUTPUT"
+
+  images:
+    needs: [plan]
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.plan.outputs.images) }}
+    steps:
+      - name: Check out the pushed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push ${{ matrix.image.name }}
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.dockerfile }}
+          target: ${{ matrix.image.target }}
+          build-args: ${{ matrix.image.build_args }}
+          push: true
+          tags: |
+            ghcr.io/sidiora-labs/${{ matrix.image.name }}:${{ needs.plan.outputs.sha }}
+            ghcr.io/sidiora-labs/${{ matrix.image.name }}:${{ needs.plan.outputs.describe }}
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}
+      - name: Record the pushed digest of ${{ matrix.image.name }}
+        env:
+          NAME: ${{ matrix.image.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "no digest for $NAME" >&2; exit 1; }
+          mkdir -p digests
+          printf '%s=%s\n' "$NAME" "$DIGEST" > "digests/$NAME"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: digest-${{ matrix.image.name }}
+          path: digests/${{ matrix.image.name }}
+          if-no-files-found: error
+
+  digests:
+    needs: [images]
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+      - name: Merge every image digest into digests.json
+        run: |
+          set -euo pipefail
+          cat digests/* | jq -R -s -c '[splits("\n") | select(length > 0) | split("=") | {key: .[0], value: .[1]}] | from_entries' > digests.json
+          cat digests.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: digests.json
+          path: digests.json
+          if-no-files-found: error
