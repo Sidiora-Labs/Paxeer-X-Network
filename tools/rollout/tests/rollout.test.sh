@@ -185,6 +185,25 @@ ROLLOUT_MANIFEST="$tmp/good.kvx" "$rollout" plan --sha "$sha" >/dev/null || fail
 if "$rollout" plan --sha "${sha:0:12}" >/dev/null 2>&1; then fail "short sha accepted"; fi
 if "$rollout" plan --sha "$sha" --only nope >/dev/null 2>&1; then fail "unknown --only accepted"; fi
 
+digest=sha256:$(printf '%064d' 0 | tr 0 a)
+printf '[service.gateway]\ntarget = "railway-image"\nimage = "layerx-gateway"\nrailway_service = "gateway"\nhealth = "/healthz"\norder = 1\n' \
+	>"$tmp/image.kvx"
+printf '{"layerx-gateway": "%s"}\n' "$digest" >"$tmp/digests.json"
+ROLLOUT_MANIFEST="$tmp/image.kvx" "$rollout" plan --sha "$sha" --digests "$tmp/digests.json" >"$tmp/image.plan"
+grep -qE "^ *1 gateway +railway-image gateway image=ghcr\.io/sidiora-labs/layerx-gateway@$digest health=/healthz$" "$tmp/image.plan" ||
+	fail "railway-image row does not print its image digest"
+printf '{"other-image": "%s"}\n' "$digest" >"$tmp/no-digest.json"
+for case in no-digest no-map; do
+	args=(--digests "$tmp/no-digest.json")
+	[ "$case" = no-map ] && args=()
+	status=0
+	ROLLOUT_MANIFEST="$tmp/image.kvx" "$rollout" plan --sha "$sha" "${args[@]}" >"$tmp/$case.out" 2>"$tmp/$case.err" || status=$?
+	[ "$status" -eq 2 ] || fail "railway-image plan ($case) returned $status, want 2"
+	[ ! -s "$tmp/$case.out" ] || fail "railway-image plan ($case) printed a partial plan"
+done
+grep -qxF "digest map has no digest for: layerx-gateway" "$tmp/no-digest.err" || fail "missing digest returned the wrong refusal"
+grep -qxF -- "--digests is required for railway-image services" "$tmp/no-map.err" || fail "missing --digests returned the wrong refusal"
+
 export ROLLOUT_LEDGER_DIR="$tmp/ledger"
 "$ledger" "$sha" router railway 2026-10-07T10:00:00Z pass /root/lx-ops/rollout/2026-10-07/x-router.log
 "$ledger" "$sha" router railway 2026-10-07T10:05:00Z fail /root/lx-ops/rollout/2026-10-07/x-router.log
@@ -194,4 +213,4 @@ if "$ledger" "$sha" router box 2026-10-07T10:00:00Z pass 10.1.2.3:/var/log/x >/d
 	fail "ledger accepted evidence outside /root/lx-ops"
 fi
 
-echo "PASS rollout plan (${#want[@]} services), retired service rejection, manifest rejection, ledger"
+echo "PASS rollout plan (${#want[@]} services), railway-image digests, retired service rejection, manifest rejection, ledger"

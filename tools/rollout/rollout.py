@@ -17,11 +17,13 @@ API = "https://backboard.railway.com/graphql/v2"
 STOCK = {"redis", "postgres"}
 KEYS = {
     "railway": {"target", "image", "railway_service", "health", "order"},
+    "railway-image": {"target", "image", "railway_service", "health", "order"},
     "box": {"target", "image", "box_role", "box_unit", "health", "order"},
 }
 NAME = r"[a-z0-9][a-z0-9-]*"
 STRING = r'"((?:[^"\\]|\\.)*)"'
 LINE = re.compile(r"^([a-z_][a-z0-9_]*)\s*=\s*(" + STRING + r"|-?\d+)\s*(?:#.*)?$")
+DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 HEALTH = re.compile(r"^(/[A-Za-z0-9._/-]*|tcp:\d{1,5})$")
 TERMINAL = {"SUCCESS": "pass", "FAILED": "fail", "CRASHED": "fail", "REMOVED": "fail",
             "SKIPPED": "fail", "NEEDS_APPROVAL": "blocked"}
@@ -71,7 +73,7 @@ def services(path):
         name = m.group(1)
         target = kv.get("target")
         if target not in KEYS:
-            raise Malformed(f"[{section}]: target must be railway or box, got {target!r}")
+            raise Malformed(f"[{section}]: target must be railway, railway-image or box, got {target!r}")
         if set(kv) != KEYS[target]:
             missing = sorted(KEYS[target] - set(kv))
             extra = sorted(set(kv) - KEYS[target])
@@ -97,8 +99,24 @@ def host_key(role):
     return role.upper().replace("-", "_") + "_HOST"
 
 
-def describe(svc, sha):
+def image_ref(svc, digests):
+    return f"{GHCR}/{svc['image']}@{digests[svc['image']]}"
+
+
+def load_digests(path):
+    digests = json.loads(Path(path).read_text())
+    if not isinstance(digests, dict):
+        raise ValueError("digest map must be a JSON object")
+    for image, digest in digests.items():
+        if not isinstance(digest, str) or not DIGEST.match(digest):
+            raise ValueError(f"digest for {image} must be sha256:<64hex>")
+    return digests
+
+
+def describe(svc, sha, digests=None):
     head = f"{svc['order']:>3} {svc['name']:<20} {svc['target']:<7}"
+    if svc["target"] == "railway-image":
+        return f"{head} {svc['railway_service']} image={image_ref(svc, digests)} health={svc['health']}"
     if svc["target"] == "railway":
         if svc["image"] in STOCK:
             return f"{head} {svc['railway_service']} skip stock-image={svc['image']}"
@@ -144,6 +162,34 @@ def apply_railway(svc, sha, names, env_id, log):
                      "serviceInstanceDeployV2(serviceId: $s, environmentId: $e, commitSha: $c) }",
                      {"s": service_id, "e": env_id, "c": sha})["serviceInstanceDeployV2"]
     log.write(f"deployment {deployment} commit {sha}\n")
+    return wait_deployment(deployment, log)
+
+
+def apply_railway_image(svc, ref, names, env_id, log):
+    service_id = names.get(svc["railway_service"])
+    if not service_id:
+        log.write(f"railway service {svc['railway_service']} not in the project\n")
+        return "blocked"
+    ids = {"s": service_id, "e": env_id}
+    instance = gql("query($s: String!, $e: String!) { "
+                   "serviceInstance(serviceId: $s, environmentId: $e) { source { image } } }",
+                   ids)["serviceInstance"]
+    current = ((instance or {}).get("source") or {}).get("image")
+    if current == ref:
+        log.write(f"unchanged image {ref}\n")
+        return "pass"
+    log.write(f"image {current} -> {ref}\n")
+    gql("mutation($s: String!, $e: String!, $i: ServiceInstanceUpdateInput!) { "
+        "serviceInstanceUpdate(serviceId: $s, environmentId: $e, input: $i) }",
+        dict(ids, i={"source": {"image": ref}}))
+    deployment = gql("mutation($s: String!, $e: String!) { "
+                     "serviceInstanceDeployV2(serviceId: $s, environmentId: $e) }",
+                     ids)["serviceInstanceDeployV2"]
+    log.write(f"deployment {deployment} image {ref}\n")
+    return wait_deployment(deployment, log)
+
+
+def wait_deployment(deployment, log):
     deadline = time.monotonic() + int(os.environ.get("ROLLOUT_TIMEOUT", "1800"))
     last = None
     while time.monotonic() < deadline:
@@ -212,12 +258,13 @@ def apply_box(svc, sha, hosts, log):
 
 
 def main(argv):
-    usage = "usage: rollout.sh plan|apply --sha <40hex> [--only <svc>,..] [--env beta]"
+    usage = ("usage: rollout.sh plan|apply --sha <40hex> [--only <svc>,..] [--env beta] "
+             "[--digests <image-digest-map.json>]")
     if not argv or argv[0] not in ("plan", "apply"):
         print(usage, file=sys.stderr)
         return 2
     mode, args = argv[0], argv[1:]
-    opts = {"--sha": None, "--only": None, "--env": "beta"}
+    opts = {"--sha": None, "--only": None, "--env": "beta", "--digests": None}
     while args:
         if args[0] not in opts or len(args) < 2:
             print(usage, file=sys.stderr)
@@ -240,15 +287,31 @@ def main(argv):
             print(f"unknown services: {','.join(unknown)}", file=sys.stderr)
             return 2
         plan = [s for s in plan if s["name"] in only]
+    digests = None
+    images = sorted({s["image"] for s in plan if s["target"] == "railway-image"})
+    if images:
+        if not opts["--digests"]:
+            print("--digests is required for railway-image services", file=sys.stderr)
+            print(usage, file=sys.stderr)
+            return 2
+        try:
+            digests = load_digests(opts["--digests"])
+        except (ValueError, OSError) as e:
+            print(f"bad digest map: {e}", file=sys.stderr)
+            return 2
+        missing = [i for i in images if i not in digests]
+        if missing:
+            print(f"digest map has no digest for: {','.join(missing)}", file=sys.stderr)
+            return 2
     print(f"rollout {mode} env={opts['--env']} sha={sha}")
     for svc in plan:
-        print(describe(svc, sha))
+        print(describe(svc, sha, digests))
     if mode == "plan" or os.environ.get("ROLLOUT_DRY_RUN") == "1":
         return 0
 
     work = [s for s in plan if not (s["target"] == "railway" and s["image"] in STOCK)]
     names = env_id = hosts = None
-    if any(s["target"] == "railway" for s in work):
+    if any(s["target"] in ("railway", "railway-image") for s in work):
         names, env_id = railway_ids(opts["--env"])
     if any(s["target"] == "box" for s in work):
         hosts = load_hosts()
@@ -264,12 +327,15 @@ def main(argv):
             try:
                 if svc["target"] == "railway":
                     outcome = apply_railway(svc, sha, names, env_id, log)
+                elif svc["target"] == "railway-image":
+                    outcome = apply_railway_image(svc, image_ref(svc, digests), names, env_id, log)
                 else:
                     outcome = apply_box(svc, sha, hosts, log)
             except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
                 log.write(f"error: {e}\n")
                 outcome = "fail"
-        subprocess.run([str(HERE / "ledger.sh"), sha, svc["name"], svc["target"], started,
+        target = "railway" if svc["target"] == "railway-image" else svc["target"]
+        subprocess.run([str(HERE / "ledger.sh"), sha, svc["name"], target, started,
                         outcome, str(path)], check=True)
         print(f"{outcome} {svc['name']} evidence={path}")
         if outcome != "pass":
