@@ -1,0 +1,1554 @@
+{
+ "sha": "0123456789abcdef0123456789abcdef01234567",
+ "digests": {
+  "layerx-gateway": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+ },
+ "scenarios": {
+  "first-apply": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 0,
+   "out": [
+    "pass gateway",
+    "pass router"
+   ],
+   "calls": [
+    {
+     "op": "Project",
+     "variables": {
+      "id": "p1"
+     },
+     "data": {
+      "project": {
+       "name": "paxeer-x-perps",
+       "services": {
+        "edges": [
+         {
+          "node": {
+           "id": "s-gateway",
+           "name": "gateway"
+          }
+         },
+         {
+          "node": {
+           "id": "s-router",
+           "name": "router"
+          }
+         }
+        ]
+       },
+       "environments": {
+        "edges": [
+         {
+          "node": {
+           "id": "e1",
+           "name": "production"
+          }
+         },
+         {
+          "node": {
+           "id": "e2",
+           "name": "beta"
+          }
+         }
+        ]
+       }
+      }
+     }
+    },
+    {
+     "op": "Instance",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstance": {
+       "source": {
+        "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+       },
+       "healthcheckPath": null,
+       "latestDeployment": {
+        "id": "d0",
+        "status": "SUCCESS",
+        "meta": {
+         "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+       }
+      }
+     }
+    },
+    {
+     "op": "InstanceUpdate",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1",
+      "i": {
+       "healthcheckPath": "/healthz",
+       "source": {
+        "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       }
+      }
+     },
+     "data": {
+      "serviceInstanceUpdate": true
+     }
+    },
+    {
+     "op": "Deploy",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstanceDeployV2": "d1"
+     }
+    },
+    {
+     "op": "Deployment",
+     "variables": {
+      "id": "d1"
+     },
+     "data": {
+      "deployment": {
+       "status": "DEPLOYING"
+      }
+     }
+    },
+    {
+     "op": "Deployment",
+     "variables": {
+      "id": "d1"
+     },
+     "data": {
+      "deployment": {
+       "status": "SUCCESS"
+      }
+     }
+    },
+    {
+     "op": "Instance",
+     "variables": {
+      "s": "s-router",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstance": {
+       "source": null,
+       "healthcheckPath": null,
+       "latestDeployment": null
+      }
+     }
+    },
+    {
+     "op": "InstanceUpdate",
+     "variables": {
+      "s": "s-router",
+      "e": "e1",
+      "i": {
+       "healthcheckPath": "/healthz"
+      }
+     },
+     "data": {
+      "serviceInstanceUpdate": true
+     }
+    },
+    {
+     "op": "DeployCommit",
+     "variables": {
+      "s": "s-router",
+      "e": "e1",
+      "c": "0123456789abcdef0123456789abcdef01234567"
+     },
+     "data": {
+      "serviceInstanceDeployV2": "d2"
+     }
+    },
+    {
+     "op": "Deployment",
+     "variables": {
+      "id": "d2"
+     },
+     "data": {
+      "deployment": {
+       "status": "BUILDING"
+      }
+     }
+    },
+    {
+     "op": "Deployment",
+     "variables": {
+      "id": "d2"
+     },
+     "data": {
+      "deployment": {
+       "status": "SUCCESS"
+      }
+     }
+    }
+   ]
+  },
+  "rerun-after-crash-redeploys": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 0,
+   "out": [
+    "pass gateway"
+   ],
+   "calls": [
+    {
+     "op": "Project",
+     "variables": {
+      "id": "p1"
+     },
+     "data": {
+      "project": {
+       "name": "paxeer-x-perps",
+       "services": {
+        "edges": [
+         {
+          "node": {
+           "id": "s-gateway",
+           "name": "gateway"
+          }
+         },
+         {
+          "node": {
+           "id": "s-router",
+           "name": "router"
+          }
+         }
+        ]
+       },
+       "environments": {
+        "edges": [
+         {
+          "node": {
+           "id": "e1",
+           "name": "production"
+          }
+         },
+         {
+          "node": {
+           "id": "e2",
+           "name": "beta"
+          }
+         }
+        ]
+       }
+      }
+     }
+    },
+    {
+     "op": "Instance",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstance": {
+       "source": {
+        "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       },
+       "healthcheckPath": "/healthz",
+       "latestDeployment": {
+        "id": "d1",
+        "status": "CRASHED",
+        "meta": {
+         "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+         "serviceManifest": {
+          "deploy": {
+           "healthcheckPath": "/healthz"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    {
+     "op": "Deploy",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstanceDeployV2": "d3"
+     }
+    },
+    {
+     "op": "Deployment",
+     "variables": {
+      "id": "d3"
+     },
+     "data": {
+      "deployment": {
+       "status": "SUCCESS"
+      }
+     }
+    }
+   ]
+  },
+  "rerun-after-crash-crashes-again": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 1,
+   "out": [
+    "fail gateway"
+   ],
+   "calls": [
+    {
+     "op": "Project",
+     "variables": {
+      "id": "p1"
+     },
+     "data": {
+      "project": {
+       "name": "paxeer-x-perps",
+       "services": {
+        "edges": [
+         {
+          "node": {
+           "id": "s-gateway",
+           "name": "gateway"
+          }
+         },
+         {
+          "node": {
+           "id": "s-router",
+           "name": "router"
+          }
+         }
+        ]
+       },
+       "environments": {
+        "edges": [
+         {
+          "node": {
+           "id": "e1",
+           "name": "production"
+          }
+         },
+         {
+          "node": {
+           "id": "e2",
+           "name": "beta"
+          }
+         }
+        ]
+       }
+      }
+     }
+    },
+    {
+     "op": "Instance",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstance": {
+       "source": {
+        "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       },
+       "healthcheckPath": "/healthz",
+       "latestDeployment": {
+        "id": "d1",
+        "status": "FAILED",
+        "meta": {
+         "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+         "serviceManifest": {
+          "deploy": {
+           "healthcheckPath": "/healthz"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    {
+     "op": "Deploy",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstanceDeployV2": "d4"
+     }
+    },
+    {
+     "op": "Deployment",
+     "variables": {
+      "id": "d4"
+     },
+     "data": {
+      "deployment": {
+       "status": "DEPLOYING"
+      }
+     }
+    },
+    {
+     "op": "Deployment",
+     "variables": {
+      "id": "d4"
+     },
+     "data": {
+      "deployment": {
+       "status": "CRASHED"
+      }
+     }
+    }
+   ]
+  },
+  "rerun-healthy-is-unchanged": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 0,
+   "out": [
+    "pass gateway"
+   ],
+   "calls": [
+    {
+     "op": "Project",
+     "variables": {
+      "id": "p1"
+     },
+     "data": {
+      "project": {
+       "name": "paxeer-x-perps",
+       "services": {
+        "edges": [
+         {
+          "node": {
+           "id": "s-gateway",
+           "name": "gateway"
+          }
+         },
+         {
+          "node": {
+           "id": "s-router",
+           "name": "router"
+          }
+         }
+        ]
+       },
+       "environments": {
+        "edges": [
+         {
+          "node": {
+           "id": "e1",
+           "name": "production"
+          }
+         },
+         {
+          "node": {
+           "id": "e2",
+           "name": "beta"
+          }
+         }
+        ]
+       }
+      }
+     }
+    },
+    {
+     "op": "Instance",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstance": {
+       "source": {
+        "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       },
+       "healthcheckPath": "/healthz",
+       "latestDeployment": {
+        "id": "d3",
+        "status": "SUCCESS",
+        "meta": {
+         "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+         "serviceManifest": {
+          "deploy": {
+           "healthcheckPath": "/healthz"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    {
+     "op": "Deployment",
+     "variables": {
+      "id": "d3"
+     },
+     "data": {
+      "deployment": {
+       "status": "SUCCESS"
+      }
+     }
+    }
+   ]
+  },
+  "rerun-waits-for-running-deployment": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 0,
+   "out": [
+    "pass gateway"
+   ],
+   "calls": [
+    {
+     "op": "Project",
+     "variables": {
+      "id": "p1"
+     },
+     "data": {
+      "project": {
+       "name": "paxeer-x-perps",
+       "services": {
+        "edges": [
+         {
+          "node": {
+           "id": "s-gateway",
+           "name": "gateway"
+          }
+         },
+         {
+          "node": {
+           "id": "s-router",
+           "name": "router"
+          }
+         }
+        ]
+       },
+       "environments": {
+        "edges": [
+         {
+          "node": {
+           "id": "e1",
+           "name": "production"
+          }
+         },
+         {
+          "node": {
+           "id": "e2",
+           "name": "beta"
+          }
+         }
+        ]
+       }
+      }
+     }
+    },
+    {
+     "op": "Instance",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstance": {
+       "source": {
+        "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       },
+       "healthcheckPath": "/healthz",
+       "latestDeployment": {
+        "id": "d5",
+        "status": "DEPLOYING",
+        "meta": {
+         "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+         "serviceManifest": {
+          "deploy": {
+           "healthcheckPath": "/healthz"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    {
+     "op": "Deployment",
+     "variables": {
+      "id": "d5"
+     },
+     "data": {
+      "deployment": {
+       "status": "DEPLOYING"
+      }
+     }
+    },
+    {
+     "op": "Deployment",
+     "variables": {
+      "id": "d5"
+     },
+     "data": {
+      "deployment": {
+       "status": "SUCCESS"
+      }
+     }
+    }
+   ]
+  },
+  "rerun-deployment-runs-old-image": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 0,
+   "out": [
+    "pass gateway"
+   ],
+   "calls": [
+    {
+     "op": "Project",
+     "variables": {
+      "id": "p1"
+     },
+     "data": {
+      "project": {
+       "name": "paxeer-x-perps",
+       "services": {
+        "edges": [
+         {
+          "node": {
+           "id": "s-gateway",
+           "name": "gateway"
+          }
+         },
+         {
+          "node": {
+           "id": "s-router",
+           "name": "router"
+          }
+         }
+        ]
+       },
+       "environments": {
+        "edges": [
+         {
+          "node": {
+           "id": "e1",
+           "name": "production"
+          }
+         },
+         {
+          "node": {
+           "id": "e2",
+           "name": "beta"
+          }
+         }
+        ]
+       }
+      }
+     }
+    },
+    {
+     "op": "Instance",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstance": {
+       "source": {
+        "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       },
+       "healthcheckPath": "/healthz",
+       "latestDeployment": {
+        "id": "d0",
+        "status": "SUCCESS",
+        "meta": {
+         "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+         "serviceManifest": {
+          "deploy": {
+           "healthcheckPath": "/healthz"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    {
+     "op": "Deploy",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstanceDeployV2": "d6"
+     }
+    },
+    {
+     "op": "Deployment",
+     "variables": {
+      "id": "d6"
+     },
+     "data": {
+      "deployment": {
+       "status": "SUCCESS"
+      }
+     }
+    }
+   ]
+  },
+  "rerun-deployment-predates-health": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 0,
+   "out": [
+    "pass gateway"
+   ],
+   "calls": [
+    {
+     "op": "Project",
+     "variables": {
+      "id": "p1"
+     },
+     "data": {
+      "project": {
+       "name": "paxeer-x-perps",
+       "services": {
+        "edges": [
+         {
+          "node": {
+           "id": "s-gateway",
+           "name": "gateway"
+          }
+         },
+         {
+          "node": {
+           "id": "s-router",
+           "name": "router"
+          }
+         }
+        ]
+       },
+       "environments": {
+        "edges": [
+         {
+          "node": {
+           "id": "e1",
+           "name": "production"
+          }
+         },
+         {
+          "node": {
+           "id": "e2",
+           "name": "beta"
+          }
+         }
+        ]
+       }
+      }
+     }
+    },
+    {
+     "op": "Instance",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstance": {
+       "source": {
+        "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       },
+       "healthcheckPath": "/healthz",
+       "latestDeployment": {
+        "id": "d0",
+        "status": "SUCCESS",
+        "meta": {
+         "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+       }
+      }
+     }
+    },
+    {
+     "op": "Deploy",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstanceDeployV2": "d7"
+     }
+    },
+    {
+     "op": "Deployment",
+     "variables": {
+      "id": "d7"
+     },
+     "data": {
+      "deployment": {
+       "status": "SUCCESS"
+      }
+     }
+    }
+   ]
+  },
+  "health-only-change": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 0,
+   "out": [
+    "pass gateway"
+   ],
+   "calls": [
+    {
+     "op": "Project",
+     "variables": {
+      "id": "p1"
+     },
+     "data": {
+      "project": {
+       "name": "paxeer-x-perps",
+       "services": {
+        "edges": [
+         {
+          "node": {
+           "id": "s-gateway",
+           "name": "gateway"
+          }
+         },
+         {
+          "node": {
+           "id": "s-router",
+           "name": "router"
+          }
+         }
+        ]
+       },
+       "environments": {
+        "edges": [
+         {
+          "node": {
+           "id": "e1",
+           "name": "production"
+          }
+         },
+         {
+          "node": {
+           "id": "e2",
+           "name": "beta"
+          }
+         }
+        ]
+       }
+      }
+     }
+    },
+    {
+     "op": "Instance",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstance": {
+       "source": {
+        "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       },
+       "healthcheckPath": "/",
+       "latestDeployment": {
+        "id": "d3",
+        "status": "SUCCESS",
+        "meta": {
+         "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+         "serviceManifest": {
+          "deploy": {
+           "healthcheckPath": "/"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    {
+     "op": "InstanceUpdate",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1",
+      "i": {
+       "healthcheckPath": "/healthz"
+      }
+     },
+     "data": {
+      "serviceInstanceUpdate": true
+     }
+    },
+    {
+     "op": "Deploy",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstanceDeployV2": "d8"
+     }
+    },
+    {
+     "op": "Deployment",
+     "variables": {
+      "id": "d8"
+     },
+     "data": {
+      "deployment": {
+       "status": "SUCCESS"
+      }
+     }
+    }
+   ]
+  },
+  "needs-approval-blocks": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 1,
+   "out": [
+    "blocked gateway"
+   ],
+   "calls": [
+    {
+     "op": "Project",
+     "variables": {
+      "id": "p1"
+     },
+     "data": {
+      "project": {
+       "name": "paxeer-x-perps",
+       "services": {
+        "edges": [
+         {
+          "node": {
+           "id": "s-gateway",
+           "name": "gateway"
+          }
+         },
+         {
+          "node": {
+           "id": "s-router",
+           "name": "router"
+          }
+         }
+        ]
+       },
+       "environments": {
+        "edges": [
+         {
+          "node": {
+           "id": "e1",
+           "name": "production"
+          }
+         },
+         {
+          "node": {
+           "id": "e2",
+           "name": "beta"
+          }
+         }
+        ]
+       }
+      }
+     }
+    },
+    {
+     "op": "Instance",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstance": {
+       "source": {
+        "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+       },
+       "healthcheckPath": "/healthz",
+       "latestDeployment": {
+        "id": "d0",
+        "status": "SUCCESS",
+        "meta": {
+         "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+         "serviceManifest": {
+          "deploy": {
+           "healthcheckPath": "/healthz"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    {
+     "op": "InstanceUpdate",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1",
+      "i": {
+       "source": {
+        "image": "ghcr.io/sidiora-labs/layerx-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       }
+      }
+     },
+     "data": {
+      "serviceInstanceUpdate": true
+     }
+    },
+    {
+     "op": "Deploy",
+     "variables": {
+      "s": "s-gateway",
+      "e": "e1"
+     },
+     "data": {
+      "serviceInstanceDeployV2": "d9"
+     }
+    },
+    {
+     "op": "Deployment",
+     "variables": {
+      "id": "d9"
+     },
+     "data": {
+      "deployment": {
+       "status": "NEEDS_APPROVAL"
+      }
+     }
+    }
+   ]
+  },
+  "service-missing-blocks": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 1,
+   "out": [
+    "blocked gateway"
+   ],
+   "calls": [
+    {
+     "op": "Project",
+     "variables": {
+      "id": "p1"
+     },
+     "data": {
+      "project": {
+       "name": "paxeer-x-perps",
+       "services": {
+        "edges": [
+         {
+          "node": {
+           "id": "s-router",
+           "name": "router"
+          }
+         }
+        ]
+       },
+       "environments": {
+        "edges": [
+         {
+          "node": {
+           "id": "e1",
+           "name": "production"
+          }
+         },
+         {
+          "node": {
+           "id": "e2",
+           "name": "beta"
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  },
+  "wrong-project-refused": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 1,
+   "err": "RAILWAY_PROJECT_ID names project 'sidiora-launch', the manifest is for 'paxeer-x-perps'",
+   "calls": [
+    {
+     "op": "Project",
+     "variables": {
+      "id": "p1"
+     },
+     "data": {
+      "project": {
+       "name": "sidiora-launch",
+       "services": {
+        "edges": [
+         {
+          "node": {
+           "id": "s-gateway",
+           "name": "gateway"
+          }
+         },
+         {
+          "node": {
+           "id": "s-router",
+           "name": "router"
+          }
+         }
+        ]
+       },
+       "environments": {
+        "edges": [
+         {
+          "node": {
+           "id": "e1",
+           "name": "production"
+          }
+         },
+         {
+          "node": {
+           "id": "e2",
+           "name": "beta"
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  },
+  "env-mismatch-refused": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests",
+    "--env",
+    "beta"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 2,
+   "err": "--env beta does not match the manifest environment production",
+   "calls": []
+  },
+  "no-environment-refused": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 2,
+   "err": "the manifest [meta] names no environment and --env is not given",
+   "calls": []
+  },
+  "no-project-refused": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"/healthz\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 2,
+   "err": "the manifest [meta] names no Railway project",
+   "calls": []
+  },
+  "tcp-health-refused": {
+   "argv": [
+    "apply",
+    "--sha",
+    "0123456789abcdef0123456789abcdef01234567",
+    "--only",
+    "gateway",
+    "--digests",
+    "@digests"
+   ],
+   "manifest": [
+    "[meta]",
+    "kind = \"rollout-manifest\"",
+    "project = \"paxeer-x-perps\"",
+    "environment = \"production\"",
+    "",
+    "[service.gateway]",
+    "target = \"railway-image\"",
+    "image = \"layerx-gateway\"",
+    "railway_service = \"gateway\"",
+    "health = \"tcp:4222\"",
+    "order = 1",
+    "",
+    "[service.router]",
+    "target = \"railway\"",
+    "image = \"layerx-router\"",
+    "railway_service = \"router\"",
+    "health = \"/healthz\"",
+    "order = 2"
+   ],
+   "exit": 2,
+   "err": "Railway runs only HTTP health checks, give an HTTP path for: gateway",
+   "calls": []
+  }
+ }
+}

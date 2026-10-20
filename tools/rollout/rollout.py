@@ -27,6 +27,7 @@ DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 HEALTH = re.compile(r"^(/[A-Za-z0-9._/-]*|tcp:\d{1,5})$")
 TERMINAL = {"SUCCESS": "pass", "FAILED": "fail", "CRASHED": "fail", "REMOVED": "fail",
             "SKIPPED": "fail", "NEEDS_APPROVAL": "blocked"}
+RAILWAY = ("railway", "railway-image")
 
 
 class Malformed(Exception):
@@ -95,6 +96,14 @@ def services(path):
     return sorted(out, key=lambda s: s["order"])
 
 
+def manifest_meta(path):
+    meta = parse(path).get("meta", {})
+    for key in ("project", "environment"):
+        if key in meta and (not isinstance(meta[key], str) or not re.fullmatch(NAME, meta[key])):
+            raise Malformed(f"{path}: [meta] {key} must be a lowercase name")
+    return meta
+
+
 def host_key(role):
     return role.upper().replace("-", "_") + "_HOST"
 
@@ -139,13 +148,16 @@ def gql(query, variables):
     return body["data"]
 
 
-def railway_ids(env):
+def railway_ids(env, project_name):
     project = os.environ.get("RAILWAY_PROJECT_ID")
     if not project:
         raise SystemExit("RAILWAY_PROJECT_ID is not set")
-    data = gql("query($id: String!) { project(id: $id) { "
+    data = gql("query Project($id: String!) { project(id: $id) { name "
                "services { edges { node { id name } } } "
                "environments { edges { node { id name } } } } }", {"id": project})["project"]
+    if not data or data.get("name") != project_name:
+        raise SystemExit(f"RAILWAY_PROJECT_ID names project {(data or {}).get('name')!r}, "
+                         f"the manifest is for {project_name!r}")
     names = {e["node"]["name"]: e["node"]["id"] for e in data["services"]["edges"]}
     envs = {e["node"]["name"]: e["node"]["id"] for e in data["environments"]["edges"]}
     if env not in envs:
@@ -153,16 +165,44 @@ def railway_ids(env):
     return names, envs[env]
 
 
+def service_instance(ids):
+    return gql("query Instance($s: String!, $e: String!) { "
+               "serviceInstance(serviceId: $s, environmentId: $e) { source { image } healthcheckPath "
+               "latestDeployment { id status meta } } }", ids)["serviceInstance"] or {}
+
+
+def update_instance(ids, change):
+    if change:
+        gql("mutation InstanceUpdate($s: String!, $e: String!, $i: ServiceInstanceUpdateInput!) { "
+            "serviceInstanceUpdate(serviceId: $s, environmentId: $e, input: $i) }", dict(ids, i=change))
+
+
+def health_change(svc, instance, log):
+    if instance.get("healthcheckPath") == svc["health"]:
+        return {}
+    log.write(f"healthcheckPath {instance.get('healthcheckPath')} -> {svc['health']}\n")
+    return {"healthcheckPath": svc["health"]}
+
+
 def apply_railway(svc, sha, names, env_id, log):
     service_id = names.get(svc["railway_service"])
     if not service_id:
         log.write(f"railway service {svc['railway_service']} not in the project\n")
         return "blocked"
-    deployment = gql("mutation($s: String!, $e: String!, $c: String!) { "
+    ids = {"s": service_id, "e": env_id}
+    update_instance(ids, health_change(svc, service_instance(ids), log))
+    deployment = gql("mutation DeployCommit($s: String!, $e: String!, $c: String!) { "
                      "serviceInstanceDeployV2(serviceId: $s, environmentId: $e, commitSha: $c) }",
-                     {"s": service_id, "e": env_id, "c": sha})["serviceInstanceDeployV2"]
+                     dict(ids, c=sha))["serviceInstanceDeployV2"]
     log.write(f"deployment {deployment} commit {sha}\n")
     return wait_deployment(deployment, log)
+
+
+def runs(deployment, ref, health):
+    meta = deployment.get("meta") or {}
+    deploy = (meta.get("serviceManifest") or {}).get("deploy") or {}
+    return (bool(deployment.get("id")) and TERMINAL.get(deployment.get("status")) != "fail"
+            and meta.get("image") == ref and deploy.get("healthcheckPath") == health)
 
 
 def apply_railway_image(svc, ref, names, env_id, log):
@@ -171,18 +211,22 @@ def apply_railway_image(svc, ref, names, env_id, log):
         log.write(f"railway service {svc['railway_service']} not in the project\n")
         return "blocked"
     ids = {"s": service_id, "e": env_id}
-    instance = gql("query($s: String!, $e: String!) { "
-                   "serviceInstance(serviceId: $s, environmentId: $e) { source { image } } }",
-                   ids)["serviceInstance"]
-    current = ((instance or {}).get("source") or {}).get("image")
-    if current == ref:
-        log.write(f"unchanged image {ref}\n")
-        return "pass"
-    log.write(f"image {current} -> {ref}\n")
-    gql("mutation($s: String!, $e: String!, $i: ServiceInstanceUpdateInput!) { "
-        "serviceInstanceUpdate(serviceId: $s, environmentId: $e, input: $i) }",
-        dict(ids, i={"source": {"image": ref}}))
-    deployment = gql("mutation($s: String!, $e: String!) { "
+    instance = service_instance(ids)
+    current = (instance.get("source") or {}).get("image")
+    change = health_change(svc, instance, log)
+    if current != ref:
+        log.write(f"image {current} -> {ref}\n")
+        change["source"] = {"image": ref}
+    latest = instance.get("latestDeployment") or {}
+    if not change and runs(latest, ref, svc["health"]):
+        log.write(f"unchanged image {ref} health {svc['health']}, "
+                  f"latest deployment {latest['id']} {latest['status']}\n")
+        return wait_deployment(latest["id"], log)
+    if not change:
+        log.write(f"latest deployment {latest.get('id')} {latest.get('status')} does not run "
+                  f"image {ref} health {svc['health']}, redeploying\n")
+    update_instance(ids, change)
+    deployment = gql("mutation Deploy($s: String!, $e: String!) { "
                      "serviceInstanceDeployV2(serviceId: $s, environmentId: $e) }",
                      ids)["serviceInstanceDeployV2"]
     log.write(f"deployment {deployment} image {ref}\n")
@@ -193,7 +237,7 @@ def wait_deployment(deployment, log):
     deadline = time.monotonic() + int(os.environ.get("ROLLOUT_TIMEOUT", "1800"))
     last = None
     while time.monotonic() < deadline:
-        status = gql("query($id: String!) { deployment(id: $id) { status } }",
+        status = gql("query Deployment($id: String!) { deployment(id: $id) { status } }",
                      {"id": deployment})["deployment"]["status"]
         if status != last:
             log.write(f"{datetime.datetime.now(datetime.UTC):%FT%TZ} {status}\n")
@@ -258,13 +302,13 @@ def apply_box(svc, sha, hosts, log):
 
 
 def main(argv):
-    usage = ("usage: rollout.sh plan|apply --sha <40hex> [--only <svc>,..] [--env beta] "
+    usage = ("usage: rollout.sh plan|apply --sha <40hex> [--only <svc>,..] [--env <manifest environment>] "
              "[--digests <image-digest-map.json>]")
     if not argv or argv[0] not in ("plan", "apply"):
         print(usage, file=sys.stderr)
         return 2
     mode, args = argv[0], argv[1:]
-    opts = {"--sha": None, "--only": None, "--env": "beta", "--digests": None}
+    opts = {"--sha": None, "--only": None, "--env": None, "--digests": None}
     while args:
         if args[0] not in opts or len(args) < 2:
             print(usage, file=sys.stderr)
@@ -275,10 +319,20 @@ def main(argv):
     if not sha or not re.fullmatch(r"[0-9a-f]{40}", sha):
         print("--sha must be a 40-hex commit", file=sys.stderr)
         return 2
+    manifest = os.environ.get("ROLLOUT_MANIFEST", ROOT / "deploy/rollout.kvx")
     try:
-        plan = services(os.environ.get("ROLLOUT_MANIFEST", ROOT / "deploy/rollout.kvx"))
+        plan = services(manifest)
+        meta = manifest_meta(manifest)
     except (Malformed, OSError) as e:
         print(f"malformed manifest: {e}", file=sys.stderr)
+        return 2
+    env = meta.get("environment")
+    if opts["--env"] and env and opts["--env"] != env:
+        print(f"--env {opts['--env']} does not match the manifest environment {env}", file=sys.stderr)
+        return 2
+    env = opts["--env"] or env
+    if mode == "apply" and not env:
+        print("the manifest [meta] names no environment and --env is not given", file=sys.stderr)
         return 2
     if opts["--only"]:
         only = opts["--only"].split(",")
@@ -303,7 +357,7 @@ def main(argv):
         if missing:
             print(f"digest map has no digest for: {','.join(missing)}", file=sys.stderr)
             return 2
-    print(f"rollout {mode} env={opts['--env']} sha={sha}")
+    print(f"rollout {mode} env={env or '-'} sha={sha}")
     for svc in plan:
         print(describe(svc, sha, digests))
     if mode == "plan" or os.environ.get("ROLLOUT_DRY_RUN") == "1":
@@ -311,8 +365,17 @@ def main(argv):
 
     work = [s for s in plan if not (s["target"] == "railway" and s["image"] in STOCK)]
     names = env_id = hosts = None
-    if any(s["target"] in ("railway", "railway-image") for s in work):
-        names, env_id = railway_ids(opts["--env"])
+    hosted = [s for s in work if s["target"] in RAILWAY]
+    if hosted:
+        if not meta.get("project"):
+            print("the manifest [meta] names no Railway project", file=sys.stderr)
+            return 2
+        tcp = [s["name"] for s in hosted if not s["health"].startswith("/")]
+        if tcp:
+            print(f"Railway runs only HTTP health checks, give an HTTP path for: {','.join(tcp)}",
+                  file=sys.stderr)
+            return 2
+        names, env_id = railway_ids(env, meta["project"])
     if any(s["target"] == "box" for s in work):
         hosts = load_hosts()
     day = datetime.datetime.now(datetime.UTC).strftime("%F")

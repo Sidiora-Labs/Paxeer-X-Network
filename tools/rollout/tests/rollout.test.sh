@@ -213,4 +213,105 @@ if "$ledger" "$sha" router box 2026-10-07T10:00:00Z pass 10.1.2.3:/var/log/x >/d
 	fail "ledger accepted evidence outside /root/lx-ops"
 fi
 
-echo "PASS rollout plan (${#want[@]} services), railway-image digests, retired service rejection, manifest rejection, ledger"
+mkdir -p /root/lx-ops/rollout
+replay_logs="$(mktemp -d /root/lx-ops/rollout/replay-test.XXXXXX)"
+trap 'rm -rf "$tmp" "$replay_logs"' EXIT
+(
+	unset ROLLOUT_DRY_RUN
+	export ROLLOUT_LOG_DIR="$replay_logs" ROLLOUT_LEDGER_DIR="$tmp/replay-ledger" ROLLOUT_POLL=0
+	export RAILWAY_API_TOKEN=sentinel-railway-token RAILWAY_PROJECT_ID=p1
+	python3 - "$root" "$here/replay.json" "$tmp" <<'PY'
+import contextlib
+import io
+import json
+import re
+import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+sys.path.insert(0, str(Path(sys.argv[1]) / "tools" / "rollout"))
+import rollout
+
+record = json.loads(Path(sys.argv[2]).read_text())
+tmp = Path(sys.argv[3])
+digests = tmp / "replay-digests.json"
+digests.write_text(json.dumps(record["digests"]))
+pending, seen = [], []
+
+
+class Railway(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        op = re.match(r"\s*(?:query|mutation)\s+(\w+)", body["query"])
+        got = {"op": op and op.group(1), "variables": body["variables"]}
+        seen.append(got)
+        want = pending.pop(0) if pending else None
+        if self.headers.get("Authorization") != "Bearer sentinel-railway-token":
+            reply = {"errors": [{"message": "bad token"}]}
+        elif want is None or {"op": want["op"], "variables": want["variables"]} != got:
+            reply = {"errors": [{"message": f"unexpected request {got}, transcript wants {want}"}]}
+        else:
+            reply = {"data": want["data"]}
+        data = json.dumps(reply).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Railway)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+rollout.API = f"http://127.0.0.1:{server.server_port}/graphql/v2"
+failures = []
+for name, case in record["scenarios"].items():
+    manifest = tmp / f"replay-{name}.kvx"
+    manifest.write_text("\n".join(case["manifest"]) + "\n")
+    rollout.os.environ["ROLLOUT_MANIFEST"] = str(manifest)
+    pending[:] = [dict(c) for c in case["calls"]]
+    seen.clear()
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            code = rollout.main([str(digests) if a == "@digests" else a for a in case["argv"]])
+        except SystemExit as e:
+            code = e.code if isinstance(e.code, int) else 1
+            print(e.code, file=sys.stderr)
+    lines = out.getvalue().splitlines()
+    problems = []
+    if code != case["exit"]:
+        problems.append(f"exit {code}, want {case['exit']}")
+    if pending:
+        problems.append(f"{len(pending)} recorded requests not made, next {pending[0]['op']}")
+    if len(seen) != len(case["calls"]):
+        problems.append(f"made {len(seen)} requests, transcript has {len(case['calls'])}")
+    for want in case.get("out", []):
+        if not any(line.startswith(want + " evidence=") for line in lines):
+            problems.append(f"no outcome line {want!r}")
+    if "err" in case and case["err"] not in err.getvalue().splitlines():
+        problems.append(f"no refusal {case['err']!r}")
+    if code == 2 and any(re.match(r"^(pass|fail|blocked) ", line) for line in lines):
+        problems.append("a refused run applied a service")
+    for line in lines:
+        m = re.match(r"^(pass|fail|blocked) (\S+) evidence=(\S+)$", line)
+        if m and not Path(m.group(3)).is_file():
+            problems.append(f"evidence {m.group(3)} missing")
+    if problems:
+        failures.append(f"{name}: {'; '.join(problems)}\n  stdout: {out.getvalue()!r}\n  stderr: {err.getvalue()!r}")
+server.shutdown()
+ledger = "".join(p.read_text() for p in sorted((tmp / "replay-ledger").glob("*.kvx")))
+outcomes = re.findall(r'outcome = "(\w+)"', ledger)
+want_outcomes = [o.split()[0] for c in record["scenarios"].values() for o in c.get("out", [])]
+if outcomes != want_outcomes:
+    failures.append(f"ledger outcomes {outcomes}, want {want_outcomes}")
+if failures:
+    sys.exit("FAIL: apply replay\n" + "\n".join(failures))
+print(f"apply replay: {len(record['scenarios'])} scenarios")
+PY
+) || fail "apply replay against the recorded Railway transcript"
+
+echo "PASS rollout plan (${#want[@]} services), railway-image digests, retired service rejection, manifest rejection, ledger, apply replay"
