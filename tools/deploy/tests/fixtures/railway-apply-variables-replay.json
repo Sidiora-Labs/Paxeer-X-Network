@@ -1,0 +1,15 @@
+[
+ {"op": "Project", "variables": {"id": "proj-test"}, "data": {"project": {
+  "services": {"edges": [{"node": {"id": "svc-charts", "name": "charts"}}]},
+  "environments": {"edges": [{"node": {"id": "env-staging", "name": "staging"}}, {"node": {"id": "env-prod", "name": "production"}}]}}}},
+ {"op": "Variables", "variables": {"p": "proj-test", "e": "env-prod", "s": "svc-charts"}, "data": {"variables": {
+  "NODE_ENV": "production",
+  "RUNTIME_PROFILE": "platform",
+  "BIND_ADDRESS": "0.0.0.0",
+  "SECRETS_PROVIDER": "env",
+  "CHAIN_ID": "125",
+  "DATABASE_URL": "postgresql://charts:live-db-password-31@postgres.railway.internal:5432/railway",
+  "REDIS_URL": "redis://default:live-redis-password-32@redis.railway.internal:6379",
+  "RPC_URL": "https://rpc.example.invalid",
+  "CHART_FEATURES_CONFIG_FILE": "/app/prod/chart-features.json"}}}
+]
