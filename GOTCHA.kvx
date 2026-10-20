@@ -8580,3 +8580,8 @@ detail = "data/state_commit/memiavl/current is a symlink to the latest snapshot 
 area = "tools/release/init-chain"
 summary = "init-chain genesis lacks the uhpx exponent 6 unit"
 detail = "The v6.12.0 upgrade pointer check panics with 'uhpx exponent 0, want 6' on a chain seeded by init-chain.sh, because the seeded denom metadata has only the exponent 0 unit."
+
+[gotcha.1802]
+area = "tools/release/tests"
+summary = "reproducible.test.sh runs three full release builds"
+detail = "The reproducibility test takes well over thirty minutes and deletes its release directories on exit, so the SHA256SUMS listings printed in the log are the only record of which artifacts differed."

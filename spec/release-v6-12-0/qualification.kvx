@@ -2452,3 +2452,11 @@ exit = 1
 log = fleet/logs/release-7.3.99-verify-2.log
 observed = Indexing the loopback chain from genesis runs at about nine blocks a second with repeated two-second RPC timeouts and outruns the go test timeout, and starting the indexer mid-chain fails with a missing position projection row once a funding settlement touches a position opened before the start height.
 assumption = The test is complete and the rerun needs a fresh loopback chain whose head is shortly past activation and one funding hour, on a quiet box.
+
+[finding.8.4.3-paths-remapped]
+revision = c9bb60e88
+command = bash tools/release/tests/reproducible.test.sh
+exit = 1
+log = fleet/logs/release-8.4.3-verify-1.log
+observed = Two builds from the same checkout are identical and the clean native rebuild matches, but a build from a checkout at a different path differs in every built artifact starting with the native library sums, so paths_remapped fails.
+assumption = The release build script's path remapping does not yet cover the native library build; it is fixed in the build script in a follow-up and this gate rerun.

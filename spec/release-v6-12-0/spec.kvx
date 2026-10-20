@@ -29308,7 +29308,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.3]
 title = "Make the reproducibility check rebuild the kernel libraries from clean"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 4
 requires = ["8.4.2"]
