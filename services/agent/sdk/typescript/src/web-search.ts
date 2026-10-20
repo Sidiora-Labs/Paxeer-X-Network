@@ -320,7 +320,7 @@ export class WebSearchClient {
     const endpoint = new URL(options.endpoint);
     if (!["https:", "http:"].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash
       || (endpoint.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname))) throw new WebSearchError("invalid-endpoint");
-    if (!/^layerx:[A-Za-z0-9._-]{1,64}$/u.test(options.network)) throw new WebSearchError("invalid-network");
+    if (!/^eip155:[1-9][0-9]{0,63}$/u.test(options.network)) throw new WebSearchError("invalid-network");
     if (!hex32(options.nativeAsset) || options.nativeAsset === ZERO32) throw new WebSearchError("invalid-native-asset");
     for (const [currency, terms] of Object.entries(options.assets)) {
       if (!(WEB_SEARCH_CURRENCIES as readonly string[]).includes(currency) || terms === undefined

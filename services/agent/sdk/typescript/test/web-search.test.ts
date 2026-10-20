@@ -148,7 +148,7 @@ function client(endpoint: string, payer: WebSearchPayer, key = trustedKey): WebS
   const assets = Object.fromEntries(currencies.map((currency) => [currency, { assetId: configured[currency].asset_id, maxAmount: BigInt(configured[currency].price) }]));
   return new WebSearchClient({
     endpoint,
-    network: "layerx:1",
+    network: "eip155:1337",
     nativeAsset: configured.PAX.asset_id,
     assets,
     payer,
@@ -211,7 +211,7 @@ for (const [position, currency] of currencies.entries()) {
   assert.equal(fetched.digest, vector.digest);
   const settlement = settlementOf(exchange[paid]!);
   assert.deepEqual(fetched.settlement, {
-    scheme: "exact", currency, network: "layerx:1", asset: configured[currency].asset_id, amount: configured[currency].price,
+    scheme: "exact", currency, network: "eip155:1337", asset: configured[currency].asset_id, amount: configured[currency].price,
     payer: settlement["payer"], receiptDigest: (settlement["extensions"] as { layerx: Json }).layerx["receiptDigest"], transaction: settlement["transaction"],
   });
   await sidecar.close();
@@ -231,7 +231,7 @@ for (const [position, currency] of currencies.entries()) {
     .find((candidate) => candidate["scheme"] === "metered" && ((candidate["extra"] as Json)["layerx"] as Json)["currency"] === "SID")!;
   assert.equal(layerx["purposeHash"], ((offer["extra"] as Json)["layerx"] as Json)["purposeHash"]);
   assert.deepEqual(found.settlement, {
-    scheme: "metered", currency: "SID", network: "layerx:1", asset: configured.SID.asset_id, amount: configured.SID.price,
+    scheme: "metered", currency: "SID", network: "eip155:1337", asset: configured.SID.asset_id, amount: configured.SID.price,
     payer: settlement["payer"], receiptDigest: layerx["receiptDigest"], transaction: settlement["transaction"],
   });
   await sidecar.close();
@@ -359,7 +359,7 @@ for (const currency of currencies) {
   const tampered = await replay(steps);
   await refused(client(tampered.endpoint, meteredSid).search("paxeer"), "offer-payer-mismatch");
   await refused(new WebSearchClient({
-    endpoint: sidecar.endpoint, network: "layerx:1", nativeAsset: configured.PAX.asset_id,
+    endpoint: sidecar.endpoint, network: "eip155:1337", nativeAsset: configured.PAX.asset_id,
     assets: { SID: { assetId: configured.SID.asset_id, maxAmount: BigInt(configured.SID.price) - 1n } },
     payer: meteredSid, authority: async (receipt: Uint8Array) => batchFacts(receipt, trustedKey), protocolVersion: 3, now: () => 1_000_000_000n,
   }).search("paxeer"), "offer-price-exceeded");

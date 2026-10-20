@@ -966,7 +966,7 @@ fn web_scoped_document(root: &Path, endpoint: &str, web: Option<Value>) -> Strin
 fn web_section() -> Value {
     json!({
         "endpoint": "http://127.0.0.1:9450",
-        "network": "layerx:1",
+        "network": "eip155:1337",
         "sequencer_public_key": "5e".repeat(32),
         "timeout_ms": 5_000,
         "pending_attempts": 3,

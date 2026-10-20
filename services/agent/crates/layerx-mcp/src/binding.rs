@@ -1120,9 +1120,12 @@ fn web_binding(declared: &Value) -> Result<WebBinding, BindingError> {
     }
     if !binding
         .network
-        .strip_prefix("layerx:")
-        .is_some_and(|network| {
-            !network.is_empty() && network.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        .strip_prefix("eip155:")
+        .is_some_and(|chain_id| {
+            !chain_id.is_empty()
+                && chain_id.len() <= 64
+                && !chain_id.starts_with('0')
+                && chain_id.bytes().all(|byte| byte.is_ascii_digit())
         })
     {
         return Err(malformed("field web.network is invalid"));

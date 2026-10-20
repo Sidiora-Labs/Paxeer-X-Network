@@ -294,7 +294,7 @@ def _client(
 ) -> WebSearchClient:
     return WebSearchClient(
         endpoint,
-        "layerx:1",
+        "eip155:1337",
         ASSETS["PAX"]["asset_id"],
         assets if assets is not None else _terms(),
         payer,
@@ -308,7 +308,7 @@ def _client(
 def _unbounded_client(endpoint: str, payer: _Payer) -> WebSearchClient:
     return WebSearchClient(
         endpoint,
-        "layerx:1",
+        "eip155:1337",
         ASSETS["PAX"]["asset_id"],
         _terms(),
         payer,
@@ -323,7 +323,7 @@ def _bounded_client(
 ) -> WebSearchClient:
     return WebSearchClient(
         endpoint,
-        "layerx:1",
+        "eip155:1337",
         ASSETS["PAX"]["asset_id"],
         _terms(),
         payer,
@@ -539,7 +539,7 @@ class WebSearchClientTest(unittest.TestCase):
                     fetched.settlement.currency,
                     fetched.settlement.network,
                 ),
-                ("exact", currency, "layerx:1"),
+                ("exact", currency, "eip155:1337"),
             )
             self.assertEqual(fetched.settlement.payer, settlement["payer"])
             self.assertEqual(fetched.settlement.transaction, settlement["transaction"])
@@ -706,7 +706,7 @@ class WebSearchClientTest(unittest.TestCase):
             self._refused(
                 lambda: WebSearchClient(
                     sidecar.endpoint,
-                    "layerx:1",
+                    "eip155:1337",
                     ASSETS["PAX"]["asset_id"],
                     _terms(),
                     _exact_usdc(),

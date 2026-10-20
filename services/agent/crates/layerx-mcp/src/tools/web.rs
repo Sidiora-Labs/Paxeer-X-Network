@@ -320,8 +320,11 @@ impl WebConfig {
         if !valid_payer(payer_did) {
             return Err(WebToolError::Configuration("payer_did"));
         }
-        if !network.strip_prefix("layerx:").is_some_and(|rest| {
-            !rest.is_empty() && rest.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        if !network.strip_prefix("eip155:").is_some_and(|rest| {
+            !rest.is_empty()
+                && rest.len() <= 64
+                && !rest.starts_with('0')
+                && rest.bytes().all(|byte| byte.is_ascii_digit())
         }) {
             return Err(WebToolError::Configuration("network"));
         }

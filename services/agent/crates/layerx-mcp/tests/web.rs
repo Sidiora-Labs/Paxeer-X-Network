@@ -40,7 +40,7 @@ use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
 use sha3::Keccak256;
 
-const NETWORK: &str = "layerx:1";
+const NETWORK: &str = "eip155:1337";
 const RECORDED_FETCH_URL: &str = "https://paxeer.app/data.json";
 const RECORDED_FETCH_TARGET: &str = "/fetch?url=https%3A%2F%2Fpaxeer.app%2Fdata.json";
 const SEARCH_RECEIPT_DIGEST: &str =
@@ -1254,7 +1254,7 @@ fn configuration_fails_closed_naming_the_field() {
         refused(WebConfig::new(
             "http://127.0.0.1:1",
             &did,
-            "eip155:1",
+            "layerx:1",
             key,
             second,
             1

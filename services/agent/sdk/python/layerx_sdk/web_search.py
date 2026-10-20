@@ -46,7 +46,7 @@ _ZERO32 = "00" * 32
 _MEDIA_TYPE = re.compile(r"[a-z0-9!#$&^_.+-]{1,127}/[a-z0-9!#$&^_.+-]{1,127}")
 _AMOUNT = re.compile(r"[1-9][0-9]{0,38}")
 _ERROR = re.compile(r"[a-z0-9_]{1,64}")
-_NETWORK = re.compile(r"layerx:[A-Za-z0-9._-]{1,64}")
+_NETWORK = re.compile(r"eip155:[1-9][0-9]{0,63}")
 _DID = re.compile(r"[a-z0-9._:-]{1,255}")
 _BASE64 = re.compile(r"[A-Za-z0-9+/]+={0,2}")
 _MAX_REPLY_BYTES = 9 * 1048576
