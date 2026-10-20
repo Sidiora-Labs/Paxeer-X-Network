@@ -2492,3 +2492,11 @@ exit = 0
 log = "release-8.4.20-verify-1.log"
 observed = "The programme checks, driver check functions and decoding tests were already in place from an earlier commit; 19 offline decoding cases pass and py_compile plus bash -n exit 0."
 assumption = "The live programme run against four rehearsal nodes remains covered by finding.fix-rehearsal-merge and the 8.4.12 rehearsal env."
+
+[finding.8.4.13-rehearsal-env-required]
+revision = "6dfd911b7"
+command = "bash tools/release/rehearse-v6120.sh --env-file .env.rehearsal-v6120 --receipt tools/release/rollout/v6.12.0/rehearsal.json"
+exit = 1
+log = "release-8.4.12-verify-2.log"
+observed = "The eight rehearsal cases of this task are present in rehearse.test.sh and the driver is complete, but the run needs a filled rehearsal env over a stopped mainnet data copy with the operator keys, which the harness does not hold."
+assumption = "The candidate build and the full rehearsal run qualify on the host that holds the env; nothing further is written for this task."

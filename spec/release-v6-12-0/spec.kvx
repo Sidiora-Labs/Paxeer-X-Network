@@ -29582,7 +29582,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.13]
 title = "Run the v6.12.0 upgrade rehearsal with its rollback leg on the release candidate"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 4
 requires = ["8.4.2", "8.4.12", "8.4.20"]
@@ -29636,7 +29636,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.15]
 title = "One runner for every release test"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 4
 requires = ["8.4.1", "8.4.2", "8.4.3", "8.4.4", "8.4.5", "8.4.6", "8.4.7", "8.4.8", "8.4.9", "8.4.10", "8.4.11", "8.4.12", "8.4.16", "8.4.17", "8.4.19", "8.4.20"]
