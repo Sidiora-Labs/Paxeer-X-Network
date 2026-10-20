@@ -10,10 +10,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Sidiora-Technologies/KindleLaunch/core/indexer/internal/decode"
 	"github.com/Sidiora-Technologies/KindleLaunch/core/indexer/internal/publisher"
 	"github.com/Sidiora-Technologies/KindleLaunch/core/indexer/internal/receipt"
 	"github.com/Sidiora-Technologies/KindleLaunch/core/indexer/internal/store"
 	"github.com/Sidiora-Technologies/KindleLaunch/shared/accounting"
+	"github.com/Sidiora-Technologies/KindleLaunch/shared/config/deployment"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/jackc/pgx/v5"
@@ -30,77 +32,95 @@ func qualifiedCreationFacts(ctx context.Context, receipts []*receipt.QualifiedRe
 		if err != nil {
 			return nil, err
 		}
-		for _, env := range events {
-			if env == nil || env.Event == nil || env.EmitterRole != "SidioraFactory" || env.EventName != "MarketCreated" {
+		receiptFacts, err := creationFacts(events, timestamp, func(a common.Address) (accounting.Provenance, error) { return q.SourceProvenance(ctx, a) })
+		if err != nil {
+			return nil, err
+		}
+		facts = append(facts, receiptFacts...)
+	}
+	return facts, nil
+}
+
+func tokenMirror(env *decode.DecodedEnvelope) bool {
+	if env == nil || env.Event == nil || env.EventName != "TokenDeployed" {
+		return false
+	}
+	return env.EmitterRole == "EventEmitter" || (env.EmitterRole == decode.LaunchpadPrecompileRole && strings.EqualFold(env.Raw.Emitter, deployment.LaunchpadPrecompileAddress))
+}
+
+func creationFacts(events []*decode.DecodedEnvelope, timestamp int64, provenance func(common.Address) (accounting.Provenance, error)) ([]store.CreationFact, error) {
+	facts := []store.CreationFact{}
+	var err error
+	for _, env := range events {
+		if env == nil || env.Event == nil || env.EmitterRole != "SidioraFactory" || env.EventName != "MarketCreated" {
+			continue
+		}
+		args := env.Event.Args
+		get := func(key string) (string, error) {
+			v, ok := args[key].(string)
+			if !ok {
+				return "", store.ErrIntegrity
+			}
+			return v, nil
+		}
+		f := store.CreationFact{Factory: env.Raw.Emitter, Position: accounting.SourcePosition{ChainID: "125", Height: strconv.FormatUint(env.Raw.Order.Block, 10), TransactionIndex: strconv.FormatUint(uint64(env.Raw.Order.Transaction), 10), LogIndex: strconv.FormatUint(uint64(env.Raw.Order.Log), 10), TransactionHash: env.Raw.Identity.TransactionHash, BlockHash: env.Raw.Identity.BlockHash}, BlockTimestampSeconds: strconv.FormatInt(timestamp, 10)}
+		if f.Token, err = get("token"); err != nil {
+			return nil, err
+		}
+		if f.Pool, err = get("pool"); err != nil {
+			return nil, err
+		}
+		if f.Creator, err = get("creator"); err != nil {
+			return nil, err
+		}
+		if f.Optical, err = get("optical"); err != nil {
+			return nil, err
+		}
+		if f.NFTID, err = get("nftId"); err != nil {
+			return nil, err
+		}
+		f.Provenance, err = provenance(common.HexToAddress(f.Factory))
+		if err != nil {
+			return nil, err
+		}
+		if f.Provenance.ABIRevision != env.ABIRevision {
+			return nil, store.ErrIntegrity
+		}
+		for _, mirror := range events {
+			if !tokenMirror(mirror) {
 				continue
 			}
-			args := env.Event.Args
-			get := func(key string) (string, error) {
-				v, ok := args[key].(string)
-				if !ok {
-					return "", store.ErrIntegrity
-				}
-				return v, nil
+			m := mirror.Event.Args
+			if m["token"] != f.Token || m["pool"] != f.Pool || m["creator"] != f.Creator {
+				continue
 			}
-			f := store.CreationFact{Factory: env.Raw.Emitter, Position: accounting.SourcePosition{ChainID: "125", Height: strconv.FormatUint(env.Raw.Order.Block, 10), TransactionIndex: strconv.FormatUint(uint64(env.Raw.Order.Transaction), 10), LogIndex: strconv.FormatUint(uint64(env.Raw.Order.Log), 10), TransactionHash: env.Raw.Identity.TransactionHash, BlockHash: env.Raw.Identity.BlockHash}, BlockTimestampSeconds: strconv.FormatInt(timestamp, 10)}
-			if f.Token, err = get("token"); err != nil {
-				return nil, err
-			}
-			if f.Pool, err = get("pool"); err != nil {
-				return nil, err
-			}
-			if f.Creator, err = get("creator"); err != nil {
-				return nil, err
-			}
-			if f.Optical, err = get("optical"); err != nil {
-				return nil, err
-			}
-			if f.NFTID, err = get("nftId"); err != nil {
-				return nil, err
-			}
-			f.Provenance, err = q.SourceProvenance(ctx, common.HexToAddress(f.Factory))
-			if err != nil {
-				return nil, err
-			}
-			if f.Provenance.ABIRevision != env.ABIRevision {
+			if f.Metadata != nil || mirror.Raw.Identity.TransactionHash != f.Position.TransactionHash || mirror.Raw.Identity.BlockHash != f.Position.BlockHash || m["timestamp"] != f.BlockTimestampSeconds || m["blockNumber"] != f.Position.Height {
 				return nil, store.ErrIntegrity
 			}
-			for _, mirror := range events {
-				if mirror == nil || mirror.Event == nil || mirror.EmitterRole != "EventEmitter" || mirror.EventName != "TokenDeployed" {
-					continue
-				}
-				m := mirror.Event.Args
-				if m["token"] != f.Token || m["pool"] != f.Pool || m["creator"] != f.Creator {
-					continue
-				}
-				if f.Metadata != nil || mirror.Raw.Identity.TransactionHash != f.Position.TransactionHash || mirror.Raw.Identity.BlockHash != f.Position.BlockHash || m["timestamp"] != f.BlockTimestampSeconds || m["blockNumber"] != f.Position.Height {
-					return nil, store.ErrIntegrity
-				}
-				name, nok := m["name"].(string)
-				symbol, sok := m["symbol"].(string)
-				decimals, dok := m["decimals"].(string)
-				supply, supplyOK := m["totalSupply"].(string)
-				if !nok || !sok || !dok || !supplyOK {
-					return nil, store.ErrIntegrity
-				}
-				d, parseErr := strconv.ParseUint(decimals, 10, 8)
-				if parseErr != nil {
-					return nil, parseErr
-				}
-				if _, parseErr = accounting.Uint(supply); parseErr != nil {
-					return nil, parseErr
-				}
-				proof, proofErr := q.SourceProvenance(ctx, common.HexToAddress(mirror.Raw.Emitter))
-				if proofErr != nil {
-					return nil, proofErr
-				}
-				if proof.ABIRevision != mirror.ABIRevision {
-					return nil, store.ErrIntegrity
-				}
-				f.Metadata = &store.TokenCreationMetadata{Emitter: mirror.Raw.Emitter, Name: name, Symbol: symbol, Decimals: uint8(d), TotalSupply: supply, Position: accounting.SourcePosition{ChainID: "125", Height: strconv.FormatUint(mirror.Raw.Order.Block, 10), TransactionIndex: strconv.FormatUint(uint64(mirror.Raw.Order.Transaction), 10), LogIndex: strconv.FormatUint(uint64(mirror.Raw.Order.Log), 10), TransactionHash: mirror.Raw.Identity.TransactionHash, BlockHash: mirror.Raw.Identity.BlockHash}, Provenance: proof}
+			name, nok := m["name"].(string)
+			symbol, sok := m["symbol"].(string)
+			decimals, dok := m["decimals"].(string)
+			supply, supplyOK := m["totalSupply"].(string)
+			if !nok || !sok || !dok || !supplyOK {
+				return nil, store.ErrIntegrity
 			}
-			facts = append(facts, f)
+			d, parseErr := strconv.ParseUint(decimals, 10, 8)
+			if parseErr != nil {
+				return nil, parseErr
+			}
+			if _, parseErr = accounting.Uint(supply); parseErr != nil {
+				return nil, parseErr
+			}
+			proof, proofErr := provenance(common.HexToAddress(mirror.Raw.Emitter))
+			if proofErr != nil {
+				return nil, proofErr
+			}
+			if proof.ABIRevision != mirror.ABIRevision {
+				return nil, store.ErrIntegrity
+			}
+			f.Metadata = &store.TokenCreationMetadata{Emitter: mirror.Raw.Emitter, Name: name, Symbol: symbol, Decimals: uint8(d), TotalSupply: supply, Position: accounting.SourcePosition{ChainID: "125", Height: strconv.FormatUint(mirror.Raw.Order.Block, 10), TransactionIndex: strconv.FormatUint(uint64(mirror.Raw.Order.Transaction), 10), LogIndex: strconv.FormatUint(uint64(mirror.Raw.Order.Log), 10), TransactionHash: mirror.Raw.Identity.TransactionHash, BlockHash: mirror.Raw.Identity.BlockHash}, Provenance: proof}
 		}
+		facts = append(facts, f)
 	}
 	return facts, nil
 }
