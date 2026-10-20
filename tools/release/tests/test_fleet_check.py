@@ -1,22 +1,31 @@
 #!/usr/bin/env python3
-import argparse
 import contextlib
 import hashlib
 import io
-import ipaddress
+import http.server
 import json
+import os
 from pathlib import Path
+import random
+import re
+import socket
+import subprocess
 import sys
 import tempfile
+import threading
+import time
+import tomllib
 import unittest
-import urllib.parse
+import urllib.request
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools/release"))
 import fleet_check as fleet
 
-LOCAL_ENV = ROOT / ".env.fleet-check-local"
+LOCAL_VERSION = "v6.11.0"
+CHAIN_ID = "fleet_9000-1"
+CGO_LDFLAGS = "-L/root/Layerx-protocol/build -L/root/Layerx-protocol/programs/target/debug -L/root/Layerx-protocol/programs/target/release"
 VIEWS = json.loads((ROOT / "tools/release/fleet-views.json").read_text())
 
 
@@ -232,7 +241,7 @@ class FleetUnitTests(unittest.TestCase):
                         fleet.write_receipt(path, {**receipt, key: value})
                     self.assertEqual(path.read_bytes(), original)
 
-    def test_services_phase(self):
+    def test_service_readiness_units(self):
         outcome = fleet.Outcome()
         fleet.service_readiness([200, 200, 503, 200], outcome)
         self.assertEqual(outcome.finish()["services_ready"], 3)
@@ -341,66 +350,317 @@ class FleetUnitTests(unittest.TestCase):
         self.assertEqual(outcome.receipt["precompiles_served"], 7)
 
 
+LOOPBACK = "127.0.0.1"
+NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def free_port(taken):
+    for _ in range(1000):
+        port = random.randint(30001, 60999)
+        if port in taken:
+            continue
+        with socket.socket() as probe:
+            try:
+                probe.bind((LOOPBACK, port))
+            except OSError:
+                continue
+        taken.add(port)
+        return port
+    raise AssertionError("LOCAL_PORTS_EXHAUSTED")
+
+
+def edit_toml(path, changes):
+    section = ""
+    seen = set()
+    lines = []
+    for line in path.read_text().splitlines():
+        heading = re.fullmatch(r"\s*\[([^]]+)\]\s*", line)
+        if heading:
+            section = heading[1]
+        key = re.match(r"\s*([\w-]+)\s*=", line)
+        pair = (section, key[1]) if key else None
+        if pair in changes:
+            line = f"{key[1]} = {changes[pair]}"
+            seen.add(pair)
+        lines.append(line)
+    if seen != set(changes):
+        raise AssertionError(f"TOML_KEYS_MISSING {sorted(set(changes) - seen)}")
+    text = "\n".join(lines) + "\n"
+    tomllib.loads(text)
+    path.write_text(text)
+
+
+def chain_ready(consensus_rpc):
+    try:
+        with NO_PROXY.open(consensus_rpc + "/status", timeout=2) as response:
+            sync = json.load(response)["sync_info"]
+        return sync["catching_up"] is False and int(sync["latest_block_height"]) > 0
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def readiness_service(upstream, build_id=None):
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz/ready":
+                code = 200 if chain_ready(upstream) else 503
+                body = json.dumps({"status": "ok" if code == 200 else "degraded"})
+            elif self.path == "/api/build-id" and build_id is not None:
+                code, body = 200, json.dumps({"buildId": build_id})
+            else:
+                code, body = 404, "{}"
+            data = body.encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer((LOOPBACK, 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
 class LocalChainTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        if not LOCAL_ENV.is_file():
-            raise AssertionError(
-                "LOCAL_CHAIN_INPUT_MISSING: supply --local-env with a filled rollout env for a real upgraded local single-node paxd chain and real data services; no live qualification was performed"
+        cls.work = tempfile.TemporaryDirectory(prefix="fleet-check-")
+        work = Path(cls.work.name)
+        cls.bin_dir = work / "bin"
+        cls.bin_dir.mkdir()
+        paxd = cls.bin_dir / "paxd"
+        given = os.environ.get("PAXD_BIN")
+        if given:
+            paxd.symlink_to(Path(given).resolve())
+        else:
+            subprocess.run(
+                [
+                    "/usr/local/go/bin/go",
+                    "build",
+                    "-trimpath",
+                    "-buildvcs=false",
+                    "-tags",
+                    "netgo ledger",
+                    "-ldflags",
+                    "-checklinkname=0 -X github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version.Version="
+                    + LOCAL_VERSION,
+                    "-o",
+                    str(paxd),
+                    "./daemon/paxd",
+                ],
+                cwd=ROOT,
+                env={**os.environ, "CGO_LDFLAGS": CGO_LDFLAGS},
+                check=True,
             )
-        cls.env = fleet.read_env(LOCAL_ENV)
-        nodes, _, _, _, _ = fleet.load_config(cls.env, "post")
-        if len(nodes) != 1:
-            raise AssertionError("LOCAL_CHAIN_REQUIRES_ONE_NODE")
-        for node in nodes:
-            for url in (node.consensus_rpc, node.evm_rpc):
-                if not ipaddress.ip_address(
-                    urllib.parse.urlsplit(url).hostname
-                ).is_loopback:
-                    raise AssertionError("LOCAL_CHAIN_REQUIRES_LOOPBACK")
-        cls.nodes = nodes
+        cls.version = subprocess.run(
+            [str(paxd), "version"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        home = work / "home"
 
-    def test_post_on_local_paxd(self):
-        with tempfile.TemporaryDirectory() as directory:
-            receipt = Path(directory) / "post.json"
-            self.assertEqual(
-                fleet.main(
-                    [
-                        "--env-file",
-                        str(LOCAL_ENV),
-                        "--phase",
-                        "post",
-                        "--receipt",
-                        str(receipt),
-                    ]
-                ),
-                0,
-            )
-            value = json.loads(receipt.read_text())
-            self.assertEqual(value["result"], "pass")
-            self.assertEqual((value["nodes_checked"], value["nodes_passed"]), (1, 1))
-            self.assertEqual(value["precompiles_served"], 8)
-            self.assertEqual(value["markets"], 18)
-            self.assertEqual(value["oracle_fresh"], 18)
-            self.assertEqual(value["feed_keys"], 1)
+        def paxd_run(*args):
+            return subprocess.run(
+                [str(paxd), *args, "--home", str(home)],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
 
-    def test_services_phase_on_local_services(self):
-        urls = fleet.required(self.env, "DATA_SERVICE_URLS").split()
-        urls.append(fleet.required(self.env, "APP_URL"))
-        for url in urls:
-            self.assertTrue(
-                ipaddress.ip_address(urllib.parse.urlsplit(url).hostname).is_loopback
+        paxd_run("init", "fleet", "--chain-id", CHAIN_ID, "--mode", "validator")
+        paxd_run("keys", "add", "operator", "--keyring-backend", "test")
+        address = paxd_run(
+            "keys", "show", "operator", "-a", "--keyring-backend", "test"
+        ).strip()
+        genesis_path = home / "config/genesis.json"
+        denom = json.loads(genesis_path.read_text())["app_state"]["staking"]["params"][
+            "bond_denom"
+        ]
+        paxd_run("add-genesis-account", address, "100000000000000000000" + denom)
+        paxd_run(
+            "gentx",
+            "operator",
+            "1000000000000000000" + denom,
+            "--chain-id",
+            CHAIN_ID,
+            "--keyring-backend",
+            "test",
+        )
+        genesis = json.loads(genesis_path.read_text())
+        public_key = json.loads((home / "config/priv_validator_key.json").read_text())[
+            "pub_key"
+        ]
+        genesis["validators"] = [{"power": "1000000000000", "pub_key": public_key}]
+        genesis["app_state"]["staking"]["params"][
+            "max_voting_power_ratio"
+        ] = "1.000000000000000000"
+        genesis_path.write_text(json.dumps(genesis))
+        paxd_run("collect-gentxs")
+        paxd_run("validate-genesis")
+        taken = set()
+        rpc, peer, http_port, ws, grpc = (free_port(taken) for _ in range(5))
+        edit_toml(
+            home / "config/config.toml",
+            {
+                ("rpc", "laddr"): json.dumps(f"tcp://{LOOPBACK}:{rpc}"),
+                ("rpc", "pprof-laddr"): '""',
+                ("p2p", "laddr"): json.dumps(f"tcp://{LOOPBACK}:{peer}"),
+                ("p2p", "persistent-peers"): '""',
+                ("p2p", "bootstrap-peers"): '""',
+                ("consensus", "create-empty-blocks"): "true",
+                ("consensus", "create-empty-blocks-interval"): '"10ms"',
+                ("consensus", "unsafe-commit-timeout-override"): '"10ms"',
+            },
+        )
+        edit_toml(
+            home / "config/app.toml",
+            {
+                ("", "minimum-gas-prices"): json.dumps("0" + denom),
+                ("api", "enable"): "false",
+                ("grpc", "enable"): "true",
+                ("grpc", "address"): json.dumps(f"{LOOPBACK}:{grpc}"),
+                ("grpc-web", "enable"): "false",
+                ("evm", "http_enabled"): "true",
+                ("evm", "http_address"): json.dumps(LOOPBACK),
+                ("evm", "http_port"): str(http_port),
+                ("evm", "ws_enabled"): "true",
+                ("evm", "ws_port"): str(ws),
+            },
+        )
+        cls.consensus_rpc = f"http://{LOOPBACK}:{rpc}"
+        cls.evm_rpc = f"http://{LOOPBACK}:{http_port}"
+        cls.dead_rpc = f"http://{LOOPBACK}:{free_port(taken)}"
+        cls.servers = []
+        cls.log = open(work / "paxd.log", "wb")
+        cls.process = subprocess.Popen(
+            [str(paxd), "start", "--home", str(home)],
+            stdout=cls.log,
+            stderr=subprocess.STDOUT,
+        )
+        deadline = time.monotonic() + 180
+        while not chain_ready(cls.consensus_rpc):
+            if cls.process.poll() is not None or time.monotonic() > deadline:
+                tail = (work / "paxd.log").read_text(errors="replace")[-4000:]
+                cls.tearDownClass()
+                raise AssertionError("LOCAL_CHAIN_NOT_READY\n" + tail)
+            time.sleep(0.2)
+
+    @classmethod
+    def tearDownClass(cls):
+        for server in cls.servers:
+            server.shutdown()
+            server.server_close()
+        cls.process.terminate()
+        try:
+            cls.process.wait(60)
+        except subprocess.TimeoutExpired:
+            cls.process.kill()
+            cls.process.wait()
+        cls.log.close()
+        cls.work.cleanup()
+
+    def write_env(self, values):
+        path = Path(self.work.name) / "inputs.env"
+        path.write_text("".join(f'{key}="{value}"\n' for key, value in values.items()))
+        return path
+
+    def chain_env(self):
+        inventory = Path(self.work.name) / "inventory.json"
+        inventory.write_text(
+            json.dumps(
+                {
+                    "previous_version": LOCAL_VERSION,
+                    "nodes": [
+                        {
+                            "role": "validator",
+                            "consensus_rpc": self.consensus_rpc,
+                            "evm_rpc": self.evm_rpc,
+                        }
+                    ],
+                }
             )
-        outcome = fleet.Outcome()
-        fleet.check_services(self.env, outcome)
-        self.assertEqual(outcome.errors, [])
-        self.assertEqual(outcome.finish()["result"], "pass")
-        self.assertEqual(outcome.receipt["services_ready"], len(urls) - 1)
+        )
+        return {
+            "HALT_HEIGHT": "1000000",
+            "CHAIN_ID": CHAIN_ID,
+            "BIN_DIR": str(self.bin_dir),
+            "INVENTORY_FILE": str(inventory),
+        }
+
+    def run_main(self, env, phase):
+        receipt = Path(self.work.name) / f"{phase}.json"
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(
+            io.StringIO()
+        ):
+            code = fleet.main(
+                [
+                    "--env-file",
+                    str(self.write_env(env)),
+                    "--phase",
+                    phase,
+                    "--receipt",
+                    str(receipt),
+                ]
+            )
+        text = receipt.read_text()
+        value = json.loads(text)
+        self.assertLessEqual(set(value), fleet.RECEIPT_KEYS)
+        self.assertNotRegex(text, r":\d+|\d+\.\d+\.\d+\.\d+")
+        return code, value, stderr.getvalue().splitlines()
+
+    def test_preflight_on_local_paxd(self):
+        self.assertEqual(self.version, LOCAL_VERSION)
+        code, value, errors = self.run_main(self.chain_env(), "preflight")
+        self.assertEqual(errors, [])
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            value,
+            {
+                "version": fleet.VERSION,
+                "plan": fleet.VERSION,
+                "nodes_checked": 1,
+                "nodes_passed": 1,
+                "result": "pass",
+            },
+        )
+
+    def test_version_mismatch_on_local_paxd(self):
+        code, value, errors = self.run_main(self.chain_env(), "validators")
+        self.assertEqual(code, 1)
+        self.assertIn("node 0 version: VERSION_MISMATCH", errors)
+        self.assertTrue(any(line.startswith("node 0 applied: ") for line in errors))
+        self.assertEqual((value["nodes_checked"], value["nodes_passed"]), (1, 0))
+        self.assertEqual(value["result"], "fail")
+
+    def test_services_phase(self):
+        live = [readiness_service(self.consensus_rpc) for _ in range(3)]
+        dead = readiness_service(self.dead_rpc)
+        app = readiness_service(self.consensus_rpc, self.version)
+        self.servers.extend([*live, dead, app])
+
+        def url(server):
+            return f"http://{LOOPBACK}:{server.server_address[1]}"
+
+        env = {
+            "DATA_SERVICE_URLS": " ".join(url(server) for server in [*live, dead]),
+            "APP_URL": url(app),
+            "APP_BUILD_ID": self.version,
+        }
+        code, value, errors = self.run_main(env, "services")
+        self.assertEqual(code, 1)
+        self.assertEqual(errors, ["service 3: SERVICE_HTTP_503"])
+        self.assertEqual(value["services_ready"], 3)
+        self.assertEqual(value["result"], "fail")
+        env["DATA_SERVICE_URLS"] = " ".join(url(server) for server in live)
+        code, value, errors = self.run_main(env, "services")
+        self.assertEqual((code, errors), (0, []))
+        self.assertEqual((value["services_ready"], value["result"]), (3, "pass"))
+        env["APP_BUILD_ID"] = fleet.VERSION
+        code, value, errors = self.run_main(env, "services")
+        self.assertEqual((code, errors), (1, ["application: APP_BUILD_ID_MISMATCH"]))
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--local-env", type=Path, default=LOCAL_ENV)
-    arguments, remaining = parser.parse_known_args()
-    LOCAL_ENV = arguments.local_env
-    unittest.main(argv=[sys.argv[0], *remaining], verbosity=2)
+    unittest.main(verbosity=2)

@@ -2340,3 +2340,27 @@ exit = 101
 log = fleet/logs/human-reserve-build-1.log
 observed = With the custody-credit reserve bound to the treasury namespace, layerx-paxeer-client and the platform workspace compile again, but layerx-human-service still names SubmissionState::Acknowledged and TrackedSubmission.verification_level, which the API 2 write alignment removed from layerx-agent-api.
 assumption = The human service is aligned to the current write states in a follow-up fix; the hosted core keeps the kernel's reserve id until the kernel adopts the treasury namespace.
+
+[finding.8.4.11-verified]
+revision = 63015af9476b70c1aba7b1df5166c7c87108ce34
+command = python3 tools/release/rehearsal/test_rewrite_genesis.py
+exit = 0
+log = fleet/logs/release-8.4.11-verify-2.log
+observed = The first run exited 1 because the export fixture built the node with state commit disabled, which the node now refuses at startup; the fixture now loads the home app.toml first and all five tests pass.
+assumption = The genesis rewrite script itself was unchanged and complete; only the test fixture needed the state-commit setting.
+
+[finding.8.4.10-services-phase-fidelity]
+revision = cbd613277
+command = python3 tools/release/tests/test_fleet_check.py
+exit = 0
+log = fleet/logs/release-8.4.10-verify-2.log
+observed = The 22 tests pass against a loopback single-node chain built at v6.11.0; the services phase is exercised through in-test HTTP readiness endpoints whose 503 comes from a closed upstream port, not through the perps-data services, which need PostgreSQL and NATS.
+assumption = Readiness handling is covered by the real endpoint contract; a run against the deployed perps-data services belongs to the fleet check at upgrade time.
+
+[finding.5.3.3-verified]
+revision = 0ccbf01a353cf1fb72136ea6ee69e9db2bca6a99
+command = go test ./node/ -run 'TestPriceFeedLivePath' -v
+exit = 0
+log = fleet/logs/release-5.3.3-verify-1.log
+observed = All eight live-path tests pass at this revision with no file change; the earlier finding.5.3.3 compile failure no longer reproduces.
+assumption = The sequencer gasless checks are covered through antedecorators.IsTxGasless because importing the sequencer from package app is an import cycle.

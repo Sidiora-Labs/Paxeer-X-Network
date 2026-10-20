@@ -8480,3 +8480,28 @@ detail = "generate_lifecycle.py shells out to gofmt and stops with FileNotFoundE
 area = "scripts/ci"
 summary = "xweb-workflow-check mutations anchor on literal workflow text"
 detail = "The mutation step of scripts/ci/xweb-workflow-check.sh finds its edit points by literal lines in the workflow, so an unrelated workflow edit such as a runs-on expression stops the check with 'mutation does not apply'; re-anchor the mutation and leave the assertion intact."
+
+[gotcha.1782]
+area = "node/rpc"
+summary = "GET /status on the consensus RPC returns the bare result"
+detail = "A GET of /status on the consensus RPC answers the bare result object without a JSON-RPC envelope, so read sync_info directly; a JSON-RPC POST still returns the jsonrpc/id/result envelope."
+
+[gotcha.1783]
+area = "node/paxdb"
+summary = "node.New from a bare viper panics in SetupPaxDB"
+detail = "Unset keys parse as zero, so a test that builds the node from an empty viper runs with state commit disabled and the node refuses to start; load the home config/app.toml first or set state-commit.sc-enable and its sibling keys."
+
+[gotcha.1784]
+area = "node/sequencer"
+summary = "sequencer gasless checks only testable through antedecorators from package app"
+detail = "node/sequencer imports node, so a test in package app cannot call couldBeGasless, blockGas or CheckNodeFloor; exercise the same check through antedecorators.IsTxGasless with the app keepers."
+
+[gotcha.1785]
+area = "tools/release"
+summary = "py_compile leaves tools/release/__pycache__ behind"
+detail = "Compiling a release script with python3 -m py_compile writes an ignored __pycache__ directory next to it; remove it before reading git status so it is not mistaken for lane output."
+
+[gotcha.1786]
+area = "spec/release-v6-12-0"
+summary = "a planned-path task can already be landed by an earlier lane"
+detail = "Check git log on the task's touches before writing; when the gates pass with no diff there is nothing to commit, and an empty commit would claim work that did not happen."
