@@ -414,7 +414,7 @@ COPY --from=build /src/human/target/release/layerx-human-service /src/human/targ
      /src/human/target/release/layerx-human-onboarding /src/human/target/release/layerx-human-kms \
      /src/human/target/release/layerx-explorer-index /src/human/target/release/layerx-human-identity-provider \
      /src/human/target/release/layerx-human-security-provider /src/human/target/release/layerx-human-movement-provider \
-     /src/agent/target/release/layerx-agentd /src/agent/target/release/layerx-mcp /usr/local/bin/
+     /src/services/agent/target/release/layerx-agentd /src/services/agent/target/release/layerx-mcp /usr/local/bin/
 COPY --from=build /src/cmd/layerxctl/target/release/layerxctl /usr/local/bin/layerxctl
 COPY services/platform/hosted/human/provision.py services/platform/hosted/human/owner_native.py services/platform/hosted/human/owner_kms.py \
      services/platform/hosted/human/onboarding_socket.py services/platform/hosted/human/onboarding_bootstrap.py \

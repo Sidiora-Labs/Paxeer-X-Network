@@ -7,7 +7,7 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
 
 RUN corepack enable \
     && corepack prepare pnpm@12.6.0 --activate
-COPY services/agent/sdk/typescript /src/agent/sdk/typescript
+COPY services/agent/sdk/typescript /src/services/agent/sdk/typescript
 COPY human/wallet /src/human/wallet
 RUN pnpm install --frozen-lockfile --filter ./sdk... \
     && pnpm --filter ./sdk... run build
