@@ -4,7 +4,7 @@ set -euo pipefail
 
 export PATH="$PATH:/root/go/bin:/usr/local/go/bin"
 
-paxhome=$(CDPATH= cd -- "$(dirname -- "$0")/../../.. && pwd)
+paxhome=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 flatkv_dir=${FLATKV_DIR:-/root/.pax/data/state_commit/flatkv}
 dump_dir=${FLATKV_EVM_DUMP_DIR:-/tmp/flatkv-evm-dump}
 storage_dump="$dump_dir/storage"

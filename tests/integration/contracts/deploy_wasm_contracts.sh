@@ -4,7 +4,7 @@ paxdbin=$(which ~/go/bin/paxd | tr -d '"')
 keyname=$(printf "12345678\n" | $paxdbin keys list --output json | jq ".[0].name" | tr -d '"')
 keyaddress=$(printf "12345678\n" | $paxdbin keys list --output json | jq ".[0].address" | tr -d '"')
 chainid=$($paxdbin status | jq ".NodeInfo.network" | tr -d '"')
-paxhome=$(CDPATH= cd -- "$(dirname -- "$0")/../../.. && pwd)
+paxhome=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 
 source "$(dirname "$0")/../utils/_tx_helpers.sh"
 

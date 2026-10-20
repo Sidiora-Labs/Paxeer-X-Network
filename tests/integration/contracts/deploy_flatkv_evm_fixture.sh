@@ -24,7 +24,7 @@ fi
 STORAGE_CONTRACT_INIT_CODE=0x602a600055600a600f600039600a6000f3602a60005260206000f3
 STORAGE_SLOT_ZERO=0x0000000000000000000000000000000000000000000000000000000000000000
 
-paxhome=$(CDPATH= cd -- "$(dirname -- "$0")/../../.. && pwd)
+paxhome=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 out_dir="$paxhome/tests/integration/contracts"
 
 write_fixture() {
