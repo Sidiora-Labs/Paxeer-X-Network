@@ -25,7 +25,13 @@ import fleet_check as fleet
 
 LOCAL_VERSION = "v6.11.0"
 CHAIN_ID = "fleet_9000-1"
-CGO_LDFLAGS = "-L/root/Layerx-protocol/build -L/root/Layerx-protocol/programs/target/debug -L/root/Layerx-protocol/programs/target/release"
+CGO_LDFLAGS = os.environ.get(
+    "CGO_LDFLAGS",
+    " ".join(
+        f"-L{ROOT / sub}"
+        for sub in ("build", "programs/target/debug", "programs/target/release")
+    ),
+)
 VIEWS = json.loads((ROOT / "tools/release/fleet-views.json").read_text())
 
 
