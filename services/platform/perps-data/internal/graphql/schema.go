@@ -344,12 +344,12 @@ type FundingPayment {
 type MarketSnapshotRecord {
   id: Int!
   marketId: Int!
-  longOi: BigDecimal!
-  shortOi: BigDecimal!
+  longOi: BigDecimal
+  shortOi: BigDecimal
   markPrice: BigDecimal!
-  indexPrice: BigDecimal!
-  fundingRatePerSecond: BigDecimal!
-  fundingRate24h: BigDecimal!
+  indexPrice: BigDecimal
+  fundingRatePerSecond: BigDecimal
+  fundingRate24h: BigDecimal
   volume24hUsd: BigDecimal!
   onchainTimestamp: Int!
   blockNumber: Int!

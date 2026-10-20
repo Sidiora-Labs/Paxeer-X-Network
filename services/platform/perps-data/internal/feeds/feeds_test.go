@@ -36,7 +36,7 @@ var (
 var touchedTables = []string{
 	"orders", "order_events", "fills", "mark_prices", "index_prices", "funding_rates", "funding_settlements", "open_interest",
 	"liquidations", "spot_orders", "spot_swaps", "spot_order_events", "spot_token_registry", "market_stats_rolling", "blocks",
-	"tx_actions", "cursors",
+	"tx_actions", "cursors", "positions_current",
 }
 
 func addr(lo, hi byte) []byte {
@@ -590,6 +590,22 @@ func TestFeeds(t *testing.T) {
 		exec(t, db, `INSERT INTO perps.market_stats_rolling (market_id, volume_24h, volume_7d, volume_30d, trades_count, open_interest_long,
 			open_interest_short, last_price, open_24h, updated_block) VALUES (0, $1, $2, $3, 7, 0, 0, $4, $5, 5)`,
 			e18(t, "250"), e18(t, "700"), e18(t, "900"), e18(t, "110"), e18(t, "100"))
+		// Open interest in contracts is the base size of the open positions,
+		// size_usd / entry_price each: 300/100 + 100/50 = 5. The closed
+		// position and the other market's position are not counted, and the
+		// mark (100.5) plays no part.
+		for _, pos := range []struct {
+			id, market  int
+			long        bool
+			size, entry string
+			status      string
+		}{{1, 0, true, "300", "100", "open"}, {2, 0, false, "100", "50", "open"},
+			{3, 0, true, "1000", "10", "closed"}, {4, 1, true, "1000", "10", "open"}} {
+			exec(t, db, `INSERT INTO perps.positions_current (position_id, account, market_id, is_long, size_usd, collateral_usd,
+				collateral_amount, collateral_token, entry_price, leverage, realized_pnl, status, opened_block)
+				VALUES ($1, $2, $3, $4, $5, 1, 1, $2, $6, 1, 0, $7, 1)`,
+				pos.id, trader, pos.market, pos.long, e18(t, pos.size), e18(t, pos.entry), pos.status)
+		}
 		p := providers(t, db)
 		rec := decodeJSON[map[string]any](t, subscribe(t, p, "BTC@market"))
 		if len(rec) != 23 {
@@ -601,7 +617,7 @@ func TestFeeds(t *testing.T) {
 			"funding_8h": nil, "est_funding_rate": nil, "volume_7d": 700.0, "volume_30d": 900.0, "trades_count": 7.0,
 			"last_updated": float64(time.Unix(1_700_000_005, 0).UnixMilli()), "perp_mark_price": 100.5, "perp_index_price": 100.0,
 			"perp_basis_bps": 50.0, "perp_funding_rate": nil, "perp_next_funding_ms": next, "perp_long_short_ratio": 3.0,
-			"perp_liq_volume_24h": 0.0, "perp_oi_contracts": 400 / 100.5, "perp_oi_usd": 400.0, "perp_volume_24h_contracts": 2.5,
+			"perp_liq_volume_24h": 0.0, "perp_oi_contracts": 5.0, "perp_oi_usd": 400.0, "perp_volume_24h_contracts": 2.5,
 			"perp_volume_24h_usd": 250.0,
 		}
 		if !reflect.DeepEqual(rec, want) {

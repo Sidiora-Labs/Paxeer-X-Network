@@ -90,6 +90,12 @@ func venueMarketFacts(t *testing.T, db *sql.DB) {
 			args:   []string{"market_id", "new_rate_per_second", "funding_rate24h"},
 			values: []any{0, e18(t, rate.perSecond), e18(t, rate.daily)}})
 	}
+	for i, rate := range []string{"0.00002", "0.00005"} {
+		insert(t, db, row{table: "funding_settlements", kind: "settled", block: 39 + int64(i), txIndex: 2,
+			at: at, emitter: perpsAddr, account: perpsAddr,
+			args:   []string{"market_id", "funding_rate", "long_payment", "short_payment"},
+			values: []any{0, e18(t, rate), "0", "0"}})
+	}
 	accountExec(t, db, `INSERT INTO perps.market_stats_rolling (market_id, volume_24h, volume_7d,
         volume_30d, trades_count, open_interest_long, open_interest_short, high_24h, low_24h,
         open_24h, last_price, updated_block)
@@ -219,15 +225,17 @@ func TestVenueREST(t *testing.T) {
 					t.Fatalf("unexpected market %q at %d", symbol, i)
 				}
 				seen[symbol] = true
-				long, short := 0.0, 0.0
 				switch symbol {
 				case "BTC":
-					long, short = 1250.5, 750.25
+					wantNumber(t, entry, "long_oi", 1250.5)
+					wantNumber(t, entry, "short_oi", 750.25)
 				case "ETH":
-					long, short = 200, 300
+					wantNumber(t, entry, "long_oi", 200)
+					wantNumber(t, entry, "short_oi", 300)
+				default:
+					wantNull(t, entry, "long_oi")
+					wantNull(t, entry, "short_oi")
 				}
-				wantNumber(t, entry, "long_oi", long)
-				wantNumber(t, entry, "short_oi", short)
 			}
 		}
 	})
@@ -246,7 +254,7 @@ func TestVenueREST(t *testing.T) {
 				t.Fatalf("symbol: %s", entry["symbol"])
 			}
 			for name, want := range map[string]float64{"index_price": 77173, "mark_price": 77182.4,
-				"est_funding_rate": -0.000864, "last_funding_rate": -0.000036,
+				"est_funding_rate": -0.000036, "last_funding_rate": 0.00005,
 				"open_interest": 2000.75, "volume_24h": 2500} {
 				wantNumber(t, entry, name, want)
 			}
@@ -281,18 +289,25 @@ func TestVenueREST(t *testing.T) {
 			if field[string](t, entry, "symbol") != "PERP_"+symbol+"_USDC" {
 				t.Fatalf("symbol: %s", entry["symbol"])
 			}
-			want := map[string]float64{"mark_price": 50.5, "index_price": 50, "open_interest": 0,
-				"est_funding_rate": 0, "last_funding_rate": 0, "24h_open": 0, "24h_close": 0,
-				"24h_high": 0, "24h_low": 0, "24h_amount": 0, "24h_volume": 0}
+			// A market without the source fact answers null, never 0: no
+			// OpenInterestChanged, FundingRateUpdated, FundingSettled or
+			// rolling 24 hour prices outside BTC. Volumes count fills.
+			want := map[string]float64{"mark_price": 50.5, "index_price": 50, "24h_amount": 0, "24h_volume": 0}
+			null := []string{"open_interest", "est_funding_rate", "last_funding_rate", "24h_open", "24h_close", "24h_high", "24h_low"}
 			if symbol == "BTC" {
 				want = map[string]float64{"mark_price": 77182.4, "index_price": 77173, "open_interest": 2000.75,
-					"est_funding_rate": -0.000864, "last_funding_rate": -0.000036, "24h_open": 100,
+					"est_funding_rate": -0.000036, "last_funding_rate": 0.00005, "24h_open": 100,
 					"24h_close": 125, "24h_high": 125, "24h_low": 100, "24h_amount": 22, "24h_volume": 2500}
+				null = nil
 			} else if symbol == "ETH" {
 				want["open_interest"], want["24h_amount"] = 500, 100
+				null = null[1:]
 			}
 			for name, value := range want {
 				wantNumber(t, entry, name, value)
+			}
+			for _, name := range null {
+				wantNull(t, entry, name)
 			}
 		}
 	})

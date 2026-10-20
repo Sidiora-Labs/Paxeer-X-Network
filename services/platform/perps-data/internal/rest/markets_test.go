@@ -73,7 +73,7 @@ func TestMarketsREST(t *testing.T) {
 	// rolling stats, and ETH with rolling stats only.
 	seed := func(t *testing.T) {
 		reset(t, db)
-		if _, err := db.Exec(`TRUNCATE perps.market_stats_rolling`); err != nil {
+		if _, err := db.Exec(`TRUNCATE perps.market_stats_rolling, perps.positions_current`); err != nil {
 			t.Fatal(err)
 		}
 		fill(t, db, 0, 90, 0, now.Add(-25*time.Hour), true, "70000", "9999")
@@ -91,6 +91,24 @@ func TestMarketsREST(t *testing.T) {
 			args: []string{"market_id", "new_rate_per_second", "funding_rate24h"}, values: []any{0, "3472222222", e18(t, "0.0003")}})
 		rollingStats(t, db, 0, "100", "700", "3000", 4, "600000", "400000", "80000")
 		rollingStats(t, db, 1, "300", "900", "5000", 6, "50", "0", "2000")
+		if _, err := db.Exec(`UPDATE perps.market_stats_rolling SET last_price = $1 WHERE market_id = 0`, e18(t, "62500")); err != nil {
+			t.Fatal(err)
+		}
+		// BTC open positions: 600000 USD long at 50000 and 400000 USD short at
+		// 80000, 12 + 5 = 17 contracts; the closed one is not counted.
+		for _, pos := range []struct {
+			id          int
+			long        bool
+			size, entry string
+			status      string
+		}{{1, true, "600000", "50000", "open"}, {2, false, "400000", "80000", "open"}, {3, true, "999999", "10000", "closed"}} {
+			if _, err := db.Exec(`INSERT INTO perps.positions_current (position_id, account, market_id, is_long, size_usd,
+				collateral_usd, collateral_amount, collateral_token, entry_price, leverage, realized_pnl, status, opened_block)
+				VALUES ($1, $2, 0, $3, $4, 1, 1, $2, $5, 1, 0, $6, 1)`,
+				pos.id, trader, pos.long, e18(t, pos.size), e18(t, pos.entry), pos.status); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 
 	t.Run("markets_all", func(t *testing.T) {
@@ -124,9 +142,10 @@ func TestMarketsREST(t *testing.T) {
 			t.Fatalf("ETH trades_count %d", got)
 		}
 		for _, name := range []string{"price", "change_24h", "funding_8h", "est_funding_rate", "last_updated", "perp_mark_price",
-			"perp_index_price", "perp_basis_bps", "perp_funding_rate", "perp_long_short_ratio", "perp_oi_contracts"} {
+			"perp_index_price", "perp_basis_bps", "perp_funding_rate", "perp_long_short_ratio"} {
 			wantNull(t, eth, name)
 		}
+		wantNumber(t, eth, "perp_oi_contracts", 0)
 		sol := records[2]
 		for _, name := range []string{"volume_24h", "open_interest", "perp_oi_usd", "perp_volume_24h_usd", "perp_liq_volume_24h"} {
 			wantNumber(t, sol, name, 0)
@@ -221,7 +240,9 @@ func TestMarketsREST(t *testing.T) {
 		wantNumber(t, rec, "perp_mark_price", 77182.4)
 		wantNumber(t, rec, "perp_index_price", 77173)
 		wantNumber(t, rec, "price", 77173)
-		wantNumber(t, rec, "change_24h", -0.0353375)
+		// change_24h compares the last fill (62500) with the window's first
+		// fill (80000), not the index price (77173).
+		wantNumber(t, rec, "change_24h", -0.21875)
 		wantNumber(t, rec, "est_funding_rate", 0.0000124999999992)
 		wantNumber(t, rec, "funding_8h", 0.0000999999999936)
 		wantNumber(t, rec, "perp_funding_rate", 0.0000999999999936)
@@ -233,8 +254,7 @@ func TestMarketsREST(t *testing.T) {
 		}
 		wantNumber(t, rec, "open_interest", 1000000)
 		wantNumber(t, rec, "perp_oi_usd", 1000000)
-		oiUSD, mark := 1000000.0, 77182.4
-		wantNumber(t, rec, "perp_oi_contracts", oiUSD/mark)
+		wantNumber(t, rec, "perp_oi_contracts", 17)
 		wantNumber(t, rec, "perp_long_short_ratio", 1.5)
 		wantNumber(t, rec, "perp_volume_24h_usd", 3500)
 		wantNumber(t, rec, "perp_volume_24h_contracts", 0.0605)

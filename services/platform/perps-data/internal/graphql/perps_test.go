@@ -659,8 +659,10 @@ func TestPerpsResolvers(t *testing.T) {
 	t.Run("enrichedMarketStats", func(t *testing.T) {
 		check(t, s, `{ enrichedMarketStats(marketId: 1) { onchain { `+marketStatsFields+` } ticker { symbol } fundingRate { symbol } openInterest { symbol } priceChange { symbol } } }`,
 			`{"enrichedMarketStats":{"onchain":`+marketStats1+`,"ticker":null,"fundingRate":null,"openInterest":null,"priceChange":null}}`)
-		check(t, s, `{ enrichedMarketStats(marketId: 99) { onchain { marketId symbol totalPositions totalVolume } } }`,
-			`{"enrichedMarketStats":{"onchain":{"marketId":99,"symbol":null,"totalPositions":0,"totalVolume":"0"}}}`)
+		data, errs := exec(t, s, `{ enrichedMarketStats(marketId: 99) { onchain { marketId symbol totalPositions totalVolume } } }`)
+		if len(errs) != 1 || errs[0] != "enrichedMarketStats: unknown market 99" || data != "null" {
+			t.Fatalf("unknown market: data %s, errors %v", data, errs)
+		}
 	})
 
 	t.Run("orderlyTickers", func(t *testing.T) {

@@ -438,12 +438,12 @@ type FundingPayment struct {
 type MarketSnapshotRecord struct {
 	ID                   int32
 	MarketID             int32
-	LongOi               BigDecimal
-	ShortOi              BigDecimal
+	LongOi               *BigDecimal
+	ShortOi              *BigDecimal
 	MarkPrice            BigDecimal
-	IndexPrice           BigDecimal
-	FundingRatePerSecond BigDecimal
-	FundingRate24h       BigDecimal
+	IndexPrice           *BigDecimal
+	FundingRatePerSecond *BigDecimal
+	FundingRate24h       *BigDecimal
 	Volume24hUsd         BigDecimal
 	OnchainTimestamp     int32
 	BlockNumber          int32
@@ -1550,16 +1550,17 @@ const crossingBlockSQL = `COALESCE((SELECT b.number FROM perps.blocks b WHERE b.
 
 // MarketSnapshots answers perps.market_snapshots with the open interest and
 // 24 hour funding rate in force before the hour and the fill volume of the
-// 24 hours before it.
+// 24 hours before it; open interest, index price and funding rates are null
+// when no fact preceded the hour.
 func (r *Resolver) MarketSnapshots(ctx context.Context, args struct {
 	MarketID int32
 	Limit    *int32
 	Offset   *int32
 }) ([]*MarketSnapshotRecord, error) {
 	limit, offset := paging(args.Limit, args.Offset)
-	return collect(ctx, r.DB, "marketSnapshots", `SELECT `+hourIDSQL("s.hour")+`, s.market_id, COALESCE(oi.long_oi, 0)::text,
-    COALESCE(oi.short_oi, 0)::text, s.mark_price::text, COALESCE(s.index_price, 0)::text, COALESCE(s.funding_rate, 0)::text,
-    COALESCE(fr.funding_rate24h, 0)::text, COALESCE(v.vol, 0)::text, floor(extract(epoch FROM s.hour))::bigint,
+	return collect(ctx, r.DB, "marketSnapshots", `SELECT `+hourIDSQL("s.hour")+`, s.market_id, oi.long_oi::text,
+    oi.short_oi::text, s.mark_price::text, s.index_price::text, s.funding_rate::text,
+    fr.funding_rate24h::text, COALESCE(v.vol, 0)::text, floor(extract(epoch FROM s.hour))::bigint,
     `+crossingBlockSQL+`, s.hour
 FROM perps.market_snapshots s
 LEFT JOIN LATERAL (SELECT long_oi, short_oi FROM perps.open_interest WHERE market_id = s.market_id AND block_time < s.hour
@@ -1611,14 +1612,14 @@ func (r *Resolver) EnrichedGlobalStats(ctx context.Context) (*EnrichedGlobalStat
 }
 
 // EnrichedMarketStats carries the on-chain values only; a market without a
-// perps.markets row answers zero statistics.
+// perps.markets row is an error.
 func (r *Resolver) EnrichedMarketStats(ctx context.Context, args struct{ MarketID int32 }) (*EnrichedMarketStats, error) {
 	m, err := r.MarketStats(ctx, args)
 	if err != nil {
 		return nil, err
 	}
 	if m == nil {
-		m = &MarketStats{MarketID: args.MarketID, TotalVolume: "0"}
+		return nil, fmt.Errorf("enrichedMarketStats: unknown market %d", args.MarketID)
 	}
 	return &EnrichedMarketStats{Onchain: m}, nil
 }

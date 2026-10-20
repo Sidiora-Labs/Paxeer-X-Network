@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/feeds"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/records"
 )
 
@@ -120,20 +121,22 @@ func (m *Markets) serveHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // marketRecordsSQL builds the records of perps.markets ($4 null) or of the
-// market whose symbol is $4: windows and open interest from
+// market whose symbol is $4: windows, open interest and the 24 hour change of
+// the last fill price against the first fill of the window from
 // perps.market_stats_rolling, mark, index and basis from the latest
 // MarkPriceUpdated, the hourly and 8 hour funding rates from the latest
-// FundingRateUpdated, and the 24 hour contract and liquidation volumes from the
-// fills since $3.
+// FundingRateUpdated, the 24 hour contract and liquidation volumes from the
+// fills since $3, and the open interest in contracts from the open positions.
 const marketRecordsSQL = `SELECT m.symbol, m.name,
-	(mp.index_price - s.open_24h) / NULLIF(s.open_24h, 0),
+	(s.last_price - s.open_24h) / NULLIF(s.open_24h, 0),
 	COALESCE(s.volume_24h, 0) / $1::numeric, COALESCE(s.volume_7d, 0) / $1::numeric, COALESCE(s.volume_30d, 0) / $1::numeric,
 	COALESCE(s.trades_count, 0),
 	COALESCE(s.open_interest_long, 0) / $1::numeric, COALESCE(s.open_interest_short, 0) / $1::numeric,
 	mp.mark_price / $1::numeric, mp.index_price / $1::numeric,
 	round((mp.mark_price - mp.index_price) * 10000 / NULLIF(mp.index_price, 0), 3), mp.block_time,
 	fr.new_rate_per_second * $2::numeric / $1::numeric, fr.new_rate_per_second * $2::numeric * 8 / $1::numeric,
-	COALESCE(w.volume, 0) / $1::numeric, COALESCE(w.contracts, 0), COALESCE(w.liq_volume, 0) / $1::numeric
+	COALESCE(w.volume, 0) / $1::numeric, COALESCE(w.contracts, 0), COALESCE(w.liq_volume, 0) / $1::numeric,
+	` + feeds.OIContractsSQL + `
 FROM perps.markets m
 LEFT JOIN perps.market_stats_rolling s ON s.market_id = m.market_id
 LEFT JOIN LATERAL (SELECT mark_price, index_price, block_time FROM perps.mark_prices WHERE market_id = m.market_id
@@ -177,11 +180,12 @@ func (m *Markets) records(ctx context.Context, symbol *string) ([]MarketRecord, 
 			change, mark, index, basis, hourly, eight sql.NullString
 			vol24, vol7, vol30, longOI, shortOI       sql.NullString
 			fillVolume, fillContracts, liqVolume      sql.NullString
+			oiContracts                               sql.NullString
 			markAt                                    sql.NullTime
 		)
 		if err := rows.Scan(&rec.Symbol, &rec.SymbolFull, &change, &vol24, &vol7, &vol30, &rec.TradesCount,
 			&longOI, &shortOI, &mark, &index, &basis, &markAt, &hourly, &eight,
-			&fillVolume, &fillContracts, &liqVolume); err != nil {
+			&fillVolume, &fillContracts, &liqVolume, &oiContracts); err != nil {
 			return nil, err
 		}
 		nullable := []struct {
@@ -190,6 +194,7 @@ func (m *Markets) records(ctx context.Context, symbol *string) ([]MarketRecord, 
 		}{
 			{change, &rec.Change24h}, {mark, &rec.PerpMarkPrice}, {index, &rec.PerpIndexPrice},
 			{basis, &rec.PerpBasisBps}, {hourly, &rec.EstFundingRate}, {eight, &rec.Funding8h},
+			{oiContracts, &rec.PerpOIContracts},
 		}
 		for _, v := range nullable {
 			if *v.dst, err = records.Decimal(v.raw); err != nil {
@@ -217,10 +222,6 @@ func (m *Markets) records(ctx context.Context, symbol *string) ([]MarketRecord, 
 		if short != 0 {
 			ratio := long / short
 			rec.PerpLongShortRatio = &ratio
-		}
-		if rec.PerpMarkPrice != nil && *rec.PerpMarkPrice != 0 {
-			contracts := rec.OpenInterest / *rec.PerpMarkPrice
-			rec.PerpOIContracts = &contracts
 		}
 		if markAt.Valid {
 			ms := markAt.Time.UnixMilli()
