@@ -394,6 +394,30 @@ const PLATFORM_INSTALL: &[Step] = &[
         &["cargo"],
     ),
     Step::command(
+        "Fetch the locked platform tooling workspace crates",
+        "cargo",
+        &[
+            "fetch",
+            "--manifest-path",
+            "tools/platform/Cargo.toml",
+            "--locked",
+        ],
+        ".",
+        &["cargo"],
+    ),
+    Step::command(
+        "Fetch the locked platform SDK generator workspace crates",
+        "cargo",
+        &[
+            "fetch",
+            "--manifest-path",
+            "sdk/platform/generators/Cargo.toml",
+            "--locked",
+        ],
+        ".",
+        &["cargo"],
+    ),
+    Step::command(
         "Install the locked JavaScript workspaces",
         "npm",
         &[

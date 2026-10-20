@@ -2300,3 +2300,35 @@ exit = 0
 log = fleet/logs/release-2.3.99-keeper-verify-9.log
 observed = Keeper payAirdrop never lowered the fee accumulator's total liabilities, so any airdrop claim would have left liabilities above fee held and failed the export validation, and the task's do_4 to do_6 tests had never been written while the role tests predated the nine genesis-installed surfaces.
 assumption = The keeper airdrop path only goes live with this release, so no existing state needs a liabilities repair; the fix sits in payAirdrop and the do_4 to do_6 tests now cover it.
+
+[finding.2.3.99-verified]
+revision = cd0d469681dc367469aa46afca347d355a1c8d9c
+command = go test -count=1 ./modules/launchpad/... ./precompiles/launchpad/...
+exit = 0
+log = fleet/logs/release-2.3.99-verify-main-1.log
+observed = Every launchpad module and precompile package passes on the merged revision with the keeper airdrop liabilities fix and the precompile test environment fixes in place.
+assumption = The launchpad domain is complete for the release; task 1.3.100 keeps its earlier passing node gate.
+
+[finding.gh-662-xweb-workflow-checker]
+revision = 827bf0039
+command = tools/workflow checker over the xweb pytest step
+exit = 1
+log = fleet/logs/issue-662-2.log
+observed = The xweb workflow checker stops because it names a spec file that was folded into the consolidated spec and no longer exists; every other step of the issue passes.
+assumption = The checker is pointed at the consolidated spec in a follow-up fix; the moved paths in this commit are correct.
+
+[finding.gh-663-agent-sdk-gen]
+revision = a469146c7
+command = make platform-sdk-generate
+exit = 1
+log = fleet/logs/issue-663-1.log
+observed = agent-sdk-gen --write stops with missing type.Level.variants because the schema dropped the Level type while the generator still requires it; the platform sdkgen step runs clean.
+assumption = The generator follows the schema in a follow-up fix; the digest refresh in this commit stands.
+
+[finding.gh-665-platform-offline-check]
+revision = 09d0cb2a9
+command = cargo check --offline --manifest-path services/platform/Cargo.toml
+exit = 1
+log = fleet/logs/issue-665-1.log
+observed = The offline check resolves every dependency from the bootstrapped cache and then fails to compile layerx-paxeer-client, which still names the retired paxeer-reserve account namespace.
+assumption = The human crates are bound to the treasury namespace in a separate fix; the bootstrap recipes in this commit are complete.

@@ -124,12 +124,12 @@ platform-lint:
 
 platform-test: public-tls-test-prerequisites
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked --workspace
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked --workspace --features layerx-platform-cli/test-credential-store
+	LAYERX_PAXEER_BOUNDARY_BIN="$(PUBLIC_TLS_TEST_BOUNDARY)" sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked --workspace --features layerx-platform-cli/test-credential-store
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_SDKGEN_MANIFEST) --locked --workspace
 
 platform-test-tooling: platform-test-cli-production-credential-refusal public-tls-test-prerequisites
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked -p layerx-platform-cli --features test-credential-store
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked -p layerx-platform-emulator
+	LAYERX_PAXEER_BOUNDARY_BIN="$(PUBLIC_TLS_TEST_BOUNDARY)" sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked -p layerx-platform-cli --features test-credential-store
+	LAYERX_PAXEER_BOUNDARY_BIN="$(PUBLIC_TLS_TEST_BOUNDARY)" sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_TOOLS_MANIFEST) --locked -p layerx-platform-emulator
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-faucet
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-testnet
 	sh -n services/platform/hosted/testnet/run-testnet.sh services/platform/hosted/testnet/reset-testnet.sh \
