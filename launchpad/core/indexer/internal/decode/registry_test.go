@@ -1,6 +1,8 @@
 package decode
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -640,5 +642,78 @@ func TestPrecompileDecodesRouterAndEventEmitterEvents(t *testing.T) {
 				t.Fatal("router Buy before activation", e, err)
 			}
 		})
+	}
+}
+
+// TestPrecompileBindsRouterRevisionsByEpoch upgrades the Router at a block: the
+// precompile decodes Buy with the revision whose attested range holds the log,
+// and Router revisions whose ranges overlap are refused.
+func TestPrecompileBindsRouterRevisionsByEpoch(t *testing.T) {
+	_, c := frozen(t)
+	var revA CatalogContract
+	for _, contract := range c.Contracts {
+		if contract.Name == "Router" {
+			revA = contract
+		}
+	}
+	var entries []map[string]any
+	if err := json.Unmarshal(revA.ABI, &entries); err != nil {
+		t.Fatal(err)
+	}
+	var kept []map[string]any
+	for _, entry := range entries {
+		if entry["name"] != "Upgraded" {
+			kept = append(kept, entry)
+		}
+	}
+	revB := revA
+	var err error
+	if revB.ABI, err = json.Marshal(kept); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(revB.ABI)
+	revB.ABIRevision = hex.EncodeToString(sum[:])
+	if revB.ABIRevision == revA.ABIRevision {
+		t.Fatal("second Router revision shares the first's digest")
+	}
+	c.Contracts = append(c.Contracts, revB)
+	catalog, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	activation, upgrade := Order{Block: 71}, Order{Block: 100}
+	precompile, _ := deployment(t, "EventEmitter", LaunchpadPrecompileAddress)
+	precompile.Role = LaunchpadPrecompileRole
+	precompile.From = activation
+	routerA := Deployment{Address: common.HexToAddress("0x5E1F"), Role: "Router", ABIRevision: revA.ABIRevision, From: activation, Until: &upgrade}
+	routerB := Deployment{Address: common.HexToAddress("0x5E1F"), Role: "Router", ABIRevision: revB.ABIRevision, From: upgrade}
+	r, err := NewRegistry(catalog, []Deployment{precompile, routerA, routerB})
+	if err != nil {
+		t.Fatal(err)
+	}
+	routerABI := nodeABI(t, "abi/Router.json")
+	pool, buyer := common.HexToAddress("0xA001"), common.HexToAddress("0xB002")
+	wantBuy := map[string]any{"pool": strings.ToLower(pool.Hex()), "buyer": strings.ToLower(buyer.Hex()), "usdlIn": "1000000", "tokensOut": "42000"}
+	for _, tc := range []struct {
+		block    uint64
+		revision string
+	}{{activation.Block, revA.ABIRevision}, {upgrade.Block - 1, revA.ABIRevision}, {upgrade.Block, revB.ABIRevision}, {upgrade.Block + 50, revB.ABIRevision}} {
+		buy := nodeLog(t, routerABI.Events["Buy"], tc.block, 4, pool, buyer, big.NewInt(1_000_000), big.NewInt(42_000))
+		e, err := r.Decode(buy)
+		if err != nil || e.Status != "decoded" || e.EmitterRole != "Router" || e.ABIRevision != tc.revision || e.EventName != "Buy" || !reflect.DeepEqual(e.Event.Args, wantBuy) {
+			t.Fatal("router Buy at block", tc.block, e, err)
+		}
+	}
+	early := nodeLog(t, routerABI.Events["Buy"], activation.Block-1, 4, pool, buyer, big.NewInt(1_000_000), big.NewInt(42_000))
+	if e, err := r.Decode(early); err == nil || e.FailureReason != "untrusted_emitter" || e.Event != nil {
+		t.Fatal("router Buy before activation", e, err)
+	}
+
+	overlapping := routerB
+	overlapping.Address = common.HexToAddress("0x5E20")
+	overlapping.From = Order{Block: 90}
+	if _, err := NewRegistry(catalog, []Deployment{precompile, routerA, overlapping}); err == nil || !strings.Contains(err.Error(), "overlapping deployment epochs for "+LaunchpadPrecompileAddress.String()) {
+		t.Fatal("overlapping Router revisions at the precompile", err)
 	}
 }

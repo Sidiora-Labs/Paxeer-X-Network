@@ -291,20 +291,22 @@ func NewRegistry(catalogJSON []byte, deployments []Deployment) (*Registry, error
 	return r, nil
 }
 
-// precompileRouter adds a Router epoch at the launchpad precompile for every
-// precompile epoch unless the caller already bound Router there. Router calls
-// made to the precompile emit Buy, Sell, MarketCreated and MultihopSwap with
-// the precompile as emitter. The Router revision is the attested Router
-// deployment's, or the catalog's only Router ABI when none is attested.
+// precompileRouter adds Router epochs at the launchpad precompile unless the
+// caller already bound Router there. Router calls made to the precompile emit
+// Buy, Sell, MarketCreated and MultihopSwap with the precompile as emitter.
+// Each attested Router ABI revision is bound over its own deployments'
+// [From, Until) ranges within each precompile epoch, so Decode selects the
+// revision by log order like any other address's epochs, and NewRegistry
+// refuses Router revisions whose ranges overlap. With no Router attested, the
+// catalog's only Router ABI covers each precompile epoch.
 func precompileRouter(deployments []Deployment, contracts map[string]CatalogContract) ([]Deployment, error) {
-	var precompiles []Deployment
-	attested := map[string]bool{}
+	var precompiles, routers []Deployment
 	for _, d := range deployments {
 		switch {
 		case d.Role == "Router" && d.Address == LaunchpadPrecompileAddress:
 			return deployments, nil
 		case d.Role == "Router":
-			attested[d.ABIRevision] = true
+			routers = append(routers, Deployment{ABIRevision: d.ABIRevision, From: d.From, Until: d.Until})
 		case d.Role == LaunchpadPrecompileRole:
 			precompiles = append(precompiles, d)
 		}
@@ -312,24 +314,49 @@ func precompileRouter(deployments []Deployment, contracts map[string]CatalogCont
 	if len(precompiles) == 0 {
 		return deployments, nil
 	}
-	revisions := attested
-	if len(revisions) == 0 {
+	if len(routers) == 0 {
 		for _, c := range contracts {
 			if c.Name == "Router" {
-				revisions[c.ABIRevision] = true
+				routers = append(routers, Deployment{ABIRevision: c.ABIRevision})
 			}
 		}
+		if len(routers) != 1 {
+			return nil, fmt.Errorf("launchpad precompile without an attested Router requires one catalog Router ABI revision, found %d", len(routers))
+		}
 	}
-	if len(revisions) != 1 {
-		return nil, fmt.Errorf("launchpad precompile requires one Router ABI revision, found %d", len(revisions))
-	}
-	var revision string
-	for r := range revisions {
-		revision = r
+	// Coalesce each revision's overlapping or adjacent ranges, e.g. the same
+	// Router ABI attested at two addresses.
+	sort.Slice(routers, func(i, j int) bool {
+		if routers[i].ABIRevision != routers[j].ABIRevision {
+			return routers[i].ABIRevision < routers[j].ABIRevision
+		}
+		return routers[i].From.less(routers[j].From)
+	})
+	var spans []Deployment
+	for _, r := range routers {
+		if n := len(spans); n > 0 && spans[n-1].ABIRevision == r.ABIRevision && (spans[n-1].Until == nil || !spans[n-1].Until.less(r.From)) {
+			if spans[n-1].Until != nil && (r.Until == nil || spans[n-1].Until.less(*r.Until)) {
+				spans[n-1].Until = r.Until
+			}
+			continue
+		}
+		spans = append(spans, r)
 	}
 	out := append([]Deployment(nil), deployments...)
 	for _, p := range precompiles {
-		out = append(out, Deployment{Address: LaunchpadPrecompileAddress, Role: "Router", ABIRevision: revision, From: p.From, Until: p.Until})
+		for _, r := range spans {
+			from, until := p.From, p.Until
+			if from.less(r.From) {
+				from = r.From
+			}
+			if until == nil || (r.Until != nil && r.Until.less(*until)) {
+				until = r.Until
+			}
+			if until != nil && !from.less(*until) {
+				continue
+			}
+			out = append(out, Deployment{Address: LaunchpadPrecompileAddress, Role: "Router", ABIRevision: r.ABIRevision, From: from, Until: until})
+		}
 	}
 	return out, nil
 }
