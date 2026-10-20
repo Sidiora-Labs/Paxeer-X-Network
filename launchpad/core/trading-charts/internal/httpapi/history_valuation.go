@@ -186,6 +186,15 @@ func valuationHistory(ctx context.Context, page CanonicalCandlePage, supply *RPC
 	valuationValues := make([][]float64, 4)
 	supplies := map[string]SupplySnapshot{}
 	supplyFailures := map[string]bool{}
+	// Supply enrichment is optional: it shares one budget that ends before the
+	// caller's deadline, so slow supply reads mark valuation unavailable instead
+	// of consuming the time the price response and revision check still need.
+	enrichDeadline := time.Now().Add(1500 * time.Millisecond)
+	if deadline, ok := ctx.Deadline(); ok && deadline.Add(-time.Second).Before(enrichDeadline) {
+		enrichDeadline = deadline.Add(-time.Second)
+	}
+	enrich, cancelEnrich := context.WithDeadline(ctx, enrichDeadline)
+	defer cancelEnrich()
 	for _, bar := range page.Items {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -220,7 +229,7 @@ func valuationHistory(ctx context.Context, page CanonicalCandlePage, supply *RPC
 			snapshot, found := supplies[supplyKey]
 			e = nil
 			if !found && !supplyFailures[supplyKey] {
-				snapshot, e = supply.At(ctx, *p.BaseAsset.Address, *p.Source.Position)
+				snapshot, e = supply.At(enrich, *p.BaseAsset.Address, *p.Source.Position)
 				if e == nil {
 					supplies[supplyKey] = snapshot
 				} else {

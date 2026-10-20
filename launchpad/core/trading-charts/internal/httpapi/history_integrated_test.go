@@ -3,7 +3,9 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts/internal/chainread"
 	interfaces "github.com/Sidiora-Technologies/KindleLaunch/shared/interfaces/v2"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"math/big"
@@ -56,6 +58,47 @@ func TestProductionUnavailableSupplyPreservesPrice(t *testing.T) {
 	}
 	if body.Status != "ok" || body.Available || len(body.Close) != 1 || body.Close[0] != 2 {
 		t.Fatalf("price availability lost: %s", raw)
+	}
+}
+func TestProductionSlowSupplyRPCPreservesPrice(t *testing.T) {
+	release := make(chan struct{})
+	rpc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		select {
+		case <-req.Context().Done():
+		case <-release:
+		}
+	}))
+	defer rpc.Close()
+	defer close(release)
+	client, err := ethclient.Dial(rpc.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	address := "0x1111111111111111111111111111111111111111"
+	decimals := interfaces.SafeInteger(18)
+	page := CanonicalCandlePage{}
+	for i, hash := range []string{"0xaa", "0xbb", "0xcc"} {
+		position := interfaces.ChainPosition{ChainId: "125", Height: interfaces.UInt256(strconv.Itoa(100 + i)), BlockHash: hash + strings.Repeat("0", 62)}
+		price := interfaces.Price{Numerator: "2", Denominator: "1", BaseAsset: interfaces.AssetRef{Address: &address, Decimals: &decimals}, Source: interfaces.PriceSource{Position: &position}}
+		page.Items = append(page.Items, interfaces.Candle{Start: time.Unix(int64(60*(i+1)), 0).UTC().Format("2006-01-02T15:04:05.000Z"), Open: price, High: price, Low: price, Close: price, VolumeUsdlRaw: "1000000"})
+	}
+	worker, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	raw, err := valuationHistory(worker, page, &RPCSupplySource{Chain: &chainread.Reader{RPC: client}}, "price")
+	if err != nil || worker.Err() != nil {
+		t.Fatalf("slow supply RPC consumed the price history budget: %v %v", err, worker.Err())
+	}
+	var body struct {
+		Status    string    `json:"s"`
+		Available bool      `json:"valuationAvailable"`
+		Close     []float64 `json:"c"`
+	}
+	if err = json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Status != "ok" || body.Available || len(body.Close) != 3 || body.Close[2] != 2 {
+		t.Fatalf("price history lost: %s", raw)
 	}
 }
 func TestProductionRevisionChangesOnHistoricalCorrection(t *testing.T) {

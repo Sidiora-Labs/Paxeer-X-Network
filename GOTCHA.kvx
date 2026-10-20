@@ -8445,3 +8445,8 @@ detail = "Point LAUNCHPAD_CONTRACTS_DIR at launchpad/contracts/contracts and SOL
 area = "modules/launchpad/keeper"
 summary = "Airdrop keeper fixtures must fund fee held exactly once"
 detail = "InitGenesis writes gs.FeeHeld into the fee held ledger and validation requires FeeHeld >= FeeAccounting.TotalLiabilities, so set both in the genesis and move the backing USDL with a plain ERC20 transfer to the module EVM address; PullQuote credits the ledger a second time and doubles fee held."
+
+[gotcha.1775]
+area = "launchpad/core/trading-charts"
+summary = "A hanging httptest server must also stop on test end"
+detail = "A test server whose handler waits only for the request context leaves one connection open after the geth RPC client's context ends, so Close blocks until the package's test timeout; make the handler also select on a channel the test closes at cleanup."
