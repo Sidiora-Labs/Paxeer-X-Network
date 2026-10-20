@@ -354,6 +354,12 @@ func (s *Socket) CloseRetryAfter() error {
 	return errors.Join(werr, s.conn.Close())
 }
 
+// closeLater closes s as CloseRetryAfter does on a goroutine of its own, so a
+// socket that stalls the close frame never blocks the caller.
+func (s *Socket) closeLater() {
+	go func() { _ = s.CloseRetryAfter() }()
+}
+
 // write writes v and returns the result; on a served socket it goes through
 // the send queue, behind the frames queued before it.
 func (s *Socket) write(v any) error {

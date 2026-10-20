@@ -137,7 +137,7 @@ func hubSeedBook(t *testing.T, db *sql.DB) {
 
 // hubBroker starts an in-process JetStream broker holding PERPS_V1 for chain
 // 125 on one replica; maxMsgs > 0 bounds the stream and discards the oldest.
-func hubBroker(t *testing.T, maxMsgs int64) (*nats.Conn, jetstream.JetStream) {
+func hubBroker(t *testing.T, maxMsgs int64) (*server.Server, *nats.Conn, jetstream.JetStream) {
 	t.Helper()
 	ns, err := server.NewServer(&server.Options{Host: "127.0.0.1", Port: server.RANDOM_PORT, JetStream: true, StoreDir: t.TempDir(), NoLog: true, NoSigs: true})
 	if err != nil {
@@ -165,7 +165,7 @@ func hubBroker(t *testing.T, maxMsgs int64) (*nats.Conn, jetstream.JetStream) {
 	if _, err := js.CreateStream(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
-	return nc, js
+	return ns, nc, js
 }
 
 // hubPublisher publishes delivery envelopes with the headers of the perps
@@ -215,6 +215,7 @@ func blockTime(at time.Time) string {
 // hubRig is one hub with its broker, providers and socket server.
 type hubRig struct {
 	hub  *Hub
+	ns   *server.Server
 	nc   *nats.Conn
 	pub  *hubPublisher
 	url  string
@@ -223,7 +224,7 @@ type hubRig struct {
 
 func newHubRig(t *testing.T, db *sql.DB, maxMsgs int64) *hubRig {
 	t.Helper()
-	nc, js := hubBroker(t, maxMsgs)
+	ns, nc, js := hubBroker(t, maxMsgs)
 	p, err := feeds.NewProviders(context.Background(), db, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -239,7 +240,7 @@ func newHubRig(t *testing.T, db *sql.DB, maxMsgs int64) *hubRig {
 	srv.OnSubscribe, srv.OnUnsubscribe, srv.OnClose = hub.Subscribe, hub.Unsubscribe, hub.Leave
 	httpServer := httptest.NewServer(srv)
 	t.Cleanup(httpServer.Close)
-	r := &hubRig{hub: hub, nc: nc, pub: &hubPublisher{js: js}, url: "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws"}
+	r := &hubRig{hub: hub, ns: ns, nc: nc, pub: &hubPublisher{js: js}, url: "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws"}
 	r.start(t)
 	t.Cleanup(func() { r.stop() })
 	return r
@@ -387,6 +388,55 @@ func (c *hubClient) delta(t *testing.T, seq uint64) DataFrame {
 		t.Fatalf("frame snapshot=%v seq %d, want live seq %d", f.Snapshot, f.Seq, seq)
 	}
 	return f
+}
+
+// retryAfter reads until the socket closes and requires the close to be 1013
+// with a retry-after reason between 5 and 30 seconds.
+func (c *hubClient) retryAfter(t *testing.T) {
+	t.Helper()
+	if err := c.conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	var (
+		raw []byte
+		err error
+	)
+	for err == nil {
+		_, raw, err = c.conn.ReadMessage()
+	}
+	var closed *websocket.CloseError
+	if !errors.As(err, &closed) {
+		t.Fatalf("read %s, %v; want a close", raw, err)
+	}
+	m := regexp.MustCompile(`^retry-after=(\d+)$`).FindStringSubmatch(closed.Text)
+	if closed.Code != websocket.CloseTryAgainLater || m == nil {
+		t.Fatalf("close %d %q", closed.Code, closed.Text)
+	}
+	if n, _ := strconv.Atoi(m[1]); n < 5 || n > 30 {
+		t.Fatalf("retry-after %d outside [5, 30]", n)
+	}
+}
+
+// resync reads the frames up to the next snapshot, at most max of them, and
+// returns the snapshot.
+func (c *hubClient) resync(t *testing.T, max int) DataFrame {
+	t.Helper()
+	for range max {
+		if f := c.frame(t); f.Snapshot {
+			return f
+		}
+	}
+	t.Fatalf("no snapshot within %d frames", max)
+	return DataFrame{}
+}
+
+func hubTradesOf(t *testing.T, f DataFrame) hubTrades {
+	t.Helper()
+	var trades hubTrades
+	if err := json.Unmarshal(f.Data, &trades); err != nil {
+		t.Fatal(err)
+	}
+	return trades
 }
 
 type hubTrades struct {
@@ -542,22 +592,81 @@ func TestHub(t *testing.T) {
 			r.pub.publish(t, "perps.125.chain.block", "block", n, hubBlockRow())
 		}
 		r.start(t)
-		if err := c.conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		c.retryAfter(t)
+		hubWait(t, "stream sequence 11", func() bool { return r.applied() == 11 })
+	})
+
+	t.Run("perps_seq_resync", func(t *testing.T) {
+		hubReset(t, db)
+		r := newHubRig(t, db, 0)
+		c, snap := r.dial(t, btcTrade)
+		hubFill(t, db, 1)
+		r.pub.publish(t, "perps.125.0.fill", "fill", 1, blockTime(time.Now()))
+		c.delta(t, snap.Seq+1)
+		// The producer never delivers Perps-Seq 2, whose fill is stored; the
+		// stream sequence stays contiguous, and the hole resyncs the topic.
+		hubFill(t, db, 2)
+		hubFill(t, db, 3)
+		r.pub.seq++
+		r.pub.publish(t, "perps.125.0.fill", "fill", 3, blockTime(time.Now()))
+		if trades := hubTradesOf(t, c.resync(t, 3)); len(trades.Trades) != 3 || trades.Trades[0]["id"] != "3-0" {
+			t.Fatalf("snapshot after a Perps-Seq hole holds %d trades, newest %v", len(trades.Trades), trades.Trades[0]["id"])
+		}
+		// Perps-Seq 2 arrives late, after 3, and resyncs the topic again.
+		hubFill(t, db, 4)
+		r.pub.seq = 1
+		r.pub.publish(t, "perps.125.0.fill", "fill", 4, blockTime(time.Now()))
+		if trades := hubTradesOf(t, c.resync(t, 2)); len(trades.Trades) != 4 || trades.Trades[0]["id"] != "4-0" {
+			t.Fatalf("snapshot after a late Perps-Seq holds %d trades, newest %v", len(trades.Trades), trades.Trades[0]["id"])
+		}
+		// Perps-Seq 4, the one after the highest applied, is a live delta.
+		hubFill(t, db, 5)
+		r.pub.seq = 3
+		r.pub.publish(t, "perps.125.0.fill", "fill", 5, blockTime(time.Now()))
+		if f := c.frame(t); f.Snapshot || tradeID(t, f) != "5-0" {
+			t.Fatalf("frame after Perps-Seq 4 %+v data %s", f, f.Data)
+		}
+	})
+
+	t.Run("stream_recreated_resumes", func(t *testing.T) {
+		hubReset(t, db)
+		r := newHubRig(t, db, 0)
+		c, snap := r.dial(t, feeds.TopicChainBlocks)
+		for n := int64(1); n <= 3; n++ {
+			hubBlock(t, db, n)
+			r.pub.publish(t, "perps.125.chain.block", "block", n, hubBlockRow())
+			c.delta(t, snap.Seq+uint64(n))
+		}
+		r.stop()
+		ctx := context.Background()
+		if err := r.pub.js.DeleteStream(ctx, stream.Name); err != nil {
 			t.Fatal(err)
 		}
-		_, raw, err := c.conn.ReadMessage()
-		var closed *websocket.CloseError
-		if !errors.As(err, &closed) {
-			t.Fatalf("read %s, %v; want a close", raw, err)
+		cfg := stream.Config(125)
+		cfg.Replicas = 1
+		if _, err := r.pub.js.CreateStream(ctx, cfg); err != nil {
+			t.Fatal(err)
 		}
-		m := regexp.MustCompile(`^retry-after=(\d+)$`).FindStringSubmatch(closed.Text)
-		if closed.Code != websocket.CloseTryAgainLater || m == nil {
-			t.Fatalf("close %d %q", closed.Code, closed.Text)
+		r.start(t)
+		c.retryAfter(t)
+		hubWait(t, "resume on the new stream", func() bool { return r.applied() == 0 })
+		hubBlock(t, db, 4)
+		if seq, _ := r.pub.publish(t, "perps.125.chain.block", "block", 4, hubBlockRow()); seq != 1 {
+			t.Fatalf("new stream sequence %d, want 1", seq)
 		}
-		if n, _ := strconv.Atoi(m[1]); n < 5 || n > 30 {
-			t.Fatalf("retry-after %d outside [5, 30]", n)
-		}
-		hubWait(t, "stream sequence 11", func() bool { return r.applied() == 11 })
+		hubWait(t, "stream sequence 1 of the new stream", func() bool { return r.applied() == 1 })
+		d, snap := r.dial(t, feeds.TopicChainBlocks)
+		hubBlock(t, db, 5)
+		r.pub.publish(t, "perps.125.chain.block", "block", 5, hubBlockRow())
+		d.delta(t, snap.Seq+1)
+	})
+
+	t.Run("broker_outage_closes_1013", func(t *testing.T) {
+		hubReset(t, db)
+		r := newHubRig(t, db, 0)
+		c, _ := r.dial(t, feeds.TopicChainBlocks)
+		r.ns.Shutdown()
+		c.retryAfter(t)
 	})
 
 	t.Run("stale_frame_dropped", func(t *testing.T) {

@@ -48,6 +48,9 @@ const (
 	ReadyLag = 10 * time.Second
 	// spotQueue bounds the stream messages waiting for the spot user socket.
 	spotQueue = 1024
+	// spotItemTimeout bounds the reads that translate one message into the
+	// spot user socket items.
+	spotItemTimeout = 5 * time.Second
 
 	// readyInterval is how often the readiness of the socket gate is
 	// evaluated.
@@ -328,9 +331,11 @@ func (s *Server) Run(ctx context.Context) error {
 // feedSpotUser feeds the spot user socket from the spot and user subjects the
 // hub applies until ctx ends; stop detaches it from the hub. The listener
 // runs under the hub lock, so it only queues the message, and a worker
-// translates it into the REST items (rest.SpotUsers.StreamItems).
-// ponytail: a full queue drops the message with an error log; the socket
-// client then misses that update until its next REST read.
+// translates it into the REST items (rest.SpotUsers.StreamItems) within
+// spotItemTimeout. A message the full queue drops or whose items cannot be
+// read is an update some socket would miss without knowing whose it is, so
+// every spot user socket closes with 1013 and its client resyncs through
+// REST. A slow socket is closed by the spot user socket, never waited on.
 func (s *Server) feedSpotUser(ctx context.Context) (stop func()) {
 	type message struct {
 		subject string
@@ -339,6 +344,9 @@ func (s *Server) feedSpotUser(ctx context.Context) (stop func()) {
 	ctx, cancel := context.WithCancel(ctx)
 	queue := make(chan message, spotQueue)
 	prefix := "perps." + strconv.FormatUint(s.chain, 10) + "."
+	// lost is set by the listener when the full queue drops a message; the
+	// worker resyncs every socket for it after the message it translates.
+	var lost atomic.Bool
 	stopListen := s.hub.Listen(func(subject string, env delivery.Envelope) {
 		if !stream.Matches(prefix+"spot.>", subject) && !stream.Matches(prefix+"user.>", subject) {
 			return
@@ -346,9 +354,16 @@ func (s *Server) feedSpotUser(ctx context.Context) (stop func()) {
 		select {
 		case queue <- message{subject, env}:
 		default:
-			s.logger.Error("spot user socket queue full", slog.String("subject", subject), slog.String("event", env.EventID))
+			if !lost.Swap(true) {
+				s.logger.Error("spot user socket queue full", slog.String("subject", subject), slog.String("event", env.EventID))
+			}
 		}
 	})
+	read := func(env delivery.Envelope) ([]rest.SpotStreamItem, error) {
+		ctx, cancel := context.WithTimeout(ctx, spotItemTimeout)
+		defer cancel()
+		return s.spotUsers.StreamItems(ctx, env)
+	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -357,10 +372,14 @@ func (s *Server) feedSpotUser(ctx context.Context) (stop func()) {
 			case <-ctx.Done():
 				return
 			case m := <-queue:
-				items, err := s.spotUsers.StreamItems(ctx, m.env)
+				items, err := read(m.env)
+				if lost.Swap(false) {
+					s.spotUser.CloseAll()
+				}
 				if err != nil {
 					if ctx.Err() == nil {
 						s.logger.Error("spot user socket item", slog.String("subject", m.subject), slog.Any("err", err))
+						s.spotUser.CloseAll()
 					}
 					continue
 				}

@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -290,6 +291,46 @@ func TestSpotUserSocket(t *testing.T) {
 		spotUserSend(t, conn, "unsubscribe", "trade", removed)
 		spotUserExpect(t, spotUserRead(t, conn, 5*time.Second), spotUserControlWant("unsubscribed", "trade", removed))
 		subscribe(t, conn, "trade", address)
+	})
+	t.Run("slow_socket_closes_1013", func(t *testing.T) {
+		conn := connect(t)
+		subscribe(t, conn, "trade", spotUserTestAddress)
+		// The client reads nothing while far more than its queue and socket
+		// buffers hold is delivered; Deliver never waits on it.
+		item := json.RawMessage(`{"data":"` + strings.Repeat("x", 32<<10) + `"}`)
+		start := time.Now()
+		for range 2000 {
+			if err := socket.Deliver("trade", spotUserTestAddress, item); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if took := time.Since(start); took > 5*time.Second {
+			t.Fatalf("delivering to a stalled socket took %s", took)
+		}
+		if err := conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		for err == nil {
+			_, _, err = conn.ReadMessage()
+		}
+		var closed *websocket.CloseError
+		if !errors.As(err, &closed) || closed.Code != websocket.CloseTryAgainLater || !strings.HasPrefix(closed.Text, "retry-after=") {
+			t.Fatalf("stalled socket ended with %v, want a 1013 retry-after close", err)
+		}
+	})
+	t.Run("close_all", func(t *testing.T) {
+		conn := connect(t)
+		subscribe(t, conn, "trade", spotUserTestAddress)
+		socket.CloseAll()
+		if err := conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err := conn.ReadMessage()
+		var closed *websocket.CloseError
+		if !errors.As(err, &closed) || closed.Code != websocket.CloseTryAgainLater || !strings.HasPrefix(closed.Text, "retry-after=") {
+			t.Fatalf("CloseAll ended the socket with %v, want a 1013 retry-after close", err)
+		}
 	})
 	t.Run("routing_isolation", func(t *testing.T) {
 		conn := connect(t)

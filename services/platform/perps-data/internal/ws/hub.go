@@ -26,9 +26,28 @@ import (
 // instead (contracts/data-services.md section 8).
 const StaleAfter = 60 * time.Second
 
+// OutageAfter is how long the stream may stay unanswered before every
+// subscribed socket closes with 1013, so its client resyncs instead of
+// showing frozen books and tapes beside live timed frames.
+const OutageAfter = 10 * time.Second
+
 const (
 	snapshotTimeout = 10 * time.Second
-	reattachDelay   = time.Second
+	// messageTimeout bounds the reads Message makes under the hub lock for a
+	// message whose Prepare could not make them.
+	messageTimeout = 5 * time.Second
+	reattachDelay  = time.Second
+	// probeAfter is how long the consumer may deliver nothing before the hub
+	// asks the broker for the stream; probeTimeout bounds every stream
+	// request of the hub.
+	probeAfter   = 5 * time.Second
+	probeTimeout = 2 * time.Second
+	// loadAttempts is how often a subscribe reads the topic state outside the
+	// hub lock before a load that messages keep racing reads its snapshot
+	// under it.
+	loadAttempts = 3
+	// resnapshotWorkers bounds the snapshots one resync reads at once.
+	resnapshotWorkers = 8
 )
 
 // Frame is one live frame of a topic as a Provider produces it.
@@ -59,12 +78,10 @@ type Provider interface {
 }
 
 // topicState is one topic of the gateway process: the snapshotId of the
-// process, the dense seq of the last broadcast, the Perps-Seq of the last
-// message applied to the topic and the subscribed sockets.
+// process, the dense seq of the last broadcast and the subscribed sockets.
 type topicState struct {
 	snapshotID string
 	seq        uint64
-	perpsSeq   int64
 	subs       map[*Socket]struct{}
 }
 
@@ -79,11 +96,17 @@ type Hub struct {
 
 	// mu serialises message application, timed frames and subscribe
 	// snapshots, so a snapshot and the deltas after it reach a socket in seq
-	// order. Socket writes happen under it, so a slow socket stalls every
-	// topic up to the write deadline.
-	mu        sync.Mutex
-	topics    map[string]*topicState
-	applied   uint64
+	// order. Frames are only queued under it; socket closes, stream requests
+	// and resync snapshots happen outside it.
+	mu      sync.Mutex
+	topics  map[string]*topicState
+	applied uint64
+	// perpsSeq is the highest Perps-Seq applied, zero until the first
+	// message after an attach of a new stream.
+	perpsSeq int64
+	// created is the creation time of the stream the hub resumes on; a
+	// stream created anew is a history the hub cannot resume.
+	created   time.Time
 	attached  bool
 	listeners map[*listener]struct{}
 }
@@ -133,8 +156,9 @@ func (h *Hub) Listen(fn func(subject string, env delivery.Envelope)) (stop func(
 // Subscribe sends the snapshot frame of f.Topic to s, carrying the seq of the
 // last broadcast, and registers s for the deltas after it. The provider
 // loads the topic state outside the hub lock, and the snapshot is answered
-// from that state under it; only a load a message raced reads the snapshot
-// under the lock. A snapshot that cannot be built closes s with 1013 so the
+// from that state under it; a load a message raced is read again, and only
+// after loadAttempts raced loads is the snapshot read under the lock, within
+// snapshotTimeout. A snapshot that cannot be built closes s with 1013 so the
 // client resyncs. The socket protocol calls Subscribe, Unsubscribe and Leave
 // of one socket in turn, so s cannot leave while its state loads.
 func (h *Hub) Subscribe(s *Socket, f ClientFrame) {
@@ -151,20 +175,31 @@ func (h *Hub) Subscribe(s *Socket, f ClientFrame) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), snapshotTimeout)
 	defer cancel()
-	err := h.provider.Load(ctx, f.Topic)
-	h.mu.Lock()
-	_, in := t.subs[s]
-	if held && !in {
-		// A failed write dropped s from every topic and closed it meanwhile.
-		h.mu.Unlock()
-		return
-	}
-	var data json.RawMessage
-	if err == nil {
-		var ok bool
-		if data, ok = h.provider.Held(f.Topic); !ok {
-			data, err = h.provider.Snapshot(ctx, f.Topic)
+	var (
+		data json.RawMessage
+		err  error
+		in   bool
+	)
+	for attempt := 1; ; attempt++ {
+		err = h.provider.Load(ctx, f.Topic)
+		h.mu.Lock()
+		if _, in = t.subs[s]; held && !in {
+			// A failed write dropped s from every topic and closed it meanwhile.
+			h.mu.Unlock()
+			return
 		}
+		if err != nil {
+			break
+		}
+		var ok bool
+		if data, ok = h.provider.Held(f.Topic); ok {
+			break
+		}
+		if attempt == loadAttempts {
+			data, err = h.provider.Snapshot(ctx, f.Topic)
+			break
+		}
+		h.mu.Unlock()
 	}
 	if err != nil {
 		h.logger.Error("ws: subscribe snapshot", slog.String("topic", f.Topic), slog.Any("err", err))
@@ -222,7 +257,11 @@ func (h *Hub) dropLocked(s *Socket) {
 // timed frames of the provider until ctx ends. The first attach of the
 // process starts after the stream head; every later attach, after a
 // consumer failure or a new Run of the same hub, resumes from the stream
-// sequence after the last applied message.
+// sequence after the last applied message, unless the stream was created
+// anew or lost the messages the hub applied: then every subscribed socket
+// closes with 1013 and the hub starts after the new stream head. A stream
+// that stays unanswered for OutageAfter closes every subscribed socket with
+// 1013 once.
 func (h *Hub) Run(ctx context.Context, nc *nats.Conn) error {
 	if ctx == nil || nc == nil || nc.IsClosed() {
 		return errors.New("ws: hub needs a context and an open connection")
@@ -231,12 +270,14 @@ func (h *Hub) Run(ctx context.Context, nc *nats.Conn) error {
 	defer cancel()
 	timed := make(chan error, 1)
 	go func() { timed <- h.provider.Run(inner, h.emit) }()
+	o := &outage{heard: time.Now()}
 	for {
-		err := h.consume(inner, nc)
+		err := h.consume(inner, nc, o)
 		if ctx.Err() != nil {
 			break
 		}
 		h.logger.Error("ws: hub consumer", slog.Any("err", err))
+		o.unheard(h)
 		select {
 		case <-ctx.Done():
 		case err := <-timed:
@@ -252,9 +293,32 @@ func (h *Hub) Run(ctx context.Context, nc *nats.Conn) error {
 	return ctx.Err()
 }
 
+// outage tracks how long the stream has gone unanswered: heard is when the
+// broker last answered for it, and down is set once that outage closed the
+// subscribed sockets. Run and the fetch loop of its consume use it in turn.
+type outage struct {
+	heard time.Time
+	down  bool
+}
+
+func (o *outage) answered() { o.heard, o.down = time.Now(), false }
+
+// unheard closes every subscribed socket with 1013 once per outage, when the
+// stream has gone unanswered for OutageAfter.
+func (o *outage) unheard(h *Hub) {
+	if o.down || time.Since(o.heard) < OutageAfter {
+		return
+	}
+	o.down = true
+	h.logger.Error("ws: hub stream unanswered", slog.Duration("for", time.Since(o.heard)))
+	h.closeAll()
+}
+
 // consume attaches the consumer at the resume sequence and applies its
-// messages until the consumer fails or ctx ends.
-func (h *Hub) consume(ctx context.Context, nc *nats.Conn) error {
+// messages until the consumer fails or ctx ends. A consumer that delivers
+// nothing for probeAfter has the stream asked for, so an outage the
+// consumer reports only as empty fetches is seen.
+func (h *Hub) consume(ctx context.Context, nc *nats.Conn, o *outage) error {
 	js, err := jetstream.New(nc)
 	if err != nil {
 		return err
@@ -263,6 +327,7 @@ func (h *Hub) consume(ctx context.Context, nc *nats.Conn) error {
 	if err != nil {
 		return err
 	}
+	o.answered()
 	c, err := natsdriver.NewConsumer(ctx, nc, natsdriver.ConsumerConfig{
 		Stream:        stream.Name,
 		Subject:       h.prefix + ">",
@@ -287,6 +352,16 @@ func (h *Hub) consume(ctx context.Context, nc *nats.Conn) error {
 		families := map[string]chan struct{}{}
 		for {
 			messages, err := c.Fetch(ctx)
+			switch {
+			case len(messages) > 0:
+				o.answered()
+			case err == nil && time.Since(o.heard) >= probeAfter:
+				if h.reachable(ctx, js) {
+					o.answered()
+				} else {
+					o.unheard(h)
+				}
+			}
 			for _, m := range messages {
 				p := h.prepare(ctx, m, families, &preparing)
 				select {
@@ -305,14 +380,18 @@ func (h *Hub) consume(ctx context.Context, nc *nats.Conn) error {
 	defer preparing.Wait()
 	for p := range queue {
 		<-p.ready
-		if err := h.apply(ctx, p); err != nil {
-			c.Close()
-			for range queue {
-			}
-			return err
-		}
+		h.apply(ctx, p)
 	}
 	return <-fetchErr
+}
+
+// reachable reports whether the broker answers for the stream within
+// probeTimeout.
+func (h *Hub) reachable(ctx context.Context, js jetstream.JetStream) bool {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	_, err := js.Stream(ctx, stream.Name)
+	return err == nil
 }
 
 // preparedQueue bounds the messages fetched ahead of the apply loop.
@@ -358,14 +437,13 @@ func (h *Hub) prepare(ctx context.Context, m *natsdriver.Message, families map[s
 }
 
 // resumeFrom returns the stream sequence after the last applied message; on
-// the first attach of the process that is the sequence after the stream head.
+// the first attach of the process, and on a stream created anew or whose
+// last sequence is below the last applied message, that is the sequence
+// after the stream head, and the hub forgets the Perps-Seq it applied. A
+// stream that went back closes every subscribed socket with 1013.
 func (h *Hub) resumeFrom(ctx context.Context, js jetstream.JetStream) (uint64, error) {
-	h.mu.Lock()
-	attached, applied := h.attached, h.applied
-	h.mu.Unlock()
-	if attached {
-		return applied + 1, nil
-	}
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
 	s, err := js.Stream(ctx, stream.Name)
 	if err != nil {
 		return 0, fmt.Errorf("ws: hub stream: %w", err)
@@ -375,41 +453,75 @@ func (h *Hub) resumeFrom(ctx context.Context, js jetstream.JetStream) (uint64, e
 		return 0, fmt.Errorf("ws: hub stream: %w", err)
 	}
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.applied, h.attached = info.State.LastSeq, true
-	return h.applied + 1, nil
+	var closing []*Socket
+	reset := h.attached && (!info.Created.Equal(h.created) || info.State.LastSeq < h.applied)
+	if reset {
+		h.logger.Error("ws: hub stream went back", slog.Uint64("applied", h.applied), slog.Uint64("last", info.State.LastSeq),
+			slog.Time("created", info.Created), slog.Time("was_created", h.created))
+		closing = h.dropAllLocked()
+	}
+	if !h.attached || reset {
+		h.applied, h.perpsSeq, h.created, h.attached = info.State.LastSeq, 0, info.Created, true
+	}
+	start := h.applied + 1
+	h.mu.Unlock()
+	closeLater(closing)
+	return start, nil
 }
 
 // apply applies one message once. A stream sequence beyond the one after the
 // last applied message is a range the hub cannot fill: every subscribed
-// socket closes with 1013 and the client resyncs through REST.
-func (h *Hub) apply(ctx context.Context, p *prepared) error {
+// socket closes with 1013 and the client resyncs through REST. The topics
+// the message leaves out of date are resynced outside the hub lock before
+// the next message is applied.
+func (h *Hub) apply(ctx context.Context, p *prepared) {
 	seq := p.m.Sequence
-	subject := p.m.Subject
-	env, perpsSeq, err := p.env, p.perpsSeq, p.err
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if seq <= h.applied {
-		return nil
+		h.mu.Unlock()
+		return
 	}
+	var closing []*Socket
 	if seq > h.applied+1 {
 		h.logger.Error("ws: hub stream gap", slog.Uint64("applied", h.applied), slog.Uint64("next", seq))
-		h.closeAllLocked()
+		closing = h.dropAllLocked()
 	}
 	h.applied = seq
-	if err != nil {
-		h.logger.Error("ws: hub message", slog.Uint64("stream_seq", seq), slog.Any("err", err))
-		h.resnapshotLocked(ctx, h.watchedLocked(), 0)
-		return nil
+	var resnap []string
+	if p.err != nil {
+		h.logger.Error("ws: hub message", slog.Uint64("stream_seq", seq), slog.Any("err", p.err))
+		resnap = h.watchedLocked()
+	} else {
+		resnap = h.messageLocked(ctx, p.m.Subject, p.env, p.perpsSeq)
 	}
+	h.mu.Unlock()
+	closeLater(closing)
+	h.resnapshot(ctx, resnap)
+}
+
+// messageLocked applies one decoded message: it calls the listeners, sends
+// the live frames of the provider and returns the subscribed topics that
+// must resync instead. A Perps-Seq that is not the one after the highest
+// applied is a hole or a late message of the producer, which the stream
+// sequence cannot show, so every subscribed topic resyncs.
+func (h *Hub) messageLocked(ctx context.Context, subject string, env delivery.Envelope, perpsSeq int64) []string {
 	for l := range h.listeners {
 		l.fn(subject, env)
 	}
-	frames, resnap, err := h.provider.Message(ctx, subject, env)
+	var resnap []string
+	if h.perpsSeq > 0 && perpsSeq != h.perpsSeq+1 {
+		h.logger.Error("ws: hub Perps-Seq out of order", slog.Int64("applied", h.perpsSeq), slog.Int64("next", perpsSeq), slog.String("subject", subject))
+		resnap = h.watchedLocked()
+	}
+	h.perpsSeq = max(h.perpsSeq, perpsSeq)
+	mctx, cancel := context.WithTimeout(ctx, messageTimeout)
+	defer cancel()
+	frames, more, err := h.provider.Message(mctx, subject, env)
 	if err != nil {
 		h.logger.Error("ws: hub provider message", slog.String("subject", subject), slog.Any("err", err))
-		frames, resnap = nil, h.watchedLocked()
+		frames, more = nil, h.watchedLocked()
 	}
+	resnap = append(resnap, more...)
 	if subject == h.prefix+"chain.rewind" {
 		resnap = append(resnap, h.watchedLocked()...)
 	}
@@ -423,11 +535,14 @@ func (h *Hub) apply(ctx context.Context, p *prepared) error {
 			resnap = append(resnap, f.Topic)
 			continue
 		}
-		h.broadcastLocked(f, at, perpsSeq)
+		h.broadcastLocked(f, at)
 	}
+	resnap = slices.DeleteFunc(resnap, func(topic string) bool {
+		t := h.topics[topic]
+		return t == nil || len(t.subs) == 0
+	})
 	slices.Sort(resnap)
-	h.resnapshotLocked(ctx, slices.Compact(resnap), perpsSeq)
-	return nil
+	return slices.Compact(resnap)
 }
 
 // decode reads the delivery envelope of m, checked against its headers.
@@ -476,9 +591,7 @@ func dataTime(env delivery.Envelope) (time.Time, error) {
 func (h *Hub) emit(f Frame) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if t := h.topics[f.Topic]; t != nil {
-		h.broadcastLocked(f, time.Now(), t.perpsSeq)
-	}
+	h.broadcastLocked(f, time.Now())
 }
 
 // watchedLocked returns the topics with a subscriber.
@@ -494,41 +607,61 @@ func (h *Hub) watchedLocked() []string {
 
 // broadcastLocked sends f as the next delta of its topic, stamped with the
 // time of its data.
-func (h *Hub) broadcastLocked(f Frame, at time.Time, perpsSeq int64) {
+func (h *Hub) broadcastLocked(f Frame, at time.Time) {
 	t := h.topics[f.Topic]
 	if t == nil || len(t.subs) == 0 {
 		return
 	}
 	t.seq++
-	t.perpsSeq = perpsSeq
 	h.sendLocked(t, DataFrame{Topic: f.Topic, TS: at.UnixMilli(), SnapshotID: t.snapshotID, Seq: t.seq, Data: f.Data})
 }
 
-// resnapshotLocked rebuilds the snapshot of every subscribed topic of topics
-// and sends it with snapshot true and the next seq. A topic whose snapshot
-// cannot be built closes its sockets with 1013.
-func (h *Hub) resnapshotLocked(ctx context.Context, topics []string, perpsSeq int64) {
-	for _, topic := range topics {
+// resnapshot reads a fresh snapshot of every topic of topics outside the hub
+// lock, resnapshotWorkers at a time and each within snapshotTimeout, and
+// sends it to the sockets the topic holds then, with snapshot true and the
+// next seq. It runs on the apply loop between two messages, so no message
+// changes the topic state while its snapshot is read; a timed frame sent
+// meanwhile is a whole frame the snapshot supersedes. A topic whose snapshot
+// cannot be read closes its sockets with 1013.
+func (h *Hub) resnapshot(ctx context.Context, topics []string) {
+	if len(topics) == 0 {
+		return
+	}
+	data := make([]json.RawMessage, len(topics))
+	errs := make([]error, len(topics))
+	slots := make(chan struct{}, resnapshotWorkers)
+	var reads sync.WaitGroup
+	for i, topic := range topics {
+		slots <- struct{}{}
+		reads.Go(func() {
+			defer func() { <-slots }()
+			ctx, cancel := context.WithTimeout(ctx, snapshotTimeout)
+			defer cancel()
+			data[i], errs[i] = h.provider.Snapshot(ctx, topic)
+		})
+	}
+	reads.Wait()
+	h.mu.Lock()
+	var closing []*Socket
+	for i, topic := range topics {
 		t := h.topics[topic]
 		if t == nil || len(t.subs) == 0 {
 			continue
 		}
-		data, err := h.provider.Snapshot(ctx, topic)
-		if err != nil {
-			h.logger.Error("ws: hub resnapshot", slog.String("topic", topic), slog.Any("err", err))
+		if errs[i] != nil {
+			h.logger.Error("ws: hub resnapshot", slog.String("topic", topic), slog.Any("err", errs[i]))
 			for s := range t.subs {
 				delete(t.subs, s)
 				h.provider.Unsubscribed(topic)
-				_ = s.CloseRetryAfter()
+				closing = append(closing, s)
 			}
 			continue
 		}
 		t.seq++
-		if perpsSeq > 0 {
-			t.perpsSeq = perpsSeq
-		}
-		h.sendLocked(t, DataFrame{Topic: topic, TS: time.Now().UnixMilli(), SnapshotID: t.snapshotID, Seq: t.seq, Snapshot: true, Data: data})
+		h.sendLocked(t, DataFrame{Topic: topic, TS: time.Now().UnixMilli(), SnapshotID: t.snapshotID, Seq: t.seq, Snapshot: true, Data: data[i]})
 	}
+	h.mu.Unlock()
+	closeLater(closing)
 }
 
 // sendLocked queues frame, encoded once, to every subscriber of t; a socket
@@ -551,17 +684,36 @@ func (h *Hub) sendLocked(t *topicState, frame DataFrame) {
 	}
 }
 
-// closeAllLocked closes every subscribed socket with 1013 and retry-after.
-func (h *Hub) closeAllLocked() {
-	closing := map[*Socket]struct{}{}
+// closeAll closes every subscribed socket with 1013 and retry-after.
+func (h *Hub) closeAll() {
+	h.mu.Lock()
+	closing := h.dropAllLocked()
+	h.mu.Unlock()
+	closeLater(closing)
+}
+
+// dropAllLocked removes every subscribed socket from every topic and returns
+// each once.
+func (h *Hub) dropAllLocked() []*Socket {
+	seen := map[*Socket]struct{}{}
+	var out []*Socket
 	for topic, t := range h.topics {
 		for s := range t.subs {
 			delete(t.subs, s)
 			h.provider.Unsubscribed(topic)
-			closing[s] = struct{}{}
+			if _, dup := seen[s]; !dup {
+				seen[s] = struct{}{}
+				out = append(out, s)
+			}
 		}
 	}
-	for s := range closing {
-		_ = s.CloseRetryAfter()
+	return out
+}
+
+// closeLater closes every socket of sockets with 1013 and retry-after
+// without waiting for the close frames.
+func closeLater(sockets []*Socket) {
+	for _, s := range sockets {
+		s.closeLater()
 	}
 }

@@ -50,6 +50,8 @@ type spotUserSocket struct {
 	subs   map[spotUserKey]struct{}
 	queue  chan any
 	done   chan struct{}
+	// closing closes the socket with 1013 once, without waiting for it.
+	closing sync.Once
 }
 
 func spotUserAddress(address string) (string, bool) {
@@ -90,6 +92,17 @@ func (s *SpotUser) Deliver(stream, address string, data json.RawMessage) error {
 		socket.mu.Unlock()
 	}
 	return nil
+}
+
+// CloseAll closes every spot user socket with 1013 and retry-after without
+// waiting for the close frames, so each client reads its state again through
+// REST; the gateway calls it when it lost an update it cannot attribute.
+func (s *SpotUser) CloseAll() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for socket := range s.sockets {
+		socket.close()
+	}
 }
 
 func (s *SpotUser) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -174,9 +187,13 @@ func (s *spotUserSocket) enqueue(frame any) {
 	select {
 	case s.queue <- frame:
 	default:
-		_ = s.socket.CloseRetryAfter()
+		// A socket that fell spotUserQueueSize frames behind would miss this
+		// one; it closes with 1013 so its client resyncs.
+		s.close()
 	}
 }
+
+func (s *spotUserSocket) close() { s.closing.Do(s.socket.closeLater) }
 
 func (s *spotUserSocket) handle(raw []byte) {
 	var frame struct {
