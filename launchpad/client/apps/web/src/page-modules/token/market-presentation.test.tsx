@@ -9,7 +9,7 @@ import { appendRankingPage, mergeTradeHistory, tradeKey } from './market-session
 import { safeSocialUrl } from '@/widgets/trading/token-description';
 import { CoinCard } from '@/ui/primitives';
 import { poolPath } from '@/core/app-foundation/navigation';
-import { exactUnits, tokenAmount, freshness, dataAgeMs, orderedTrades, holderRows, rankingCards, type PoolStats, type Pool, type Token, type Trade, type HoldersResponse, type Watermark, type RankingsResponse } from './market-presentation';
+import { exactUnits, tokenAmount, freshness, dataAgeMs, orderedTrades, holderRows, rankingCards, priceNumber, type PoolStats, type Pool, type Token, type Trade, type HoldersResponse, type Watermark, type RankingsResponse } from './market-presentation';
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const address = '0x' + '1'.repeat(40);
 const position = { chainId: '125' as const, height: '20', transactionIndex: '1', logIndex: '0', transactionHash: '0x' + '2'.repeat(64), blockHash: '0x' + '3'.repeat(64) };
@@ -25,6 +25,16 @@ describe('schema-bound market primitives (synthetic arithmetic fixtures)', () =>
     expect(tokenAmount('1', { ...token, decimalsQuality: 'unavailable' })).toBe('—');
     expect(() => exactUnits('1e20', 6)).toThrow();
     expect(() => exactUnits('1', 256)).toThrow();
+  });
+  it('keeps the significant digits of small positive prices when converting ratios', () => {
+    expect(priceNumber({ numerator: '1', denominator: '10000000' })).toBe(1e-7);
+    expect(priceNumber({ numerator: '123', denominator: '1000000000000' })).toBe(1.23e-10);
+    expect(priceNumber({ numerator: '1', denominator: '3' })).toBeCloseTo(1 / 3, 15);
+    expect(priceNumber({ numerator: '1250000', denominator: '1000000' })).toBe(1.25);
+    expect(priceNumber({ numerator: '9'.repeat(30), denominator: '1' })).toBe(1e30);
+    expect(priceNumber({ numerator: '0', denominator: '7' })).toBe(0);
+    expect(priceNumber({ numerator: '1', denominator: '0' })).toBeNull();
+    expect(priceNumber({ numerator: '1' + '0'.repeat(400), denominator: '1' })).toBeNull();
   });
   it('retains stale and gap status until snapshot continuity is confirmed', () => {
     const base = { now: 100000, generatedAt: new Date(100000).toISOString(), heartbeatAt: 100000, contiguous: true, watermark: { ...watermark, observedAt: new Date(100000).toISOString() } };

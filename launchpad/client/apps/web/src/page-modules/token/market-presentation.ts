@@ -111,7 +111,13 @@ export function priceNumber(price: PriceLike | null | undefined): number | null 
   if (!price) return null;
   const component = /^(0|[1-9][0-9]{0,1023})$/;
   if (!component.test(price.numerator) || !component.test(price.denominator) || BigInt(price.denominator) === 0n) return null;
-  const value = Number(exactPriceRatio(price.numerator, price.denominator).replace('≈', ''));
+  // Divide at 18 significant digits, not 6 decimal places, so a small positive
+  // price keeps its digits; display rounding belongs to the final formatter.
+  const numerator = BigInt(price.numerator), denominator = BigInt(price.denominator);
+  if (numerator === 0n) return 0;
+  const shift = 18 - (price.numerator.length - price.denominator.length);
+  const quotient = shift >= 0 ? numerator * 10n ** BigInt(shift) / denominator : numerator / (denominator * 10n ** BigInt(-shift));
+  const value = Number(`${quotient}e${-shift}`);
   return Number.isFinite(value) ? value : null;
 }
 /** Raw USDL integer (6 decimals) to a JS number for compact display; null when invalid. */
