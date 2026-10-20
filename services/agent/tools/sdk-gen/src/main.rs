@@ -35,6 +35,7 @@ struct Model {
 struct Compatibility {
     sdk: String,
     contract: String,
+    contract_major: u16,
     node_interface: String,
     daemon: String,
 }
@@ -189,6 +190,7 @@ fn read_schema(schema_root: &Path) -> Result<Model, String> {
     )?)?;
     let approval_enforcement = unquote(required(&combined, "guarantee.ApprovalHold.enforcement")?)?;
     let approval_notice = unquote(required(&combined, "guarantee.ApprovalHold.notice")?)?;
+    let contract = unquote(required(&root, "compatibility.matrix.contract")?)?;
     let model = Model {
         scalars,
         operations,
@@ -209,7 +211,8 @@ fn read_schema(schema_root: &Path) -> Result<Model, String> {
         ],
         compatibility: Compatibility {
             sdk: unquote(required(&root, "compatibility.matrix.sdk")?)?,
-            contract: unquote(required(&root, "compatibility.matrix.contract")?)?,
+            contract_major: contract_major(&contract, required(&root, "schema.major")?)?,
+            contract,
             node_interface: unquote(required(&root, "compatibility.matrix.node_interface")?)?,
             daemon: unquote(required(&root, "compatibility.matrix.daemon")?)?,
         },
@@ -229,6 +232,19 @@ fn read_schema(schema_root: &Path) -> Result<Model, String> {
     };
     validate_model(&model)?;
     Ok(model)
+}
+
+fn contract_major(contract: &str, schema_major: &str) -> Result<u16, String> {
+    let major = contract
+        .strip_suffix(".x")
+        .and_then(|major| major.parse::<u16>().ok())
+        .ok_or_else(|| format!("compatibility contract {contract} is not a major.x range"))?;
+    if major.to_string() != schema_major {
+        return Err(format!(
+            "compatibility contract {contract} disagrees with schema major {schema_major}"
+        ));
+    }
+    Ok(major)
 }
 
 fn validate_model(model: &Model) -> Result<(), String> {
@@ -505,6 +521,10 @@ export interface ApprovalLifecycleEvent {{
         tuple(&model.approval.events),
     );
     Ok(TYPESCRIPT_TEMPLATE
+        .replace(
+            "{{CONTRACT_MAJOR}}",
+            &model.compatibility.contract_major.to_string(),
+        )
         .replace("{{SCALARS}}", scalars.trim_end())
         .replace("{{RUNGS}}", &rungs)
         .replace("{{ERRORS}}", &errors)
@@ -653,6 +673,10 @@ class ApprovalLifecycleEvent:
         literal(&model.approval.events),
     );
     Ok(PYTHON_TEMPLATE
+        .replace(
+            "{{CONTRACT_MAJOR}}",
+            &model.compatibility.contract_major.to_string(),
+        )
         .replace("{{SCALARS}}", scalars.trim_end())
         .replace("{{RUNGS}}", &rungs)
         .replace("{{ERRORS}}", &errors)

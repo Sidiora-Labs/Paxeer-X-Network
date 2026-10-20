@@ -21,7 +21,7 @@ digest = "709067b1c9d7bf0df896b37d411e74195af9754675b953c194fd5bc5d9e8d4ba"
 
 [generator.agent-sdk-gen]
 root = "services/agent/tools/sdk-gen"
-digest = "e4bdca1e49126570a18cdeae37deec44359f7ccb8928700bb53149b969697971"
+digest = "f7d11eb5472120abb22d0b0dcbc5a093a981d1fc5e3c4d6e70df58c35a934ed3"
 
 [generator.human-api-gen]
 root = "human/tools/api-gen"
@@ -82,7 +82,7 @@ language = "typescript"
 root = "services/agent/sdk/typescript/src/generated"
 
 [files.agent-typescript]
-"client.ts" = "28f25a34b32c4a00ae550b16d097fa93c851f0811ed05d047b16efcb0aa78c23"
+"client.ts" = "cd45ebdbced20bc1d2fa96dbfac763dc46fbe76d078d398a2f9054001ff87937"
 "guarantees.md" = "7f44042200d4ce72758644fc3aeb9e20b5b4414f1db8412973f6347872d1c7b3"
 "mirror.ts" = "53f5fc3afc8cccd0d27a1bb656d6f5e520e3e21983ee274a44fd74b1ddc6eac1"
 "receipt.ts" = "ee9f7b2dc347a31c673e1bc943a265cbbda2c1b1df9b9656ff27ab4cc94f0d5e"
@@ -93,7 +93,7 @@ root = "services/agent/sdk/python/layerx_sdk/generated"
 
 [files.agent-python]
 "__init__.py" = "5542bf19c9f1b61d1a0a9cb748dc1f0062a9a8df1a3db4b1e525cb8dbd1f6e34"
-"client.py" = "8fc58cb805c16fe184e1292cdeec797e89e59c6a5c4b114d0a1bbc80e8cb6ba4"
+"client.py" = "66c1bab451aac38f48247ab0fd7abad493a296ee0ebdb25e499b8bd67a494c8f"
 "client.pyi" = "38d06a320958ba360a9a5684720a48ecc15836629fd9947bec944defd8608770"
 "guarantees.md" = "7f44042200d4ce72758644fc3aeb9e20b5b4414f1db8412973f6347872d1c7b3"
 "mirror.py" = "c4ca83fb5b195303cf3154da99933fda9d8915140f6e864c6c74df872422843e"

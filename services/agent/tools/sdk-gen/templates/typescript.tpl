@@ -3,7 +3,7 @@
 const PACKAGE_METADATA = Object.freeze({
   name: "@sidiora/layerx-sdk",
   version: "0.1.0",
-  contractMajor: 1,
+  contractMajor: {{CONTRACT_MAJOR}},
 });
 
 export function layerx_sdk_ts_package(): typeof PACKAGE_METADATA {

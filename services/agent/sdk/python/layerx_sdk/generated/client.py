@@ -9,7 +9,7 @@ from typing import NotRequired, TypedDict, Generic, Literal, Protocol, TypeAlias
 _PACKAGE_METADATA: Mapping[str, str | int] = MappingProxyType({
     "name": "layerx-sdk",
     "version": "0.1.0",
-    "contract_major": 1,
+    "contract_major": 2,
 })
 
 def layerx_sdk_py_package() -> Mapping[str, str | int]:

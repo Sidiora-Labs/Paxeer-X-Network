@@ -442,7 +442,7 @@ class PythonSdkIntegration(unittest.TestCase):
         self.assertIsInstance(metadata, MappingProxyType)
         self.assertEqual(metadata["name"], "layerx-sdk")
         self.assertEqual(metadata["version"], "0.1.0")
-        self.assertEqual(metadata["contract_major"], 1)
+        self.assertEqual(metadata["contract_major"], 2)
         with self.assertRaises(TypeError):
             metadata["contract_major"] = 2  # type: ignore[index]
 

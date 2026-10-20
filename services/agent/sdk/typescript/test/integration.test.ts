@@ -37,7 +37,7 @@ function expectThrow(operation: () => unknown, message: string): void {
 
 export async function verifyTypeScriptPackage(): Promise<void> {
   const metadata = layerx_sdk_ts_package();
-  assert(metadata.contractMajor === 1, "contract major drift");
+  assert(metadata.contractMajor === 2, "contract major drift");
   assert(parseAmount("9007199254740993") === 9007199254740993n, "amount lost precision");
   assert(parseSequence("18446744073709551615") === 18446744073709551615n, "sequence lost precision");
   expectThrow(() => parseAmount("1.5"), "fractional amount accepted");
