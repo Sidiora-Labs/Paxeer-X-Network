@@ -102,7 +102,9 @@ type Hub struct {
 	topics  map[string]*topicState
 	applied uint64
 	// perpsSeq is the highest Perps-Seq applied, zero until the first
-	// message after an attach of a new stream.
+	// message after an attach of a new stream. It orders and deduplicates
+	// messages only: Perps-Seq is an identity column, so a hole in it is a
+	// rolled back or quarantined outbox row, never a lost message.
 	perpsSeq int64
 	// created is the creation time of the stream the hub resumes on; a
 	// stream created anew is a history the hub cannot resume.
@@ -111,8 +113,11 @@ type Hub struct {
 	listeners map[*listener]struct{}
 }
 
+// listener is one Listen or ListenLoss registration: fn receives every
+// applied message, lost every loss of the hub.
 type listener struct {
-	fn func(subject string, env delivery.Envelope)
+	fn   func(subject string, env delivery.Envelope)
+	lost func()
 }
 
 // NewHub builds the Hub of chain for the process snapshotID; a nil logger
@@ -150,6 +155,42 @@ func (h *Hub) Listen(fn func(subject string, env delivery.Envelope)) (stop func(
 		h.mu.Lock()
 		delete(h.listeners, l)
 		h.mu.Unlock()
+	}
+}
+
+// ListenLoss calls lost, outside the hub lock, whenever the hub loses
+// messages a Listen callback may have needed: a stream sequence gap, a
+// stream created anew or gone back, a stream unanswered for OutageAfter and
+// a message the hub cannot decode. The hub closes its own topic sockets
+// then; lost closes the sockets fed through Listen. It holds until stop is
+// called.
+func (h *Hub) ListenLoss(lost func()) (stop func()) {
+	l := &listener{lost: lost}
+	h.mu.Lock()
+	h.listeners[l] = struct{}{}
+	h.mu.Unlock()
+	return func() {
+		h.mu.Lock()
+		delete(h.listeners, l)
+		h.mu.Unlock()
+	}
+}
+
+// lossesLocked returns the ListenLoss callbacks, to run after the hub lock
+// is released.
+func (h *Hub) lossesLocked() []func() {
+	var out []func()
+	for l := range h.listeners {
+		if l.lost != nil {
+			out = append(out, l.lost)
+		}
+	}
+	return out
+}
+
+func signal(losses []func()) {
+	for _, lost := range losses {
+		lost()
 	}
 }
 
@@ -303,8 +344,9 @@ type outage struct {
 
 func (o *outage) answered() { o.heard, o.down = time.Now(), false }
 
-// unheard closes every subscribed socket with 1013 once per outage, when the
-// stream has gone unanswered for OutageAfter.
+// unheard closes every subscribed socket with 1013 and signals the loss
+// listeners once per outage, when the stream has gone unanswered for
+// OutageAfter.
 func (o *outage) unheard(h *Hub) {
 	if o.down || time.Since(o.heard) < OutageAfter {
 		return
@@ -440,7 +482,8 @@ func (h *Hub) prepare(ctx context.Context, m *natsdriver.Message, families map[s
 // the first attach of the process, and on a stream created anew or whose
 // last sequence is below the last applied message, that is the sequence
 // after the stream head, and the hub forgets the Perps-Seq it applied. A
-// stream that went back closes every subscribed socket with 1013.
+// stream that went back closes every subscribed socket with 1013 and
+// signals the loss listeners.
 func (h *Hub) resumeFrom(ctx context.Context, js jetstream.JetStream) (uint64, error) {
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
@@ -453,12 +496,15 @@ func (h *Hub) resumeFrom(ctx context.Context, js jetstream.JetStream) (uint64, e
 		return 0, fmt.Errorf("ws: hub stream: %w", err)
 	}
 	h.mu.Lock()
-	var closing []*Socket
+	var (
+		closing []*Socket
+		losses  []func()
+	)
 	reset := h.attached && (!info.Created.Equal(h.created) || info.State.LastSeq < h.applied)
 	if reset {
 		h.logger.Error("ws: hub stream went back", slog.Uint64("applied", h.applied), slog.Uint64("last", info.State.LastSeq),
 			slog.Time("created", info.Created), slog.Time("was_created", h.created))
-		closing = h.dropAllLocked()
+		closing, losses = h.dropAllLocked(), h.lossesLocked()
 	}
 	if !h.attached || reset {
 		h.applied, h.perpsSeq, h.created, h.attached = info.State.LastSeq, 0, info.Created, true
@@ -466,14 +512,20 @@ func (h *Hub) resumeFrom(ctx context.Context, js jetstream.JetStream) (uint64, e
 	start := h.applied + 1
 	h.mu.Unlock()
 	closeLater(closing)
+	signal(losses)
 	return start, nil
 }
 
-// apply applies one message once. A stream sequence beyond the one after the
-// last applied message is a range the hub cannot fill: every subscribed
-// socket closes with 1013 and the client resyncs through REST. The topics
-// the message leaves out of date are resynced outside the hub lock before
-// the next message is applied.
+// apply applies one message once. The publisher persists the outbox rows
+// one after another in Perps-Seq order onto a stream whose subjects are
+// exactly the filter of the hub, so the stream sequence of the hub is dense:
+// a stream sequence beyond the one after the last applied message is a range
+// the hub cannot fill, every subscribed socket closes with 1013, the loss
+// listeners are signalled and the client resyncs through REST. A message
+// that cannot be decoded is lost to the listeners as well: the subscribed
+// topics resync and the loss listeners are signalled. The topics the
+// message leaves out of date are resynced outside the hub lock before the
+// next message is applied.
 func (h *Hub) apply(ctx context.Context, p *prepared) {
 	seq := p.m.Sequence
 	h.mu.Lock()
@@ -481,39 +533,51 @@ func (h *Hub) apply(ctx context.Context, p *prepared) {
 		h.mu.Unlock()
 		return
 	}
-	var closing []*Socket
+	var (
+		closing []*Socket
+		losses  []func()
+	)
 	if seq > h.applied+1 {
 		h.logger.Error("ws: hub stream gap", slog.Uint64("applied", h.applied), slog.Uint64("next", seq))
-		closing = h.dropAllLocked()
+		closing, losses = h.dropAllLocked(), h.lossesLocked()
 	}
 	h.applied = seq
 	var resnap []string
 	if p.err != nil {
 		h.logger.Error("ws: hub message", slog.Uint64("stream_seq", seq), slog.Any("err", p.err))
 		resnap = h.watchedLocked()
+		if losses == nil {
+			losses = h.lossesLocked()
+		}
 	} else {
 		resnap = h.messageLocked(ctx, p.m.Subject, p.env, p.perpsSeq)
 	}
 	h.mu.Unlock()
 	closeLater(closing)
+	signal(losses)
 	h.resnapshot(ctx, resnap)
 }
 
 // messageLocked applies one decoded message: it calls the listeners, sends
 // the live frames of the provider and returns the subscribed topics that
-// must resync instead. A Perps-Seq that is not the one after the highest
-// applied is a hole or a late message of the producer, which the stream
-// sequence cannot show, so every subscribed topic resyncs.
+// must resync instead. Loss is the stream sequence's to show; Perps-Seq
+// only orders and deduplicates. A hole in it is an outbox row that was
+// rolled back, re-enqueued onto its existing row or quarantined, so a
+// higher Perps-Seq applies as usual, and a Perps-Seq at or below the highest
+// applied is a message the hub already applied, republished after the
+// broker's duplicate window, and is dropped.
 func (h *Hub) messageLocked(ctx context.Context, subject string, env delivery.Envelope, perpsSeq int64) []string {
+	if perpsSeq <= h.perpsSeq {
+		h.logger.Warn("ws: hub Perps-Seq already applied", slog.Int64("applied", h.perpsSeq), slog.Int64("next", perpsSeq), slog.String("subject", subject), slog.String("event", env.EventID))
+		return nil
+	}
+	h.perpsSeq = perpsSeq
 	for l := range h.listeners {
-		l.fn(subject, env)
+		if l.fn != nil {
+			l.fn(subject, env)
+		}
 	}
 	var resnap []string
-	if h.perpsSeq > 0 && perpsSeq != h.perpsSeq+1 {
-		h.logger.Error("ws: hub Perps-Seq out of order", slog.Int64("applied", h.perpsSeq), slog.Int64("next", perpsSeq), slog.String("subject", subject))
-		resnap = h.watchedLocked()
-	}
-	h.perpsSeq = max(h.perpsSeq, perpsSeq)
 	mctx, cancel := context.WithTimeout(ctx, messageTimeout)
 	defer cancel()
 	frames, more, err := h.provider.Message(mctx, subject, env)
@@ -684,12 +748,14 @@ func (h *Hub) sendLocked(t *topicState, frame DataFrame) {
 	}
 }
 
-// closeAll closes every subscribed socket with 1013 and retry-after.
+// closeAll closes every subscribed socket with 1013 and retry-after and
+// signals the loss listeners.
 func (h *Hub) closeAll() {
 	h.mu.Lock()
-	closing := h.dropAllLocked()
+	closing, losses := h.dropAllLocked(), h.lossesLocked()
 	h.mu.Unlock()
 	closeLater(closing)
+	signal(losses)
 }
 
 // dropAllLocked removes every subscribed socket from every topic and returns

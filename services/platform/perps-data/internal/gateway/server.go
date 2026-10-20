@@ -335,7 +335,10 @@ func (s *Server) Run(ctx context.Context) error {
 // spotItemTimeout. A message the full queue drops or whose items cannot be
 // read is an update some socket would miss without knowing whose it is, so
 // every spot user socket closes with 1013 and its client resyncs through
-// REST. A slow socket is closed by the spot user socket, never waited on.
+// REST. Every message the hub loses (a stream gap, a stream created anew
+// or gone back, a stream outage or an undecodable message) closes every
+// spot user socket with 1013 the same way. A slow socket is closed by the
+// spot user socket, never waited on.
 func (s *Server) feedSpotUser(ctx context.Context) (stop func()) {
 	type message struct {
 		subject string
@@ -359,6 +362,7 @@ func (s *Server) feedSpotUser(ctx context.Context) (stop func()) {
 			}
 		}
 	})
+	stopLoss := s.hub.ListenLoss(s.spotUser.CloseAll)
 	read := func(env delivery.Envelope) ([]rest.SpotStreamItem, error) {
 		ctx, cancel := context.WithTimeout(ctx, spotItemTimeout)
 		defer cancel()
@@ -392,6 +396,7 @@ func (s *Server) feedSpotUser(ctx context.Context) (stop func()) {
 		}
 	}()
 	return func() {
+		stopLoss()
 		stopListen()
 		cancel()
 		<-done

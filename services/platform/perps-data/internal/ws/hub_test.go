@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"regexp"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -212,14 +214,17 @@ func blockTime(at time.Time) string {
 	return `{"block_time":"` + at.UTC().Format(time.RFC3339Nano) + `"}`
 }
 
-// hubRig is one hub with its broker, providers and socket server.
+// hubRig is one hub with its broker, providers and socket server, and the
+// spot user socket the hub loss closes, as the gateway wires it.
 type hubRig struct {
-	hub  *Hub
-	ns   *server.Server
-	nc   *nats.Conn
-	pub  *hubPublisher
-	url  string
-	stop func()
+	hub     *Hub
+	ns      *server.Server
+	nc      *nats.Conn
+	pub     *hubPublisher
+	url     string
+	spotURL string
+	losses  *atomic.Int64
+	stop    func()
 }
 
 func newHubRig(t *testing.T, db *sql.DB, maxMsgs int64) *hubRig {
@@ -238,9 +243,19 @@ func newHubRig(t *testing.T, db *sql.DB, maxMsgs int64) *hubRig {
 		t.Fatal(err)
 	}
 	srv.OnSubscribe, srv.OnUnsubscribe, srv.OnClose = hub.Subscribe, hub.Unsubscribe, hub.Leave
-	httpServer := httptest.NewServer(srv)
+	spot := &SpotUser{}
+	losses := &atomic.Int64{}
+	t.Cleanup(hub.ListenLoss(func() {
+		losses.Add(1)
+		spot.CloseAll()
+	}))
+	mux := http.NewServeMux()
+	mux.Handle("/ws", srv)
+	mux.Handle("/v1/ws", spot)
+	httpServer := httptest.NewServer(mux)
 	t.Cleanup(httpServer.Close)
-	r := &hubRig{hub: hub, ns: ns, nc: nc, pub: &hubPublisher{js: js}, url: "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws"}
+	base := "ws" + strings.TrimPrefix(httpServer.URL, "http")
+	r := &hubRig{hub: hub, ns: ns, nc: nc, pub: &hubPublisher{js: js}, url: base + "/ws", spotURL: base + "/v1/ws", losses: losses}
 	r.start(t)
 	t.Cleanup(func() { r.stop() })
 	return r
@@ -266,6 +281,24 @@ func (r *hubRig) start(t *testing.T) {
 		defer r.hub.mu.Unlock()
 		return r.hub.attached
 	})
+}
+
+// lossCount is how often the hub signalled its loss listeners.
+func (r *hubRig) lossCount() int64 { return r.losses.Load() }
+
+// spotDial opens a spot user socket subscribed to the trades of one
+// address, as a client of the gateway's /v1/ws holds it.
+func (r *hubRig) spotDial(t *testing.T) *hubClient {
+	t.Helper()
+	conn, _, err := websocket.DefaultDialer.Dial(r.spotURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	spotUserExpect(t, spotUserRead(t, conn, 5*time.Second), `{"type":"hello","service":"websocket","streams":["trade","position","pnl","order","closed-leg"],"protocolVersion":1}`)
+	spotUserSend(t, conn, "subscribe", "trade", spotUserTestAddress)
+	spotUserExpect(t, spotUserRead(t, conn, 5*time.Second), spotUserControlWant("subscribed", "trade", spotUserTestAddress))
+	return &hubClient{conn: conn}
 }
 
 func (r *hubRig) applied() uint64 {
@@ -584,6 +617,7 @@ func TestHub(t *testing.T) {
 		hubReset(t, db)
 		r := newHubRig(t, db, 5)
 		c, snap := r.dial(t, feeds.TopicChainBlocks)
+		spot := r.spotDial(t)
 		hubBlock(t, db, 1)
 		r.pub.publish(t, "perps.125.chain.block", "block", 1, hubBlockRow())
 		c.delta(t, snap.Seq+1)
@@ -593,45 +627,70 @@ func TestHub(t *testing.T) {
 		}
 		r.start(t)
 		c.retryAfter(t)
+		spot.retryAfter(t)
 		hubWait(t, "stream sequence 11", func() bool { return r.applied() == 11 })
 	})
 
-	t.Run("perps_seq_resync", func(t *testing.T) {
+	t.Run("perps_seq_hole_is_not_loss", func(t *testing.T) {
 		hubReset(t, db)
 		r := newHubRig(t, db, 0)
 		c, snap := r.dial(t, btcTrade)
+		spot := r.spotDial(t)
 		hubFill(t, db, 1)
 		r.pub.publish(t, "perps.125.0.fill", "fill", 1, blockTime(time.Now()))
-		c.delta(t, snap.Seq+1)
-		// The producer never delivers Perps-Seq 2, whose fill is stored; the
-		// stream sequence stays contiguous, and the hole resyncs the topic.
-		hubFill(t, db, 2)
+		if id := tradeID(t, c.delta(t, snap.Seq+1)); id != "1-0" {
+			t.Fatalf("delta 1 carried %s", id)
+		}
+		// Perps-Seq 2 was taken by an outbox row that rolled back, so the
+		// identity column skips it; the stream sequence stays dense and
+		// Perps-Seq 3 is a live delta, not a resync.
 		hubFill(t, db, 3)
 		r.pub.seq++
 		r.pub.publish(t, "perps.125.0.fill", "fill", 3, blockTime(time.Now()))
-		if trades := hubTradesOf(t, c.resync(t, 3)); len(trades.Trades) != 3 || trades.Trades[0]["id"] != "3-0" {
-			t.Fatalf("snapshot after a Perps-Seq hole holds %d trades, newest %v", len(trades.Trades), trades.Trades[0]["id"])
+		if f := c.delta(t, snap.Seq+2); tradeID(t, f) != "3-0" {
+			t.Fatalf("frame after a Perps-Seq hole %+v data %s", f, f.Data)
 		}
-		// Perps-Seq 2 arrives late, after 3, and resyncs the topic again.
-		hubFill(t, db, 4)
+		// A Perps-Seq at or below the highest applied is a message the hub
+		// already applied and is dropped: its fill never reaches the socket.
+		hubFill(t, db, 2)
 		r.pub.seq = 1
-		r.pub.publish(t, "perps.125.0.fill", "fill", 4, blockTime(time.Now()))
-		if trades := hubTradesOf(t, c.resync(t, 2)); len(trades.Trades) != 4 || trades.Trades[0]["id"] != "4-0" {
-			t.Fatalf("snapshot after a late Perps-Seq holds %d trades, newest %v", len(trades.Trades), trades.Trades[0]["id"])
-		}
-		// Perps-Seq 4, the one after the highest applied, is a live delta.
-		hubFill(t, db, 5)
+		dup, _ := r.pub.publish(t, "perps.125.0.fill", "fill", 2, blockTime(time.Now()))
+		hubWait(t, "the dropped message", func() bool { return r.applied() == dup })
+		hubFill(t, db, 4)
 		r.pub.seq = 3
-		r.pub.publish(t, "perps.125.0.fill", "fill", 5, blockTime(time.Now()))
-		if f := c.frame(t); f.Snapshot || tradeID(t, f) != "5-0" {
-			t.Fatalf("frame after Perps-Seq 4 %+v data %s", f, f.Data)
+		r.pub.publish(t, "perps.125.0.fill", "fill", 4, blockTime(time.Now()))
+		if f := c.delta(t, snap.Seq+3); tradeID(t, f) != "4-0" {
+			t.Fatalf("frame after a dropped Perps-Seq %+v data %s", f, f.Data)
 		}
+		if n := r.lossCount(); n != 0 {
+			t.Fatalf("a Perps-Seq hole signalled %d losses", n)
+		}
+		spotUserSend(t, spot.conn, "ping", "", "")
+		spotUserExpect(t, spotUserRead(t, spot.conn, 5*time.Second), `{"type":"pong"}`)
+	})
+
+	t.Run("undecodable_message_resyncs", func(t *testing.T) {
+		hubReset(t, db)
+		r := newHubRig(t, db, 0)
+		c, snap := r.dial(t, feeds.TopicChainBlocks)
+		spot := r.spotDial(t)
+		// A message without a Perps-Seq header is one the hub cannot decode:
+		// the topic resyncs and the spot user socket closes with 1013.
+		msg := &nats.Msg{Subject: "perps.125.chain.block", Data: []byte(`{}`), Header: nats.Header{}}
+		if _, err := r.pub.js.PublishMsg(context.Background(), msg, jetstream.WithMsgID("undecodable"), jetstream.WithExpectStream(stream.Name)); err != nil {
+			t.Fatal(err)
+		}
+		if f := c.resync(t, 3); f.Seq <= snap.Seq {
+			t.Fatalf("resync after an undecodable message %+v", f)
+		}
+		spot.retryAfter(t)
 	})
 
 	t.Run("stream_recreated_resumes", func(t *testing.T) {
 		hubReset(t, db)
 		r := newHubRig(t, db, 0)
 		c, snap := r.dial(t, feeds.TopicChainBlocks)
+		spot := r.spotDial(t)
 		for n := int64(1); n <= 3; n++ {
 			hubBlock(t, db, n)
 			r.pub.publish(t, "perps.125.chain.block", "block", n, hubBlockRow())
@@ -649,6 +708,7 @@ func TestHub(t *testing.T) {
 		}
 		r.start(t)
 		c.retryAfter(t)
+		spot.retryAfter(t)
 		hubWait(t, "resume on the new stream", func() bool { return r.applied() == 0 })
 		hubBlock(t, db, 4)
 		if seq, _ := r.pub.publish(t, "perps.125.chain.block", "block", 4, hubBlockRow()); seq != 1 {
@@ -665,8 +725,10 @@ func TestHub(t *testing.T) {
 		hubReset(t, db)
 		r := newHubRig(t, db, 0)
 		c, _ := r.dial(t, feeds.TopicChainBlocks)
+		spot := r.spotDial(t)
 		r.ns.Shutdown()
 		c.retryAfter(t)
+		spot.retryAfter(t)
 	})
 
 	t.Run("stale_frame_dropped", func(t *testing.T) {

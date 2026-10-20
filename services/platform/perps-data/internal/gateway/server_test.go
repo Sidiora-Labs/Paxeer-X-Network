@@ -542,6 +542,40 @@ func TestGatewayServer(t *testing.T) {
 		}
 	})
 
+	t.Run("spot_user_closes_1013_on_hub_loss", func(t *testing.T) {
+		conn, _ := dial(t, ts, "/v1/ws")
+		if hello := readFrame(t, conn); text(t, hello["type"]) != "hello" {
+			t.Fatalf("first spot user frame %v", hello)
+		}
+		if err := conn.WriteJSON(map[string]string{"op": "subscribe", "stream": "trade", "address": testAccount}); err != nil {
+			t.Fatal(err)
+		}
+		if ack := readFrame(t, conn); text(t, ack["type"]) != "subscribed" {
+			t.Fatalf("spot user subscribe answer %v", ack)
+		}
+		// A stream message the hub cannot decode is an update the spot user
+		// socket may have needed, so it closes with 1013.
+		msg := &nats.Msg{Subject: "perps." + strconv.Itoa(testChain) + ".chain.block", Data: []byte(`{}`), Header: nats.Header{}}
+		msg.Header.Set("Nats-Msg-Id", "undecodable")
+		if err := nc.PublishMsg(msg); err != nil {
+			t.Fatal(err)
+		}
+		if err := nc.Flush(); err != nil {
+			t.Fatal(err)
+		}
+		if err := conn.SetReadDeadline(time.Now().Add(frameDeadline)); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		for err == nil {
+			_, _, err = conn.ReadMessage()
+		}
+		var closeErr *websocket.CloseError
+		if !errors.As(err, &closeErr) || closeErr.Code != websocket.CloseTryAgainLater || !strings.HasPrefix(closeErr.Text, "retry-after=") {
+			t.Fatalf("spot user socket ended with %v, want a 1013 retry-after close", err)
+		}
+	})
+
 	cancel()
 	select {
 	case err := <-runErr:
