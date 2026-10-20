@@ -22,3 +22,14 @@ rust|tests/fixtures/example/cosmwasm/parallelization/bank/Cargo.toml|build_test_
 rust|tests/fixtures/example/cosmwasm/parallelization/staking/Cargo.toml|build_test_lint
 rust|tests/fixtures/example/cosmwasm/parallelization/wasm/Cargo.toml|build_test_lint
 rust|wasm-runtime/libwasmvm/Cargo.toml|build_test_lint
+npm|sdk/integrations/agents/package.json|build_test_lint
+npm|sdk/integrations/agents/examples/agent-runtime/package.json|build_static
+npm|sdk/integrations/agents/examples/mcp-server/package.json|build_static
+npm|sdk/integrations/express/package.json|build_static
+npm|sdk/integrations/express/example/package.json|build_static
+npm|sdk/integrations/next/package.json|build_static
+npm|sdk/integrations/next/example/package.json|build_static
+npm|sdk/js/package.json|build_test_lint
+npm|sdk/platform/conformance-runner/package.json|build_static
+rust|sdk/platform/generators/Cargo.toml|build_test_lint
+go|sdk/platform/go/go.mod|build_test_lint
