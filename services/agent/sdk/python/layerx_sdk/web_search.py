@@ -865,7 +865,7 @@ class WebSearchClient:
             settlement.get("success") is not True
             or settlement.get("network") != offer.network
             or settlement.get("amount") != offer.amount
-            or layerx.get("verificationLevel") != "sequencer-signed"
+            or layerx.get("verificationLevel") != "receipted"
             or not isinstance(encoded, str)
         ):
             raise WebSearchError("settlement-mismatch")
@@ -876,14 +876,14 @@ class WebSearchClient:
         if base64.b64encode(receipt).decode("ascii") != encoded:
             raise WebSearchError("settlement-receipt-mismatch")
         digest = _receipt_digest(receipt)
-        if (
-            layerx.get("receiptDigest") != digest
-            or settlement.get("transaction") != f"lxp:{digest}"
-        ):
+        if layerx.get("receiptDigest") != digest:
             raise WebSearchError("settlement-receipt-mismatch")
         if payment.receipt is not None and payment.receipt != receipt:
             raise WebSearchError("settlement-receipt-mismatch")
         verified = self._verify(receipt, offer)
+        transaction = "0x" + verified.receipt.activity_id.hex()
+        if settlement.get("transaction") != transaction:
+            raise WebSearchError("settlement-receipt-mismatch")
         payer = verified.receipt.from_account.hex()
         if settlement.get("payer") != payer:
             raise WebSearchError("settlement-payer-mismatch")
@@ -902,7 +902,7 @@ class WebSearchClient:
             amount=offer.amount,
             payer=payer,
             receipt_digest=digest,
-            transaction=f"lxp:{digest}",
+            transaction=transaction,
         )
 
     def _get(self, target: str, headers: Mapping[str, str]) -> _Reply:

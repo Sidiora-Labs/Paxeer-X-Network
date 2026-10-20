@@ -251,11 +251,11 @@ for (const [mutate, code] of [
   [(settlement: Json) => { settlement["payer"] = settlementOf(exchange[fetchIndex("SID")]!)["payer"]; }, "settlement-payer-mismatch"],
   [(settlement: Json) => { settlement["success"] = false; }, "settlement-mismatch"],
   [(settlement: Json) => { settlement["amount"] = "1"; }, "settlement-mismatch"],
-  [(settlement: Json) => { settlement["transaction"] = `lxp:${"11".repeat(32)}`; }, "settlement-receipt-mismatch"],
+  [(settlement: Json) => { settlement["transaction"] = `0x${"11".repeat(32)}`; }, "settlement-receipt-mismatch"],
   [(settlement: Json) => {
     const other = (buyer["exact"] as Record<string, Json>)["SID"]!;
-    settlement["extensions"] = { layerx: { receipt: other["receipt"], receiptDigest: other["receiptDigest"], verificationLevel: "sequencer-signed" } };
-    settlement["transaction"] = `lxp:${other["receiptDigest"] as string}`;
+    settlement["extensions"] = { layerx: { receipt: other["receipt"], receiptDigest: other["receiptDigest"], verificationLevel: "receipted" } };
+    settlement["transaction"] = settlementOf(exchange[fetchIndex("SID")]!)["transaction"];
   }, "settlement-receipt-mismatch"],
 ] as const) {
   const steps = clone();

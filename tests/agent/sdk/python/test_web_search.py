@@ -611,14 +611,15 @@ class WebSearchClientTest(unittest.TestCase):
                 "layerx": {
                     "receipt": other["receipt"],
                     "receiptDigest": other["receiptDigest"],
-                    "verificationLevel": "sequencer-signed",
+                    "verificationLevel": "receipted",
                 }
             }
-            settlement["transaction"] = f"lxp:{other['receiptDigest']}"
+            settlement["transaction"] = sid_settlement["transaction"]
 
-        sid_payer = EXCHANGE[_fetch_index("SID")]["response"]["headers"][
+        sid_settlement = EXCHANGE[_fetch_index("SID")]["response"]["headers"][
             "PAYMENT-RESPONSE"
-        ]["payer"]
+        ]
+        sid_payer = sid_settlement["payer"]
         cases: list[tuple[Callable[[dict], None], str]] = [
             (
                 lambda settlement: settlement.update(payer=sid_payer),
@@ -630,7 +631,7 @@ class WebSearchClientTest(unittest.TestCase):
             ),
             (lambda settlement: settlement.update(amount="1"), "settlement-mismatch"),
             (
-                lambda settlement: settlement.update(transaction=f"lxp:{'11' * 32}"),
+                lambda settlement: settlement.update(transaction=f"0x{'11' * 32}"),
                 "settlement-receipt-mismatch",
             ),
             (swap, "settlement-receipt-mismatch"),

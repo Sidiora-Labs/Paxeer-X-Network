@@ -479,14 +479,16 @@ export class WebSearchClient {
     const extensions = record(settlement["extensions"], "invalid-payment-response");
     const layerx = record(extensions["layerx"], "invalid-payment-response");
     if (settlement["success"] !== true || settlement["network"] !== offer.network || settlement["amount"] !== offer.amount
-      || layerx["verificationLevel"] !== "sequencer-signed" || typeof layerx["receipt"] !== "string") throw new WebSearchError("settlement-mismatch");
+      || layerx["verificationLevel"] !== "receipted" || typeof layerx["receipt"] !== "string") throw new WebSearchError("settlement-mismatch");
     const encoded = layerx["receipt"];
     const receipt = new Uint8Array(Buffer.from(encoded, "base64"));
     if (Buffer.from(receipt).toString("base64") !== encoded) throw new WebSearchError("settlement-receipt-mismatch");
     const digest = receiptDigest(receipt);
-    if (layerx["receiptDigest"] !== digest || settlement["transaction"] !== `lxp:${digest}`) throw new WebSearchError("settlement-receipt-mismatch");
+    if (layerx["receiptDigest"] !== digest) throw new WebSearchError("settlement-receipt-mismatch");
     if (payment.receipt !== undefined && hex(payment.receipt) !== hex(receipt)) throw new WebSearchError("settlement-receipt-mismatch");
     const verified = await this.#verify(receipt, offer);
+    const transaction = `0x${hex(verified.receipt.activityId)}`;
+    if (settlement["transaction"] !== transaction) throw new WebSearchError("settlement-receipt-mismatch");
     const from = hex(verified.receipt.from);
     if (settlement["payer"] !== from) throw new WebSearchError("settlement-payer-mismatch");
     if (offer.scheme === "metered") {
@@ -496,7 +498,7 @@ export class WebSearchClient {
     }
     return Object.freeze({
       scheme: offer.scheme, currency: offer.currency, network: offer.network, asset: offer.asset, amount: offer.amount,
-      payer: from, receiptDigest: digest, transaction: `lxp:${digest}`,
+      payer: from, receiptDigest: digest, transaction,
     });
   }
 
