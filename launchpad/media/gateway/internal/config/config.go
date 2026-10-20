@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,15 +39,19 @@ type Config struct {
 	BindAddress               string `env:"BIND_ADDRESS"`
 	RuntimeBudgetFile         string `env:"DB_BUDGET_FILE"`
 	RuntimeBudgetSHA256       string `env:"DB_BUDGET_SHA256"`
+	RuntimeBudgetDocument     string `env:"DB_BUDGET_DOCUMENT"`
 	RuntimePoolID             string `env:"DB_POOL_ID"`
 	RuntimeInstanceID         string `env:"INSTANCE_ID"`
 	ExpectedSchemaFile        string `env:"EXPECTED_SCHEMA_FILE"`
 	ExpectedSchemaSHA256      string `env:"EXPECTED_SCHEMA_SHA256"`
+	ExpectedSchemaDocument    string `env:"EXPECTED_SCHEMA_DOCUMENT"`
 	DatabaseURL               string `env:"DATABASE_URL"`
 	IdentityConfigSHA256      string `env:"IDENTITY_CONFIG_SHA256"`
+	IdentityConfigDocument    string `env:"IDENTITY_CONFIG_DOCUMENT"`
 	IdentityConfigFile        string `env:"IDENTITY_CONFIG_FILE"`
 	GatewayRuntimeFile        string `env:"GATEWAY_RUNTIME_FILE"`
 	GatewayRuntimeSHA256      string `env:"GATEWAY_RUNTIME_SHA256"`
+	GatewayRuntimeDocument    string `env:"GATEWAY_RUNTIME_DOCUMENT"`
 	IdentityServiceToken      string `env:"IDENTITY_SERVICE_TOKEN"`
 	IdentityLimiterKey        string `env:"IDENTITY_LIMITER_KEY"`
 	IdentitySigningSecret     string `env:"IDENTITY_SIGNING_SECRET"`
@@ -129,6 +134,7 @@ func Load() (Config, error) {
 	if err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
+	cfg.registerInlineDocuments()
 	return cfg, nil
 }
 
@@ -150,6 +156,12 @@ func (c *Config) Buckets() map[string]string {
 // Validate enforces field-level rules beyond presence.
 func (c *Config) Validate() error {
 	var errs []error
+	for _, d := range c.boundDocuments() {
+		if d[0] != "" && d[1] != "" {
+			errs = append(errs, errors.New("runtime_document_source_ambiguous"))
+			break
+		}
+	}
 
 	if strings.TrimSpace(c.RedisURL) == "" {
 		errs = append(errs, errors.New("REDIS_URL is required"))
@@ -213,7 +225,7 @@ func (c *Config) Validate() error {
 	}
 
 	if c.NodeEnv == "production" {
-		if c.GatewayRuntimeFile == "" || len(c.GatewayRuntimeSHA256) != 64 {
+		if (c.GatewayRuntimeFile == "" && c.GatewayRuntimeDocument == "") || len(c.GatewayRuntimeSHA256) != 64 {
 			errs = append(errs, errors.New("gateway_runtime_binding_required"))
 		}
 		origin, err := url.Parse(c.PublicURL)
@@ -341,14 +353,11 @@ func (c *Config) OpenRuntimePool(ctx context.Context, role string, legacy runtim
 	} else {
 		return nil, fmt.Errorf("runtime_profile_required")
 	}
-	if c.RuntimeBudgetFile == "" || c.RuntimePoolID == "" || c.RuntimeInstanceID == "" {
+	if (c.RuntimeBudgetFile == "" && c.RuntimeBudgetDocument == "") || c.RuntimePoolID == "" || c.RuntimeInstanceID == "" {
 		return nil, fmt.Errorf("runtime_pool_configuration_missing")
 	}
-	data, err := os.ReadFile(c.RuntimeBudgetFile)
+	data, err := boundBytes(c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256)
 	if err != nil {
-		return nil, err
-	}
-	if len(data) > 1048576 || len(c.RuntimeBudgetSHA256) != 64 || fmt.Sprintf("%x", sha256.Sum256(data)) != c.RuntimeBudgetSHA256 {
 		return nil, fmt.Errorf("runtime_budget_binding_mismatch")
 	}
 	budget, err := dbproduction.ParseConnectionBudget(data)
@@ -376,10 +385,10 @@ func (c *Config) CheckRuntimeSchema(ctx context.Context, pool *pgxpool.Pool) err
 	if c.NodeEnv != "production" {
 		return pool.Ping(ctx)
 	}
-	if c.ExpectedSchemaFile == "" || len(c.ExpectedSchemaSHA256) != 64 {
+	if (c.ExpectedSchemaFile == "" && c.ExpectedSchemaDocument == "") || len(c.ExpectedSchemaSHA256) != 64 {
 		return fmt.Errorf("runtime_schema_configuration_missing")
 	}
-	data, err := os.ReadFile(c.ExpectedSchemaFile)
+	data, err := boundBytes(c.ExpectedSchemaFile, c.ExpectedSchemaDocument, c.ExpectedSchemaSHA256)
 	if err != nil {
 		return err
 	}
@@ -394,22 +403,79 @@ func (c *Config) CheckRuntimeSchema(ctx context.Context, pool *pgxpool.Pool) err
 }
 
 func ReadBoundDocument(path, digest string, out any) error {
-	if path == "" || len(digest) != 64 {
-		return fmt.Errorf("runtime_document_binding_missing")
+	inline := ""
+	if path == "" {
+		if value, ok := inlineDocuments.Load(digest); ok {
+			inline = value.(string)
+		}
 	}
-	info, err := os.Lstat(path)
-	if err != nil {
-		return err
+	return decodeBoundDocument(path, inline, digest, out)
+}
+
+// inlineDocuments maps a pinned sha256 digest to the inline *_DOCUMENT value
+// Load registered for it, so ReadBoundDocument callers holding an empty *_FILE
+// path resolve the inline sibling; boundBytes still checks the digest.
+var inlineDocuments sync.Map
+
+func (c *Config) boundDocuments() [][3]string {
+	return [][3]string{
+		{c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256},
+		{c.ExpectedSchemaFile, c.ExpectedSchemaDocument, c.ExpectedSchemaSHA256},
+		{c.IdentityConfigFile, c.IdentityConfigDocument, c.IdentityConfigSHA256},
+		{c.GatewayRuntimeFile, c.GatewayRuntimeDocument, c.GatewayRuntimeSHA256},
 	}
-	if !info.Mode().IsRegular() || info.Size() > 1048576 {
-		return fmt.Errorf("runtime_document_invalid")
+}
+
+func (c *Config) registerInlineDocuments() {
+	for _, d := range c.boundDocuments() {
+		if d[1] != "" {
+			inlineDocuments.Store(d[2], d[1])
+		}
 	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return err
+}
+
+// boundBytes returns the exact bytes of a digest-bound runtime document,
+// read from the file at path or decoded from inline (standard base64), and
+// verifies them against the sha256 hex digest. Exactly one source may be set.
+func boundBytes(path, inline, digest string) ([]byte, error) {
+	if (path == "") == (inline == "") || len(digest) != 64 {
+		return nil, fmt.Errorf("runtime_document_binding_missing")
+	}
+	var raw []byte
+	if path != "" {
+		info, err := os.Lstat(path)
+		if err != nil {
+			return nil, err
+		}
+		if !info.Mode().IsRegular() || info.Size() > 1048576 {
+			return nil, fmt.Errorf("runtime_document_invalid")
+		}
+		if raw, err = os.ReadFile(path); err != nil {
+			return nil, err
+		}
+	} else {
+		if len(inline) > 1398104 {
+			return nil, fmt.Errorf("runtime_document_invalid")
+		}
+		decoded, err := base64.StdEncoding.Strict().DecodeString(inline)
+		if err != nil {
+			return nil, fmt.Errorf("runtime_document_invalid")
+		}
+		raw = decoded
+	}
+	if len(raw) == 0 || len(raw) > 1048576 {
+		return nil, fmt.Errorf("runtime_document_invalid")
 	}
 	if fmt.Sprintf("%x", sha256.Sum256(raw)) != digest {
-		return fmt.Errorf("runtime_document_binding_mismatch")
+		return nil, fmt.Errorf("runtime_document_binding_mismatch")
+	}
+	return raw, nil
+}
+
+func decodeBoundDocument(path, inline, digest string, out any) error {
+	raw, err := boundBytes(path, inline, digest)
+	if err != nil {
+		return err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -442,8 +508,8 @@ func (c *Config) OpenSplitRuntimePools(ctx context.Context, split RuntimePoolSpl
 	} else if c.RuntimeProfile != "owned_local" || c.BindAddress != "127.0.0.1" {
 		return nil, nil, fmt.Errorf("runtime_profile_required")
 	}
-	data, err := os.ReadFile(c.RuntimeBudgetFile)
-	if err != nil || len(data) > 1048576 || len(c.RuntimeBudgetSHA256) != 64 || fmt.Sprintf("%x", sha256.Sum256(data)) != c.RuntimeBudgetSHA256 {
+	data, err := boundBytes(c.RuntimeBudgetFile, c.RuntimeBudgetDocument, c.RuntimeBudgetSHA256)
+	if err != nil {
 		return nil, nil, fmt.Errorf("runtime_budget_binding_mismatch")
 	}
 	budget, err := dbproduction.ParseConnectionBudget(data)
