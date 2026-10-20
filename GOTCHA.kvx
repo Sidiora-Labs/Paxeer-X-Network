@@ -8710,3 +8710,8 @@ detail = "Import cycle; a test that needs a real keeper lives in the external ev
 area = "rpc/tests"
 summary = "read account numbers from the harness keeper, never hard-code them"
 detail = "accountNumberAfterInit in rpc/tests reads the number after the test's setup steps; the numbers shift whenever a module account is added."
+
+[gotcha.1828]
+area = "spec/workflow"
+summary = "check git log on a task's touched files before dispatching it"
+detail = "8.4.20 had landed days earlier with its spec status never advanced, so it was claimed twice; a look at the log of its files would have shown the work done."

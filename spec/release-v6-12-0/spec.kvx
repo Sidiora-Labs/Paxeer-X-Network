@@ -29769,7 +29769,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.20]
 title = "Add the programme checks to the rehearsal"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["8.4.12", "2.3.99", "3.3.99", "4.3.99", "5.3.99"]

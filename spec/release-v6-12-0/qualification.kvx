@@ -2484,3 +2484,11 @@ exit = 1
 log = "domain-fix-d-verify-5.log"
 observed = "Two regression tests in rpc/tests/regression_test.go replay transactions recorded on the upstream chain and fail on an oracle message type and a wasm capability this chain does not register."
 assumption = "The replay fixtures predate the fork and cannot pass on this chain; they need re-recording against this chain's transactions or a decision to retire them, which is outside the domain gate."
+
+[finding.8.4.20-verified]
+revision = "08ffd17b9"
+command = "python3 tools/release/tests/test_programme.py"
+exit = 0
+log = "release-8.4.20-verify-1.log"
+observed = "The programme checks, driver check functions and decoding tests were already in place from an earlier commit; 19 offline decoding cases pass and py_compile plus bash -n exit 0."
+assumption = "The live programme run against four rehearsal nodes remains covered by finding.fix-rehearsal-merge and the 8.4.12 rehearsal env."
