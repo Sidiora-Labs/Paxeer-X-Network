@@ -93,7 +93,7 @@ fn rust_sdk_refuses_unverified() -> Result<(), String> {
 }
 
 fn dynamic_sdks_refuse_unverified(repository: &Path) -> Result<(), String> {
-    let typescript = r#"import {VerificationLevel,requireVerified} from './agent/sdk/typescript/dist/src/index.js';
+    let typescript = r#"import {VerificationLevel,requireVerified} from './services/agent/sdk/typescript/dist/src/index.js';
 const read={value:999n,achievedVerificationLevel:VerificationLevel.Unverified,freshness:{chainHead:1n,latestBatch:'b',latestCheckpoint:'c',valueSequence:1n}};
 let refused=false; try { requireVerified(VerificationLevel.StateProven,read); } catch { refused=true; }
 if (!refused) process.exit(1);"#;

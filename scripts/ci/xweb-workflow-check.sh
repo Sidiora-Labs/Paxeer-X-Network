@@ -498,7 +498,9 @@ def feature_make_targets(spec):
 
 def crate_manifests(root):
     names = {}
-    for manifest in glob.glob(os.path.join(root, "*", "crates", "*", "Cargo.toml")):
+    for manifest in glob.glob(os.path.join(root, "*", "crates", "*", "Cargo.toml")) + glob.glob(
+        os.path.join(root, "*", "*", "crates", "*", "Cargo.toml")
+    ):
         found = re.search(r'^name\s*=\s*"([^"]+)"', read(manifest), re.M)
         if found:
             names[found.group(1)] = os.path.relpath(manifest, root)
@@ -944,8 +946,8 @@ MUTATIONS = {
         1,
     ),
     "bare-cd": (
-        "        run: (cd services/agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py)\n",
-        "        run: cd services/agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py\n",
+        "        run: (cd services/agent/sdk/typescript && npm ci && npm run build && node dist/test/web-search.test.js)\n",
+        "        run: cd services/agent/sdk/typescript && npm ci && npm run build && node dist/test/web-search.test.js\n",
         1,
     ),
     "missing-installer": (

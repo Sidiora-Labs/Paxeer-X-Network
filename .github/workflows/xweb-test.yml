@@ -206,4 +206,4 @@ jobs:
         run: (cd services/agent/sdk/typescript && npm ci && npm run build && node dist/test/web-search.test.js)
 
       - name: Run pytest for the Python web search client test
-        run: (cd services/agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py)
+        run: PYTHONPATH=services/agent/sdk/python python3 -m pytest -q tests/agent/sdk/python/test_web_search.py

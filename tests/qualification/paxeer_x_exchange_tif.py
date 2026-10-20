@@ -435,7 +435,7 @@ def build():
                  '-Wl,--gc-sections', '-Wl,--start-group', native, programs, '-Wl,--end-group', '-lcrypto', '-lsqlite3', '-pthread', '-ldl', '-lm', '-o', out / name])
     produce(['go', 'test', '-c', '-o', out / 'go-keeper', './modules/layerxexchange/keeper/'])
     produce(['go', 'test', '-c', '-o', out / 'go-precompile', './precompiles/layerxexchange/'])
-    for name, workspace, package, target in [('rust-payload', 'agent', 'layerx-types', 'trading_payload'),
+    for name, workspace, package, target in [('rust-payload', 'services/agent', 'layerx-types', 'trading_payload'),
                                              ('rust-router', 'human', 'layerx-intents', 'precompile_router')]:
         argv = ['cargo', 'test', '--locked', '--no-run', '--message-format=json', '-p', package, '--test', target]
         commands.append(argv)

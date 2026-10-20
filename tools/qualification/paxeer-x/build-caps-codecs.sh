@@ -44,7 +44,7 @@ import os,pathlib,json,hashlib,subprocess
 out=pathlib.Path(os.environ['CAPS_BUILD_DIR'])
 old=json.loads(pathlib.Path(os.environ['CAPS_REUSE_MANIFEST']).read_text())
 def tree(t):return subprocess.check_output(['git','rev-parse','HEAD:'+t],text=True).strip()
-for t in ['agent','programs','src','include','tests/qualification']:
+for t in ['services/agent','programs','src','include','tests/qualification']:
  if old['source_trees'][t]!=tree(t):raise SystemExit('compiled source changed: '+t)
 for artifact in old['artifacts'].values():
  with open(artifact['path'],'rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
@@ -70,7 +70,7 @@ for key,file,name in [('client','client-build.jsonl','committed_caps'),('agentd'
  matches=[r['executable'] for line in (out/file).read_text().splitlines() if (r:=json.loads(line)).get('reason')=='compiler-artifact' and r.get('target',{}).get('name')==name and r.get('executable')]
  if len(matches)!=1:raise SystemExit('missing or ambiguous prebuilt executable: '+name)
  artifacts[key]=matches[0]
-m=json.loads((out/'native-source.json').read_text());m['artifacts']={k:{'path':p,'sha256':sha(p)} for k,p in artifacts.items()};m['source_trees']={t:subprocess.check_output(['git','rev-parse','HEAD:'+t],text=True).strip() for t in ['agent','programs','src','include','tests/qualification','tools/qualification/paxeer-x','tools/paxeer-x/gates']}
+m=json.loads((out/'native-source.json').read_text());m['artifacts']={k:{'path':p,'sha256':sha(p)} for k,p in artifacts.items()};m['source_trees']={t:subprocess.check_output(['git','rev-parse','HEAD:'+t],text=True).strip() for t in ['services/agent','programs','src','include','tests/qualification','tools/qualification/paxeer-x','tools/paxeer-x/gates']}
 (out/'manifest.json').write_text(json.dumps(m,indent=2)+'\n')
 os.chmod(out/'manifest.json',0o600)
 PY

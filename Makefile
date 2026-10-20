@@ -2590,7 +2590,7 @@ agent-fuzz-wire agent-fuzz-interface agent-fuzz-all:
 			-runs=$(AGENT_FUZZ_RUNS) -max_len=$(AGENT_FUZZ_MAX_LEN) \
 			-rss_limit_mb=$(AGENT_FUZZ_RSS_MB) -timeout=$(AGENT_FUZZ_TIMEOUT) \
 			-verbosity=$(AGENT_FUZZ_VERBOSITY); \
-		cd ../..; \
+		cd "$(CURDIR)"; \
 	done
 
 agent-fuzz-long: AGENT_FUZZ_SELECTED := $(AGENT_FUZZ_TARGETS)
@@ -2606,7 +2606,7 @@ agent-fuzz-long agent-fuzz-wire-long:
 			-max_total_time=$(AGENT_FUZZ_LONG_SECONDS) -max_len=$(AGENT_FUZZ_MAX_LEN) \
 			-rss_limit_mb=$(AGENT_FUZZ_RSS_MB) -timeout=$(AGENT_FUZZ_TIMEOUT) \
 			-verbosity=$(AGENT_FUZZ_VERBOSITY); \
-		cd ../..; \
+		cd "$(CURDIR)"; \
 	done
 
 agent-fuzz-minimize: AGENT_FUZZ_SELECTED := $(AGENT_FUZZ_TARGETS)
@@ -2622,7 +2622,7 @@ agent-fuzz-minimize agent-fuzz-wire-minimize:
 			"$(AGENT_FUZZ_MINIMIZED_ROOT)/$$target" -- \
 			-max_len=$(AGENT_FUZZ_MAX_LEN) -rss_limit_mb=$(AGENT_FUZZ_RSS_MB) \
 			-timeout=$(AGENT_FUZZ_TIMEOUT); \
-		cd ../..; \
+		cd "$(CURDIR)"; \
 	done
 
 agent-check: agent-check-boundary agent-check-secrets agent-test-boundary
