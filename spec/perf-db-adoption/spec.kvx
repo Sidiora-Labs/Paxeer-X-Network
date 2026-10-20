@@ -1,0 +1,1193 @@
+[meta]
+name = "perf-db adoption: the embedded Rust engine as the perps hot path behind the existing gateway"
+slug = "perf-db-adoption"
+version = "0.1.0"
+status = "draft"
+goal = "Bring the imported perf-db engine (services/platform/perf-db, crate perfdb) to the monorepo standard and to production durability, then serve candles and ticks from it through the existing perps gateway so the application sees no change, move the hot state and the leaderboard and stats aggregations onto it, and retire the PostgreSQL paths it replaces only after parity gates against the PostgreSQL answers pass."
+scope = "services/platform/perf-db (engine, CLI, a new sidecar crate), services/platform/perps-data (gateway client, UDF and kline routes behind a flag, feeds, REST and GraphQL aggregates, deploy manifests, a backfill command, a parity command and retirement migrations), services/platform/Makefile.inc and the repository CI workflows. The perps data services stay on PostgreSQL for release v6.12.0; this feature starts after that release."
+revision = "ca7384d7c"
+completion = "Every task verify_cmd passes at one revision; every acceptance criterion of req.1 to req.14 holds on that revision; with PERPS_PERFDB_URL unset the release negative tests of the gateway pass unchanged, and with it set the gateway serves UDF history and kline frames from the sidecar whose candles match a rebuild from the PostgreSQL facts; every retired PostgreSQL family has a recorded parity pass before its read path is removed."
+
+[design]
+flow = "Indexer (Go, perps-data) -> PostgreSQL facts and projections -> delivery outbox -> JetStream stream PERPS_V1 (subjects perps.<chain>.<market>.{fill,order,funding,index,liq,mark,oi,market}, perps.<chain>.user.<acct>.*, perps.<chain>.chain.{block,tx,rewind}; envelope services/platform/perps-data/internal/delivery/envelope.go:37-47) -> perf-db sidecar (Rust, embeds perfdb, durable JetStream consumer) -> HTTP surface -> perps gateway (Go) -> REST, WebSocket and GraphQL clients. Go cannot embed the engine, so the gateway reaches it only through the sidecar."
+engine = "perfdb provides PerfDb and PerfDbConfig (services/platform/perf-db/src/engine.rs:33-45, :82-107): mmap tick and candle stores, a CRC WAL with segments (src/storage/wal.rs), bincode snapshots (src/storage/snapshot.rs:18-28), in-memory market state, position, order and balance tables, a tokio broadcast pub/sub bus, relational stores (users, referrals, checkpoint, alerts, api keys, competitions), an event store, trader and daily stats and a leaderboard, over sixteen timeframes from 1s to 1W (src/core/timeframe.rs:116-131)."
+candles_today = "The application loads chart history through its candle proxy (Hyperpax:src/pages/api/candle/[...path].ts:5, :10), which forwards the UDF endpoints config, symbols, search, history, marks, timescale_marks, time and quotes to MARKET_PROXY_HOST /api/<sym>/, and streams klines as <SYM>@kline_<interval> on the Chainflow feed socket /ws/<sym> (Hyperpax:src/hooks/perps/useSidPaxMarketStream.ts:50-52, :69-70) as tuples [time, open, high, low, close, volume, closed] with time in unix seconds (Hyperpax:src/hooks/perps/useSidPaxMarketStream.ts:143-157). The perps gateway serves neither: the release pins 404 Not found for every UDF route (services/platform/perps-data/internal/rest/symbol_test.go:629-638), unknown_topic for every kline topic (services/platform/perps-data/internal/feeds/feeds_test.go:749-760) and no candle table or candle directory (services/platform/perps-data/internal/store/migrate_test.go:696-713, services/platform/perps-data/migrations/schema_test.go:741)."
+flag_rule = "Every perf-db path of the gateway is enabled only when PERPS_PERFDB_URL is set. With it unset the gateway behaves exactly as at the release and the release negative tests run unchanged. No Go package or directory under services/platform/perps-data carries candle in its name; the client package is internal/perfdb and the sidecar lives under services/platform/perf-db."
+external_revisions = "Hyperpax citations are at commit 242152b of the Hyperpax application repository."
+
+[execution]
+planning_state = "Task completion requires the declared implementation and its verify_cmd evidence at one revision. A specification or task status alone establishes no runtime result."
+task_policy = "Read the exact declared source and contract section, keep code that already meets the contract, implement every unmet criterion of the task, then run one bounded qualification pass. Implementation, qualification and activation evidence are recorded separately."
+gate_policy = "Every planned gate is implemented by the task that owns its acceptance criteria. A verify_cmd names a target that exists at the revision or is listed in planned_paths with gate_kind planned; unknown, empty or skipped selectors are refused."
+candidate_policy = "A passing gate is reused only while its source, inputs, scope and environment stay the same. Aggregate, sanitizer and parity-matrix gates run once per wave on the merged wave revision, not per task."
+parallelism = "tasks in the same wave with disjoint touches run in parallel; a requires entry inside the same wave orders those two tasks only"
+privacy = "Credentials, key material, operational inventories, host names and raw execution logs stay in access-controlled storage. Everything in this feature directory is public and is reviewed before publication."
+path_exclusivity = "every path appears in the touches of exactly one task per wave"
+citation_policy = "every do_n names the path:line it changes or reproduces; paths in the Hyperpax repository carry the prefix Hyperpax:"
+decision_policy = "A task with blocked_by is written for the first option of each named decision; it is not claimed until the decision is resolved, and it is rewritten before it is claimed if the decision resolves to another option."
+
+[req.1]
+title = "perf-db meets the monorepo standard"
+ac_1 = "Given services/platform/perf-db/Cargo.toml, when it is read, then every dependency requirement is an exact pin (=x.y.z), rust-version equals the root rust-toolchain.toml channel 1.91.1 instead of 1.85 (Cargo.toml:11), the repository field names no external repository (Cargo.toml:7) and the license field equals the value of decision.13 (Cargo.toml:5 today reads MIT OR Apache-2.0)."
+ac_2 = "Given the crate, when cargo build --locked runs on its manifest, then it exits 0, and Cargo.lock resolves tokio, serde, serde_json and clap to the versions the platform workspace pins (services/platform/Cargo.toml:36-65) where the crate uses them."
+ac_3 = "Given the crate, when cargo clippy --all-targets runs with -D warnings -D clippy::pedantic, then it exits 0; unsafe appears only in src/storage/mmap.rs (today :75 and :256), each site under a SAFETY comment and an allow(unsafe_code) on that item, and unwrap or expect outside cfg(test) is refused by a crate-level deny (today src/aggregation/candle_builder.rs:119 unwraps on the hot path)."
+ac_4 = "Given services/platform/perf-db/deny.toml, when cargo deny check bans licenses sources runs, then it exits 0 with multiple-versions = deny and the license confidence threshold of the platform policy, instead of multiple-versions warn and 0.8."
+ac_5 = "Given README.md and ARCHITECTURE.md of the crate, when lychee --offline runs on them, then it exits 0: the links to CONTRIBUTING.md (README.md:315), SECURITY.md (README.md:329) and LICENSE-APACHE and LICENSE-MIT (README.md:335-336) point at files that exist, the git dependency snippet (README.md:168) names the monorepo path dependency, and the durability claim (README.md:278) states the sync policy it holds under."
+ac_6 = "Given the repository CI, when a change under services/platform/perf-db is pushed, then .github/workflows/perf-db.yml runs make platform-perfdb-check on vars.CI_LINUX_RUNNER with every action pinned by full commit SHA, and the nested services/platform/perf-db/.github directory (unpinned actions/checkout@v4 at .github/workflows/ci.yml:22-23, its own dependabot and review assignment files) no longer exists."
+
+[req.2]
+title = "An acknowledged write survives a crash under the declared sync policy"
+ac_1 = "Given SyncPolicy::Interval(d), when entries are appended and no further append follows, then a background flusher syncs them within d; today sync happens only inside append (src/storage/wal.rs:173-182), so the last entries before an idle period stay unsynced."
+ac_2 = "Given a snapshot write, when the process is killed at any point of it, then the previous snapshot stays loadable: the snapshot is written to a temporary file, fsynced, renamed and the directory fsynced, instead of fs::write to the final path (src/storage/snapshot.rs:103-133)."
+ac_3 = "Given a corrupt latest snapshot, when the engine opens, then it loads the newest valid older snapshot and replays the WAL from its block, instead of failing (src/storage/snapshot.rs:136-164)."
+ac_4 = "Given a snapshot, when it is taken, then it carries alerts, api keys, competitions, referrals and the event store besides the state of StateSnapshot (src/storage/snapshot.rs:18-28), and an open after a restart returns the same events for a block range as before it; today replay skips events at or below the snapshot block (src/engine.rs:866-869) and the snapshot omits them."
+ac_5 = "Given a successful snapshot at block b, when it completes, then WAL segments wholly below b are removed with wal::truncate_before (src/storage/wal.rs:336) and snapshots beyond the retention count are removed with snapshot::cleanup_snapshots (src/storage/snapshot.rs:222); today neither is called by the engine."
+
+[req.3]
+title = "Every on-disk format is versioned"
+ac_1 = "Given a WAL segment, a snapshot, a tick file or a candle file written by this feature, when its first bytes are read, then they hold a four-byte magic of its kind and a u16 format version."
+ac_2 = "Given a file with an unknown version or a wrong magic, when the engine opens, then it refuses with PerfDbError::UnsupportedFormat naming the path, kind and version, and writes nothing."
+ac_3 = "Given a data directory written by the imported revision (no headers), when the engine opens it, then the files are read as version 0 and rewritten at the current version, and a second open reads the same ticks, candles and state."
+
+[req.4]
+title = "One writer per data directory"
+ac_1 = "Given an engine open on a directory, when a second PerfDb::open runs on it, then it refuses with PerfDbError::DirectoryLocked; the lock is an exclusive File::lock on <data_dir>/LOCK held for the life of the engine."
+ac_2 = "Given PerfDb::open_read_only, when it opens a directory locked by a writer, then it reads ticks, candles and state from the latest snapshot and WAL without taking the lock, and every write method returns PerfDbError::ReadOnly."
+ac_3 = "Given the perfdb CLI (src/main.rs:164 opens with PerfDb::open as a writer), when a query command runs against a live directory, then it opens read-only and succeeds while the writer runs."
+
+[req.5]
+title = "The engine reports metrics and health"
+ac_1 = "Given an engine, when Metrics::render is called, then it returns Prometheus text exposition with perfdb_ticks_ingested_total, perfdb_events_processed_total, perfdb_wal_bytes, perfdb_wal_sync_seconds, perfdb_snapshot_seconds, perfdb_snapshot_last_block and perfdb_last_block, each moving when the matching operation runs."
+ac_2 = "Given the engine, when a WAL sync or a snapshot fails, then perfdb_wal_sync_failures_total or perfdb_snapshot_failures_total increases and the error is returned to the caller, not logged and dropped."
+
+[req.6]
+title = "A live engine can be backed up and restored"
+ac_1 = "Given a running writer, when perfdb backup <dest> runs, then dest holds a snapshot and the WAL segments above it that open to the same state as the source at the backup block."
+ac_2 = "Given a backup, when perfdb restore <backup> <data_dir> runs on an empty or absent data_dir, then an engine opened there returns the same ticks, candles, positions and leaderboard as the source at the backup block; restore refuses a non-empty data_dir."
+
+[req.7]
+title = "Markets are data, not a constant"
+ac_1 = "Given the market table of the perps data services (services/platform/perps-data/migrations/0005_markets_seed.sql), when a market beyond the eighteen of src/core/market.rs:5 and :16-35 is registered, then the engine accepts its ticks and builds its candles; today candle_builder drops market ids at or above 18 (src/aggregation/candle_builder.rs:100-102) and the engine seeds state by MARKET_COUNT (src/engine.rs:200, :681)."
+ac_2 = "Given a tick for an unregistered market id, when it is ingested, then ingest_tick returns PerfDbError::UnknownMarket instead of dropping it silently."
+
+[req.8]
+title = "A Rust sidecar embeds perf-db and serves a small HTTP surface"
+ac_1 = "Given the perfdb-sidecar binary, when it starts with PERFDB_DATA_DIR, PERFDB_LISTEN, PERFDB_READ_TOKEN and PERFDB_ADMIN_TOKEN set, then it opens the engine as the single writer and listens; it refuses to start when a token is shorter than 32 bytes or PERFDB_LISTEN is not a socket address."
+ac_2 = "Given a request to /v1/* without Authorization: Bearer <PERFDB_READ_TOKEN>, or to /v1/admin/* without the admin token, then it answers 401 with no body read beyond the headers."
+ac_3 = "Given GET /healthz, then it answers 200 with last_block and lag_ms when the last ingested block is younger than PERFDB_MAX_LAG_MS and 503 otherwise; GET /metrics answers Metrics::render."
+ac_4 = "Given the deploy manifests, when services.json is read, then it lists the sidecar as a service with its image, its volume for PERFDB_DATA_DIR and its NATS user, deploy/services_test.go:84 expects it in the fixed service order, and services_test.go:155 still requires at least two gateway replicas."
+ac_5 = "Given deploy/nats/nats.conf, when the sidecar user is read, then it may subscribe perps.> and publish only $JS.API.CONSUMER.> and $JS.ACK.PERPS_V1.>, and the perps-gateway and perps-indexer permissions (nats.conf:24-40) are unchanged."
+
+[req.9]
+title = "Candles and ticks are built from the venue's own prices"
+ac_1 = "Given a perps.<chain>.<market>.index message whose payload is an IndexPriceRow (services/platform/perps-data/internal/decode/pricefeed.go:196-205), when the sidecar ingests it, then one PriceTick of the source of decision.6 at TimestampMs and block height is ingested, with the 18-decimal string parsed into the representation of decision.2 without loss."
+ac_2 = "Given a perps.<chain>.<market>.fill message, when it is ingested, then its size adds to the volume of every open bucket of that market; today volume from ticks is always 0."
+ac_3 = "Given a bucket whose end time has passed by wall clock, when no new tick arrives, then close_due closes it and publishes the closed frame within one second; today a bucket closes only on the next tick (src/aggregation/candle_builder.rs:111-127)."
+ac_4 = "Given a perps.<chain>.chain.rewind message carrying fork height h, when it is ingested, then every tick and candle contribution at or above h is removed and the affected buckets are rebuilt from the remaining ticks, so a read after the rewind never mixes two branches."
+ac_5 = "Given the backfill command, when it runs against the PostgreSQL facts from a start height, then it posts ticks and fills to /v1/admin/ingest in block order and the candles of every timeframe equal those a live ingestion of the same messages produces; JetStream retention is 72 hours, so history older than that comes only from backfill."
+ac_6 = "Given GET /v1/candles?market=<id>&tf=<tf>&from=<s>&to=<s>&limit=<n>, then it returns the candles of that range in ascending time as [time, open, high, low, close, volume, closed] tuples with time in unix seconds and closed 0 or 1 (Hyperpax:src/hooks/perps/useSidPaxMarketStream.ts:143-157), and GET /v1/candles/stream streams the same tuples as NDJSON, one per update."
+
+[req.10]
+title = "The gateway serves UDF and kline routes from the sidecar only when PERPS_PERFDB_URL is set"
+ac_1 = "Given PERPS_PERFDB_URL unset, when TestSymbolREST, TestFeeds, TestMigrate and TestSchemaFiles run, then the subtests no_udf_<route> (internal/rest/symbol_test.go:629-638), no_kline_topic (internal/feeds/feeds_test.go:749-760) and no_candle_table (internal/store/migrate_test.go:696-713, migrations/schema_test.go:741) pass unchanged."
+ac_2 = "Given PERPS_PERFDB_URL and PERPS_PERFDB_TOKEN set, when /api/<sym>/history?resolution=<r>&from=<s>&to=<s> is requested, then the gateway answers the UDF shape {s, t, o, h, l, c, v} from /v1/candles, or {s: no_data, nextTime} when the range is empty, for the resolutions 1, 2, 3, 5, 15, 30, 60, 240, 480, 1D and 1W."
+ac_3 = "Given the flag set, when config, symbols, search, time, quotes, marks and timescale_marks are requested, then each answers the UDF shape the candle proxy forwards (Hyperpax:src/pages/api/candle/[...path].ts:10), marks and timescale_marks as empty arrays."
+ac_4 = "Given the flag set, when a client subscribes <SYM>@kline_<interval> for an interval of feeds_test.go:752, then it receives a snapshot of the live bucket and one frame per update in the Chainflow kline tuple, and an unknown interval still answers unknown_topic."
+ac_5 = "Given the flag set and the sidecar unreachable, when a UDF route is requested, then the gateway answers 503 with error perfdb_unavailable and its /health reports the sidecar as down; it never falls back to an empty 200."
+ac_6 = "Given PERPS_PERFDB_URL set without PERPS_PERFDB_TOKEN, or with a scheme other than http or https, then config.Load refuses it, and Config.String prints the token as redacted (internal/config/config.go:31-40)."
+
+[req.11]
+title = "Hot state follows the Paxeer X perps events"
+ac_1 = "Given every event of the Paxeer X perps decoding table (contracts/data-services.md section 6 of the release spec, thirty events), when it is delivered, then the sidecar adapter maps it to an engine event or records it as ignored by name; an event name outside the table increases perfdb_events_unknown_total and is not dropped silently. The engine Event enum (src/core/types.rs:184) carries seventeen variants today."
+ac_2 = "Given orders placed, filled, amended and cancelled, when the book of a market is read, then it equals the release book (contracts/data-services.md section 10; services/platform/perps-data/internal/feeds/book.go:80-81): remaining_size_usd of active orders aggregated at limit_price per side; today the engine keys orders by trigger_price with id lists only (src/state/orders.rs:17-19, :145)."
+ac_3 = "Given position and margin events, when positions of an account are read, then size, entry price, margin, realized PnL and funding equal the PostgreSQL projection for the same events (services/platform/perps-data/internal/store/projections.go:61)."
+ac_4 = "Given a state change, when it is applied, then one pub/sub frame is published on the matching channel (Prices, Positions, Orders, Trades, Liquidations, Funding, Balances) after the state is visible to a read."
+
+[req.12]
+title = "Leaderboard and stats match the release rules"
+ac_1 = "Given trader stats, when the leaderboard is built, then it ranks by realized_pnl, breaks ties by the lower account bytes and serves the windows all, 30d and 7d (contracts/data-services.md section 18; services/platform/perps-data/internal/pnl/pnl.go:431-479); today it sorts by total_pnl with no tie rule and no windows (src/aggregation/leaderboard.rs:119-125)."
+ac_2 = "Given more traders than max_entries (500 by default), when a rank of a trader below the cut is requested, then the engine returns the exact rank, not None."
+ac_3 = "Given fills, when user and market stats are read, then volume, trade count, fees and open interest equal projectStats and projectMarketStats (services/platform/perps-data/internal/store/projections.go:517, :553) for the same facts."
+
+[req.13]
+title = "A PostgreSQL path is retired only after a recorded parity pass"
+ac_1 = "Given the perps-parity command, when it runs for a family (candles, book, positions, stats, leaderboard) over a block range, then it compares the PostgreSQL answer and the sidecar answer row by row and exits 0 only when they are equal, printing the first difference otherwise; its tests fail, never skip, when PERPS_DATA_TEST_DATABASE_URL or PERPS_DATA_TEST_PERFDB_URL is unset."
+ac_2 = "Given PERPS_PERFDB_FAMILIES, when the gateway starts, then every listed family is read from the sidecar and every other family from PostgreSQL; the default is candles when PERPS_PERFDB_URL is set and empty otherwise, and an unknown family name is refused."
+ac_3 = "Given a family listed in PERPS_INDEXER_RETIRED, when the indexer runs, then it stops writing that family's projection tables and keeps writing every fact table."
+ac_4 = "Given a retired family, when the rollback command runs, then store.Rebuild re-projects its tables from the facts and the parity command for that family exits 0 against the sidecar."
+ac_5 = "Given the retirement migration of a family, when it applies, then its projection tables are dropped only for the families of decision.10, and the tests that pinned those tables are updated in the same task without weakening any other assertion."
+
+[req.14]
+title = "Open decisions are recorded with options and costs"
+ac_1 = "Given this spec, when it is read, then every choice that changes a public format, a dependency or the release contract is a [decision.N] block with status open, its options and their costs, and every task that depends on it names it in blocked_by."
+
+[capability.0.1]
+title = "Exact-pinned manifest at the monorepo toolchain"
+reqs = ["1.1", "1.2"]
+touches = ["services/platform/perf-db/Cargo.toml", "services/platform/perf-db/Cargo.lock", "services/platform/perf-db/tests/manifest.rs"]
+tests = ["services/platform/perf-db/tests/manifest.rs"]
+verification_contract = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test manifest"
+
+[capability.0.2]
+title = "Clippy pedantic clean with unsafe confined to the mmap module"
+reqs = ["1.3"]
+touches = ["services/platform/perf-db/src", "services/platform/perf-db/tests/integration.rs", "services/platform/perf-db/tests/recovery.rs", "services/platform/perf-db/benches"]
+tests = ["services/platform/perf-db/tests/integration.rs", "services/platform/perf-db/tests/recovery.rs"]
+verification_contract = "cargo clippy --locked --manifest-path services/platform/perf-db/Cargo.toml --all-targets -- -D warnings -D clippy::pedantic"
+
+[capability.0.3]
+title = "Dependency policy aligned with the platform"
+reqs = ["1.4"]
+touches = ["services/platform/perf-db/deny.toml"]
+tests = []
+verification_contract = "cargo deny --manifest-path services/platform/perf-db/Cargo.toml check bans licenses sources"
+
+[capability.0.4]
+title = "Crate documentation with working links"
+reqs = ["1.5"]
+touches = ["services/platform/perf-db/README.md", "services/platform/perf-db/ARCHITECTURE.md"]
+tests = []
+verification_contract = "lychee --offline --no-progress services/platform/perf-db/README.md services/platform/perf-db/ARCHITECTURE.md"
+
+[capability.0.5]
+title = "perf-db in the monorepo CI"
+reqs = ["1.6"]
+touches = [".github/workflows/perf-db.yml", ".github/dependabot.yml", "services/platform/Makefile.inc", "services/platform/perf-db/.github"]
+tests = []
+verification_contract = "actionlint .github/workflows/perf-db.yml && make platform-perfdb-check"
+
+[capability.1.1]
+title = "Typed errors and engine metrics"
+reqs = ["3.2", "4.1", "4.2", "5.1"]
+touches = ["services/platform/perf-db/src/error.rs", "services/platform/perf-db/src/metrics.rs", "services/platform/perf-db/src/lib.rs", "services/platform/perf-db/tests/metrics.rs"]
+tests = ["services/platform/perf-db/tests/metrics.rs"]
+verification_contract = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test metrics"
+
+[capability.1.2]
+title = "Versioned WAL with a background flusher"
+reqs = ["2.1", "3.1", "3.2", "3.3"]
+touches = ["services/platform/perf-db/src/storage/wal.rs", "services/platform/perf-db/tests/wal_format.rs"]
+tests = ["services/platform/perf-db/tests/wal_format.rs"]
+verification_contract = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test wal_format"
+
+[capability.1.3]
+title = "Atomic, versioned, complete snapshots with fallback"
+reqs = ["2.2", "2.3", "2.4", "3.1", "3.2", "3.3"]
+touches = ["services/platform/perf-db/src/storage/snapshot.rs", "services/platform/perf-db/src/storage/event_store.rs", "services/platform/perf-db/src/relational/referrals.rs", "services/platform/perf-db/src/relational/checkpoint.rs", "services/platform/perf-db/tests/snapshot_format.rs"]
+tests = ["services/platform/perf-db/tests/snapshot_format.rs"]
+verification_contract = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test snapshot_format"
+
+[capability.1.4]
+title = "Versioned tick and candle files"
+reqs = ["3.1", "3.2", "3.3"]
+touches = ["services/platform/perf-db/src/storage/mmap.rs", "services/platform/perf-db/src/storage/tick_store.rs", "services/platform/perf-db/src/storage/candle_store.rs", "services/platform/perf-db/tests/storage_format.rs"]
+tests = ["services/platform/perf-db/tests/storage_format.rs"]
+verification_contract = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test storage_format"
+
+[capability.1.5]
+title = "Engine lifecycle: lock, read-only open, complete snapshot, truncation, metrics"
+reqs = ["2.4", "2.5", "4.1", "4.2", "5.1", "5.2"]
+touches = ["services/platform/perf-db/src/engine.rs", "services/platform/perf-db/tests/recovery.rs", "services/platform/perf-db/tests/integration.rs"]
+tests = ["services/platform/perf-db/tests/recovery.rs"]
+verification_contract = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test recovery"
+
+[capability.1.6]
+title = "Read-only CLI, backup and restore"
+reqs = ["4.3", "6.1", "6.2"]
+touches = ["services/platform/perf-db/src/main.rs", "services/platform/perf-db/src/storage/mod.rs", "services/platform/perf-db/src/storage/backup.rs", "services/platform/perf-db/tests/backup.rs"]
+tests = ["services/platform/perf-db/tests/backup.rs"]
+verification_contract = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test backup"
+
+[capability.1.7]
+title = "Advisory gate after the encoding decision"
+reqs = ["1.4"]
+touches = ["services/platform/perf-db/deny.toml"]
+tests = []
+verification_contract = "cargo deny --manifest-path services/platform/perf-db/Cargo.toml check advisories"
+
+[capability.2.1]
+title = "Engine candle path: market registry, exact prices, fill volume, wall-clock close, rewind"
+reqs = ["7.1", "7.2", "9.2", "9.3", "9.4"]
+touches = ["services/platform/perf-db/src/core/types.rs", "services/platform/perf-db/src/core/market.rs", "services/platform/perf-db/src/aggregation/candle_builder.rs", "services/platform/perf-db/src/engine.rs", "services/platform/perf-db/src/storage/wal.rs", "services/platform/perf-db/src/lib.rs", "services/platform/perf-db/tests/candle_path.rs"]
+tests = ["services/platform/perf-db/tests/candle_path.rs"]
+verification_contract = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test candle_path"
+
+[capability.2.2]
+title = "perfdb-sidecar crate with the HTTP surface and JetStream ingestion"
+reqs = ["8.1", "8.2", "8.3", "9.1", "9.6"]
+touches = ["services/platform/perf-db/Cargo.toml", "services/platform/perf-db/Cargo.lock", "services/platform/perf-db/sidecar"]
+tests = ["services/platform/perf-db/sidecar/tests/http.rs"]
+verification_contract = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml -p perfdb-sidecar --test http"
+
+[capability.2.3]
+title = "Gateway configuration and perf-db client"
+reqs = ["10.6", "13.2"]
+touches = ["services/platform/perps-data/internal/config/config.go", "services/platform/perps-data/internal/config/config_test.go", "services/platform/perps-data/internal/perfdb/client.go", "services/platform/perps-data/internal/perfdb/client_test.go"]
+tests = ["services/platform/perps-data/internal/perfdb/client_test.go", "services/platform/perps-data/internal/config/config_test.go"]
+verification_contract = "go test -count=1 ./services/platform/perps-data/internal/perfdb/ ./services/platform/perps-data/internal/config/ -run 'TestPerfDBClient|TestConfig'"
+
+[capability.2.4]
+title = "UDF routes behind the flag"
+reqs = ["10.1", "10.2", "10.3", "10.5"]
+touches = ["services/platform/perps-data/internal/rest/udf.go", "services/platform/perps-data/internal/rest/udf_test.go", "services/platform/perps-data/internal/gateway/server.go", "services/platform/perps-data/internal/gateway/server_test.go"]
+tests = ["services/platform/perps-data/internal/rest/udf_test.go", "services/platform/perps-data/internal/rest/symbol_test.go"]
+verification_contract = "go test -count=1 ./services/platform/perps-data/internal/rest/ -run 'TestUDF|TestSymbolREST'"
+
+[capability.2.5]
+title = "Kline topics behind the flag"
+reqs = ["10.1", "10.4"]
+touches = ["services/platform/perps-data/internal/feeds/topics.go", "services/platform/perps-data/internal/feeds/kline.go", "services/platform/perps-data/internal/feeds/kline_test.go", "services/platform/perps-data/internal/feeds/testdata/kline_frame.json"]
+tests = ["services/platform/perps-data/internal/feeds/kline_test.go", "services/platform/perps-data/internal/feeds/feeds_test.go"]
+verification_contract = "go test -count=1 ./services/platform/perps-data/internal/feeds/ -run 'TestKline|TestFeeds'"
+
+[capability.2.6]
+title = "Sidecar deploy manifests and NATS user"
+reqs = ["8.4", "8.5"]
+touches = ["services/platform/perf-db/Dockerfile.sidecar", "services/platform/perps-data/deploy/services.json", "services/platform/perps-data/deploy/services_test.go", "services/platform/perps-data/deploy/nats/nats.conf", "services/platform/perps-data/deploy/nats_test.go"]
+tests = ["services/platform/perps-data/deploy/services_test.go", "services/platform/perps-data/deploy/nats_test.go"]
+verification_contract = "go test -count=1 ./services/platform/perps-data/deploy/ -run 'TestServices|TestNATS'"
+
+[capability.2.7]
+title = "Backfill of candles from the PostgreSQL facts"
+reqs = ["9.5"]
+touches = ["services/platform/perps-data/cmd/perps-perfdb-backfill/main.go", "services/platform/perps-data/internal/perfdb/backfill.go", "services/platform/perps-data/internal/perfdb/backfill_test.go"]
+tests = ["services/platform/perps-data/internal/perfdb/backfill_test.go"]
+verification_contract = "go test -count=1 ./services/platform/perps-data/internal/perfdb/ -run 'TestBackfill'"
+
+[capability.3.1]
+title = "Engine hot state from the Paxeer X event vocabulary"
+reqs = ["11.2", "11.3", "11.4"]
+touches = ["services/platform/perf-db/src/core/types.rs", "services/platform/perf-db/src/engine.rs", "services/platform/perf-db/src/state/orders.rs", "services/platform/perf-db/src/state/positions.rs", "services/platform/perf-db/src/state/balances.rs", "services/platform/perf-db/src/state/market_state.rs", "services/platform/perf-db/src/state/pubsub.rs", "services/platform/perf-db/tests/hot_state.rs"]
+tests = ["services/platform/perf-db/tests/hot_state.rs"]
+verification_contract = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test hot_state"
+
+[capability.3.2]
+title = "Leaderboard windows, tie rule, exact ranks and stats"
+reqs = ["12.1", "12.2", "12.3"]
+touches = ["services/platform/perf-db/src/aggregation/leaderboard.rs", "services/platform/perf-db/src/aggregation/stats.rs", "services/platform/perf-db/tests/aggregations.rs"]
+tests = ["services/platform/perf-db/tests/aggregations.rs"]
+verification_contract = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test aggregations"
+
+[capability.3.3]
+title = "Sidecar event adapter, state routes and streams"
+reqs = ["11.1", "11.4"]
+touches = ["services/platform/perf-db/sidecar/src/events.rs", "services/platform/perf-db/sidecar/src/http.rs", "services/platform/perf-db/sidecar/src/ingest.rs", "services/platform/perf-db/sidecar/tests/state.rs"]
+tests = ["services/platform/perf-db/sidecar/tests/state.rs"]
+verification_contract = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml -p perfdb-sidecar --test state"
+
+[capability.3.4]
+title = "Feeds providers backed by perf-db"
+reqs = ["11.2", "13.2"]
+touches = ["services/platform/perps-data/internal/feeds/book.go", "services/platform/perps-data/internal/feeds/perfdb_state.go", "services/platform/perps-data/internal/feeds/perfdb_state_test.go", "services/platform/perps-data/internal/perfdb/state.go"]
+tests = ["services/platform/perps-data/internal/feeds/perfdb_state_test.go"]
+verification_contract = "go test -count=1 ./services/platform/perps-data/internal/feeds/ -run 'TestPerfDBState'"
+
+[capability.3.5]
+title = "REST and GraphQL aggregates backed by perf-db"
+reqs = ["12.1", "12.3", "13.2"]
+touches = ["services/platform/perps-data/internal/rest/accountv2.go", "services/platform/perps-data/internal/rest/perfdb_aggregates_test.go", "services/platform/perps-data/internal/graphql/perps.go", "services/platform/perps-data/internal/graphql/perfdb_aggregates_test.go", "services/platform/perps-data/internal/perfdb/aggregates.go"]
+tests = ["services/platform/perps-data/internal/rest/perfdb_aggregates_test.go", "services/platform/perps-data/internal/graphql/perfdb_aggregates_test.go"]
+verification_contract = "go test -count=1 ./services/platform/perps-data/internal/rest/ ./services/platform/perps-data/internal/graphql/ -run 'TestPerfDBAggregates'"
+
+[capability.4.1]
+title = "Parity command against the PostgreSQL answers"
+reqs = ["13.1"]
+touches = ["services/platform/perps-data/cmd/perps-parity/main.go", "services/platform/perps-data/internal/parity/parity.go", "services/platform/perps-data/internal/parity/parity_test.go"]
+tests = ["services/platform/perps-data/internal/parity/parity_test.go"]
+verification_contract = "go test -count=1 ./services/platform/perps-data/internal/parity/ -run 'TestParity'"
+
+[capability.4.2]
+title = "Read backend per family in the gateway"
+reqs = ["13.2"]
+touches = ["services/platform/perps-data/internal/gateway/server.go", "services/platform/perps-data/internal/gateway/backends.go", "services/platform/perps-data/internal/gateway/backends_test.go"]
+tests = ["services/platform/perps-data/internal/gateway/backends_test.go"]
+verification_contract = "go test -count=1 ./services/platform/perps-data/internal/gateway/ -run 'TestReadBackends'"
+
+[capability.4.3]
+title = "Indexer stops projecting retired families"
+reqs = ["13.3"]
+touches = ["services/platform/perps-data/internal/store/projections.go", "services/platform/perps-data/internal/store/retired.go", "services/platform/perps-data/internal/store/retired_test.go"]
+tests = ["services/platform/perps-data/internal/store/retired_test.go"]
+verification_contract = "go test -count=1 ./services/platform/perps-data/internal/store/ -run 'TestRetiredProjections'"
+
+[capability.4.4]
+title = "Retirement migration with the pinned tests updated"
+reqs = ["13.5"]
+touches = ["services/platform/perps-data/migrations/0009_retire_perfdb_families.sql", "services/platform/perps-data/migrations/schema_test.go", "services/platform/perps-data/internal/store/migrate_test.go"]
+tests = ["services/platform/perps-data/migrations/schema_test.go", "services/platform/perps-data/internal/store/migrate_test.go"]
+verification_contract = "go test -count=1 ./services/platform/perps-data/migrations/ ./services/platform/perps-data/internal/store/ -run 'TestSchemaFiles|TestMigrate'"
+
+[capability.4.5]
+title = "Rollback by re-projection"
+reqs = ["13.4"]
+touches = ["services/platform/perps-data/cmd/perps-replay", "services/platform/perps-data/internal/replay/rollback.go", "services/platform/perps-data/internal/replay/rollback_test.go"]
+tests = ["services/platform/perps-data/internal/replay/rollback_test.go"]
+verification_contract = "go test -count=1 ./services/platform/perps-data/internal/replay/ -run 'TestRollbackFamily'"
+
+[task.0.1]
+title = "Pin the manifest exactly and move it to the monorepo toolchain"
+status = "pending"
+mode = "BUILD"
+wave = 0
+requires = []
+blocked_by = ["decision.1", "decision.13"]
+reqs = ["1.1", "1.2"]
+capabilities = ["0.1"]
+do_1 = "Rewrite every dependency of services/platform/perf-db/Cargo.toml:19-47 (memmap2, dashmap, parking_lot, tokio, serde, bincode, tracing, thiserror, bytemuck, crc32fast, clap, serde_json and the dev-dependencies) as an exact =x.y.z pin; tokio, serde, serde_json and clap take the versions of services/platform/Cargo.toml:36-65 so the crate and the platform resolve one version each (the imported lock holds tokio 1.52.0 against 1.53.1 of the platform)."
+do_2 = "Set rust-version to 1.91.1 (Cargo.toml:11, today 1.85) so File::lock of req.4 is available, drop the external repository field (Cargo.toml:7), set license to the value of decision.13 (Cargo.toml:5) and keep the empty [workspace] table of Cargo.toml:76 under option one of decision.1 (standalone manifest)."
+do_3 = "Regenerate services/platform/perf-db/Cargo.lock with cargo update scoped to the changed pins and commit it."
+do_4 = "Add tests/manifest.rs with tests manifest_pins_exact (parses include_str of Cargo.toml and fails on any dependency requirement not starting with =), manifest_toolchain (rust-version equals the channel of the root rust-toolchain.toml) and manifest_license (license equals the decision.13 value and no repository key is present)."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["manifest_pins_exact", "manifest_toolchain", "manifest_license"]
+touches = ["services/platform/perf-db/Cargo.toml", "services/platform/perf-db/Cargo.lock", "services/platform/perf-db/tests/manifest.rs"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml --all-targets"
+verify_cmd = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test manifest"
+gate_kind = "planned"
+planned_paths = ["services/platform/perf-db/tests/manifest.rs"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.2]
+title = "Make the crate clippy pedantic clean and confine unsafe to the mmap module"
+status = "pending"
+mode = "BUILD"
+wave = 0
+requires = []
+reqs = ["1.3"]
+capabilities = ["0.2"]
+do_1 = "Add to src/lib.rs the crate attributes deny(unsafe_code) and cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used)); put allow(unsafe_code) on the two items of src/storage/mmap.rs:75 and :256 with a SAFETY comment stating the invariant each relies on (file length fixed while mapped, single writer)."
+do_2 = "Replace every non-test unwrap and expect of src with a returned PerfDbError or an explicit match, starting with src/aggregation/candle_builder.rs:119 on the tick hot path; tests and benches keep unwrap under cfg(test) or their own allow."
+do_3 = "Fix every clippy::all and clippy::pedantic finding of src, tests/integration.rs, tests/recovery.rs and benches without allow attributes except must_use_candidate and module_name_repetitions at crate level; float_arithmetic is not denied in this task because the price representation is decision.2."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb::storage::mmap", "perfdb::aggregation::candle_builder"]
+touches = ["services/platform/perf-db/src", "services/platform/perf-db/tests/integration.rs", "services/platform/perf-db/tests/recovery.rs", "services/platform/perf-db/benches"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml --all-targets"
+verify_cmd = "cargo clippy --locked --manifest-path services/platform/perf-db/Cargo.toml --all-targets -- -D warnings -D clippy::pedantic"
+gate_kind = "existing"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.3]
+title = "Align the crate dependency policy with the platform"
+status = "pending"
+mode = "BUILD"
+wave = 0
+requires = ["0.1"]
+reqs = ["1.4"]
+capabilities = ["0.3"]
+do_1 = "Set services/platform/perf-db/deny.toml bans multiple-versions to deny (today warn), the licenses confidence threshold (today 0.8), the license allow list and the unknown-registry and unknown-git rules to those of services/platform/deny.toml; any duplicate the exact pins of task 0.1 leave is listed by name and version in bans skip with the crate that pulls it."
+do_2 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["services/platform/perf-db/deny.toml"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml"
+verify_cmd = "cargo deny --manifest-path services/platform/perf-db/Cargo.toml check bans licenses sources"
+gate_kind = "existing"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.4]
+title = "Repair the crate documentation links and claims"
+status = "pending"
+mode = "BUILD"
+wave = 0
+requires = []
+blocked_by = ["decision.13"]
+reqs = ["1.5"]
+capabilities = ["0.4"]
+do_1 = "Point the CONTRIBUTING.md and SECURITY.md links of README.md:315 and :329 at the repository root files, and the LICENSE-APACHE and LICENSE-MIT links of README.md:335-336 at the license files of the decision.13 option (the root LICENSE under the Apache-2.0 option)."
+do_2 = "Replace the git dependency snippet of README.md:168 with the monorepo path dependency, state under README.md:278 that an acknowledged write survives a crash under SyncPolicy::EveryWrite and within the interval under SyncPolicy::Interval, and keep the pre-release status of README.md:305-310."
+do_3 = "Remove external image and badge links that lychee --offline cannot resolve and fix every relative link of ARCHITECTURE.md."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["services/platform/perf-db/README.md", "services/platform/perf-db/ARCHITECTURE.md"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml"
+verify_cmd = "lychee --offline --no-progress services/platform/perf-db/README.md services/platform/perf-db/ARCHITECTURE.md"
+gate_kind = "existing"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.5]
+title = "Run perf-db in the monorepo CI and remove the nested GitHub directory"
+status = "pending"
+mode = "BUILD"
+wave = 0
+requires = ["0.1", "0.2", "0.3", "0.4"]
+reqs = ["1.6"]
+capabilities = ["0.5"]
+do_1 = "Add the make target platform-perfdb-check to services/platform/Makefile.inc beside platform-build and platform-lint (Makefile.inc:97-102, :114-123), declared in the .PHONY list of Makefile.inc:7-20, running cargo fmt --check, cargo clippy --locked --all-targets -- -D warnings -D clippy::pedantic, cargo test --locked and cargo deny check bans licenses sources on --manifest-path services/platform/perf-db/Cargo.toml, as the examples/marketplace manifest is wired separately today."
+do_2 = "Add .github/workflows/perf-db.yml triggered on pushes and pull requests touching services/platform/perf-db/**, running on vars.CI_LINUX_RUNNER as .github/workflows/platform.yml does, with every action pinned by full commit SHA and a version comment, and running make platform-perfdb-check."
+do_3 = "Add a cargo entry for /services/platform/perf-db to .github/dependabot.yml, then delete services/platform/perf-db/.github (workflows benchmark, ci and security with unpinned actions at .github/workflows/ci.yml:22-23, its dependabot file, issue and pull request templates and its review assignment file), which never runs inside the monorepo."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["platform-perfdb-check"]
+touches = [".github/workflows/perf-db.yml", ".github/dependabot.yml", "services/platform/Makefile.inc", "services/platform/perf-db/.github"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml"
+verify_cmd = "actionlint .github/workflows/perf-db.yml && make platform-perfdb-check"
+gate_kind = "planned"
+planned_paths = [".github/workflows/perf-db.yml"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.1]
+title = "Add the typed error variants and the engine metrics"
+status = "pending"
+mode = "BUILD"
+wave = 1
+requires = ["0.2"]
+reqs = ["3.2", "4.1", "4.2", "5.1"]
+capabilities = ["1.1"]
+do_1 = "Add PerfDbError::UnsupportedFormat { path, kind, version }, DirectoryLocked { path }, ReadOnly, CorruptSnapshot { path } and UnknownMarket { market_id } to src/error.rs, each with a thiserror message naming its fields."
+do_2 = "Add src/metrics.rs with Metrics holding AtomicU64 counters and gauges for perfdb_ticks_ingested_total, perfdb_events_processed_total, perfdb_events_unknown_total, perfdb_wal_bytes, perfdb_wal_sync_seconds, perfdb_wal_sync_failures_total, perfdb_snapshot_seconds, perfdb_snapshot_failures_total, perfdb_snapshot_last_block and perfdb_last_block, and Metrics::render returning Prometheus text exposition; no metrics dependency is added. Export it from src/lib.rs."
+do_3 = "Add tests/metrics.rs with render_lists_every_metric, counters_move and render_is_valid_exposition (every line is a HELP, TYPE or name value line)."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb::PerfDbError", "perfdb::metrics::Metrics", "perfdb::metrics::Metrics::render"]
+touches = ["services/platform/perf-db/src/error.rs", "services/platform/perf-db/src/metrics.rs", "services/platform/perf-db/src/lib.rs", "services/platform/perf-db/tests/metrics.rs"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml --all-targets"
+verify_cmd = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test metrics"
+gate_kind = "planned"
+planned_paths = ["services/platform/perf-db/src/metrics.rs", "services/platform/perf-db/tests/metrics.rs"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.2]
+title = "Version the WAL segments and sync them in the background"
+status = "pending"
+mode = "BUILD"
+wave = 1
+requires = ["1.1"]
+blocked_by = ["decision.8", "decision.12"]
+reqs = ["2.1", "3.1", "3.2", "3.3"]
+capabilities = ["1.2"]
+do_1 = "Write a segment header of magic PDBW and a u16 version at the start of every segment opened by WalWriter (src/storage/wal.rs), and read it back in the reader; a headerless segment is read as version 0 and rewritten on the next rotation; any other version returns UnsupportedFormat."
+do_2 = "Start a flusher thread in WalWriter for SyncPolicy::Interval(d) that syncs pending bytes every d and stops on drop, so an append followed by no further append is synced within d; today sync runs only inside append (wal.rs:173-182). The default policy (wal.rs:87, Interval of 10 ms) becomes the decision.8 value."
+do_3 = "Keep truncate_before (wal.rs:336) public and make it refuse to remove the segment that holds the current write position."
+do_4 = "Add tests/wal_format.rs with header_written, unknown_version_refused, v0_segment_read_and_rewritten, interval_flush_without_append (appends, sleeps 2d, reads a copy of the directory taken before drop and finds the entry) and truncate_keeps_active_segment."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb::storage::wal::WalWriter", "perfdb::storage::wal::truncate_before", "perfdb::storage::wal::SyncPolicy"]
+touches = ["services/platform/perf-db/src/storage/wal.rs", "services/platform/perf-db/tests/wal_format.rs"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml --all-targets"
+verify_cmd = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test wal_format"
+gate_kind = "planned"
+planned_paths = ["services/platform/perf-db/tests/wal_format.rs"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.3]
+title = "Write snapshots atomically, versioned and complete, with fallback on corruption"
+status = "pending"
+mode = "BUILD"
+wave = 1
+requires = ["1.1"]
+blocked_by = ["decision.12"]
+reqs = ["2.2", "2.3", "2.4", "3.1", "3.2", "3.3"]
+capabilities = ["1.3"]
+do_1 = "Replace fs::write to the final path in write_snapshot (src/storage/snapshot.rs:103-133) with a write to <name>.tmp, File::sync_all, rename and a sync of the snapshots directory; prefix the body with magic PDBS and a u16 version."
+do_2 = "Make load_latest_snapshot (snapshot.rs:136-164) try snapshots newest first and return the first that decodes, recording each skipped path; it returns CorruptSnapshot only when none decodes and at least one exists. A headerless snapshot is read as version 0."
+do_3 = "Extend StateSnapshot (snapshot.rs:18-28) with alerts, api keys, competitions, referrals and the event store; derive Serialize and Deserialize for the referral and checkpoint types (src/relational/referrals.rs:4, src/relational/checkpoint.rs) and for the event store records (src/storage/event_store.rs)."
+do_4 = "Add tests/snapshot_format.rs with atomic_write_leaves_previous (a truncated tmp file beside a valid snapshot loads the valid one), corrupt_latest_falls_back, header_written, unknown_version_refused, v0_snapshot_read and every_store_round_trips."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb::storage::snapshot::StateSnapshot", "perfdb::storage::snapshot::write_snapshot", "perfdb::storage::snapshot::load_latest_snapshot"]
+touches = ["services/platform/perf-db/src/storage/snapshot.rs", "services/platform/perf-db/src/storage/event_store.rs", "services/platform/perf-db/src/relational/referrals.rs", "services/platform/perf-db/src/relational/checkpoint.rs", "services/platform/perf-db/tests/snapshot_format.rs"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml --all-targets"
+verify_cmd = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test snapshot_format"
+gate_kind = "planned"
+planned_paths = ["services/platform/perf-db/tests/snapshot_format.rs"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.4]
+title = "Version the tick and candle files"
+status = "pending"
+mode = "BUILD"
+wave = 1
+requires = ["1.1"]
+reqs = ["3.1", "3.2", "3.3"]
+capabilities = ["1.4"]
+do_1 = "Reserve a header page in the mapped files of src/storage/mmap.rs holding magic PDBT for tick files and PDBC for candle files, a u16 version and the record size; tick_store and candle_store offset their records past it."
+do_2 = "On open of a headerless file (version 0, written by the imported revision), copy its records into a new file with the header, fsync and rename it over the old one; any other version or a record size that differs returns UnsupportedFormat."
+do_3 = "Add tests/storage_format.rs with tick_header_written, candle_header_written, unknown_version_refused, record_size_mismatch_refused and v0_files_migrated (a directory written with the imported layout reopens with the same ticks and candles)."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb::storage::mmap", "perfdb::storage::tick_store::TickStore", "perfdb::storage::candle_store::CandleStore"]
+touches = ["services/platform/perf-db/src/storage/mmap.rs", "services/platform/perf-db/src/storage/tick_store.rs", "services/platform/perf-db/src/storage/candle_store.rs", "services/platform/perf-db/tests/storage_format.rs"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml --all-targets"
+verify_cmd = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test storage_format"
+gate_kind = "planned"
+planned_paths = ["services/platform/perf-db/tests/storage_format.rs"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.5]
+title = "Lock the data directory, open read-only, snapshot every store and truncate the WAL"
+status = "pending"
+mode = "BUILD"
+wave = 1
+requires = ["1.1", "1.2", "1.3", "1.4"]
+reqs = ["2.4", "2.5", "4.1", "4.2", "5.1", "5.2"]
+capabilities = ["1.5"]
+do_1 = "In PerfDb::open (src/engine.rs:120) take an exclusive File::lock on <data_dir>/LOCK before any store opens and hold it in PerfDb; a held lock returns DirectoryLocked."
+do_2 = "Add PerfDb::open_read_only that loads the latest snapshot and replays the WAL without the lock and without the WalWriter of engine.rs:171; every write method of PerfDb (ingest_tick :242, process_event :281, save_checkpoint :602, snapshot :663) returns ReadOnly on it."
+do_3 = "Make snapshot (engine.rs:663-703) capture the stores added by task 1.3 (constructed at engine.rs:140, :143, :147-149), then call truncate_before for the snapshot block and cleanup_snapshots with the retention of PerfDbConfig; restore them all on open, and replay events above the snapshot block instead of skipping them at or below it (engine.rs:866-869) without losing those already in the snapshot."
+do_4 = "Hold a Metrics in PerfDb and update it from ingest_tick, process_event, sync_wal (:724) and snapshot; a failed sync or snapshot increments its failure counter and returns the error."
+do_5 = "Extend tests/recovery.rs with second_open_locked, read_only_beside_writer, read_only_refuses_writes, events_survive_restart, wal_truncated_after_snapshot, snapshot_retention and metrics_move; adjust tests/integration.rs only where an open now returns a lock error, without removing any assertion."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb::PerfDb::open", "perfdb::PerfDb::open_read_only", "perfdb::PerfDb::snapshot", "perfdb::PerfDb::metrics"]
+touches = ["services/platform/perf-db/src/engine.rs", "services/platform/perf-db/tests/recovery.rs", "services/platform/perf-db/tests/integration.rs"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml --all-targets"
+verify_cmd = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test recovery"
+gate_kind = "existing"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.6]
+title = "Open the CLI read-only and add backup and restore"
+status = "pending"
+mode = "BUILD"
+wave = 1
+requires = ["1.5"]
+reqs = ["4.3", "6.1", "6.2"]
+capabilities = ["1.6"]
+do_1 = "Make every query subcommand of src/main.rs open with PerfDb::open_read_only instead of PerfDb::open (main.rs:164); only an explicit ingest subcommand opens as a writer."
+do_2 = "Add src/storage/backup.rs, declared in src/storage/mod.rs, with backup(src_dir, dest) copying the newest valid snapshot and the WAL segments above its block into dest and fsyncing them, and restore(backup, data_dir) refusing a non-empty data_dir; add the CLI subcommands backup and restore."
+do_3 = "Add tests/backup.rs with cli_reads_beside_writer, backup_of_live_writer_opens, restore_matches_source and restore_refuses_non_empty."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb::storage::backup::backup", "perfdb::storage::backup::restore"]
+touches = ["services/platform/perf-db/src/main.rs", "services/platform/perf-db/src/storage/mod.rs", "services/platform/perf-db/src/storage/backup.rs", "services/platform/perf-db/tests/backup.rs"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml --all-targets"
+verify_cmd = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test backup"
+gate_kind = "planned"
+planned_paths = ["services/platform/perf-db/src/storage/backup.rs", "services/platform/perf-db/tests/backup.rs"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.1.7]
+title = "Pass the advisory gate under the chosen encoding"
+status = "pending"
+mode = "BUILD"
+wave = 1
+requires = ["0.3"]
+blocked_by = ["decision.12"]
+reqs = ["1.4"]
+capabilities = ["1.7"]
+do_1 = "Under option one of decision.12 (keep bincode 1), add the bincode unmaintained advisory to the advisories ignore list of services/platform/perf-db/deny.toml with a reason naming the versioned format headers of tasks 1.2 and 1.3; set unmaintained and yanked to the values of services/platform/deny.toml. No other advisory is ignored."
+do_2 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["services/platform/perf-db/deny.toml"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml"
+verify_cmd = "cargo deny --manifest-path services/platform/perf-db/Cargo.toml check advisories"
+gate_kind = "existing"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.2.1]
+title = "Build candles from registered markets with exact prices, fill volume, wall-clock close and rewind"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["1.5"]
+blocked_by = ["decision.2", "decision.6"]
+reqs = ["7.1", "7.2", "9.2", "9.3", "9.4"]
+capabilities = ["2.1"]
+do_1 = "Under option two of decision.2, change the price of PriceTick (src/core/types.rs:11) and the open, high, low, close and volume of the candle record (types.rs:22-25, today f64 with volume f32) to i128 18-decimal fixed point with a parse from the decimal strings of the perps data services; WalEntry (src/storage/wal.rs:17-52) takes the same type under a WAL format version bump; deny clippy::float_arithmetic in src/lib.rs once no float arithmetic remains in src."
+do_2 = "Replace MARKET_COUNT and the MARKETS table (src/core/market.rs:5, :16-35) with a MarketRegistry loaded from PerfDbConfig and extended by PerfDb::register_market; candle_builder (src/aggregation/candle_builder.rs:100-102) and the engine seeds (src/engine.rs:200, :681) iterate the registry; a tick for an unregistered id returns UnknownMarket."
+do_3 = "Add a block height to PriceTick and add PerfDb::ingest_fill(market, size, block, ts) adding size to the volume of every open bucket of the market."
+do_4 = "Add PerfDb::close_due(now_ms) closing every bucket whose end time is at or before now_ms and returning the closed CandleOutput values; today a bucket closes only on the next tick (candle_builder.rs:111-127)."
+do_5 = "Add PerfDb::rewind_to(height) removing every tick and fill contribution at or above height and rebuilding the affected buckets of every timeframe from the remaining ticks."
+do_6 = "Add tests/candle_path.rs with registered_market_beyond_eighteen, unknown_market_refused, exact_price_round_trip (an 18-decimal string survives ingest and read byte for byte), fill_volume, wall_clock_close and rewind_rebuilds."
+do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb::core::market::MarketRegistry", "perfdb::PerfDb::register_market", "perfdb::PerfDb::ingest_fill", "perfdb::PerfDb::close_due", "perfdb::PerfDb::rewind_to"]
+touches = ["services/platform/perf-db/src/core/types.rs", "services/platform/perf-db/src/core/market.rs", "services/platform/perf-db/src/aggregation/candle_builder.rs", "services/platform/perf-db/src/engine.rs", "services/platform/perf-db/src/storage/wal.rs", "services/platform/perf-db/src/lib.rs", "services/platform/perf-db/tests/candle_path.rs"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml --all-targets"
+verify_cmd = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test candle_path"
+gate_kind = "planned"
+planned_paths = ["services/platform/perf-db/tests/candle_path.rs"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.2.2]
+title = "Add the perfdb-sidecar crate with its HTTP surface and JetStream ingestion"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["1.5"]
+blocked_by = ["decision.1", "decision.3", "decision.4", "decision.11"]
+reqs = ["8.1", "8.2", "8.3", "9.1", "9.6"]
+capabilities = ["2.2"]
+do_1 = "Add the package perfdb-sidecar at services/platform/perf-db/sidecar as a member of the [workspace] of services/platform/perf-db/Cargo.toml:76, sharing services/platform/perf-db/Cargo.lock, with a path dependency on perfdb and exact pins; async-nats is the only new dependency (option one of decision.3)."
+do_2 = "sidecar/src/config.rs reads PERFDB_DATA_DIR, PERFDB_LISTEN, PERFDB_READ_TOKEN, PERFDB_ADMIN_TOKEN, PERFDB_MAX_LAG_MS, NATS_URL, PERFDB_NATS_USER, PERFDB_NATS_PASSWORD and PERPS_CHAIN_ID, refusing a token shorter than 32 bytes, a PERFDB_LISTEN that is not a socket address and a non-numeric chain id; Debug prints tokens and passwords as redacted."
+do_3 = "sidecar/src/http.rs serves HTTP/1.1 on a std TcpListener as the platform hosted services do (no HTTP framework, option one of decision.4): GET /healthz, GET /metrics, GET /v1/candles, GET /v1/candles/stream as NDJSON and POST /v1/admin/ingest taking NDJSON ticks and fills; bearer tokens are compared in constant time and checked before the body is read."
+do_4 = "sidecar/src/ingest.rs runs a durable JetStream consumer named perfdb-sidecar on stream PERPS_V1 filtered to perps.<chain>.*.index, perps.<chain>.*.fill and perps.<chain>.chain.rewind, decodes the envelope of services/platform/perps-data/internal/delivery/envelope.go:37-47, ingests index rows (services/platform/perps-data/internal/decode/pricefeed.go:196-205) as ticks of the decision.6 source, fills through ingest_fill and rewinds through rewind_to, acknowledges only after the WAL append returns, and calls close_due every second."
+do_5 = "Add sidecar/tests/http.rs with refuses_short_token, unauthorized_without_token, admin_requires_admin_token, healthz_ok_and_stale, metrics_served, candles_range_tuple_shape (time in unix seconds, closed 0 or 1) and stream_ndjson, against the real engine in a temporary directory."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb_sidecar::config::Config", "perfdb_sidecar::http::serve", "perfdb_sidecar::ingest::run"]
+touches = ["services/platform/perf-db/Cargo.toml", "services/platform/perf-db/Cargo.lock", "services/platform/perf-db/sidecar"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml -p perfdb-sidecar --all-targets"
+verify_cmd = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml -p perfdb-sidecar --test http"
+gate_kind = "planned"
+planned_paths = ["services/platform/perf-db/sidecar/Cargo.toml", "services/platform/perf-db/sidecar/src/main.rs", "services/platform/perf-db/sidecar/src/config.rs", "services/platform/perf-db/sidecar/src/http.rs", "services/platform/perf-db/sidecar/src/ingest.rs", "services/platform/perf-db/sidecar/tests/http.rs"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.2.3]
+title = "Add the gateway perf-db configuration and client"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = []
+reqs = ["10.6", "13.2"]
+capabilities = ["2.3"]
+do_1 = "Add envPerfDBURL PERPS_PERFDB_URL, envPerfDBToken PERPS_PERFDB_TOKEN and envPerfDBFamilies PERPS_PERFDB_FAMILIES to services/platform/perps-data/internal/config/config.go:31-40 and read them in Load (config.go:76) for the gateway only: the URL is optional, needs an http or https scheme and a token of at least 32 bytes, the families list accepts candles, book, positions, stats and leaderboard and defaults to candles when the URL is set; String prints the token as redacted."
+do_2 = "Add package internal/perfdb with Client (base URL, token, an http.Client with a 2 second timeout) and the methods Candles(ctx, market, timeframe, from, to, limit), StreamCandles(ctx, market, timeframe, fn) reading NDJSON, Health(ctx) and an ErrUnavailable returned on a dial failure, timeout or 5xx."
+do_3 = "Add TestPerfDBClient with subtests candles_decode, stream_decode, unavailable_on_dial, unavailable_on_5xx and bearer_sent against an httptest server answering the sidecar wire shape, and extend TestConfig with perfdb_optional, perfdb_requires_token, perfdb_refuses_scheme, perfdb_families_default, perfdb_unknown_family and perfdb_token_redacted."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb.Client", "perfdb.NewClient", "perfdb.Client.Candles", "perfdb.Client.StreamCandles", "perfdb.Client.Health", "perfdb.ErrUnavailable"]
+touches = ["services/platform/perps-data/internal/config/config.go", "services/platform/perps-data/internal/config/config_test.go", "services/platform/perps-data/internal/perfdb/client.go", "services/platform/perps-data/internal/perfdb/client_test.go"]
+build_cmd = "go build ./services/platform/perps-data/..."
+verify_cmd = "go test -count=1 ./services/platform/perps-data/internal/perfdb/ ./services/platform/perps-data/internal/config/ -run 'TestPerfDBClient|TestConfig'"
+gate_kind = "planned"
+planned_paths = ["services/platform/perps-data/internal/perfdb/client.go", "services/platform/perps-data/internal/perfdb/client_test.go"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.2.4]
+title = "Serve the UDF routes from the sidecar behind the flag"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["2.3"]
+blocked_by = ["decision.5", "decision.7"]
+reqs = ["10.1", "10.2", "10.3", "10.5"]
+capabilities = ["2.4"]
+do_1 = "Add internal/rest/udf.go with UDF serving /api/<sym>/{config,symbols,search,history,time,quotes,marks,timescale_marks} from a perfdb.Client, mapping the resolutions 1, 2, 3, 5, 15, 30, 60, 240, 480, 1D and 1W to the timeframes 1m to 1W (services/platform/perf-db/src/core/timeframe.rs:116-131), answering history as {s, t, o, h, l, c, v} or {s: no_data, nextTime}, marks and timescale_marks as empty arrays, and 503 perfdb_unavailable on ErrUnavailable."
+do_2 = "In NewServer (services/platform/perps-data/internal/gateway/server.go:143-292) add a PerfDB *perfdb.Client to Options (server.go:85-94) and mount UDF beside the symbol routes (server.go:265-290) only when it is non-nil; /health (server.go:287) reports perfdb up or down when it is set. With it nil the route table is the release table."
+do_3 = "Add TestUDF with subtests history_shape, history_no_data, resolutions, config_symbols_search_time_quotes, marks_empty and unavailable_503 against a real sidecar named by PERPS_DATA_TEST_PERFDB_URL and PERPS_DATA_TEST_PERFDB_TOKEN, failing (never skipping) when they are unset; TestSymbolREST stays unchanged, so no_udf_<route> (internal/rest/symbol_test.go:629-638) still passes with the client nil. Extend TestGatewayServer with perfdb_health only."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["rest.UDF", "rest.NewUDF", "gateway.Options.PerfDB"]
+touches = ["services/platform/perps-data/internal/rest/udf.go", "services/platform/perps-data/internal/rest/udf_test.go", "services/platform/perps-data/internal/gateway/server.go", "services/platform/perps-data/internal/gateway/server_test.go"]
+build_cmd = "go build ./services/platform/perps-data/..."
+verify_cmd = "go test -count=1 ./services/platform/perps-data/internal/rest/ -run 'TestUDF|TestSymbolREST'"
+gate_kind = "planned"
+planned_paths = ["services/platform/perps-data/internal/rest/udf.go", "services/platform/perps-data/internal/rest/udf_test.go"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.2.5]
+title = "Serve the kline topics from the sidecar behind the flag"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["2.3"]
+blocked_by = ["decision.7"]
+reqs = ["10.1", "10.4"]
+capabilities = ["2.5"]
+do_1 = "Add internal/feeds/kline.go with a kline provider that, given a perfdb.Client, serves <SYM>@kline_<interval> for the intervals of internal/feeds/feeds_test.go:752: a snapshot of the live bucket and one frame per NDJSON update of StreamCandles, encoded as the Chainflow kline tuple pinned in testdata/kline_frame.json (shape of Hyperpax:src/hooks/perps/useSidPaxMarketStream.ts:143-157)."
+do_2 = "Add a WithPerfDB(*perfdb.Client) option to NewProviders (internal/feeds/topics.go:155) and make Served (topics.go:213) admit kline topics only when it is set; the comment at topics.go:211 states the flag rule. NewProviders without the option is the release provider set."
+do_3 = "Add TestKline with subtests served_with_flag, snapshot_then_updates, tuple_matches_fixture, unknown_interval_refused and unavailable_closes_topic against the sidecar of PERPS_DATA_TEST_PERFDB_URL, failing when it is unset; TestFeeds stays unchanged, so no_kline_topic (feeds_test.go:749-760) still passes."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["feeds.WithPerfDB", "feeds.klineProvider"]
+touches = ["services/platform/perps-data/internal/feeds/topics.go", "services/platform/perps-data/internal/feeds/kline.go", "services/platform/perps-data/internal/feeds/kline_test.go", "services/platform/perps-data/internal/feeds/testdata/kline_frame.json"]
+build_cmd = "go build ./services/platform/perps-data/..."
+verify_cmd = "go test -count=1 ./services/platform/perps-data/internal/feeds/ -run 'TestKline|TestFeeds'"
+gate_kind = "planned"
+planned_paths = ["services/platform/perps-data/internal/feeds/kline.go", "services/platform/perps-data/internal/feeds/kline_test.go", "services/platform/perps-data/internal/feeds/testdata/kline_frame.json"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.2.6]
+title = "Deploy the sidecar beside the gateway with its own NATS user"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = []
+blocked_by = ["decision.11"]
+reqs = ["8.4", "8.5"]
+capabilities = ["2.6"]
+do_1 = "Add services/platform/perf-db/Dockerfile.sidecar building perfdb-sidecar with --locked on the root toolchain 1.91.1 into a non-root runtime image with PERFDB_DATA_DIR on a volume."
+do_2 = "Add the perfdb-sidecar service to services/platform/perps-data/deploy/services.json with its image, volume, one replica per gateway replica under option one of decision.11 and the variables of task 2.2 as secret references; add PERPS_PERFDB_URL and PERPS_PERFDB_TOKEN to the gateway as optional references. Insert it into serviceOrder (deploy/services_test.go:84) and keep the gateway replica floor of services_test.go:155."
+do_3 = "Add the perfdb-sidecar user to deploy/nats/nats.conf with subscribe perps.> and publish $JS.API.CONSUMER.> and $JS.ACK.PERPS_V1.> only, leaving the perps-indexer and perps-gateway blocks (nats.conf:24-40) unchanged; extend TestNATS with sidecar_user_permissions and TestServices with sidecar_service."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["services/platform/perf-db/Dockerfile.sidecar", "services/platform/perps-data/deploy/services.json", "services/platform/perps-data/deploy/services_test.go", "services/platform/perps-data/deploy/nats/nats.conf", "services/platform/perps-data/deploy/nats_test.go"]
+build_cmd = "go build ./services/platform/perps-data/..."
+verify_cmd = "go test -count=1 ./services/platform/perps-data/deploy/ -run 'TestServices|TestNATS'"
+gate_kind = "planned"
+planned_paths = ["services/platform/perf-db/Dockerfile.sidecar"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.2.7]
+title = "Backfill the sidecar from the PostgreSQL facts"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["2.3"]
+blocked_by = ["decision.6"]
+reqs = ["9.5"]
+capabilities = ["2.7"]
+do_1 = "Add internal/perfdb/backfill.go with Backfill(ctx, db, client, chain, fromHeight) reading perps.index_prices and the fill facts in (block, tx index, log index) order and posting them as NDJSON batches of at most 1000 lines to /v1/admin/ingest, resuming from the highest block the sidecar reports in /healthz."
+do_2 = "Add cmd/perps-perfdb-backfill/main.go reading DATABASE_URL, PERPS_CHAIN_ID, PERPS_PERFDB_URL and PERPS_PERFDB_ADMIN_TOKEN through the config.Load conventions and a -from flag; it exits non-zero on the first refused batch."
+do_3 = "Add TestBackfill with subtests order_preserved, resumes_from_health and backfill_equals_live (the candles of every timeframe after backfill equal those after posting the same rows as live messages) against PERPS_DATA_TEST_DATABASE_URL and the sidecar of PERPS_DATA_TEST_PERFDB_URL, failing when either is unset."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb.Backfill"]
+touches = ["services/platform/perps-data/cmd/perps-perfdb-backfill/main.go", "services/platform/perps-data/internal/perfdb/backfill.go", "services/platform/perps-data/internal/perfdb/backfill_test.go"]
+build_cmd = "go build ./services/platform/perps-data/..."
+verify_cmd = "go test -count=1 ./services/platform/perps-data/internal/perfdb/ -run 'TestBackfill'"
+gate_kind = "planned"
+planned_paths = ["services/platform/perps-data/cmd/perps-perfdb-backfill/main.go", "services/platform/perps-data/internal/perfdb/backfill.go", "services/platform/perps-data/internal/perfdb/backfill_test.go"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.3.1]
+title = "Hold the order book, positions, balances and market state of the Paxeer X events"
+status = "pending"
+mode = "BUILD"
+wave = 3
+requires = ["2.1"]
+reqs = ["11.2", "11.3", "11.4"]
+capabilities = ["3.1"]
+do_1 = "Extend the Event enum (src/core/types.rs:184, seventeen variants) with the Paxeer X perps events that change state in the decoding table of the release (contracts/data-services.md section 6): order placed, amended, cancelled, triggered and filled, position opened, increased, decreased, closed and liquidated, margin added and removed, funding paid, collateral deposited and withdrawn and mark price updated (services/platform/perps-data/internal/decode/perps.go:478); every field carries the fixed-point type of task 2.1."
+do_2 = "Re-key OrderTable (src/state/orders.rs:17-19, :145) by limit_price per side holding remaining_size_usd per order, so the book of a market aggregates the remaining size of active orders at each limit price as the release book does (contracts/data-services.md section 10; services/platform/perps-data/internal/feeds/book.go:80-81); trigger orders stay in a separate trigger index."
+do_3 = "Apply the position, margin, funding and collateral events in PositionTable, BalanceCache and MarketStateTable through process_event (src/engine.rs:281), with realized PnL and funding accumulated as the projection of services/platform/perps-data/internal/store/projections.go:61 does."
+do_4 = "Publish one PubSubBus frame (src/state/pubsub.rs) per applied event on its channel after the state write is visible."
+do_5 = "Add tests/hot_state.rs with book_aggregates_remaining_size, amend_moves_level, cancel_removes_level, position_lifecycle, funding_accumulates, frame_after_state and replay_equals_live."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb::core::types::Event", "perfdb::state::orders::OrderTable", "perfdb::state::positions::PositionTable", "perfdb::PerfDb::process_event"]
+touches = ["services/platform/perf-db/src/core/types.rs", "services/platform/perf-db/src/engine.rs", "services/platform/perf-db/src/state/orders.rs", "services/platform/perf-db/src/state/positions.rs", "services/platform/perf-db/src/state/balances.rs", "services/platform/perf-db/src/state/market_state.rs", "services/platform/perf-db/src/state/pubsub.rs", "services/platform/perf-db/tests/hot_state.rs"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml --all-targets"
+verify_cmd = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test hot_state"
+gate_kind = "planned"
+planned_paths = ["services/platform/perf-db/tests/hot_state.rs"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.3.2]
+title = "Rank the leaderboard by the release rules and compute exact ranks and stats"
+status = "pending"
+mode = "BUILD"
+wave = 3
+requires = ["2.1"]
+reqs = ["12.1", "12.2", "12.3"]
+capabilities = ["3.2"]
+do_1 = "Replace the sort of Leaderboard::rebuild (src/aggregation/leaderboard.rs:119-125, total_pnl with no tie rule) with realized_pnl descending and ties by the lower account bytes, for the windows all, 30d and 7d computed from DailyStatsStore (src/aggregation/stats.rs:154-280), as services/platform/perps-data/internal/pnl/pnl.go:431-479 ranks."
+do_2 = "Keep the full ordered ranking beside the truncated board so pnl_rank and volume_rank (leaderboard.rs:95, :105) return the exact rank of a trader below max_entries."
+do_3 = "Add volume, trade count, fees and open interest per account and per market to TraderStatsStore and DailyStatsStore matching projectStats and projectMarketStats (services/platform/perps-data/internal/store/projections.go:517, :553)."
+do_4 = "Add tests/aggregations.rs with realized_pnl_order, tie_by_lower_account, windows_all_30d_7d, exact_rank_below_cut and market_stats."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb::aggregation::leaderboard::Leaderboard::rebuild", "perfdb::aggregation::leaderboard::Leaderboard::pnl_rank", "perfdb::aggregation::stats::TraderStatsStore"]
+touches = ["services/platform/perf-db/src/aggregation/leaderboard.rs", "services/platform/perf-db/src/aggregation/stats.rs", "services/platform/perf-db/tests/aggregations.rs"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml --all-targets"
+verify_cmd = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml --test aggregations"
+gate_kind = "planned"
+planned_paths = ["services/platform/perf-db/tests/aggregations.rs"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.3.3]
+title = "Adapt the JetStream envelopes to engine events and serve state routes and streams"
+status = "pending"
+mode = "BUILD"
+wave = 3
+requires = ["2.2", "3.1", "3.2"]
+blocked_by = ["decision.9"]
+reqs = ["11.1", "11.4"]
+capabilities = ["3.3"]
+do_1 = "Add sidecar/src/events.rs mapping every event_type of the release decoding table (contracts/data-services.md section 6, thirty events) to an engine Event or to an explicit ignored entry by name; an unknown event_type increments perfdb_events_unknown_total and is acknowledged without being applied."
+do_2 = "Widen the consumer filter of sidecar/src/ingest.rs to perps.<chain>.*.{order,funding,liq,mark,oi,market} and perps.<chain>.user.>, applying each message through process_event in source_order (envelope.go:37-47)."
+do_3 = "Add to sidecar/src/http.rs GET /v1/book, /v1/positions, /v1/stats/account, /v1/stats/market and /v1/leaderboard?window=all|30d|7d, and GET /v1/stream?channel=<name> as NDJSON of the pub/sub frames; account tables stay in PostgreSQL under option one of decision.9."
+do_4 = "Add sidecar/tests/state.rs with every_table_event_mapped, unknown_event_counted, book_route, positions_route, leaderboard_windows and stream_frames against the real engine."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb_sidecar::events::adapt", "perfdb_sidecar::http::serve"]
+touches = ["services/platform/perf-db/sidecar/src/events.rs", "services/platform/perf-db/sidecar/src/http.rs", "services/platform/perf-db/sidecar/src/ingest.rs", "services/platform/perf-db/sidecar/tests/state.rs"]
+build_cmd = "cargo build --locked --manifest-path services/platform/perf-db/Cargo.toml -p perfdb-sidecar --all-targets"
+verify_cmd = "cargo test --locked --manifest-path services/platform/perf-db/Cargo.toml -p perfdb-sidecar --test state"
+gate_kind = "planned"
+planned_paths = ["services/platform/perf-db/sidecar/src/events.rs", "services/platform/perf-db/sidecar/tests/state.rs"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.3.4]
+title = "Back the book feed by perf-db when the book family is selected"
+status = "pending"
+mode = "BUILD"
+wave = 3
+requires = ["2.5", "3.3"]
+reqs = ["11.2", "13.2"]
+capabilities = ["3.4"]
+do_1 = "Add internal/perfdb/state.go with Client.Book(ctx, market) and Client.Stream(ctx, channel, fn) for the routes of task 3.3."
+do_2 = "Add internal/feeds/perfdb_state.go with a book source reading Client.Book and Client.Stream, and make the book provider of internal/feeds/book.go:80-81 use it only when the book family is in PERPS_PERFDB_FAMILIES; otherwise the SQL path of book.go stays the source."
+do_3 = "Add TestPerfDBState with subtests book_equals_sql (the frames of both sources are equal for the same fixture events), stream_updates and sql_when_family_absent against PERPS_DATA_TEST_DATABASE_URL and PERPS_DATA_TEST_PERFDB_URL, failing when either is unset."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb.Client.Book", "perfdb.Client.Stream", "feeds.perfdbBook"]
+touches = ["services/platform/perps-data/internal/feeds/book.go", "services/platform/perps-data/internal/feeds/perfdb_state.go", "services/platform/perps-data/internal/feeds/perfdb_state_test.go", "services/platform/perps-data/internal/perfdb/state.go"]
+build_cmd = "go build ./services/platform/perps-data/..."
+verify_cmd = "go test -count=1 ./services/platform/perps-data/internal/feeds/ -run 'TestPerfDBState'"
+gate_kind = "planned"
+planned_paths = ["services/platform/perps-data/internal/feeds/perfdb_state.go", "services/platform/perps-data/internal/feeds/perfdb_state_test.go", "services/platform/perps-data/internal/perfdb/state.go"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.3.5]
+title = "Back the leaderboard and stats routes by perf-db when their families are selected"
+status = "pending"
+mode = "BUILD"
+wave = 3
+requires = ["3.3"]
+reqs = ["12.1", "12.3", "13.2"]
+capabilities = ["3.5"]
+do_1 = "Add internal/perfdb/aggregates.go with Client.Leaderboard(ctx, window, limit, cursor), Client.AccountStats and Client.MarketStats for the routes of task 3.3."
+do_2 = "Make the leaderboard handler of internal/rest/accountv2.go:98-124 and the Leaderboard resolver of internal/graphql/perps.go:1709-1718 read the sidecar only when the leaderboard family is selected, and the stats handlers only when the stats family is selected; the response shape is unchanged."
+do_3 = "Add TestPerfDBAggregates in internal/rest/perfdb_aggregates_test.go and internal/graphql/perfdb_aggregates_test.go with subtests leaderboard_equals_sql, windows, stats_equal_sql and sql_when_family_absent, against PERPS_DATA_TEST_DATABASE_URL and PERPS_DATA_TEST_PERFDB_URL, failing when either is unset."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["perfdb.Client.Leaderboard", "perfdb.Client.AccountStats", "perfdb.Client.MarketStats"]
+touches = ["services/platform/perps-data/internal/rest/accountv2.go", "services/platform/perps-data/internal/rest/perfdb_aggregates_test.go", "services/platform/perps-data/internal/graphql/perps.go", "services/platform/perps-data/internal/graphql/perfdb_aggregates_test.go", "services/platform/perps-data/internal/perfdb/aggregates.go"]
+build_cmd = "go build ./services/platform/perps-data/..."
+verify_cmd = "go test -count=1 ./services/platform/perps-data/internal/rest/ ./services/platform/perps-data/internal/graphql/ -run 'TestPerfDBAggregates'"
+gate_kind = "planned"
+planned_paths = ["services/platform/perps-data/internal/rest/perfdb_aggregates_test.go", "services/platform/perps-data/internal/graphql/perfdb_aggregates_test.go", "services/platform/perps-data/internal/perfdb/aggregates.go"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.4.1]
+title = "Compare the PostgreSQL and perf-db answers per family"
+status = "pending"
+mode = "BUILD"
+wave = 4
+requires = ["2.7", "3.4", "3.5"]
+reqs = ["13.1"]
+capabilities = ["4.1"]
+do_1 = "Add internal/parity/parity.go with Compare(ctx, db, client, family, fromHeight, toHeight) for candles (rebuilt from perps.index_prices and fills against /v1/candles), book (book.go:80-81 SQL against /v1/book), positions, stats (projections.go:517, :553) and leaderboard (pnl.go:431-479), returning the first differing row with both values."
+do_2 = "Add cmd/perps-parity/main.go with -family, -from and -to, exiting 0 only when Compare finds no difference and printing the difference otherwise."
+do_3 = "Add TestParity with subtests equal_per_family (one per family over the fixture events), detects_difference (a sidecar fed one extra fill reports it) and refuses_unknown_family, failing when PERPS_DATA_TEST_DATABASE_URL or PERPS_DATA_TEST_PERFDB_URL is unset."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["parity.Compare", "parity.Difference"]
+touches = ["services/platform/perps-data/cmd/perps-parity/main.go", "services/platform/perps-data/internal/parity/parity.go", "services/platform/perps-data/internal/parity/parity_test.go"]
+build_cmd = "go build ./services/platform/perps-data/..."
+verify_cmd = "go test -count=1 ./services/platform/perps-data/internal/parity/ -run 'TestParity'"
+gate_kind = "planned"
+planned_paths = ["services/platform/perps-data/cmd/perps-parity/main.go", "services/platform/perps-data/internal/parity/parity.go", "services/platform/perps-data/internal/parity/parity_test.go"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.4.2]
+title = "Select the read backend per family in the gateway"
+status = "pending"
+mode = "BUILD"
+wave = 4
+requires = ["4.1"]
+reqs = ["13.2"]
+capabilities = ["4.2"]
+do_1 = "Add internal/gateway/backends.go resolving PERPS_PERFDB_FAMILIES into one ReadBackends value passed from NewServer (server.go:143-292) to the feeds, REST and GraphQL constructors, replacing the per-handler family checks of tasks 3.4 and 3.5 with one source."
+do_2 = "Add TestReadBackends with subtests default_candles_only, empty_without_url, listed_families_use_sidecar and unknown_family_refused."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["gateway.ReadBackends", "gateway.resolveBackends"]
+touches = ["services/platform/perps-data/internal/gateway/server.go", "services/platform/perps-data/internal/gateway/backends.go", "services/platform/perps-data/internal/gateway/backends_test.go"]
+build_cmd = "go build ./services/platform/perps-data/..."
+verify_cmd = "go test -count=1 ./services/platform/perps-data/internal/gateway/ -run 'TestReadBackends'"
+gate_kind = "planned"
+planned_paths = ["services/platform/perps-data/internal/gateway/backends.go", "services/platform/perps-data/internal/gateway/backends_test.go"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.4.3]
+title = "Stop projecting retired families in the indexer"
+status = "pending"
+mode = "BUILD"
+wave = 4
+requires = ["4.1"]
+blocked_by = ["decision.10"]
+reqs = ["13.3"]
+capabilities = ["4.3"]
+do_1 = "Add internal/store/retired.go reading PERPS_INDEXER_RETIRED (families book, positions, stats, leaderboard; candles has no PostgreSQL projection) and make Project (internal/store/projections.go:61) skip projectStats (:517), projectMarketStats (:553) and the other projection writers of a retired family while every fact table is still written."
+do_2 = "Add TestRetiredProjections with subtests facts_still_written, retired_tables_untouched, active_tables_written and unknown_family_refused against PERPS_DATA_TEST_DATABASE_URL, failing when it is unset."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["store.Retired", "store.Project"]
+touches = ["services/platform/perps-data/internal/store/projections.go", "services/platform/perps-data/internal/store/retired.go", "services/platform/perps-data/internal/store/retired_test.go"]
+build_cmd = "go build ./services/platform/perps-data/..."
+verify_cmd = "go test -count=1 ./services/platform/perps-data/internal/store/ -run 'TestRetiredProjections'"
+gate_kind = "planned"
+planned_paths = ["services/platform/perps-data/internal/store/retired.go", "services/platform/perps-data/internal/store/retired_test.go"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.4.4]
+title = "Drop the projection tables of the retired families"
+status = "pending"
+mode = "BUILD"
+wave = 4
+requires = ["4.3"]
+blocked_by = ["decision.10"]
+reqs = ["13.5"]
+capabilities = ["4.4"]
+do_1 = "Add migrations/0009_retire_perfdb_families.sql dropping only the projection tables of the families decision.10 retires, after the last migration 0008_delivery_pending_seq.sql; no fact table and no table of a family still read from PostgreSQL is dropped."
+do_2 = "Update the expectations of TestSchemaFiles (migrations/schema_test.go) and TestMigrate (internal/store/migrate_test.go) that list the dropped tables, removing exactly those table names; no_candle_table (migrate_test.go:696-713, schema_test.go:741) and every other subtest stay unchanged."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["services/platform/perps-data/migrations/0009_retire_perfdb_families.sql", "services/platform/perps-data/migrations/schema_test.go", "services/platform/perps-data/internal/store/migrate_test.go"]
+build_cmd = "go build ./services/platform/perps-data/..."
+verify_cmd = "go test -count=1 ./services/platform/perps-data/migrations/ ./services/platform/perps-data/internal/store/ -run 'TestSchemaFiles|TestMigrate'"
+gate_kind = "planned"
+planned_paths = ["services/platform/perps-data/migrations/0009_retire_perfdb_families.sql"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.4.5]
+title = "Roll a retired family back by re-projection from the facts"
+status = "pending"
+mode = "BUILD"
+wave = 4
+requires = ["4.3"]
+reqs = ["13.4"]
+capabilities = ["4.5"]
+do_1 = "Add internal/replay/rollback.go with RollbackFamily(ctx, db, family) recreating the family's projection tables through the migration of its release schema and re-projecting them with store.Rebuild from the facts, and a -rollback <family> flag on cmd/perps-replay."
+do_2 = "Add TestRollbackFamily with subtests rebuilds_tables, parity_after_rollback (parity.Compare for the family finds no difference against the sidecar) and refuses_unknown_family against PERPS_DATA_TEST_DATABASE_URL and PERPS_DATA_TEST_PERFDB_URL, failing when either is unset."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["replay.RollbackFamily", "store.Rebuild"]
+touches = ["services/platform/perps-data/cmd/perps-replay", "services/platform/perps-data/internal/replay/rollback.go", "services/platform/perps-data/internal/replay/rollback_test.go"]
+build_cmd = "go build ./services/platform/perps-data/..."
+verify_cmd = "go test -count=1 ./services/platform/perps-data/internal/replay/ -run 'TestRollbackFamily'"
+gate_kind = "planned"
+planned_paths = ["services/platform/perps-data/internal/replay/rollback.go", "services/platform/perps-data/internal/replay/rollback_test.go"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[decision.1]
+title = "Workspace membership of perf-db"
+status = "open"
+option_1 = "Standalone manifest with its own lockfile and an empty [workspace] (services/platform/perf-db/Cargo.toml:76), wired into make as the examples/marketplace manifest is. Cost: a second lockfile to keep in step with the platform pins; the platform [lints] table (services/platform/Cargo.toml:66-75) is not inherited."
+option_2 = "Member of the platform workspace (services/platform/Cargo.toml:2-27). Cost: inherits the float_arithmetic deny and the Rust 2021 edition of the workspace (Cargo.toml:31) against the 2024 edition of the crate (perf-db Cargo.toml:4), so decision.2 must land first and one of the editions changes; one lockfile."
+option_3 = "Own perf-db workspace holding the engine and the sidecar. Cost: the same as option one plus a workspace manifest; keeps the sidecar's async-nats tree out of the platform lock."
+affects = ["task.0.1", "task.2.2"]
+
+[decision.2]
+title = "Price representation in the engine"
+status = "open"
+option_1 = "Keep f64 (src/core/types.rs:11, :22-25). Cost: 18-decimal prices lose precision above 2^53 units, parity against the PostgreSQL decimal strings fails on exact compare, float_arithmetic cannot be denied."
+option_2 = "i128 18-decimal fixed point. Cost: WAL, snapshot and candle record format bump (the headers of tasks 1.2 to 1.4 absorb it), doubled record size, every aggregation rewritten in integer arithmetic."
+option_3 = "u64 scaled to a per-market tick size. Cost: needs a per-market scale in the registry and refuses prices beyond the scale; smaller records."
+affects = ["task.2.1", "task.3.1", "task.4.1"]
+
+[decision.3]
+title = "Ingestion source of the sidecar"
+status = "open"
+option_1 = "Durable JetStream consumer on PERPS_V1. Cost: adds async-nats to the Rust tree and a NATS user; 72 hour retention means history older than that comes only from the backfill of task 2.7."
+option_2 = "Read the chain directly. Cost: duplicates the decoders and the rewind logic of the indexer in Rust and adds a second follower against the nodes."
+option_3 = "Poll PostgreSQL. Cost: adds a PostgreSQL client to the sidecar, polling latency, and ties the hot path to the store it is meant to relieve."
+affects = ["task.2.2", "task.2.6", "task.3.3"]
+
+[decision.4]
+title = "Gateway to sidecar transport"
+status = "open"
+option_1 = "HTTP/1.1 JSON and NDJSON streams on a std TcpListener. Cost: hand-written request parsing; no new dependency; matches the platform hosted services."
+option_2 = "gRPC. Cost: tonic and prost in the Rust tree and code generation in Go against the pinned grpc replace (go.mod:105, :300)."
+option_3 = "Sidecar publishes candles and state to NATS subjects the gateway already reads. Cost: candle history still needs a request path, and the sidecar user needs publish rights on perps subjects."
+affects = ["task.2.2", "task.2.3"]
+
+[decision.5]
+title = "Application cutover of chart history"
+status = "open"
+option_1 = "Point the server variable MARKET_PROXY_HOST of the candle proxy (Hyperpax:src/pages/api/candle/[...path].ts:5) at the gateway. Cost: none in application code; only UDF history moves."
+option_2 = "Point NEXT_PUBLIC_MARKET_PROXY_HOST (Hyperpax:src/core/feeds.ts:2) at the gateway. Cost: every Chainflow surface the application reads through FEED_ORIGIN (Hyperpax:src/core/feeds.ts:8-14) must then be served by the gateway, including klines, tickers and depth."
+option_3 = "Change the application to read the gateway routes directly. Cost: an application release; the application is not unchanged."
+affects = ["task.2.4"]
+
+[decision.6]
+title = "Candle price source and history horizon"
+status = "open"
+option_1 = "Index price of perps.index_prices with volume from fills, backfilled from the start of the venue. Cost: the full backfill time on first start."
+option_2 = "Mark price (services/platform/perps-data/internal/decode/perps.go:478). Cost: candles follow the funding basis, not the index the application charts today."
+option_3 = "Fill prices only. Cost: empty buckets on illiquid markets."
+affects = ["task.2.1", "task.2.2", "task.2.7"]
+
+[decision.7]
+title = "Release contract for UDF and kline routes"
+status = "open"
+option_1 = "Add a flag-conditional clause to the data services contract: the routes exist only when PERPS_PERFDB_URL is set, and the release negative tests run with it unset. Cost: two behaviours of one binary to document and test."
+option_2 = "Revise the contract to serve the routes always and change the negative tests. Cost: removes the release tests and makes the sidecar a hard dependency of the gateway."
+affects = ["task.2.4", "task.2.5"]
+
+[decision.8]
+title = "Default WAL sync policy"
+status = "open"
+option_1 = "Interval of 10 ms with the background flusher (src/storage/wal.rs:87). Cost: up to 10 ms of acknowledged writes lost on power failure; JetStream redelivers unacknowledged messages, so the sidecar acknowledges only after a sync."
+option_2 = "EveryWrite. Cost: one fsync per entry on the ingest path."
+affects = ["task.1.2"]
+
+[decision.9]
+title = "Use of the relational stores"
+status = "open"
+option_1 = "Keep users, referrals, alerts, api keys and competitions in PostgreSQL; the relational stores of the crate are unused by the sidecar. Cost: unused code kept in the crate."
+option_2 = "Move them to perf-db. Cost: key material (src/relational/api_keys.rs:8 key_hash) in a store with no auth layer and no backup policy beyond task 1.6."
+affects = ["task.3.3"]
+
+[decision.10]
+title = "Retirement scope"
+status = "open"
+option_1 = "Retire projection tables only; facts stay in PostgreSQL as the source for backfill, parity and rollback. Cost: two stores remain."
+option_2 = "Remove PostgreSQL from the perps data services. Cost: no source for backfill, parity or rollback; the indexer and its tests are rewritten."
+affects = ["task.4.3", "task.4.4"]
+
+[decision.11]
+title = "Sidecar topology"
+status = "open"
+option_1 = "One sidecar per gateway replica, each with its own volume and durable consumer. Cost: N copies of the state and N consumers; no cross-replica dependency."
+option_2 = "One shared sidecar. Cost: a single point of failure for every gateway replica, against the replica floor of deploy/services_test.go:155."
+affects = ["task.2.2", "task.2.6"]
+
+[decision.12]
+title = "WAL and snapshot encoding"
+status = "open"
+option_1 = "Keep bincode 1 behind the version headers and ignore its unmaintained advisory. Cost: an ignored advisory in deny.toml."
+option_2 = "postcard. Cost: one-time v0 migration of every snapshot and WAL segment."
+option_3 = "bincode 2. Cost: incompatible wire format, the same migration as option two."
+option_4 = "Hand-rolled encoding. Cost: encoder and decoder code with its own tests."
+affects = ["task.1.2", "task.1.3", "task.1.7"]
+
+[decision.13]
+title = "Crate license"
+status = "open"
+option_1 = "Apache-2.0, the repository license, with the README pointing at the root LICENSE. Cost: changes the imported dual license."
+option_2 = "Keep MIT OR Apache-2.0 (services/platform/perf-db/Cargo.toml:5) and add LICENSE-APACHE and LICENSE-MIT to the crate. Cost: two license files and an allow entry for the dual expression."
+affects = ["task.0.1", "task.0.4"]
