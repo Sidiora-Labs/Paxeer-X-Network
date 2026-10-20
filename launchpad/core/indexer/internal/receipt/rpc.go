@@ -616,7 +616,8 @@ func NewPrivateFixtureRPCQualification(ctx context.Context, client *ethclient.Cl
 	}
 	for role, identity := range f.Roles {
 		address := common.HexToAddress(identity.Address)
-		if f.CreationTransactions[address] == (common.Hash{}) || (identity.Kind != "direct" && f.CreationTransactions[common.HexToAddress(identity.ImplementationAddress)] == (common.Hash{})) {
+		proxied := identity.Kind != "direct" && identity.Kind != "surface" && identity.Kind != "precompile"
+		if identity.Kind != "precompile" && f.CreationTransactions[address] == (common.Hash{}) || proxied && f.CreationTransactions[common.HexToAddress(identity.ImplementationAddress)] == (common.Hash{}) {
 			return nil, ErrQualification
 		}
 		kind := role
@@ -722,11 +723,17 @@ func newRPCQualification(ctx context.Context, client *ethclient.Client, o RPCOpt
 	return a, nil
 }
 func validRPCIdentity(i deployment.Role) bool {
-	if !common.IsHexAddress(i.Address) || common.HexToAddress(i.Address) == (common.Address{}) || !rpcHash(i.RuntimeHash) {
+	if !common.IsHexAddress(i.Address) || common.HexToAddress(i.Address) == (common.Address{}) {
+		return false
+	}
+	if i.Kind == "precompile" {
+		return i.Address == deployment.LaunchpadPrecompileAddress && i.RuntimeHash == "" && i.ImplementationAddress == "" && i.ImplementationHash == "" && i.BeaconAddress == ""
+	}
+	if !rpcHash(i.RuntimeHash) {
 		return false
 	}
 	switch i.Kind {
-	case "direct":
+	case "direct", "surface":
 		return i.ImplementationAddress == "" && i.ImplementationHash == "" && i.BeaconAddress == ""
 	case "erc1967", "beacon", "beacon_proxy":
 		if !common.IsHexAddress(i.ImplementationAddress) || common.HexToAddress(i.ImplementationAddress) == (common.Address{}) || !rpcHash(i.ImplementationHash) {
@@ -915,6 +922,14 @@ func (a *RPCQualification) validateCode(ctx context.Context, e RPCCodeEpoch, blo
 }
 
 func (a *RPCQualification) validateCodeUncached(ctx context.Context, e RPCCodeEpoch, block common.Hash) (string, error) {
+	if e.Identity.Kind == "precompile" {
+		// A precompile has no runtime code to hash: its identity is the
+		// manifest-fixed address bound to the LaunchpadPrecompile role.
+		if !validRPCIdentity(e.Identity) || e.Deployment.Role != deployment.LaunchpadPrecompileRole || e.Deployment.Address != common.HexToAddress(deployment.LaunchpadPrecompileAddress) || e.Deployment.Address != common.HexToAddress(e.Identity.Address) {
+			return "", ErrQualification
+		}
+		return a.codeEpochDigest(e)
+	}
 	code, err := a.codeAt(ctx, e.Deployment.Address, block)
 	if err != nil || len(code) == 0 || len(code) > 128<<10 || a.runtimeHash(e, code) != common.HexToHash(e.Identity.RuntimeHash) {
 		return "", ErrQualification
@@ -953,11 +968,11 @@ func (a *RPCQualification) validateCodeUncached(ctx context.Context, e RPCCodeEp
 		if err != nil {
 			return "", err
 		}
-	case "direct":
+	case "direct", "surface":
 	default:
 		return "", ErrQualification
 	}
-	if e.Identity.Kind != "direct" {
+	if e.Identity.Kind != "direct" && e.Identity.Kind != "surface" {
 		if impl != common.HexToAddress(e.Identity.ImplementationAddress) {
 			return "", ErrQualification
 		}
@@ -966,6 +981,9 @@ func (a *RPCQualification) validateCodeUncached(ctx context.Context, e RPCCodeEp
 			return "", ErrQualification
 		}
 	}
+	return a.codeEpochDigest(e)
+}
+func (a *RPCQualification) codeEpochDigest(e RPCCodeEpoch) (string, error) {
 	raw, err := json.Marshal(e)
 	if err != nil {
 		return "", err

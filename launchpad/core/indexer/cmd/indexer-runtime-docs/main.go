@@ -33,11 +33,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-// measuredPoolRuntime is keccak256 of the factory pool proxy runtime code,
-// measured from pool 0xCE20Da50F92D21d8BeE497910c782E9Aa25b6263 (identical for
-// every pool of PoolBeacon 0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE).
-const measuredPoolRuntime = "0xa9b304d6d0aa562f283b45978b84ced8840a9331f8ac946742670b1b02a2872d"
-
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "indexer-runtime-docs:", err)
@@ -49,7 +44,7 @@ func run() error {
 	repo := flag.String("repo", ".", "repository root")
 	start := flag.Uint64("start-height", 0, "first block the fleet ingests (anchor = start-height-1)")
 	anchorRPC := flag.String("anchor-rpc", "", "JSON-RPC endpoint that still serves the anchor block (archive)")
-	poolRuntime := flag.String("pool-runtime-hash", measuredPoolRuntime, "keccak256 of the pool proxy runtime code")
+	poolRuntime := flag.String("pool-runtime", "0x6302ff80f4168c2af23afbf3117c613edd66d288d120eee825f9ecadd43a392f", "keccak256 of the runtime code every pool holds (SurfaceRuntime after v6.12.0)")
 	out := flag.String("out", ".", "output directory")
 	flag.Parse()
 	manifest := deployment.Current()

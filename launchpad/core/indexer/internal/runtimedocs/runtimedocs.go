@@ -26,12 +26,24 @@ import (
 // URL is resolved from the RPC_URL secret, never written into the document.
 const PrimaryEndpointID = "paxeer-primary"
 
-// catalogRole maps manifest roles to catalog contract names.
+// catalogRole maps manifest roles to catalog contract names. The launchpad
+// precompile emits the EventEmitter ABI, so it decodes with that revision.
 func catalogRole(role string) string {
-	if role == "USDL" {
+	switch role {
+	case "USDL":
 		return "SidioraERC20"
+	case deployment.LaunchpadPrecompileRole:
+		return "EventEmitter"
 	}
 	return role
+}
+
+// epochRole is the decode role of a manifest role's epoch.
+func epochRole(role string) string {
+	if role == deployment.LaunchpadPrecompileRole {
+		return role
+	}
+	return catalogRole(role)
 }
 
 // Inputs are the reviewed sources a production document set is derived from.
@@ -41,9 +53,8 @@ type Inputs struct {
 	// ERC20RuntimeCode is the SidioraERC20 deployed bytecode (compiler
 	// artifact); immutables are masked before hashing.
 	ERC20RuntimeCode []byte
-	// PoolRuntimeHash is keccak256 of the factory-created pool proxy runtime
-	// code. The proxy embeds only the PoolBeacon address, so every pool shares
-	// it; it is measured from a factory-created pool.
+	// PoolRuntimeHash is keccak256 of the runtime code every pool holds; after
+	// v6.12.0 that is the launchpad SurfaceRuntime.
 	PoolRuntimeHash common.Hash
 	Anchor          receipt.BlockAnchor
 }
@@ -202,7 +213,7 @@ func ReceiptOptions(in Inputs) (receipt.RPCOptions, Catalog, error) {
 			continue
 		}
 		identity := manifest.Roles[role]
-		epochs = append(epochs, receipt.RPCCodeEpoch{Deployment: decode.Deployment{Address: common.HexToAddress(identity.Address), Role: name, ABIRevision: revision, From: decode.Order{Block: manifest.ActivationHeight}}, Identity: identity})
+		epochs = append(epochs, receipt.RPCCodeEpoch{Deployment: decode.Deployment{Address: common.HexToAddress(identity.Address), Role: epochRole(role), ABIRevision: revision, From: decode.Order{Block: manifest.ActivationHeight}}, Identity: identity})
 	}
 	o := receipt.RPCOptions{
 		Manifest:    manifest,
