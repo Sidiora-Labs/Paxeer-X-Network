@@ -164,6 +164,14 @@ evm["states"].extend(export["evm"]["states"])
 genesis["app_state"]["launchpad"] = export["launchpad"]
 genesis["app_state"]["launchpad"]["params"]["quote_denom"] = "uusdl"
 del genesis["app_state"]["launchpad"]["params"]["quote_token"]
+# The v6.12.0 pointers hook requires uhpx metadata with display exponent 6; init-chain.sh writes exponent 0 only.
+genesis["app_state"]["bank"]["denom_metadata"] = [
+    entry for entry in genesis["app_state"]["bank"]["denom_metadata"] if entry["base"] != "uhpx"
+] + [{
+    "description": "PAX, the native coin of Paxeer X Network.",
+    "denom_units": [{"denom": "uhpx", "exponent": 0, "aliases": []}, {"denom": "PAX", "exponent": 6, "aliases": []}],
+    "base": "uhpx", "display": "PAX", "name": "PAX", "symbol": "PAX",
+}]
 genesis["app_state"]["launchpad"]["protocol_fees_pending"] = export["launchpad"]["fee_accounting"]["pending_protocol_fees"]
 with open(sys.argv[2], "w") as handle:
     json.dump(genesis, handle, indent=2)
