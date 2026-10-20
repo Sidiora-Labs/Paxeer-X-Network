@@ -1,0 +1,76 @@
+[package]
+name = "perfdb"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Embedded, unified time-series/state/relational/event-log database for high-frequency trading systems"
+repository = "https://github.com/Sidiora-Labs/perf-db"
+readme = "README.md"
+keywords = ["database", "embedded", "time-series", "trading", "mmap"]
+categories = ["database-implementations", "database"]
+rust-version = "1.85"
+
+[[bin]]
+name = "perfdb"
+path = "src/main.rs"
+
+[dependencies]
+# Memory-mapped I/O
+memmap2 = "0.9"
+
+# Concurrent data structures
+crossbeam-utils = "0.8"
+dashmap = "6"
+parking_lot = "0.12"
+
+# Async runtime (used for pub/sub channels, background tasks)
+tokio = { version = "1", features = ["sync", "fs", "time", "rt"] }
+
+# Serialization (WAL entries, heap types)
+serde = { version = "1", features = ["derive"] }
+bincode = "1"
+
+# Observability
+tracing = "0.1"
+
+# Error handling
+thiserror = "2"
+
+# Zero-copy casts for repr(C) structs
+bytemuck = { version = "1", features = ["derive"] }
+
+# WAL checksums
+crc32fast = "1"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+serde_json = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+tempfile = "3"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "tick_ingestion"
+harness = false
+
+[[bench]]
+name = "candle_query"
+harness = false
+
+[[bench]]
+name = "position_lookup"
+harness = false
+
+[[bench]]
+name = "price_read"
+harness = false
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = 3
+
+[workspace]
