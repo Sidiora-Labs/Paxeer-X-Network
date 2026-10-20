@@ -1,0 +1,61 @@
+# rollout-perps.kvx — rollout manifest read by tools/rollout/rollout.sh via ROLLOUT_MANIFEST.
+#
+# Same format as deploy/rollout.kvx. Every row is target "railway-image": the
+# Railway service railway_service of project paxeer-x-perps is pointed at
+# ghcr.io/sidiora-labs/<image>@<digest> from the --digests map and redeployed.
+# health is an HTTP path on $PORT or tcp:<port>. order is the wave.
+# Stock services (Postgres) are not listed.
+
+[meta]
+name = "Perps rollout manifest"
+kind = "rollout-manifest"
+environment = "production"
+
+[service.nats]
+target = "railway-image"
+image = "perps-data-nats"
+railway_service = "nats"
+health = "tcp:4222"
+order = 1
+
+[service.nats-2]
+target = "railway-image"
+image = "perps-data-nats"
+railway_service = "nats-2"
+health = "tcp:4222"
+order = 1
+
+[service.nats-3]
+target = "railway-image"
+image = "perps-data-nats"
+railway_service = "nats-3"
+health = "tcp:4222"
+order = 1
+
+[service.indexer]
+target = "railway-image"
+image = "perps-data-indexer"
+railway_service = "indexer"
+health = "/healthz/ready"
+order = 2
+
+[service.gateway]
+target = "railway-image"
+image = "perps-gateway"
+railway_service = "gateway"
+health = "/healthz/ready"
+order = 3
+
+[service.explorer]
+target = "railway-image"
+image = "perps-explorer"
+railway_service = "explorer"
+health = "/healthz/ready"
+order = 4
+
+[service.portal]
+target = "railway-image"
+image = "perps-portal"
+railway_service = "portal"
+health = "/healthz/ready"
+order = 4
