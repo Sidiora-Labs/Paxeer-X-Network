@@ -1619,7 +1619,7 @@ func (app *App) ProcessProposalHandler(ctx sdk.Context, req *abci.RequestProcess
 			app.optimisticProcessingInfo.Aborted = true
 			completion := app.optimisticProcessingInfo.Completion
 			app.optimisticProcessingInfoMutex.Unlock()
-			completion <- struct{}{}
+			close(completion)
 		} else {
 			go func() {
 				// ProcessBlock has panic recovery and returns error for any processing failures
@@ -1645,7 +1645,7 @@ func (app *App) ProcessProposalHandler(ctx sdk.Context, req *abci.RequestProcess
 				}
 				completion := app.optimisticProcessingInfo.Completion
 				app.optimisticProcessingInfoMutex.Unlock()
-				completion <- struct{}{}
+				close(completion)
 			}()
 		}
 	} else {
