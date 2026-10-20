@@ -1,17 +1,22 @@
 package indexer
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -129,6 +134,12 @@ func setup(t *testing.T) *env {
 // publisher of e.
 func (e *env) newIndexer(t *testing.T, holder string, start uint64) *Indexer {
 	t.Helper()
+	return e.newIndexerVia(t, holder, start, requireEnv(t, testRPCEnv))
+}
+
+// newIndexerVia is newIndexer with the EVM JSON-RPC of the indexer at rpcURL.
+func (e *env) newIndexerVia(t *testing.T, holder string, start uint64, rpcURL string) *Indexer {
+	t.Helper()
 	ctx := context.Background()
 	metrics, err := telemetry.New(config.Indexer)
 	if err != nil {
@@ -138,7 +149,7 @@ func (e *env) newIndexer(t *testing.T, holder string, start uint64) *Indexer {
 		sum := sha256.Sum256([]byte(name))
 		return common.BytesToAddress(sum[:common.AddressLength])
 	}
-	rpc, err := source.NewRPC(ctx, source.RPCOptions{URLs: []string{requireEnv(t, testRPCEnv)}})
+	rpc, err := source.NewRPC(ctx, source.RPCOptions{URLs: []string{rpcURL}})
 	if err != nil {
 		t.Fatalf("NewRPC: %v", err)
 	}
@@ -236,8 +247,8 @@ func (e *env) latestLogs(t *testing.T, q ethereum.FilterQuery, n int) []ethtypes
 	}
 	to := head
 	for range scanWindows {
-		from := uint64(0)
-		if to >= scanWindow {
+		from := uint64(1)
+		if to > scanWindow {
 			from = to - scanWindow + 1
 		}
 		q.FromBlock, q.ToBlock = new(big.Int).SetUint64(from), new(big.Int).SetUint64(to)
@@ -248,13 +259,101 @@ func (e *env) latestLogs(t *testing.T, q ethereum.FilterQuery, n int) []ethtypes
 		if len(logs) >= n {
 			return logs[len(logs)-n:]
 		}
-		if from == 0 {
+		if from == 1 {
 			break
 		}
 		to = from - 1
 	}
 	t.Fatalf("the node of %s holds fewer than %d matching logs in the last %d blocks", testRPCEnv, n, scanWindow*scanWindows)
 	return nil
+}
+
+// logsCall is one eth_getLogs request seen by sizeRefusingNode.
+type logsCall struct {
+	from, to  uint64
+	addresses []string
+	refused   bool
+}
+
+func (c logsCall) span() uint64 { return c.to - c.from + 1 }
+
+// sizeRefusingNode forwards every JSON-RPC request to the node at upstream and
+// records each eth_getLogs range; the first eth_getLogs spanning exactly
+// refuseSpan blocks is answered with the node's size refusal instead.
+type sizeRefusingNode struct {
+	upstream   string
+	refuseSpan uint64
+	mu         sync.Mutex
+	calls      []logsCall
+	refusedOne bool
+}
+
+func (n *sizeRefusingNode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+		Params []struct {
+			FromBlock string   `json:"fromBlock"`
+			ToBlock   string   `json:"toBlock"`
+			Address   []string `json:"address"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(body, &req) == nil && req.Method == "eth_getLogs" && len(req.Params) == 1 {
+		from, errFrom := strconv.ParseUint(strings.TrimPrefix(req.Params[0].FromBlock, "0x"), 16, 64)
+		to, errTo := strconv.ParseUint(strings.TrimPrefix(req.Params[0].ToBlock, "0x"), 16, 64)
+		if errFrom != nil || errTo != nil || to < from {
+			http.Error(w, "eth_getLogs range", http.StatusBadRequest)
+			return
+		}
+		call := logsCall{from: from, to: to, addresses: req.Params[0].Address}
+		n.mu.Lock()
+		if !n.refusedOne && call.span() == n.refuseSpan {
+			n.refusedOne, call.refused = true, true
+		}
+		n.calls = append(n.calls, call)
+		n.mu.Unlock()
+		if call.refused {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{
+				"code": -32000, "message": "block range too large (" + strconv.FormatUint(call.span(), 10) + "), maximum allowed is 250 blocks"}})
+			return
+		}
+	}
+	resp, err := http.Post(n.upstream, "application/json", bytes.NewReader(body))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+
+// venueCalls returns the recorded eth_getLogs calls whose filter holds the
+// perps module, the first pass of each follower window.
+func (n *sizeRefusingNode) venueCalls() []logsCall {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	perps := strings.ToLower(decode.PerpsAddress.Hex())
+	var out []logsCall
+	for _, c := range n.calls {
+		if slices.Contains(c.addresses, perps) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func (n *sizeRefusingNode) allCalls() []logsCall {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return slices.Clone(n.calls)
 }
 
 type streamMsg struct {
@@ -406,6 +505,79 @@ func TestIndexer(t *testing.T) {
 			if o := sourceOrder(t, m); o[0] <= cursor {
 				t.Fatalf("message %d of the second run at height %d, at or below cursor %d", m.seq, o[0], cursor)
 			}
+		}
+	})
+
+	t.Run("catch_up_batches", func(t *testing.T) {
+		e := setup(t)
+		ctx := context.Background()
+		const behind = 1200
+		head, err := e.client.BlockNumber(ctx)
+		if err != nil {
+			t.Fatalf("head: %v", err)
+		}
+		if head <= behind {
+			t.Fatalf("node head %d is not above %d", head, behind)
+		}
+		cursor := head - behind
+		header, err := e.client.HeaderByNumber(ctx, new(big.Int).SetUint64(cursor))
+		if err != nil {
+			t.Fatalf("header %d: %v", cursor, err)
+		}
+		if _, err := e.db.Exec(`INSERT INTO perps.cursors (name, height, hash, updated_at) VALUES ('head', $1, $2, now())`, int64(cursor), header.Hash().Bytes()); err != nil {
+			t.Fatalf("insert cursor: %v", err)
+		}
+		node := &sizeRefusingNode{upstream: requireEnv(t, testRPCEnv), refuseSpan: source.MaxLogRange}
+		proxy := httptest.NewServer(node)
+		t.Cleanup(proxy.Close)
+		ix := e.newIndexerVia(t, "catch-up-batches", 0, proxy.URL)
+		e.runUntil(t, ix, "the catch-up to the head", e.indexedThrough(t, head))
+
+		for _, c := range node.allCalls() {
+			if c.span() > source.MaxLogRange {
+				t.Fatalf("eth_getLogs [%d, %d] spans %d blocks, above %d", c.from, c.to, c.span(), source.MaxLogRange)
+			}
+		}
+		calls := node.venueCalls()
+		if len(calls) < 3 {
+			t.Fatalf("venue eth_getLogs calls = %d, want at least the refused window and its two halves: %+v", len(calls), calls)
+		}
+		first := logsCall{from: cursor + 1, to: cursor + source.MaxLogRange, refused: true}
+		lowHalf := logsCall{from: cursor + 1, to: cursor + source.MaxLogRange/2}
+		highHalf := logsCall{from: cursor + source.MaxLogRange/2 + 1, to: cursor + source.MaxLogRange}
+		for i, want := range []logsCall{first, lowHalf, highHalf} {
+			got := calls[i]
+			if got.from != want.from || got.to != want.to || got.refused != want.refused {
+				t.Fatalf("venue eth_getLogs call %d = [%d, %d] refused %t, want [%d, %d] refused %t", i, got.from, got.to, got.refused, want.from, want.to, want.refused)
+			}
+		}
+		for _, c := range calls[3:] {
+			if c.refused {
+				t.Fatalf("eth_getLogs [%d, %d] refused after the first window", c.from, c.to)
+			}
+		}
+		next := cursor + 1
+		for _, c := range calls {
+			if c.refused {
+				continue
+			}
+			if c.from > next {
+				t.Fatalf("venue eth_getLogs calls skip heights %d to %d", next, c.from-1)
+			}
+			next = max(next, c.to+1)
+		}
+		if next <= head {
+			t.Fatalf("venue eth_getLogs calls end at %d, below the head %d", next-1, head)
+		}
+		stored, ok := e.cursor(t)
+		if !ok || stored < head {
+			t.Fatalf("cursor after the catch-up = %d (%t), want at least %d", stored, ok, head)
+		}
+		if n := e.count(t, `SELECT count(*) FROM perps.blocks WHERE number > $1 AND number <= $2`, int64(cursor), int64(stored)); n != int(stored-cursor) {
+			t.Fatalf("perps.blocks rows above the cursor %d through %d = %d, want %d", cursor, stored, n, stored-cursor)
+		}
+		if n := e.count(t, `SELECT count(*) FROM perps.blocks WHERE number <= $1`, int64(cursor)); n != 0 {
+			t.Fatalf("perps.blocks rows at or below the starting cursor %d = %d, want 0", cursor, n)
 		}
 	})
 

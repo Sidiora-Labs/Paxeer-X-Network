@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,8 +32,10 @@ import (
 
 // Bounds of contracts/data-services.md sections 5 and 19.
 const (
-	// IdleInterval separates two follower steps of a caught-up indexer.
+	// IdleInterval separates two follower steps of a caught-up indexer, give
+	// or take IdleJitter (Launch-x core/indexer/internal/source/committed.go:830).
 	IdleInterval = 100 * time.Millisecond
+	IdleJitter   = 10 * time.Millisecond
 	// MaxLagBlocks is the largest lag to the node head of a ready indexer.
 	MaxLagBlocks = 30
 	// MaxOutboxAge is the largest age of the oldest pending outbox row of a
@@ -105,10 +108,9 @@ type Indexer struct {
 	// step, in block order; the follower commits them in that order.
 	written []map[string]int
 
-	held    atomic.Bool
-	head    atomic.Uint64
-	cursor  atomic.Int64
-	renewed time.Time
+	held   atomic.Bool
+	head   atomic.Uint64
+	cursor atomic.Int64
 
 	headHeight    prometheus.Gauge
 	cursorHeight  prometheus.Gauge
@@ -200,19 +202,46 @@ func (ix *Indexer) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	pubCtx, cancel := context.WithCancel(ctx)
+	runCtx, cancel := context.WithCancelCause(ctx)
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		if err := ix.publisher.Run(pubCtx); err != nil && !errors.Is(err, context.Canceled) {
+		if err := ix.publisher.Run(runCtx); err != nil && !errors.Is(err, context.Canceled) {
 			ix.logger.Error("perps publisher stopped", slog.Any("err", err))
 		}
 	}()
-	err = ix.follow(ctx, next)
-	cancel()
+	go func() {
+		defer wg.Done()
+		if err := ix.keepLease(runCtx); errors.Is(err, ErrLeaseLost) {
+			cancel(err)
+		}
+	}()
+	err = ix.follow(runCtx, next)
+	if cause := context.Cause(runCtx); errors.Is(cause, ErrLeaseLost) {
+		err = cause
+	}
+	cancel(nil)
 	wg.Wait()
 	return err
+}
+
+// keepLease renews the held lease every RenewInterval until ctx ends, so a
+// long catch-up step never outlives the lease, and returns ErrLeaseLost when
+// a renewal finds it expired or taken.
+func (ix *Indexer) keepLease(ctx context.Context) error {
+	t := time.NewTicker(RenewInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.C:
+		}
+		if err := ix.renew(ctx); err != nil {
+			return err
+		}
+	}
 }
 
 // Checks returns the readiness checks of the indexer for httpx.HealthDeps:
@@ -294,11 +323,6 @@ func (ix *Indexer) follow(ctx context.Context, next uint64) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if time.Since(ix.renewed) >= RenewInterval {
-			if err := ix.renew(ctx); err != nil {
-				return err
-			}
-		}
 		n, err := ix.step(ctx, next)
 		if err != nil {
 			var mismatch *source.SyntheticMismatchError
@@ -314,7 +338,7 @@ func (ix *Indexer) follow(ctx context.Context, next uint64) error {
 			}
 			continue
 		}
-		if n == next && !sleep(ctx, IdleInterval) {
+		if n == next && !sleep(ctx, IdleInterval+rand.N(2*IdleJitter+time.Millisecond)-IdleJitter) {
 			return ctx.Err()
 		}
 		next = n
@@ -417,7 +441,6 @@ func (ix *Indexer) acquire(ctx context.Context) error {
 		err := ix.db.QueryRowContext(ctx, acquireSQL, leaseName, ix.holder, LeaseTTL.Milliseconds()).Scan(&holder)
 		if err == nil {
 			ix.held.Store(true)
-			ix.renewed = time.Now()
 			return nil
 		}
 		if ctx.Err() != nil {
@@ -451,7 +474,6 @@ func (ix *Indexer) renew(ctx context.Context) error {
 		ix.held.Store(false)
 		return ErrLeaseLost
 	}
-	ix.renewed = time.Now()
 	return nil
 }
 
