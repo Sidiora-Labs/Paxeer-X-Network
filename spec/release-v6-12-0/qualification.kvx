@@ -2236,3 +2236,11 @@ exit = 1
 log = fleet/logs/release-7.3.5-fix-verify-3.log
 observed = The reconnect storm guard now holds (2000 welcomed, 2000 guarded, 400 recovered, 2000 live, 517124 frames with no rate, level, gap or error violation) but the p99 frame delay measured 49.8 s against the 250 ms bound and 3631 of 35176 checksums were late, in three runs taken on a build box at load average 42 to 58 on 18 cores with 38 percent iowait where the test held about two cores.
 assumption = The latency bound is measured once more on a quiet host before the task is marked done; the gateway package test that timed out in publish.EnsureStream during NATS setup is the same host condition and is not a gateway defect.
+
+[finding.2.3.2-router-harness]
+revision = 0713aab22
+command = cargo test --locked --manifest-path human/Cargo.toml -p layerx-intents --test precompile_router
+exit = 101
+log = fleet/logs/release-2.3.2-verify-1.log
+observed = The twelve launchpad events, the FeeDistributed strategy map for 0 to 3 with the refusal for 4 and 255 and the computed topics are covered by the existing launchpad decode, intent map and declared-topic tests and pass; the one failing case is the exchange keeper replay, which needs the PAXEER_X_TIF_INGRESS_FILE written by the exchange time-in-force qualification whose runtime fixture needs the full daemon chain.
+assumption = The router test is qualified as the rust-router component of the exchange time-in-force qualification at release, the same gap recorded for 2.3.1, and the hosted core custody profile check is back on the paxeer-reserve id until the kernel rename after the upgrade.
