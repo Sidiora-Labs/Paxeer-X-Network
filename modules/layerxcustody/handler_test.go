@@ -15,17 +15,21 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/client/cli"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
-	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
-	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/tests/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
 
 const sidPointer = "0x21f7b20a555199fa73A238B1a91FD0f549068fEe"
+
+// custodyApp is a chain that has not run the v6.12.0 plan, so each test
+// activates custody governance itself through the real upgrade keeper; the
+// shared EVM test app already records the plan done at height 1.
+var custodyApp = paxapp.SetupWithDefaultHome(false, true, false)
 
 func assetID(symbol string) string {
 	sum := sha256.Sum256([]byte("layerx-asset:125:" + symbol))
@@ -43,19 +47,18 @@ func newCtx() sdk.Context {
 }
 
 func inactiveCtx() sdk.Context {
-	ctx, _ := testkeeper.EVMTestApp.NewContext(false, tmtypes.Header{}).WithBlockHeight(7).CacheContext()
+	ctx, _ := custodyApp.NewContext(false, tmtypes.Header{}).WithBlockHeight(7).CacheContext()
 	return ctx
 }
 
-// activate schedules and applies the custody governance activation plan at
-// height through the real upgrade keeper and returns ctx at that height.
+// activate records the custody governance activation plan done at height
+// through the real upgrade keeper, the record the custody gate reads, and
+// returns ctx at that height. The full v6.12.0 handler needs the seeded
+// release state, so node/gov_custody_test.go applies it end to end.
 func activate(ctx sdk.Context, height int64) sdk.Context {
-	plan := upgradetypes.Plan{Name: types.GovernanceActivationUpgrade, Height: height}
-	if err := testkeeper.EVMTestApp.UpgradeKeeper.ScheduleUpgrade(ctx.WithBlockHeight(height-1), plan); err != nil {
-		panic(err)
-	}
-	testkeeper.EVMTestApp.UpgradeKeeper.ApplyUpgrade(ctx.WithBlockHeight(height), plan)
-	return ctx.WithBlockHeight(height)
+	ctx = ctx.WithBlockHeight(height)
+	custodyApp.UpgradeKeeper.SetDone(ctx, types.GovernanceActivationUpgrade)
+	return ctx
 }
 
 func sidAsset() types.AssetMapping {
@@ -64,7 +67,7 @@ func sidAsset() types.AssetMapping {
 
 func TestCustodyProposalSetsAssetAndDepositRootAuthority(t *testing.T) {
 	ctx := newCtx()
-	k := testkeeper.EVMTestApp.LayerXCustodyKeeper
+	k := custodyApp.LayerXCustodyKeeper
 	governance := types.GovernanceAuthority()
 	params := k.GetParams(ctx)
 	params.DepositRootAuthority = depositRootAuthority()
@@ -96,7 +99,7 @@ func mustAddress(t *testing.T, text string) common.Address {
 
 func TestCustodyProposalRefusals(t *testing.T) {
 	ctx := newCtx()
-	k := testkeeper.EVMTestApp.LayerXCustodyKeeper
+	k := custodyApp.LayerXCustodyKeeper
 	handler := layerxcustody.NewProposalHandler(k)
 	governance := types.GovernanceAuthority()
 
@@ -128,7 +131,7 @@ func TestSubmitCustodyProposalFile(t *testing.T) {
 		 "asset":{"asset_id":%q,"denom":"usid","pointer":%q,"enabled":true}}]}`,
 		governance, assetID("SID"), sidPointer)
 	proposer := sdk.AccAddress(make([]byte, 20))
-	cdc := testkeeper.EVMTestApp.AppCodec()
+	cdc := custodyApp.AppCodec()
 
 	msg, err := cli.NewSubmitCustodyProposalMsg(cdc, []byte(file), proposer)
 	require.NoError(t, err)
@@ -147,7 +150,7 @@ func TestSubmitCustodyProposalFile(t *testing.T) {
 
 func authorityProposal(t *testing.T, authority string) *types.CustodyProposal {
 	t.Helper()
-	params := testkeeper.EVMTestApp.LayerXCustodyKeeper.GetParams(newCtx())
+	params := custodyApp.LayerXCustodyKeeper.GetParams(newCtx())
 	params.DepositRootAuthority = authority
 	proposal, err := types.NewCustodyProposal("Deposit root authority", "Set the deposit root authority",
 		&types.MsgUpdateParams{Authority: types.GovernanceAuthority(), Params: params})
@@ -156,7 +159,7 @@ func authorityProposal(t *testing.T, authority string) *types.CustodyProposal {
 }
 
 func TestCustodyProposalExecutesOnlyFromActivationHeight(t *testing.T) {
-	k := testkeeper.EVMTestApp.LayerXCustodyKeeper
+	k := custodyApp.LayerXCustodyKeeper
 	handler := layerxcustody.NewProposalHandler(k)
 	proposal := authorityProposal(t, depositRootAuthority())
 
@@ -167,7 +170,7 @@ func TestCustodyProposalExecutesOnlyFromActivationHeight(t *testing.T) {
 	require.Empty(t, never.EventManager().Events())
 
 	ctx := activate(inactiveCtx(), 20)
-	require.Equal(t, int64(20), testkeeper.EVMTestApp.UpgradeKeeper.GetDoneHeight(ctx, types.GovernanceActivationUpgrade))
+	require.Equal(t, int64(20), custodyApp.UpgradeKeeper.GetDoneHeight(ctx, types.GovernanceActivationUpgrade))
 	early := ctx.WithBlockHeight(19)
 	require.ErrorIs(t, handler(early, proposal), types.ErrGovernanceNotActive)
 	require.Equal(t, before, k.GetParams(early))
@@ -180,7 +183,7 @@ func TestCustodyProposalExecutesOnlyFromActivationHeight(t *testing.T) {
 
 func TestCustodyProposalRejectsWrongContent(t *testing.T) {
 	ctx := newCtx()
-	k := testkeeper.EVMTestApp.LayerXCustodyKeeper
+	k := custodyApp.LayerXCustodyKeeper
 	before := k.GetParams(ctx)
 	err := layerxcustody.NewProposalHandler(k)(ctx, govtypes.NewTextProposal("Text", "Not custody content", false))
 	require.ErrorIs(t, err, sdkerrors.ErrUnknownRequest)
@@ -190,7 +193,7 @@ func TestCustodyProposalRejectsWrongContent(t *testing.T) {
 
 func TestCustodyProposalRejectsUnauthorizedMessages(t *testing.T) {
 	ctx := newCtx()
-	k := testkeeper.EVMTestApp.LayerXCustodyKeeper
+	k := custodyApp.LayerXCustodyKeeper
 	handler := layerxcustody.NewProposalHandler(k)
 	outsider := sdk.AccAddress(make([]byte, 20)).String()
 	params := k.GetParams(ctx)
@@ -213,7 +216,7 @@ func TestCustodyProposalRejectsUnauthorizedMessages(t *testing.T) {
 
 func TestCustodyProposalPreservesMessageOrder(t *testing.T) {
 	ctx := newCtx()
-	k := testkeeper.EVMTestApp.LayerXCustodyKeeper
+	k := custodyApp.LayerXCustodyKeeper
 	governance := types.GovernanceAuthority()
 	first, second := k.GetParams(ctx), k.GetParams(ctx)
 	first.DepositRootAuthority = depositRootAuthority()
@@ -229,7 +232,7 @@ func TestCustodyProposalPreservesMessageOrder(t *testing.T) {
 
 func TestCustodyProposalRollsBackStateIndexesAndEvents(t *testing.T) {
 	ctx := newCtx()
-	k := testkeeper.EVMTestApp.LayerXCustodyKeeper
+	k := custodyApp.LayerXCustodyKeeper
 	governance := types.GovernanceAuthority()
 	params := k.GetParams(ctx)
 	before := params
@@ -256,7 +259,7 @@ func TestCustodyProposalRollsBackStateIndexesAndEvents(t *testing.T) {
 
 func pendingGovernanceClaim(t *testing.T) (sdk.Context, *keeper.Keeper, types.Claim) {
 	t.Helper()
-	app := testkeeper.EVMTestApp
+	app := custodyApp
 	ctx := newCtx().WithBlockTime(time.Unix(1_800_000_000, 0).UTC())
 	k := keeper.NewKeeper(app.AppCodec(), app.GetKey(types.StoreKey),
 		app.AccountKeeper, app.BankKeeper, &app.EvmKeeper, app.UpgradeKeeper)
@@ -340,7 +343,7 @@ func governanceMessages(t *testing.T, ctx sdk.Context, k *keeper.Keeper, claim t
 
 func custodyStoreSnapshot(t *testing.T, ctx sdk.Context) map[string][]byte {
 	t.Helper()
-	iterator := ctx.KVStore(testkeeper.EVMTestApp.GetKey(types.StoreKey)).Iterator(nil, nil)
+	iterator := ctx.KVStore(custodyApp.GetKey(types.StoreKey)).Iterator(nil, nil)
 	defer func() { require.NoError(t, iterator.Close()) }()
 	state := make(map[string][]byte)
 	for ; iterator.Valid(); iterator.Next() {
@@ -415,7 +418,7 @@ func TestCustodyProposalDispatchesAllGovernanceMessages(t *testing.T) {
 
 func TestCustodyProposalWithoutUpgradeReaderPreservesStateAndEvents(t *testing.T) {
 	ctx, k, pending := pendingGovernanceClaim(t)
-	app := testkeeper.EVMTestApp
+	app := custodyApp
 	withoutReader := keeper.NewKeeper(app.AppCodec(), app.GetKey(types.StoreKey),
 		app.AccountKeeper, app.BankKeeper, &app.EvmKeeper, nil)
 	messages, _, _ := governanceMessages(t, ctx, k, pending)

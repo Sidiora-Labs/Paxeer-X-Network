@@ -8610,3 +8610,13 @@ detail = "The pre-upgrade binary refuses a genesis whose launchpad state only ca
 area = "tooling/worktrees"
 summary = "worktree guard refuses lx-commit with a long inline message"
 detail = "Run the commit from a scratch script when the message is long."
+
+[gotcha.1808]
+area = "modules/testkeeper"
+summary = "the shared EVM test app records v6.12.0 as done at height 1"
+detail = "A test that schedules or applies the v6.12.0 plan, or expects custody governance to be inactive, needs its own app from SetupWithDefaultHome instead of testkeeper.EVMTestApp."
+
+[gotcha.1809]
+area = "node/upgrades"
+summary = "applying v6.12.0 on a clean test app panics in the launchpad step"
+detail = "The full v6.12.0 migration needs seeded release state and fails with LXP_LAUNCHPAD_INVALID_PARAMS quote token is the zero address; a module test outside package node can only record the done height through the upgrade keeper."
