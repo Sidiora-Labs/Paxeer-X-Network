@@ -145,7 +145,7 @@ fn deposit_intent(recipient_marker: u64, amount: u128, asset: [u8; 32], key: [u8
     let deposit = BridgeDepositCredit::new(
         DepositProofId::new([0x61; 32]),
         CheckpointId::new([0x62; 32]),
-        account("system:paxeer-reserve"),
+        account("system:treasury"),
         recipient(recipient_marker),
         AssetId::new(asset),
         Amount::from_u128(amount),

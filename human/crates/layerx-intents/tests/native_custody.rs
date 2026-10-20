@@ -34,7 +34,7 @@ fn recipient() -> AccountId {
 fn credit(payload: &[u8]) -> NativeCustodyCredit {
     checked(NativeCustodyCredit::new(
         payload,
-        checked(AccountId::parse("system:paxeer-reserve")),
+        checked(AccountId::parse("system:treasury")),
         recipient(),
     ))
 }
@@ -122,7 +122,7 @@ fn native_credit_preserves_real_attestation_and_all_disclosed_bytes() {
 
 #[test]
 fn native_credit_refuses_wrong_accounts_and_semantic_substitution() {
-    let reserve = checked(AccountId::parse("system:paxeer-reserve"));
+    let reserve = checked(AccountId::parse("system:treasury"));
     let wrong = checked(AccountId::parse("agent:did:layerx:another:main"));
     assert!(NativeCustodyCredit::new(CREDIT, reserve, wrong).is_err());
     let fees = checked(AccountId::parse("system:fees"));

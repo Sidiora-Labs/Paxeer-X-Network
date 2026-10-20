@@ -1194,7 +1194,7 @@ mod tests {
         let owner = || account("agent:did:layerx:alice:main");
         let recipient = || account("agent:did:layerx:bob:main");
         let budget = || account("agent:did:layerx:alice:budget:primary");
-        let reserve = || account("system:paxeer-reserve");
+        let reserve = || account("system:treasury");
         let withdrawals = || account("system:paxeer-withdrawals");
         let asset = || AssetId::new([2; 32]);
         let key = || IdempotencyKey::new([3; 32]);

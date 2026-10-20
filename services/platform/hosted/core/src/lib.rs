@@ -446,7 +446,7 @@ pub fn read_custody_profile(
         let id: [u8; 32] = Sha256::digest(format!("layerx-asset:125:{symbol}").as_bytes()).into();
         let bytes = custody_read(transport, context, &mut state_root, 8, &custody_key(b"LX:CUSTODY:PROFILE:v2", Some(&id)))?;
         let profile: [u8; 223] = bytes.try_into().map_err(|_| "custody profile length is invalid")?;
-        validate_custody_profile(&profile, &id, symbol, context.expected_network_id)?;
+        validate_custody_profile(&profile, &id, context.expected_network_id)?;
         if first.as_ref().is_some_and(|base| base[5..97] != profile[5..97] || base[161..223] != profile[161..223]) {
             return Err("custody registry contains incompatible domain or trust".into());
         }
@@ -530,10 +530,10 @@ fn custody_u64(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0, |value, byte| (value << 8) | u64::from(*byte))
 }
 
-fn validate_custody_profile(profile: &[u8; 223], asset: &[u8; 32], symbol: &str, network: u32) -> Result<(), String> {
+fn validate_custody_profile(profile: &[u8; 223], asset: &[u8; 32], network: u32) -> Result<(), String> {
     let mut module = Sha256::new(); module.update(b"LX:CUSTODY:MODULE:v1layerxcustody"); module.update(&profile[13..33]);
     let module_id: [u8; 32] = module.finalize().into();
-    let reserve = AccountId::parse(&format!("system:paxeer-reserve:{}", symbol.to_lowercase()))
+    let reserve = AccountId::parse("system:treasury")
         .map_err(|error| format!("custody reserve account: {error:?}"))?;
     let reserve_id = layerx_wire::hash::account_id_for_protocol(&reserve, 3)
         .map_err(|error| format!("custody reserve id: {error:?}"))?;

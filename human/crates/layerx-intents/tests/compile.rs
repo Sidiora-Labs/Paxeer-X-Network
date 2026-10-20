@@ -373,7 +373,7 @@ fn every_v1_intent_compiles_through_the_registered_module() {
             BridgeDepositCredit::new(
                 DepositProofId::new([13; 32]),
                 CheckpointId::new([14; 32]),
-                account("system:paxeer-reserve"),
+                account("system:treasury"),
                 owner(),
                 asset(),
                 amount(),

@@ -295,12 +295,12 @@ fn fixtures() -> Vec<Fixture> {
         },
         Fixture {
             name: "bridge_deposit_credit",
-            source: "v1 bridge_deposit_credit proof=0dx32 checkpoint=0ex32 reserve=system:paxeer-reserve recipient=agent:did:layerx:golden:main asset=02x32 amount=25 idempotency=03x32",
+            source: "v1 bridge_deposit_credit proof=0dx32 checkpoint=0ex32 reserve=system:treasury recipient=agent:did:layerx:golden:main asset=02x32 amount=25 idempotency=03x32",
             intent: Intent::v1(IntentKind::BridgeDepositCredit(
                 BridgeDepositCredit::new(
                     DepositProofId::new([13; 32]),
                     CheckpointId::new([14; 32]),
-                    account("system:paxeer-reserve"),
+                    account("system:treasury"),
                     owner(),
                     asset(),
                     amount(),
