@@ -45,9 +45,9 @@ func TestPrecompileRolesShareAddress(t *testing.T) {
 		r = m.Roles["Router"]
 		switch field {
 		case "implementationAddress":
-			r.ImplementationAddress = Current().Roles["Router"].ImplementationAddress
+			r.ImplementationAddress = Current().Roles["EventEmitter"].ImplementationAddress
 		case "implementationHash":
-			r.ImplementationHash = Current().Roles["Router"].ImplementationHash
+			r.ImplementationHash = Current().Roles["EventEmitter"].ImplementationHash
 		case "beaconAddress":
 			r.BeaconAddress = Current().Roles["PoolBeacon"].Address
 		}
@@ -58,9 +58,9 @@ func TestPrecompileRolesShareAddress(t *testing.T) {
 		p := m.Roles[LaunchpadPrecompileRole]
 		switch field {
 		case "implementationAddress":
-			p.ImplementationAddress = Current().Roles["Router"].ImplementationAddress
+			p.ImplementationAddress = Current().Roles["EventEmitter"].ImplementationAddress
 		case "implementationHash":
-			p.ImplementationHash = Current().Roles["Router"].ImplementationHash
+			p.ImplementationHash = Current().Roles["EventEmitter"].ImplementationHash
 		case "beaconAddress":
 			p.BeaconAddress = Current().Roles["PoolBeacon"].Address
 		}

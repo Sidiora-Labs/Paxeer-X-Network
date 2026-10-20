@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "deploymentVersion": "paxeer125-a35ff7c6f532d2f9",
+  "deploymentVersion": "paxeer125-v6.12.0",
   "sourceManifestSha256": "a35ff7c6f532d2f92e4ca59e4ef2cf0a105d551ae9ac3eba68b95f79a355df4a",
   "chainId": 125,
-  "activationHeight": 32226215,
+  "activationHeight": 37220320,
   "status": "active",
   "roles": {
     "EventEmitter": {
@@ -15,59 +15,43 @@
     },
     "ProtocolConfig": {
       "address": "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
-      "kind": "erc1967",
-      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
-      "implementationAddress": "0xE612759AaA47E96B0801Fb506e4E115C4756Dca5",
-      "implementationHash": "0x951a356ea08b211a69a8f6247a3cd2cbffbaefb23c6c528c2e9c0d794f6cd9c8"
+      "kind": "surface",
+      "runtimeHash": "0x6302ff80f4168c2af23afbf3117c613edd66d288d120eee825f9ecadd43a392f"
     },
     "Router": {
       "address": "0x78FB06f525cD964388f2305A489035263E31C6e4",
-      "kind": "erc1967",
-      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
-      "implementationAddress": "0xfcBce73f397dF65D5b18364dadDCaE86E95CdB96",
-      "implementationHash": "0x3377796c705ad082dfa476c61f25f9cbf64f39fb80dad47de4f5220a4e65190c"
+      "kind": "surface",
+      "runtimeHash": "0x6302ff80f4168c2af23afbf3117c613edd66d288d120eee825f9ecadd43a392f"
     },
     "Quoter": {
       "address": "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
-      "kind": "erc1967",
-      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
-      "implementationAddress": "0x49Fe29eaAcb16d3D1a8671dD4d6D9070E340B5B8",
-      "implementationHash": "0x26be23199e2a93fc8c3b83982ac9e9dca7e065664bc83b028bf5c804d2a5320c"
+      "kind": "surface",
+      "runtimeHash": "0x6302ff80f4168c2af23afbf3117c613edd66d288d120eee825f9ecadd43a392f"
     },
     "SidioraFactory": {
       "address": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
-      "kind": "erc1967",
-      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
-      "implementationAddress": "0xAA348015a0dA5FE65296481B0e98EF240bd57AF4",
-      "implementationHash": "0xd1737d0ee5a34a19259d7efac0f2ca8a4cc6a89de64cffc44c09fa0ecd533389"
+      "kind": "surface",
+      "runtimeHash": "0x6302ff80f4168c2af23afbf3117c613edd66d288d120eee825f9ecadd43a392f"
     },
     "PoolRegistry": {
       "address": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
-      "kind": "erc1967",
-      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
-      "implementationAddress": "0x0e4d66894321e7e29803eF63E618bF07B9772687",
-      "implementationHash": "0xc74db1081c5791cda0336d914cdc44cd31cfb656c8b8aaa0c2e200123503e216"
+      "kind": "surface",
+      "runtimeHash": "0x6302ff80f4168c2af23afbf3117c613edd66d288d120eee825f9ecadd43a392f"
     },
     "FeeAccumulator": {
       "address": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
-      "kind": "erc1967",
-      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
-      "implementationAddress": "0xc21a8f1f8cd416D8B84a0627b4c4bfcc3a6c15a0",
-      "implementationHash": "0x4117715336d6a32d4e3c26038adbf576f6eb85f9787b296118c49cf5dbbbb40a"
+      "kind": "surface",
+      "runtimeHash": "0x6302ff80f4168c2af23afbf3117c613edd66d288d120eee825f9ecadd43a392f"
     },
     "SidioraNFT": {
       "address": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
-      "kind": "erc1967",
-      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
-      "implementationAddress": "0x799CeE9468FCd5B504F267658619C7540b2D9650",
-      "implementationHash": "0x5b62b9bae123fe58a8efc58d966a21718df022a399894d3da7f767b635661d28"
+      "kind": "surface",
+      "runtimeHash": "0x6302ff80f4168c2af23afbf3117c613edd66d288d120eee825f9ecadd43a392f"
     },
     "FeesRouter": {
       "address": "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
-      "kind": "erc1967",
-      "runtimeHash": "0xb2f39d5c380b45131e836d4beb5254d4e5c410d35935bf270e8492755f7da6f7",
-      "implementationAddress": "0xaB930A3b2bFCdb38555b57D1254B3424EC7FB328",
-      "implementationHash": "0x32d0cd6ab521f803ee77c700715efb56826b59dadd5c3cbeeaef933c44bcb925"
+      "kind": "surface",
+      "runtimeHash": "0x6302ff80f4168c2af23afbf3117c613edd66d288d120eee825f9ecadd43a392f"
     },
     "OpticalRegistry": {
       "address": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
@@ -87,6 +71,15 @@
       "address": "0x85fcd13735f4309833a503ee804ea32395851479",
       "kind": "direct",
       "runtimeHash": "0xa5d84d5e9db89e88646654510a9445271bdd67c3b0e84c64e923c6b82589aaaf"
+    },
+    "Treasury": {
+      "address": "0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723",
+      "kind": "surface",
+      "runtimeHash": "0x6302ff80f4168c2af23afbf3117c613edd66d288d120eee825f9ecadd43a392f"
+    },
+    "LaunchpadPrecompile": {
+      "address": "0x0000000000000000000000000000000000001017",
+      "kind": "precompile"
     }
   },
   "native": {
