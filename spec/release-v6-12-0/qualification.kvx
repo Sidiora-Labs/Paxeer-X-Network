@@ -2284,3 +2284,11 @@ exit = 0
 log = fleet/logs/release-2.3.99-precompile-verify-2.log
 observed = TestCallKindRefusals dereferenced nil because the run test env built the keeper without an EVM keeper after InitGenesis began installing the generation 2 role surfaces through it; the env now mounts an EVM store and passes a real EVM keeper as events_test does, and TestOpticalHooksSeeTheContractCallers passes once LAUNCHPAD_CONTRACTS_DIR points at launchpad/contracts/contracts and SOLC at a 0.8.24-compatible solc.
 assumption = Every run of the launchpad precompile tests sets those two variables; the test code is unchanged.
+
+[finding.7.3.5-double-tape-read]
+revision = 77e1b4332
+command = go test -count=1 ./services/platform/perps-data/loadtest/ -run 'TestLoadProfile'
+exit = 1
+log = fleet/logs/release-7.3.5-latency-verify-1.log
+observed = Each fill's tape was read from the database twice, once under the hub lock at about 35 ms prepare plus 17 ms locked per message against a 28 ms budget, and the gateway churned Postgres connections with a two-connection idle pool; with the prefetched items reused, prepare parallel per family and 64 idle connections the p99 frame delay fell from 48.8 s to 2.27 s with zero late checksums, zero gaps and zero server closes, still above 250 ms.
+assumption = The remaining delay is measured from the fill's block time stamped before the trader's own transaction and eighteen serial publishes while the box answered SELECT 1 in 80 ms to 3 s; the gate is rerun once with no other build on the box, and if it still fails the ramp and storm subscribe contention on the hub lock is the next target.

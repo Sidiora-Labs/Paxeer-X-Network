@@ -52,6 +52,11 @@ const (
 	// readyInterval is how often the readiness of the socket gate is
 	// evaluated.
 	readyInterval = time.Second
+	// dbIdle is the idle connection pool the gateway keeps on its database:
+	// the topic reads of the stream families run side by side beside the
+	// timed reads, subscribe loads and REST, and the default pool of two
+	// would close and reopen a connection for most of them.
+	dbIdle = 64
 
 	// clientRequests is the number of REST and GraphQL requests one client
 	// key may make per clientWindow.
@@ -83,6 +88,7 @@ var dataSockets = []string{"GET /{$}", "GET /ws", "GET /ws/markets", "GET /ws/ex
 
 // Options wires a Server.
 type Options struct {
+	// DB is the database of the gateway; NewServer sets its idle pool.
 	DB         *sql.DB
 	NATS       *nats.Conn
 	Chain      uint64
@@ -153,6 +159,7 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 	case opts.Metrics == nil:
 		return nil, errors.New("gateway: nil metrics")
 	}
+	opts.DB.SetMaxIdleConns(dbIdle)
 	logger := opts.Logger
 	if logger == nil {
 		logger = slog.Default()

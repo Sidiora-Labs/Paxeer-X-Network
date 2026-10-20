@@ -160,9 +160,10 @@ type Providers struct {
 	bodies map[string]json.RawMessage
 	// loading holds the Load in flight of a topic.
 	loading map[string]*load
-	// pre holds the reads Prepare made for the next Message; cur is it while
-	// that Message runs.
-	pre, cur *prefetch
+	// pre holds the reads Prepare made for the messages not applied yet, by
+	// event id; cur is the one of the Message that runs.
+	pre map[string]*prefetch
+	cur *prefetch
 
 	tokenMu    sync.Mutex
 	spotTokens map[string][]byte
@@ -186,7 +187,7 @@ func NewProviders(ctx context.Context, db *sql.DB, logger *slog.Logger) (*Provid
 		db: db, symbol: symbol, logger: logger,
 		symbols: map[string]string{}, ids: map[string]string{},
 		watched: map[string]int{}, books: map[string]*bookState{}, cursors: map[string]*cursor{}, bodies: map[string]json.RawMessage{},
-		loading: map[string]*load{}, spotTokens: map[string][]byte{},
+		loading: map[string]*load{}, pre: map[string]*prefetch{}, spotTokens: map[string][]byte{},
 	}
 	rows, err := db.QueryContext(ctx, marketsSQL)
 	if err != nil {
@@ -511,26 +512,26 @@ func (p *Providers) Snapshot(ctx context.Context, topic string) (json.RawMessage
 	return encode(topic, h)
 }
 
-// prefetch is what Prepare read for the message eventID: the order rows of
+// prefetch is what Prepare read for one message: the order rows of
 // its source position by market, the newest items of its tape by topic and
 // the marks of its market by symbol.
 type prefetch struct {
-	eventID string
-	rows    map[string][]decode.Row
-	items   map[string][]item
-	marks   map[string]marks
+	rows  map[string][]decode.Row
+	items map[string][]item
+	marks map[string]marks
 }
 
 // Prepare makes, outside the lock under which the hub applies messages, the
 // database reads that Message of the same message makes for the state the
 // topics hold now; Message uses them in place of its own. A read that fails
-// here is left to Message.
+// here is left to Message. The hub prepares the messages of different
+// families at once.
 func (p *Providers) Prepare(ctx context.Context, subject string, env delivery.Envelope) {
 	parts := strings.Split(subject, ".")
 	if len(parts) < 4 || parts[0] != "perps" {
 		return
 	}
-	pf := &prefetch{eventID: env.EventID, rows: map[string][]decode.Row{}, items: map[string][]item{}, marks: map[string]marks{}}
+	pf := &prefetch{rows: map[string][]decode.Row{}, items: map[string][]item{}, marks: map[string]marks{}}
 	var book, tape, sym string
 	switch family := parts[2]; {
 	case family == "chain" && len(parts) == 4 && parts[3] == "block":
@@ -556,6 +557,15 @@ func (p *Providers) Prepare(ctx context.Context, subject string, env delivery.En
 	p.mu.Lock()
 	b, c := p.books[book], p.cursors[tape]
 	p.mu.Unlock()
+	// The book and tape reads are independent and run side by side.
+	var reads sync.WaitGroup
+	if c != nil {
+		reads.Go(func() {
+			if items, _, err := p.tapeItems(ctx, tape); err == nil {
+				pf.items[tape] = items
+			}
+		})
+	}
 	if b != nil {
 		switch parts[3] {
 		case "order", "fill":
@@ -570,13 +580,9 @@ func (p *Providers) Prepare(ctx context.Context, subject string, env delivery.En
 			}
 		}
 	}
-	if c != nil {
-		if items, _, err := p.tapeItems(ctx, tape); err == nil {
-			pf.items[tape] = items
-		}
-	}
+	reads.Wait()
 	p.mu.Lock()
-	p.pre = pf
+	p.pre[env.EventID] = pf
 	p.mu.Unlock()
 }
 
@@ -591,10 +597,8 @@ func (p *Providers) Message(ctx context.Context, subject string, env delivery.En
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.pre != nil && p.pre.eventID == env.EventID {
-		p.cur = p.pre
-	}
-	p.pre = nil
+	p.cur = p.pre[env.EventID]
+	delete(p.pre, env.EventID)
 	defer func() { p.cur = nil }()
 	switch family := parts[2]; {
 	case family == "chain" && len(parts) == 4:
@@ -705,15 +709,22 @@ func sourcePos(at delivery.SourceOrder) ([3]int64, error) {
 	return pos, nil
 }
 
-// tapeItems reads the newest items of a tape and the window its cursor keeps.
-func (p *Providers) tapeItems(ctx context.Context, topic string) ([]item, int, error) {
+// tapeWindow is the window the cursor of a tape keeps.
+func tapeWindow(topic string) int {
 	switch topic {
 	case TopicChainBlocks:
-		items, err := p.chainItems(ctx, topic)
-		return items, BlockSnapshot, err
+		return BlockSnapshot
 	case TopicChainTxs:
+		return TxSnapshot
+	}
+	return TradeSnapshot
+}
+
+// tapeItems reads the newest items of a tape and the window its cursor keeps.
+func (p *Providers) tapeItems(ctx context.Context, topic string) ([]item, int, error) {
+	if topic == TopicChainBlocks || topic == TopicChainTxs {
 		items, err := p.chainItems(ctx, topic)
-		return items, TxSnapshot, err
+		return items, tapeWindow(topic), err
 	}
 	sym, kind, _ := p.parse(topic)
 	items, err := p.trades(ctx, sym, kind)
@@ -727,11 +738,19 @@ func (p *Providers) advance(ctx context.Context, topic string) ([]Frame, []strin
 	if !ok {
 		return nil, nil, nil
 	}
-	items, window, err := p.tapeItems(ctx, topic)
+	var (
+		items  []item
+		window int
+		err    error
+		pre    bool
+	)
 	if p.cur != nil {
-		if pre, ok := p.cur.items[topic]; ok {
-			items, err = pre, nil
-		}
+		items, pre = p.cur.items[topic]
+	}
+	if pre {
+		window = tapeWindow(topic)
+	} else {
+		items, window, err = p.tapeItems(ctx, topic)
 	}
 	if err != nil {
 		return nil, nil, err

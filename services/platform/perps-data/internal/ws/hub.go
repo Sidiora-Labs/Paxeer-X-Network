@@ -43,8 +43,10 @@ type Frame struct {
 // Message in stream order and runs Run for the timed frames. Load reads the
 // state of a subscribed topic outside the hub lock and Held answers the
 // subscribe snapshot from it without IO; Snapshot reads a fresh snapshot.
-// Message returns the live frames a message causes and the topics that must
-// send a fresh snapshot instead.
+// Prepare runs outside the hub lock before the Message of the same message,
+// for the messages of different families at once and for those of one
+// family in stream order. Message returns the live frames a message causes
+// and the topics that must send a fresh snapshot instead.
 type Provider interface {
 	Subscribed(topic string)
 	Unsubscribed(topic string)
@@ -274,17 +276,85 @@ func (h *Hub) consume(ctx context.Context, nc *nats.Conn) error {
 	defer c.Close()
 	stop := context.AfterFunc(ctx, c.Close)
 	defer stop()
-	for {
-		messages, err := c.Fetch(ctx)
-		for _, m := range messages {
-			if err := h.apply(ctx, m); err != nil {
-				return err
+	// The fetch loop decodes and prepares every message as it arrives and
+	// queues it; the apply loop applies the queue in stream order, each
+	// message once its Prepare is done.
+	queue := make(chan *prepared, preparedQueue)
+	fetchErr := make(chan error, 1)
+	var preparing sync.WaitGroup
+	go func() {
+		defer close(queue)
+		families := map[string]chan struct{}{}
+		for {
+			messages, err := c.Fetch(ctx)
+			for _, m := range messages {
+				p := h.prepare(ctx, m, families, &preparing)
+				select {
+				case queue <- p:
+				case <-ctx.Done():
+					fetchErr <- ctx.Err()
+					return
+				}
+			}
+			if err != nil {
+				fetchErr <- err
+				return
 			}
 		}
-		if err != nil {
+	}()
+	defer preparing.Wait()
+	for p := range queue {
+		<-p.ready
+		if err := h.apply(ctx, p); err != nil {
+			c.Close()
+			for range queue {
+			}
 			return err
 		}
 	}
+	return <-fetchErr
+}
+
+// preparedQueue bounds the messages fetched ahead of the apply loop.
+const preparedQueue = 256
+
+// prepared is a fetched message decoded for apply; ready is closed once its
+// provider Prepare is done.
+type prepared struct {
+	m        *natsdriver.Message
+	env      delivery.Envelope
+	perpsSeq int64
+	err      error
+	ready    chan struct{}
+}
+
+// prepare decodes m and runs the provider Prepare of a message the hub has
+// not applied yet outside the hub lock, in a goroutine of its own. The
+// messages of one family, perps.<chain>.<family>, prepare one after another
+// in stream order, each after the one before it in families; the families
+// prepare side by side, so a message waits for the reads of its own family
+// only.
+func (h *Hub) prepare(ctx context.Context, m *natsdriver.Message, families map[string]chan struct{}, preparing *sync.WaitGroup) *prepared {
+	env, perpsSeq, err := h.decode(m.Subject, m)
+	p := &prepared{m: m, env: env, perpsSeq: perpsSeq, err: err, ready: make(chan struct{})}
+	h.mu.Lock()
+	applied := h.applied
+	h.mu.Unlock()
+	if err != nil || m.Sequence <= applied {
+		close(p.ready)
+		return p
+	}
+	family, _, _ := strings.Cut(strings.TrimPrefix(m.Subject, h.prefix), ".")
+	prev := families[family]
+	families[family] = p.ready
+	preparing.Go(func() {
+		defer close(p.ready)
+		if prev != nil {
+			<-prev
+		}
+		h.provider.Prepare(ctx, m.Subject, env)
+	})
+	return p
 }
 
 // resumeFrom returns the stream sequence after the last applied message; on
@@ -313,13 +383,10 @@ func (h *Hub) resumeFrom(ctx context.Context, js jetstream.JetStream) (uint64, e
 // apply applies one message once. A stream sequence beyond the one after the
 // last applied message is a range the hub cannot fill: every subscribed
 // socket closes with 1013 and the client resyncs through REST.
-func (h *Hub) apply(ctx context.Context, m *natsdriver.Message) error {
-	seq := m.Sequence
-	subject := m.Subject
-	env, perpsSeq, err := h.decode(subject, m)
-	if err == nil {
-		h.provider.Prepare(ctx, subject, env)
-	}
+func (h *Hub) apply(ctx context.Context, p *prepared) error {
+	seq := p.m.Sequence
+	subject := p.m.Subject
+	env, perpsSeq, err := p.env, p.perpsSeq, p.err
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if seq <= h.applied {
