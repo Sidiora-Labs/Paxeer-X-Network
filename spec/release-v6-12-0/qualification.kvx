@@ -2428,3 +2428,11 @@ exit = 0
 log = fleet/logs/release-8.4.1-verify-1.log
 observed = All four identity checks pass first time; the version file already named v6.12.0 and only the test's messages and the scratch-repository tag check were aligned to the acceptance text.
 assumption = The release identity is complete.
+
+[finding.8.4.4-verified]
+revision = c9bb60e88
+command = bash tools/release/tests/workflows.test.sh
+exit = 0
+log = fleet/logs/release-8.4.4-verify-1.log
+observed = All seven workflow checks pass with no file change; both release workflows already install the pinned Rust and C toolchains, check the V6120Upgrade declaration and name the release Paxeer X Network.
+assumption = The workflows are complete; nothing was committed because nothing changed.

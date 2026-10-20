@@ -29335,7 +29335,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.4]
 title = "Install pinned Rust and C toolchains in both release workflows, check the V6120Upgrade declaration and name the release Paxeer X Network"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["1.0.3", "8.4.2"]
