@@ -1,8 +1,7 @@
 const BASE_URL_ENV = 'NEXT_PUBLIC_PAXSCAN_BASE_URL';
-const MAINNET_EXPLORER = 'https://paxscan.io';
 
-function parseBaseUrl(raw: string | undefined): string {
-  if (!raw) return MAINNET_EXPLORER;
+function parseBaseUrl(raw: string | undefined): string | null {
+  if (!raw) return null;
   let url: URL;
   try {
     url = new URL(raw);

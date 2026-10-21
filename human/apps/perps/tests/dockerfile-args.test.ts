@@ -15,8 +15,9 @@ function unsetLoop(): string {
 }
 
 function envAfterLoop(vars: Record<string, string>): Map<string, string> {
+  const env: Record<string, string> = { PATH: process.env.PATH ?? '/usr/bin:/bin', ...vars };
   const out = execFileSync('sh', ['-c', `${unsetLoop()}; env`], {
-    env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...vars },
+    env: env as NodeJS.ProcessEnv,
     encoding: 'utf8',
   });
   return new Map(
