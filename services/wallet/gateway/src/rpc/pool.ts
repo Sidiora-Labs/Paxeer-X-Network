@@ -3,6 +3,7 @@ import {
   custom,
   defineChain,
   type Chain,
+  keccak256,
   type Hex,
   type PublicClient,
 } from 'viem';
@@ -62,10 +63,9 @@ export class TransactionRejectedError extends RpcResponseError {
 }
 
 /**
- * A node refused a broadcast because the sender's nonce is already used: the chain passed it
- * (nonce too low), the same transaction is pooled (already known) or another transaction at that
- * nonce is pooled (replacement underpriced). The nonce stays held and the caller prepares again,
- * so nothing is ever silently replaced.
+ * A node refused a broadcast because another transaction holds the sender's nonce: the chain passed
+ * it and our transaction is known on no member (nonce too low), or another transaction at that nonce
+ * is pooled (replacement underpriced). The caller prepares again, so nothing is ever silently replaced.
  */
 export class NonceConflictError extends RpcResponseError {
   constructor(code: number, message: string, data: unknown) {
@@ -74,9 +74,15 @@ export class NonceConflictError extends RpcResponseError {
   }
 }
 
-const NONCE_OCCUPIED = /already known|already in (?:the )?mempool|already exists|nonce too low|replacement (?:transaction )?underpriced/i;
+const ALREADY_KNOWN = /already known|already in (?:the )?mempool|already exists/i;
+const NONCE_TOO_LOW = /nonce too low/i;
+const REPLACEMENT_UNDERPRICED = /replacement (?:transaction )?underpriced/i;
 
-export type PooledTransactions = Map<number, { hash: Hex | null; member: string }>;
+/** Whether any member knows a transaction, and the members that could not answer when none does. */
+export interface TransactionLookup {
+  known: boolean;
+  unreachable: string[];
+}
 
 class RpcTransportError extends Error {
   constructor(message: string) {
@@ -262,78 +268,51 @@ export class RpcPool {
   }
 
   /**
-   * Whether a node knows the transaction, pooled or mined. The node that accepted the broadcast and
-   * every pool member are asked and a transaction known anywhere is known; a not found from the
-   * accepting node alone is not final, only every answering member saying not found is. Throws when
-   * no node could answer, so a caller never reads silence as not known.
+   * Ask the node that accepted the broadcast and every pool member for the transaction by hash. Known
+   * anywhere is known; otherwise every member that failed to answer is named, so a partition is never
+   * read as not known.
    */
-  async transactionKnown(hash: Hex, member: string | null): Promise<boolean> {
+  async lookupTransaction(hash: Hex, member: string | null): Promise<TransactionLookup> {
     const urls = [...new Set([...(member === null ? [] : [member]), ...this.endpoints.map((ep) => ep.url)])];
     const answers = await Promise.allSettled(urls.map((url) => this.post(url, 'eth_getTransactionByHash', [hash])));
-    if (answers.some((a) => a.status === 'fulfilled' && a.value !== null)) return true;
-    const failed = answers.find((a) => a.status === 'rejected' && !(a.reason instanceof RpcTransportError));
-    if (failed?.status === 'rejected') throw failed.reason;
-    if (answers.every((a) => a.status === 'rejected')) {
-      throw new RpcUnavailableError(`no RPC endpoint answered eth_getTransactionByHash for ${hash}`);
-    }
-    return false;
+    const known = answers.some((a) => a.status === 'fulfilled' && a.value !== null);
+    return { known, unreachable: known ? [] : urls.filter((_, i) => answers[i]!.status === 'rejected') };
   }
 
-  /**
-   * The sender's pending and queued transactions by nonce, merged from txpool_content on every pool
-   * member, each with the member that pools it. Null when every answering member refuses the method
-   * as not served; throws when no member answered at all.
-   */
-  async pooledFrom(address: `0x${string}`): Promise<PooledTransactions | null> {
-    const key = address.toLowerCase();
-    const answers = await Promise.allSettled(
-      this.endpoints.map(async (ep) => ({ member: ep.url, content: await this.post(ep.url, 'txpool_content', []) })),
-    );
-    const pooled: PooledTransactions = new Map();
-    let served = false;
-    let notServed = false;
-    for (const answer of answers) {
-      if (answer.status === 'rejected') {
-        if (answer.reason instanceof RpcResponseError) {
-          if (answer.reason.code !== -32601) throw answer.reason;
-          notServed = true;
-        }
-        continue;
-      }
-      served = true;
-      const content = answer.value.content as Record<string, Record<string, Record<string, { hash?: unknown }>>> | null;
-      for (const section of [content?.pending, content?.queued]) {
-        for (const [from, txs] of Object.entries(section ?? {})) {
-          if (from.toLowerCase() !== key) continue;
-          for (const [nonce, tx] of Object.entries(txs)) {
-            const n = Number(nonce);
-            if (!Number.isSafeInteger(n) || n < 0 || pooled.has(n)) continue;
-            const hash = typeof tx?.hash === 'string' ? tx.hash.toLowerCase() : '';
-            pooled.set(n, { hash: /^0x[0-9a-f]{64}$/.test(hash) ? (hash as Hex) : null, member: answer.value.member });
-          }
-        }
-      }
+  /** lookupTransaction() as a boolean; throws when no member knows it and some member did not answer. */
+  async transactionKnown(hash: Hex, member: string | null): Promise<boolean> {
+    const { known, unreachable } = await this.lookupTransaction(hash, member);
+    if (!known && unreachable.length > 0) {
+      throw new RpcUnavailableError(`eth_getTransactionByHash for ${hash} went unanswered by ${unreachable.join(', ')}`);
     }
-    if (served) return pooled;
-    if (notServed) return null;
-    throw new RpcUnavailableError(`no RPC endpoint answered txpool_content for ${address}`);
+    return known;
   }
 
   async sendRawTransaction(signed: Hex): Promise<Hex> {
     return (await this.sendRawTransactionVia(signed)).hash;
   }
 
-  /** sendRawTransaction(), also naming the pool member that accepted the transaction. */
-  async sendRawTransactionVia(signed: Hex): Promise<{ hash: Hex; member: string }> {
+  /**
+   * sendRawTransaction(), also naming the pool member that accepted the transaction; an idempotent
+   * answer returns the keccak of the signed bytes as the hash. A member that times out is retried with the same bytes only, so a
+   * retry can only answer already known (success with our hash) or accept it. Nonce too low is
+   * success when our hash is known on any member and a NonceConflictError when it is known on none;
+   * replacement underpriced is a NonceConflictError; any other refusal is a TransactionRejectedError.
+   */
+  async sendRawTransactionVia(signed: Hex): Promise<{ hash: Hex; member: string | null }> {
+    const hash = keccak256(signed);
     try {
       const { result, member } = await this.requestVia<Hex>('eth_sendRawTransaction', [signed]);
       return { hash: result, member };
     } catch (err) {
-      if (err instanceof RpcResponseError) {
-        if (NONCE_OCCUPIED.test(err.message)) throw new NonceConflictError(err.code, err.message, err.data);
-        throw new TransactionRejectedError(err.code, err.message, err.data);
+      if (!(err instanceof RpcResponseError)) throw err;
+      if (ALREADY_KNOWN.test(err.message)) return { hash, member: null };
+      if (NONCE_TOO_LOW.test(err.message)) {
+        if (await this.transactionKnown(hash, null)) return { hash, member: null };
+        throw new NonceConflictError(err.code, err.message, err.data);
       }
-      throw err;
+      if (REPLACEMENT_UNDERPRICED.test(err.message)) throw new NonceConflictError(err.code, err.message, err.data);
+      throw new TransactionRejectedError(err.code, err.message, err.data);
     }
   }
 

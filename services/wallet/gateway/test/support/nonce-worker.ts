@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { keccak256, toHex } from 'viem';
 import { NonceStore } from '../../src/nonce/store.js';
 import { RpcPool } from '../../src/rpc/pool.js';
 
@@ -16,13 +17,17 @@ async function main(): Promise<void> {
     pool,
     chainId: 125,
     pendingCount: (a) => rpc.getTransactionCount(a, 'latest'),
-    transactionKnown: (h, m) => rpc.transactionKnown(h, m), pooledFrom: (a) => rpc.pooledFrom(a),
+    lookupTransaction: (h, m) => rpc.lookupTransaction(h, m),
   });
   await new Promise<void>((resolve) => {
     process.once('message', () => resolve());
     process.send?.({ ready: true });
   });
-  const nonces = await Promise.all(Array.from({ length: count }, () => store.allocate(address)));
+  const nonces = await Promise.all(Array.from({ length: count }, () => store.withLock(address, async (lease) => {
+    const nonce = await lease.next();
+    await lease.track(nonce, keccak256(toHex(`worker ${process.pid} ${nonce}`)), null);
+    return nonce;
+  })));
   await pool.end();
   await new Promise<void>((resolve) => process.send?.({ pid: process.pid, nonces }, () => resolve()));
 }

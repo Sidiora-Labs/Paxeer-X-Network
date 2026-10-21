@@ -14,7 +14,7 @@ import { bindCustodyBudgetReservation, getPolicy, listRules, releaseBudget, rele
 import { evaluateAgent, type AgentTxIntent } from '../policy/agent.js';
 import { AttestorError, AttestorTokenError, AttestorReauthorizationRequired, attestorErrorBody, attestorErrorStatus } from '../attestor/client.js';
 import { resolveGas } from '../chainReads.js';
-import { NonceBelowLatestError, NonceOutstandingError, broadcastReserved, type NonceLease } from '../nonce/store.js';
+import { NonceBelowLatestError, NonceOutstandingError, NonceUnresolvedError, broadcastReserved, type NonceLease } from '../nonce/store.js';
 import { NonceConflictError, TransactionRejectedError, sharedRpcPool } from '../rpc/pool.js';
 
 /**
@@ -78,6 +78,9 @@ export function custodyRefusal(error: unknown): ExecResult | null {
   }
   if (error instanceof NonceOutstandingError) {
     return { status: 409, body: { error: 'nonce_outstanding', nonce: error.nonce } };
+  }
+  if (error instanceof NonceUnresolvedError) {
+    return { status: 503, body: { error: 'nonce_unresolved', nonce: error.nonce, unreachable: error.members } };
   }
   if (error instanceof NonceConflictError) {
     return { status: 409, body: { error: 'nonce_conflict', detail: error.message, retry: 'prepare' } };
@@ -193,7 +196,10 @@ export async function executeAgentTransaction(args: {
         });
       }
       const raw = await account.signTransaction(transaction);
-      if (!broadcast) return { raw, hash: null, error: null };
+      if (!broadcast) {
+        await lease.track(transaction.nonce!, keccak256(raw), null);
+        return { raw, hash: null, error: null };
+      }
       signedTx = raw;
       txHash = keccak256(raw);
       const sent = await broadcastReserved(lease, transaction.nonce!, raw, (r) => sharedRpcPool().sendRawTransactionVia(r));

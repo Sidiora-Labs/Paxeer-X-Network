@@ -31,7 +31,7 @@ import {
   lxSigningPreimage,
 } from '../attestor/client.js';
 import { NonceConflictError, RpcPool, RpcResponseError, sharedRpcPool } from '../rpc/pool.js';
-import { NonceBelowLatestError, NonceStore, broadcastReserved, sharedNonceStore } from '../nonce/store.js';
+import { NonceBelowLatestError, NonceStore, NonceUnresolvedError, broadcastReserved, sharedNonceStore } from '../nonce/store.js';
 import {
   RateLimitedError,
   RateLimiter,
@@ -352,6 +352,9 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       if (err instanceof RouteRefusal) return refuse(err.status, err.code, err.body, err.headers);
       if (err instanceof CustodyAuthorizationError) return refuse(409,err.code,{error:err.code});
       if(err instanceof CustodyAuthorityError) return refuse(503,err.code,{error:err.code,replication_pending:true});
+      if (err instanceof NonceUnresolvedError) {
+        return refuse(503, 'nonce_unresolved', { error: 'nonce_unresolved', nonce: err.nonce, unreachable: err.members });
+      }
       if (err instanceof AttestorError) {
         return refuse(attestorErrorStatus(err), `${err.category}:${err.code}`, attestorErrorBody(err));
       }
@@ -516,8 +519,11 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       async ({ sw, signer }) => {
         const prepared = await prepareTx(signer, tx);
         const { nonce, signed } = await nonces.withLock(sw.row.address, async (lease) => {
-          const nonce = tx.nonce ?? (await lease.next());
-          return { nonce, signed: await signer.signTransaction({ ...prepared, nonce }) };
+          if (tx.nonce !== undefined) return { nonce: tx.nonce, signed: await signer.signTransaction({ ...prepared, nonce: tx.nonce }) };
+          const nonce = await lease.next();
+          const signed = await signer.signTransaction({ ...prepared, nonce });
+          await lease.track(nonce, keccak256(signed.value), null);
+          return { nonce, signed };
         });
         const signatureLog: SignatureLogInput = {
           user_id: userId,

@@ -3,47 +3,43 @@ import { keccak256, type Hex } from 'viem';
 import { env } from '../env.js';
 import { getPool } from '../db/pool.js';
 import { BROADCAST_GRACE_MS } from '../chain.js';
-import { NonceConflictError, TransactionRejectedError, sharedRpcPool, type PooledTransactions } from '../rpc/pool.js';
+import { TransactionRejectedError, sharedRpcPool, type TransactionLookup } from '../rpc/pool.js';
 
 export type PendingCountReader = (address: `0x${string}`) => Promise<number>;
-export type TransactionKnownReader = (hash: `0x${string}`, member: string | null) => Promise<boolean>;
-export type PooledReader = (address: `0x${string}`) => Promise<PooledTransactions | null>;
+export type TransactionLookupReader = (hash: `0x${string}`, member: string | null) => Promise<TransactionLookup>;
 
 /** Outstanding broadcasts at most this far above the chain floor are asked for by hash on every allocation. */
 const RECONCILE_WINDOW = 64;
 
 /**
- * A nonce is outstanding from its reservation until the chain floor (the highest latest count
- * seen) passes it. Every allocation drops outstanding nonces below the floor, asks the node that
- * accepted each broadcast in the reconcile window (every pool member when that is unknown or
- * unreachable) by hash and releases the ones no node knows once they are older than the broadcast
- * grace period, then hands out the lowest nonce at or above the floor that is not outstanding.
- * A nonce held without a hash (signed for the caller to broadcast, or refused by a node as already
- * used) is released after the grace period only when no pool member pools a transaction from the
- * sender at that nonce. The first allocation for a wallet seeds its outstanding nonces from the
- * sender's pooled transactions when the nodes serve txpool_content.
+ * A nonce is outstanding from its reservation until the chain floor (the highest latest count seen)
+ * passes it, and every reservation records the hash of the signed transaction the gateway produced,
+ * including one handed to the caller to broadcast. Every allocation drops outstanding nonces below
+ * the floor and asks every pool member by hash for each one in the reconcile window that is older
+ * than the broadcast grace period: known anywhere keeps it, unknown on every member releases it, and
+ * a member that does not answer leaves it unresolved, which fails the allocation only when the next
+ * nonce depends on it. A wallet's first allocation seeds from latest only.
  */
 export interface NonceLease {
   readonly address: string;
-  /** Reserve the lowest free nonce at or above the floor and record it as outstanding. */
+  /** Reserve the lowest free nonce at or above the floor; it must be tracked or released before the lock ends. */
   next(): Promise<number>;
   /** The nonce next() would hand out, without reserving it. */
   peek(): Promise<number>;
-  /** Free an outstanding nonce whose transaction the node never accepted or that was never broadcast. */
+  /** Free an outstanding nonce whose transaction the node never accepted or that was never signed. */
   release(nonce: number): Promise<void>;
-  /** Record a broadcast at a nonce with its transaction hash and the node that accepted it; a null hash holds it by sender and nonce. */
-  track(nonce: number, txHash: Hex | null, member: string | null): Promise<void>;
+  /** Record the hash of the signed transaction at a nonce and the node that accepted it, if any. */
+  track(nonce: number, txHash: Hex, member: string | null): Promise<void>;
   /** Refuse a caller-chosen nonce below the latest count before anything is signed or broadcast. */
   checkClientNonce(nonce: number): Promise<void>;
-  /** Refuse a caller-chosen nonce below the floor or already outstanding, then record it as outstanding. */
+  /** Refuse a caller-chosen nonce below the floor or already outstanding, then reserve it. */
   reserveClientNonce(nonce: number): Promise<void>;
 }
 
 /**
- * Broadcast a signed transaction at a nonce this lease holds. A node rejection frees the nonce; a
- * nonce conflict (too low, already known, replacement underpriced) keeps it held by sender and nonce
- * and is returned as the typed refusal; an accepted send or any other failure (a timeout) records the
- * hash so the next allocation reconciles it against the pool.
+ * Broadcast a signed transaction at a nonce this lease holds. A node rejection frees the nonce; any
+ * other outcome (accepted, nonce conflict, timeout) records the signed transaction's hash so the
+ * next allocation resolves the nonce by that hash.
  */
 export async function broadcastReserved(
   lease: NonceLease,
@@ -57,7 +53,6 @@ export async function broadcastReserved(
     return { hash, error: null };
   } catch (error) {
     if (error instanceof TransactionRejectedError) await lease.release(nonce);
-    else if (error instanceof NonceConflictError) await lease.track(nonce, null, null);
     else await lease.track(nonce, keccak256(raw), null);
     return { hash: null, error };
   }
@@ -77,12 +72,19 @@ export class NonceOutstandingError extends Error {
   }
 }
 
+/** The next nonce depends on an outstanding one that pool members could not resolve; nothing is released. */
+export class NonceUnresolvedError extends Error {
+  constructor(readonly nonce: number, readonly members: string[]) {
+    super(`nonce ${nonce} cannot be resolved: ${members.join(', ')} did not answer`);
+    this.name = 'NonceUnresolvedError';
+  }
+}
+
 export interface NonceStoreOptions {
   pool: Pool;
   chainId: number;
   pendingCount: PendingCountReader;
-  transactionKnown: TransactionKnownReader;
-  pooledFrom: PooledReader;
+  lookupTransaction: TransactionLookupReader;
 }
 
 export class NonceStore {
@@ -121,8 +123,11 @@ export class NonceStore {
       const custody = await client.query<{ id:string }>(
         "select id from wallet_custody_submissions where address=$1 and chain_id=$2 and state='pending' limit 1",[key,this.opts.chainId]);
       if(custody.rows[0]) throw new Error('wallet nonce is reserved by an unresolved custody submission');
-      const lease = new Lease(client, key, this.opts.pendingCount, this.opts.transactionKnown, this.opts.pooledFrom);
+      const lease = new Lease(client, key, this.opts.pendingCount, this.opts.lookupTransaction);
       const result = await fn(lease);
+      if (lease.untracked.size > 0) {
+        throw new Error(`nonce store: reserved nonce ${[...lease.untracked].join(', ')} was neither tracked with a signed transaction hash nor released`);
+      }
       await client.query('COMMIT');
       return result;
     } catch (err) {
@@ -132,21 +137,18 @@ export class NonceStore {
       client.release();
     }
   }
-
-  async allocate(address: string): Promise<number> {
-    return this.withLock(address, (lease) => lease.next());
-  }
 }
 
 class Lease implements NonceLease {
   readonly address: string;
+  /** Nonces this lease reserved that carry no signed transaction hash yet. */
+  readonly untracked = new Set<number>();
 
   constructor(
     private readonly client: PoolClient,
     address: string,
     private readonly latestCount: PendingCountReader,
-    private readonly transactionKnown: TransactionKnownReader,
-    private readonly pooledFrom: PooledReader,
+    private readonly lookup: TransactionLookupReader,
   ) {
     this.address = address;
   }
@@ -159,54 +161,30 @@ class Lease implements NonceLease {
     return onChain;
   }
 
-  /** Drop what the chain passed, release broadcasts no node knows, return the floor and the lowest free nonce. */
+  /** Drop what the chain passed, release broadcasts no member knows, return the floor and the lowest free nonce. */
   private async resolve(): Promise<{ floor: number; next: number }> {
     const latest = await this.latest();
-    const { rows: seen } = await this.client.query<{ latest_seen: string; outstanding_seeded: boolean }>(
+    const { rows: seen } = await this.client.query<{ latest_seen: string }>(
       `update nonce_allocations set latest_seen = greatest(latest_seen, $2), updated_at = now()
-        where address = $1 returning latest_seen::text as latest_seen, outstanding_seeded`,
+        where address = $1 returning latest_seen::text as latest_seen`,
       [this.address, latest],
     );
     const floor = Number(seen[0]!.latest_seen);
-    if (!seen[0]!.outstanding_seeded) {
-      for (const [nonce, tx] of (await this.pooledFrom(this.address as `0x${string}`)) ?? []) {
-        if (nonce < floor) continue;
-        await this.client.query(
-          `insert into nonce_outstanding (address, nonce, tx_hash, member) values ($1, $2, $3, $4)
-           on conflict (address, nonce) do nothing`,
-          [this.address, nonce, tx.hash, tx.hash === null ? null : tx.member],
-        );
-      }
-      await this.client.query('update nonce_allocations set outstanding_seeded = true where address = $1', [this.address]);
-    }
     await this.client.query('delete from nonce_outstanding where address = $1 and nonce < $2', [this.address, floor]);
-    const { rows: broadcasts } = await this.client.query<{ nonce: string; tx_hash: Hex; member: string | null; aged: boolean }>(
-      `select nonce::text as nonce, tx_hash, member, created_at <= now() - make_interval(secs => $3::double precision / 1000) as aged
+    const { rows: aged } = await this.client.query<{ nonce: string; tx_hash: Hex; member: string | null }>(
+      `select nonce::text as nonce, tx_hash, member
          from nonce_outstanding
-        where address = $1 and tx_hash is not null and nonce <= $2 order by nonce_outstanding.nonce`,
+        where address = $1 and tx_hash is not null and nonce <= $2
+          and created_at <= now() - make_interval(secs => $3::double precision / 1000)
+        order by nonce_outstanding.nonce`,
       [this.address, floor + RECONCILE_WINDOW, BROADCAST_GRACE_MS],
     );
-    for (const row of broadcasts) {
-      if (row.aged && !(await this.transactionKnown(row.tx_hash, row.member))) {
-        await this.client.query('delete from nonce_outstanding where address = $1 and nonce = $2', [this.address, row.nonce]);
-      }
-    }
-    const { rows: held } = await this.client.query<{ nonce: string }>(
-      `select nonce::text as nonce from nonce_outstanding
-        where address = $1 and tx_hash is null and nonce <= $2
-          and created_at <= now() - make_interval(secs => $3::double precision / 1000)`,
-      [this.address, floor + RECONCILE_WINDOW, BROADCAST_GRACE_MS],
-    );
-    if (held.length > 0) {
-      const pooled = await this.pooledFrom(this.address as `0x${string}`);
-      if (pooled === null) {
-        throw new Error('nonce store: no RPC member serves txpool_content, so a held nonce cannot be reconciled');
-      }
-      for (const row of held) {
-        if (!pooled.has(Number(row.nonce))) {
-          await this.client.query('delete from nonce_outstanding where address = $1 and nonce = $2', [this.address, row.nonce]);
-        }
-      }
+    const unresolved: Array<{ nonce: number; members: string[] }> = [];
+    for (const row of aged) {
+      const { known, unreachable } = await this.lookup(row.tx_hash, row.member);
+      if (known) continue;
+      if (unreachable.length > 0) unresolved.push({ nonce: Number(row.nonce), members: unreachable });
+      else await this.client.query('delete from nonce_outstanding where address = $1 and nonce = $2', [this.address, row.nonce]);
     }
     const { rows } = await this.client.query<{ nonce: string }>(
       'select nonce::text as nonce from nonce_outstanding where address = $1 order by nonce_outstanding.nonce',
@@ -218,6 +196,8 @@ class Lease implements NonceLease {
       next += 1;
     }
     if (!Number.isSafeInteger(next)) throw new Error(`nonce store: next nonce ${next} is not a safe integer`);
+    const blocking = unresolved.find((u) => u.nonce < next);
+    if (blocking) throw new NonceUnresolvedError(blocking.nonce, blocking.members);
     return { floor, next };
   }
 
@@ -236,6 +216,7 @@ class Lease implements NonceLease {
   async next(): Promise<number> {
     const { next } = await this.resolve();
     await this.hold(next, null);
+    this.untracked.add(next);
     await this.client.query(
       `update nonce_allocations
           set next_nonce = greatest((select max(nonce) + 1 from nonce_outstanding where address = $1), latest_seen),
@@ -260,13 +241,16 @@ class Lease implements NonceLease {
     );
     if (rows[0]) throw new NonceOutstandingError(nonce);
     await this.hold(nonce, null);
+    this.untracked.add(nonce);
   }
 
-  async track(nonce: number, txHash: Hex | null, member: string | null): Promise<void> {
-    await this.hold(nonce, txHash === null ? null : txHash.toLowerCase(), txHash === null ? null : member);
+  async track(nonce: number, txHash: Hex, member: string | null): Promise<void> {
+    await this.hold(nonce, txHash.toLowerCase(), member);
+    this.untracked.delete(nonce);
   }
 
   async release(nonce: number): Promise<void> {
+    this.untracked.delete(nonce);
     await this.client.query('delete from nonce_outstanding where address = $1 and nonce = $2', [this.address, nonce]);
   }
 }
@@ -280,8 +264,7 @@ export function sharedNonceStore(): NonceStore {
     pool: getPool(),
     chainId: env.HYPERPAXEER_CHAIN_ID,
     pendingCount: (address) => rpc.getTransactionCount(address, 'latest'),
-    transactionKnown: (hash, member) => rpc.transactionKnown(hash, member),
-    pooledFrom: (address) => rpc.pooledFrom(address),
+    lookupTransaction: (hash, member) => rpc.lookupTransaction(hash, member),
   });
   return shared;
 }
