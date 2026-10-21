@@ -37,6 +37,18 @@ export class RpcResponseError extends Error {
   }
 }
 
+/**
+ * A node refused a read at the `pending` block tag with -32000. Nodes serve no
+ * pending block until the sequencer builds one, so this is a definite refusal,
+ * never a reason to fail over or retry.
+ */
+export class PendingReadRefusedError extends RpcResponseError {
+  constructor(message: string, data: unknown) {
+    super(-32000, message, data);
+    this.name = 'PendingReadRefusedError';
+  }
+}
+
 class RpcTransportError extends Error {
   constructor(message: string) {
     super(message);
@@ -188,7 +200,7 @@ export class RpcPool {
     return this.client;
   }
 
-  async getTransactionCount(address: `0x${string}`, blockTag: 'pending' | 'latest' = 'pending'): Promise<number> {
+  async getTransactionCount(address: `0x${string}`, blockTag: 'latest' = 'latest'): Promise<number> {
     const hex = await this.request<string>('eth_getTransactionCount', [address, blockTag]);
     return Number(BigInt(hex));
   }
@@ -242,7 +254,12 @@ export class RpcPool {
     } catch {
       throw new RpcTransportError('non-JSON answer');
     }
-    if (body.error) throw new RpcResponseError(body.error.code, body.error.message, body.error.data);
+    if (body.error) {
+      if (body.error.code === -32000 && params.includes('pending')) {
+        throw new PendingReadRefusedError(body.error.message, body.error.data);
+      }
+      throw new RpcResponseError(body.error.code, body.error.message, body.error.data);
+    }
     if (!('result' in body)) throw new RpcTransportError('answer carries neither result nor error');
     return body.result;
   }

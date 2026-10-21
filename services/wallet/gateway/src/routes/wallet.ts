@@ -320,7 +320,7 @@ export async function walletSponsorRoutes(
       });
       let encoded: Hex;
       try {
-        encoded = await rpc.request<Hex>('eth_call', [{ to: ADDR_PRECOMPILE, data }, 'pending']);
+        encoded = await rpc.request<Hex>('eth_call', [{ to: ADDR_PRECOMPILE, data }, 'latest']);
       } catch (error) {
         if (!(error instanceof RpcResponseError)) throw error;
         const unifiedData = encodeFunctionData({
@@ -330,7 +330,7 @@ export async function walletSponsorRoutes(
         });
         const unifiedEncoded = await rpc.request<Hex>('eth_call', [
           { to: ADDR_PRECOMPILE, data: unifiedData },
-          'pending',
+          'latest',
         ]);
         const unified = decodeFunctionResult({
           abi: addrAbi,

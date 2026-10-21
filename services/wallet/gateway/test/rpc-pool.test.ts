@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import {
+  PendingReadRefusedError,
   RpcPool,
   RpcResponseError,
   RpcUnavailableError,
@@ -43,6 +44,7 @@ function startNode(): Promise<Node> {
         case 'eth_chainId':
           return reply({ result: '0x7d' });
         case 'eth_getTransactionCount':
+          if (body.params[1] === 'pending') return reply({ error: { code: -32000, message: 'pending block is not available' } });
           return reply({ result: '0x9' });
         case 'eth_call':
           if (node.revertCalls) return reply({ error: { code: 3, message: 'execution reverted', data: '0x' } });
@@ -164,6 +166,24 @@ describe('RpcPool', () => {
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(RpcResponseError);
     expect((err as RpcResponseError).code).toBe(3);
+    expect(a.calls.length + b.calls.length).toBe(1);
+    expect(p.healthyCount()).toBe(2);
+  });
+
+  it('reads the nonce at latest and surfaces a -32000 pending refusal as a typed error without failing over', async () => {
+    const p = pool();
+    await p.checkHealth();
+    a.calls = [];
+    b.calls = [];
+    expect(await p.getTransactionCount('0x00000000000000000000000000000000000000b4')).toBe(9);
+    a.calls = [];
+    b.calls = [];
+    const err = await p
+      .request('eth_getTransactionCount', ['0x00000000000000000000000000000000000000b4', 'pending'])
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PendingReadRefusedError);
+    expect(err).toBeInstanceOf(RpcResponseError);
+    expect((err as PendingReadRefusedError).code).toBe(-32000);
     expect(a.calls.length + b.calls.length).toBe(1);
     expect(p.healthyCount()).toBe(2);
   });

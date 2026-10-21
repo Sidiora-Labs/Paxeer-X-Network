@@ -14,7 +14,7 @@ import {
 import { bindCustodyBudgetReservation, getPolicy, listRules, releaseBudget, releaseCustodyBudgetReservation } from '../db/agents.js';
 import { evaluateAgent, type AgentTxIntent } from '../policy/agent.js';
 import { AttestorError, AttestorTokenError, AttestorReauthorizationRequired, attestorErrorBody, attestorErrorStatus } from '../attestor/client.js';
-import { getNonce, getNonceGap, resolveGas } from '../chainReads.js';
+import { getNonce, resolveGas } from '../chainReads.js';
 
 /**
  * Shared agent execution core.
@@ -194,24 +194,7 @@ export async function executeAgentTransaction(args: {
     }
     const refused = custodyRefusal(err);
     if (refused) return refused;
-    // Diagnose the classic silent wedge: an unmined tx in the mempool blocks
-    // every later nonce, so estimation runs against stale latest-state (e.g.
-    // an allowance that "succeeded" but never mined) and reverts forever.
-    // Naming it here turns an opaque send_failed into an actionable error.
-    let detail = (err as Error).message;
-    if (broadcast) {
-      try {
-        const gap = await getNonceGap(wallet.address);
-        if (gap.stuck > 0) {
-          detail +=
-            ` | NONCE GAP: ${gap.stuck} unmined tx(s) in the mempool (latest nonce ${gap.latest}, pending ${gap.pending}).` +
-            ` This wallet is wedged behind an unmined tx at nonce ${gap.latest}: prior broadcasts (e.g. an approve) have NOT taken effect on-chain,` +
-            ` and nothing later can mine until nonce ${gap.latest} is filled or replaced (0-value self-send at that nonce with higher fees).`;
-        }
-      } catch {
-        /* diagnosis is best-effort; never mask the original error */
-      }
-    }
+    const detail = (err as Error).message;
     return {
       status: 502,
       body: { error: broadcast ? 'send_failed' : 'sign_failed', detail,

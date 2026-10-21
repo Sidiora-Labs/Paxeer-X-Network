@@ -147,27 +147,11 @@ export async function getErc20Metadata(token: `0x${string}`): Promise<Erc20Metad
   return { decimals, symbol };
 }
 
-/** Pending nonce for an address (transaction count incl. mempool). */
+/** Nonce for an address at the latest block; nodes serve no pending block. */
 export async function getNonce(address: `0x${string}`): Promise<number> {
-  return publicClient().getTransactionCount({ address, blockTag: 'pending' });
+  return publicClient().getTransactionCount({ address, blockTag: 'latest' });
 }
 
-/**
- * Latest-vs-pending nonce gap for an address. A gap means unmined
- * transactions sit in the mempool; if the oldest of them never mines
- * (underpriced / dropped), EVERY later send from this wallet queues behind it
- * and the wallet is wedged until the gap nonce is filled or replaced.
- */
-export async function getNonceGap(
-  address: `0x${string}`,
-): Promise<{ latest: number; pending: number; stuck: number }> {
-  const pc = publicClient();
-  const [latest, pending] = await Promise.all([
-    pc.getTransactionCount({ address, blockTag: 'latest' }),
-    pc.getTransactionCount({ address, blockTag: 'pending' }),
-  ]);
-  return { latest, pending, stuck: Math.max(0, pending - latest) };
-}
 /** Current gas price (wei). */
 export async function getGasPrice(): Promise<bigint> {
   return publicClient().getGasPrice();

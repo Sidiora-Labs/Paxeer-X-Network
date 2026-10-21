@@ -271,7 +271,7 @@ try {
 
   await control('lose-quorum');
   await new Promise(resolve => setTimeout(resolve, 1500));
-  const currentNonce = await rpc('eth_getTransactionCount', [runtime.account, 'pending'], true);
+  const currentNonce = await rpc('eth_getTransactionCount', [runtime.account, 'latest'], true);
   const unavailableCustody = sdk.encodeCustodyAuthorization({ ...decoded, nonce: BigInt(currentNonce),
     deadline: BigInt(Math.floor(Date.now() / 1000) + 300) });
   const unavailable = await http('/v1/wallet/sign-custody', { custody: unavailableCustody });

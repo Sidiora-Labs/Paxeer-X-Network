@@ -237,6 +237,7 @@ function mintToken(sub: string): Promise<string> {
 let rpcServer: HttpServer;
 let rpcUrl: string;
 const broadcasts: Hex[] = [];
+const nonceTags: string[] = [];
 
 function startRpc(): Promise<void> {
   rpcServer = createHttpServer((req, res) => {
@@ -256,6 +257,8 @@ function startRpc(): Promise<void> {
         case 'eth_estimateGas':
           return reply({ result: '0x5208' });
         case 'eth_getTransactionCount':
+          nonceTags.push(String(body.params[1]));
+          if (body.params[1] === 'pending') return reply({ error: { code: -32000, message: 'pending block is not available' } });
           return reply({ result: `0x${routeInputs.nonce.toString(16)}` });
         case 'eth_sendRawTransaction': {
           const raw = body.params[0] as Hex;
@@ -556,7 +559,7 @@ describe('signing routes', () => {
     const { RpcPool } = await import('../src/rpc/pool.js');
     const { NonceStore } = await import('../src/nonce/store.js');
     rpc = new RpcPool({ urls: [rpcUrl], chainId: 125, lagThresholdBlocks: 20, timeoutMs: 5_000, healthIntervalMs: 60_000 });
-    nonces = new NonceStore({ pool: getPool(), chainId: 125, pendingCount: (a) => rpc.getTransactionCount(a, 'pending') });
+    nonces = new NonceStore({ pool: getPool(), chainId: 125, pendingCount: (a) => rpc.getTransactionCount(a, 'latest') });
     client = newClient();
   });
 
@@ -575,6 +578,7 @@ describe('signing routes', () => {
     await getPool().query('delete from nonce_allocations where address = $1', [walletFixture.address.toLowerCase()]);
     await client.refreshHealth();
     broadcasts.length = 0;
+    nonceTags.length = 0;
   });
 
   it('signs through the attestors for a migrated wallet and the envelope path otherwise, switching on the flag', async () => {
@@ -645,6 +649,7 @@ describe('signing routes', () => {
         [walletFixture.address.toLowerCase()],
       );
       expect(rows[0]?.next_nonce).toBe(String(routeInputs.nonce + 1));
+      expect(nonceTags).toEqual(['latest']);
 
       const typed = await app.inject({
         method: 'POST',
@@ -655,6 +660,35 @@ describe('signing routes', () => {
       expect(typed.statusCode).toBe(200);
       const typedSig = typed.json<{ signature: Hex }>().signature;
       expect(await recoverTypedDataAddress({ ...routeInputs.typed_data, signature: typedSig } as never)).toBe(walletFixture.address);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('reads the authorization nonce at latest and refuses a changed nonce without signing', async () => {
+    const app = await buildApp({ client: 100, account: 100 });
+    try {
+      const user = await provision(true);
+      expectedToken = user.token;
+      const headers = { authorization: `Bearer ${user.token}` };
+      const refused = await app.inject({
+        method: 'POST',
+        url: '/v1/wallet/sign-digest',
+        headers,
+        payload: {
+          construction: {
+            kind: 'eip7702_authorization',
+            chainId: '125',
+            address: walletFixture.address,
+            nonce: String(routeInputs.nonce + 1),
+          },
+        },
+      });
+      expect(refused.statusCode).toBe(409);
+      expect(refused.json<{ error: string }>().error).toBe('authorization_nonce_changed');
+      expect(nonceTags).toEqual(['latest']);
+      expect(attestorNodes.every((n) => n.received.length === 0)).toBe(true);
+      expect(broadcasts).toEqual([]);
     } finally {
       await app.close();
     }

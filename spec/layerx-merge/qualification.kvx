@@ -2247,3 +2247,10 @@ command = "grep -rn 'SetOpenBlock\|SetPendingSnapshot\|sequencer.NewExecutor' no
 exit_code = 0
 log_path = "node/app.go"
 observed_and_assumption = "Pending is the sequencer open block L_open (req ac_2, contracts/K3-SEQUENCER-CONTRACT.md (b2)) and only the sequencer and standby serve it, every other node answers -32000 by design; no node builds the executor because that wiring is task 9.1.2, pending behind 9.0.15, so pending reads stay refused until 9.1.2 lands and serving the consensus deliver state as pending would invent a semantic the design rejects."
+
+[finding.wallet.gateway-suite-baseline-red]
+revision = "f53714202"
+command = "corepack pnpm@9.15.9 -C services/wallet --filter @paxeer/api test"
+exit_code = 1
+log_path = "logs/wallet-gateway-baseline.log"
+observed_and_assumption = "On an unmodified checkout the gateway suite has 12 failing tests in 7 files, the same set after the latest-read change: attestor, custody authorization and agent signing paths stop at the custody inventory guard because WALLET_CUSTODY_INVENTORY_FILE, its public key file and WALLET_IDENTITY_BINDING_TENANT are unset and no workflow, setup file or fixture supplies a signed inventory, plus the rpc pool sixteen public host default and the backfill, provisioning and e2e files failing to load; assumed test drift since the inventory guard was enforced, left as written for a harness task that mints a signed inventory and serves authority acks from the mock attestors."

@@ -52,7 +52,7 @@ function startRpc(): Promise<void> {
 
 function makeStore(): InstanceType<StoreModule['NonceStore']> {
   const rpc = new poolMod.RpcPool({ urls: [rpcUrl], chainId: 125, lagThresholdBlocks: 20, timeoutMs: 5_000, healthIntervalMs: 60_000 });
-  return new storeMod.NonceStore({ pool, chainId: 125, pendingCount: (a) => rpc.getTransactionCount(a, 'pending') });
+  return new storeMod.NonceStore({ pool, chainId: 125, pendingCount: (a) => rpc.getTransactionCount(a, 'latest') });
 }
 
 interface WorkerResult {

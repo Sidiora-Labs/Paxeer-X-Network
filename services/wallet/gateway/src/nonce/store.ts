@@ -139,7 +139,7 @@ export function sharedNonceStore(): NonceStore {
   shared = new NonceStore({
     pool: getPool(),
     chainId: env.HYPERPAXEER_CHAIN_ID,
-    pendingCount: (address) => rpc.getTransactionCount(address, 'pending'),
+    pendingCount: (address) => rpc.getTransactionCount(address, 'latest'),
   });
   return shared;
 }

@@ -15,7 +15,7 @@ async function main(): Promise<void> {
   const store = new NonceStore({
     pool,
     chainId: 125,
-    pendingCount: (a) => rpc.getTransactionCount(a, 'pending'),
+    pendingCount: (a) => rpc.getTransactionCount(a, 'latest'),
   });
   await new Promise<void>((resolve) => {
     process.once('message', () => resolve());

@@ -236,7 +236,7 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
     if(row&&(row.user_id!==req.user!.id||row.wallet_id!==sw.row.id||row.custody!==bytes||row.signature!==signature)) throw new RouteRefusal(409,'custody_identity_conflict',{error:'custody_identity_conflict'});
     if(!row){
       readConsent(bytes,sw.row.address,sw.row.chain_id);
-      if(await rpc.getTransactionCount(sw.row.address as Hex,'pending')!==actual.nonce) throw new RouteRefusal(409,'custody_nonce_changed',{error:'custody_nonce_changed'});
+      if(await rpc.getTransactionCount(sw.row.address as Hex,'latest')!==actual.nonce) throw new RouteRefusal(409,'custody_nonce_changed',{error:'custody_nonce_changed'});
       await rpc.simulate({from:sw.row.address as Hex,to:actual.to,data:actual.data,value:actual.value});
       const unsigned=unsignedTransactionBytes(actual);
       const signed=await signConstruction(sw,req,{kind:'evm_tx',transaction:unsigned,custody:{bytes,signature}},keccak256(serializeTransaction(actual)));
@@ -465,7 +465,7 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       const consent=readConsent(bytes,sw.row.address,sw.row.chain_id,true);await custodyBeneficiary(client,sw,consent.beneficiary);
       const prior=await readCustodyAuthorization(client,identity);if(prior)return custodyCompleted(sw,prior);
       readConsent(bytes,sw.row.address,sw.row.chain_id);
-      if(await rpc.getTransactionCount(sw.row.address as Hex,'pending')!==consent.transaction.nonce) throw new RouteRefusal(409,'custody_nonce_changed',{error:'custody_nonce_changed'});
+      if(await rpc.getTransactionCount(sw.row.address as Hex,'latest')!==consent.transaction.nonce) throw new RouteRefusal(409,'custody_nonce_changed',{error:'custody_nonce_changed'});
       const retained=await retainCustodyAuthorization(client,identity);if(!retained.attempt)return custodyCompleted(sw,retained.record);
       await client.query('COMMIT');
       await client.query('BEGIN');
@@ -477,7 +477,7 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       if(!pending||pending.state!=='signing_unknown')throw new RouteRefusal(409,'custody_authorization_state_changed',{error:'custody_authorization_state_changed'});
       readConsent(bytes,current.row.address,current.row.chain_id);
       await custodyBeneficiary(client,current,consent.beneficiary);
-      if(await rpc.getTransactionCount(current.row.address as Hex,'pending')!==consent.transaction.nonce)throw new RouteRefusal(409,'custody_nonce_changed',{error:'custody_nonce_changed'});
+      if(await rpc.getTransactionCount(current.row.address as Hex,'latest')!==consent.transaction.nonce)throw new RouteRefusal(409,'custody_nonce_changed',{error:'custody_nonce_changed'});
       const signed=await signConstruction(current,req,{kind:'custody',message:bytes},hashMessage({raw:bytes}));
       const complete=await completeCustodyAuthorization(client,revalidated,signed.signature,signed.result);
       return custodyCompleted(current,complete);
@@ -490,10 +490,10 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       if(BigInt(c.chainId)!==BigInt(sw.row.chain_id)||sw.row.chain_id!==env.HYPERPAXEER_CHAIN_ID) throw new RouteRefusal(403,'chain_mismatch',{error:'chain_mismatch'});
       if(c.kind==='sponsored_batch'){
         if(c.account.toLowerCase()!==sw.row.address.toLowerCase()||BigInt(c.quote.deadline)<=BigInt(Math.floor(Date.now()/1000))||BigInt(c.quote.tokenAmount)>BigInt(c.quote.maxTokenAmount)) throw new RouteRefusal(403,'consent_mismatch',{error:'consent_mismatch'});
-      }else if(BigInt(c.nonce)!==BigInt(await rpc.getTransactionCount(sw.row.address as Hex,'pending'))) throw new RouteRefusal(409,'authorization_nonce_changed',{error:'authorization_nonce_changed'});
+      }else if(BigInt(c.nonce)!==BigInt(await rpc.getTransactionCount(sw.row.address as Hex,'latest'))) throw new RouteRefusal(409,'authorization_nonce_changed',{error:'authorization_nonce_changed'});
       const digest=constructionDigest(c);const signed=await signConstruction(sw,req,{kind:'eth_sign_digest',digest,construction:c},digest);
       if(c.kind==='sponsored_batch'&&BigInt(c.quote.deadline)<=BigInt(Math.floor(Date.now()/1000)))throw new RouteRefusal(403,'consent_expired',{error:'consent_expired'});
-      if(c.kind==='eip7702_authorization'&&BigInt(c.nonce)!==BigInt(await rpc.getTransactionCount(sw.row.address as Hex,'pending')))throw new RouteRefusal(409,'authorization_nonce_changed',{error:'authorization_nonce_changed'});
+      if(c.kind==='eip7702_authorization'&&BigInt(c.nonce)!==BigInt(await rpc.getTransactionCount(sw.row.address as Hex,'latest')))throw new RouteRefusal(409,'authorization_nonce_changed',{error:'authorization_nonce_changed'});
       return {status:200,body:{signature:signed.signature,address:sw.row.address},decision:'signed',path:'attestor',account:sw.row.address,walletId:sw.row.id,attestor:signed.result,txHash:null,nonce:null,reasonCode:null};
     });
   });
@@ -515,7 +515,7 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       valueWei,
       async ({ sw, signer }) => {
         const prepared = await prepareTx(signer, tx);
-        const nonce = tx.nonce ?? (await rpc.getTransactionCount(signer.address, 'pending'));
+        const nonce = tx.nonce ?? (await rpc.getTransactionCount(signer.address, 'latest'));
         const signed = await signer.signTransaction({ ...prepared, nonce });
         const signatureLog: SignatureLogInput = {
           user_id: userId,
