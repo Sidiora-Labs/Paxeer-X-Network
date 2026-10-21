@@ -86,12 +86,14 @@ export function parseMarketProxyOrigin(raw: string | undefined): string {
 // A set but malformed value refuses to load the route at all.
 if (process.env.MARKET_PROXY_ORIGIN) parseMarketProxyOrigin(process.env.MARKET_PROXY_ORIGIN);
 
-function upstreamOrigin(): string | null {
+function upstreamOrigin(): { origin: string } | { reason: string } {
   try {
-    return parseMarketProxyOrigin(process.env.MARKET_PROXY_ORIGIN);
+    return { origin: parseMarketProxyOrigin(process.env.MARKET_PROXY_ORIGIN) };
   } catch (err) {
-    console.error("[candle proxy]", err instanceof Error ? err.message : String(err));
-    return null;
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[candle proxy]", message);
+    // The reason without the configured value, which stays in the server log.
+    return { reason: message.split(":")[0] };
   }
 }
 
@@ -144,8 +146,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const origin = upstreamOrigin();
-  if (!origin) return res.status(503).json({ error: "MARKET_PROXY_ORIGIN is not configured" });
+  const proxyOrigin = upstreamOrigin();
+  if (!("origin" in proxyOrigin)) {
+    res.setHeader("X-Config-Error", proxyOrigin.reason);
+    return res.status(503).json({ error: "MARKET_PROXY_ORIGIN is not configured" });
+  }
+  const origin = proxyOrigin.origin;
 
   const ip = clientIp(req);
   if (!checkRateLimit(ip)) {

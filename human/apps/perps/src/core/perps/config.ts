@@ -129,9 +129,13 @@ export const MARKET_LOGO_FILES: Readonly<Record<string, string>> = Object.freeze
   aster: "aster.png", trump: "trump.png", bnb: "bnb.png", usdl: "usdl.jpg",
 });
 
+export const MARKET_LOGO_SYMBOLS: ReadonlySet<string> = new Set(Object.keys(MARKET_LOGO_FILES));
+
+export const MARKET_LOGO_PLACEHOLDER = "/market-logos/generic.svg";
+
 export function coinLogoUrl(symbol: string): string {
   const key = symbol.toLowerCase();
-  return `/market-logos/${MARKET_LOGO_FILES[key] ?? `${key}.png`}`;
+  return MARKET_LOGO_SYMBOLS.has(key) ? `/market-logos/${MARKET_LOGO_FILES[key]}` : MARKET_LOGO_PLACEHOLDER;
 }
 
 // ── ERC20 ABI (minimal for approve/allowance/balanceOf) ──────────────

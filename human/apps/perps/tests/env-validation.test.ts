@@ -95,3 +95,22 @@ test('no src file references raw.githubusercontent.com and the dead streaming sh
   }
   assert.equal(existsSync(path.join(ROOT, 'src/utils/streaming.js')), false);
 });
+
+function runRegister(env: Record<string, string>) {
+  const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env };
+  delete childEnv.NODE_TEST_CONTEXT;
+  return spawnSync(process.execPath, ['--import', 'tsx', '-e', `import('./src/instrumentation.ts').then((m) => (m.default ?? m).register())`], {
+    cwd: ROOT, env: childEnv, encoding: 'utf8',
+  });
+}
+
+test('instrumentation register() fails the boot on a malformed MARKET_PROXY_ORIGIN naming the variable', () => {
+  const child = runRegister({ MARKET_PROXY_ORIGIN: 'https://perps.example.com/' });
+  assert.notEqual(child.status, 0);
+  assert.match(`${child.stdout}${child.stderr}`, /MARKET_PROXY_ORIGIN must be a bare origin/);
+});
+
+test('instrumentation register() returns against a valid env', () => {
+  const child = runRegister({ MARKET_PROXY_ORIGIN: 'https://perps.example.com', NEXT_PUBLIC_STATUS_PAGE_URL: 'https://status.example.com' });
+  assert.equal(child.status, 0, `${child.stdout}${child.stderr}`);
+});
