@@ -456,6 +456,7 @@ The fixed routes /api/markets/health, /api/markets/open-interest, /api/markets/t
 
 The record has 23 fields: symbol, symbol_full, price, change_24h, volume_24h, open_interest, funding_8h, last_funding_rate_hourly, volume_7d, volume_30d, trades_count, last_updated and the eleven perp_ fields of the application data protocol (perp_mark_price, perp_index_price, perp_basis_bps, perp_next_funding_ms and the others listed there).
 
+- change_24h = (last_price − open_24h) / open_24h of perps.market_stats_rolling: last_price the price of the market's latest fill, open_24h the price of its first fill in the 24 hours before the latest fill-touching block, null when open_24h is null or 0.
 - funding_8h = 8 × the hourly rate of the latest FundingRateUpdated.
 - last_funding_rate_hourly = the hourly rate of the latest FundingSettled as an exact decimal string (as in the ticker of section 24), null before the first FundingSettled.
 - perp_next_funding_ms = the next whole UTC hour in milliseconds.

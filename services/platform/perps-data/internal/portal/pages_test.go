@@ -135,7 +135,8 @@ ON CONFLICT (name) DO UPDATE SET height = EXCLUDED.height, hash = EXCLUDED.hash,
 // position 1, trader B's short position 2, and in its EndBlock the 50000 mark,
 // the funding rate and the funding applied to position 1. Block 101, 2 hours
 // ago, carries trader A's resting limit order 8 and in its EndBlock the 51000
-// mark and the liquidation of position 2 at a 100 USD loss. Block 102, a
+// mark and the liquidation of position 2 at a 100 USD loss through a 500 USD
+// buy fill at 51000, the last BTC fill. Block 102, a
 // minute ago, is empty. The leaderboard is rebuilt as of now.
 func seedPages(t *testing.T, db *sql.DB, now time.Time) (b100, b101, b102 time.Time) {
 	t.Helper()
@@ -195,6 +196,9 @@ func seedPages(t *testing.T, db *sql.DB, now time.Time) (b100, b101, b102 time.T
 	f = two.fact(1, true, "mark", decode.PerpsAddress)
 	two.add("MarkPriceUpdated", map[string]any{"marketId": "0"}, decode.MarkPriceUpdatedRow{Fact: f, MarketID: "0", MarkPrice: pPx51000,
 		IndexPrice: pPx51000, MidPrice: pPx51000})
+	f = two.fact(1, true, "fill", pageTraderB)
+	two.add("Fill", map[string]any{"takerOrderId": "0"}, decode.FillRow{Fact: f, MarketID: "0", MakerOrderID: "0", TakerOrderID: "0",
+		Maker: decode.PerpsAddress, Taker: pageTraderB, TakerIsLong: true, Price: pPx51000, SizeUSD: pUSD500, MakerFeeUSD: "0", TakerFeeUSD: "0"})
 	f = two.fact(1, true, "closed", pageTraderB)
 	two.add("PositionClosed", map[string]any{"positionId": "2"}, decode.PositionClosedRow{Fact: f, PositionID: "2", User: pageTraderB, MarketID: "0",
 		ClosedSizeUSD: pUSD500, ExitPrice: pPx51000, RealizedPnl: pLoss, IsFullClose: true})
@@ -307,13 +311,14 @@ func TestPortalPages(t *testing.T) {
 		markets := section(body, "markets")
 		row := markets[strings.Index(markets, `<tr><td><a href="/markets/btc">BTC</a></td>`):]
 		row = row[:strings.Index(row, "</tr>")]
-		// price and mark 51000, change 0.02, volume 1000, open interest 0,
-		// funding 8h 1e9 x 28800 / 1e18, one fill.
-		contains(t, "BTC row", row, "<td>51000</td><td>51000</td><td>0.02</td><td>1000</td><td>0</td><td>0.0000288</td><td>1</td>")
+		// price and mark 51000, change (51000 - 50000) / 50000 = 0.02 from
+		// the first to the last fill, volume 1000 + 500 = 1500, open interest
+		// 0, funding 8h 1e9 x 28800 / 1e18, two fills.
+		contains(t, "BTC row", row, "<td>51000</td><td>51000</td><td>0.02</td><td>1500</td><td>0</td><td>0.0000288</td><td>2</td>")
 		contains(t, "markets", markets, `<a href="/markets/eth">ETH</a>`)
 		contains(t, "totals", section(body, "totals"),
-			"<tr><th>Trades</th><td>1</td></tr>", "<tr><th>Volume 24h (USD)</th><td>1000</td></tr>",
-			"<tr><th>Volume 7d (USD)</th><td>1000</td></tr>", "<tr><th>Volume 30d (USD)</th><td>1000</td></tr>",
+			"<tr><th>Trades</th><td>2</td></tr>", "<tr><th>Volume 24h (USD)</th><td>1500</td></tr>",
+			"<tr><th>Volume 7d (USD)</th><td>1500</td></tr>", "<tr><th>Volume 30d (USD)</th><td>1500</td></tr>",
 			"<tr><th>Open interest (USD)</th><td>0</td></tr>")
 		if strings.Contains(body, explorerBase) {
 			t.Errorf("home page links a transaction although no market row carries one")
@@ -328,8 +333,8 @@ func TestPortalPages(t *testing.T) {
 		body := page(t, portal.URL+"/markets/btc")
 		contains(t, "record", section(body, "record"), "<tr><th>Symbol</th><td>BTC</td></tr>",
 			"<tr><th>Mark price</th><td>51000</td></tr>", "<tr><th>Index price</th><td>51000</td></tr>",
-			"<tr><th>Volume 24h (USD)</th><td>1000</td></tr>", "<tr><th>Last settled funding 1h</th><td>-</td></tr>",
-			"<tr><th>Trades</th><td>1</td></tr>")
+			"<tr><th>Volume 24h (USD)</th><td>1500</td></tr>", "<tr><th>Last settled funding 1h</th><td>-</td></tr>",
+			"<tr><th>Trades</th><td>2</td></tr>")
 		fill := fmt.Sprintf("<tr><td>100-3</td><td>BUY</td><td>50000</td><td>0.02</td><td>1000</td><td>no</td><td>%s</td></tr>",
 			b100.UTC().Format(time.RFC3339))
 		contains(t, "fills", section(body, "fills"), fill)
@@ -337,10 +342,11 @@ func TestPortalPages(t *testing.T) {
 			b100.UTC().Format(time.RFC3339), explorerLink(100, 2)))
 		snapshots := section(body, "snapshots")
 		// The hour a minute ago or earlier follows the 51000 mark of block
-		// 101; the hour after block 100 follows its 50000 mark; both see the
-		// 1000 USD fill in their 24 hours.
+		// 101 and sees both fills, 1000 + 500 USD, in its 24 hours; the hour
+		// after block 100 follows its 50000 mark and sees only the 1000 USD
+		// fill.
 		contains(t, "snapshots", snapshots,
-			"<tr><td>"+hour(b102)+"</td><td>51000</td><td>51000</td><td>1000</td></tr>",
+			"<tr><td>"+hour(b102)+"</td><td>51000</td><td>51000</td><td>1500</td></tr>",
 			"<tr><td>"+hour(b100.Add(time.Hour))+"</td><td>50000</td><td>50000</td><td>1000</td></tr>")
 		if eight := hour(now.Add(-8 * 24 * time.Hour)); strings.Contains(snapshots, "<tr><td>"+eight+"</td>") {
 			t.Errorf("snapshots show hour %s, older than 7 days", eight)
@@ -415,8 +421,8 @@ func TestPortalPages(t *testing.T) {
 		body := page(t, portal.URL+"/stats")
 		contains(t, "global", section(body, "global"), fmt.Sprintf("<tr><th>Markets</th><td>%d</td></tr>", markets),
 			"<tr><th>Positions</th><td>3</td></tr>", "<tr><th>Open positions</th><td>1</td></tr>",
-			"<tr><th>Trades</th><td>1</td></tr>", "<tr><th>Liquidations</th><td>1</td></tr>",
-			"<tr><th>Volume (USD)</th><td>1000</td></tr>", "<tr><th>Traders</th><td>3</td></tr>")
+			"<tr><th>Trades</th><td>2</td></tr>", "<tr><th>Liquidations</th><td>1</td></tr>",
+			"<tr><th>Volume (USD)</th><td>1500</td></tr>", "<tr><th>Traders</th><td>3</td></tr>")
 		contains(t, "protocol snapshots", section(body, "protocol-snapshots"),
 			fmt.Sprintf("<tr><td>%s</td><td>102</td><td>3</td><td>1</td><td>%d</td><td>0</td><td>0</td></tr>", hour(b102), markets))
 		contains(t, "indexer", section(body, "indexer"), "<tr><th>Last indexed block</th><td>102</td></tr>",

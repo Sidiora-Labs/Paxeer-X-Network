@@ -2627,4 +2627,12 @@ command = "GOFLAGS=-p=1 go test -count=1 ./internal/portal/ -run 'TestPortalPage
 exit = 1
 log = "PD-F17-portal-base.log"
 observed = "pages_test.go:312 expects the BTC home row change_24h 0.02 but the page renders 0 on the unchanged base revision, so the failure predates the funding rename."
-assumption = "The change_24h fixture or query is reconciled by its owner; the assertion stays unchanged."
+assumption = "Superseded by finding.portal-change24h-ruling."
+
+[finding.portal-change24h-ruling]
+revision = "01c64347e"
+command = "GOFLAGS=-p=1 go test -count=1 -timeout 30m ./internal/portal/... ./internal/records/... (services/platform/perps-data, throwaway database)"
+exit = 0
+log = "PD-F19-verify.log"
+observed = "pages_test.go asserted the superseded index-based change_24h ((index - open_24h) / open_24h); the ruled definition is last fill against the window's first fill, which its single-fill seed made 0."
+assumption = "The seed was extended with a 500 USD liquidation buy fill at 51000 in block 101, so the BTC row still asserts 0.02 and the trades and volume cells became 2 and 1500."
