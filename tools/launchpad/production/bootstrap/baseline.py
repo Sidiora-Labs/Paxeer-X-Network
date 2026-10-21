@@ -20,8 +20,14 @@ def sha(path):
             h.update(block)
     return h.hexdigest()
 
+LAUNCHPAD_HOMES = ('launchpad', 'apps/launchpad', 'services/launchpad', 'sdk/launchpad', 'contracts/launchpad', 'deploy/launchpad', 'tools/launchpad')
+
 def source_files(root, evidence):
-    for directory, children, files in os.walk(root, followlinks=False):
+    for home in LAUNCHPAD_HOMES:
+        yield from home_files(root / home, evidence)
+
+def home_files(base, evidence):
+    for directory, children, files in os.walk(base, followlinks=False):
         children[:] = sorted(x for x in children if x not in SKIP and not Path(directory, x).is_symlink() and Path(directory, x).resolve() != evidence)
         for name in sorted(files):
             path = Path(directory, name)
@@ -52,8 +58,8 @@ def main():
     if not os.environ.get('QUALIFICATION_EVIDENCE_DIR'):
         print('QUALIFICATION_EVIDENCE_DIR is required', file=sys.stderr)
         return 2
-    root = Path(os.environ.get('QUALIFICATION_SOURCE_ROOT', os.getcwd())).resolve()
-    contracts = Path(os.environ.get('QUALIFICATION_CONTRACT_ROOT', root.parent / 'contracts')).resolve()
+    root = Path(os.environ.get('QUALIFICATION_SOURCE_ROOT', Path(__file__).resolve().parents[4])).resolve()
+    contracts = Path(os.environ.get('QUALIFICATION_CONTRACT_ROOT', root / 'contracts/launchpad')).resolve()
     evidence = Path(os.environ['QUALIFICATION_EVIDENCE_DIR']).resolve()
     evidence.mkdir(parents=True, exist_ok=True)
     report = {'schema_version': 1, 'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'source_root': str(root), 'contract_root': str(contracts), 'required_versions': PINNED, 'commands': [], 'failures': [], 'manifest_files': [], 'go_modules': [], 'npm_packages': [], 'license_boundary': 'Source evidence only; missing or unclassified license sources remain explicit. No legal approval asserted.'}
@@ -77,24 +83,24 @@ def main():
             fail('Command failed: ' + ' '.join(argv))
         return code, stdout
     actual_pins = {}
-    pin_file = root / 'tools/production/bootstrap/toolchain/versions.txt'
+    pin_file = root / 'tools/launchpad/production/bootstrap/toolchain/versions.txt'
     try:
         actual_pins = read_pins(pin_file)
         report['declared_versions'] = actual_pins
         for key, expected in PINNED.items():
             if actual_pins.get(key) != expected:
-                fail('tools/production/bootstrap/toolchain/versions.txt mismatch for ' + key)
+                fail('tools/launchpad/production/bootstrap/toolchain/versions.txt mismatch for ' + key)
     except (OSError, ValueError) as exc:
         fail('Required tools/production/bootstrap/toolchain/versions.txt unavailable/invalid: ' + str(exc))
     checks = {'python': ['python3', '--version'], 'go': ['go', 'version'], 'node': ['node', '--version'], 'pnpm': ['pnpm', '--version']}
-    tsc = root / 'client/apps/web/node_modules/typescript/bin/tsc'
+    tsc = root / 'apps/launchpad/web/node_modules/typescript/bin/tsc'
     checks['typescript'] = ['node', str(tsc), '--version']
     for key, argv in checks.items():
         code, output = run(argv, timeout=20)
         match = re.search(r'(?<![\d.])(?:go|v|Version )?(\d+\.\d+\.\d+)(?![\d.])', output)
         if code or not match or match.group(1) != (actual_pins.get('python', actual_pins.get('python3')) if key == 'python' else PINNED[key]):
             fail('Installed tool version mismatch: ' + key)
-    lock = root / 'client/pnpm-lock.yaml'
+    lock = root / 'apps/launchpad/pnpm-lock.yaml'
     locked_packages = set()
     try:
         text = lock.read_text()
@@ -103,7 +109,7 @@ def main():
             fail('pnpm lockfileVersion is not 9.0')
         if not re.search(r'^  [\'\"]?typescript@5\.9\.3[:\'\"]', text, re.M):
             fail('TypeScript 5.9.3 absent from lock packages')
-        package = json.loads((root / 'client/package.json').read_text())
+        package = json.loads((root / 'apps/launchpad/package.json').read_text())
         if package.get('packageManager') != 'pnpm@' + PINNED['pnpm']:
             fail('client packageManager does not match pinned pnpm')
     except (OSError, ValueError) as exc:
@@ -154,7 +160,7 @@ def main():
                     fail('Unresolved npm workspace package ' + name + ' in ' + str(path))
                 if version.startswith(('file:', 'link:')) and not (path.parent / version.split(':', 1)[1]).exists():
                     fail('Unresolved npm local dependency ' + name + ' in ' + str(path))
-    packages = root / 'client/node_modules/.pnpm'
+    packages = root / 'apps/launchpad/node_modules/.pnpm'
     if not packages.is_dir():
         fail('Resolved pnpm store unavailable')
     else:
@@ -177,7 +183,7 @@ def main():
                         fail('Unreadable installed package: ' + str(exc))
         if not report['npm_packages']:
             fail('No real installed npm package manifests found')
-    abi = root / 'protocol/bootstrap/abi_baseline.py'
+    abi = root / 'sdk/launchpad/protocol/bootstrap/abi_baseline.py'
     if not abi.is_file():
         fail('ABI baseline helper missing: ' + str(abi))
     elif not contracts.is_dir():

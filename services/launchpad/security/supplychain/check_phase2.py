@@ -131,7 +131,7 @@ def prepare(config, root, output):
     expected = config['controller']['expected']
     require(builds['source'] == expected['source'] and builds['binary_sha256'] == config['controller']['approved_binary_sha256'], 'paired build source mismatch')
     now = int(time.time())
-    sbom = generate(config['sbom'], expected['image'], pathlib.Path(root) / 'launchpad/client', output / 'sbom')
+    sbom = generate(config['sbom'], expected['image'], pathlib.Path(root) / 'apps/launchpad', output / 'sbom')
     documents = []
     for artifact in sbom['artifacts']:
         document, _ = read_document(artifact['path'], artifact['sha256'])

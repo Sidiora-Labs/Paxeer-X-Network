@@ -176,7 +176,7 @@ def validate_registry(registry, task_id, root):
         if not isinstance(argv, list) or not argv or not all(isinstance(part, str) and part and '\x00' not in part for part in argv):
             raise QualificationError(f'{check_id}: argv must be a nonempty string array')
         if task_id == '0.3':
-            if kind != 'dispatcher' or target != 'scheduler-harness' or check.get('evidence_format') != 'dispatcher-json' or argv != ['python3', 'tools/production/dispatcher/qualification.py', '--spec', 'spec/production-system/spec.kvx', '--plan', 'spec/production-system/execution-plan.json', '--state-dir', '{evidence_dir}/dispatcher-state', '--evidence-dir', '{evidence_dir}/dispatcher', '--case', 'all']:
+            if kind != 'dispatcher' or target != 'scheduler-harness' or check.get('evidence_format') != 'dispatcher-json' or argv != ['python3', 'tools/launchpad/production/dispatcher/qualification.py', '--spec', 'launchpad/spec/production-system/spec.kvx', '--plan', 'launchpad/spec/production-system/execution-plan.json', '--state-dir', '{evidence_dir}/dispatcher-state', '--evidence-dir', '{evidence_dir}/dispatcher', '--case', 'all']:
                 raise QualificationError('task0.3 requires the actual registered full dispatcher harness')
             if not (root / argv[1]).is_file():
                 raise QualificationError('dispatcher qualification checker is absent')
@@ -197,19 +197,19 @@ def validate_registry(registry, task_id, root):
         coverage[kind].add(target)
         covers = check.get('covers', {})
         if covers:
-            permitted = (task_id == '0.2' and kind == 'fixture' and target == 'postgres-privileges' and argv[:2] == ['python3', 'tools/production/interfaces/persistence_check.py'] and covers == {'baseline': ['migration-ownership']})
+            permitted = (task_id == '0.2' and kind == 'fixture' and target == 'postgres-privileges' and argv[:2] == ['python3', 'tools/launchpad/production/interfaces/persistence_check.py'] and covers == {'baseline': ['migration-ownership']})
             if not permitted:
                 raise QualificationError(f'{check_id}: unapproved multi-obligation checker mapping')
             coverage['baseline'].add('migration-ownership')
         normalized.append({**check, 'cwd': cwd, 'timeout_seconds': timeout, 'env': env})
     required_targets = {kind: set(targets) for kind, targets in policy.items()}
-    package_root = root / 'client/packages'
+    package_root = root / 'sdk/launchpad/packages'
     if task_id == '0.1' and package_root.is_dir():
         required_targets['build'].add('client/packages')
         for manifest in package_root.glob('*/package.json'):
             package = json.loads(manifest.read_text())
             if package.get('scripts', {}).get('test'):
-                required_targets['test'].add(manifest.parent.relative_to(root).as_posix())
+                required_targets['test'].add('client/packages/' + manifest.parent.name)
     for kind, targets in required_targets.items():
         missing = targets - coverage[kind]
         if missing:
@@ -341,7 +341,7 @@ def expand_tokens(value, root, evidence, contract_root, started_at=None):
 
 def execute_check(check, root, evidence, contract_root=None, control=None):
     control = control or ExecutionControl()
-    contract_root = contract_root or root.parent / 'contracts/launchpad'
+    contract_root = contract_root or root / 'contracts/launchpad'
     check = {**check, 'argv': [expand_tokens(value, root, evidence, contract_root, control.started_at) for value in check['argv']],
              'env': {key: expand_tokens(value, root, evidence, contract_root, control.started_at) for key, value in check['env'].items()}}
     log = evidence / f'{check["id"]}.log'
@@ -508,11 +508,11 @@ def qualify_accepted_candidate(entry, task_id, task, spec, root, evidence):
     check_registry = json.loads(registry_file.read_text())
     if check_registry.get(task_id) != checks:
         raise QualificationError('current coordinator check registry differs from reviewed policy')
-    sys.path.insert(0, str(root / 'tools/production'))
+    sys.path.insert(0, str(root / 'tools/launchpad/production'))
     try:
         acceptance = importlib.import_module('dispatcher.acceptance')
         graph_module = importlib.import_module('dispatcher.graph')
-        graph = graph_module.Graph(root / 'spec/production-system/spec.kvx', root / 'spec/production-system/execution-plan.json')
+        graph = graph_module.Graph(root / 'launchpad/spec/production-system/spec.kvx', root / 'launchpad/spec/production-system/execution-plan.json')
         if graph.layout_digest != policy['layout_sha256']:
             raise QualificationError('current task layout differs from reviewed policy')
         store_module = importlib.import_module('dispatcher.store')
@@ -550,11 +550,11 @@ def qualify_accepted_candidate(entry, task_id, task, spec, root, evidence):
 
 def run(args, control=None):
     control = control or ExecutionControl()
-    root = Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[3]
     spec_path = (root / args.spec).resolve() if not args.spec.is_absolute() else args.spec.resolve()
     registry_path = (root / args.registry).resolve() if not args.registry.is_absolute() else args.registry.resolve()
     evidence_base = (root / args.evidence_dir).resolve() if not args.evidence_dir.is_absolute() else args.evidence_dir.resolve()
-    if not evidence_base.is_relative_to(root / 'evidence'):
+    if not evidence_base.is_relative_to(root / 'launchpad/evidence'):
         raise QualificationError('evidence directory must be inside source-root/evidence')
     if not re.fullmatch(r'\d+(?:\.\d+)+', args.task):
         raise QualificationError('task must be a numeric dotted identifier')
@@ -585,8 +585,8 @@ def run(args, control=None):
         registry_bytes = registry_path.read_bytes()
         registry = json.loads(registry_bytes)
         if args.task not in IMPLEMENTED_TASKS:
-            trusted_registry = root / 'tools/production/bootstrap/check-registry.json'
-            if registry_path != trusted_registry or spec_path != root / 'spec/production-system/spec.kvx':
+            trusted_registry = root / 'tools/launchpad/production/bootstrap/check-registry.json'
+            if registry_path != trusted_registry or spec_path != root / 'launchpad/spec/production-system/spec.kvx':
                 raise QualificationError('future task requires canonical reviewed registry and specification')
             entry = registry.get('tasks', {}).get(args.task)
             if registry.get('schema_version') != SCHEMA_VERSION or not isinstance(entry, dict):
@@ -624,7 +624,7 @@ def run(args, control=None):
         if args.task in {'0.2', '0.3'}:
             frozen_interface = interface_bundle(registry['tasks'][args.task].get('interface_bundle'), root)
             (evidence / 'interface-bundle.json').write_text(json.dumps(frozen_interface, indent=2) + '\n')
-            catalog_path = root / 'spec/production-system/integration/contracts/v1/catalog-map.json'
+            catalog_path = root / 'launchpad/spec/production-system/integration/contracts/v1/catalog-map.json'
             catalog_document = json.loads(catalog_path.read_text())
             catalog_inputs = catalog_document.get('inputs', {}) if isinstance(catalog_document, dict) else {}
             if not isinstance(catalog_inputs, dict):
@@ -653,7 +653,7 @@ def run(args, control=None):
             print(json.dumps({'check': observed['id'], 'passed': observed['passed'],
                               'duration_seconds': observed['duration_seconds']}), flush=True)
         execute_checks(checks, root, evidence,
-                       args.contract_root.resolve() if args.contract_root else root.parent / 'contracts/launchpad',
+                       args.contract_root.resolve() if args.contract_root else root / 'contracts/launchpad',
                        publish, control)
         if frozen_interface is not None:
             current_interface = interface_bundle(registry['tasks'][args.task].get('interface_bundle'), root)
@@ -693,8 +693,8 @@ def main():
     parser.add_argument('--task', required=True)
     parser.add_argument('--spec', type=Path, required=True)
     parser.add_argument('--require-current-source', action='store_true', required=True)
-    parser.add_argument('--registry', type=Path, default=Path('tools/production/bootstrap/check-registry.json'))
-    parser.add_argument('--evidence-dir', type=Path, default=Path('evidence/production-system/qualification'))
+    parser.add_argument('--registry', type=Path, default=Path('tools/launchpad/production/bootstrap/check-registry.json'))
+    parser.add_argument('--evidence-dir', type=Path, default=Path('launchpad/evidence/production-system/qualification'))
     parser.add_argument('--candidate-sha256')
     parser.add_argument('--contract-root', type=Path)
     args = parser.parse_args()

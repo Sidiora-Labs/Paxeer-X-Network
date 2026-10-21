@@ -261,7 +261,7 @@ func measurementJSON(path, expected string, target any) ([]byte, error) {
 
 func DecoderCandidateSourceDigest(root string) (string, error) {
 	files := []string{}
-	for _, relative := range []string{"core/indexer/internal/decode", "core/indexer/internal/chainreader", "core/indexer/internal/receipt", "protocol", "shared/accounting"} {
+	for _, relative := range []string{"services/launchpad/indexer/internal/decode", "services/launchpad/indexer/internal/chainreader", "services/launchpad/indexer/internal/receipt", "sdk/launchpad/protocol", "sdk/launchpad/shared/accounting"} {
 		err := filepath.WalkDir(filepath.Join(root, relative), func(path string, entry os.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -285,7 +285,7 @@ func DecoderCandidateSourceDigest(root string) (string, error) {
 			return "", err
 		}
 	}
-	files = append(files, "core/indexer/go.mod", "core/indexer/go.sum", "protocol/go.mod", "protocol/go.sum", "shared/go.mod", "shared/go.sum")
+	files = append(files, "services/launchpad/indexer/go.mod", "services/launchpad/indexer/go.sum", "sdk/launchpad/protocol/go.mod", "sdk/launchpad/protocol/go.sum", "sdk/launchpad/shared/go.mod", "sdk/launchpad/shared/go.sum")
 	sort.Strings(files)
 	hash := sha256.New()
 	for _, relative := range files {
@@ -501,8 +501,8 @@ func RunDecoderMeasurement(ctx context.Context, input DecoderMeasurementInput) (
 	}
 	approvedRoot, rootErr := filepath.Abs(input.SourceRoot)
 	contractsRoot, contractsErr := filepath.Abs(input.ContractsRoot)
-	if rootErr != nil || contractsErr != nil || contractsRoot != filepath.Join(filepath.Dir(approvedRoot), "contracts") {
-		return report, fmt.Errorf("%w: actual source sibling contracts required", ErrMeasurementInputs)
+	if rootErr != nil || contractsErr != nil || contractsRoot != filepath.Join(approvedRoot, "contracts", "launchpad") {
+		return report, fmt.Errorf("%w: actual source contracts/launchpad required", ErrMeasurementInputs)
 	}
 	source, err := DecoderCandidateSourceDigest(input.SourceRoot)
 	if err != nil || source != input.CandidateSourceSHA256 {

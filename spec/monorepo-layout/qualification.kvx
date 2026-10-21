@@ -149,11 +149,11 @@ log_path = "fleet/logs/layout-4.5.log"
 observed_and_assumption = "Every cargo build step of platform-build now passes and the last step, layerx-platform-release --check tools/platform/release/registries.kvx, rejects the if: always() on the ten-line-counts upload step of the release-verification job in .github/workflows/platform.yml, which commit 78b0e5d78 added before the move and task 4.5 does not touch, so it is left for the owner of the release workflow and the task stays in progress."
 
 [finding.6.3-launchpad-self-qualification-client-paths]
-revision = "34d6fa046 with the task 6.3 changes applied"
-command = "pnpm -C apps/launchpad build:packages"
+revision = "696461f54 with the follow-up path changes applied"
+command = "python3 -m unittest test_policy test_phase2 in services/launchpad/security/supplychain, go vet ./services/launchpad/indexer/..., py_compile of qualify.py and baseline.py"
 exit_code = 0
-log_path = "fleet/logs/layout-6.3.log"
-observed_and_assumption = "The same launchpad-root self-qualification tooling recorded for 6.2 also names client/apps and client/packages against the former launchpad root (tools/launchpad/production, the services/launchpad api repoFile and social phase4 bindings, metadata and safety qualify scripts, the livestream and shared measurement lists, and the qualification and sdk test scripts whose root now points explicitly at launchpad/); plain relative imports and test paths were rewritten to apps/launchpad and sdk/launchpad/packages and the harness root is left for the same dedicated rewrite."
+log_path = "fleet/logs/layout-6.2c.log"
+observed_and_assumption = "qualify.py, its check registry cwds, argv, env and interface bundle patterns, baseline.py, the indexer decoder measurement and the supply-chain SBOM root now resolve from the repository root, but the frozen interface bundle and accepted-candidate digests were taken over the old paths and the subordinate harness scripts under tools/launchpad/production (charts, feature-acceptance, load, integration, interfaces, bootstrap build, tests and wallet fixture), the services/launchpad api repoFile and social phase4 bindings, the metadata and safety qualify scripts and the livestream and shared measurement lists still climb to the former launchpad root, so they are left for a dedicated harness rewrite that re-freezes the digests."
 
 [finding.6.5-layout-check-key-handle]
 revision = "019bfdcfd with the task 6.5 changes applied"
