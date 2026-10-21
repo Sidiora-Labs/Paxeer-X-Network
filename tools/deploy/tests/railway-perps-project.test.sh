@@ -119,6 +119,29 @@ for cidr in 0.0.0.0/0 ::/0 "100.64.0.0/10,0.0.0.0/0" not-a-cidr; do
 	[ "$code" -eq 2 ] || fail "gateway trusting $cidr exited $code, want 2"
 	grep -q '\[vars.gateway\]: PERPS_TRUSTED_PROXY_CIDRS' "$tmp/err" || fail "gateway trusting $cidr not refused by name"
 done
+# The services parse the list with netip.ParsePrefix and stop at start on any
+# entry it refuses, so the tool refuses exactly those entries and names them.
+for bad in "100.64.0.1|100.64.0.1" "::1|::1" "100.64.0.0/10,100.64.0.1|100.64.0.1" "100.64.0.0/10,|" \
+	"100.64.0.0/33|100.64.0.0/33" "fd00::/129|fd00::/129" "100.64.0.0/010|100.64.0.0/010" \
+	"100.64.0.0/255.192.0.0|100.64.0.0/255.192.0.0" "fe80::1%eth0/128|fe80::1%eth0/128"; do
+	cidr="${bad%|*}" entry="${bad#*|}"
+	sed "/^\[vars.gateway\]/,/^\[/s|^PERPS_TRUSTED_PROXY_CIDRS = .*|PERPS_TRUSTED_PROXY_CIDRS = \"$cidr\"|" \
+		"$root/deploy/railway-perps-project.kvx" >"$tmp/bad-proxy.kvx"
+	grep -qF "PERPS_TRUSTED_PROXY_CIDRS = \"$cidr\"" "$tmp/bad-proxy.kvx" || fail "test did not set $cidr"
+	run --plan --digests "$tmp/digests.json" --replay "$tmp/replay.json" --start-height 34800001 --manifest "$tmp/bad-proxy.kvx"
+	[ "$code" -eq 2 ] || fail "gateway trusting $cidr exited $code, want 2"
+	grep -qF "[vars.gateway]: PERPS_TRUSTED_PROXY_CIDRS entry '$entry' is not a CIDR" "$tmp/err" ||
+		fail "gateway entry '$entry' of $cidr not refused by name"
+done
+for cidr in 100.64.0.1/32 fd00::1/128 "100.64.0.0/10, 10.0.0.7/32,fd00::/8,2001:db8::1/128" 100.64.0.1/10; do
+	sed "/^\[vars.gateway\]/,/^\[/s|^PERPS_TRUSTED_PROXY_CIDRS = .*|PERPS_TRUSTED_PROXY_CIDRS = \"$cidr\"|" \
+		"$root/deploy/railway-perps-project.kvx" >"$tmp/ok-proxy.kvx"
+	grep -qF "PERPS_TRUSTED_PROXY_CIDRS = \"$cidr\"" "$tmp/ok-proxy.kvx" || fail "test did not set $cidr"
+	run --plan --digests "$tmp/digests.json" --replay "$tmp/replay.json" --start-height 34800001 --manifest "$tmp/ok-proxy.kvx"
+	[ "$code" -eq 0 ] || { cat "$tmp/err" >&2; fail "gateway trusting $cidr exited $code, want 0"; }
+	sed -n "/^service [0-9]* gateway image/,/^service /p" "$tmp/out" | grep -qxF "  var PERPS_TRUSTED_PROXY_CIDRS add $cidr" ||
+		fail "gateway $cidr not planned"
+done
 
 (unset PERPS_AUTH_SECRET; run --plan --digests "$tmp/digests.json" --replay "$tmp/replay.json"; echo "$code" >"$tmp/code")
 [ "$(cat "$tmp/code")" -eq 3 ] || fail "plan with unresolved values exited $(cat "$tmp/code"), want 3"

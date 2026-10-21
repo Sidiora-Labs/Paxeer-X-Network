@@ -94,16 +94,28 @@ def load(path):
             if v.startswith(("env:", "arg:")) and not re.fullmatch(r"env:[A-Z_][A-Z0-9_]*|arg:start-height", v):
                 raise Malformed(f"[vars.{svc['name']}]: bad source {v!r}")
         if "PERPS_TRUSTED_PROXY_CIDRS" in svc["vars"]:
-            try:
-                nets = [ipaddress.ip_network(c.strip()) for c in svc["vars"]["PERPS_TRUSTED_PROXY_CIDRS"].split(",")]
-            except ValueError as e:
-                raise Malformed(f"[vars.{svc['name']}]: PERPS_TRUSTED_PROXY_CIDRS: {e}")
-            if any(n.prefixlen == 0 for n in nets):
-                raise Malformed(f"[vars.{svc['name']}]: PERPS_TRUSTED_PROXY_CIDRS must not trust every address")
+            for c in svc["vars"]["PERPS_TRUSTED_PROXY_CIDRS"].split(","):
+                bits = parse_prefix(c.strip())
+                if bits is None:
+                    raise Malformed(f"[vars.{svc['name']}]: PERPS_TRUSTED_PROXY_CIDRS entry {c.strip()!r} is not a CIDR")
+                if bits == 0:
+                    raise Malformed(f"[vars.{svc['name']}]: PERPS_TRUSTED_PROXY_CIDRS entry {c.strip()!r} must not trust every address")
         out.append(svc)
     if not out:
         raise Malformed(f"{path}: no [service.*] sections")
     return meta, sorted(out, key=lambda s: s["order"])
+
+
+def parse_prefix(entry):
+    """Prefix length of entry as Go's netip.ParsePrefix reads it, or None if it refuses it."""
+    addr, slash, bits = entry.rpartition("/")
+    if not slash or "%" in addr or not re.fullmatch(r"0|[1-9][0-9]{0,2}", bits):
+        return None
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return None
+    return int(bits) if int(bits) <= ip.max_prefixlen else None
 
 
 def http_transport(token):
