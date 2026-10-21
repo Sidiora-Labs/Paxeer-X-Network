@@ -2676,3 +2676,11 @@ exit = 1
 log = "PD-F23-verify.log"
 observed = "TestSpotDecoders failed at its websocket handshake because the configured feed origin rejected the test credential with 401, while store, indexer (indexes_venue_block and catch_up_batches included) and migrations passed."
 assumption = "Environment credential problem outside the projection-seed change, which does not touch the spot feed path."
+
+[finding.memiavl-invalid-path-tests-as-root]
+revision = "c68213750"
+command = "go test -count=1 ./storage/state_db/sc/memiavl/..."
+exit = 1
+log = "FX-CH-1-fm1455-verify-r1.log"
+observed = "TestWriterLoopErrors and TestSnapshotWriterErrorHandling expect WriteSnapshot to /invalid/path to fail, but as root the directory is created and the write succeeds; every other test in the package, the changelog offset tests included, passes."
+assumption = "Pre-existing environment dependence of those two tests, untouched by the changelog offset change."

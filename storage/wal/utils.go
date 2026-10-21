@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -30,6 +31,32 @@ func GetLastIndex(dir string) (index uint64, err error) {
 	}
 	defer func() { _ = rlog.Close() }()
 	return rlog.LastIndex()
+}
+
+// GetLastEntryVersion returns the last written index of the changelog and the
+// version recorded in the entry at that index; both are 0 if the log is empty.
+func GetLastEntryVersion(dir string) (index uint64, version int64, err error) {
+	rlog, err := open(dir, &wal.Options{
+		NoSync: true,
+		NoCopy: true,
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = rlog.Close() }()
+	index, err = rlog.LastIndex()
+	if err != nil || index == 0 {
+		return index, 0, err
+	}
+	bz, err := rlog.Read(index)
+	if err != nil {
+		return 0, 0, err
+	}
+	var entry paxdbproto.ChangelogEntry
+	if err := entry.Unmarshal(bz); err != nil {
+		return 0, 0, fmt.Errorf("unmarshal changelog entry %d: %w", index, err)
+	}
+	return index, entry.Version, nil
 }
 
 // truncateCorruptedTail truncates the corrupted tail

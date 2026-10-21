@@ -399,8 +399,8 @@ func (t *MultiTree) Catchup(ctx context.Context, stream wal.ChangelogWAL, delta 
 		default:
 		}
 
-		// Safety check: skip entries we already have (should not happen with correct startIndex)
-		if entry.Version <= currentVersion {
+		// Skip entries we already have, including entries a torn changelog repeats.
+		if entry.Version <= t.lastCommitInfo.Version {
 			return nil
 		}
 

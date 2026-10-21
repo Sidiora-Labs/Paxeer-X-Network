@@ -79,7 +79,8 @@ type DB struct {
 
 	// walIndexDelta is the difference: version - walIndex for any entry.
 	// Since both WAL indices and versions are strictly contiguous, this delta is constant.
-	// Computed once when opening the DB from the first WAL entry.
+	// Computed once when opening the DB from the first and last WAL entries; if they
+	// disagree the larger one is kept, so index lookups land at or before the version.
 	walIndexDelta int64
 
 	// The assumptions to concurrency:
@@ -93,6 +94,9 @@ type DB struct {
 	// worker goroutine IdleTimeout = 5s
 	snapshotWriterPool *pond.WorkerPool
 }
+
+// walDrainTimeout bounds how long a snapshot switch waits for pending changelog writes.
+const walDrainTimeout = 30 * time.Second
 
 const (
 	SnapshotPrefix = "snapshot-"
@@ -219,6 +223,19 @@ func OpenDB(targetVersion int64, opts Options) (database *DB, _err error) {
 	if !walHasEntries {
 		walIndexDelta = mtree.WorkingCommitInfo().Version - 1
 	}
+	var walDrifted bool
+	if walHasEntries {
+		lastIndexDelta, err := computeLastWALIndexDelta(streamHandler)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute WAL index delta: %w", err)
+		}
+		if lastIndexDelta != walIndexDelta {
+			walDrifted = true
+			logger.Error("changelog WAL index offset is inconsistent: the first and last entries disagree on version - index; versions are taken from the entries themselves",
+				"first_entry_offset", walIndexDelta, "last_entry_offset", lastIndexDelta)
+			walIndexDelta = max(walIndexDelta, lastIndexDelta)
+		}
+	}
 
 	// Replay WAL to catch up to target version (if WAL has entries)
 	if walHasEntries && (targetVersion == 0 || targetVersion > mtree.Version()) {
@@ -243,6 +260,9 @@ func OpenDB(targetVersion int64, opts Options) (database *DB, _err error) {
 			}
 		}
 
+		if walDrifted {
+			return nil, fmt.Errorf("refusing to truncate the changelog WAL after version %d: its index offset is inconsistent, restore the state-commitment data from a consistent copy", targetVersion)
+		}
 		// truncate the rlog file (if WAL is provided and has entries)
 		if walHasEntries {
 			logger.Info("truncate rlog after version", "version", targetVersion)
@@ -465,7 +485,8 @@ func (db *DB) checkAsyncTasks() error {
 	return db.checkBackgroundSnapshotRewrite()
 }
 
-// CommittedVersion returns the current version of the MultiTree.
+// CommittedVersion returns the version recorded in the last changelog WAL entry,
+// or the snapshot version if the WAL is empty.
 func (db *DB) CommittedVersion() (int64, error) {
 	lastOffset, err := db.GetWAL().LastOffset()
 	if err != nil {
@@ -474,7 +495,11 @@ func (db *DB) CommittedVersion() (int64, error) {
 	if lastOffset == 0 {
 		return db.SnapshotVersion(), nil
 	}
-	return db.walIndexToVersion(lastOffset), nil
+	entry, err := db.GetWAL().ReadAt(lastOffset)
+	if err != nil {
+		return 0, err
+	}
+	return entry.Version, nil
 }
 
 // checkBackgroundSnapshotRewrite check the result of background snapshot rewrite, cleans up the old snapshots and switches to a new multitree
@@ -504,15 +529,23 @@ func (db *DB) checkBackgroundSnapshotRewrite() error {
 
 		// wait for potential pending writes to finish, to make sure we catch up to latest state.
 		// in real world, block execution should be slower than tree updates, so this should not block for long.
+		deadline := time.Now().Add(walDrainTimeout)
 		for {
 			committedVersion, err := db.CommittedVersion()
 			if err != nil {
 				return fmt.Errorf("get committed version failed: %w", err)
 			}
-			if db.lastCommitInfo.Version == committedVersion {
+			if committedVersion == db.lastCommitInfo.Version {
 				break
 			}
-			time.Sleep(time.Nanosecond)
+			if committedVersion > db.lastCommitInfo.Version || time.Now().After(deadline) {
+				logger.Error("changelog WAL and committed version disagree, not switching to the new snapshot",
+					"wal_version", committedVersion, "committed_version", db.lastCommitInfo.Version)
+				_ = result.mtree.Close()
+				go db.pruneSnapshots()
+				return fmt.Errorf("changelog WAL is at version %d but the committed version is %d", committedVersion, db.lastCommitInfo.Version)
+			}
+			time.Sleep(time.Millisecond)
 		}
 
 		// catchup the remaining entries in rlog
@@ -620,6 +653,20 @@ func computeWALIndexDelta(stream wal.ChangelogWAL) (int64, bool, error) {
 	// delta = version - index, so for any entry: version = index + delta
 	// #nosec G115 -- WAL indices are always much smaller than MaxInt64 in practice
 	return firstVersion - int64(firstIndex), true, nil
+}
+
+// computeLastWALIndexDelta returns version - index for the last WAL entry; the WAL must not be empty.
+func computeLastWALIndexDelta(stream wal.ChangelogWAL) (int64, error) {
+	lastIndex, err := stream.LastOffset()
+	if err != nil {
+		return 0, err
+	}
+	entry, err := stream.ReadAt(lastIndex)
+	if err != nil {
+		return 0, err
+	}
+	// #nosec G115 -- WAL indices are always much smaller than MaxInt64 in practice
+	return entry.Version - int64(lastIndex), nil
 }
 
 // versionToWALIndex converts a version to its corresponding WAL index using the precomputed delta.
@@ -1311,9 +1358,13 @@ func GetLatestVersion(dir string) (int64, error) {
 		}
 		return 0, err
 	}
-	lastIndex, err := wal.GetLastIndex(wal.LogPath(dir))
+	lastIndex, lastVersion, err := wal.GetLastEntryVersion(wal.LogPath(dir))
 	if err != nil {
 		return 0, err
+	}
+	if lastIndex > 0 {
+		// The changelog index offset can drift from initial_version, so trust the entry's own version.
+		return lastVersion, nil
 	}
 	if metadata.InitialVersion < 0 || metadata.InitialVersion > math.MaxUint32 {
 		return 0, fmt.Errorf("invalid initial version: %d", metadata.InitialVersion)

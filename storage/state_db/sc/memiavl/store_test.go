@@ -2,9 +2,12 @@ package memiavl
 
 import (
 	"math"
+	"os"
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/utils"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/wal"
 	"github.com/stretchr/testify/require"
 )
 
@@ -481,6 +484,44 @@ func TestGetVersions(t *testing.T) {
 	latestVersion, err := cs2.GetLatestVersion()
 	require.NoError(t, err)
 	require.Equal(t, int64(3), latestVersion)
+}
+
+func TestGetLatestVersionReadsTheLastEntryWhenTheChangelogOffsetDrifted(t *testing.T) {
+	home := t.TempDir()
+	dir := utils.GetCosmosSCStorePath(home)
+	const initialVersion = 100
+	require.NoError(t, os.MkdirAll(dir, 0o750))
+	require.NoError(t, initEmptyDB(dir, initialVersion))
+
+	changelog, err := wal.NewChangelogWAL(wal.LogPath(dir), wal.Config{})
+	require.NoError(t, err)
+	// One version is logged twice, so the index runs one ahead of initial_version.
+	for _, version := range []int64{100, 101, 101, 102} {
+		require.NoError(t, changelog.Write(proto.ChangelogEntry{Version: version}))
+	}
+	lastIndex, err := changelog.LastOffset()
+	require.NoError(t, err)
+	require.NoError(t, changelog.Close())
+	require.Equal(t, uint64(4), lastIndex)
+	require.Equal(t, int64(103), utils.IndexToVersion(lastIndex, initialVersion))
+
+	cs := NewCommitStore(home, Config{})
+	cs.Initialize([]string{"test"})
+	latestVersion, err := cs.GetLatestVersion()
+	require.NoError(t, err)
+	require.Equal(t, int64(102), latestVersion)
+
+	// The upgrade store loader adds stores only when the upgrade height is the next version.
+	const upgradeHeight = int64(103)
+	require.Equal(t, upgradeHeight, latestVersion+1)
+}
+
+func TestGetLatestVersionOfAnEmptyChangelogFollowsInitialVersion(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, initEmptyDB(dir, 100))
+	latestVersion, err := GetLatestVersion(dir)
+	require.NoError(t, err)
+	require.Equal(t, int64(99), latestVersion)
 }
 
 func TestCreateWAL(t *testing.T) {

@@ -1101,3 +1101,105 @@ func TestCloseWithSuccessfulBackgroundSnapshot(t *testing.T) {
 	err = db.Close()
 	require.NoError(t, err)
 }
+
+// commitDriftedChangelog commits versions 1-3, then appends copies of the entries
+// for versions 2 and 3 to the changelog the way a torn log replayed after a hard
+// reset does, so every later index runs two ahead of its version, and commits
+// version 4 on top.
+func commitDriftedChangelog(t *testing.T, db *DB) {
+	t.Helper()
+	commit := func(i int) {
+		require.NoError(t, db.ApplyChangeSets([]*proto.NamedChangeSet{{Name: "test", Changeset: ChangeSets[i]}}))
+		v, err := db.Commit()
+		require.NoError(t, err)
+		require.Equal(t, int64(i+1), v)
+		require.Equal(t, RefHashes[i], db.lastCommitInfo.StoreInfos[0].CommitId.Hash)
+	}
+	for i := 0; i < 3; i++ {
+		commit(i)
+	}
+	for _, index := range []uint64{2, 3} {
+		entry, err := db.GetWAL().ReadAt(index)
+		require.NoError(t, err)
+		require.NoError(t, db.GetWAL().Write(entry))
+	}
+	commit(3)
+	lastIndex, err := db.GetWAL().LastOffset()
+	require.NoError(t, err)
+	require.Equal(t, uint64(6), lastIndex)
+}
+
+func TestOpenWithDriftedChangelogLoadsTheRealLatestVersion(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(0, Options{Dir: dir, CreateIfMissing: true, InitialStores: []string{"test"}})
+	require.NoError(t, err)
+	commitDriftedChangelog(t, db)
+	require.NoError(t, db.Close())
+
+	latest, err := GetLatestVersion(dir)
+	require.NoError(t, err)
+	require.Equal(t, int64(4), latest)
+
+	db, err = OpenDB(0, Options{Dir: dir, InitialStores: []string{"test"}})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	require.Equal(t, int64(4), db.Version())
+	require.Equal(t, RefHashes[3], db.TreeByName("test").RootHash())
+	committed, err := db.CommittedVersion()
+	require.NoError(t, err)
+	require.Equal(t, int64(4), committed)
+
+	require.NoError(t, db.ApplyChangeSets([]*proto.NamedChangeSet{{Name: "test", Changeset: ChangeSets[4]}}))
+	v, err := db.Commit()
+	require.NoError(t, err)
+	require.Equal(t, int64(5), v)
+	require.Equal(t, RefHashes[4], db.lastCommitInfo.StoreInfos[0].CommitId.Hash)
+}
+
+func TestOpenForOverwritingRefusesADriftedChangelog(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(0, Options{Dir: dir, CreateIfMissing: true, InitialStores: []string{"test"}})
+	require.NoError(t, err)
+	commitDriftedChangelog(t, db)
+	require.NoError(t, db.Close())
+
+	_, err = OpenDB(3, Options{Dir: dir, LoadForOverwriting: true})
+	require.ErrorContains(t, err, "index offset is inconsistent")
+}
+
+func TestSnapshotSwitchDoesNotStallOnADriftedChangelog(t *testing.T) {
+	db, err := OpenDB(0, Options{
+		Config:          Config{SnapshotKeepRecent: 0},
+		Dir:             t.TempDir(),
+		CreateIfMissing: true,
+		InitialStores:   []string{"test"},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	commitDriftedChangelog(t, db)
+
+	require.NoError(t, db.RewriteSnapshotBackground())
+	done := make(chan error, 1)
+	go func() {
+		for {
+			db.mtx.Lock()
+			err := db.checkAsyncTasks()
+			finished := db.snapshotRewriteChan == nil
+			db.mtx.Unlock()
+			if err != nil || finished {
+				done <- err
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("snapshot switch stalled on the drifted changelog")
+	}
+	require.Equal(t, int64(4), db.Version())
+	require.Equal(t, int64(4), db.SnapshotVersion())
+	require.Equal(t, RefHashes[3], db.TreeByName("test").RootHash())
+}
