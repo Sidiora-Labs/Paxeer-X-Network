@@ -108,7 +108,7 @@ jobs:
           [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "no digest for $NAME" >&2; exit 1; }
           mkdir -p digests
           printf '%s=%s\n' "$NAME" "$DIGEST" > "digests/$NAME"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digest-${{ matrix.image.name }}
           path: digests/${{ matrix.image.name }}
@@ -147,7 +147,7 @@ jobs:
           jq -r '.[] | "- \(.) was planned but its build or push failed: no digest in digests.json, so the rollout tool refuses it"' <<<"$failed" >> "$GITHUB_STEP_SUMMARY"
           cat digests.json
           jq -e 'length > 0' digests.json >/dev/null || { echo "no image was pushed, digests.json is empty" >&2; exit 1; }
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digests.json
           path: digests.json
