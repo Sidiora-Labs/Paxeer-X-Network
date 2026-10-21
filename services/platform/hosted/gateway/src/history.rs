@@ -22,7 +22,6 @@ use std::net::SocketAddr;
 pub(super) const DEFAULT_LIMIT: u64 = 50;
 /// The largest page the gateway asks the indexer for.
 pub(super) const MAXIMUM_LIMIT: u64 = 100;
-const MAXIMUM_CURSOR: usize = 32;
 const MAXIMUM_KIND: usize = 64;
 
 /// Where the indexer read API lives.
@@ -156,12 +155,7 @@ pub(super) fn params(params: Option<&Value>) -> Result<(String, Query), i32> {
     };
     let cursor = match args.get(1) {
         None | Some(Value::Null) => None,
-        Some(Value::String(cursor))
-            if (1..=MAXIMUM_CURSOR).contains(&cursor.len())
-                && cursor.bytes().all(|byte| byte.is_ascii_alphanumeric()) =>
-        {
-            Some(cursor.clone())
-        }
+        Some(Value::String(cursor)) if Position::parse(cursor).is_some() => Some(cursor.clone()),
         Some(_) => return Err(-32602),
     };
     let limit = match args.get(2) {
@@ -210,6 +204,17 @@ type RowKey = (Position, u64, bool, u64);
 struct Page {
     items: Vec<(RowKey, Value)>,
     next_cursor: Option<String>,
+    indexed_height: Option<u64>,
+}
+
+/// The indexer's `indexedHeight` of a page: its indexed Paxeer height, or
+/// `null` before the first indexed block.
+fn indexed_height(body: &Value) -> Result<Option<u64>, Failure> {
+    match body.get("indexedHeight") {
+        Some(Value::Null) => Ok(None),
+        Some(height) if height.is_u64() => Ok(height.as_u64()),
+        _ => Err(Failure::Unavailable("invalid_indexer_response")),
+    }
 }
 
 fn page(source: &Source<'_>, account: &str, query: &Query) -> Result<Page, Failure> {
@@ -252,7 +257,13 @@ fn page(source: &Source<'_>, account: &str, query: &Query) -> Result<Page, Failu
         if items.last().is_some_and(|((last, ..), _)| *last > position) {
             return Err(invalid());
         }
-        items.push(((position, ordinal, explorer, id), row.clone()));
+        let mut row = row.clone();
+        if let Some(object) = row.as_object_mut() {
+            object.insert("blockHeight".to_owned(), json!(position.height));
+            object.insert("txIndex".to_owned(), json!(position.tx_index));
+            object.insert("logIndex".to_owned(), json!(position.log_index));
+        }
+        items.push(((position, ordinal, explorer, id), row));
     }
     // The indexer reads a limit of 0 as 1 and keeps the rows of the page's
     // last position together, so only rows sharing the position of row
@@ -270,7 +281,11 @@ fn page(source: &Source<'_>, account: &str, query: &Query) -> Result<Page, Failu
     body.get("freshness")
         .filter(|value| readiness_status(value).is_some())
         .ok_or_else(invalid)?;
-    Ok(Page { items, next_cursor })
+    Ok(Page {
+        items,
+        next_cursor,
+        indexed_height: indexed_height(&body)?,
+    })
 }
 
 /// The `(blockHeight, txIndex, logIndex)` position an indexer row carries
@@ -409,8 +424,16 @@ pub(super) fn history(
     query: &Query,
 ) -> Result<Value, Failure> {
     let limit = usize::try_from(query.limit).unwrap_or(usize::MAX);
+    let mut indexed: Option<Option<u64>> = None;
+    let mut lowest = |height: Option<u64>| {
+        indexed = Some(match indexed {
+            None => height,
+            Some(seen) => seen.zip(height).map(|(seen, height)| seen.min(height)),
+        });
+    };
     let (mut items, next_cursor): (Vec<Value>, Option<String>) = if let [(_, account)] = accounts {
         let page = page(source, account, query)?;
+        lowest(page.indexed_height);
         (
             page.items.into_iter().map(|(_, item)| item).collect(),
             page.next_cursor,
@@ -420,6 +443,7 @@ pub(super) fn history(
         let mut more = false;
         for (side, account) in accounts {
             let page = page(source, account, query)?;
+            lowest(page.indexed_height);
             more |= page.next_cursor.is_some();
             for (key, mut item) in page.items {
                 if let Some(row) = item.as_object_mut() {
@@ -451,7 +475,11 @@ pub(super) fn history(
         )
     };
     join_assets(source, registry, &mut items)?;
-    Ok(json!({"items": items, "next_cursor": next_cursor}))
+    Ok(json!({
+        "items": items,
+        "next_cursor": next_cursor,
+        "indexedHeight": indexed.flatten(),
+    }))
 }
 
 fn refusal(id: &Value, code: i32, message: &str, data: Value) -> Value {
@@ -472,12 +500,18 @@ fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> 
         Err(code) => return super::rpc::error(id, code, "Invalid params"),
     };
     let (document, accounts) = match method {
-        "px_getHistory" => match paxeer_key(&account) {
-            Some(key) => (json!(key.clone()), vec![("paxeer", key)]),
-            None => return super::rpc::error(id, -32602, "Invalid params"),
-        },
-        _ => match super::paxeer::history_accounts(config, id, &account) {
-            Ok(resolved) => resolved,
+        "px_getHistory" => {
+            let key = match paxeer_key(&account) {
+                Some(key) => key,
+                None => match super::paxeer::history_account(config, id, &account) {
+                    Ok((_, key)) => key,
+                    Err(refused) => return refused,
+                },
+            };
+            (json!(key.clone()), vec![("paxeer", key)])
+        }
+        _ => match super::paxeer::history_account(config, id, &account) {
+            Ok((document, key)) => (document, vec![("paxeer", key)]),
             Err(refused) => return refused,
         },
     };
@@ -519,7 +553,12 @@ fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> 
             )
         }
     };
+    let chain_height = match super::paxeer::block_number(config) {
+        Ok(height) => height,
+        Err(code) => return refusal(id, -32001, "History unavailable", json!({"code": code})),
+    };
     if let Some(object) = result.as_object_mut() {
+        object.insert("chainHeight".to_owned(), json!(chain_height));
         object.insert("freshness".to_owned(), freshness);
         object.insert("account".to_owned(), document);
         if method == "px_getUnifiedHistory" {
@@ -1086,10 +1125,17 @@ mod tests {
         assert_eq!(upstream["indexedHeight"], json!(12));
         assert_eq!(upstream["chainHeight"], Value::Null);
         assert_eq!(upstream["freshness"]["version"], json!(1));
+        assert_eq!(first["indexedHeight"], json!(12));
         for (item, row) in items(&first).iter().zip(items(&upstream)) {
+            let at = position(item);
+            assert_eq!(item["blockHeight"], json!(at.height));
+            assert_eq!(item["txIndex"], json!(at.tx_index));
+            assert_eq!(item["logIndex"], json!(at.log_index));
             let mut stripped = item.clone();
             if let Some(object) = stripped.as_object_mut() {
-                object.remove("asset_metadata");
+                for field in ["asset_metadata", "blockHeight", "txIndex", "logIndex"] {
+                    object.remove(field);
+                }
             }
             assert_eq!(&stripped, row);
         }
@@ -1444,7 +1490,10 @@ mod tests {
             ],
         ] {
             let page = read(&indexer, &accounts, &query(None, 10, None));
-            assert_eq!(page, json!({"items": [], "next_cursor": null}));
+            assert_eq!(
+                page,
+                json!({"items": [], "next_cursor": null, "indexedHeight": 12})
+            );
         }
     }
 
@@ -1511,6 +1560,9 @@ mod tests {
             json!([EVE, ""]),
             json!([EVE, "1&limit=500"]),
             json!([EVE, "x".repeat(33)]),
+            json!([EVE, "abc"]),
+            json!([EVE, "000000000000000C0000000000000000"]),
+            json!([EVE, "0000000000000042000000030000000"]),
             json!([EVE, "ab".repeat(56)]),
             json!([EVE, null, 0]),
             json!([EVE, null, 101]),
@@ -1557,6 +1609,104 @@ mod tests {
         ] {
             assert!(Indexer::parse(refused).is_err(), "{refused}");
         }
+    }
+
+    #[test]
+    fn history_position_cursor_passes_through_and_the_112_hex_form_is_refused() {
+        let indexer = indexer();
+        let eve = [("paxeer", EVE.to_owned())];
+        let first = read(&indexer, &eve, &query(None, 2, None));
+        let cursor = first["next_cursor"]
+            .as_str()
+            .unwrap_or_else(|| panic!("next cursor in {first}"))
+            .to_owned();
+        assert_eq!(cursor, at(11, 0, 0).encode());
+        let (account, selected) = params(Some(&json!([EVE, cursor, 2])))
+            .unwrap_or_else(|code| panic!("position cursor refused: {code}"));
+        assert_eq!(selected.cursor.as_deref(), Some(cursor.as_str()));
+        assert!(selected.encoded().contains(&format!("cursor={cursor}")));
+        let next = read(&indexer, &[("paxeer", account)], &selected);
+        let upstream = raw(
+            &indexer,
+            &format!("/v1/history/{EVE}"),
+            &format!("limit=2&cursor={cursor}"),
+        );
+        assert_eq!(ids(&next), vec![9, 11]);
+        assert_eq!(next["next_cursor"], upstream["next_cursor"]);
+        assert_eq!(next["indexedHeight"], upstream["indexedHeight"]);
+        let order: Vec<(u64, u32, u32)> = items(&next)
+            .iter()
+            .map(|item| {
+                (
+                    item["blockHeight"].as_u64().unwrap_or_default(),
+                    u32::try_from(item["txIndex"].as_u64().unwrap_or_default()).unwrap_or_default(),
+                    u32::try_from(item["logIndex"].as_u64().unwrap_or_default())
+                        .unwrap_or_default(),
+                )
+            })
+            .collect();
+        assert_eq!(order, vec![(12, 0, 0), (12, 1, 0)]);
+        let long = "ab".repeat(56);
+        assert_eq!(params(Some(&json!([EVE, long]))), Err(-32602));
+        assert_eq!(refused_code(&indexer, &long), json!("invalid_cursor"));
+    }
+
+    #[test]
+    fn history_dids_resolve_through_addr_before_the_indexer_read() {
+        let did = format!("did:layerx:{ALICE}");
+        assert_eq!(
+            super::super::paxeer::history_selector(&did),
+            Ok(super::super::paxeer::Selector::Did([0xaa; 32]))
+        );
+        assert_eq!(
+            super::super::paxeer::history_selector(EVE),
+            Ok(super::super::paxeer::Selector::Evm([0xee; 20]))
+        );
+        for refused in [ALICE, "did:layerx:00", "nope", "did:layerx:", ""] {
+            assert_eq!(
+                super::super::paxeer::history_selector(refused),
+                Err(-32602),
+                "{refused}"
+            );
+        }
+        let mut bound = [0_u8; 32];
+        bound[12..].copy_from_slice(&[0xee; 20]);
+        let address = super::super::paxeer::bound_address(&bound)
+            .unwrap_or_else(|code| panic!("bound DID refused: {code}"));
+        let key = evm::address_hex(&address);
+        assert_eq!(key, EVE);
+        let indexer = indexer();
+        let resolved = read(&indexer, &[("paxeer", key)], &query(None, 50, None));
+        let direct = read(
+            &indexer,
+            &[("paxeer", EVE.to_owned())],
+            &query(None, 50, None),
+        );
+        assert_eq!(ids(&resolved), vec![3, 6, 9, 11]);
+        assert_eq!(resolved, direct);
+    }
+
+    #[test]
+    fn history_unbound_did_is_invalid_params_and_lx_get_history_is_not_found() {
+        assert_eq!(
+            super::super::paxeer::bound_address(&[0_u8; 32]),
+            Err(super::super::paxeer::UNBOUND_DID)
+        );
+        let id = json!(4);
+        let unbound = super::super::paxeer::history_refusal(&id, super::super::paxeer::UNBOUND_DID);
+        assert_eq!(unbound["error"]["code"], json!(-32602));
+        assert_eq!(
+            unbound["error"]["data"]["code"],
+            json!("identity_binding_unavailable")
+        );
+        assert_eq!(
+            super::super::paxeer::history_refusal(&id, "paxeer_unreachable")["error"]["code"],
+            json!(-32001)
+        );
+        assert_eq!(
+            super::super::rpc::selector("lx_getHistory", Some(&json!([ALICE]))),
+            Err(-32601)
+        );
     }
 
     fn holder(height: u64, holder: &str, kind: &'static str, record: &str) -> HolderRow {

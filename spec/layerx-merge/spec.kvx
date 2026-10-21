@@ -30746,7 +30746,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.6]
 title = "History and AI views on the one-chain indexer"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 11
 requires = ["0.27", "6.5.47", "0.114", "0.156"]

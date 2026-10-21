@@ -1,5 +1,6 @@
-//! Proposed authenticated AI market views: `GET /v1/ai/markets/{market}/snapshot`,
-//! `/participants` and `/epochs` over the indexer's verified finalized projection.
+//! Authenticated AI market views: `GET /v1/ai/markets/{market}/snapshot`,
+//! `/participants` and `/epochs` served from the indexer's projection, where finalized means
+//! committed in a block and the projection's freshness state is passed through unchanged.
 //!
 //! Every request re-authenticates the presented gateway key against the durable key store, so
 //! a revoked or disabled key loses access on its next request even while it holds a cursor.
@@ -121,6 +122,7 @@ fn serve(
                     json!({
                         "snapshot_id": hex0x(v.snapshot_id.as_bytes()),
                         "projection": projection(v.projection),
+                        "committed": v.projection.finalized(),
                         "binding": binding(&v.binding),
                         "components": components(&v.availability),
                         "source_activity": hex0x(v.source_activity.as_bytes()),

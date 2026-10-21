@@ -289,10 +289,23 @@ fn account_selector(params: Option<&Value>) -> Result<Selector, i32> {
     })
 }
 
-enum Selector {
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum Selector {
     Evm([u8; 20]),
     Did([u8; 32]),
     NativeAccount([u8; 32]),
+}
+
+/// Why a DID has no EVM address: addr `0x1004` answers it unbound.
+pub(super) const UNBOUND_DID: &str = "identity_binding_unavailable";
+
+/// The EVM address addr `0x1004` `getEvmAddrByLayerX` answers for a DID.
+pub(super) fn bound_address(answer: &[u8]) -> Result<[u8; 20], &'static str> {
+    let bound = evm::decode_address(answer).map_err(|_| "invalid_paxeer_response")?;
+    if is_zero(&bound) {
+        return Err(UNBOUND_DID);
+    }
+    Ok(bound)
 }
 
 fn resolve(config: &Config, selector: &Selector) -> Result<Resolution, &'static str> {
@@ -303,16 +316,11 @@ fn resolve(config: &Config, selector: &Selector) -> Result<Resolution, &'static 
             return Err("native_account_reverse_resolution_unsupported");
         }
         Selector::Did(key) => {
-            let answer = call(
+            bound_address(&call(
                 config,
                 &evm::ADDR_PRECOMPILE,
                 &evm::calldata_word(evm::SELECTOR_GET_EVM_ADDR_BY_LAYERX, key),
-            )?;
-            let bound = evm::decode_address(&answer).map_err(|_| "invalid_paxeer_response")?;
-            if is_zero(&bound) {
-                return Err("identity_binding_unavailable");
-            }
-            bound
+            )?)?
         }
     };
     let answer = call(
@@ -391,51 +399,46 @@ fn resolved(config: &Config, id: &Value, params: Option<&Value>) -> Result<Resol
     resolve(config, &selector).map_err(|code| unavailable(id, code))
 }
 
-type HistoryAccounts = (Value, Vec<(&'static str, String)>);
+/// The selector of a history read: an `0x` EVM address or an explicit
+/// `did:layerx:` DID. A bare native account key names no EVM address and is
+/// invalid params, like every other form.
+pub(super) fn history_selector(account: &str) -> Result<Selector, i32> {
+    match account_selector(Some(&json!([account])))? {
+        Selector::NativeAccount(_) => Err(-32602),
+        selector => Ok(selector),
+    }
+}
 
-/// The indexer account keys one unified account answers to: its EVM
-/// address on the Paxeer side and every `LayerX` account its DID holds (the
-/// bound main account plus the public core's per-asset accounts), with the
-/// resolution document naming both halves.
-pub(super) fn history_accounts(
+/// The refusal of a history read whose resolution failed: a DID with no
+/// binding is invalid params, anything else is the Paxeer read failure.
+pub(super) fn history_refusal(id: &Value, code: &'static str) -> Value {
+    if code == UNBOUND_DID {
+        let mut refusal = super::rpc::error(id, -32602, "Invalid params");
+        refusal["error"]["data"] = json!({"code": code});
+        refusal
+    } else {
+        unavailable(id, code)
+    }
+}
+
+/// The EVM address one history read pages on the indexer, with the
+/// resolution document naming both halves. A DID resolves through addr
+/// `0x1004` alone; the kernel is never asked.
+pub(super) fn history_account(
     config: &Config,
     id: &Value,
     account: &str,
-) -> Result<HistoryAccounts, Value> {
-    let resolution = resolved(config, id, Some(&json!([account])))?;
-    let mut accounts: Vec<(&'static str, String)> = Vec::new();
-    if let Some(address) = &resolution.evm {
-        accounts.push(("paxeer", evm::address_hex(address)));
+) -> Result<(Value, String), Value> {
+    let selector =
+        history_selector(account).map_err(|code| super::rpc::error(id, code, "Invalid params"))?;
+    if config.paxeer.is_none() {
+        return Err(unconfigured(id));
     }
-    if let Some(main) = &resolution.layerx_account {
-        accounts.push(("layerx", hex32(main)));
-    }
-    if let Some(listing) = resolution
-        .did()
-        .and_then(|did| super::rpc::read_result(config, &format!("/v1/dids/{did}/accounts")))
-    {
-        validate_native_listing(&resolution, &listing)
-            .map_err(|code| unavailable(id, code))?;
-        for held in listing
-            .get("accounts")
-            .and_then(Value::as_array)
-            .map(Vec::as_slice)
-            .unwrap_or_default()
-        {
-            if let Some(key) = held
-                .get("account_id")
-                .and_then(Value::as_str)
-                .and_then(|key| super::parse_hex32(key).ok())
-                .filter(|key| !is_zero(key))
-            {
-                accounts.push(("layerx", hex32(&key)));
-            }
-        }
-    }
-    let mut seen = std::collections::BTreeSet::new();
-    accounts.retain(|(_, key)| seen.insert(key.clone()));
-    accounts.truncate(MAX_JOINED_ASSETS);
-    Ok((resolution.document(), accounts))
+    let resolution = resolve(config, &selector).map_err(|code| history_refusal(id, code))?;
+    let address = resolution
+        .evm
+        .ok_or_else(|| unavailable(id, "invalid_paxeer_response"))?;
+    Ok((resolution.document(), evm::address_hex(&address)))
 }
 
 fn validate_native_listing(resolution: &Resolution, listing: &Value) -> Result<(), &'static str> {

@@ -227,7 +227,7 @@ fn list_assets(config: &Config, id: &Value, params: Option<&Value>) -> Value {
     }
 }
 
-fn selector(method: &str, params: Option<&Value>) -> Result<String, i32> {
+pub(super) fn selector(method: &str, params: Option<&Value>) -> Result<String, i32> {
     let empty = Vec::new();
     let args = match params {
         None => &empty,
@@ -1138,6 +1138,7 @@ mod tests {
             "px_getNetwork",
             "px_getHistory",
             "px_getUnifiedHistory",
+            "px_listHolderRecords",
             "px_getCapabilities",
         ];
         for name in published {
