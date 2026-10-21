@@ -16,8 +16,8 @@ export interface MarketRow extends PerpsMarket {
   volume24h: number;
   /** Open interest notional, in quote USD (matches the feed convention). */
   openInterest: number;
-  /** Realised 8h funding ratio (0.0001 = 0.01%). */
-  funding8h: number;
+  /** 8h funding rate at 18 decimals (1e18 = 1.0); null before the first settlement or the feed. */
+  funding8h: bigint | null;
   /** Last settled hourly funding rate at 18 decimals; null before the first settlement or the feed. */
   fundingHourly: bigint | null;
   /** Canonical category (crypto / stocks / indices / commodities). */

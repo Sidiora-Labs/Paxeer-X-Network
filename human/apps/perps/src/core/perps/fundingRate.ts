@@ -56,3 +56,43 @@ export function fundingFigures(hourly: bigint): { label: string; rate: bigint; t
     { label: FUNDING_LABEL_24H, rate: daily, text: formatFundingRatePct(daily) },
   ];
 }
+
+const PLAIN_DECIMAL = /^(-?)(\d+)(?:\.(\d+))?$/;
+
+/**
+ * A funding rate the server sends as a JSON number (the symbol socket's
+ * perp_stats funding_rate and last_funding_rate, and the GraphQL Float
+ * last_funding_rate) as an exact plain decimal string. JSON.parse does not
+ * expose the number's text, so this writes the parsed double's shortest
+ * round-trip digits, which are the digits the server's encoder emitted for
+ * that value, without exponent and without any float arithmetic. A string
+ * already in exact decimal form passes unchanged; null, missing, non-finite or
+ * any other value is null, never zero.
+ */
+export function fundingRateFromJsonNumber(v: unknown): string | null {
+  if (typeof v === "string") return PLAIN_DECIMAL.test(v) ? v : null;
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  const [mantissa, exp] = String(v).split("e");
+  if (exp === undefined) return mantissa;
+  const sign = mantissa.startsWith("-") ? "-" : "";
+  const [int, frac = ""] = mantissa.replace("-", "").split(".");
+  const digits = int + frac;
+  const point = int.length + +exp;
+  if (point <= 0) return `${sign}0.${"0".repeat(-point)}${digits}`;
+  if (point >= digits.length) return `${sign}${digits}${"0".repeat(point - digits.length)}`;
+  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
+}
+
+/** An exact decimal rate string as a percent with `dp` decimals, rounded half away from zero; null or malformed is a dash. */
+export function formatFundingDecimalPct(v: string | null, dp = 4): string {
+  const m = v === null ? null : PLAIN_DECIMAL.exec(v);
+  if (!m) return "—";
+  const frac = m[3] ?? "";
+  const units = BigInt(m[2] + frac) * 100n;
+  const drop = frac.length - dp;
+  const unit = 10n ** BigInt(Math.max(drop, 0));
+  const scaled = drop <= 0 ? units * 10n ** BigInt(-drop) : (units + unit / 2n) / unit;
+  const step = 10n ** BigInt(dp);
+  const body = dp > 0 ? `${scaled / step}.${(scaled % step).toString().padStart(dp, "0")}` : `${scaled}`;
+  return `${m[1] && scaled > 0n ? "-" : ""}${body}%`;
+}

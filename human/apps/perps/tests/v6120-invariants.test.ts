@@ -612,6 +612,17 @@ describe("v6120Invariants", () => {
     assert.deepEqual(hits, []);
   });
 
+  it("noFundingThroughFloat", () => {
+    const field = /\b(funding_8h|perp_funding_rate|last_funding_rate|last_funding_rate_hourly|funding_rate|funding8h|fundingHourly|venueHourly|estFunding)\b/;
+    const hits: string[] = [];
+    for (const file of walk("src").filter((f) => /\.(ts|tsx)$/.test(f))) {
+      read(file).split("\n").forEach((line, index) => {
+        if (field.test(line) && /\bNumber\(|parseFloat|\bnum\(/.test(line)) hits.push(`${file}:${index + 1} ${line.trim()}`);
+      });
+    }
+    assert.deepEqual(hits, []);
+  });
+
   it("noEstFundingRate", () => {
     const hits = walk("src").filter((file) => /est_funding_rate/.test(read(file)));
     assert.deepEqual(hits, []);

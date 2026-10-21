@@ -306,7 +306,12 @@ function FundingTabPanel({
 }) {
   const router = useRouter();
   const sorted = useMemo(
-    () => [...rows].filter((r) => r.hasLiveData).sort((a, b) => Math.abs(b.funding8h) - Math.abs(a.funding8h)),
+    () => [...rows].filter((r) => r.hasLiveData).sort((a, b) => {
+      const abs = (v: bigint | null) => (v === null ? -1n : v < 0n ? -v : v);
+      const x = abs(a.funding8h);
+      const y = abs(b.funding8h);
+      return x === y ? 0 : x < y ? 1 : -1;
+    }),
     [rows],
   );
 
@@ -337,7 +342,7 @@ function FundingTabPanel({
       </div>
       <div className="divide-y divide-white/[0.04]">
         {sorted.map((row) => {
-          const fp = row.funding8h >= 0;
+          const fp = row.funding8h === null || row.funding8h >= 0n;
           const ep = row.fundingHourly === null || row.fundingHourly >= 0n;
           return (
             <button
@@ -357,7 +362,7 @@ function FundingTabPanel({
                 {row.price > 0 ? `$${row.price.toLocaleString("en-US", { maximumFractionDigits: 4 })}` : "—"}
               </span>
               <span className={`text-xs font-mono tabular-nums text-right ${fp ? "text-emerald-400" : "text-red-400"}`}>
-                {(row.funding8h * 100).toFixed(4)}%
+                {row.funding8h === null ? "—" : formatFundingRatePct(row.funding8h)}
               </span>
               <span className={`text-xs font-mono tabular-nums text-right ${ep ? "text-emerald-400" : "text-red-400"}`}>
                 {row.fundingHourly === null ? "—" : formatFundingRatePct(row.fundingHourly)}

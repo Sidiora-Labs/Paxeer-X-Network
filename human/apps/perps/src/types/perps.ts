@@ -156,6 +156,7 @@ export interface OrderlyTicker {
   sum_unitary_funding: number | null;
   /** Last settled hourly funding rate, an exact decimal string (parse with fundingRate.ts). */
   last_funding_rate_hourly: string | null;
+  /** The server sends a JSON number (GraphQL Float); read it only through fundingRateFromJsonNumber (fundingRate.ts), never Number(), and null is never zero. */
   last_funding_rate: number | null;
   next_funding_time: number | null;
   open_interest: number | null;
@@ -202,6 +203,7 @@ export interface OrderlyFundingRate {
   paxeerSymbol: string;
   /** Last settled hourly funding rate, an exact decimal string (parse with fundingRate.ts). */
   last_funding_rate_hourly: string | null;
+  /** The server sends a JSON number (GraphQL Float); read it only through fundingRateFromJsonNumber (fundingRate.ts), never Number(), and null is never zero. */
   last_funding_rate: number | null;
   last_funding_rate_timestamp: number | null;
   next_funding_time: number | null;

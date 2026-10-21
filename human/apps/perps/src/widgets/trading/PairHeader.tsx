@@ -6,7 +6,7 @@ import { useRealtimePrices } from "@/hooks/perps/useRealtimePrices";
 import { useEnrichedMarketStats } from "@/hooks/perps/useEnrichedStats";
 import { useSidPaxOrderbook, useSidPaxTrades, useSidPaxStats } from "@/hooks/perps/useSidPaxMarketStream";
 import { marketFundingHourly } from "@/hooks/perps/useMarketsStream";
-import { FUNDING_LABEL_1H, FUNDING_LABEL_24H, fundingFigures } from "@/core/perps/fundingRate";
+import { FUNDING_LABEL_1H, FUNDING_LABEL_24H, formatFundingDecimalPct, fundingFigures } from "@/core/perps/fundingRate";
 import { ChevronDown } from "lucide-react";
 import { PriceFlash } from "@/ui/atoms/PriceFlash";
 import { MarketWatchlist } from "./MarketSelectorPanel";
@@ -28,11 +28,6 @@ function fmtCompact(val: number): string {
   if (Math.abs(val) >= 1_000_000) return `$${(val / 1_000_000).toFixed(2)}M`;
   if (Math.abs(val) >= 1_000) return `$${(val / 1_000).toFixed(2)}K`;
   return `$${val.toFixed(2)}`;
-}
-
-function fmtPercent(val: number): string {
-  const pct = val * 100;
-  return `${pct >= 0 ? "+" : ""}${pct.toFixed(4)}%`;
 }
 
 function fmtBps(bps: number): string {
@@ -218,8 +213,8 @@ export function PairHeader({ selectedPair, onPairChange, onOpenMarketPanel }: Pa
         {estFunding !== null && (
           <StatChip
             label="Est. Funding"
-            value={fmtPercent(estFunding)}
-            valueClass={estFunding > 0 ? "text-emerald-500" : estFunding < 0 ? "text-red-500" : ""}
+            value={`${estFunding.startsWith("-") ? "" : "+"}${formatFundingDecimalPct(estFunding)}`}
+            valueClass={/^-/.test(estFunding) ? "text-red-500" : /[1-9]/.test(estFunding) ? "text-emerald-500" : ""}
           />
         )}
 

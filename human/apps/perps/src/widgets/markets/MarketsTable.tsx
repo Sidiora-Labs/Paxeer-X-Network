@@ -7,8 +7,8 @@ import {
   fmtPrice,
   fmtChangePct,
   fmtUsdCompact as fmtUsd,
-  fmtPercent,
 } from "@/ui/utils/format";
+import { formatFundingRatePct } from "@/core/perps/fundingRate";
 import { coinLogoUrl } from "@/core/perps/config";
 import { PriceFlash } from "@/ui/atoms/PriceFlash";
 import { MarketsTableSkeleton } from "./MarketsSkeletons";
@@ -160,7 +160,7 @@ const MarketRowItem = React.memo(function MarketRowItem({
 }) {
   const router = useRouter();
   const positive = row.change24h >= 0;
-  const fundingPositive = row.funding8h >= 0;
+  const fundingPositive = row.funding8h !== null && row.funding8h >= 0n;
 
   const goTrade = useCallback(
     (e?: React.MouseEvent | React.KeyboardEvent) => {
@@ -294,14 +294,14 @@ const MarketRowItem = React.memo(function MarketRowItem({
         <span
           className={cn(
             "text-xs font-mono tabular-nums",
-            row.funding8h === 0
+            row.funding8h === null || row.funding8h === 0n
               ? "text-muted-foreground"
               : fundingPositive
                 ? "text-emerald-400"
                 : "text-red-400",
           )}
         >
-          {row.hasLiveData ? fmtPercent(row.funding8h, 4) : "—"}
+          {row.funding8h === null ? "—" : `${row.funding8h >= 0n ? "+" : ""}${formatFundingRatePct(row.funding8h)}`}
         </span>
       </div>
 

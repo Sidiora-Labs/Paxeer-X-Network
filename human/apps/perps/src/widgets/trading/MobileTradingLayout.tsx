@@ -12,7 +12,7 @@ import {
   useSidPaxTrades,
   useSidPaxStats,
 } from "@/hooks/perps/useSidPaxMarketStream";
-import { FUNDING_LABEL_1H, formatFundingRatePct } from "@/core/perps/fundingRate";
+import { FUNDING_LABEL_1H, formatFundingDecimalPct, formatFundingRatePct } from "@/core/perps/fundingRate";
 
 type MobileMarketView = "chart" | "trades" | "data";
 
@@ -37,7 +37,7 @@ function FundingRateRow({ symbol }: { symbol: string }) {
   // The symbol socket's EMA estimate when present, else the venue's last settled hourly rate, each under its own label.
   const venueHourly = ticker?.last_funding_rate_hourly ?? null;
   const funding = wsStats !== null
-    ? { label: "Pred. funding rate", text: `${(wsStats.funding_rate * 100).toFixed(4)}%`, positive: wsStats.funding_rate >= 0 }
+    ? { label: "Pred. funding rate", text: formatFundingDecimalPct(wsStats.funding_rate), positive: !wsStats.funding_rate?.startsWith("-") }
     : { label: FUNDING_LABEL_1H, text: venueHourly === null ? "\u2014" : formatFundingRatePct(venueHourly), positive: venueHourly === null || venueHourly >= 0n };
   // Use server-provided next_funding_ms when available; otherwise count to next 8h mark.
   const serverNextMs = wsStats?.next_funding_ms ?? 0;

@@ -195,3 +195,75 @@ describe("venue funding consumers", () => {
     }
   });
 });
+
+describe("exact funding_8h, perp_funding_rate and symbol socket rates", () => {
+  it("the markets stream parses funding_8h and perp_funding_rate strings exactly and keeps null as null", async () => {
+    const { normalizeMarket } = await import("../src/hooks/perps/useMarketsStream");
+    const m = normalizeMarket({ symbol: "BTC", funding_8h: "0.0001", perp_funding_rate: "0.0000125", last_funding_rate_hourly: "0.0000125" })!;
+    assert.equal(m.funding_8h, 100_000_000_000_000n);
+    assert.equal(m.perp_funding_rate, 12_500_000_000_000n);
+    assert.equal(m.funding_8h, m.perp_funding_rate! * 8n);
+    assert.equal(normalizeMarket({ symbol: "ETH", funding_8h: "-0.000000000000000008" })?.funding_8h, -8n);
+    const none = normalizeMarket({ symbol: "SOL", funding_8h: null })!;
+    assert.equal(none.funding_8h, null);
+    assert.equal(none.perp_funding_rate, null);
+  });
+
+  it("a malformed funding_8h nulls only that market and warns once per symbol and field per minute", async (t) => {
+    const { normalizeMarketsFrame } = await import("../src/hooks/perps/useMarketsStream");
+    const warn = t.mock.method(console, "warn", () => {});
+    t.mock.timers.enable({ apis: ["Date"], now: 5_000_000 });
+    const frame = normalizeMarketsFrame([
+      { symbol: "F8A", price: 100, funding_8h: "0.0008", perp_funding_rate: "0.0001" },
+      { symbol: "F8B", price: 10, funding_8h: 0.0008, perp_funding_rate: "1e-4" },
+      { symbol: "F8C", price: 1, funding_8h: "-0.0008" },
+    ]);
+    assert.deepEqual(frame.map((m) => [m.symbol, m.price, m.funding_8h, m.perp_funding_rate]), [
+      ["F8A", 100, 800_000_000_000_000n, 100_000_000_000_000n], ["F8B", 10, null, null], ["F8C", 1, -800_000_000_000_000n, null],
+    ]);
+    assert.equal(warn.mock.callCount(), 2);
+    assert.match(String(warn.mock.calls[0].arguments[0]), /F8B funding_8h/);
+    assert.match(String(warn.mock.calls[1].arguments[0]), /F8B perp_funding_rate/);
+    normalizeMarketsFrame([{ symbol: "F8B", funding_8h: "x" }]);
+    assert.equal(warn.mock.callCount(), 2);
+    t.mock.timers.tick(60_000);
+    normalizeMarketsFrame([{ symbol: "F8B", funding_8h: "x" }]);
+    assert.equal(warn.mock.callCount(), 3);
+  });
+
+  it("a JSON number rate becomes its exact plain decimal text and absent is null, never zero", async () => {
+    const { fundingRateFromJsonNumber } = await import("../src/core/perps/fundingRate");
+    assert.equal(fundingRateFromJsonNumber(JSON.parse("0.0001")), "0.0001");
+    assert.equal(fundingRateFromJsonNumber(JSON.parse("1.25e-07")), "0.000000125");
+    assert.equal(fundingRateFromJsonNumber(JSON.parse("-1.2345678901234568e-5")), "-0.000012345678901234568");
+    assert.equal(fundingRateFromJsonNumber(JSON.parse("1e21")), "1000000000000000000000");
+    assert.equal(fundingRateFromJsonNumber(0), "0");
+    assert.equal(fundingRateFromJsonNumber("0.0000125"), "0.0000125");
+    for (const bad of [null, undefined, "", "1e-4", "abc", Number.NaN, Infinity, {}]) assert.equal(fundingRateFromJsonNumber(bad), null);
+  });
+
+  it("a null or malformed rate renders as a dash and a present one rounds exactly", async () => {
+    const { formatFundingDecimalPct } = await import("../src/core/perps/fundingRate");
+    assert.equal(formatFundingDecimalPct(null), "—");
+    assert.equal(formatFundingDecimalPct("1e-4"), "—");
+    assert.equal(formatFundingDecimalPct("0.0001"), "0.0100%");
+    assert.equal(formatFundingDecimalPct("-0.000012345678901234567"), "-0.0012%");
+    assert.equal(formatFundingDecimalPct("0.000000005"), "0.0000%");
+    assert.equal(formatFundingDecimalPct("0.0000005"), "0.0001%");
+    assert.equal(formatFundingDecimalPct("-0.0000000001"), "0.0000%");
+    assert.equal(formatFundingDecimalPct("0"), "0.0000%");
+    assert.equal(formatFundingRatePct(parseFundingRateHourly("0.0008")), formatFundingDecimalPct("0.0008"));
+  });
+
+  it("the markets table and funding tab render a missing 8h rate as a dash and the present one through formatFundingRatePct", () => {
+    const read = (file: string) => readFileSync(ROOT + file, "utf8");
+    assert.match(read("src/widgets/markets/useMarketsRows.ts"), /funding8h: snap\?\.funding_8h \?\? null,/);
+    assert.match(read("src/widgets/markets/MarketsTable.tsx"), /row\.funding8h === null \? "—" : `\$\{row\.funding8h >= 0n \? "\+" : ""\}\$\{formatFundingRatePct\(row\.funding8h\)\}`/);
+    assert.match(read("src/page-modules/markets/index.tsx"), /row\.funding8h === null \? "—" : formatFundingRatePct\(row\.funding8h\)/);
+    assert.match(read("src/widgets/trading/PairHeader.tsx"), /formatFundingDecimalPct\(estFunding\)/);
+    assert.match(read("src/widgets/trading/MobileTradingLayout.tsx"), /text: formatFundingDecimalPct\(wsStats\.funding_rate\)/);
+    const stream = read("src/hooks/perps/useSidPaxMarketStream.ts");
+    assert.match(stream, /funding_rate: {9}fundingRateFromJsonNumber\(d\.funding_rate\),/);
+    assert.match(stream, /last_funding_rate: {4}fundingRateFromJsonNumber\(d\.last_funding_rate\),/);
+  });
+});

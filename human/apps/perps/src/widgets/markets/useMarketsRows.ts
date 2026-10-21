@@ -67,7 +67,7 @@ export function useMarketsRows(): { rows: MarketRow[]; bySymbol: Map<string, Mar
         change24h: snap?.change_24h ?? 0,
         volume24h: snap?.volume_24h ?? 0,
         openInterest: snap?.open_interest ?? 0,
-        funding8h: snap?.funding_8h ?? 0,
+        funding8h: snap?.funding_8h ?? null,
         fundingHourly: snap?.last_funding_rate_hourly ?? null,
         category: getMarketCategory(m.marketId),
         isNew: NEW_MARKET_IDS.has(m.marketId),
@@ -134,7 +134,7 @@ export function filterAndSort(
         cmp = a.openInterest - b.openInterest;
         break;
       case "funding8h":
-        cmp = a.funding8h - b.funding8h;
+        cmp = a.funding8h === b.funding8h ? 0 : a.funding8h === null ? -1 : b.funding8h === null ? 1 : a.funding8h < b.funding8h ? -1 : 1;
         break;
     }
     return sortDir === "asc" ? cmp : -cmp;

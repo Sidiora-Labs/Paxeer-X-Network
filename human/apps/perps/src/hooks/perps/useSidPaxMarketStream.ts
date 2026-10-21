@@ -6,6 +6,7 @@ import { fetchWithPolicy } from "@/core/net/fetch";
 import { isVenueSymbol, parseVenueBook, RESYNC_DEPTH } from "@/core/net/venueStream";
 import { gatewayUrls } from "@/core/network/gateway";
 import { normalizeLevels } from "@/core/perps/bookLevels";
+import { fundingRateFromJsonNumber } from "@/core/perps/fundingRate";
 import { useEffect, useState } from "react";
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -108,9 +109,10 @@ export interface SidPaxStats {
   index_price: number;
   /** (mark − index) / index × 10 000 */
   basis_bps: number;
-  /** EMA estimate of periodic funding rate. */
-  funding_rate: number;
-  last_funding_rate: number;
+  /** EMA estimate of periodic funding rate, an exact decimal string; null when absent. */
+  funding_rate: string | null;
+  /** Last funding rate, an exact decimal string; null when absent. */
+  last_funding_rate: string | null;
   /** Milliseconds until next 8-h settlement. */
   next_funding_ms: number;
   /** Rolling 5-min buy_notional / sell_notional (1.0 = balanced). */
@@ -320,7 +322,6 @@ function connect(symbol: string, s: SymbolStream) {
     // Stats frame — perp_stats shape (full perp metrics snapshot).
     if (msg.topic === statsTopic && msg.data) {
       const d = msg.data;
-      const fundingRate = Number(d.funding_rate) || 0;
       const volumeUsd   = Number(d.volume_24h_usd) || 0;
       const oiUsd       = Number(d.oi_usd) || 0;
       s.statsData = {
@@ -328,8 +329,9 @@ function connect(symbol: string, s: SymbolStream) {
         mark_price:           Number(d.mark_price)           || 0,
         index_price:          Number(d.index_price)          || 0,
         basis_bps:            Number(d.basis_bps)            || 0,
-        funding_rate:         fundingRate,
-        last_funding_rate:    Number(d.last_funding_rate)    || 0,
+        // perp_stats sends both funding rates as JSON numbers; fundingRateFromJsonNumber is the one conversion.
+        funding_rate:         fundingRateFromJsonNumber(d.funding_rate),
+        last_funding_rate:    fundingRateFromJsonNumber(d.last_funding_rate),
         next_funding_ms:      Number(d.next_funding_ms)      || 0,
         long_short_ratio:     Number(d.long_short_ratio)     || 1,
         liq_volume_24h:       Number(d.liq_volume_24h)       || 0,

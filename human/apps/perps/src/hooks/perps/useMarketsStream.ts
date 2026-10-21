@@ -40,8 +40,10 @@ export interface MarketSnapshot {
   change_24h: number;
   volume_24h: number;
   open_interest: number;
-  /** Realised 8h funding — a ratio (e.g. 0.0001 = 0.01%). */
-  funding_8h: number;
+  /** 8 × the hourly funding rate at 18 decimals (1e18 = 1.0); null before the first settlement or when malformed. */
+  funding_8h: bigint | null;
+  /** The market's hourly funding rate (perp_funding_rate) at 18 decimals; null before the first settlement or when malformed. */
+  perp_funding_rate: bigint | null;
   /** Last settled hourly funding rate at 18 decimals (1e18 = 1.0); null before the first settlement. */
   last_funding_rate_hourly: bigint | null;
   volume_7d: number;
@@ -286,7 +288,8 @@ function num(v: unknown): number {
 }
 
 /**
- * The venue's `last_funding_rate_hourly` at 18 decimals. Absent (null or
+ * A venue funding rate (`last_funding_rate_hourly`, `funding_8h` or
+ * `perp_funding_rate`) at 18 decimals. Absent (null or
  * missing) is null, never zero; anything present that is not an exact
  * decimal string throws.
  */
@@ -299,7 +302,7 @@ const FUNDING_WARN_INTERVAL_MS = 60_000;
 const fundingWarnedAt = new Map<string, number>();
 
 /**
- * One market's venue hourly rate: a malformed value is that market's funding
+ * One market's venue funding field: a malformed value is that market's funding
  * unavailable (null), with at most one console.warn per symbol and field per
  * minute, so one bad row never drops the rest of a frame or ticker map.
  */
@@ -330,7 +333,8 @@ export function normalizeMarket(raw: unknown): MarketSnapshot | null {
     change_24h: num(r.change_24h),
     volume_24h: num(r.volume_24h),
     open_interest: num(r.open_interest),
-    funding_8h: num(r.funding_8h),
+    funding_8h: marketFundingHourly(symbol, "funding_8h", r.funding_8h),
+    perp_funding_rate: marketFundingHourly(symbol, "perp_funding_rate", r.perp_funding_rate),
     last_funding_rate_hourly: marketFundingHourly(symbol, "last_funding_rate_hourly", r.last_funding_rate_hourly),
     volume_7d: num(r.volume_7d),
     volume_30d: num(r.volume_30d),
