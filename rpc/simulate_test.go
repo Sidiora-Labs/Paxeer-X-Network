@@ -1232,3 +1232,23 @@ func TestGetTransactionUsesBlockIDHash(t *testing.T) {
 		})
 	}
 }
+
+func TestStateAndHeaderUsesBlockTime(t *testing.T) {
+	testApp := app.Setup(t, false, false, false)
+	blockTime := time.Unix(1696941649, 0)
+	ctxProvider := func(height int64) sdk.Context {
+		return testApp.GetContextForDeliverTx([]byte{}).WithBlockHeight(height).WithBlockTime(blockTime.Add(20 * time.Second))
+	}
+	tmClient := &MockClient{}
+	watermarks := evmrpc.NewWatermarkManager(tmClient, ctxProvider, nil, testApp.EvmKeeper.ReceiptStore())
+	backend := evmrpc.NewBackend(ctxProvider, &testApp.EvmKeeper, legacyabci.BeginBlockKeepers{},
+		func(int64) client.TxConfig { return TxConfig }, tmClient,
+		&evmrpc.SimulateConfig{GasCap: 10000000, EVMTimeout: 30 * time.Second},
+		testApp.BaseApp, testApp.TracerAnteHandler, evmrpc.NewBlockCache(3000), &sync.Mutex{}, watermarks)
+
+	latest := rpc.LatestBlockNumber
+	sdb, header, err := backend.StateAndHeaderByNumberOrHash(context.Background(), rpc.BlockNumberOrHash{BlockNumber: &latest})
+	require.NoError(t, err)
+	require.Equal(t, uint64(blockTime.Unix()), header.Time)
+	require.True(t, blockTime.Equal(sdb.(*state.DBImpl).Ctx().BlockTime()))
+}

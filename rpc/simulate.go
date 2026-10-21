@@ -395,7 +395,9 @@ func (b *Backend) StateAndHeaderByNumberOrHash(ctx context.Context, blockNrOrHas
 	}
 	height := tmBlock.Block.Height
 	isWasmdCall, ok := ctx.Value(CtxIsWasmdPrecompileCallKey).(bool)
-	sdkCtx := b.ctxProvider(height).WithIsEVM(true).WithEVMEntryViaWasmdPrecompile(ok && isWasmdCall)
+	// The provider's context carries the node's latest header time; reads
+	// pinned to this block judge time-dependent state at its own time.
+	sdkCtx := b.ctxProvider(height).WithBlockTime(tmBlock.Block.Time).WithIsEVM(true).WithEVMEntryViaWasmdPrecompile(ok && isWasmdCall)
 	if !isLatestBlock {
 		// no need to check version for latest block
 		if err := CheckVersion(sdkCtx, b.keeper); err != nil {

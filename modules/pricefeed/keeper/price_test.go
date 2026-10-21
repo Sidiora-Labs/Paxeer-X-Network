@@ -141,3 +141,22 @@ func TestGetPriceBySymbol(t *testing.T) {
 		require.Equal(t, byID, bySymbol, market.Symbol)
 	}
 }
+
+func TestGetPriceFreshAtContextBlockTime(t *testing.T) {
+	k, ctx, _ := newParamsKeeper(t)
+	storeAggregate(k, ctx, 0, btcAggregate())
+	pinned := atMs(ctx, int64(priceTimestampMs)+1_000)
+
+	price, err := k.GetPrice(pinned, 0)
+	require.NoError(t, err)
+	require.True(t, price.Fresh)
+
+	later := atMs(ctx, int64(priceTimestampMs)+20_000).WithBlockHeight(ctx.BlockHeight() + 1)
+	price, err = k.GetPrice(later, 0)
+	require.NoError(t, err)
+	require.False(t, price.Fresh)
+
+	price, err = k.GetPrice(pinned, 0)
+	require.NoError(t, err)
+	require.True(t, price.Fresh)
+}
