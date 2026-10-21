@@ -72,6 +72,23 @@ struct RawTicker<'a> {
     updated_at: Option<i64>,
 }
 
+/// Longest upstream text carried into an error, so a large error object is
+/// not logged verbatim on every poll.
+pub const MAX_UPSTREAM_TEXT: usize = 256;
+
+/// `text` cut to at most [`MAX_UPSTREAM_TEXT`] bytes on a char boundary,
+/// marked with `...` when cut.
+fn bounded(text: &str) -> String {
+    if text.len() <= MAX_UPSTREAM_TEXT {
+        return text.to_owned();
+    }
+    let mut end = MAX_UPSTREAM_TEXT;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}...", &text[..end])
+}
+
 /// The ticker inside a 200 body: `data` of a `{"success": true, "data": {..}}`
 /// envelope, or the body itself when it is a bare ticker with `symbol` at the
 /// top level.
@@ -98,12 +115,13 @@ fn ticker_object(body: &str) -> Result<&str, FetchError> {
                 .find_map(|key| top.get(*key))
                 .map_or("no message", |m| m.get());
             Err(FetchError::Transport(format!(
-                "chainflow success=false: {message}"
+                "chainflow success=false: {}",
+                bounded(message)
             )))
         }
         Err(_) => Err(FetchError::Transport(format!(
             "envelope success is not a boolean: {}",
-            success.get()
+            bounded(success.get())
         ))),
     }
 }
@@ -324,6 +342,7 @@ pub fn parse_json_number_fixed(token: &str, decimals: u32) -> Result<String, Str
 mod tests {
     use super::{
         parse_json_number_fixed, status_error, ChainflowConfig, FetchError, Ticker, API_KEY_HEADER,
+        MAX_UPSTREAM_TEXT,
         MAX_PRICE,
     };
     use std::io::{Read, Write};
@@ -498,6 +517,17 @@ mod tests {
                 r#"envelope success is not a boolean: "yes""#.to_owned()
             ))
         );
+        let long = "\u{e9}".repeat(MAX_UPSTREAM_TEXT);
+        let Err(FetchError::Transport(text)) = config.parse_ticker(
+            &format!(r#"{{"success":false,"error":"{long}"}}"#),
+            "BTC",
+            1_700_000_000_000,
+        ) else {
+            panic!("a long success=false body must be refused");
+        };
+        let prefix = "chainflow success=false: ";
+        assert!(text.starts_with(prefix) && text.ends_with("..."));
+        assert!(text.len() <= prefix.len() + MAX_UPSTREAM_TEXT + 3);
         assert_eq!(
             config.parse_ticker(r#"{"result":{},"ok":1}"#, "BTC", 1_700_000_000_000),
             Err(FetchError::Transport(

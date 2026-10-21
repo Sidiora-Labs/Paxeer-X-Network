@@ -11,6 +11,7 @@ import {
     LEDGER_PRECOMPILE,
     type WalletCapsState,
     type WalletGrantCap,
+    type WebPayerGrant,
     feeToken,
     type FeeChoiceId,
     type ModuleProvider,
@@ -292,8 +293,7 @@ export function useFeeSelection(provider: ModuleProvider | null, address: string
             const client=station();const outstanding=await client.pending(address);
             if(outstanding){await recover();return;}
             if(!provider)throw new GasStationError({code:'unavailable',field:'provider'});
-            const [didPublicKey,did]=await layerXDid(provider,address);
-            if(didPublicKey===ZERO_WORD)throw new GasStationError({code:'refused',field:'did'});
+            const did=await boundDid(provider,address);
             const nonce=await client.batchNonce(address);
             const answer=await client.requestQuote({account:address,did,nonce,calls:[call],maxTokenAmount:maximum,gasCost},{signal:abort.signal});
             const batch:SponsoredBatch=Object.freeze({chainId:client.config.chainId,account:address.toLowerCase(),nonce,calls:Object.freeze([call]),quote:Object.freeze(answer.quote)});
@@ -344,6 +344,12 @@ const GRANT_LOOKUP_ABI = parseAbi([
 const PAYER_GRANT_ISSUED = toEventSelector('PayerGrantIssued(bytes32)');
 const ZERO_WORD: Hex = `0x${'0'.repeat(64)}`;
 const REFUSED_CAPS: WalletCapsState = { state: 'refused', reason: 'The account or its evidence was refused.' };
+const NO_FINALISED_CHECKPOINT: WalletCapsState = { state: 'unavailable', reason: 'No finalised checkpoint is available yet.' };
+const NO_GRANT_EXPIRY = ((1n << 64n) - 1n).toString();
+export const GRANT_LOG_WINDOW = 10_000n;
+// ponytail: accounts carry no first-seen block, so grant logs are read back from the finalised head in GRANT_LOG_WINDOW
+// blocks down to GRANT_LOG_LOOKBACK below it; older grants are not shown. Read grant ids from an indexer to lift the floor.
+export const GRANT_LOG_LOOKBACK = 1_000_000n;
 
 async function view(provider: ModuleProvider, to: string, data: Hex): Promise<Hex> {
     return (await ethCall(provider, to, data)) as Hex;
@@ -357,11 +363,16 @@ async function layerXDid(provider: ModuleProvider, address: string): Promise<rea
     });
 }
 
-// ponytail: scans every PayerGrantIssued log for the holder's grant ids; read them from the indexer when grant counts grow.
-async function issuedGrantIds(provider: ModuleProvider, toBlock: string): Promise<string[]> {
+export async function boundDid(provider: ModuleProvider, address: string): Promise<string> {
+    const [didPublicKey, did] = await layerXDid(provider, address);
+    if (didPublicKey === ZERO_WORD) throw new GasStationError({ code: 'refused', field: 'did' });
+    return did;
+}
+
+async function issuedGrantIds(provider: ModuleProvider, fromBlock: bigint, toBlock: bigint): Promise<string[]> {
     const logs = await provider.request({
         method: 'eth_getLogs',
-        params: [{ address: LEDGER_PRECOMPILE, topics: [PAYER_GRANT_ISSUED], fromBlock: '0x0', toBlock }],
+        params: [{ address: LEDGER_PRECOMPILE, topics: [PAYER_GRANT_ISSUED], fromBlock: `0x${fromBlock.toString(16)}`, toBlock: `0x${toBlock.toString(16)}` }],
     });
     if (!Array.isArray(logs)) throw new TypeError('invalid grant logs');
     return [...new Set(logs.map((log) => {
@@ -376,7 +387,8 @@ async function issuedGrantIds(provider: ModuleProvider, toBlock: string): Promis
 
 async function readGrantCaps(provider: ModuleProvider, address: string): Promise<WalletCapsState> {
     const chainId = await ethQuantity(provider, 'eth_chainId');
-    const head = await provider.request({ method: 'eth_getBlockByNumber', params: ['latest', false] });
+    const head = await provider.request({ method: 'eth_getBlockByNumber', params: ['finalized', false] });
+    if (head === null) return NO_FINALISED_CHECKPOINT;
     if (!isRecord(head) || typeof head.number !== 'string' || !/^0x[0-9a-fA-F]+$/u.test(head.number)
         || typeof head.stateRoot !== 'string' || !/^0x[0-9a-fA-F]{64}$/u.test(head.stateRoot)) {
         throw new TypeError('invalid block header');
@@ -388,17 +400,22 @@ async function readGrantCaps(provider: ModuleProvider, address: string): Promise
         functionName: 'accountId',
         data: await view(provider, LEDGER_PRECOMPILE, encodeFunctionData({ abi: GRANT_LOOKUP_ABI, functionName: 'accountId', args: [didPublicKey, ZERO_WORD] })),
     }).toLowerCase();
-    const { grants } = await webData(provider).caps(await issuedGrantIds(provider, head.number));
-    const owned = grants.filter((grant) => grant.from === account);
-    if (owned.length === 0) return REFUSED_CAPS;
-    const expires = owned.reduce((earliest, grant) => (grant.expiration < earliest ? grant.expiration : earliest), owned[0].expiration);
-    const height = BigInt(head.number).toString();
+    const finalised = BigInt(head.number);
+    const floor = finalised > GRANT_LOG_LOOKBACK ? finalised - GRANT_LOG_LOOKBACK : 0n;
+    let owned: readonly WebPayerGrant[] = [];
+    for (let to = finalised; owned.length === 0 && to >= floor; to -= GRANT_LOG_WINDOW) {
+        const from = to - floor >= GRANT_LOG_WINDOW ? to - GRANT_LOG_WINDOW + 1n : floor;
+        const ids = await issuedGrantIds(provider, from, to);
+        if (ids.length > 0) owned = (await webData(provider).caps(ids)).grants.filter((grant) => grant.from === account);
+    }
+    const expires = owned.reduce((earliest, grant) => (grant.expiration < earliest ? grant.expiration : earliest), owned[0]?.expiration ?? 0n);
+    const height = finalised.toString();
     return {
-        state: 'ready',
+        state: owned.length === 0 ? 'empty' : 'ready',
         did,
         account_id: account.slice(2),
         network_id: Number(chainId),
-        context: { principal: did, session_id: '', address: address.toLowerCase(), chain_id: Number(chainId), expires_at: expires.toString() },
+        context: { principal: did, session_id: '', address: address.toLowerCase(), chain_id: Number(chainId), expires_at: owned.length === 0 ? NO_GRANT_EXPIRY : expires.toString() },
         observation: { verification: 'checkpoint_finalised', state_root: head.stateRoot.slice(2).toLowerCase(), sequence: height, observed_head: height, batch: height },
         budgets: [],
         grants: owned.map((grant): WalletGrantCap => ({
