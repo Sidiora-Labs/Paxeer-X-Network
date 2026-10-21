@@ -630,6 +630,41 @@ func TestIndexer(t *testing.T) {
 		ready(http.StatusServiceUnavailable, map[string]string{"lag": "ok", "lease": "failed", "outbox": "ok"})
 	})
 
+	t.Run("rebuild_renews_lease", func(t *testing.T) {
+		e := setup(t)
+		ctx := context.Background()
+		ix := e.newIndexer(t, "rebuild-renews-lease", 1)
+		if err := ix.acquire(ctx); err != nil {
+			t.Fatalf("acquire: %v", err)
+		}
+		// A lease two seconds from expiry stands for one a long rebuild has
+		// held past its renewal: the rebuild must commit it live.
+		if _, err := e.db.ExecContext(ctx, `UPDATE perps.writer_lease SET expires_at = clock_timestamp() + interval '2 seconds' WHERE name = $1`, leaseName); err != nil {
+			t.Fatalf("age lease: %v", err)
+		}
+		tx, err := e.db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatalf("begin: %v", err)
+		}
+		if err := ix.rebuild(ctx, tx, source.Affected{From: 1}); err != nil {
+			_ = tx.Rollback()
+			t.Fatalf("rebuild: %v", err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("commit: %v", err)
+		}
+		var left float64
+		if err := e.db.QueryRowContext(ctx, `SELECT EXTRACT(EPOCH FROM expires_at - clock_timestamp()) FROM perps.writer_lease WHERE name = $1 AND holder = $2`, leaseName, ix.holder).Scan(&left); err != nil {
+			t.Fatalf("read lease: %v", err)
+		}
+		if left < (LeaseTTL - 5*time.Second).Seconds() {
+			t.Fatalf("lease %.1fs from expiry after the rebuild, want about %s", left, LeaseTTL)
+		}
+		if err := ix.checkLease(ctx); err != nil {
+			t.Fatalf("lease after rebuild: %v", err)
+		}
+	})
+
 	t.Run("publishes_in_order", func(t *testing.T) {
 		e := setup(t)
 		logs := e.latestLogs(t, ethereum.FilterQuery{Addresses: []common.Address{decode.PerpsAddress}}, 3)

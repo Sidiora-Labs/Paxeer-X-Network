@@ -71,6 +71,11 @@ WHERE perps.writer_lease.holder = EXCLUDED.holder OR perps.writer_lease.expires_
 RETURNING holder`
 	renewSQL = `UPDATE perps.writer_lease SET expires_at = clock_timestamp() + $3::bigint * interval '1 millisecond'
 WHERE name = $1 AND holder = $2 AND expires_at > clock_timestamp()`
+	// extendSQL renews the lease inside a transaction that has held its row
+	// since a fence, so no other instance could take it meanwhile and the
+	// expiry needs no check.
+	extendSQL = `UPDATE perps.writer_lease SET expires_at = clock_timestamp() + $3::bigint * interval '1 millisecond'
+WHERE name = $1 AND holder = $2`
 	releaseSQL = `DELETE FROM perps.writer_lease WHERE name = $1 AND holder = $2`
 	outboxSQL  = `SELECT count(*), COALESCE(EXTRACT(EPOCH FROM clock_timestamp() - min(created_at)) * 1000, 0)::bigint
 FROM perps.delivery_outbox WHERE state = 'pending'`
@@ -447,12 +452,37 @@ func (ix *Indexer) logLookups(lookups []decode.AccountLookup) {
 }
 
 // rebuild is the follower's rewind rebuild: under the lease fence it
-// re-projects the stored facts after the rewound blocks are deleted.
+// re-projects the stored facts after the rewound blocks are deleted. The
+// fence holds the lease row for the whole rebuild, which blocks keepLease's
+// renewal, so a rebuild longer than LeaseTTL would commit an expired lease
+// that a waiting instance takes at once; the lease is therefore renewed
+// inside tx when the rebuild ends, and commits live.
 func (ix *Indexer) rebuild(ctx context.Context, tx *sql.Tx, a source.Affected) error {
 	if err := ix.fence(ctx, tx); err != nil {
 		return err
 	}
-	return store.Rebuild(ctx, tx, int64(a.From), int64(a.From))
+	if err := store.Rebuild(ctx, tx, int64(a.From), int64(a.From)); err != nil {
+		return err
+	}
+	return ix.extend(ctx, tx)
+}
+
+// extend renews the lease inside tx, which holds the lease row since its
+// fence, and reports ErrLeaseLost when the row is no longer this instance's.
+func (ix *Indexer) extend(ctx context.Context, tx *sql.Tx) error {
+	res, err := tx.ExecContext(ctx, extendSQL, leaseName, ix.holder, LeaseTTL.Milliseconds())
+	if err != nil {
+		return fmt.Errorf("indexer: extend lease: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		ix.held.Store(false)
+		return ErrLeaseLost
+	}
+	return nil
 }
 
 // acquire takes the writer lease, waiting AcquireInterval between attempts

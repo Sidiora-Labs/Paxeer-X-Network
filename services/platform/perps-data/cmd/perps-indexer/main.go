@@ -22,6 +22,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	gethrpc "github.com/ethereum/go-ethereum/rpc"
 	"github.com/nats-io/nats.go"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/config"
@@ -153,10 +154,13 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	client, err := ethclient.DialContext(ctx, cfg.RPCURLs[0])
+	// The markets refresh goes through the RPC pool's failover; the URL only
+	// selects the HTTP transport, the pool picks the node.
+	rc, err := gethrpc.DialOptions(ctx, cfg.RPCURLs[0], gethrpc.WithHTTPClient(&http.Client{Transport: rpc.Transport()}))
 	if err != nil {
 		return fmt.Errorf("dial rpc: %w", err)
 	}
+	client := ethclient.NewClient(rc)
 	defer client.Close()
 	go func() {
 		err := markets.Retry(ctx, db, client, func(err error, retryIn time.Duration) {

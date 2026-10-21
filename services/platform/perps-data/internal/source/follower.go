@@ -574,10 +574,17 @@ func (f *Follower) continuity(ctx context.Context, b *EVMBlock) (bool, error) {
 	return false, nil
 }
 
+// ErrHashDisagreement reports a stored block that one node read disagreed
+// with and the re-read agrees with: nodes serve different hashes for one
+// height, so nothing is rewound and the step is retried.
+var ErrHashDisagreement = errors.New("source: nodes disagree on a stored block hash")
+
 // rewind walks back from height to the highest stored height whose hash
 // equals the node's and, in one transaction, deletes facts and projections at
 // or above the fork, rebuilds the affected projections, moves the cursor to
-// fork-1 and enqueues perps.<chain>.chain.rewind {"from":fork}.
+// fork-1 and enqueues perps.<chain>.chain.rewind {"from":fork}. When the
+// re-read of height agrees with the stored hash there is no fork: it rewinds
+// nothing and returns ErrHashDisagreement.
 func (f *Follower) rewind(ctx context.Context, height uint64) (uint64, error) {
 	fork := height + 1
 	for h := height; ; h-- {
@@ -600,6 +607,9 @@ func (f *Follower) rewind(ctx context.Context, height uint64) (uint64, error) {
 			break
 		}
 	}
+	if fork > height {
+		return 0, fmt.Errorf("%w: height %d", ErrHashDisagreement, height)
+	}
 	tx, err := f.opts.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -608,13 +618,10 @@ func (f *Follower) rewind(ctx context.Context, height uint64) (uint64, error) {
 
 	var discarded []byte
 	var forkTime time.Time
-	err = tx.QueryRowContext(ctx, "SELECT hash, time FROM perps.blocks WHERE number = $1", int64(fork)).Scan(&discarded, &forkTime)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return 0, err
-	}
-	if errors.Is(err, sql.ErrNoRows) {
-		discarded = make([]byte, common.HashLength)
-		forkTime = time.Now().UTC()
+	// The walk compared a stored row at the fork, so the row is there unless
+	// another writer removed it since; that is an error, never a zero hash.
+	if err := tx.QueryRowContext(ctx, "SELECT hash, time FROM perps.blocks WHERE number = $1", int64(fork)).Scan(&discarded, &forkTime); err != nil {
+		return 0, fmt.Errorf("source: rewind fork block %d: %w", fork, err)
 	}
 	affected, err := collectAffected(ctx, tx, fork)
 	if err != nil {

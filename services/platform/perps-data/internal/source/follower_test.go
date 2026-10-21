@@ -25,6 +25,7 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	gethrpc "github.com/ethereum/go-ethereum/rpc"
 
 	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	rpchttp "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/http"
@@ -654,6 +655,156 @@ func TestFollower(t *testing.T) {
 		}
 		if got := h.count(t, "SELECT count(*) FROM perps.fee_config"); got != 1 {
 			t.Fatalf("%d fee_config rows after rewind, want 1", got)
+		}
+	})
+
+	t.Run("agreeing_reread_does_not_rewind", func(t *testing.T) {
+		h := newHarness(t)
+		base := h.base(t)
+		rec := &recorder{}
+		f := h.follower(t, base, rec)
+		n := h.follow(t, f)
+		if n < 11 {
+			t.Fatalf("stored %d blocks, want at least 11", n)
+		}
+		cursor := h.cursor(t)
+		if _, err := f.rewind(h.ctx, cursor); !errors.Is(err, ErrHashDisagreement) {
+			t.Fatalf("rewind of an agreeing height: %v, want ErrHashDisagreement", err)
+		}
+		if rows := h.outboxRows(t); len(rows) != 0 {
+			t.Fatalf("%d rewind messages without a fork", len(rows))
+		}
+		if len(rec.affected) != 0 {
+			t.Fatalf("rebuild ran without a fork: %+v", rec.affected)
+		}
+		if got := h.cursor(t); got != cursor {
+			t.Fatalf("cursor %d, want %d", got, cursor)
+		}
+		if got := h.count(t, "SELECT count(*) FROM perps.blocks"); got != n {
+			t.Fatalf("%d block rows, want %d", got, n)
+		}
+	})
+
+	t.Run("logs_from_node_holding_to", func(t *testing.T) {
+		h := newHarness(t)
+		head, err := h.rpc.Head(h.ctx)
+		if err != nil {
+			t.Fatalf("head: %v", err)
+		}
+		// The lagging node reports a head 25 blocks back and, like a node
+		// behind the range, answers eth_getLogs with no logs.
+		lagHead := head - 25
+		var lagLogs atomic.Int64
+		lagging := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			var req struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+			}
+			if err := json.Unmarshal(body, &req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			switch req.Method {
+			case "eth_blockNumber":
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(req.ID) + `,"result":"0x` + strconv.FormatUint(lagHead, 16) + `"}`))
+				return
+			case "eth_getLogs":
+				lagLogs.Add(1)
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(req.ID) + `,"result":[]}`))
+				return
+			}
+			resp, err := http.Post(h.rpcURL, "application/json", bytes.NewReader(body))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadGateway)
+				return
+			}
+			defer resp.Body.Close()
+			w.WriteHeader(resp.StatusCode)
+			_, _ = io.Copy(w, resp.Body)
+		}))
+		defer lagging.Close()
+		pool, err := NewRPC(h.ctx, RPCOptions{URLs: []string{lagging.URL, h.rpcURL}})
+		if err != nil {
+			t.Fatalf("rpc: %v", err)
+		}
+		defer pool.Close()
+		// Rank the lagging node first.
+		pool.mu.Lock()
+		pool.slots[1].consecutiveFailures = 1
+		pool.mu.Unlock()
+		if got := pool.rankedIndices(); !reflect.DeepEqual(got, []int{0, 1}) {
+			t.Fatalf("rank %v, want [0 1]", got)
+		}
+		from, to := head-19, head
+		addresses := []string{strings.ToLower(PerpsModule.Hex())}
+		res, err := pool.Logs(h.ctx, FetchOptions{MonitoredAddresses: addresses, FromBlock: int64(from), ToBlock: int64(to)})
+		if err != nil {
+			t.Fatalf("logs: %v", err)
+		}
+		if got := lagLogs.Load(); got != 0 {
+			t.Fatalf("lagging node at %d served %d eth_getLogs for %d-%d", lagHead, got, from, to)
+		}
+		client, err := ethclient.Dial(h.rpcURL)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		defer client.Close()
+		want, err := client.FilterLogs(h.ctx, ethereum.FilterQuery{Addresses: []common.Address{PerpsModule}, FromBlock: new(big.Int).SetUint64(from), ToBlock: new(big.Int).SetUint64(to)})
+		if err != nil {
+			t.Fatalf("direct logs: %v", err)
+		}
+		if len(res.Logs) != len(want) {
+			t.Fatalf("pool served %d logs of %d-%d, the node holds %d", len(res.Logs), from, to, len(want))
+		}
+		for i := range want {
+			if res.Logs[i].BlockNumber != want[i].BlockNumber || res.Logs[i].Index != want[i].Index || res.Logs[i].TxHash != want[i].TxHash {
+				t.Fatalf("log %d is %d/%d, node has %d/%d", i, res.Logs[i].BlockNumber, res.Logs[i].Index, want[i].BlockNumber, want[i].Index)
+			}
+		}
+		// With every node behind the range the pool refuses instead of
+		// serving it empty.
+		lagOnly, err := NewRPC(h.ctx, RPCOptions{URLs: []string{lagging.URL}})
+		if err != nil {
+			t.Fatalf("rpc: %v", err)
+		}
+		defer lagOnly.Close()
+		if _, err := lagOnly.Logs(h.ctx, FetchOptions{MonitoredAddresses: addresses, FromBlock: int64(from), ToBlock: int64(to)}); !errors.Is(err, ErrNodeBehind) {
+			t.Fatalf("logs from a pool behind %d: %v, want ErrNodeBehind", to, err)
+		}
+		if got := lagLogs.Load(); got != 0 {
+			t.Fatalf("lagging node served %d eth_getLogs", got)
+		}
+	})
+
+	t.Run("transport_failover", func(t *testing.T) {
+		h := newHarness(t)
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("listen: %v", err)
+		}
+		refused := "http://" + l.Addr().String()
+		_ = l.Close()
+		pool, err := NewRPC(h.ctx, RPCOptions{URLs: []string{refused, h.rpcURL}})
+		if err != nil {
+			t.Fatalf("rpc: %v", err)
+		}
+		defer pool.Close()
+		rc, err := gethrpc.DialOptions(h.ctx, refused, gethrpc.WithHTTPClient(&http.Client{Transport: pool.Transport()}))
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		client := ethclient.NewClient(rc)
+		defer client.Close()
+		if err := markets.Refresh(h.ctx, h.db, client); err != nil {
+			t.Fatalf("markets refresh over the pool: %v", err)
+		}
+		if got := h.count(t, "SELECT count(*) FROM perps.markets"); got != 18 {
+			t.Fatalf("%d markets, want 18", got)
 		}
 	})
 }

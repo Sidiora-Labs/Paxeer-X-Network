@@ -56,6 +56,9 @@ var (
 // ErrResponseSize reports a node refusal of a request by its result size.
 var ErrResponseSize = errors.New("source: response size refused")
 
+// ErrNodeBehind reports that no healthy node holds the block a request needs.
+var ErrNodeBehind = errors.New("source: no healthy node holds the block")
+
 // FetchOptions is one ranged log query.
 type FetchOptions struct {
 	// MonitoredAddresses is the address filter; an empty filter is refused.
@@ -206,23 +209,29 @@ func (s *RPC) Close() {
 
 // Head returns the highest eth_blockNumber seen, with failover.
 func (s *RPC) Head(ctx context.Context) (uint64, error) {
-	raw, err := s.callWithFallback(ctx, s.timeout, "eth_blockNumber")
+	raw, idx, err := s.request(ctx, s.timeout, 0, "eth_blockNumber")
 	if err != nil {
 		return 0, err
 	}
-	var hexStr string
-	if err := json.Unmarshal(raw, &hexStr); err != nil {
-		return 0, fmt.Errorf("eth_blockNumber decode: %w", err)
-	}
-	height, err := parseHexUint64(hexStr)
+	height, err := decodeBlockNumber(raw)
 	if err != nil {
 		return 0, err
 	}
 	s.mu.Lock()
+	sl := s.slots[idx]
+	sl.lastBlock = max(sl.lastBlock, height)
 	s.maximumHead = max(s.maximumHead, height)
 	height = s.maximumHead
 	s.mu.Unlock()
 	return height, nil
+}
+
+func decodeBlockNumber(raw json.RawMessage) (uint64, error) {
+	var hexStr string
+	if err := json.Unmarshal(raw, &hexStr); err != nil {
+		return 0, fmt.Errorf("eth_blockNumber decode: %w", err)
+	}
+	return parseHexUint64(hexStr)
 }
 
 // EVMBlock is the header and transaction senders of one EVM block.
@@ -367,7 +376,9 @@ func (s *RPC) getLogs(ctx context.Context, timeout time.Duration, addresses []st
 		"toBlock":   fmt.Sprintf("0x%x", to),
 		"address":   addresses,
 	}
-	raw, err := s.callWithFallback(ctx, timeout, "eth_getLogs", filter)
+	// Only a node that holds block to answers: a node behind it would serve
+	// the blocks it lacks with no logs.
+	raw, _, err := s.request(ctx, timeout, to, "eth_getLogs", filter)
 	if errors.Is(err, ErrResponseSize) && to > from {
 		mid := from + (to-from)/2
 		low, err := s.getLogs(ctx, timeout, addresses, from, mid)
@@ -392,13 +403,13 @@ func (s *RPC) getLogs(ctx context.Context, timeout time.Duration, addresses []st
 
 // Call runs eth_call of data at to on the latest block.
 func (s *RPC) Call(ctx context.Context, to common.Address, data []byte) ([]byte, error) {
-	return s.call(ctx, to, data, "latest")
+	return s.call(ctx, to, data, nil)
 }
 
 // CallAt runs eth_call of data at to on block height. A node that no longer
 // holds the state of height answers decode.ErrStatePruned.
 func (s *RPC) CallAt(ctx context.Context, to common.Address, data []byte, height uint64) ([]byte, error) {
-	return s.call(ctx, to, data, fmt.Sprintf("0x%x", height))
+	return s.call(ctx, to, data, new(big.Int).SetUint64(height))
 }
 
 // BlockNumber is Head under the name rest.SpotNode reads.
@@ -409,11 +420,11 @@ func (s *RPC) BlockNumber(ctx context.Context) (uint64, error) {
 // BalanceAt runs eth_getBalance of account at blockNumber; nil is the latest
 // block.
 func (s *RPC) BalanceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error) {
-	block, err := blockTag(blockNumber)
+	block, need, err := blockTag(blockNumber)
 	if err != nil {
 		return nil, err
 	}
-	raw, err := s.callWithFallback(ctx, s.timeout, "eth_getBalance", account.Hex(), block)
+	raw, _, err := s.request(ctx, s.timeout, need, "eth_getBalance", account.Hex(), block)
 	if err != nil {
 		return nil, err
 	}
@@ -434,25 +445,27 @@ func (s *RPC) CallContract(ctx context.Context, call ethereum.CallMsg, blockNumb
 	if call.To == nil {
 		return nil, errors.New("source: eth_call without a target")
 	}
-	block, err := blockTag(blockNumber)
+	return s.call(ctx, *call.To, call.Data, blockNumber)
+}
+
+// blockTag is the block parameter of n, nil the latest block, and the height
+// a node must hold to answer it, zero for the latest block.
+func blockTag(n *big.Int) (string, uint64, error) {
+	if n == nil {
+		return "latest", 0, nil
+	}
+	if n.Sign() < 0 || !n.IsUint64() {
+		return "", 0, fmt.Errorf("source: invalid block number %s", n)
+	}
+	return fmt.Sprintf("0x%x", n.Uint64()), n.Uint64(), nil
+}
+
+func (s *RPC) call(ctx context.Context, to common.Address, data []byte, blockNumber *big.Int) ([]byte, error) {
+	block, need, err := blockTag(blockNumber)
 	if err != nil {
 		return nil, err
 	}
-	return s.call(ctx, *call.To, call.Data, block)
-}
-
-func blockTag(n *big.Int) (string, error) {
-	if n == nil {
-		return "latest", nil
-	}
-	if n.Sign() < 0 || !n.IsUint64() {
-		return "", fmt.Errorf("source: invalid block number %s", n)
-	}
-	return fmt.Sprintf("0x%x", n.Uint64()), nil
-}
-
-func (s *RPC) call(ctx context.Context, to common.Address, data []byte, block string) ([]byte, error) {
-	raw, err := s.callWithFallback(ctx, s.timeout, "eth_call", map[string]string{"to": to.Hex(), "data": "0x" + common.Bytes2Hex(data)}, block)
+	raw, _, err := s.request(ctx, s.timeout, need, "eth_call", map[string]string{"to": to.Hex(), "data": "0x" + common.Bytes2Hex(data)}, block)
 	if err != nil {
 		return nil, err
 	}
@@ -519,7 +532,7 @@ type ethTxWire struct {
 }
 
 func (s *RPC) getBlock(ctx context.Context, height uint64) (*ethBlockWire, error) {
-	raw, err := s.callWithFallback(ctx, s.timeout, "eth_getBlockByNumber", fmt.Sprintf("0x%x", height), true)
+	raw, _, err := s.request(ctx, s.timeout, height, "eth_getBlockByNumber", fmt.Sprintf("0x%x", height), true)
 	if err != nil {
 		return nil, err
 	}
@@ -555,37 +568,55 @@ type jsonRPCResponse struct {
 // the revert data.
 const revertCode = 3
 
-// callWithFallback sends a JSON-RPC request to the healthy nodes in rank
-// order until one answers. A size refusal is the request's fault and a
-// revert is the state's answer, not the node's health: both return at once
-// without a failure mark.
-func (s *RPC) callWithFallback(ctx context.Context, timeout time.Duration, method string, params ...any) (json.RawMessage, error) {
+// request sends a JSON-RPC request to the healthy nodes in rank order until
+// one answers, and returns the answer and the slot of the node. With need
+// above zero only a node that holds block need is asked: one whose last seen
+// head is below need is asked for its head first and skipped while it is
+// still behind. A size refusal is the request's fault and a revert is the
+// state's answer, not the node's health: both return at once without a
+// failure mark.
+func (s *RPC) request(ctx context.Context, timeout time.Duration, need uint64, method string, params ...any) (json.RawMessage, int, error) {
 	order := s.rankedIndices()
 	if len(order) == 0 {
-		return nil, errors.New("source: no healthy RPC nodes")
+		return nil, 0, errors.New("source: no healthy RPC nodes")
 	}
 	if params == nil {
 		params = []any{}
 	}
 	body, err := json.Marshal(jsonRPCRequest{JSONRPC: "2.0", Method: method, Params: params, ID: s.nextID.Add(1)})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var lastErr error
-	pruned := 0
+	pruned, behind := 0, 0
 	for _, idx := range order {
+		if need > 0 {
+			holds, err := s.holds(ctx, idx, need)
+			if ctx.Err() != nil {
+				return nil, 0, ctx.Err()
+			}
+			if err != nil {
+				lastErr = err
+				s.markFailure(idx, err)
+				continue
+			}
+			if !holds {
+				behind++
+				continue
+			}
+		}
 		t0 := s.now()
 		result, err := s.doRequest(ctx, timeout, s.slotURL(idx), body)
 		if err == nil {
 			s.markSuccess(idx, s.now().Sub(t0).Milliseconds())
-			return result, nil
+			return result, idx, nil
 		}
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return nil, 0, ctx.Err()
 		}
 		var revert *decode.RevertError
 		if errors.Is(err, ErrResponseSize) || errors.As(err, &revert) {
-			return nil, err
+			return nil, 0, err
 		}
 		lastErr = err
 		if errors.Is(err, decode.ErrStatePruned) {
@@ -596,9 +627,119 @@ func (s *RPC) callWithFallback(ctx context.Context, timeout time.Duration, metho
 		s.markFailure(idx, err)
 	}
 	if pruned == len(order) {
-		return nil, lastErr
+		return nil, 0, lastErr
 	}
-	return nil, fmt.Errorf("source: all %d healthy node(s) failed for %s: %w", len(order), method, lastErr)
+	if behind == len(order) {
+		return nil, 0, fmt.Errorf("%w: %s needs block %d", ErrNodeBehind, method, need)
+	}
+	if behind > 0 {
+		lastErr = fmt.Errorf("%w (%d node(s) behind block %d)", lastErr, behind, need)
+	}
+	return nil, 0, fmt.Errorf("source: all %d healthy node(s) failed for %s: %w", len(order), method, lastErr)
+}
+
+// holds reports whether the node of slot idx holds block need: at once when
+// its last seen head is at or above need, else by asking it for its head.
+// A node's head never goes back, so a head seen at or above need stays a
+// proof that it holds the block.
+func (s *RPC) holds(ctx context.Context, idx int, need uint64) (bool, error) {
+	s.mu.Lock()
+	sl := s.slots[idx]
+	seen, url := sl.lastBlock, sl.url
+	s.mu.Unlock()
+	if seen >= need {
+		return true, nil
+	}
+	body, err := json.Marshal(jsonRPCRequest{JSONRPC: "2.0", Method: "eth_blockNumber", Params: []any{}, ID: s.nextID.Add(1)})
+	if err != nil {
+		return false, err
+	}
+	raw, err := s.doRequest(ctx, s.timeout, url, body)
+	if err != nil {
+		return false, err
+	}
+	head, err := decodeBlockNumber(raw)
+	if err != nil {
+		return false, err
+	}
+	s.mu.Lock()
+	sl.lastBlock = max(sl.lastBlock, head)
+	s.maximumHead = max(s.maximumHead, head)
+	s.mu.Unlock()
+	return head >= need, nil
+}
+
+// blockParam is the position of the block parameter of the state reads that
+// Transport routes to a node holding that block.
+var blockParam = map[string]int{"eth_call": 1, "eth_getBalance": 1, "eth_getCode": 1, "eth_getTransactionCount": 1, "eth_getStorageAt": 2, "eth_getBlockByNumber": 0}
+
+// Transport is an http.RoundTripper that answers each single JSON-RPC request
+// through the pool, with its failover and, for a state read at a block
+// number, only from a node that holds that block. It lets a go-ethereum
+// client (ethclient over rpc.WithHTTPClient) use the pool; the request URL is
+// ignored. A batch request is refused.
+func (s *RPC) Transport() http.RoundTripper { return poolTransport{s} }
+
+type poolTransport struct{ s *RPC }
+
+func (t poolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.Body == nil {
+		return nil, errors.New("source: json-rpc request without a body")
+	}
+	data, err := io.ReadAll(io.LimitReader(r.Body, maxResponseBytes+1))
+	_ = r.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxResponseBytes {
+		return nil, fmt.Errorf("%w: request above %d bytes", ErrResponseSize, maxResponseBytes)
+	}
+	var req struct {
+		ID     json.RawMessage   `json:"id"`
+		Method string            `json:"method"`
+		Params []json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal(data, &req); err != nil {
+		return nil, fmt.Errorf("source: transport accepts single json-rpc requests: %w", err)
+	}
+	var need uint64
+	if at, ok := blockParam[req.Method]; ok && at < len(req.Params) {
+		var tag string
+		if json.Unmarshal(req.Params[at], &tag) == nil {
+			if h, err := parseHexUint64(tag); err == nil {
+				need = h
+			}
+		}
+	}
+	params := make([]any, len(req.Params))
+	for i, p := range req.Params {
+		params[i] = p
+	}
+	out := map[string]any{"jsonrpc": "2.0", "id": req.ID}
+	raw, _, err := t.s.request(r.Context(), t.s.timeout, need, req.Method, params...)
+	if err != nil {
+		if ctxErr := r.Context().Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		out["error"] = map[string]any{"code": -32000, "message": err.Error()}
+	} else {
+		out["result"] = raw
+	}
+	body, err := json.Marshal(out)
+	if err != nil {
+		return nil, err
+	}
+	return &http.Response{
+		Status:        "200 OK",
+		StatusCode:    http.StatusOK,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Header:        http.Header{"Content-Type": []string{"application/json"}},
+		Body:          io.NopCloser(bytes.NewReader(body)),
+		ContentLength: int64(len(body)),
+		Request:       r,
+	}, nil
 }
 
 func (s *RPC) doRequest(ctx context.Context, timeout time.Duration, url string, body []byte) (json.RawMessage, error) {
