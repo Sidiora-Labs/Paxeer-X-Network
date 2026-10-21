@@ -1,6 +1,7 @@
 //! Chainflow feed source of the price sidecar: the authenticated ticker
 //! request and the exact conversion of its JSON number prices.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
@@ -69,6 +70,42 @@ struct RawTicker<'a> {
     #[serde(borrow)]
     mark_price: Option<&'a RawValue>,
     updated_at: Option<i64>,
+}
+
+/// The ticker inside a 200 body: `data` of a `{"success": true, "data": {..}}`
+/// envelope, or the body itself when it is a bare ticker with `symbol` at the
+/// top level.
+fn ticker_object(body: &str) -> Result<&str, FetchError> {
+    let top: BTreeMap<String, &RawValue> =
+        serde_json::from_str(body).map_err(|e| FetchError::Transport(e.to_string()))?;
+    let Some(success) = top.get("success") else {
+        if top.contains_key("symbol") {
+            return Ok(body);
+        }
+        let keys: Vec<&str> = top.keys().map(String::as_str).collect();
+        return Err(FetchError::Transport(format!(
+            "unknown ticker body, top-level keys {keys:?}"
+        )));
+    };
+    match serde_json::from_str::<bool>(success.get()) {
+        Ok(true) => top
+            .get("data")
+            .map(|data| data.get())
+            .ok_or_else(|| FetchError::Transport("success envelope without data".to_owned())),
+        Ok(false) => {
+            let message = ["error", "message"]
+                .iter()
+                .find_map(|key| top.get(*key))
+                .map_or("no message", |m| m.get());
+            Err(FetchError::Transport(format!(
+                "chainflow success=false: {message}"
+            )))
+        }
+        Err(_) => Err(FetchError::Transport(format!(
+            "envelope success is not a boolean: {}",
+            success.get()
+        ))),
+    }
 }
 
 impl ChainflowConfig {
@@ -160,21 +197,23 @@ impl ChainflowConfig {
         self.parse_ticker(&body, symbol, now_ms())
     }
 
-    /// Checks a 200 ticker body for the request `symbol`: the response symbol
+    /// Checks a 200 ticker body, enveloped or bare, for the request `symbol`:
+    /// a `success: false` envelope is refused with its message; the response symbol
     /// must be `PERP_<SYMBOL>_USDC`, both prices JSON numbers, and `updated_at`
     /// (the observation time) no older than `max_quote_age_ms`.
     ///
     /// # Errors
     /// [`FetchError::Symbol`], [`FetchError::NoPrice`], [`FetchError::Stale`],
-    /// or [`FetchError::Transport`] for a body that is not a ticker object.
+    /// or [`FetchError::Transport`] for a refused envelope or a body that is
+    /// not a ticker object, naming the body's top-level keys.
     pub fn parse_ticker(
         &self,
         body: &str,
         symbol: &str,
         now_ms: u64,
     ) -> Result<Ticker, FetchError> {
-        let raw: RawTicker<'_> =
-            serde_json::from_str(body).map_err(|e| FetchError::Transport(e.to_string()))?;
+        let raw: RawTicker<'_> = serde_json::from_str(ticker_object(body)?)
+            .map_err(|e| FetchError::Transport(e.to_string()))?;
         if raw.symbol.as_deref() != Some(format!("PERP_{symbol}_USDC").as_str()) {
             return Err(FetchError::Symbol);
         }
@@ -294,6 +333,7 @@ mod tests {
     use std::thread;
 
     const BTC: &str = include_str!("../tests/fixtures/chainflow_ticker_btc.json");
+    const BTC_ENVELOPE: &str = include_str!("../tests/fixtures/chainflow_ticker_btc_envelope.json");
 
     fn config(api_key_env: &str) -> ChainflowConfig {
         ChainflowConfig {
@@ -414,6 +454,55 @@ mod tests {
                 .parse_ticker("[]", "BTC", 1_700_000_000_000)
                 .map_err(|e| e.kind()),
             Err("transport")
+        );
+    }
+
+    #[test]
+    fn chainflow_enveloped_ticker_parses() {
+        assert_eq!(
+            config("UNUSED").parse_ticker(BTC_ENVELOPE, "BTC", 1_700_000_000_500),
+            Ok(Ticker {
+                index_price: "65000500000000000000000".to_owned(),
+                mark_price: "65010000000000000000000".to_owned(),
+                observed_at_ms: 1_700_000_000_000,
+            })
+        );
+        assert_eq!(
+            config("UNUSED").parse_ticker(BTC_ENVELOPE, "ETH", 1_700_000_000_500),
+            Err(FetchError::Symbol)
+        );
+    }
+
+    #[test]
+    fn chainflow_envelope_refusals() {
+        let config = config("UNUSED");
+        assert_eq!(
+            config.parse_ticker(
+                r#"{"success":false,"error":"Price unavailable or stale"}"#,
+                "BTC",
+                1_700_000_000_000
+            ),
+            Err(FetchError::Transport(
+                r#"chainflow success=false: "Price unavailable or stale""#.to_owned()
+            ))
+        );
+        assert_eq!(
+            config.parse_ticker(r#"{"success":true}"#, "BTC", 1_700_000_000_000),
+            Err(FetchError::Transport(
+                "success envelope without data".to_owned()
+            ))
+        );
+        assert_eq!(
+            config.parse_ticker(r#"{"success":"yes","data":{}}"#, "BTC", 1_700_000_000_000),
+            Err(FetchError::Transport(
+                r#"envelope success is not a boolean: "yes""#.to_owned()
+            ))
+        );
+        assert_eq!(
+            config.parse_ticker(r#"{"result":{},"ok":1}"#, "BTC", 1_700_000_000_000),
+            Err(FetchError::Transport(
+                r#"unknown ticker body, top-level keys ["ok", "result"]"#.to_owned()
+            ))
         );
     }
 
