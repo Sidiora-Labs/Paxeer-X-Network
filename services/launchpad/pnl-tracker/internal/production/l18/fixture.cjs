@@ -1,7 +1,7 @@
 // Private Anvil-only contract fixture. No keys or external RPC configuration.
 // Uses source-compiled artifacts and actual contracts; USDL is a test ERC20.
 const fs=require('node:fs');const path=require('node:path');
-const root=path.resolve(__dirname,'../../../../../../contracts');const {ethers}=require('ethers');
+const root=path.resolve(__dirname,'../../../../../../contracts/launchpad');const {ethers}=require('ethers');
 const rpc='http://127.0.0.1:21800';const provider=new ethers.JsonRpcProvider(rpc,125,{staticNetwork:true});
 // Exact process identity and listener ownership are checked for every mutation.
 const identity=JSON.parse(process.env.L18_ANVIL_IDENTITY||'null');

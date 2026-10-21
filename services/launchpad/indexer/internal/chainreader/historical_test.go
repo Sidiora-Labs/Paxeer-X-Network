@@ -133,7 +133,7 @@ func actualAdversarialChain(t *testing.T) *adversarialChain {
 
 func actualArtifact(t *testing.T, name string) (abi.ABI, []byte) {
 	t.Helper()
-	root := filepath.Join("..", "..", "..", "..", "..", "contracts", "artifacts", "contracts")
+	root := filepath.Join("..", "..", "..", "..", "..", "contracts", "launchpad", "artifacts", "contracts")
 	var files []string
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {

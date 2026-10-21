@@ -102,7 +102,7 @@ test('actual approval hook rejects actual chain1 with zero transaction dispatch'
   await nodeRpc('anvil_setChainId', [125]);
   await act(async () => { await disconnect(config); await connect(config, { connector: config.connectors[0]! }); });
   expect(await rpc.getChainId()).toBe(125);
-  const artifactPath = process.env.DISPATCH_TEST_ERC20_ARTIFACT ?? '../../../../contracts/artifacts/contracts/test/MockERC20.sol/MockERC20.json';
+  const artifactPath = process.env.DISPATCH_TEST_ERC20_ARTIFACT ?? '../../../contracts/launchpad/artifacts/contracts/test/MockERC20.sol/MockERC20.json';
   const artifact = JSON.parse(readFileSync(artifactPath, 'utf8')) as { abi: Abi; bytecode: Hex };
   const creation = encodeDeployData({ abi: artifact.abi, bytecode: artifact.bytecode, args: ['Owned fixture', 'FIX', 6] });
   const deploymentHash = await nodeRpc('eth_sendTransaction', [{ from: accounts[0]!, data: creation, gas: '0x4c4b40' }]) as Hex;

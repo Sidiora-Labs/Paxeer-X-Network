@@ -109,7 +109,7 @@ class ExportTests(unittest.TestCase):
 
     def test_generation_measurement_records_real_artifact_identities_without_runtime_claims(self):
         reviewed = json.loads((pathlib.Path(__file__).resolve().parents[1] / 'catalog/reviewed.json').read_text())
-        roots = pathlib.Path(__file__).resolve().parents[3] / 'contracts'
+        roots = pathlib.Path(__file__).resolve().parents[4] / 'contracts/launchpad'
         result = m.generation_measurement(reviewed, roots, ['EventEmitter', 'SidioraERC20'])
         self.assertEqual(result['firstExportSha256'], result['secondExportSha256'])
         self.assertTrue(result['byteIdentical'])

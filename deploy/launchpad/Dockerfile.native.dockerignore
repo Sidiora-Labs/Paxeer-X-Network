@@ -13,7 +13,7 @@
 **/__pycache__
 **/dist
 **/out
-launchpad/contracts/cache
+contracts/launchpad/cache
 tools/launchpad/cache
 evidence
 **/evidence
@@ -36,7 +36,7 @@ evidence
 **/.codegraph
 **/token.json
 **/coordinator.key
-launchpad/contracts
+contracts/launchpad
 research
 knowledge
 **/.next-build

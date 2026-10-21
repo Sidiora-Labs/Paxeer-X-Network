@@ -1018,7 +1018,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.4]
 title = "Move the launchpad contracts to contracts/launchpad"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 6

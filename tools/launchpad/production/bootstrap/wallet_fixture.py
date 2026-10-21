@@ -95,7 +95,7 @@ def main():
         try:
             node, url = start_node(log)
             dispatch_node, dispatch_url = start_node(dispatch_log, 1)
-            contract_root = Path(os.environ.get('QUALIFICATION_CONTRACT_ROOT', str(ROOT.parent / 'contracts')))
+            contract_root = Path(os.environ.get('QUALIFICATION_CONTRACT_ROOT', str(Path(__file__).resolve().parents[4] / 'contracts/launchpad')))
             artifact = contract_root / 'artifacts/contracts/test/MockERC20.sol/MockERC20.json'
             if not artifact.is_file():
                 raise RuntimeError('Compiled real ERC20 fixture artifact is missing')

@@ -341,7 +341,7 @@ def expand_tokens(value, root, evidence, contract_root, started_at=None):
 
 def execute_check(check, root, evidence, contract_root=None, control=None):
     control = control or ExecutionControl()
-    contract_root = contract_root or root.parent / 'contracts'
+    contract_root = contract_root or root.parent / 'contracts/launchpad'
     check = {**check, 'argv': [expand_tokens(value, root, evidence, contract_root, control.started_at) for value in check['argv']],
              'env': {key: expand_tokens(value, root, evidence, contract_root, control.started_at) for key, value in check['env'].items()}}
     log = evidence / f'{check["id"]}.log'
@@ -653,7 +653,7 @@ def run(args, control=None):
             print(json.dumps({'check': observed['id'], 'passed': observed['passed'],
                               'duration_seconds': observed['duration_seconds']}), flush=True)
         execute_checks(checks, root, evidence,
-                       args.contract_root.resolve() if args.contract_root else root.parent / 'contracts',
+                       args.contract_root.resolve() if args.contract_root else root.parent / 'contracts/launchpad',
                        publish, control)
         if frozen_interface is not None:
             current_interface = interface_bundle(registry['tasks'][args.task].get('interface_bundle'), root)
