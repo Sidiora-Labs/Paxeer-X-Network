@@ -1746,7 +1746,7 @@ unset CHECK_LIVE_ROUTER_CONNECT
 # stand in for the two running processes on each of the five relayer apps,
 # and each relayer's volume holds its own journal.
 bridges=()
-mkdir -p "$fx/services/interop/deploy/bridge-relayer" "$fx/bridge/deploy" "$fx/bridge/evm/chains/base" "$fx/bridge/solana/chains/solana" \
+mkdir -p "$fx/services/interop/deploy/bridge-relayer" "$fx/services/bridge/deploy" "$fx/contracts/bridge/evm/chains/base" "$fx/contracts/bridge/solana/chains/solana" \
 	"$work/bridge/records" "$work/bridge/bin"
 for n in 1 2 3 4 5; do
 	bridges+=("$(fx_app "services/interop/deploy/bridge-relayer/relayer-$n.toml")")
@@ -1760,7 +1760,7 @@ for b in "${bridges[@]}"; do
 	bridge_none+=("fail processes app=$b relayer=none signer=none")
 	bridge_running+=("pass processes app=$b relayer=running signer=running")
 done
-cat >"$fx/bridge/deploy/checklist.sh" <<'SH'
+cat >"$fx/services/bridge/deploy/checklist.sh" <<'SH'
 #!/usr/bin/env bash
 set -eu
 if grep -q match "$PAXEER_BRIDGE_DEPLOYMENT_RECORD"; then
@@ -1770,7 +1770,7 @@ fi
 echo "checklist: error: $1 vault owner read through https://fixture-rpc.invalid/secret-key differs" >&2
 exit 1
 SH
-chmod +x "$fx/bridge/deploy/checklist.sh"
+chmod +x "$fx/services/bridge/deploy/checklist.sh"
 cp "$(command -v sleep)" "$work/bridge/bin/layerx-bridge-relayer"
 cp "$(command -v sleep)" "$work/bridge/bin/layerx-mirror-signer"
 printf '{"chain":"base","match":true}\n' >"$work/bridge/records/base.json"

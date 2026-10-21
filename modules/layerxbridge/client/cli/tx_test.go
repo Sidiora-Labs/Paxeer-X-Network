@@ -14,7 +14,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
-	"github.com/Sidiora-Labs/Paxeer-X-Network/bridge/deploy/proposals"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
@@ -24,9 +23,10 @@ import (
 	authtx "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/tx"
 	govcli "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/cli"
 	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/services/bridge/deploy/proposals"
 )
 
-var proposalTestdata = filepath.Join("..", "..", "..", "..", "bridge", "deploy", "proposals", "testdata")
+var proposalTestdata = filepath.Join("..", "..", "..", "..", "services", "bridge", "deploy", "proposals", "testdata")
 
 const testDeposit = "10000000uhpx"
 

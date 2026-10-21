@@ -6,16 +6,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Sidiora-Labs/Paxeer-X-Network/bridge/deploy/proposals"
 	layerxbridgecli "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/client/cli"
 	layerxbridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/services/bridge/deploy/proposals"
 	"github.com/stretchr/testify/require"
 )
 
-var bridgeProposalTestdata = filepath.Join("..", "bridge", "deploy", "proposals", "testdata")
+var bridgeProposalTestdata = filepath.Join("..", "services", "bridge", "deploy", "proposals", "testdata")
 
 // generatedBridgeProposal is the proposal the generator writes for the
 // committed ethereum proposal input, as the file an operator submits.

@@ -73,8 +73,8 @@ const NULLIFIER: &str = "FSACiQWvDWbuuarWkWmWik9diuERNadDv6EpasgWYrUk";
 const VAULT_TOKEN: &str = "J8Rf9GPpeneA3AcgVTSvCEDCKyztYqrzD6S5NqWHU2nw";
 const RECIPIENT_TOKEN: &str = "5Yc2Ahn1FPMtG4fhXzPi9LbfhJADa3YRZkibiGmS1kNt";
 
-/// The pinned outbound vector of `bridge/vectors` and
-/// `bridge/ATTESTATION-SOLANA.md`.
+/// The pinned outbound vector of `contracts/bridge/vectors` and
+/// `contracts/bridge/ATTESTATION-SOLANA.md`.
 const VECTOR_TX_HASH: &str = "0x6f79d9a61a77030bbeba5f435907f53b09321779310326b9faaebb391b3b5d5f";
 const VECTOR_NONCE: u64 = 11;
 const VECTOR_AMOUNT: u64 = 4_200_000;

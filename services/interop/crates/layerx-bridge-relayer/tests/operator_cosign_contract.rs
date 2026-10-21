@@ -76,7 +76,7 @@ fn signer_binary() -> PathBuf {
 
 /// Qualification uses the declared cardinality; generated keys confer no operator approval.
 fn declared_quorum() -> (usize, usize) {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../bridge/deploy/attestors.json");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../services/bridge/deploy/attestors.json");
     let text = fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("declared membership {}: {error}", path.display()));
     let document: serde_json::Value =

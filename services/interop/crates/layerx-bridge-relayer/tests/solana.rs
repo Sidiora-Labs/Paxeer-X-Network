@@ -45,8 +45,8 @@ const SIGNATURE_C: &str =
     "2KPXJi3cjmvBZtMz1P5B4aXzDFyaA1kGshjGCosSQcqveLqKiz9u3mqtbwohXMumzKPN1kPjbwmWtk3xj7M667bn";
 const RECENT_BLOCKHASH: &str = "FrLFSoxDaT2FroN4k7ZE7uettrVRLzn3DQN8p6hBcjCT";
 
-/// The pinned inbound vector of `bridge/vectors` and
-/// `bridge/ATTESTATION-SOLANA.md`.
+/// The pinned inbound vector of `contracts/bridge/vectors` and
+/// `contracts/bridge/ATTESTATION-SOLANA.md`.
 const VECTOR_TX_HASH: &str = "0x4219bc1e7d357618e0c662c494981e70d02920d8f7c3f850dd25712ef87e48d3";
 const VECTOR_RECIPIENT: &str = "0x000000000000000000000000b65aa00b0baa8fe2abc2d188312fb0a6d00e3ed5";
 const VECTOR_DIGEST: &str = "0x3333b122e2a4e61ad324d5c875a8a9c72cf98a2724da26c211235e30a8d294ef";

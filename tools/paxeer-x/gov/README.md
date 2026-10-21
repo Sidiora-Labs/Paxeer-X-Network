@@ -22,7 +22,7 @@ tools/paxeer-x/gov/render.sh --out DIR --paxd build/paxd \
 | `04-exchange-markets.json` | LayerXProposal with `layerxexchange.MsgSetMarket` for PAX/SID spot (SID margin), BTC-USD and ETH-USD perps (`--perp-margin`, default PAX) | `tx gov submit-proposal layerx-proposal` |
 | `05-custody.json` | CustodyProposal: `MsgSetAsset` for uhpx and usid, `MsgUpdateParams` with the deposit root authority | `tx layerxcustody submit-proposal custody` |
 | `06-anchor-sequencer-authorization.json` | Calldata for `setSequencerAuthorization` on the anchor precompile `0x…1014`, sent by the anchor authority | shape check |
-| `bridge/<chain>/` | Output of `bridge/deploy/proposals` for each `--bridge-config`: bodies under `bodies/`, `proposals/04-proposal-open-chain.json` and `proposals/05-proposal-sidiora-cap.json` | `tx gov submit-proposal layerxbridge-proposal` |
+| `bridge/<chain>/` | Output of `services/bridge/deploy/proposals` for each `--bridge-config`: bodies under `bodies/`, `proposals/04-proposal-open-chain.json` and `proposals/05-proposal-sidiora-cap.json` | `tx gov submit-proposal layerxbridge-proposal` |
 
 Each validated file gets a `<file>.tx.json` beside it with the unsigned transaction.
 

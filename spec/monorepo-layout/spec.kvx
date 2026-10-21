@@ -1043,7 +1043,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5]
 title = "Split bridge: on-chain programs to contracts/bridge, deploy and relayer configuration to services/bridge"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 6

@@ -3418,11 +3418,11 @@ interop-lint:
 .PHONY: bridge-test-evm bridge-test-solana
 
 bridge-test-evm:
-	bash bridge/evm/bootstrap-libs.sh
-	forge test --root bridge/evm -vvv
+	bash contracts/bridge/evm/bootstrap-libs.sh
+	forge test --root contracts/bridge/evm -vvv
 
 bridge-test-solana:
-	cargo test --locked --manifest-path bridge/solana/Cargo.toml
+	cargo test --locked --manifest-path contracts/bridge/solana/Cargo.toml
 
 PROGRAMS_CARGO ?= cargo
 PROGRAMS_DIR ?= $(CURDIR)/programs

@@ -7,7 +7,7 @@
 //! the Ethereum chains use.
 //!
 //! Solana identities enter a digest as 20-byte handles, exactly as
-//! `bridge/ATTESTATION-SOLANA.md` specifies: the handle of a 32-byte key is the
+//! `contracts/bridge/ATTESTATION-SOLANA.md` specifies: the handle of a 32-byte key is the
 //! last 20 bytes of its keccak256, the inbound txHash is keccak256 of the
 //! 64-byte transaction signature, and Solana's chain id on the Paxeer side is
 //! the reserved constant [`SOLANA_CHAIN_ID`].

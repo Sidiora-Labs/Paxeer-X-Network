@@ -30,7 +30,7 @@ PERP_MARGIN=pax
 FIRST_BATCH=0
 LAST_BATCH=18446744073709551615
 SID_POINTER=""
-BRIDGE_MANIFEST="$ROOT/bridge/deploy/attestors.json"
+BRIDGE_MANIFEST="$ROOT/services/bridge/deploy/attestors.json"
 BRIDGE_CONFIGS=()
 OUT="" HEIGHT="" RELEASE_URL="" RELEASE_SHA256="" DEPOSIT="" PAX_USD="" RATE_UPDATE_HEIGHT=""
 PAX_ASSET_ID="" SID_ASSET_ID="" MARKET_PAX_SID="" MARKET_BTC_USD="" MARKET_ETH_USD=""
@@ -192,7 +192,7 @@ for config in "${BRIDGE_CONFIGS[@]}"; do
   name=$(jq -r .name "$config")
   dir="$OUT/bridge/$name"
   rm -rf "$dir"
-  (cd "$ROOT" && go run ./bridge/deploy/proposals/cmd/paxeer-bridge-proposals -manifest "$BRIDGE_MANIFEST" \
+  (cd "$ROOT" && go run ./services/bridge/deploy/proposals/cmd/paxeer-bridge-proposals -manifest "$BRIDGE_MANIFEST" \
     -proposals "$dir/proposals" "$config" "$dir/bodies") >/dev/null
   for file in "$dir"/proposals/04-proposal-open-chain.json "$dir"/proposals/05-proposal-sidiora-cap.json; do
     [ -f "$file" ] || continue

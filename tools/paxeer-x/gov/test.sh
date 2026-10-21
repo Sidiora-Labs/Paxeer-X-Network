@@ -67,8 +67,8 @@ OUT=$WORK/out
   --sequencer-id 6666666666666666666666666666666666666666666666666666666666666666 \
   --sequencer-pubkey 3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c \
   --first-batch 1 \
-  --bridge-config "$ROOT/bridge/deploy/proposals/testdata/solana.json" \
-  --bridge-manifest "$ROOT/bridge/deploy/proposals/testdata/attestors.json"
+  --bridge-config "$ROOT/services/bridge/deploy/proposals/testdata/solana.json" \
+  --bridge-manifest "$ROOT/services/bridge/deploy/proposals/testdata/attestors.json"
 
 for f in 01-software-upgrade 02-fee-token-params 03-xweb-fee 04-exchange-markets 05-custody \
   bridge/solana/proposals/04-proposal-open-chain bridge/solana/proposals/05-proposal-sidiora-cap; do

@@ -1,7 +1,7 @@
 //! ABI of the two bridge endpoints the relayer drives: the layerxBridge
 //! precompile at `0x…1016` on Paxeer (`precompiles/layerxbridge/abi.json`) and
 //! `PaxeerXVault` on each Ethereum chain
-//! (`bridge/evm/src/PaxeerXVault.sol`).
+//! (`contracts/bridge/evm/src/PaxeerXVault.sol`).
 
 use std::fmt;
 

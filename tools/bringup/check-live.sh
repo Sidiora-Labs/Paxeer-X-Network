@@ -119,8 +119,8 @@ explorer  reads the deployed explorer at CHECK_LIVE_EXPLORER_ORIGIN, by default
              missing_block_ranges
           Exits 0 only when every check passes.
 
-bridge    runs bridge/deploy/checklist.sh for every chain under bridge/evm/chains
-          and bridge/solana/chains against PAXEER_BRIDGE_RECORDS_DIR/<chain>.json,
+bridge    runs services/bridge/deploy/checklist.sh for every chain under contracts/bridge/evm/chains
+          and contracts/bridge/solana/chains against PAXEER_BRIDGE_RECORDS_DIR/<chain>.json,
           then reads a machine of the app of each of
           services/interop/deploy/bridge-relayer/relayer-1.toml through relayer-5.toml
           through flyctl ssh console, one line per check:
@@ -2366,8 +2366,8 @@ sed -n "s/^{\"kind\":\"completed\",\"item\":\"\(in:[^\"]*\)\",\"completion\":{\"
 	fi
 done'
 
-# check_bridge: bridge/deploy/checklist.sh exits 0 for every chain under
-# bridge/evm/chains and bridge/solana/chains against the deployment record
+# check_bridge: services/bridge/deploy/checklist.sh exits 0 for every chain under
+# contracts/bridge/evm/chains and contracts/bridge/solana/chains against the deployment record
 # PAXEER_BRIDGE_RECORDS_DIR/<chain>.json, each run bounded by ten times
 # CHECK_LIVE_TIMEOUT; a machine of the app of each of
 # services/interop/deploy/bridge-relayer/relayer-1.toml through relayer-5.toml runs both
@@ -2388,7 +2388,7 @@ check_bridge() {
 		echo "check-live: flyctl is required" >&2
 		exit 2
 	fi
-	for dir in "$repo_root"/bridge/evm/chains/*/ "$repo_root"/bridge/solana/chains/*/; do
+	for dir in "$repo_root"/contracts/bridge/evm/chains/*/ "$repo_root"/contracts/bridge/solana/chains/*/; do
 		[ -d "$dir" ] && chains+=("$(basename "$dir")")
 	done
 	if [ "${#chains[@]}" -eq 0 ]; then
@@ -2403,7 +2403,7 @@ check_bridge() {
 			continue
 		fi
 		status=0
-		out="$(PAXEER_BRIDGE_DEPLOYMENT_RECORD="$record" timeout "$((timeout * 10))" "$repo_root/bridge/deploy/checklist.sh" "$chain" 2>&1 </dev/null)" || status=$?
+		out="$(PAXEER_BRIDGE_DEPLOYMENT_RECORD="$record" timeout "$((timeout * 10))" "$repo_root/services/bridge/deploy/checklist.sh" "$chain" 2>&1 </dev/null)" || status=$?
 		if [ "$status" -eq 0 ]; then
 			echo "pass checklist chain=$chain exit=0"
 		else

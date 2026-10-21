@@ -662,7 +662,7 @@
       ]
     },
     {
-      "path": "bridge/evm/src/PaxeerXVault.sol",
+      "path": "contracts/bridge/evm/src/PaxeerXVault.sol",
       "lines": [
         "_recordDeposit(asset, amount, paxeerRecipient);",
         "_recordDeposit(NATIVE_ASSET, msg.value, paxeerRecipient);",

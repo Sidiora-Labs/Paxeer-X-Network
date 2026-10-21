@@ -32623,9 +32623,9 @@ ac_3 = "The Sidiora pair registers ahead of its cap (modules/layerxbridge/keeper
 [req.8054]
 title = "Remote EVM vaults and the Solana program stay"
 disposition = "KEEP"
-ac_1 = "PaxeerXVault deposit (bridge/evm/src/PaxeerXVault.sol:139) emits BridgeDeposit (bridge/evm/src/PaxeerXVault.sol:40) with a left-padded Paxeer EVM recipient."
-ac_2 = "release (bridge/evm/src/PaxeerXVault.sol:158) checks attestations (bridge/evm/src/BridgeAttestation.sol:16)."
-ac_3 = "The Solana program deposit and release (bridge/solana/src/deposit.rs:29, bridge/solana/src/release.rs:36) are unchanged."
+ac_1 = "PaxeerXVault deposit (contracts/bridge/evm/src/PaxeerXVault.sol:139) emits BridgeDeposit (contracts/bridge/evm/src/PaxeerXVault.sol:40) with a left-padded Paxeer EVM recipient."
+ac_2 = "release (contracts/bridge/evm/src/PaxeerXVault.sol:158) checks attestations (contracts/bridge/evm/src/BridgeAttestation.sol:16)."
+ac_3 = "The Solana program deposit and release (contracts/bridge/solana/src/deposit.rs:29, contracts/bridge/solana/src/release.rs:36) are unchanged."
 
 [req.8055]
 title = "Bridge relayer confirms from the signed receipt"
@@ -33455,7 +33455,7 @@ verification_contract = "go test -count=1 ./precompiles/layerxbridge/... -run Te
 do_1 = "Keep bridgeOut (precompiles/layerxbridge/layerxbridge.go:247)."
 do_2 = "Keep BridgeOut (modules/layerxbridge/keeper/bridge.go:142)."
 do_3 = "Keep the event definitions (precompiles/layerxbridge/layerxbridge.go:49)."
-do_4 = "Keep the remote ABI parity test (bridge/evm/test/RelayerAbiParity.t.sol:44)."
+do_4 = "Keep the remote ABI parity test (contracts/bridge/evm/test/RelayerAbiParity.t.sol:44)."
 symbols = ["bridgeOut", "BridgeOut"]
 
 [capability.8.8.3]
@@ -33486,12 +33486,12 @@ symbols = ["NewProposalHandler"]
 title = "Remote EVM vaults and the Solana program stay"
 reqs = ["8054.1", "8054.2", "8054.3"]
 touches = []
-tests = ["bridge/evm/test/PaxeerXVault.t.sol"]
-verification_contract = "cd bridge/evm && forge test --match-contract PaxeerXVault"
-do_1 = "Keep deposit and depositNative (bridge/evm/src/PaxeerXVault.sol:139, bridge/evm/src/PaxeerXVault.sol:150)."
-do_2 = "Keep release (bridge/evm/src/PaxeerXVault.sol:158)."
-do_3 = "Keep attestation checks (bridge/evm/src/BridgeAttestation.sol:28, bridge/solana/src/attestation.rs:92)."
-do_4 = "Keep the recipient type (bridge/solana/src/recipient.rs:23)."
+tests = ["contracts/bridge/evm/test/PaxeerXVault.t.sol"]
+verification_contract = "cd contracts/bridge/evm && forge test --match-contract PaxeerXVault"
+do_1 = "Keep deposit and depositNative (contracts/bridge/evm/src/PaxeerXVault.sol:139, contracts/bridge/evm/src/PaxeerXVault.sol:150)."
+do_2 = "Keep release (contracts/bridge/evm/src/PaxeerXVault.sol:158)."
+do_3 = "Keep attestation checks (contracts/bridge/evm/src/BridgeAttestation.sol:28, contracts/bridge/solana/src/attestation.rs:92)."
+do_4 = "Keep the recipient type (contracts/bridge/solana/src/recipient.rs:23)."
 symbols = ["PaxeerXVault"]
 
 [capability.8.8.6]
@@ -67638,45 +67638,45 @@ ac_4 = "Case `a_release_is_journaled_before_its_broadcast_and_replays_from_disk`
 
 [req.12406]
 title = "Re-target RelayerAbiParity.t.sol at the merged chain"
-ac_1 = "Case `test_EventTopicsMatchTheRelayerConstants` asserts `assertEq(PaxeerXVault.BridgeDeposit.selector, BRIDGE_DEPOSIT_TOPIC, 'BridgeDeposit topic');` at bridge/evm/test/RelayerAbiParity.t.sol:45; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_2 = "Case `test_EventTopicsAreTheKeccakOfTheirSignatures` asserts `assertEq(` at bridge/evm/test/RelayerAbiParity.t.sol:50; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_3 = "Case `test_SelectorsMatchTheRelayerConstants` asserts `assertEq(selectorOf(vault.deposit.selector), selectorOf(DEPOSIT_SELECTOR), 'deposit selector');` at bridge/evm/test/RelayerAbiParity.t.sol:63; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_4 = "Case `test_SelectorsAreTheKeccakOfTheirSignatures` asserts `assertEq(` at bridge/evm/test/RelayerAbiParity.t.sol:74; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_1 = "Case `test_EventTopicsMatchTheRelayerConstants` asserts `assertEq(PaxeerXVault.BridgeDeposit.selector, BRIDGE_DEPOSIT_TOPIC, 'BridgeDeposit topic');` at contracts/bridge/evm/test/RelayerAbiParity.t.sol:45; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_2 = "Case `test_EventTopicsAreTheKeccakOfTheirSignatures` asserts `assertEq(` at contracts/bridge/evm/test/RelayerAbiParity.t.sol:50; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_3 = "Case `test_SelectorsMatchTheRelayerConstants` asserts `assertEq(selectorOf(vault.deposit.selector), selectorOf(DEPOSIT_SELECTOR), 'deposit selector');` at contracts/bridge/evm/test/RelayerAbiParity.t.sol:63; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_4 = "Case `test_SelectorsAreTheKeccakOfTheirSignatures` asserts `assertEq(` at contracts/bridge/evm/test/RelayerAbiParity.t.sol:74; it passes unchanged against layerxBridge 0x1016 on the merged chain"
 
 [req.12407]
 title = "Re-target PaxeerXVault.t.sol at the merged chain"
-ac_1 = "Case `test_DepositERC20` asserts `assertEq(token.balanceOf(address(vault)), 40 ether, 'vault balance');` at bridge/evm/test/PaxeerXVault.t.sol:105; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_2 = "Case `test_DepositNative` asserts `assertEq(address(vault).balance, 5 ether, 'vault eth');` at bridge/evm/test/PaxeerXVault.t.sol:118; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_3 = "Case `test_DepositRejectsNativeAssetThroughErc20Path` asserts `vm.expectRevert(PaxeerXVault.UseDepositNative.selector);` at bridge/evm/test/PaxeerXVault.t.sol:124; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_4 = "Case `test_DepositRefusesUnconfiguredAsset` asserts `vm.expectRevert(abi.encodeWithSelector(PaxeerXVault.AssetNotEnabled.selector, address(other)));` at bridge/evm/test/PaxeerXVault.t.sol:134; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_1 = "Case `test_DepositERC20` asserts `assertEq(token.balanceOf(address(vault)), 40 ether, 'vault balance');` at contracts/bridge/evm/test/PaxeerXVault.t.sol:105; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_2 = "Case `test_DepositNative` asserts `assertEq(address(vault).balance, 5 ether, 'vault eth');` at contracts/bridge/evm/test/PaxeerXVault.t.sol:118; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_3 = "Case `test_DepositRejectsNativeAssetThroughErc20Path` asserts `vm.expectRevert(PaxeerXVault.UseDepositNative.selector);` at contracts/bridge/evm/test/PaxeerXVault.t.sol:124; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_4 = "Case `test_DepositRefusesUnconfiguredAsset` asserts `vm.expectRevert(abi.encodeWithSelector(PaxeerXVault.AssetNotEnabled.selector, address(other)));` at contracts/bridge/evm/test/PaxeerXVault.t.sol:134; it passes unchanged against layerxBridge 0x1016 on the merged chain"
 
 [req.12408]
 title = "Re-target core.rs at the merged chain"
-ac_1 = "Case `the_identity_mapping_is_the_one_the_bridge_signs` asserts `assert_eq!(` at bridge/solana/tests/core.rs:519; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_2 = "Case `initialisation_records_the_owner_and_refuses_a_second_one` asserts `assert_eq!(config.pending_owner, Pubkey::default());` at bridge/solana/tests/core.rs:611; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_3 = "Case `only_the_upgrade_authority_initialises` asserts `assert_eq!(harness.data(harness.config).await, None);` at bridge/solana/tests/core.rs:647; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_4 = "Case `ownership_moves_only_in_two_steps` asserts `assert_eq!(` at bridge/solana/tests/core.rs:738; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_1 = "Case `the_identity_mapping_is_the_one_the_bridge_signs` asserts `assert_eq!(` at contracts/bridge/solana/tests/core.rs:519; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_2 = "Case `initialisation_records_the_owner_and_refuses_a_second_one` asserts `assert_eq!(config.pending_owner, Pubkey::default());` at contracts/bridge/solana/tests/core.rs:611; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_3 = "Case `only_the_upgrade_authority_initialises` asserts `assert_eq!(harness.data(harness.config).await, None);` at contracts/bridge/solana/tests/core.rs:647; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_4 = "Case `ownership_moves_only_in_two_steps` asserts `assert_eq!(` at contracts/bridge/solana/tests/core.rs:738; it passes unchanged against layerxBridge 0x1016 on the merged chain"
 
 [req.12409]
 title = "Re-target release.rs at the merged chain"
-ac_1 = "Case `the_release_signs_the_pinned_vector` asserts `assert_eq!(` at bridge/solana/tests/release.rs:780; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_2 = "Case `a_release_pays_the_recipient_once` asserts `assert_eq!(` at bridge/solana/tests/release.rs:810; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_3 = "Case `a_release_is_refused_unless_the_native_program_verified_the_attestors` asserts `assert_eq!(harness.token_amount(recipient_token).await, 0);` at bridge/solana/tests/release.rs:1101; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_4 = "Case `a_release_is_refused_outside_what_custody_allows` asserts `assert_eq!(` at bridge/solana/tests/release.rs:1253; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_1 = "Case `the_release_signs_the_pinned_vector` asserts `assert_eq!(` at contracts/bridge/solana/tests/release.rs:780; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_2 = "Case `a_release_pays_the_recipient_once` asserts `assert_eq!(` at contracts/bridge/solana/tests/release.rs:810; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_3 = "Case `a_release_is_refused_unless_the_native_program_verified_the_attestors` asserts `assert_eq!(harness.token_amount(recipient_token).await, 0);` at contracts/bridge/solana/tests/release.rs:1101; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_4 = "Case `a_release_is_refused_outside_what_custody_allows` asserts `assert_eq!(` at contracts/bridge/solana/tests/release.rs:1253; it passes unchanged against layerxBridge 0x1016 on the merged chain"
 
 [req.12410]
 title = "Re-target solana_test.go at the merged chain"
-ac_1 = "Case `TestSolanaChainIDIsTheReservedLabel` asserts `require.NoError(t, err)` at bridge/vectors/solana_test.go:45; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_2 = "Case `TestHandleIsTheLastTwentyBytesOfKeccak` asserts `require.Equal(t, expected, handle[:], 'handle of %s', key.Base58())` at bridge/vectors/solana_test.go:68; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_3 = "Case `TestAssetIDsOfTheRegisteredMints` asserts `require.Equal(t, vectors.WrappedSolAssetID, vectors.Handle(vectors.WrappedSolMint),` at bridge/vectors/solana_test.go:73; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_4 = "Case `TestVaultHandleComesFromTheVaultAuthorityPDA` asserts `require.Equal(t, vectors.VectorProgramID[:], crypto.Keccak256([]byte(vectors.VectorProgramIDLabel)),` at bridge/vectors/solana_test.go:87; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_1 = "Case `TestSolanaChainIDIsTheReservedLabel` asserts `require.NoError(t, err)` at contracts/bridge/vectors/solana_test.go:45; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_2 = "Case `TestHandleIsTheLastTwentyBytesOfKeccak` asserts `require.Equal(t, expected, handle[:], 'handle of %s', key.Base58())` at contracts/bridge/vectors/solana_test.go:68; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_3 = "Case `TestAssetIDsOfTheRegisteredMints` asserts `require.Equal(t, vectors.WrappedSolAssetID, vectors.Handle(vectors.WrappedSolMint),` at contracts/bridge/vectors/solana_test.go:73; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_4 = "Case `TestVaultHandleComesFromTheVaultAuthorityPDA` asserts `require.Equal(t, vectors.VectorProgramID[:], crypto.Keccak256([]byte(vectors.VectorProgramIDLabel)),` at contracts/bridge/vectors/solana_test.go:87; it passes unchanged against layerxBridge 0x1016 on the merged chain"
 
 [req.12411]
-title = "Re-target the bridge/deploy/tests suite at the merged chain"
-ac_1 = "Case `check` asserts `fail() {` at bridge/deploy/tests/checklist-check.sh:32; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_2 = "Case `check` asserts `exit 1` at bridge/deploy/tests/checklist-check.sh:34; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_3 = "Case `check` asserts `command -v '$tool' > /dev/null 2>&1 || fail '$tool is required and is not on the PATH'` at bridge/deploy/tests/checklist-check.sh:38; it passes unchanged against layerxBridge 0x1016 on the merged chain"
-ac_4 = "Case `check` asserts `[ -r '$CHECKLIST' ] || fail '$CHECKLIST is missing'` at bridge/deploy/tests/checklist-check.sh:40; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+title = "Re-target the services/bridge/deploy/tests suite at the merged chain"
+ac_1 = "Case `check` asserts `fail() {` at services/bridge/deploy/tests/checklist-check.sh:32; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_2 = "Case `check` asserts `exit 1` at services/bridge/deploy/tests/checklist-check.sh:34; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_3 = "Case `check` asserts `command -v '$tool' > /dev/null 2>&1 || fail '$tool is required and is not on the PATH'` at services/bridge/deploy/tests/checklist-check.sh:38; it passes unchanged against layerxBridge 0x1016 on the merged chain"
+ac_4 = "Case `check` asserts `[ -r '$CHECKLIST' ] || fail '$CHECKLIST is missing'` at services/bridge/deploy/tests/checklist-check.sh:40; it passes unchanged against layerxBridge 0x1016 on the merged chain"
 
 [req.12412]
 title = "Create the activation no-migration test for custody balances"
@@ -68838,7 +68838,7 @@ children = ["12.21.1", "12.21.2", "12.21.3", "12.21.4"]
 title = "Bridge: harness"
 reqs = ["12398.1", "12398.2", "12398.3", "12398.4", "12399.1", "12399.2", "12399.3", "12399.4", "12400.1", "12400.2", "12400.3", "12400.4", "12401.1", "12401.2", "12401.3", "12402.1", "12402.2", "12402.3", "12403.1", "12403.2", "12403.3", "12403.4", "12404.1", "12404.2", "12404.3", "12404.4", "12405.1", "12405.2", "12405.3", "12405.4", "12406.1", "12406.2", "12406.3", "12406.4", "12407.1", "12407.2", "12407.3", "12407.4", "12408.1", "12408.2", "12408.3", "12408.4", "12409.1", "12409.2", "12409.3", "12409.4", "12410.1", "12410.2", "12410.3", "12410.4", "12411.1", "12411.2", "12411.3", "12411.4"]
 touches = ["services/interop/crates/layerx-bridge-relayer/tests/cosign_transport.rs", "services/interop/crates/layerx-bridge-relayer/tests/operator_cosign_contract.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana.rs", "precompiles/layerxbridge/layerxbridge_test.go", "modules/layerxbridge/keeper/keeper_test.go", "modules/layerxbridge/keeper/attestation_test.go", "modules/layerxbridge/keeper/genesis_test.go", "modules/layerxbridge/keeper/sidiora_test.go", "services/interop/crates/layerx-bridge-relayer/tests/loops.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana_release.rs"]
-tests = ["services/interop/crates/layerx-bridge-relayer/tests", "precompiles/layerxbridge/layerxbridge_test.go", "modules/layerxbridge/keeper/keeper_test.go", "modules/layerxbridge/keeper/attestation_test.go", "modules/layerxbridge/keeper/genesis_test.go", "modules/layerxbridge/keeper/sidiora_test.go", "services/interop/crates/layerx-bridge-relayer/tests/loops.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana_release.rs", "bridge/evm/test/RelayerAbiParity.t.sol", "bridge/evm/test/PaxeerXVault.t.sol", "bridge/solana/tests/core.rs", "bridge/solana/tests/release.rs", "bridge/vectors/solana_test.go", "bridge/deploy/tests"]
+tests = ["services/interop/crates/layerx-bridge-relayer/tests", "precompiles/layerxbridge/layerxbridge_test.go", "modules/layerxbridge/keeper/keeper_test.go", "modules/layerxbridge/keeper/attestation_test.go", "modules/layerxbridge/keeper/genesis_test.go", "modules/layerxbridge/keeper/sidiora_test.go", "services/interop/crates/layerx-bridge-relayer/tests/loops.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana_release.rs", "contracts/bridge/evm/test/RelayerAbiParity.t.sol", "contracts/bridge/evm/test/PaxeerXVault.t.sol", "contracts/bridge/solana/tests/core.rs", "contracts/bridge/solana/tests/release.rs", "contracts/bridge/vectors/solana_test.go", "services/bridge/deploy/tests"]
 verification_contract = "Each task of the family runs its own verify_cmd once, for example: cargo test --locked --manifest-path services/interop/Cargo.toml -p layerx-bridge-relayer --test cosign_transport --test operator_cosign_contract --test solana"
 do_1 = "`eth_sendRawTransaction` at services/platform/hosted/gateway/src/evm.rs:805, which forwards raw transactions; on the merged chain the router sends them to the sequencer; client cases submit writes through the router to the sequencer"
 do_2 = "`PendingBlockNumber` at rpc/utils.go:66, which maps the pending tag to latest today; the sequencer path serves pending from the sequencer instead; pending reads come from the sequencer view"
@@ -68851,7 +68851,7 @@ symbols = ["eth_sendRawTransaction", "PendingBlockNumber", "verify_account_evide
 title = "Bridge: fixture loader"
 reqs = ["12398.1", "12398.2", "12398.3", "12398.4", "12399.1", "12399.2", "12399.3", "12399.4", "12400.1", "12400.2", "12400.3", "12400.4", "12401.1"]
 touches = ["services/interop/crates/layerx-bridge-relayer/tests/cosign_transport.rs", "services/interop/crates/layerx-bridge-relayer/tests/operator_cosign_contract.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana.rs", "precompiles/layerxbridge/layerxbridge_test.go", "modules/layerxbridge/keeper/keeper_test.go", "modules/layerxbridge/keeper/attestation_test.go", "modules/layerxbridge/keeper/genesis_test.go", "modules/layerxbridge/keeper/sidiora_test.go", "services/interop/crates/layerx-bridge-relayer/tests/loops.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana_release.rs"]
-tests = ["services/interop/crates/layerx-bridge-relayer/tests", "precompiles/layerxbridge/layerxbridge_test.go", "modules/layerxbridge/keeper/keeper_test.go", "modules/layerxbridge/keeper/attestation_test.go", "modules/layerxbridge/keeper/genesis_test.go", "modules/layerxbridge/keeper/sidiora_test.go", "services/interop/crates/layerx-bridge-relayer/tests/loops.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana_release.rs", "bridge/evm/test/RelayerAbiParity.t.sol", "bridge/evm/test/PaxeerXVault.t.sol", "bridge/solana/tests/core.rs", "bridge/solana/tests/release.rs", "bridge/vectors/solana_test.go", "bridge/deploy/tests"]
+tests = ["services/interop/crates/layerx-bridge-relayer/tests", "precompiles/layerxbridge/layerxbridge_test.go", "modules/layerxbridge/keeper/keeper_test.go", "modules/layerxbridge/keeper/attestation_test.go", "modules/layerxbridge/keeper/genesis_test.go", "modules/layerxbridge/keeper/sidiora_test.go", "services/interop/crates/layerx-bridge-relayer/tests/loops.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana_release.rs", "contracts/bridge/evm/test/RelayerAbiParity.t.sol", "contracts/bridge/evm/test/PaxeerXVault.t.sol", "contracts/bridge/solana/tests/core.rs", "contracts/bridge/solana/tests/release.rs", "contracts/bridge/vectors/solana_test.go", "services/bridge/deploy/tests"]
 verification_contract = "Each task of the family runs its own verify_cmd once, for example: cargo test --locked --manifest-path services/interop/Cargo.toml -p layerx-bridge-relayer --test cosign_transport --test operator_cosign_contract --test solana"
 do_1 = "`lxp_replay_fixture_load` at src/replica/lxp_replay_fixture.c:76, which loads a replay fixture into an arena; the parity fixture loader reads the same bytes; fixtures load from the same bytes the kernel uses"
 do_2 = "`corpus_magic` at tests/qualification/lxp_qual_replay.c:21, which is the corpus header the fixture loader checks before decoding; the loader checks the corpus header first"
@@ -68863,7 +68863,7 @@ symbols = ["lxp_replay_fixture_load", "corpus_magic", "activity_types", "BridgeO
 title = "Bridge: address and denom mapping"
 reqs = ["12398.1", "12398.2", "12398.3", "12398.4", "12399.1", "12399.2", "12399.3", "12399.4", "12400.1", "12400.2", "12400.3", "12400.4", "12401.1"]
 touches = ["services/interop/crates/layerx-bridge-relayer/tests/cosign_transport.rs", "services/interop/crates/layerx-bridge-relayer/tests/operator_cosign_contract.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana.rs", "precompiles/layerxbridge/layerxbridge_test.go", "modules/layerxbridge/keeper/keeper_test.go", "modules/layerxbridge/keeper/attestation_test.go", "modules/layerxbridge/keeper/genesis_test.go", "modules/layerxbridge/keeper/sidiora_test.go", "services/interop/crates/layerx-bridge-relayer/tests/loops.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana_release.rs"]
-tests = ["services/interop/crates/layerx-bridge-relayer/tests", "precompiles/layerxbridge/layerxbridge_test.go", "modules/layerxbridge/keeper/keeper_test.go", "modules/layerxbridge/keeper/attestation_test.go", "modules/layerxbridge/keeper/genesis_test.go", "modules/layerxbridge/keeper/sidiora_test.go", "services/interop/crates/layerx-bridge-relayer/tests/loops.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana_release.rs", "bridge/evm/test/RelayerAbiParity.t.sol", "bridge/evm/test/PaxeerXVault.t.sol", "bridge/solana/tests/core.rs", "bridge/solana/tests/release.rs", "bridge/vectors/solana_test.go", "bridge/deploy/tests"]
+tests = ["services/interop/crates/layerx-bridge-relayer/tests", "precompiles/layerxbridge/layerxbridge_test.go", "modules/layerxbridge/keeper/keeper_test.go", "modules/layerxbridge/keeper/attestation_test.go", "modules/layerxbridge/keeper/genesis_test.go", "modules/layerxbridge/keeper/sidiora_test.go", "services/interop/crates/layerx-bridge-relayer/tests/loops.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana_release.rs", "contracts/bridge/evm/test/RelayerAbiParity.t.sol", "contracts/bridge/evm/test/PaxeerXVault.t.sol", "contracts/bridge/solana/tests/core.rs", "contracts/bridge/solana/tests/release.rs", "contracts/bridge/vectors/solana_test.go", "services/bridge/deploy/tests"]
 verification_contract = "Each task of the family runs its own verify_cmd once, for example: cargo test --locked --manifest-path services/interop/Cargo.toml -p layerx-bridge-relayer --test cosign_transport --test operator_cosign_contract --test solana"
 do_1 = "`GetCustomPrecompiles` at precompiles/setup.go:63, which registers every precompile address with its versioned executor; the twin resolves target addresses from this table; targets resolve to layerxBridge 0x1016"
 do_2 = "`SendCoinsFromAccountToModule` at modules/layerxcustody/keeper/deposit.go:83, which moves the bank denom of the mapped asset into the module account; the denom mapping is read from this call; asset ids map to bank denoms"
@@ -68875,7 +68875,7 @@ symbols = ["GetCustomPrecompiles", "SendCoinsFromAccountToModule", "IsUpgradeAct
 title = "Bridge: receipt source"
 reqs = ["12398.1", "12398.2", "12398.3", "12398.4", "12399.1", "12399.2", "12399.3", "12399.4", "12400.1", "12400.2", "12400.3", "12400.4", "12401.1"]
 touches = ["services/interop/crates/layerx-bridge-relayer/tests/cosign_transport.rs", "services/interop/crates/layerx-bridge-relayer/tests/operator_cosign_contract.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana.rs", "precompiles/layerxbridge/layerxbridge_test.go", "modules/layerxbridge/keeper/keeper_test.go", "modules/layerxbridge/keeper/attestation_test.go", "modules/layerxbridge/keeper/genesis_test.go", "modules/layerxbridge/keeper/sidiora_test.go", "services/interop/crates/layerx-bridge-relayer/tests/loops.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana_release.rs"]
-tests = ["services/interop/crates/layerx-bridge-relayer/tests", "precompiles/layerxbridge/layerxbridge_test.go", "modules/layerxbridge/keeper/keeper_test.go", "modules/layerxbridge/keeper/attestation_test.go", "modules/layerxbridge/keeper/genesis_test.go", "modules/layerxbridge/keeper/sidiora_test.go", "services/interop/crates/layerx-bridge-relayer/tests/loops.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana_release.rs", "bridge/evm/test/RelayerAbiParity.t.sol", "bridge/evm/test/PaxeerXVault.t.sol", "bridge/solana/tests/core.rs", "bridge/solana/tests/release.rs", "bridge/vectors/solana_test.go", "bridge/deploy/tests"]
+tests = ["services/interop/crates/layerx-bridge-relayer/tests", "precompiles/layerxbridge/layerxbridge_test.go", "modules/layerxbridge/keeper/keeper_test.go", "modules/layerxbridge/keeper/attestation_test.go", "modules/layerxbridge/keeper/genesis_test.go", "modules/layerxbridge/keeper/sidiora_test.go", "services/interop/crates/layerx-bridge-relayer/tests/loops.rs", "services/interop/crates/layerx-bridge-relayer/tests/solana_release.rs", "contracts/bridge/evm/test/RelayerAbiParity.t.sol", "contracts/bridge/evm/test/PaxeerXVault.t.sol", "contracts/bridge/solana/tests/core.rs", "contracts/bridge/solana/tests/release.rs", "contracts/bridge/vectors/solana_test.go", "services/bridge/deploy/tests"]
 verification_contract = "Each task of the family runs its own verify_cmd once, for example: cargo test --locked --manifest-path services/interop/Cargo.toml -p layerx-bridge-relayer --test cosign_transport --test operator_cosign_contract --test solana"
 do_1 = "`GetTransactionReceipt` at rpc/tx.go:106, which returns the EVM receipt map (status, gasUsed, logs) that the chain side of every comparison reads; the chain receipt is read here"
 do_2 = "`decode_protocol` at services/agent/crates/layerx-wire/src/receipt.rs:730, which decodes the canonical ProtocolReceipt envelope that the signed receipt carries; signed receipts decode with the canonical envelope"
@@ -81645,193 +81645,193 @@ qualification = "UNRUN"
 [acceptance.12.406.1]
 feature = "12"
 req = "12406.1"
-scenario = "Given `test_EventTopicsMatchTheRelayerConstants` in bridge/evm/test/RelayerAbiParity.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assertEq(PaxeerXVault.BridgeDeposit.selector, BRIDGE_DEPOSIT_TOPIC, 'BridgeDeposit topic');` holds as asserted at bridge/evm/test/RelayerAbiParity.t.sol:45, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `test_EventTopicsMatchTheRelayerConstants` in contracts/bridge/evm/test/RelayerAbiParity.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assertEq(PaxeerXVault.BridgeDeposit.selector, BRIDGE_DEPOSIT_TOPIC, 'BridgeDeposit topic');` holds as asserted at contracts/bridge/evm/test/RelayerAbiParity.t.sol:45, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/evm/test/RelayerAbiParity.t.sol::test_EventTopicsMatchTheRelayerConstants"
+test = "contracts/bridge/evm/test/RelayerAbiParity.t.sol::test_EventTopicsMatchTheRelayerConstants"
 qualification = "UNRUN"
 
 [acceptance.12.406.2]
 feature = "12"
 req = "12406.2"
-scenario = "Given `test_EventTopicsAreTheKeccakOfTheirSignatures` in bridge/evm/test/RelayerAbiParity.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assertEq(` holds as asserted at bridge/evm/test/RelayerAbiParity.t.sol:50, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `test_EventTopicsAreTheKeccakOfTheirSignatures` in contracts/bridge/evm/test/RelayerAbiParity.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assertEq(` holds as asserted at contracts/bridge/evm/test/RelayerAbiParity.t.sol:50, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/evm/test/RelayerAbiParity.t.sol::test_EventTopicsAreTheKeccakOfTheirSignatures"
+test = "contracts/bridge/evm/test/RelayerAbiParity.t.sol::test_EventTopicsAreTheKeccakOfTheirSignatures"
 qualification = "UNRUN"
 
 [acceptance.12.406.3]
 feature = "12"
 req = "12406.3"
-scenario = "Given `test_SelectorsMatchTheRelayerConstants` in bridge/evm/test/RelayerAbiParity.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assertEq(selectorOf(vault.deposit.selector), selectorOf(DEPOSIT_SELECTOR), 'deposit selector');` holds as asserted at bridge/evm/test/RelayerAbiParity.t.sol:63, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `test_SelectorsMatchTheRelayerConstants` in contracts/bridge/evm/test/RelayerAbiParity.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assertEq(selectorOf(vault.deposit.selector), selectorOf(DEPOSIT_SELECTOR), 'deposit selector');` holds as asserted at contracts/bridge/evm/test/RelayerAbiParity.t.sol:63, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/evm/test/RelayerAbiParity.t.sol::test_SelectorsMatchTheRelayerConstants"
+test = "contracts/bridge/evm/test/RelayerAbiParity.t.sol::test_SelectorsMatchTheRelayerConstants"
 qualification = "UNRUN"
 
 [acceptance.12.406.4]
 feature = "12"
 req = "12406.4"
-scenario = "Given `test_SelectorsAreTheKeccakOfTheirSignatures` in bridge/evm/test/RelayerAbiParity.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assertEq(` holds as asserted at bridge/evm/test/RelayerAbiParity.t.sol:74, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `test_SelectorsAreTheKeccakOfTheirSignatures` in contracts/bridge/evm/test/RelayerAbiParity.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assertEq(` holds as asserted at contracts/bridge/evm/test/RelayerAbiParity.t.sol:74, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/evm/test/RelayerAbiParity.t.sol::test_SelectorsAreTheKeccakOfTheirSignatures"
+test = "contracts/bridge/evm/test/RelayerAbiParity.t.sol::test_SelectorsAreTheKeccakOfTheirSignatures"
 qualification = "UNRUN"
 
 [acceptance.12.407.1]
 feature = "12"
 req = "12407.1"
-scenario = "Given `test_DepositERC20` in bridge/evm/test/PaxeerXVault.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assertEq(token.balanceOf(address(vault)), 40 ether, 'vault balance');` holds as asserted at bridge/evm/test/PaxeerXVault.t.sol:105, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `test_DepositERC20` in contracts/bridge/evm/test/PaxeerXVault.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assertEq(token.balanceOf(address(vault)), 40 ether, 'vault balance');` holds as asserted at contracts/bridge/evm/test/PaxeerXVault.t.sol:105, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/evm/test/PaxeerXVault.t.sol::test_DepositERC20"
+test = "contracts/bridge/evm/test/PaxeerXVault.t.sol::test_DepositERC20"
 qualification = "UNRUN"
 
 [acceptance.12.407.2]
 feature = "12"
 req = "12407.2"
-scenario = "Given `test_DepositNative` in bridge/evm/test/PaxeerXVault.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assertEq(address(vault).balance, 5 ether, 'vault eth');` holds as asserted at bridge/evm/test/PaxeerXVault.t.sol:118, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `test_DepositNative` in contracts/bridge/evm/test/PaxeerXVault.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assertEq(address(vault).balance, 5 ether, 'vault eth');` holds as asserted at contracts/bridge/evm/test/PaxeerXVault.t.sol:118, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/evm/test/PaxeerXVault.t.sol::test_DepositNative"
+test = "contracts/bridge/evm/test/PaxeerXVault.t.sol::test_DepositNative"
 qualification = "UNRUN"
 
 [acceptance.12.407.3]
 feature = "12"
 req = "12407.3"
-scenario = "Given `test_DepositRejectsNativeAssetThroughErc20Path` in bridge/evm/test/PaxeerXVault.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `vm.expectRevert(PaxeerXVault.UseDepositNative.selector);` holds as asserted at bridge/evm/test/PaxeerXVault.t.sol:124, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `test_DepositRejectsNativeAssetThroughErc20Path` in contracts/bridge/evm/test/PaxeerXVault.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `vm.expectRevert(PaxeerXVault.UseDepositNative.selector);` holds as asserted at contracts/bridge/evm/test/PaxeerXVault.t.sol:124, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/evm/test/PaxeerXVault.t.sol::test_DepositRejectsNativeAssetThroughErc20Path"
+test = "contracts/bridge/evm/test/PaxeerXVault.t.sol::test_DepositRejectsNativeAssetThroughErc20Path"
 qualification = "UNRUN"
 
 [acceptance.12.407.4]
 feature = "12"
 req = "12407.4"
-scenario = "Given `test_DepositRefusesUnconfiguredAsset` in bridge/evm/test/PaxeerXVault.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `vm.expectRevert(abi.encodeWithSelector(PaxeerXVault.AssetNotEnabled.selector, address(other)));` holds as asserted at bridge/evm/test/PaxeerXVault.t.sol:134, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `test_DepositRefusesUnconfiguredAsset` in contracts/bridge/evm/test/PaxeerXVault.t.sol pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `vm.expectRevert(abi.encodeWithSelector(PaxeerXVault.AssetNotEnabled.selector, address(other)));` holds as asserted at contracts/bridge/evm/test/PaxeerXVault.t.sol:134, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/evm/test/PaxeerXVault.t.sol::test_DepositRefusesUnconfiguredAsset"
+test = "contracts/bridge/evm/test/PaxeerXVault.t.sol::test_DepositRefusesUnconfiguredAsset"
 qualification = "UNRUN"
 
 [acceptance.12.408.1]
 feature = "12"
 req = "12408.1"
-scenario = "Given `the_identity_mapping_is_the_one_the_bridge_signs` in bridge/solana/tests/core.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(` holds as asserted at bridge/solana/tests/core.rs:519, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `the_identity_mapping_is_the_one_the_bridge_signs` in contracts/bridge/solana/tests/core.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(` holds as asserted at contracts/bridge/solana/tests/core.rs:519, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/solana/tests/core.rs::the_identity_mapping_is_the_one_the_bridge_signs"
+test = "contracts/bridge/solana/tests/core.rs::the_identity_mapping_is_the_one_the_bridge_signs"
 qualification = "UNRUN"
 
 [acceptance.12.408.2]
 feature = "12"
 req = "12408.2"
-scenario = "Given `initialisation_records_the_owner_and_refuses_a_second_one` in bridge/solana/tests/core.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(config.pending_owner, Pubkey::default());` holds as asserted at bridge/solana/tests/core.rs:611, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `initialisation_records_the_owner_and_refuses_a_second_one` in contracts/bridge/solana/tests/core.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(config.pending_owner, Pubkey::default());` holds as asserted at contracts/bridge/solana/tests/core.rs:611, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/solana/tests/core.rs::initialisation_records_the_owner_and_refuses_a_second_one"
+test = "contracts/bridge/solana/tests/core.rs::initialisation_records_the_owner_and_refuses_a_second_one"
 qualification = "UNRUN"
 
 [acceptance.12.408.3]
 feature = "12"
 req = "12408.3"
-scenario = "Given `only_the_upgrade_authority_initialises` in bridge/solana/tests/core.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(harness.data(harness.config).await, None);` holds as asserted at bridge/solana/tests/core.rs:647, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `only_the_upgrade_authority_initialises` in contracts/bridge/solana/tests/core.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(harness.data(harness.config).await, None);` holds as asserted at contracts/bridge/solana/tests/core.rs:647, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/solana/tests/core.rs::only_the_upgrade_authority_initialises"
+test = "contracts/bridge/solana/tests/core.rs::only_the_upgrade_authority_initialises"
 qualification = "UNRUN"
 
 [acceptance.12.408.4]
 feature = "12"
 req = "12408.4"
-scenario = "Given `ownership_moves_only_in_two_steps` in bridge/solana/tests/core.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(` holds as asserted at bridge/solana/tests/core.rs:738, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `ownership_moves_only_in_two_steps` in contracts/bridge/solana/tests/core.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(` holds as asserted at contracts/bridge/solana/tests/core.rs:738, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/solana/tests/core.rs::ownership_moves_only_in_two_steps"
+test = "contracts/bridge/solana/tests/core.rs::ownership_moves_only_in_two_steps"
 qualification = "UNRUN"
 
 [acceptance.12.409.1]
 feature = "12"
 req = "12409.1"
-scenario = "Given `the_release_signs_the_pinned_vector` in bridge/solana/tests/release.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(` holds as asserted at bridge/solana/tests/release.rs:780, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `the_release_signs_the_pinned_vector` in contracts/bridge/solana/tests/release.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(` holds as asserted at contracts/bridge/solana/tests/release.rs:780, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/solana/tests/release.rs::the_release_signs_the_pinned_vector"
+test = "contracts/bridge/solana/tests/release.rs::the_release_signs_the_pinned_vector"
 qualification = "UNRUN"
 
 [acceptance.12.409.2]
 feature = "12"
 req = "12409.2"
-scenario = "Given `a_release_pays_the_recipient_once` in bridge/solana/tests/release.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(` holds as asserted at bridge/solana/tests/release.rs:810, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `a_release_pays_the_recipient_once` in contracts/bridge/solana/tests/release.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(` holds as asserted at contracts/bridge/solana/tests/release.rs:810, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/solana/tests/release.rs::a_release_pays_the_recipient_once"
+test = "contracts/bridge/solana/tests/release.rs::a_release_pays_the_recipient_once"
 qualification = "UNRUN"
 
 [acceptance.12.409.3]
 feature = "12"
 req = "12409.3"
-scenario = "Given `a_release_is_refused_unless_the_native_program_verified_the_attestors` in bridge/solana/tests/release.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(harness.token_amount(recipient_token).await, 0);` holds as asserted at bridge/solana/tests/release.rs:1101, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `a_release_is_refused_unless_the_native_program_verified_the_attestors` in contracts/bridge/solana/tests/release.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(harness.token_amount(recipient_token).await, 0);` holds as asserted at contracts/bridge/solana/tests/release.rs:1101, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/solana/tests/release.rs::a_release_is_refused_unless_the_native_program_verified_the_attestors"
+test = "contracts/bridge/solana/tests/release.rs::a_release_is_refused_unless_the_native_program_verified_the_attestors"
 qualification = "UNRUN"
 
 [acceptance.12.409.4]
 feature = "12"
 req = "12409.4"
-scenario = "Given `a_release_is_refused_outside_what_custody_allows` in bridge/solana/tests/release.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(` holds as asserted at bridge/solana/tests/release.rs:1253, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `a_release_is_refused_outside_what_custody_allows` in contracts/bridge/solana/tests/release.rs pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `assert_eq!(` holds as asserted at contracts/bridge/solana/tests/release.rs:1253, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/solana/tests/release.rs::a_release_is_refused_outside_what_custody_allows"
+test = "contracts/bridge/solana/tests/release.rs::a_release_is_refused_outside_what_custody_allows"
 qualification = "UNRUN"
 
 [acceptance.12.410.1]
 feature = "12"
 req = "12410.1"
-scenario = "Given `TestSolanaChainIDIsTheReservedLabel` in bridge/vectors/solana_test.go pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `require.NoError(t, err)` holds as asserted at bridge/vectors/solana_test.go:45, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `TestSolanaChainIDIsTheReservedLabel` in contracts/bridge/vectors/solana_test.go pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `require.NoError(t, err)` holds as asserted at contracts/bridge/vectors/solana_test.go:45, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/vectors/solana_test.go::TestSolanaChainIDIsTheReservedLabel"
+test = "contracts/bridge/vectors/solana_test.go::TestSolanaChainIDIsTheReservedLabel"
 qualification = "UNRUN"
 
 [acceptance.12.410.2]
 feature = "12"
 req = "12410.2"
-scenario = "Given `TestHandleIsTheLastTwentyBytesOfKeccak` in bridge/vectors/solana_test.go pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `require.Equal(t, expected, handle[:], 'handle of %s', key.Base58())` holds as asserted at bridge/vectors/solana_test.go:68, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `TestHandleIsTheLastTwentyBytesOfKeccak` in contracts/bridge/vectors/solana_test.go pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `require.Equal(t, expected, handle[:], 'handle of %s', key.Base58())` holds as asserted at contracts/bridge/vectors/solana_test.go:68, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/vectors/solana_test.go::TestHandleIsTheLastTwentyBytesOfKeccak"
+test = "contracts/bridge/vectors/solana_test.go::TestHandleIsTheLastTwentyBytesOfKeccak"
 qualification = "UNRUN"
 
 [acceptance.12.410.3]
 feature = "12"
 req = "12410.3"
-scenario = "Given `TestAssetIDsOfTheRegisteredMints` in bridge/vectors/solana_test.go pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `require.Equal(t, vectors.WrappedSolAssetID, vectors.Handle(vectors.WrappedSolMint),` holds as asserted at bridge/vectors/solana_test.go:73, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `TestAssetIDsOfTheRegisteredMints` in contracts/bridge/vectors/solana_test.go pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `require.Equal(t, vectors.WrappedSolAssetID, vectors.Handle(vectors.WrappedSolMint),` holds as asserted at contracts/bridge/vectors/solana_test.go:73, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/vectors/solana_test.go::TestAssetIDsOfTheRegisteredMints"
+test = "contracts/bridge/vectors/solana_test.go::TestAssetIDsOfTheRegisteredMints"
 qualification = "UNRUN"
 
 [acceptance.12.410.4]
 feature = "12"
 req = "12410.4"
-scenario = "Given `TestVaultHandleComesFromTheVaultAuthorityPDA` in bridge/vectors/solana_test.go pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `require.Equal(t, vectors.VectorProgramID[:], crypto.Keccak256([]byte(vectors.VectorProgramIDLabel)),` holds as asserted at bridge/vectors/solana_test.go:87, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `TestVaultHandleComesFromTheVaultAuthorityPDA` in contracts/bridge/vectors/solana_test.go pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `require.Equal(t, vectors.VectorProgramID[:], crypto.Keccak256([]byte(vectors.VectorProgramIDLabel)),` holds as asserted at contracts/bridge/vectors/solana_test.go:87, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/vectors/solana_test.go::TestVaultHandleComesFromTheVaultAuthorityPDA"
+test = "contracts/bridge/vectors/solana_test.go::TestVaultHandleComesFromTheVaultAuthorityPDA"
 qualification = "UNRUN"
 
 [acceptance.12.411.1]
 feature = "12"
 req = "12411.1"
-scenario = "Given `check` in bridge/deploy/tests/checklist-check.sh pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `fail() {` holds as asserted at bridge/deploy/tests/checklist-check.sh:32, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `check` in services/bridge/deploy/tests/checklist-check.sh pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `fail() {` holds as asserted at services/bridge/deploy/tests/checklist-check.sh:32, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/deploy/tests/evm-dry-run-check.sh"
+test = "services/bridge/deploy/tests/evm-dry-run-check.sh"
 qualification = "UNRUN"
 
 [acceptance.12.411.2]
 feature = "12"
 req = "12411.2"
-scenario = "Given `check` in bridge/deploy/tests/checklist-check.sh pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `exit 1` holds as asserted at bridge/deploy/tests/checklist-check.sh:34, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `check` in services/bridge/deploy/tests/checklist-check.sh pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `exit 1` holds as asserted at services/bridge/deploy/tests/checklist-check.sh:34, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/deploy/tests/evm-dry-run-check.sh"
+test = "services/bridge/deploy/tests/evm-dry-run-check.sh"
 qualification = "UNRUN"
 
 [acceptance.12.411.3]
 feature = "12"
 req = "12411.3"
-scenario = "Given `check` in bridge/deploy/tests/checklist-check.sh pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `command -v '$tool' > /dev/null 2>&1 || fail '$tool is required and is not on the PATH'` holds as asserted at bridge/deploy/tests/checklist-check.sh:38, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `check` in services/bridge/deploy/tests/checklist-check.sh pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `command -v '$tool' > /dev/null 2>&1 || fail '$tool is required and is not on the PATH'` holds as asserted at services/bridge/deploy/tests/checklist-check.sh:38, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/deploy/tests/evm-dry-run-check.sh"
+test = "services/bridge/deploy/tests/evm-dry-run-check.sh"
 qualification = "UNRUN"
 
 [acceptance.12.411.4]
 feature = "12"
 req = "12411.4"
-scenario = "Given `check` in bridge/deploy/tests/checklist-check.sh pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `[ -r '$CHECKLIST' ] || fail '$CHECKLIST is missing'` holds as asserted at bridge/deploy/tests/checklist-check.sh:40, and every receipt it checks is a signed sequencer receipt"
+scenario = "Given `check` in services/bridge/deploy/tests/checklist-check.sh pointed at the unified router of the merged chain, when the case runs with writes submitted as user-signed EVM transactions, then `[ -r '$CHECKLIST' ] || fail '$CHECKLIST is missing'` holds as asserted at services/bridge/deploy/tests/checklist-check.sh:40, and every receipt it checks is a signed sequencer receipt"
 contract = "contracts/services.md#s16-bridge-relayer-evm-and-solana"
-test = "bridge/deploy/tests/evm-dry-run-check.sh"
+test = "services/bridge/deploy/tests/evm-dry-run-check.sh"
 qualification = "UNRUN"
 
 [acceptance.12.412.1]
@@ -94138,17 +94138,17 @@ wave = 8
 requires = ["9.7.2"]
 reqs = ["12406.1", "12406.2", "12406.3", "12406.4", "9.1", "12.1"]
 capabilities = ["12.21.1", "12.21.2", "12.21.3", "12.21.4"]
-do_1 = "Point `test_EventTopicsMatchTheRelayerConstants` at bridge/evm/test/RelayerAbiParity.t.sol:45 at layerxBridge 0x1016 on the merged chain and keep its assertion `assertEq(PaxeerXVault.BridgeDeposit.selector, BRIDGE_DEPOSIT_TOPIC, 'BridgeDeposit topic');` unchanged"
-do_2 = "Point `test_EventTopicsAreTheKeccakOfTheirSignatures` at bridge/evm/test/RelayerAbiParity.t.sol:50 at layerxBridge 0x1016 on the merged chain and keep its assertion `assertEq(` unchanged"
-do_3 = "Point `test_SelectorsMatchTheRelayerConstants` at bridge/evm/test/RelayerAbiParity.t.sol:63 at layerxBridge 0x1016 on the merged chain and keep its assertion `assertEq(selectorOf(vault.deposit.selector), selectorOf(DEPOSIT_SELECTOR), 'deposit selector');` unchanged"
-do_4 = "Point `test_SelectorsAreTheKeccakOfTheirSignatures` at bridge/evm/test/RelayerAbiParity.t.sol:74 at layerxBridge 0x1016 on the merged chain and keep its assertion `assertEq(` unchanged"
+do_1 = "Point `test_EventTopicsMatchTheRelayerConstants` at contracts/bridge/evm/test/RelayerAbiParity.t.sol:45 at layerxBridge 0x1016 on the merged chain and keep its assertion `assertEq(PaxeerXVault.BridgeDeposit.selector, BRIDGE_DEPOSIT_TOPIC, 'BridgeDeposit topic');` unchanged"
+do_2 = "Point `test_EventTopicsAreTheKeccakOfTheirSignatures` at contracts/bridge/evm/test/RelayerAbiParity.t.sol:50 at layerxBridge 0x1016 on the merged chain and keep its assertion `assertEq(` unchanged"
+do_3 = "Point `test_SelectorsMatchTheRelayerConstants` at contracts/bridge/evm/test/RelayerAbiParity.t.sol:63 at layerxBridge 0x1016 on the merged chain and keep its assertion `assertEq(selectorOf(vault.deposit.selector), selectorOf(DEPOSIT_SELECTOR), 'deposit selector');` unchanged"
+do_4 = "Point `test_SelectorsAreTheKeccakOfTheirSignatures` at contracts/bridge/evm/test/RelayerAbiParity.t.sol:74 at layerxBridge 0x1016 on the merged chain and keep its assertion `assertEq(` unchanged"
 do_5 = "Decode every receipt the file checks with `decode_protocol` (services/agent/crates/layerx-wire/src/receipt.rs:730) and submit writes through `eth_sendRawTransaction` (services/platform/hosted/gateway/src/evm.rs:805)"
 do_6 = "Resolve the target of each call with `BridgeAddress` at modules/layerxbridge/types/keys.go:27, which is the bridge precompile address 0x1016"
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["test_EventTopicsMatchTheRelayerConstants", "test_EventTopicsAreTheKeccakOfTheirSignatures", "test_SelectorsMatchTheRelayerConstants", "test_SelectorsAreTheKeccakOfTheirSignatures", "decode_protocol", "eth_sendRawTransaction", "BridgeAddress"]
-touches = ["bridge/evm/test/RelayerAbiParity.t.sol"]
-build_cmd = "forge build --offline --root bridge/evm"
-verify_cmd = "forge test --offline --root bridge/evm --match-path test/RelayerAbiParity.t.sol"
+touches = ["contracts/bridge/evm/test/RelayerAbiParity.t.sol"]
+build_cmd = "forge build --offline --root contracts/bridge/evm"
+verify_cmd = "forge test --offline --root contracts/bridge/evm --match-path test/RelayerAbiParity.t.sol"
 gate_kind = "existing"
 planned_paths = []
 max_builds = 1
@@ -94167,17 +94167,17 @@ wave = 8
 requires = ["9.7.2"]
 reqs = ["12407.1", "12407.2", "12407.3", "12407.4", "9.1", "12.1"]
 capabilities = ["12.21.1", "12.21.2", "12.21.3", "12.21.4"]
-do_1 = "Point `test_DepositERC20` at bridge/evm/test/PaxeerXVault.t.sol:105 at layerxBridge 0x1016 on the merged chain and keep its assertion `assertEq(token.balanceOf(address(vault)), 40 ether, 'vault balance');` unchanged"
-do_2 = "Point `test_DepositNative` at bridge/evm/test/PaxeerXVault.t.sol:118 at layerxBridge 0x1016 on the merged chain and keep its assertion `assertEq(address(vault).balance, 5 ether, 'vault eth');` unchanged"
-do_3 = "Point `test_DepositRejectsNativeAssetThroughErc20Path` at bridge/evm/test/PaxeerXVault.t.sol:124 at layerxBridge 0x1016 on the merged chain and keep its assertion `vm.expectRevert(PaxeerXVault.UseDepositNative.selector);` unchanged"
-do_4 = "Point `test_DepositRefusesUnconfiguredAsset` at bridge/evm/test/PaxeerXVault.t.sol:134 at layerxBridge 0x1016 on the merged chain and keep its assertion `vm.expectRevert(abi.encodeWithSelector(PaxeerXVault.AssetNotEnabled.selector, address(other)));` unchanged"
+do_1 = "Point `test_DepositERC20` at contracts/bridge/evm/test/PaxeerXVault.t.sol:105 at layerxBridge 0x1016 on the merged chain and keep its assertion `assertEq(token.balanceOf(address(vault)), 40 ether, 'vault balance');` unchanged"
+do_2 = "Point `test_DepositNative` at contracts/bridge/evm/test/PaxeerXVault.t.sol:118 at layerxBridge 0x1016 on the merged chain and keep its assertion `assertEq(address(vault).balance, 5 ether, 'vault eth');` unchanged"
+do_3 = "Point `test_DepositRejectsNativeAssetThroughErc20Path` at contracts/bridge/evm/test/PaxeerXVault.t.sol:124 at layerxBridge 0x1016 on the merged chain and keep its assertion `vm.expectRevert(PaxeerXVault.UseDepositNative.selector);` unchanged"
+do_4 = "Point `test_DepositRefusesUnconfiguredAsset` at contracts/bridge/evm/test/PaxeerXVault.t.sol:134 at layerxBridge 0x1016 on the merged chain and keep its assertion `vm.expectRevert(abi.encodeWithSelector(PaxeerXVault.AssetNotEnabled.selector, address(other)));` unchanged"
 do_5 = "Decode every receipt the file checks with `decode_protocol` (services/agent/crates/layerx-wire/src/receipt.rs:730) and submit writes through `eth_sendRawTransaction` (services/platform/hosted/gateway/src/evm.rs:805)"
 do_6 = "Resolve the target of each call with `BridgeAddress` at modules/layerxbridge/types/keys.go:27, which is the bridge precompile address 0x1016"
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["test_DepositERC20", "test_DepositNative", "test_DepositRejectsNativeAssetThroughErc20Path", "test_DepositRefusesUnconfiguredAsset", "decode_protocol", "eth_sendRawTransaction", "BridgeAddress"]
-touches = ["bridge/evm/test/PaxeerXVault.t.sol"]
-build_cmd = "forge build --offline --root bridge/evm"
-verify_cmd = "forge test --offline --root bridge/evm --match-path test/PaxeerXVault.t.sol"
+touches = ["contracts/bridge/evm/test/PaxeerXVault.t.sol"]
+build_cmd = "forge build --offline --root contracts/bridge/evm"
+verify_cmd = "forge test --offline --root contracts/bridge/evm --match-path test/PaxeerXVault.t.sol"
 gate_kind = "existing"
 planned_paths = []
 max_builds = 1
@@ -94196,17 +94196,17 @@ wave = 8
 requires = ["9.7.2"]
 reqs = ["12408.1", "12408.2", "12408.3", "12408.4", "9.1", "12.1"]
 capabilities = ["12.21.1", "12.21.2", "12.21.3", "12.21.4"]
-do_1 = "Point `the_identity_mapping_is_the_one_the_bridge_signs` at bridge/solana/tests/core.rs:519 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(` unchanged"
-do_2 = "Point `initialisation_records_the_owner_and_refuses_a_second_one` at bridge/solana/tests/core.rs:611 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(config.pending_owner, Pubkey::default());` unchanged"
-do_3 = "Point `only_the_upgrade_authority_initialises` at bridge/solana/tests/core.rs:647 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(harness.data(harness.config).await, None);` unchanged"
-do_4 = "Point `ownership_moves_only_in_two_steps` at bridge/solana/tests/core.rs:738 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(` unchanged"
+do_1 = "Point `the_identity_mapping_is_the_one_the_bridge_signs` at contracts/bridge/solana/tests/core.rs:519 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(` unchanged"
+do_2 = "Point `initialisation_records_the_owner_and_refuses_a_second_one` at contracts/bridge/solana/tests/core.rs:611 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(config.pending_owner, Pubkey::default());` unchanged"
+do_3 = "Point `only_the_upgrade_authority_initialises` at contracts/bridge/solana/tests/core.rs:647 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(harness.data(harness.config).await, None);` unchanged"
+do_4 = "Point `ownership_moves_only_in_two_steps` at contracts/bridge/solana/tests/core.rs:738 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(` unchanged"
 do_5 = "Decode every receipt the file checks with `decode_protocol` (services/agent/crates/layerx-wire/src/receipt.rs:730) and submit writes through `eth_sendRawTransaction` (services/platform/hosted/gateway/src/evm.rs:805)"
 do_6 = "Resolve the target of each call with `BridgeAddress` at modules/layerxbridge/types/keys.go:27, which is the bridge precompile address 0x1016"
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["the_identity_mapping_is_the_one_the_bridge_signs", "initialisation_records_the_owner_and_refuses_a_second_one", "only_the_upgrade_authority_initialises", "ownership_moves_only_in_two_steps", "decode_protocol", "eth_sendRawTransaction", "BridgeAddress"]
-touches = ["bridge/solana/tests/core.rs"]
-build_cmd = "cargo build --locked --manifest-path bridge/solana/Cargo.toml -p paxeer-x-bridge-solana-program --tests"
-verify_cmd = "cargo test --locked --manifest-path bridge/solana/Cargo.toml -p paxeer-x-bridge-solana-program --test core"
+touches = ["contracts/bridge/solana/tests/core.rs"]
+build_cmd = "cargo build --locked --manifest-path contracts/bridge/solana/Cargo.toml -p paxeer-x-bridge-solana-program --tests"
+verify_cmd = "cargo test --locked --manifest-path contracts/bridge/solana/Cargo.toml -p paxeer-x-bridge-solana-program --test core"
 gate_kind = "existing"
 planned_paths = []
 max_builds = 1
@@ -94225,17 +94225,17 @@ wave = 8
 requires = ["9.7.2"]
 reqs = ["12409.1", "12409.2", "12409.3", "12409.4", "9.1", "12.1"]
 capabilities = ["12.21.1", "12.21.2", "12.21.3", "12.21.4"]
-do_1 = "Point `the_release_signs_the_pinned_vector` at bridge/solana/tests/release.rs:780 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(` unchanged"
-do_2 = "Point `a_release_pays_the_recipient_once` at bridge/solana/tests/release.rs:810 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(` unchanged"
-do_3 = "Point `a_release_is_refused_unless_the_native_program_verified_the_attestors` at bridge/solana/tests/release.rs:1101 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(harness.token_amount(recipient_token).await, 0);` unchanged"
-do_4 = "Point `a_release_is_refused_outside_what_custody_allows` at bridge/solana/tests/release.rs:1253 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(` unchanged"
+do_1 = "Point `the_release_signs_the_pinned_vector` at contracts/bridge/solana/tests/release.rs:780 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(` unchanged"
+do_2 = "Point `a_release_pays_the_recipient_once` at contracts/bridge/solana/tests/release.rs:810 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(` unchanged"
+do_3 = "Point `a_release_is_refused_unless_the_native_program_verified_the_attestors` at contracts/bridge/solana/tests/release.rs:1101 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(harness.token_amount(recipient_token).await, 0);` unchanged"
+do_4 = "Point `a_release_is_refused_outside_what_custody_allows` at contracts/bridge/solana/tests/release.rs:1253 at layerxBridge 0x1016 on the merged chain and keep its assertion `assert_eq!(` unchanged"
 do_5 = "Decode every receipt the file checks with `decode_protocol` (services/agent/crates/layerx-wire/src/receipt.rs:730) and submit writes through `eth_sendRawTransaction` (services/platform/hosted/gateway/src/evm.rs:805)"
 do_6 = "Resolve the target of each call with `BridgeAddress` at modules/layerxbridge/types/keys.go:27, which is the bridge precompile address 0x1016"
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["the_release_signs_the_pinned_vector", "a_release_pays_the_recipient_once", "a_release_is_refused_unless_the_native_program_verified_the_attestors", "a_release_is_refused_outside_what_custody_allows", "decode_protocol", "eth_sendRawTransaction", "BridgeAddress"]
-touches = ["bridge/solana/tests/release.rs"]
-build_cmd = "cargo build --locked --manifest-path bridge/solana/Cargo.toml -p paxeer-x-bridge-solana-program --tests"
-verify_cmd = "cargo test --locked --manifest-path bridge/solana/Cargo.toml -p paxeer-x-bridge-solana-program --test release"
+touches = ["contracts/bridge/solana/tests/release.rs"]
+build_cmd = "cargo build --locked --manifest-path contracts/bridge/solana/Cargo.toml -p paxeer-x-bridge-solana-program --tests"
+verify_cmd = "cargo test --locked --manifest-path contracts/bridge/solana/Cargo.toml -p paxeer-x-bridge-solana-program --test release"
 gate_kind = "existing"
 planned_paths = []
 max_builds = 1
@@ -94254,17 +94254,17 @@ wave = 8
 requires = ["9.7.2"]
 reqs = ["12410.1", "12410.2", "12410.3", "12410.4", "9.1", "12.1"]
 capabilities = ["12.21.1", "12.21.2", "12.21.3", "12.21.4"]
-do_1 = "Point `TestSolanaChainIDIsTheReservedLabel` at bridge/vectors/solana_test.go:45 at layerxBridge 0x1016 on the merged chain and keep its assertion `require.NoError(t, err)` unchanged"
-do_2 = "Point `TestHandleIsTheLastTwentyBytesOfKeccak` at bridge/vectors/solana_test.go:68 at layerxBridge 0x1016 on the merged chain and keep its assertion `require.Equal(t, expected, handle[:], 'handle of %s', key.Base58())` unchanged"
-do_3 = "Point `TestAssetIDsOfTheRegisteredMints` at bridge/vectors/solana_test.go:73 at layerxBridge 0x1016 on the merged chain and keep its assertion `require.Equal(t, vectors.WrappedSolAssetID, vectors.Handle(vectors.WrappedSolMint),` unchanged"
-do_4 = "Point `TestVaultHandleComesFromTheVaultAuthorityPDA` at bridge/vectors/solana_test.go:87 at layerxBridge 0x1016 on the merged chain and keep its assertion `require.Equal(t, vectors.VectorProgramID[:], crypto.Keccak256([]byte(vectors.VectorProgramIDLabel)),` unchanged"
+do_1 = "Point `TestSolanaChainIDIsTheReservedLabel` at contracts/bridge/vectors/solana_test.go:45 at layerxBridge 0x1016 on the merged chain and keep its assertion `require.NoError(t, err)` unchanged"
+do_2 = "Point `TestHandleIsTheLastTwentyBytesOfKeccak` at contracts/bridge/vectors/solana_test.go:68 at layerxBridge 0x1016 on the merged chain and keep its assertion `require.Equal(t, expected, handle[:], 'handle of %s', key.Base58())` unchanged"
+do_3 = "Point `TestAssetIDsOfTheRegisteredMints` at contracts/bridge/vectors/solana_test.go:73 at layerxBridge 0x1016 on the merged chain and keep its assertion `require.Equal(t, vectors.WrappedSolAssetID, vectors.Handle(vectors.WrappedSolMint),` unchanged"
+do_4 = "Point `TestVaultHandleComesFromTheVaultAuthorityPDA` at contracts/bridge/vectors/solana_test.go:87 at layerxBridge 0x1016 on the merged chain and keep its assertion `require.Equal(t, vectors.VectorProgramID[:], crypto.Keccak256([]byte(vectors.VectorProgramIDLabel)),` unchanged"
 do_5 = "Decode every receipt the file checks with `decode_protocol` (services/agent/crates/layerx-wire/src/receipt.rs:730) and submit writes through `eth_sendRawTransaction` (services/platform/hosted/gateway/src/evm.rs:805)"
 do_6 = "Resolve the target of each call with `BridgeAddress` at modules/layerxbridge/types/keys.go:27, which is the bridge precompile address 0x1016"
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["TestSolanaChainIDIsTheReservedLabel", "TestHandleIsTheLastTwentyBytesOfKeccak", "TestAssetIDsOfTheRegisteredMints", "TestVaultHandleComesFromTheVaultAuthorityPDA", "decode_protocol", "eth_sendRawTransaction", "BridgeAddress"]
-touches = ["bridge/vectors/solana_test.go"]
-build_cmd = "go vet ./bridge/vectors/"
-verify_cmd = "go test -count=1 -run '^(TestSolanaChainIDIsTheReservedLabel|TestHandleIsTheLastTwentyBytesOfKeccak|TestAssetIDsOfTheRegisteredMints|TestVaultHandleComesFromTheVaultAuthorityPDA|TestInboundVectorMatchesTheChainsPreimage|TestOutboundVectorMatchesTheChainsPreimage|TestAttestorSignsTheVectorDigests|TestBase58RoundTripsAndRefusesBadInput|TestDocumentCarriesEveryPinnedValue)$' ./bridge/vectors/"
+touches = ["contracts/bridge/vectors/solana_test.go"]
+build_cmd = "go vet ./contracts/bridge/vectors/"
+verify_cmd = "go test -count=1 -run '^(TestSolanaChainIDIsTheReservedLabel|TestHandleIsTheLastTwentyBytesOfKeccak|TestAssetIDsOfTheRegisteredMints|TestVaultHandleComesFromTheVaultAuthorityPDA|TestInboundVectorMatchesTheChainsPreimage|TestOutboundVectorMatchesTheChainsPreimage|TestAttestorSignsTheVectorDigests|TestBase58RoundTripsAndRefusesBadInput|TestDocumentCarriesEveryPinnedValue)$' ./contracts/bridge/vectors/"
 gate_kind = "existing"
 planned_paths = []
 max_builds = 1
@@ -94283,18 +94283,18 @@ wave = 8
 requires = ["9.7.2"]
 reqs = ["12411.1", "12411.2", "12411.3", "12411.4", "9.1", "12.1"]
 capabilities = ["12.21.1", "12.21.2", "12.21.3", "12.21.4"]
-do_1 = "Point `check` at bridge/deploy/tests/checklist-check.sh:32 at layerxBridge 0x1016 on the merged chain and keep its assertion `fail() {` unchanged"
-do_2 = "Point `check` at bridge/deploy/tests/checklist-check.sh:34 at layerxBridge 0x1016 on the merged chain and keep its assertion `exit 1` unchanged"
-do_3 = "Point `check` at bridge/deploy/tests/checklist-check.sh:38 at layerxBridge 0x1016 on the merged chain and keep its assertion `command -v '$tool' > /dev/null 2>&1 || fail '$tool is required and is not on the PATH'` unchanged"
-do_4 = "Point `check` at bridge/deploy/tests/checklist-check.sh:40 at layerxBridge 0x1016 on the merged chain and keep its assertion `[ -r '$CHECKLIST' ] || fail '$CHECKLIST is missing'` unchanged"
+do_1 = "Point `check` at services/bridge/deploy/tests/checklist-check.sh:32 at layerxBridge 0x1016 on the merged chain and keep its assertion `fail() {` unchanged"
+do_2 = "Point `check` at services/bridge/deploy/tests/checklist-check.sh:34 at layerxBridge 0x1016 on the merged chain and keep its assertion `exit 1` unchanged"
+do_3 = "Point `check` at services/bridge/deploy/tests/checklist-check.sh:38 at layerxBridge 0x1016 on the merged chain and keep its assertion `command -v '$tool' > /dev/null 2>&1 || fail '$tool is required and is not on the PATH'` unchanged"
+do_4 = "Point `check` at services/bridge/deploy/tests/checklist-check.sh:40 at layerxBridge 0x1016 on the merged chain and keep its assertion `[ -r '$CHECKLIST' ] || fail '$CHECKLIST is missing'` unchanged"
 do_5 = "Decode every receipt the file checks with `decode_protocol` (services/agent/crates/layerx-wire/src/receipt.rs:730) and submit writes through `eth_sendRawTransaction` (services/platform/hosted/gateway/src/evm.rs:805)"
 do_6 = "Resolve the target of each call with `BridgeAddress` at modules/layerxbridge/types/keys.go:27, which is the bridge precompile address 0x1016"
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["check", "decode_protocol", "eth_sendRawTransaction", "BridgeAddress"]
-touches = ["bridge/deploy/tests/evm-dry-run-check.sh"]
+touches = ["services/bridge/deploy/tests/evm-dry-run-check.sh"]
 tests = ["bridge/deploy/tests"]
-build_cmd = "bash -n bridge/deploy/tests/evm-dry-run-check.sh"
-verify_cmd = "bash bridge/deploy/tests/evm-dry-run-check.sh"
+build_cmd = "bash -n services/bridge/deploy/tests/evm-dry-run-check.sh"
+verify_cmd = "bash services/bridge/deploy/tests/evm-dry-run-check.sh"
 gate_kind = "existing"
 planned_paths = []
 max_builds = 1

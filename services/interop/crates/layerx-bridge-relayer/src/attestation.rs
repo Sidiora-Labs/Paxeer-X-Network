@@ -1,6 +1,6 @@
 //! The two `PaxeerX` bridge attestation digests and the signature rules both
 //! verifiers enforce, byte for byte as
-//! `bridge/evm/ATTESTATION.md` and
+//! `contracts/bridge/evm/ATTESTATION.md` and
 //! `modules/layerxbridge/ATTESTATION.md` specify them.
 
 use std::collections::BTreeMap;
@@ -307,7 +307,7 @@ mod tests {
         to_attestor_signature(output).unwrap_or_else(|error| panic!("low s: {error}"))
     }
 
-    // The two vectors of bridge/evm/ATTESTATION.md and
+    // The two vectors of contracts/bridge/evm/ATTESTATION.md and
     // their Paxeer-side copy in modules/layerxbridge/ATTESTATION.md, which
     // state the same inputs and the same digests.
     #[test]

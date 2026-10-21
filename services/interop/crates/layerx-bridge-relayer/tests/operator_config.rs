@@ -11,11 +11,11 @@ use serde_json::{json, Value};
 
 const EXAMPLE_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../../../bridge/deploy/relayer-solana.example.json"
+    "/../../../../services/bridge/deploy/relayer-solana.example.json"
 );
 const EXAMPLE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../../../bridge/deploy/relayer-solana.example.json"
+    "/../../../../services/bridge/deploy/relayer-solana.example.json"
 ));
 static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
 
