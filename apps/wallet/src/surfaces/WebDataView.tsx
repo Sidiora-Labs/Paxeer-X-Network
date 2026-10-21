@@ -41,6 +41,11 @@ export function DrawCaps({ caps }: Pick<WebDataViewProps, 'caps'>) {
                 : <>
                     <p data-role="caps-observation">{caps.observation.verification} · sequence {caps.observation.sequence} · batch {caps.observation.batch}</p>
                     <p data-role="caps-height">Observed at height {caps.observation.observed_head}</p>
+                    {caps.history?.source === 'indexer'
+                        ? <p data-role="caps-history" data-history-source="indexer">Grants from the indexer · indexed height {caps.history.indexed_height ?? 'unknown'} · chain height {caps.history.chain_height}</p>
+                        : caps.history?.source === 'chain_scan'
+                            ? <p data-role="caps-history" data-history-source="chain_scan">Grant history is limited to the chain scan window, blocks {caps.history.floor} to {caps.history.head}</p>
+                            : null}
                     <p data-role="caps-principal" className="break-all">Principal {caps.context.principal}</p>
                     <p data-role="caps-expiry">Earliest grant expiry {caps.context.expires_at}</p>
                     <p data-role="caps-account" className="break-all">Account {caps.account_id}</p>

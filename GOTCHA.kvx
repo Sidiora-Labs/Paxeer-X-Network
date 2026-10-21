@@ -8780,3 +8780,8 @@ detail = "The sdk/wallet typecheck runs tsc --noEmit and never writes dist; run 
 area = "shell"
 summary = "pkill -f with a pattern from the same command line kills the calling shell"
 detail = "A Bash call that runs pkill -f 'proc/loadavg' and then the gate matches its own bash -c command line and exits 144 before the gate runs; stop the earlier job by its id or pid instead."
+
+[gotcha.1842]
+area = "services/platform/hosted/gateway"
+summary = "rustfmt over gateway paxeer.rs rewrites about a hundred unrelated lines because that file is not rustfmt clean on main"
+detail = "Format only the files whose main revision is already clean (rustfmt --check first) and add new code to paxeer.rs in its existing style; cargo and rustfmt live in ~/.cargo/bin, which a fresh shell may not have on PATH."

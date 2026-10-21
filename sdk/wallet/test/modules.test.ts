@@ -48,6 +48,7 @@ import {
   CAPS_READ_BATCH,
   FEE_TOKEN_PRECOMPILE,
   GasStationError,
+  HOLDER_RECORDS_PAGE,
   LEDGER_PRECOMPILE_LOG_FLOOR,
   LEDGER_PRECOMPILE,
   PAYER_GRANT_BYTES,
@@ -58,6 +59,7 @@ import {
   WEB_DATA_EVENTS,
   bridge,
   constructionDigest,
+  listHolderRecords,
   decodeAbiString,
   exchange,
   feeChoice,
@@ -379,6 +381,7 @@ const answers: SponsoredSubmissionEvidence[] = [];
 const rpcCalls: { authorization: string | undefined; body: Json }[] = [];
 let server: Server;
 let gatewayUrl: string;
+let holderAnswer: ((params: unknown[]) => unknown) | null = null;
 
 function handle(req: IncomingMessage, res: ServerResponse): void {
   const chunks: Buffer[] = [];
@@ -388,6 +391,10 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
       const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Json;
       rpcCalls.push({ authorization: req.headers.authorization, body });
       res.writeHead(200, { 'content-type': 'application/json' });
+      if (holderAnswer !== null && body.method === 'px_listHolderRecords') {
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: holderAnswer(body.params as unknown[]) }));
+        return;
+      }
       res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, error: { code: -32601, message: 'method not found' } }));
       return;
     }
@@ -705,6 +712,41 @@ describe('modules', () => {
     expect(refusal).toBeInstanceOf(RpcResponseError);
     expect(refusal).toMatchObject({ code: -32601, message: 'method not found' });
     expect(rpcCalls).toEqual([{ authorization: undefined, body: { jsonrpc: '2.0', id: 1, method: 'lx_getWalletCaps', params: [] } }]);
+  });
+
+  it('modules_holder_records page px_listHolderRecords through the provider to the end', async () => {
+    const provider = new PaxeerProvider({ gatewayUrl, rpcUrl: `${gatewayUrl}/rpc`, token: () => 'session-token' });
+    const holder = `0x${'ab'.repeat(20)}`;
+    const record = (id: string) => ({ kind: 'grant', holder, contract: 'ledger', record_id: id.repeat(32), state: 'active' });
+    const cursors = ['00000000000000050000000000000000', '00000000000000070000000000000000'];
+    holderAnswer = (params) => {
+      if (params[2] === null) return { items: [record('a1')], next_cursor: cursors[0], indexedHeight: 990, chainHeight: 1000 };
+      if (params[2] === cursors[0]) return { items: [record('a2')], next_cursor: cursors[1], indexedHeight: 985, chainHeight: 1002 };
+      return { items: [], next_cursor: null, indexedHeight: 995, chainHeight: 1001 };
+    };
+    try {
+      rpcCalls.length = 0;
+      const records = await listHolderRecords(provider, holder.toUpperCase().replace('0X', '0x'), 'grant');
+      expect(records).toEqual({ items: [record('a1'), record('a2')], indexedHeight: 985n, chainHeight: 1002n });
+      expect(rpcCalls.map((call) => call.body.params)).toEqual([
+        [holder, 'grant', null, HOLDER_RECORDS_PAGE],
+        [holder, 'grant', cursors[0], HOLDER_RECORDS_PAGE],
+        [holder, 'grant', cursors[1], HOLDER_RECORDS_PAGE],
+      ]);
+
+      holderAnswer = () => ({ items: [record('a1')], next_cursor: null, indexedHeight: null, chainHeight: 1000 });
+      expect((await listHolderRecords(provider, holder, 'grant')).indexedHeight).toBeNull();
+      holderAnswer = () => ({ items: [{ ...record('a1'), holder: `0x${'cd'.repeat(20)}` }], next_cursor: null, indexedHeight: 1, chainHeight: 1 });
+      await expect(listHolderRecords(provider, holder, 'grant')).rejects.toBeInstanceOf(ModuleError);
+      holderAnswer = (params) => ({ items: [], next_cursor: params[2] ?? cursors[0], indexedHeight: 1, chainHeight: 1 });
+      await expect(listHolderRecords(provider, holder, 'grant')).rejects.toBeInstanceOf(ModuleError);
+      holderAnswer = () => ({ items: [], next_cursor: null, indexedHeight: 1 });
+      await expect(listHolderRecords(provider, holder, 'grant')).rejects.toBeInstanceOf(ModuleError);
+    } finally {
+      holderAnswer = null;
+    }
+    const unserved = await listHolderRecords(provider, holder, 'grant').then(() => null, (error: unknown) => error);
+    expect(unserved).toMatchObject({ code: -32601 });
   });
 
   it('modules_events decode logs encoded from each precompile ABI', () => {

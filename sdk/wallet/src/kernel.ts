@@ -153,5 +153,9 @@ export interface WalletCapsSnapshot {
   readonly context: { readonly principal: string; readonly session_id: string; readonly address: string; readonly chain_id: number; readonly expires_at: string };
   readonly observation: { readonly verification: 'state_proven' | 'checkpoint_finalised' | 'settlement_anchored'; readonly state_root: string; readonly sequence: string; readonly observed_head: string; readonly batch: string };
   readonly budgets: readonly WalletBudgetCap[]; readonly grants: readonly WalletGrantCap[];
+  readonly history?: WalletCapsHistory;
 }
+export type WalletCapsHistory =
+  | { readonly source: 'indexer'; readonly indexed_height: string | null; readonly chain_height: string }
+  | { readonly source: 'chain_scan'; readonly floor: string; readonly head: string };
 export type WalletCapsState = { readonly state: 'loading' } | { readonly state: 'unavailable' | 'refused'; readonly reason: string } | WalletCapsSnapshot;

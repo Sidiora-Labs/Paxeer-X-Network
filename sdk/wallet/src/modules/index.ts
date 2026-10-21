@@ -253,3 +253,49 @@ export * from './fee-token.js';
 export * from './web-data.js';
 export * from './gas-station.js';
 export * from './fee-choice.js';
+
+export type HolderRecordKind = 'budget' | 'grant';
+
+export interface HolderRecords {
+  readonly items: readonly Readonly<Record<string, unknown>>[];
+  readonly indexedHeight: bigint | null;
+  readonly chainHeight: bigint;
+}
+
+export const HOLDER_RECORDS_PAGE = 100;
+const POSITION_CURSOR = /^[0-9a-f]{32}$/u;
+
+function height(value: unknown, field: string): bigint {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new ModuleError('invalid_answer', field);
+  return BigInt(value);
+}
+
+// Reads every px_listHolderRecords page of the address from the first to the last; the indexed height is the lowest
+// any page reported and the chain height the highest, so the freshness never overstates what was read.
+export async function listHolderRecords(provider: ModuleProvider, address: string, kind: HolderRecordKind): Promise<HolderRecords> {
+  const holder = moduleAddress(address);
+  const items: Readonly<Record<string, unknown>>[] = [];
+  let cursor: string | null = null;
+  let indexedHeight: bigint | null | undefined;
+  let chainHeight = 0n;
+  for (;;) {
+    const page = await provider.request({ method: 'px_listHolderRecords', params: [holder, kind, cursor, HOLDER_RECORDS_PAGE] });
+    if (page === null || typeof page !== 'object' || Array.isArray(page)) throw new ModuleError('invalid_answer', 'px_listHolderRecords');
+    const { items: rows, next_cursor: next, indexedHeight: indexed, chainHeight: chain } = page as Record<string, unknown>;
+    if (!Array.isArray(rows) || rows.length > HOLDER_RECORDS_PAGE
+      || !rows.every((row) => row !== null && typeof row === 'object' && (row as Record<string, unknown>).holder === holder && (row as Record<string, unknown>).kind === kind)) {
+      throw new ModuleError('invalid_answer', 'px_listHolderRecords.items');
+    }
+    if (next !== null && (typeof next !== 'string' || !POSITION_CURSOR.test(next) || (cursor !== null && next <= cursor))) {
+      throw new ModuleError('invalid_answer', 'px_listHolderRecords.next_cursor');
+    }
+    const pageIndexed = indexed === null ? null : height(indexed, 'px_listHolderRecords.indexedHeight');
+    indexedHeight = indexedHeight === undefined ? pageIndexed
+      : indexedHeight === null || pageIndexed === null ? null : pageIndexed < indexedHeight ? pageIndexed : indexedHeight;
+    const pageChain = height(chain, 'px_listHolderRecords.chainHeight');
+    if (pageChain > chainHeight) chainHeight = pageChain;
+    items.push(...(rows as Record<string, unknown>[]));
+    if (next === null) return { items, indexedHeight: indexedHeight ?? null, chainHeight };
+    cursor = next;
+  }
+}

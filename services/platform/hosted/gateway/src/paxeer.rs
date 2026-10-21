@@ -217,6 +217,12 @@ fn quantity(config: &Config, method: &str, params: &Value) -> Result<String, &'s
         .ok_or("invalid_paxeer_response")
 }
 
+/// The Paxeer head height as `eth_blockNumber` answers it.
+pub(super) fn block_number(config: &Config) -> Result<u64, &'static str> {
+    let block = quantity(config, "eth_blockNumber", &json!([]))?;
+    u64::from_str_radix(&block[2..], 16).map_err(|_| "invalid_paxeer_response")
+}
+
 fn hex32(bytes: &[u8; 32]) -> String {
     super::hex(bytes)
 }

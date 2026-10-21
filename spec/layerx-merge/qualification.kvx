@@ -2268,3 +2268,17 @@ command = "corepack pnpm@11.5.2 -C apps/wallet test"
 exit_code = 0
 log_path = "logs/FX-HW-9-verify1-app.log"
 observed_and_assumption = "PayerGrantIssued indexes only the grant id and 0x101A has no per-account grant view, so the caps view still enumerates issued-grant logs chain wide and attributes them by issuing transaction (sender or sponsored recipient) before reading only those grants, bounded at 1024 windows; assumed the holder route of resolution 13.175 (indexer /v1/holders kind=grant, gateway px_listHolderRecords not yet served) replaces this scan once it is reachable from the wallet."
+
+[finding.gateway.crate-suite-baseline-red]
+revision = "a4fc8b66a"
+command = "cargo test --locked --manifest-path services/platform/Cargo.toml -p layerx-platform-gateway"
+exit_code = 101
+log_path = "logs/FX-HW-10-baseline-cargo.log"
+observed_and_assumption = "An unmodified main checkout fails the same six tests this change leaves failing: four readiness and lni contract tests in main.rs, the module registry test expecting Spot and Web, and rpc schema_lists_every_public_method counting 30 openrpc methods against 28 listed, while with this change every history test including px_listHolderRecords passes; assumed drift from earlier module and schema changes, left as written."
+
+[finding.wallet.app-suite-load-timeouts]
+revision = "22f0b97dc"
+command = "corepack pnpm@11.5.2 -C apps/wallet test"
+exit_code = 1
+log_path = "logs/FX-HW-10-verify2-app.log"
+observed_and_assumption = "Besides the recorded DepositFlow failure and visual system timeout, storage-forensics and atomic-json-store hit the 5000 ms default timeout in the same run while every WebDataView test passes; assumed host load timing, left as written."

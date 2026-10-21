@@ -546,18 +546,146 @@ fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> 
     json!({"jsonrpc": "2.0", "id": id, "result": result})
 }
 
-/// Answers the three history methods, or `None` for any other method.
+/// The record kinds `px_listHolderRecords` lists, as the indexer names them.
+const HOLDER_KINDS: [&str; 2] = ["budget", "grant"];
+
+/// Splits `[address, kind, cursor?, limit?]` of `px_listHolderRecords`.
+pub(super) fn holder_params(params: Option<&Value>) -> Result<(String, Query), i32> {
+    let Some(Value::Array(args)) = params else {
+        return Err(-32602);
+    };
+    if !(2..=4).contains(&args.len()) {
+        return Err(-32602);
+    }
+    let account = args[0].as_str().and_then(paxeer_key).ok_or(-32602)?;
+    let kind = args[1]
+        .as_str()
+        .filter(|kind| HOLDER_KINDS.contains(kind))
+        .ok_or(-32602)?;
+    let cursor = match args.get(2) {
+        None | Some(Value::Null) => None,
+        Some(Value::String(cursor)) if Position::parse(cursor).is_some() => Some(cursor.clone()),
+        Some(_) => return Err(-32602),
+    };
+    let limit = match args.get(3) {
+        None | Some(Value::Null) => DEFAULT_LIMIT,
+        Some(Value::Number(limit)) => limit
+            .as_u64()
+            .filter(|limit| (1..=MAXIMUM_LIMIT).contains(limit))
+            .ok_or(-32602)?,
+        Some(_) => return Err(-32602),
+    };
+    Ok((
+        account,
+        Query {
+            cursor,
+            limit,
+            kind: Some(kind.to_owned()),
+        },
+    ))
+}
+
+/// One page of `account`'s holder records of `query.kind` from the indexer
+/// `/v1/holders/{address}` route: its rows, its position cursor and the
+/// indexed Paxeer height.
+pub(super) fn holder_records(
+    source: &Source<'_>,
+    account: &str,
+    query: &Query,
+) -> Result<Value, Failure> {
+    let (status, body) = source
+        .get(
+            &format!("/v1/holders/{}", encode(account)),
+            &query.encoded(),
+        )
+        .map_err(Failure::Unavailable)?;
+    match status {
+        200 => {}
+        400 => return Err(Failure::Refused(body)),
+        _ => return Err(Failure::Unavailable("indexer_unavailable")),
+    }
+    let invalid = || Failure::Unavailable("invalid_indexer_response");
+    if body.get("version") != Some(&json!(1)) {
+        return Err(invalid());
+    }
+    let next_cursor = match body.get("next_cursor") {
+        Some(Value::Null) => Value::Null,
+        Some(Value::String(cursor)) if Position::parse(cursor).is_some() => json!(cursor),
+        _ => return Err(invalid()),
+    };
+    let indexed_height = match body.get("indexedHeight") {
+        Some(Value::Null) => Value::Null,
+        Some(height) if height.is_u64() => height.clone(),
+        _ => return Err(invalid()),
+    };
+    let items = body
+        .get("items")
+        .and_then(Value::as_array)
+        .filter(|items| {
+            u64::try_from(items.len()).is_ok_and(|count| count <= query.limit)
+                && items.iter().all(|item| {
+                    text(item, "holder") == Some(account)
+                        && text(item, "kind") == query.kind.as_deref()
+                })
+        })
+        .ok_or_else(invalid)?;
+    Ok(json!({"items": items, "next_cursor": next_cursor, "indexedHeight": indexed_height}))
+}
+
+fn answer_holders(config: &Config, id: &Value, params: Option<&Value>) -> Value {
+    let (account, query) = match holder_params(params) {
+        Ok(selected) => selected,
+        Err(code) => return super::rpc::error(id, code, "Invalid params"),
+    };
+    let Some(indexer) = &config.indexer else {
+        return refusal(
+            id,
+            -32001,
+            "History unavailable",
+            json!({"code": "indexer_not_configured"}),
+        );
+    };
+    if !public_reads::consume_read() {
+        return refusal(
+            id,
+            -32005,
+            "Read unavailable",
+            json!({"code": "public_read_rate_limit"}),
+        );
+    }
+    let source = Source {
+        indexer,
+        client: Some(&config.client),
+    };
+    let mut result = match holder_records(&source, &account, &query) {
+        Ok(result) => result,
+        Err(Failure::Refused(body)) => return refusal(id, -32602, "Invalid params", body),
+        Err(Failure::Unavailable(code)) => {
+            return refusal(id, -32001, "History unavailable", json!({"code": code}))
+        }
+    };
+    match super::paxeer::block_number(config) {
+        Ok(height) => result["chainHeight"] = json!(height),
+        Err(code) => return refusal(id, -32001, "History unavailable", json!({"code": code})),
+    }
+    json!({"jsonrpc": "2.0", "id": id, "result": result})
+}
+
+/// Answers the three history methods and `px_listHolderRecords`, or `None`
+/// for any other method.
 pub(super) fn dispatch(
     config: &Config,
     method: &str,
     id: &Value,
     params: Option<&Value>,
 ) -> Option<Value> {
-    matches!(
-        method,
-        "lx_getHistory" | "px_getHistory" | "px_getUnifiedHistory"
-    )
-    .then(|| answer(config, method, id, params))
+    match method {
+        "lx_getHistory" | "px_getHistory" | "px_getUnifiedHistory" => {
+            Some(answer(config, method, id, params))
+        }
+        "px_listHolderRecords" => Some(answer_holders(config, id, params)),
+        _ => None,
+    }
 }
 
 fn readiness_status(body: &Value) -> Option<&'static str> {
@@ -1450,5 +1578,150 @@ mod tests {
         ] {
             assert!(Indexer::parse(refused).is_err(), "{refused}");
         }
+    }
+
+    fn holder(height: u64, holder: &str, kind: &'static str, record: &str) -> HolderRow {
+        HolderRow {
+            position: at(height, 0, 0),
+            holder: holder.to_owned(),
+            kind,
+            contract: if kind == "budget" {
+                "layerxpay"
+            } else {
+                "ledger"
+            },
+            record_id: record.to_owned(),
+            event: if kind == "budget" {
+                "BudgetCreated"
+            } else {
+                "PayerGrantIssued"
+            },
+            state: "active",
+            tx_id: format!("{kind}-{height}"),
+            decoded: json!({}),
+        }
+    }
+
+    #[test]
+    fn px_list_holder_records_pages_the_indexer_holder_route_to_the_end() {
+        let store = Store::open_in_memory().unwrap_or_else(|error| panic!("{error}"));
+        let grant = |n: u8| format!("{n:02x}").repeat(32);
+        let holders = [
+            vec![holder(5, EVE, "grant", &grant(0xa1))],
+            vec![
+                holder(6, EVE, "budget", BUDGET),
+                HolderRow {
+                    position: at(6, 1, 0),
+                    ..holder(6, FRANK, "grant", &grant(0xa9))
+                },
+            ],
+            vec![holder(7, EVE, "grant", &grant(0xa2))],
+            vec![holder(8, EVE, "grant", &grant(0xa3))],
+        ];
+        for (offset, rows) in holders.into_iter().enumerate() {
+            let height = 5 + u64::try_from(offset).unwrap_or_else(|error| panic!("{error}"));
+            let unit = Unit {
+                holders: rows,
+                ..unit("paxeer", height, Vec::new(), Vec::new())
+            };
+            store
+                .commit(&unit, 64)
+                .unwrap_or_else(|error| panic!("{error}"));
+        }
+        let indexer = serve(store);
+        let source = Source {
+            indexer: &indexer,
+            client: None,
+        };
+        let records = |cursor: Option<&str>, limit: u64, kind: &str| {
+            holder_records(&source, EVE, &query(cursor, limit, Some(kind)))
+                .unwrap_or_else(|failure| panic!("{failure:?}"))
+        };
+
+        let first = records(None, 2, "grant");
+        let upstream = raw(
+            &indexer,
+            &format!("/v1/holders/{EVE}"),
+            "limit=2&kind=grant",
+        );
+        assert_eq!(first["items"], upstream["items"]);
+        assert_eq!(first["next_cursor"], json!(at(7, 0, 0).encode()));
+        assert_eq!(first["indexedHeight"], json!(8));
+        assert!(first.get("freshness").is_none());
+
+        let mut walked = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let page = records(cursor.as_deref(), 1, "grant");
+            assert!(items(&page).len() <= 1);
+            for item in items(&page) {
+                assert_eq!(item["holder"], json!(EVE));
+                assert_eq!(item["kind"], json!("grant"));
+                walked.push(item["record_id"].as_str().unwrap_or_default().to_owned());
+            }
+            match page["next_cursor"].as_str() {
+                Some(next) => cursor = Some(next.to_owned()),
+                None => break,
+            }
+        }
+        assert_eq!(walked, vec![grant(0xa1), grant(0xa2), grant(0xa3)]);
+
+        let budgets = records(None, 50, "budget");
+        assert_eq!(items(&budgets).len(), 1);
+        assert_eq!(budgets["items"][0]["record_id"], json!(BUDGET));
+        assert_eq!(budgets["next_cursor"], Value::Null);
+
+        let stranger = format!("0x{}", "12".repeat(20));
+        assert_eq!(
+            holder_records(&source, &stranger, &query(None, 10, Some("grant"))),
+            Ok(json!({"items": [], "next_cursor": null, "indexedHeight": 8}))
+        );
+        assert_eq!(
+            holder_records(&source, FRANK, &query(None, 10, Some("grant")))
+                .map(|page| items(&page).len()),
+            Ok(1)
+        );
+    }
+
+    #[test]
+    fn px_list_holder_records_params_are_exact() {
+        let cursor = at(66, 3, 7).encode();
+        assert_eq!(
+            holder_params(Some(&json!([EVE, "grant"]))),
+            Ok((EVE.to_owned(), query(None, DEFAULT_LIMIT, Some("grant"))))
+        );
+        assert_eq!(
+            holder_params(Some(&json!([
+                EVE.to_ascii_uppercase().replacen("0X", "0x", 1),
+                "budget",
+                cursor,
+                7
+            ]))),
+            Ok((EVE.to_owned(), query(Some(&cursor), 7, Some("budget"))))
+        );
+        assert_eq!(
+            holder_params(Some(&json!([EVE, "grant", null, null]))),
+            Ok((EVE.to_owned(), query(None, DEFAULT_LIMIT, Some("grant"))))
+        );
+        for invalid in [
+            json!([EVE]),
+            json!([EVE, null]),
+            json!([EVE, "transfer"]),
+            json!([EVE, "Grant"]),
+            json!([ALICE, "grant"]),
+            json!([&EVE[2..], "grant"]),
+            json!([EVE, "grant", "abc"]),
+            json!([EVE, "grant", "000000000000000C0000000000000000"]),
+            json!([EVE, "grant", "ab".repeat(56)]),
+            json!([EVE, "grant", 5]),
+            json!([EVE, "grant", null, 0]),
+            json!([EVE, "grant", null, 101]),
+            json!([EVE, "grant", null, "5"]),
+            json!([EVE, "grant", null, null, null]),
+            json!({}),
+        ] {
+            assert_eq!(holder_params(Some(&invalid)), Err(-32602), "{invalid}");
+        }
+        assert_eq!(holder_params(None), Err(-32602));
     }
 }

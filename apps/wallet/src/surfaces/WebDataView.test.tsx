@@ -117,6 +117,8 @@ class GrantChain extends SurfaceChain {
     readonly txQueries: string[] = [];
     inFlight = 0;
     peakInFlight = 0;
+    holderRecords: ((params: readonly unknown[]) => unknown) | null = null;
+    readonly holderQueries: (readonly unknown[])[] = [];
 
     override async request(args: { method: string; params?: readonly unknown[] | object }): Promise<unknown> {
         const params = Array.isArray(args.params) ? (args.params as readonly unknown[]) : [];
@@ -127,6 +129,12 @@ class GrantChain extends SurfaceChain {
             return this.finalised === null ? null : { ...this.finalised, hash: `0x${'b7'.repeat(32)}` };
         }
         if (args.method === 'eth_chainId') return toHex(this.capsChainId);
+        if (args.method === 'px_listHolderRecords') {
+            this.methods.push(args.method);
+            this.holderQueries.push(params);
+            if (this.holderRecords === null) throw Object.assign(new Error('method not found'), { code: -32601 });
+            return this.holderRecords(params);
+        }
         if (args.method === 'eth_getTransactionByHash') {
             this.methods.push(args.method);
             this.txQueries.push(params[0] as string);
@@ -286,6 +294,9 @@ describe('WebDataView', () => {
         expect(grants.calls).not.toContainEqual({ to: LEDGER_PRECOMPILE, data: `${GET_PAYER_GRANT}${FOREIGN_GRANT.grantId.slice(2)}` });
         expect(grants.txQueries.sort()).toEqual([issuingTx(FOREIGN_GRANT), issuingTx(OWNED_GRANT)].sort());
         expect(grants.methods).not.toContain('lx_getWalletCaps');
+        expect(text(container, '[data-role="caps-history"]')).toBe(`Grant history is limited to the chain scan window, blocks ${FLOOR} to ${FLOOR + 42n}`);
+        expect(container.querySelector('[data-history-source="chain_scan"]')).not.toBeNull();
+        expect(grants.holderQueries[0]).toEqual([grants.address.toLowerCase(), 'grant', null, 100]);
     });
 
     it('web_data_view_shows_empty_caps_for_a_bound_account_with_no_grant', async () => {
@@ -458,6 +469,61 @@ describe('WebDataView', () => {
         grants.issued = [{ ...OWNED_GRANT, block: 1n }];
         grants.finalised = { ...HEAD, number: toHex(40_000_000n) };
         expect(await readGrantCaps(grants, grants.address)).toEqual({ state: 'unavailable', reason: 'No ledger log floor is configured for chain 229.' });
+        expect(grants.methods).not.toContain('eth_getLogs');
+    });
+
+    it('web_data_view_reads_grants_from_holder_records_when_the_endpoint_serves_them', async () => {
+        const grants = new GrantChain();
+        grants.xwebFee = chain.xwebFee;
+        const second: IssuedGrant = { ...OWNED_GRANT, grantId: `0x${'a3'.repeat(32)}`, expiration: 1_850_000_000n };
+        grants.issued = [FOREIGN_GRANT, OWNED_GRANT, second];
+        const holder = grants.address.toLowerCase();
+        const record = (grant: IssuedGrant) => ({ kind: 'grant', holder, contract: 'ledger', record_id: grant.grantId.slice(2), state: 'active' });
+        const cursor = '00000000000000070000000000000000';
+        grants.holderRecords = (params) => (params[2] === null
+            ? { items: [record(OWNED_GRANT), record(FOREIGN_GRANT)], next_cursor: cursor, indexedHeight: 990, chainHeight: 1000 }
+            : { items: [record(second)], next_cursor: null, indexedHeight: 995, chainHeight: 1001 });
+        mounted = await mountSurface(grants, <GrantSurface />);
+        const { container } = mounted;
+
+        await until(() => container.querySelector('[data-caps-state="ready"]') !== null, 'caps ready');
+        expect(container.querySelectorAll('[data-grant]')).toHaveLength(2);
+        expect(container.querySelector(`[data-grant="${'a2'.repeat(32)}"]`)).toBeNull();
+        expect(text(container, '[data-role="caps-expiry"]')).toBe('Earliest grant expiry 1850000000');
+        expect(text(container, '[data-role="caps-history"]')).toBe('Grants from the indexer · indexed height 990 · chain height 1001');
+        expect(container.querySelector('[data-history-source="indexer"]')).not.toBeNull();
+        expect(grants.holderQueries.slice(0, 2)).toEqual([[holder, 'grant', null, 100], [holder, 'grant', cursor, 100]]);
+        expect(grants.methods).not.toContain('eth_getLogs');
+        expect(grants.methods).not.toContain('eth_getTransactionByHash');
+    });
+
+    it('web_data_view_probes_holder_records_once_and_keeps_the_chain_scan_when_not_served', async () => {
+        const grants = new GrantChain();
+        grants.xwebFee = chain.xwebFee;
+        grants.issued = [OWNED_GRANT];
+        const first = await readGrantCaps(grants, grants.address);
+        const again = await readGrantCaps(grants, grants.address);
+        expect(first.state).toBe('ready');
+        expect(again).toEqual(first);
+        expect(first.state === 'ready' ? first.history : null).toEqual({ source: 'chain_scan', floor: FLOOR.toString(), head: (FLOOR + 42n).toString() });
+        expect(grants.holderQueries).toHaveLength(1);
+        expect(grants.logQueries).toHaveLength(2);
+    });
+
+    it('web_data_view_reports_caps_unavailable_when_served_holder_records_fail_and_never_falls_back_to_the_scan', async () => {
+        const grants = new GrantChain();
+        grants.xwebFee = chain.xwebFee;
+        grants.issued = [OWNED_GRANT];
+        let fail = false;
+        grants.holderRecords = () => {
+            if (fail) throw Object.assign(new Error('History unavailable'), { code: -32001 });
+            return { items: [], next_cursor: null, indexedHeight: 40, chainHeight: 42 };
+        };
+        expect((await readGrantCaps(grants, grants.address)).state).toBe('empty');
+        fail = true;
+        await expect(readGrantCaps(grants, grants.address)).rejects.toMatchObject({ code: -32001 });
+        grants.holderRecords = null;
+        await expect(readGrantCaps(grants, grants.address)).rejects.toMatchObject({ code: -32601 });
         expect(grants.methods).not.toContain('eth_getLogs');
     });
 });

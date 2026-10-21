@@ -10,6 +10,9 @@ import {
     ethQuantity,
     LEDGER_PRECOMPILE,
     ledgerLogFloor,
+    listHolderRecords,
+    type HolderRecords,
+    type WalletCapsHistory,
     type WalletCapsState,
     type WalletGrantCap,
     type WebPayerGrant,
@@ -396,6 +399,32 @@ async function issuedBy(provider: ModuleProvider, hash: string, address: string)
     return tx.from.toLowerCase() === address || tx.to?.toLowerCase() === address;
 }
 
+const holderRecordsServed = new WeakMap<ModuleProvider, boolean>();
+const RECORD_ID = /^(?:0x)?([0-9a-fA-F]{64})$/u;
+
+// The account's grant records from px_listHolderRecords when the endpoint serves it. The first read per provider is the
+// probe: a -32601 answer marks the method as not served and returns null so the bounded chain scan is used instead.
+async function indexedGrants(provider: ModuleProvider, address: string): Promise<HolderRecords | null> {
+    if (holderRecordsServed.get(provider) === false) return null;
+    try {
+        const records = await listHolderRecords(provider, address, 'grant');
+        holderRecordsServed.set(provider, true);
+        return records;
+    } catch (cause) {
+        if (!holderRecordsServed.has(provider) && isRecord(cause) && cause.code === -32601) {
+            holderRecordsServed.set(provider, false);
+            return null;
+        }
+        throw cause;
+    }
+}
+
+function grantRecordId(record: Readonly<Record<string, unknown>>): string {
+    const match = typeof record.record_id === 'string' ? RECORD_ID.exec(record.record_id) : null;
+    if (!match) throw new TypeError('invalid holder record');
+    return `0x${match[1]!.toLowerCase()}`;
+}
+
 async function inBatches<T, R>(items: readonly T[], read: (item: T) => Promise<R>): Promise<R[]> {
     const out: R[] = [];
     for (let start = 0; start < items.length; start += GRANT_LOG_BATCH) out.push(...(await Promise.all(items.slice(start, start + GRANT_LOG_BATCH).map(read))));
@@ -418,21 +447,30 @@ export async function readGrantCaps(provider: ModuleProvider, address: string): 
         data: await view(provider, LEDGER_PRECOMPILE, encodeFunctionData({ abi: GRANT_LOOKUP_ABI, functionName: 'accountId', args: [didPublicKey, ZERO_WORD] })),
     }).toLowerCase();
     const finalised = BigInt(head.number);
-    const floor = ledgerLogFloor(Number(chainId));
-    if (floor === undefined) return { state: 'unavailable', reason: `No ledger log floor is configured for chain ${Number(chainId)}.` };
-    const count = finalised < floor ? 0n : (finalised - floor) / GRANT_LOG_WINDOW + 1n;
-    if (count > GRANT_LOG_WINDOW_CEILING) return { state: 'unavailable', reason: 'The grant history is longer than this view can scan.' };
-    const windows: (readonly [bigint, bigint])[] = [];
-    for (let to = finalised; to >= floor; to -= GRANT_LOG_WINDOW) windows.push([to - floor >= GRANT_LOG_WINDOW ? to - GRANT_LOG_WINDOW + 1n : floor, to]);
-    const issued = (await inBatches(windows, ([from, to]) => issuedGrants(provider, from, to))).flat();
-    const self = address.toLowerCase();
-    const hashes = [...new Set(issued.map(([, hash]) => hash))];
-    const sent = await inBatches(hashes, (hash) => issuedBy(provider, hash, self));
-    const mine = new Set(hashes.filter((_, index) => sent[index]));
-    const ids = [...new Set(issued.filter(([, hash]) => mine.has(hash)).map(([id]) => id))];
+    const height = finalised.toString();
+    const indexed = await indexedGrants(provider, address);
+    let ids: string[];
+    let history: WalletCapsHistory;
+    if (indexed !== null) {
+        ids = [...new Set(indexed.items.map(grantRecordId))];
+        history = { source: 'indexer', indexed_height: indexed.indexedHeight?.toString() ?? null, chain_height: indexed.chainHeight.toString() };
+    } else {
+        const floor = ledgerLogFloor(Number(chainId));
+        if (floor === undefined) return { state: 'unavailable', reason: `No ledger log floor is configured for chain ${Number(chainId)}.` };
+        const count = finalised < floor ? 0n : (finalised - floor) / GRANT_LOG_WINDOW + 1n;
+        if (count > GRANT_LOG_WINDOW_CEILING) return { state: 'unavailable', reason: 'The grant history is longer than this view can scan.' };
+        const windows: (readonly [bigint, bigint])[] = [];
+        for (let to = finalised; to >= floor; to -= GRANT_LOG_WINDOW) windows.push([to - floor >= GRANT_LOG_WINDOW ? to - GRANT_LOG_WINDOW + 1n : floor, to]);
+        const issued = (await inBatches(windows, ([from, to]) => issuedGrants(provider, from, to))).flat();
+        const self = address.toLowerCase();
+        const hashes = [...new Set(issued.map(([, hash]) => hash))];
+        const sent = await inBatches(hashes, (hash) => issuedBy(provider, hash, self));
+        const mine = new Set(hashes.filter((_, index) => sent[index]));
+        ids = [...new Set(issued.filter(([, hash]) => mine.has(hash)).map(([id]) => id))];
+        history = { source: 'chain_scan', floor: floor.toString(), head: height };
+    }
     const owned = ids.length === 0 ? [] : (await webData(provider).caps(ids)).grants.filter((grant) => grant.from === account);
     const expires = owned.reduce((earliest, grant) => (grant.expiration < earliest ? grant.expiration : earliest), owned[0]?.expiration ?? 0n);
-    const height = finalised.toString();
     return {
         state: owned.length === 0 ? 'empty' : 'ready',
         did,
@@ -440,6 +478,7 @@ export async function readGrantCaps(provider: ModuleProvider, address: string): 
         network_id: Number(chainId),
         context: { principal: did, session_id: '', address: address.toLowerCase(), chain_id: Number(chainId), expires_at: owned.length === 0 ? NO_GRANT_EXPIRY : expires.toString() },
         observation: { verification: 'checkpoint_finalised', state_root: head.stateRoot.slice(2).toLowerCase(), sequence: height, observed_head: height, batch: height },
+        history,
         budgets: [],
         grants: owned.map((grant): WalletGrantCap => ({
             id: grant.grantId.slice(2),
