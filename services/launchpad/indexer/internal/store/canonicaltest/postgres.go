@@ -69,7 +69,7 @@ func New(t *testing.T) (string, *pgxpool.Pool) {
 	}
 	t.Cleanup(pool.Close)
 	_, file, _, _ := runtime.Caller(0)
-	ddl, err := os.ReadFile(filepath.Join(filepath.Dir(file), "../../../../../spec/production-system/integration/migrations/60000.sql"))
+	ddl, err := os.ReadFile(filepath.Join(filepath.Dir(file), "../../../../../../launchpad/spec/production-system/integration/migrations/60000.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}

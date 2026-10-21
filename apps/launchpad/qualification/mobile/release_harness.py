@@ -291,7 +291,7 @@ class Capture:
 
 def approved_plan(path):
     plan = load(path)
-    require(Path(plan['sourceRoot']).resolve() == Path(__file__).resolve().parents[3], 'Harness must bind its own actual integrated source root')
+    require(Path(plan['sourceRoot']).resolve() == Path(__file__).resolve().parents[4], 'Harness must bind its own actual integrated source root')
     require(plan['environment'] == 'staging' and plan['syntheticAccountsOnly'] is True and plan['signingOwner'] and plan['backendRevision'], 'Approved staging/signing/synthetic-account inputs required')
     require(SHA.fullmatch(plan['artifactDigest']) and SHA.fullmatch(plan['sourceDigest']) and plan['sourceDigest'] == source_digest(plan['sourceRoot'], plan['sourceFiles']), 'Exact current-source binding required')
     require(digest(plan['artifact']) == plan['artifactDigest'], 'Signed candidate file digest mismatch')
@@ -550,9 +550,9 @@ def export_ios(plan, output):
 
 def build_signed(plan, output):
     require(plan['environment'] == 'staging' and plan['syntheticAccountsOnly'] is True and plan['signingOwner'], 'Approved signing owner/staging input required')
-    require(Path(plan['sourceRoot']).resolve() == Path(__file__).resolve().parents[3] and plan['sourceDigest'] == source_digest(plan['sourceRoot'], plan['sourceFiles']), 'Exact signed-candidate source binding required')
+    require(Path(plan['sourceRoot']).resolve() == Path(__file__).resolve().parents[4] and plan['sourceDigest'] == source_digest(plan['sourceRoot'], plan['sourceFiles']), 'Exact signed-candidate source binding required')
     capture = Capture(output)
-    mobile = Path(plan['sourceRoot']) / 'client/apps/mobile'
+    mobile = Path(plan['sourceRoot']) / 'apps/launchpad/mobile'
     platform = plan['platform']
     if platform == 'android':
         required = ('SIDIORA_ANDROID_KEYSTORE','SIDIORA_ANDROID_STORE_PASSWORD','SIDIORA_ANDROID_KEY_ALIAS','SIDIORA_ANDROID_KEY_PASSWORD','SIDIORA_SIGNING_OWNER','SIDIORA_PUBLIC_CONFIGURATION','SIDIORA_ASSOCIATED_HOST')
@@ -672,7 +672,7 @@ def capture_responsive(plan, output):
 def validate_release(root, bundle, candidate):
     require(bundle['schemaVersion'] == 4 and bundle['environment'] == 'staging' and bundle['syntheticAccountsOnly'] is True, 'Observed release bundle v4 required')
     require(candidate['environment'] == 'staging' and candidate['syntheticAccountsOnly'] is True and candidate['signingOwner'], 'Approved staging signing owner required')
-    require(Path(candidate['sourceRoot']).resolve() == Path(__file__).resolve().parents[3] and candidate['sourceDigest'] == source_digest(candidate['sourceRoot'], candidate['sourceFiles']), 'Actual current-source release inventory changed')
+    require(Path(candidate['sourceRoot']).resolve() == Path(__file__).resolve().parents[4] and candidate['sourceDigest'] == source_digest(candidate['sourceRoot'], candidate['sourceFiles']), 'Actual current-source release inventory changed')
     artifacts = candidate['releaseArtifacts']
     require(set(artifacts) == set(PLATFORMS) and all(SHA.fullmatch(value) for value in artifacts.values()), 'Exact per-platform release artifact inventory required')
     release_set = hashlib.sha256(json.dumps(artifacts,sort_keys=True,separators=(',',':')).encode()).hexdigest()

@@ -31,7 +31,7 @@ func measurementFixtureConfig(t *testing.T) (*identityHTTPFixture, IdentityMeasu
 	if err := f.pool.QueryRow(f.ctx, `SELECT current_database(),current_schema()`).Scan(&database, &schema); err != nil {
 		t.Fatal(err)
 	}
-	root, err := filepath.Abs("../../../..")
+	root, err := filepath.Abs("../../../../..")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func measurementFixtureConfig(t *testing.T) (*identityHTTPFixture, IdentityMeasu
 	if err != nil {
 		t.Fatal(err)
 	}
-	contract, err := os.ReadFile(filepath.Join(root, "spec/production-system/integration/contracts/v2/catalog.json"))
+	contract, err := os.ReadFile(filepath.Join(root, "launchpad/spec/production-system/integration/contracts/v2/catalog.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

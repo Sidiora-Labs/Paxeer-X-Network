@@ -918,7 +918,7 @@ func (h *identityLatencyHistogram) percentile(p int) int64 {
 }
 func identityMeasurementSources(root string) (map[string]string, string, error) {
 	sources := map[string]string{}
-	directory := filepath.Join(root, "media/gateway/internal/auth")
+	directory := filepath.Join(root, "services/launchpad/gateway/internal/auth")
 	err := filepath.WalkDir(directory, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr

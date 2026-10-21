@@ -20,7 +20,7 @@ import uuid
 DIGEST = re.compile(r'^[0-9a-f]{64}$')
 ADDRESS = re.compile(r'^0x[0-9a-f]{40}$')
 RAW = re.compile(r'^(0|[1-9][0-9]*)$')
-SOURCE = pathlib.Path(__file__).resolve().parents[5]
+SOURCE = pathlib.Path(__file__).resolve().parents[6]
 USDL = '0x85fcd13735f4309833a503ee804ea32395851479'
 TRANSFER = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 READ_PATHS = {'portfolio_read': '/v3/me/portfolio', 'reward_read': '/v2/me/rewards'}
@@ -114,7 +114,7 @@ def load_config(path, mode):
     runtime = json.loads(runtime_path.read_text())
     require(runtime.get('version') == 3 and runtime.get('realm') == 'private_fixture', 'actual private pnl runtime document required')
     require(runtime.get('releaseDigest') == config['release_digest'] and runtime.get('interfaceDigest') == config['interface_digest'], 'runtime candidate/interface mismatch')
-    domain = (SOURCE / 'core/pnl-tracker/internal/production/l18/domain.go').read_text()
+    domain = (SOURCE / 'services/launchpad/pnl-tracker/internal/production/l18/domain.go').read_text()
     manifest = re.search(r'const ManifestDigest = "([0-9a-f]{64})"', domain).group(1)
     require(runtime.get('rewardManifestDigest') == manifest, 'reward deployment manifest mismatch')
     require(config.get('rule_version') == 'l18-v1', 'current reward rule version required')

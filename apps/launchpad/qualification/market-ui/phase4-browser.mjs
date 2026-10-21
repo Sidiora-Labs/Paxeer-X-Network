@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { installMarketObserver, percentile } from './phase4-observer.mjs';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../launchpad');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const require = createRequire(import.meta.url);
 const sha = raw => crypto.createHash('sha256').update(raw).digest('hex');
 const hex = /^[0-9a-f]{64}$/;
@@ -40,7 +40,7 @@ assert.equal(config.interface_manifest.sha256, config.bindings.interface); bound
 assert.equal(config.topology_manifest.sha256, config.bindings.topology); boundFile(config.topology_manifest);
 assert.ok(Array.isArray(candidate.files) && candidate.files.length > 0);
 for (const file of candidate.files) { assert.ok(!path.isAbsolute(file.path)); const actual = relativeFile(root, file.path); boundFile({ path: actual, sha256: file.sha256 }); }
-const ownedSources = ['client/qualification/market-ui/phase4-browser.mjs', 'client/qualification/market-ui/phase4-observer.mjs', 'client/qualification/market-ui/phase4-policy.json', 'client/apps/web/src/page-modules/token/market-session.ts', 'client/apps/web/src/widgets/trading/token-market-layout.tsx'];
+const ownedSources = ['apps/launchpad/qualification/market-ui/phase4-browser.mjs', 'apps/launchpad/qualification/market-ui/phase4-observer.mjs', 'apps/launchpad/qualification/market-ui/phase4-policy.json', 'apps/launchpad/web/src/page-modules/token/market-session.ts', 'apps/launchpad/web/src/widgets/trading/token-market-layout.tsx'];
 for (const source of ownedSources) assert.ok(candidate.files.some(file => file.path === source), `Candidate omits measured source ${source}`);
 const corpus = document(config.trace_corpus, 4194304), device = document(config.browser_device, 1048576);
 assert.equal(corpus.task, '4.30'); assert.equal(corpus.candidate, config.bindings.candidate);
@@ -58,14 +58,14 @@ boundFile(config.playwright_module); const { chromium } = require(config.playwri
 boundFile(config.sdk_module); const sdk = await import(pathToFileURL(config.sdk_module.path).href); assert.equal(typeof sdk.decodeContract, 'function'); assert.equal(typeof sdk.decodeV2Contract, 'function');
 boundFile(config.axe_script); boundFile(config.browser_session);
 const backendScript = path.resolve(config.backend_runner.path); boundFile(config.backend_runner);
-assert.ok(backendScript.startsWith(path.join(root, 'tools/production/load') + path.sep));
+assert.ok(backendScript.startsWith(path.join(root, 'tools/launchpad/production/load') + path.sep));
 assert.ok(['phase2_runner.py', 'phase3_runner.py', 'phase4_runner.py'].includes(path.basename(backendScript)));
 const backendConfig = document(config.backend_config);
 assert.deepEqual(backendConfig.bindings, config.bindings);
 assert.equal(backendConfig.application_origin, applicationOrigin);
 assert.ok(Array.isArray(config.backend_environment_keys) && config.backend_environment_keys.every(key => /^[A-Z][A-Z0-9_]{0,79}$/.test(key)));
 assert.ok(path.isAbsolute(config.python_executable.path)); boundFile(config.python_executable);
-const output = path.resolve(args[5]), allowedOutput = path.join(root, 'evidence/production-system/L30/phase4');
+const output = path.resolve(args[5]), allowedOutput = path.join(root, 'launchpad/evidence/production-system/L30/phase4');
 assert.ok(output.startsWith(allowedOutput + path.sep)); fs.mkdirSync(output, { recursive: true, mode: 0o700 });
 assert.equal(fs.readdirSync(output).length, 0, 'Fresh owned evidence directory required');
 const streams = new Map(), counts = new Map(), digests = new Map(); let bytes = 0;
@@ -247,7 +247,7 @@ try {
   const backendObserved = await backendEvidence();
   await interruption();
   assert.ok(Array.isArray(corpus.controls) && corpus.controls.length > 0);
-  const registry = fs.readFileSync(path.join(root, 'client/apps/web/src/widgets/terminal/panel-registry.ts'), 'utf8');
+  const registry = fs.readFileSync(path.join(root, 'apps/launchpad/web/src/widgets/terminal/panel-registry.ts'), 'utf8');
   const panelIds = [...registry.matchAll(/panelId:\s*'([^']+)'/g)].map(match => match[1]);
   for (const id of panelIds) assert.ok(corpus.controls.some(control => control.panel_id === id), `Missing actual control outcome for:${id}`);
   for (const control of corpus.controls) { await steps(control.steps, control.panel_id); write('panel-outcomes.ndjson', { panel_id: control.panel_id, observed_utc_ms: Date.now(), inventory: await inventory() }); }

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 DIRECTORY = pathlib.Path(__file__).resolve().parents[1]
-ROOT = DIRECTORY.parents[2]
+ROOT = DIRECTORY.parents[3]
 spec = importlib.util.spec_from_file_location('journey_collection', DIRECTORY/'collect_journeys.py')
 collector = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(collector)
@@ -56,7 +56,7 @@ class Phase2Tests(unittest.TestCase):
         self.assertTrue(all(r['state'] == 'blocked' for r in result['features']))
 
     def test_actual_v2_catalog_funding_voice_bounty_automation_stay_unavailable(self):
-        catalog = json.loads((ROOT/'spec/production-system/integration/contracts/v2/capabilities.json').read_text())
+        catalog = json.loads((ROOT/'launchpad/spec/production-system/integration/contracts/v2/capabilities.json').read_text())
         selected = [c for c in catalog['capabilities'] if c['id'] in {'funding', 'voice', 'bounty', 'automation'}]
         self.assertGreaterEqual(len(selected), 3)
         for capability in selected:

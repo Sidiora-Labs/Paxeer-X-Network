@@ -11,7 +11,7 @@ import sys
 import time
 import urllib.request
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 MNEMONIC = 'test test test test test test test test test test test junk'
 ACCOUNT = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266'
 
@@ -101,7 +101,7 @@ def main():
                 raise RuntimeError('Compiled real ERC20 fixture artifact is missing')
             env = {**os.environ, 'WALLET_TEST_RPC_URL': url, 'WALLET_TEST_ALLOW_CHAIN_MUTATION': '1',
                    'DISPATCH_TEST_RPC_URL': dispatch_url, 'DISPATCH_TEST_ERC20_ARTIFACT': str(artifact.resolve())}
-            argv = [sys.executable, str(ROOT / 'tools/production/bootstrap/tests/catalog.py'),
+            argv = [sys.executable, str(ROOT / 'tools/launchpad/production/bootstrap/tests/catalog.py'),
                     'run-vitest', '--root', str(ROOT), '--log', str(args.evidence_dir / 'web-vitest.json'),
                     '--timeout', str(args.timeout)]
             tests = subprocess.Popen(argv, cwd=ROOT, env=env, start_new_session=True)

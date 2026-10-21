@@ -223,7 +223,7 @@ class MetricReader:
 
 def load_capture_adapter(source_root, references):
     v1.keys(references,LOAD_FILES,'pinned D16 capture sources')
-    root=Path(source_root).resolve()/'tools/production/load'
+    root=Path(source_root).resolve()/'tools/launchpad/production/load'
     for filename,expected in references.items():
         v1.sha(expected,'D16 capture source digest')
         v1.need(hashlib.sha256(regular_bytes(root/filename,4*1024*1024)).hexdigest()==expected,

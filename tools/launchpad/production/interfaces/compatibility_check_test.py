@@ -8,7 +8,7 @@ from pathlib import Path
 from compatibility_check import check
 
 ROOT=Path(os.environ.get('COMPAT_SOURCE_ROOT','/root/mk-falcon/KindleLaunch'))
-MANIFEST=Path(__file__).resolve().parents[3]/'spec/production-system/integration/contracts/v1/compatibility.json'
+MANIFEST=Path(__file__).resolve().parents[4]/'launchpad/spec/production-system/integration/contracts/v1/compatibility.json'
 SCHEMAS=os.environ.get('COMPAT_SCHEMAS')
 
 class CompatibilityFreezeTests(unittest.TestCase):

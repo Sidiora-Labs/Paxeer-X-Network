@@ -39,7 +39,7 @@ func TestPoolStatsInterface22FieldsRoundTrip(t *testing.T) {
 	pg, model, stream, first, firstPayload := productionReadsFixture(t)
 	ctx := context.Background()
 	for _, name := range []string{"80001", "80002", "100000", "130000"} {
-		raw, err := os.ReadFile("../../../../spec/production-system/integration/migrations/" + name + ".sql")
+		raw, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/migrations/" + name + ".sql")
 		if err != nil {
 			t.Fatal(err)
 		}

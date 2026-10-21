@@ -496,7 +496,7 @@ func phase4BindCandidate(binding phase4File) error {
 	if !ok {
 		return errors.New("current source location unavailable")
 	}
-	root := filepath.Clean(filepath.Join(filepath.Dir(file), "../../../.."))
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "../../../../.."))
 	if manifest.CandidateID == "" || len(manifest.SourceSHA256) < 20 {
 		return errors.New("complete current-candidate source manifest required")
 	}
@@ -509,7 +509,7 @@ func phase4BindCandidate(binding phase4File) error {
 			return errors.New("current candidate source differs: " + path)
 		}
 	}
-	for _, scope := range []string{"core/stats-workers", "shared", "protocol"} {
+	for _, scope := range []string{"services/launchpad/stats-workers", "sdk/launchpad/shared", "sdk/launchpad/protocol"} {
 		err = filepath.WalkDir(filepath.Join(root, scope), func(path string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
@@ -554,7 +554,7 @@ func phase4BindCandidate(binding phase4File) error {
 	if !builds["stats"] {
 		return errors.New("actual stats binary build provenance missing")
 	}
-	for _, path := range []string{"core/stats-workers/internal/analytics/phase2_capacity_test.go", "core/stats-workers/internal/analytics/projector.go", "core/stats-workers/internal/analytics/reactions.go", "core/stats-workers/internal/analytics/reads.go", "core/stats-workers/internal/analytics/snapshot.go", "core/stats-workers/internal/risk/versioned.go", "core/stats-workers/internal/risk/model-v1.json", "core/stats-workers/internal/app/app.go", "core/stats-workers/internal/httpapi/pressure.go", "core/stats-workers/internal/httpapi/reactions.go", "shared/delivery/store.go", "shared/delivery/natsdriver/driver.go", "shared/accounting/validate.go", "spec/production-system/spec.kvx"} {
+	for _, path := range []string{"services/launchpad/stats-workers/internal/analytics/phase2_capacity_test.go", "services/launchpad/stats-workers/internal/analytics/projector.go", "services/launchpad/stats-workers/internal/analytics/reactions.go", "services/launchpad/stats-workers/internal/analytics/reads.go", "services/launchpad/stats-workers/internal/analytics/snapshot.go", "services/launchpad/stats-workers/internal/risk/versioned.go", "services/launchpad/stats-workers/internal/risk/model-v1.json", "services/launchpad/stats-workers/internal/app/app.go", "services/launchpad/stats-workers/internal/httpapi/pressure.go", "services/launchpad/stats-workers/internal/httpapi/reactions.go", "sdk/launchpad/shared/delivery/store.go", "sdk/launchpad/shared/delivery/natsdriver/driver.go", "sdk/launchpad/shared/accounting/validate.go", "launchpad/spec/production-system/spec.kvx"} {
 		if manifest.SourceSHA256[path] == "" {
 			return errors.New("unbound candidate dependency: " + path)
 		}

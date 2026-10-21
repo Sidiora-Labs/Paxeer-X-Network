@@ -1,8 +1,8 @@
 {
   "version": 2,
   "task": "2.50",
-  "extends": "tools/production/feature-acceptance/phase-1-evidence-policy.json",
-  "schema": "tools/production/feature-acceptance/journey-evidence.schema.json",
+  "extends": "tools/launchpad/production/feature-acceptance/phase-1-evidence-policy.json",
+  "schema": "tools/launchpad/production/feature-acceptance/journey-evidence.schema.json",
   "collector_entrypoint": "collect_journeys.collect",
   "qualification_entrypoint": "journey_policy.qualify_feature",
   "signature": "Ed25519 over canonical UTF8 JSON; same admitted producer signs journey record index bound to independently reviewed evidence/artifact hashes",

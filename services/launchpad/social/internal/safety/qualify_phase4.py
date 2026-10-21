@@ -14,8 +14,8 @@ import subprocess
 import sys
 import time
 
-ROOT = Path(__file__).resolve().parents[4]
-BROWSER = ROOT / 'client/apps/web/src/widgets/voice-rooms/qualify-phase4.mjs'
+ROOT = Path(__file__).resolve().parents[5]
+BROWSER = ROOT / 'apps/launchpad/web/src/widgets/voice-rooms/qualify-phase4.mjs'
 FAULTS = ('safety_dependency_loss', 'single_node_loss', 'provider_unavailable', 'provider_create_db_crash', 'moderation_replay')
 SCENARIOS = {str(i) for i in range(1, 13)}
 
@@ -42,7 +42,7 @@ def pinned(entry):
 
 
 def source_snapshot():
-    path = ROOT / 'tools/production/qualify.py'
+    path = ROOT / 'tools/launchpad/production/qualify.py'
     module_spec = importlib.util.spec_from_file_location('l38_source_binding', path)
     module = importlib.util.module_from_spec(module_spec)
     module_spec.loader.exec_module(module)

@@ -45,7 +45,7 @@ func TestPhase2ReaderCompatibility(t *testing.T) {
 	if err = ApplyCoordinatedMigration(ctx, conn, baseline, []byte(baselineSQL), registry, baseline.InterfaceDigest, baseline.ApprovalManifestDigest, 1); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "spec", "production-system", "integration", "contracts", "v1", "examples.json"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "launchpad", "spec", "production-system", "integration", "contracts", "v1", "examples.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -23,7 +23,7 @@
       "hot_pool_read_fraction": 0.6,
       "hot_pool_read_denominator": "GET operations with a frozen poolAddress path parameter; unscoped reads remain separately reported",
       "cold_pool_p99_upper_bound_ns": 400000000,
-      "entrypoint": "tools/production/load/phase3_runner.py"
+      "entrypoint": "tools/launchpad/production/load/phase3_runner.py"
     },
     {
       "id": "isolated-dependency-pause",
@@ -84,7 +84,7 @@
   ],
   "command": [
     "python3",
-    "tools/production/load/phase3_runner.py",
+    "tools/launchpad/production/load/phase3_runner.py",
     "--config",
     "{private_config}",
     "--config-sha256",
@@ -92,7 +92,7 @@
     "--output",
     "{owned_evidence_directory}"
   ],
-  "verify_cmd": "python3 tools/production/qualify.py --task 3.48 --spec spec/production-system/spec.kvx --require-current-source",
+  "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.48 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
   "pending_final_scenarios": [
     "160k hot-pool subscriber surge",
     "24h shared integrated peak soak",

@@ -84,7 +84,7 @@ func newPhase4Artifacts(c phase4Config) (*phase4Artifacts, error) {
 	if c.RawMaxBytes < 1<<20 || c.RawMaxBytes > 1<<40 || !filepath.IsAbs(c.Output) {
 		return nil, ranker.ErrUnavailable
 	}
-	allowed := filepath.Join(c.SourceRoot, "evidence", "production-system", "L19", "phase4")
+	allowed := filepath.Join(c.SourceRoot, "launchpad", "evidence", "production-system", "L19", "phase4")
 	relative, err := filepath.Rel(allowed, c.Output)
 	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
 		return nil, errors.New("fresh lane-owned phase4 artifact directory required")
@@ -198,7 +198,7 @@ func phase4LoadConfig() (phase4Config, error) {
 	if err != nil || formula != c.Binding.Formula {
 		return c, errors.New("running formula source/policy binding differs")
 	}
-	source, _ := filepath.Abs("../../../..")
+	source, _ := filepath.Abs("../../../../..")
 	root, _ := filepath.Abs(c.SourceRoot)
 	if source != root {
 		return c, errors.New("measurement must execute inside the bound candidate checkout")

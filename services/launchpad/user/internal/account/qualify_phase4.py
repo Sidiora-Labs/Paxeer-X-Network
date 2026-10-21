@@ -16,8 +16,8 @@ import sys
 import time
 import uuid
 
-ROOT = Path(__file__).resolve().parents[4]
-LOAD = ROOT / 'tools/production/load'
+ROOT = Path(__file__).resolve().parents[5]
+LOAD = ROOT / 'tools/launchpad/production/load'
 sys.path.insert(0, str(LOAD))
 from calibration import cpu_fraction, linux_cpu_snapshot, nic_fraction
 from capture import gateway_summary, iter_artifact, read_manifest, sha_file
@@ -49,7 +49,7 @@ def checked_source(config):
             raise ValueError(name + ' binding differs from admitted authority')
         bound_document(document['path'], document['sha256'])
     files = config['source_files']
-    minimum = {'media/user/internal/account/qualify_phase4.py', 'media/user/internal/account/store.go', 'media/user/internal/account/preferences_http.go', 'media/user/internal/account/http.go', 'media/user/internal/account/devices_http.go', 'shared/auth/operation.go', 'shared/auth/ledger.go', 'tools/production/load/phase2_accounts.py', 'tools/production/load/phase2_http.py', 'tools/production/load/phase2_receivers.py', 'tools/production/load/capture.py', 'tools/production/load/calibration.py', 'tools/production/load/phase2_types.py', 'tools/production/load/phase2_feeder.py', 'tools/production/load/scheduler.py', 'tools/production/load/workload.py'}
+    minimum = {'services/launchpad/user/internal/account/qualify_phase4.py', 'services/launchpad/user/internal/account/store.go', 'services/launchpad/user/internal/account/preferences_http.go', 'services/launchpad/user/internal/account/http.go', 'services/launchpad/user/internal/account/devices_http.go', 'sdk/launchpad/shared/auth/operation.go', 'sdk/launchpad/shared/auth/ledger.go', 'tools/launchpad/production/load/phase2_accounts.py', 'tools/launchpad/production/load/phase2_http.py', 'tools/launchpad/production/load/phase2_receivers.py', 'tools/launchpad/production/load/capture.py', 'tools/launchpad/production/load/calibration.py', 'tools/launchpad/production/load/phase2_types.py', 'tools/launchpad/production/load/phase2_feeder.py', 'tools/launchpad/production/load/scheduler.py', 'tools/launchpad/production/load/workload.py'}
     if not isinstance(files, dict) or not minimum <= files.keys():
         raise ValueError('complete current lane/authentication/generator source bindings required')
     for relative, expected in files.items():
@@ -63,7 +63,7 @@ def checked_source(config):
 
 class Artifacts:
     def __init__(self, directory):
-        allowed = (ROOT / 'evidence/production-system/L35/phase4').resolve()
+        allowed = (ROOT / 'launchpad/evidence/production-system/L35/phase4').resolve()
         directory = Path(directory)
         if not directory.is_absolute() or directory.is_symlink() or not directory.resolve().is_relative_to(allowed):
             raise ValueError('exact lane-owned immutable run directory required')

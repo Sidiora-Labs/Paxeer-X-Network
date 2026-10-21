@@ -13,15 +13,15 @@ class BuildCheckTests(unittest.TestCase):
     def run_case(self, source, expected, reason=None, other_source=None):
         with tempfile.TemporaryDirectory(prefix='kindle-build-check-') as temporary:
             base = Path(temporary)
-            module = base / 'sample'
-            module.mkdir()
+            module = base / 'services/launchpad/sample'
+            module.mkdir(parents=True)
             (module / 'go.mod').write_text('module local.example/sample\n\ngo 1.25.0\n')
             if source is not None:
                 (module / 'sample.go').write_text(source)
             if other_source is not None:
                 (module / 'other.go').write_text(other_source)
             manifest = {'schemaVersion': 1, 'modules': [{
-                'path': 'sample', 'module': 'local.example/sample', 'goVersion': '1.25.0',
+                'path': 'services/launchpad/sample', 'module': 'local.example/sample', 'goVersion': '1.25.0',
                 'listArgv': ['go', 'list', './...'], 'buildArgv': ['go', 'build', '-p', '1', './...'], 'entrypoints': []}]}
             path = base / 'manifest.json'
             path.write_text(json.dumps(manifest))
@@ -56,9 +56,9 @@ class BuildCheckTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='kindle-manifest-check-') as temporary:
             base = Path(temporary)
             for name in ['sample', 'forgotten']:
-                (base / name).mkdir()
-                (base / name / 'go.mod').write_text('module local.example/' + name + '\n\ngo 1.25.0\n')
-            manifest = {'schemaVersion': 1, 'modules': [{'path': 'sample', 'module': 'local.example/sample',
+                (base / 'services/launchpad' / name).mkdir(parents=True)
+                (base / 'services/launchpad' / name / 'go.mod').write_text('module local.example/' + name + '\n\ngo 1.25.0\n')
+            manifest = {'schemaVersion': 1, 'modules': [{'path': 'services/launchpad/sample', 'module': 'local.example/sample',
                         'goVersion': '1.25.0', 'listArgv': ['go', 'list', './...'],
                         'buildArgv': ['go', 'build', '-p', '1', './...']}]}
             path = base / 'manifest.json'

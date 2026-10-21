@@ -205,7 +205,7 @@ func epochPostgresFixture(t *testing.T) (*pgxpool.Pool, string) {
 	}
 	t.Cleanup(pool.Close)
 	schema := fmt.Sprintf("kd_epoch_%x", time.Now().UnixNano())
-	sql, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "production", "recovery", "epoch.sql"))
+	sql, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "deploy", "launchpad", "production", "recovery", "epoch.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}

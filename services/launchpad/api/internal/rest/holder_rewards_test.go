@@ -84,7 +84,7 @@ func holderRewardOrder(t *testing.T, items []map[string]any) []string {
 func TestHolderRewardsProductionRead(t *testing.T) {
 	f := newPoolReadsFixture(t, "")
 	ctx := context.Background()
-	heads, err := os.ReadFile("../../../../spec/production-system/integration/migrations/60001.sql")
+	heads, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/migrations/60001.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

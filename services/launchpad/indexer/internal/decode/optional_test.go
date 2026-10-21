@@ -55,7 +55,7 @@ func TestAllOptionalNativeABIsHaveDedicatedRoutes(t *testing.T) {
 }
 
 func TestCoreAuthenticReceiptsWithoutAnyOracle(t *testing.T) {
-	data, err := os.ReadFile("../../../../spec/production-system/integration/contracts/v1/chain/golden-fixtures.json")
+	data, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v1/chain/golden-fixtures.json")
 	if err != nil {
 		t.Fatal(err)
 	}

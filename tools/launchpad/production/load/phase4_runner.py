@@ -51,7 +51,7 @@ def validate_runtime(config, bindings, *, final=False):
         if lane not in required or value["candidate"] != bindings.candidate or value["interface"] != bindings.interface or value["topology"] != bindings.topology or not re.fullmatch(r"[0-9a-f]{64}", value["tool_version_sha256"]):
             raise ValueError("lane runtime registration differs from frozen final candidate")
     if final:
-        spec = (ROOT / "spec/production-system/spec.kvx").read_text()
+        spec = (ROOT / "launchpad/spec/production-system/spec.kvx").read_text()
         for identifier, status in (("4.99", "done"), ("9.1", "in_progress")):
             match = re.search(r"(?ms)^\[task\." + re.escape(identifier) + r"\]\n.*?(?=^\[|\Z)", spec)
             if not match or not re.search(r'^status = "' + status + r'"$', match.group(0), re.M):

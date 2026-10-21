@@ -1,6 +1,6 @@
 # Independent integration assurance primitives
 
-Run `python3 -m unittest discover -s tools/production/integration -p 'test_*.py' -v` from the repository root. Standard-library Python only; no product reducer imports. Arithmetic inputs and hashes in tests are explicitly synthetic and never chain receipt evidence. HTTP adapter tests use a real bounded loopback server; process cleanup uses an actual directly owned process group. Docker negative boundary tests do not fault any running container.
+Run `python3 -m unittest discover -s tools/launchpad/production/integration -p 'test_*.py' -v` from the repository root. Standard-library Python only; no product reducer imports. Arithmetic inputs and hashes in tests are explicitly synthetic and never chain receipt evidence. HTTP adapter tests use a real bounded loopback server; process cleanup uses an actual directly owned process group. Docker negative boundary tests do not fault any running container.
 
 `inventory` requires complete contiguous block observations including empty blocks, anchored to an independently supplied start height and parent hash. It checks chain125 event/header identity, global log ordering, complete-block agreement, and transport duplicate equality. The caller must obtain and authenticate raw RPC receipts, deployed ABI/code provenance and complete log ranges independently. These normalized models cannot authenticate their own input or establish a deployment's activation epoch. Disagreement raises quarantine; no ordinary committed-block rollback exists.
 

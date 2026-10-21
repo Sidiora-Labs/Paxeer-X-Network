@@ -24,7 +24,7 @@ func TestCurrentMatchesFrozenDeployment(t *testing.T) {
 			PoolBeacon   string `json:"poolBeacon"`
 		}
 	}
-	b, e := os.ReadFile("../../../spec/production-system/integration/contracts/v1/chain/client-deployment.json")
+	b, e := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v1/chain/client-deployment.json")
 	if e != nil {
 		t.Fatal(e)
 	}

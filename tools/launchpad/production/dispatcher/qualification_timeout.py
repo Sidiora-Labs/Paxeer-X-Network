@@ -28,7 +28,7 @@ def qualify_timeout(rootpath):
                       'time.sleep(60)')
         runner_code = ('import sys; '
                        f'sys.path.insert(0,{str(root)!r}); '
-                       'from tools.production.dispatcher.workspace import run_process; '
+                       'from tools.launchpad.production.dispatcher.workspace import run_process; '
                        f'run_process([sys.executable,"-c",{child_code!r}],{str(work)!r},60)')
         survivor = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
         coordinator = subprocess.Popen([sys.executable, '-c', runner_code], stdout=subprocess.PIPE, stderr=subprocess.PIPE)

@@ -74,7 +74,7 @@ class Phase4Tests(unittest.TestCase):
             p.final_release_closure([], [dict(gate='9.1')], closure_authority=authority, readiness_authority={}, inventory=self.inventory, context=self.context, trust=self.trust, artifact_root=self.root, dependencies=self.dependencies, authority={}, audit_authority={}, now=self.now)
 
     def test_closure_manifest_uses_all200_lane_tasks_and_real_serial_gate_commands(self):
-        gates = p.required_release_gates(DIRECTORY.parents[2]/'spec/production-system/spec.kvx')
+        gates = p.required_release_gates(DIRECTORY.parents[3]/'launchpad/spec/production-system/spec.kvx')
         self.assertEqual(sum(g['kind']=='parallel_lane' for g in gates.values()),200)
         self.assertIn('9.1',gates)
         self.assertIn('4.99',gates)

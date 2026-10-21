@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {assertChainId,assertIdentityAttestation}=require('./identity-guard.cjs');
-const observed=()=>JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../../../spec/production-system/integration/contracts/v1/chain/mainnet-attestation.json')));
+const observed=()=>JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../../../../launchpad/spec/production-system/integration/contracts/v1/chain/mainnet-attestation.json')));
 test('production accepts chain125 and rejects other identities',()=>{assertChainId(125);assertChainId('0x7d');for(const v of [1,31337,0])assert.throws(()=>assertChainId(v),/Wrong chain/);});
 test('real recorded identity passes independently of pending governance handoff',()=>{const result=assertIdentityAttestation(observed());assert.equal(result.identityVerified,true);assert.equal(result.governanceHandoffComplete,false);assert.equal(result.releaseEligible,false);});
 test('wrong-chain observed record fails closed',()=>{const r=observed();r.chainId='1';assert.throws(()=>assertIdentityAttestation(r),/Wrong chain/);});

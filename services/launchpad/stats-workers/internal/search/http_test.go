@@ -114,7 +114,7 @@ func httpSearchDatabase(t *testing.T) *pgxpool.Pool {
 	}
 	defer tx.Rollback(ctx)
 	for _, name := range []string{"330000.sql", "350000.sql", "350001.sql"} {
-		bytes, err := os.ReadFile("../../../../spec/production-system/integration/migrations/" + name)
+		bytes, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/migrations/" + name)
 		if err != nil {
 			t.Fatal(err)
 		}

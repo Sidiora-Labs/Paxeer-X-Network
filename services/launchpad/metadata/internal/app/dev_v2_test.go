@@ -153,7 +153,7 @@ func (c *devChain) emitTokenDeployed(t *testing.T, token, pool, creator string, 
 // development indexer's real table from core/indexer's goose migration.
 func applyIndexerPools(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	raw, err := os.ReadFile("../../../../core/indexer/migrations/00001_init.sql")
+	raw, err := os.ReadFile("../../../indexer/migrations/00001_init.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -64,7 +64,7 @@ func storage(t *testing.T) *Ledger {
 		t.Fatal(e)
 	}
 	defer tx.Rollback(ctx)
-	proposal, e := os.ReadFile(filepath.Join("../../../../../spec/production-system/handoffs/L18/phase2/migration-proposal.sql"))
+	proposal, e := os.ReadFile(filepath.Join("../../../../../../launchpad/spec/production-system/handoffs/L18/phase2/migration-proposal.sql"))
 	if e != nil {
 		t.Fatal(e)
 	}

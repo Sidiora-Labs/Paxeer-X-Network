@@ -17,9 +17,9 @@
   ],
   "isolated_readiness_entrypoint": "phase4_runner.readiness(config,reports)",
   "final_readout_entrypoint": "capture.final_acceptance(config)",
-  "shared_capture_schema": "tools/production/load/final-shared-capture.schema.json",
-  "root_capacity_ledger_source": "tools/production/load/workload.py:ledger",
-  "root_mix_source": "tools/production/load/workload.py:MIX",
+  "shared_capture_schema": "tools/launchpad/production/load/final-shared-capture.schema.json",
+  "root_capacity_ledger_source": "tools/launchpad/production/load/workload.py:ledger",
+  "root_mix_source": "tools/launchpad/production/load/workload.py:MIX",
   "source_sha256": "106c4600a64f7c380259bd2b02d37c3ee8d3dab3d1e0269e834160237a1be79a",
   "final_gate": {
     "task": "9.1",
@@ -115,5 +115,5 @@
   "capacity_qualified": false,
   "release_qualified": false,
   "monthly_availability_qualified": false,
-  "source_path": "tools/production/load/phase4_runner.py"
+  "source_path": "tools/launchpad/production/load/phase4_runner.py"
 }

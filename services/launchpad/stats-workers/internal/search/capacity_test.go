@@ -280,23 +280,23 @@ func capacityBind(config capacityConfig) error {
 	if hex.EncodeToString(hash.Sum(nil)) != config.SourceDigest {
 		return errors.New("source manifest digest mismatch")
 	}
-	for _, name := range []string{"core/stats-workers/internal/search/cache.go", "core/stats-workers/internal/search/integrated.go", "core/stats-workers/internal/search/generation.go", "core/stats-workers/internal/search/projection.go", "core/stats-workers/internal/search/capacity_test.go", "core/stats-workers/internal/httpapi/search.go", "core/stats-workers/internal/app/app.go", "core/stats-workers/go.mod", "core/stats-workers/go.sum", "shared/go.mod", "shared/go.sum"} {
+	for _, name := range []string{"services/launchpad/stats-workers/internal/search/cache.go", "services/launchpad/stats-workers/internal/search/integrated.go", "services/launchpad/stats-workers/internal/search/generation.go", "services/launchpad/stats-workers/internal/search/projection.go", "services/launchpad/stats-workers/internal/search/capacity_test.go", "services/launchpad/stats-workers/internal/httpapi/search.go", "services/launchpad/stats-workers/internal/app/app.go", "services/launchpad/stats-workers/go.mod", "services/launchpad/stats-workers/go.sum", "sdk/launchpad/shared/go.mod", "sdk/launchpad/shared/go.sum"} {
 		if config.Sources[name] == "" {
 			return errors.New("candidate manifest omits a required search runtime source")
 		}
 	}
-	entries, err := os.ReadDir(filepath.Join(config.SourceRoot, "core/stats-workers/internal/search"))
+	entries, err := os.ReadDir(filepath.Join(config.SourceRoot, "services/launchpad/stats-workers/internal/search"))
 	if err != nil {
 		return err
 	}
 	for _, entry := range entries {
 		if strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), ".sql") || strings.HasSuffix(entry.Name(), ".json") {
-			if config.Sources["core/stats-workers/internal/search/"+entry.Name()] == "" {
+			if config.Sources["services/launchpad/stats-workers/internal/search/"+entry.Name()] == "" {
 				return errors.New("candidate manifest omits an owned search source")
 			}
 		}
 	}
-	corpus, err := capacityFile(filepath.Join(config.SourceRoot, "core/stats-workers/internal/search/quality-corpus.json"), 1<<20)
+	corpus, err := capacityFile(filepath.Join(config.SourceRoot, "services/launchpad/stats-workers/internal/search/quality-corpus.json"), 1<<20)
 	if err != nil {
 		return err
 	}
@@ -699,7 +699,7 @@ func capacityCapture(path string, value any) error {
 	return closeErr
 }
 func capacityBuiltinCases(config capacityConfig) ([]capacityCase, error) {
-	raw, err := capacityFile(filepath.Join(config.SourceRoot, "core/stats-workers/internal/search/quality-corpus.json"), 1<<20)
+	raw, err := capacityFile(filepath.Join(config.SourceRoot, "services/launchpad/stats-workers/internal/search/quality-corpus.json"), 1<<20)
 	if err != nil {
 		return nil, err
 	}

@@ -107,8 +107,8 @@ def main():
     args = parser.parse_args()
     if len(args.run) > 64 or not args.run.replace('-', '').isalnum():
         raise RuntimeError('invalid run name')
-    base = pathlib.Path(__file__).resolve().parents[5]
-    evidence = args.output_dir or base / 'evidence/production-system/L18'
+    base = pathlib.Path(__file__).resolve().parents[6]
+    evidence = args.output_dir or base / 'launchpad/evidence/production-system/L18'
     evidence.mkdir(parents=True, exist_ok=True)
     evidence = evidence.resolve()
     refuse_occupied_port()
@@ -147,9 +147,9 @@ def main():
                    '-p', '1', '-count=1', '-json', './internal/production/l18', './internal/referral']
             with (evidence / (args.run + '-go.jsonl')).open('x') as out:
                 assert_owned(child)
-                code = run_bounded(cmd, cwd=base / 'core/pnl-tracker', env=env,
+                code = run_bounded(cmd, cwd=base / 'services/launchpad/pnl-tracker', env=env,
                                    stdout=out, stderr=subprocess.STDOUT)
-            results.append({'command': cmd, 'cwd': str(base / 'core/pnl-tracker'),
+            results.append({'command': cmd, 'cwd': str(base / 'services/launchpad/pnl-tracker'),
                             'env': {k: env[k] for k in ['GOWORK', 'GOMAXPROCS', 'GOFLAGS',
                                                        'L18_POSTGRES_DSN', 'L18_CHAIN_FIXTURE', 'L18_ANVIL_IDENTITY']}, 'exit': code})
     except BaseException as exc:

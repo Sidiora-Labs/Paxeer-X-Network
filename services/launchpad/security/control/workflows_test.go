@@ -55,7 +55,7 @@ func phase2EnvironmentFor(t *testing.T) *phase2Environment {
 	if root == "" {
 		t.Fatal("L47_SOURCE_ROOT must bind the actual source candidate")
 	}
-	migrationBytes, err := os.ReadFile(filepath.Join(root, "spec/production-system/integration/migrations/330000.sql"))
+	migrationBytes, err := os.ReadFile(filepath.Join(root, "launchpad/spec/production-system/integration/migrations/330000.sql"))
 	must(t, err)
 	tx, err := pool.Begin(ctx)
 	must(t, err)

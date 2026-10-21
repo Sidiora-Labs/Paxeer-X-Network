@@ -79,7 +79,7 @@ func fixtureIdentity(t *testing.T) *identityFixture {
 		}
 		admin.Close()
 	})
-	sql, e := os.ReadFile(filepath.Join("../../../../spec/production-system/handoffs/L33/schema-proposal.sql"))
+	sql, e := os.ReadFile(filepath.Join("../../../../../launchpad/spec/production-system/handoffs/L33/schema-proposal.sql"))
 	if e != nil {
 		t.Fatal(e)
 	}

@@ -109,6 +109,6 @@ class NetworkTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):await asyncio.wait_for(websocket_subscribe(24801,["x"]),2)
     def persist(self,name,samples,summary):
         import dataclasses
-        out=pathlib.Path(__file__).resolve().parents[3]/"evidence/production-system/L48/phase1";out.mkdir(parents=True,exist_ok=True)
+        out=pathlib.Path(__file__).resolve().parents[4]/"launchpad/evidence/production-system/L48/phase1";out.mkdir(parents=True,exist_ok=True)
         (out/(name+".json")).write_text(json.dumps(dict(label="single-loopback-small-calibration-not-capacity",generator=source_digest(pathlib.Path(__file__).parent),samples=[dataclasses.asdict(s) for s in samples],summary=summary),indent=2))
 if __name__=="__main__":unittest.main()

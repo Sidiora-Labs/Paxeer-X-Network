@@ -19,7 +19,7 @@ import sys
 import time
 import urllib.parse
 
-ROOT = pathlib.Path(__file__).resolve().parents[5]
+ROOT = pathlib.Path(__file__).resolve().parents[6]
 ALGORITHM = "proportional_floor_v1"
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 ADDRESS = re.compile(r"^0x[0-9a-f]{40}$")
@@ -201,9 +201,9 @@ def headers_from_environment(specification):
 
 def bind_sources(configuration):
     expected = configuration["source_sha256"]
-    required = {str(path.relative_to(ROOT)) for path in (ROOT / "core/pnl-tracker").rglob("*.go")}
-    required.update({str(path.relative_to(ROOT)) for path in (ROOT / "core/pnl-tracker").rglob("*.py")})
-    required.update({"core/pnl-tracker/go.mod", "core/pnl-tracker/go.sum"})
+    required = {str(path.relative_to(ROOT)) for path in (ROOT / "services/launchpad/pnl-tracker").rglob("*.go")}
+    required.update({str(path.relative_to(ROOT)) for path in (ROOT / "services/launchpad/pnl-tracker").rglob("*.py")})
+    required.update({"services/launchpad/pnl-tracker/go.mod", "services/launchpad/pnl-tracker/go.sum"})
     require(required.issubset(expected), "release source manifest omits portfolio source")
     observed = {}
     for relative, digest in expected.items():
@@ -906,7 +906,7 @@ def main():
         if not os.environ.get("L17_TEST_DSN"):
             sys.exit("L17_TEST_DSN is required; phase2 qualification uses actual PostgreSQL")
         environment = dict(os.environ, GOWORK="off", GOMAXPROCS="2", GOFLAGS="-mod=readonly")
-        os.execvpe("go", ["go", "-C", str(ROOT / "core/pnl-tracker"), "test", "-p", "1", "-count=1", "-json", "./internal/production/l17", "./internal/ogrender"], environment)
+        os.execvpe("go", ["go", "-C", str(ROOT / "services/launchpad/pnl-tracker"), "test", "-p", "1", "-count=1", "-json", "./internal/production/l17", "./internal/ogrender"], environment)
     require(args.config is not None and args.output is not None, "phase4 requires actual provider configuration and external output")
     evidence = Evidence(args.output)
     result = {"task": "4.17", "started_at": utc_now(), "qualification_claimed": False, "shared_release_acceptance": "deferred_to_serial_9.1"}

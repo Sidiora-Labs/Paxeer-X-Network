@@ -130,7 +130,7 @@ func loadRealMarketStage(t *testing.T, ctx context.Context, stage string) *realM
 // reviewed.
 func reviewedPnlRuntime(t *testing.T, ctx context.Context, db coordinatortest.Database, admin *pgxpool.Pool) string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(coordinatortest.RepositoryRoot(t), "spec", "production-system", "integration", "migrations", "grants.json"))
+	raw, err := os.ReadFile(filepath.Join(coordinatortest.RepositoryRoot(t), "launchpad", "spec", "production-system", "integration", "migrations", "grants.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

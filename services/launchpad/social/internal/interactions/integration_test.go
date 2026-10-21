@@ -85,8 +85,8 @@ func connected(t *testing.T) *connectedFixture {
 		t.Fatal(e)
 	}
 	t.Cleanup(db.Close)
-	for _, path := range []string{"spec/production-system/integration/migrations/330000.sql", "spec/production-system/integration/migrations/350000.sql", "spec/production-system/integration/migrations/360000.sql", "spec/production-system/integration/migrations/370000.sql", "spec/production-system/integration/migrations/380000.sql", "spec/production-system/handoffs/L37/phase2/schema-proposal.sql"} {
-		raw, err := os.ReadFile(filepath.Join("../../../..", path))
+	for _, path := range []string{"launchpad/spec/production-system/integration/migrations/330000.sql", "launchpad/spec/production-system/integration/migrations/350000.sql", "launchpad/spec/production-system/integration/migrations/360000.sql", "launchpad/spec/production-system/integration/migrations/370000.sql", "launchpad/spec/production-system/integration/migrations/380000.sql", "launchpad/spec/production-system/handoffs/L37/phase2/schema-proposal.sql"} {
+		raw, err := os.ReadFile(filepath.Join("../../../../..", path))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -818,14 +818,14 @@ func phase4WriteJSON(t *testing.T, dir, name string, v any) {
 func phase4SourceBinding(t *testing.T) (string, map[string]string) {
 	t.Helper()
 	paths := []string{
-		"media/social/internal/interactions/cache.go", "media/social/internal/interactions/erasure.go", "media/social/internal/interactions/http.go", "media/social/internal/interactions/integration_test.go", "media/social/internal/interactions/outbox.go", "media/social/internal/interactions/policy.go", "media/social/internal/interactions/projection.go", "media/social/internal/interactions/store.go", "media/social/internal/interactions/store_test.go", "media/social/internal/social/comments.go", "media/social/internal/social/follows.go",
-		"client/apps/web/src/widgets/community-interactions/interaction-client.ts", "client/apps/web/src/widgets/community-interactions/interaction-controls.test.tsx", "client/apps/web/src/widgets/community-interactions/interaction-controls.tsx", "client/apps/web/src/widgets/community-interactions/plain-content.tsx", "client/apps/web/src/widgets/community-interactions/privacy-settings.tsx", "client/apps/web/src/widgets/community-interactions/tsconfig.json", "client/apps/web/src/widgets/community-interactions/vitest.config.mts",
+		"services/launchpad/social/internal/interactions/cache.go", "services/launchpad/social/internal/interactions/erasure.go", "services/launchpad/social/internal/interactions/http.go", "services/launchpad/social/internal/interactions/integration_test.go", "services/launchpad/social/internal/interactions/outbox.go", "services/launchpad/social/internal/interactions/policy.go", "services/launchpad/social/internal/interactions/projection.go", "services/launchpad/social/internal/interactions/store.go", "services/launchpad/social/internal/interactions/store_test.go", "services/launchpad/social/internal/social/comments.go", "services/launchpad/social/internal/social/follows.go",
+		"apps/launchpad/web/src/widgets/community-interactions/interaction-client.ts", "apps/launchpad/web/src/widgets/community-interactions/interaction-controls.test.tsx", "apps/launchpad/web/src/widgets/community-interactions/interaction-controls.tsx", "apps/launchpad/web/src/widgets/community-interactions/plain-content.tsx", "apps/launchpad/web/src/widgets/community-interactions/privacy-settings.tsx", "apps/launchpad/web/src/widgets/community-interactions/tsconfig.json", "apps/launchpad/web/src/widgets/community-interactions/vitest.config.mts",
 	}
 	sort.Strings(paths)
 	hashes := map[string]string{}
 	binding := sha256.New()
 	for _, path := range paths {
-		raw, err := os.ReadFile(filepath.Join("../../../..", path))
+		raw, err := os.ReadFile(filepath.Join("../../../../..", path))
 		mustConnected(t, err)
 		hash := sha256.Sum256(raw)
 		value := hex.EncodeToString(hash[:])

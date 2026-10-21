@@ -6,9 +6,9 @@
   "final_gate": "9.1",
   "status": "not_executed",
   "binding_source": "qualified3.99 output plus exact current candidate/runtime/resource lease, independent calibrated generator and provider executable/source identities",
-  "shared_capture_schema": "tools/production/load/final-shared-capture.schema.json#/$defs/CaptureManifest",
-  "root_capacity_source": "tools/production/load/workload.py:ledger",
-  "root_workload_mix_source": "tools/production/load/workload.py:MIX",
+  "shared_capture_schema": "tools/launchpad/production/load/final-shared-capture.schema.json#/$defs/CaptureManifest",
+  "root_capacity_source": "tools/launchpad/production/load/workload.py:ledger",
+  "root_workload_mix_source": "tools/launchpad/production/load/workload.py:MIX",
   "scenarios": [
     {
       "id": "isolated-regressions",

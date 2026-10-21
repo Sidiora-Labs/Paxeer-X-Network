@@ -10,7 +10,7 @@ import subprocess
 import uuid
 
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 FROZEN_HISTORIES = {
     "core/indexer": ("indexer", "migration_control.indexer_versions"),
     "core/trading-charts": ("candles", "migration_control.trading_charts_versions"),
@@ -110,15 +110,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--compose", type=Path)
     parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--register", type=Path, default=ROOT / "spec/production-system/integration/contracts/v1/migration-register.json")
+    parser.add_argument("--register", type=Path, default=ROOT / "launchpad/spec/production-system/integration/contracts/v1/migration-register.json")
     parser.add_argument("--runtime-source", type=Path)
     args = parser.parse_args()
     args.register = args.register.resolve()
     if not args.register.is_relative_to(ROOT):
         raise ValueError("migration register must belong to this checkout")
-    runtime_source=(args.runtime_source or ROOT / "shared/interfaces/v1/persistence.go").resolve()
+    runtime_source=(args.runtime_source or ROOT / "sdk/launchpad/shared/interfaces/v1/persistence.go").resolve()
     if not runtime_source.is_relative_to(ROOT) or not runtime_source.is_file():raise ValueError("runtime persistence source must belong to source checkout")
-    if args.register != (ROOT / "spec/production-system/integration/contracts/v1/migration-register.json").resolve() and args.runtime_source is None:raise ValueError("revised register requires explicit authoritative runtime source")
+    if args.register != (ROOT / "launchpad/spec/production-system/integration/contracts/v1/migration-register.json").resolve() and args.runtime_source is None:raise ValueError("revised register requires explicit authoritative runtime source")
     register = json.loads(args.register.read_text())
     histories = validate_register(register)
     if args.self_test:

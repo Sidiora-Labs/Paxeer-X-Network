@@ -11,5 +11,5 @@ export default {
       '@tanstack/react-query': fileURLToPath(new URL('../../web/node_modules/@tanstack/react-query', import.meta.url)),
     }
   },
-  test: { environment: 'jsdom', include: ['client/qualification/foundations/*.test.tsx'], fileParallelism: false },
+  test: { environment: 'jsdom', include: ['apps/launchpad/qualification/foundations/*.test.tsx'], fileParallelism: false },
 };

@@ -19,7 +19,7 @@ class NativeProjectTests(unittest.TestCase):
         self.assertEqual(check.parse_openstep('// header\n{ a = /bin/sh; b = ("quoted path", raw,); /* comment */ }'), {'a':'/bin/sh', 'b':['quoted path','raw']})
 
     def test_rejects_dangling_project_reference(self):
-        mobile = Path(__file__).resolve().parents[2] / 'apps/mobile'
+        mobile = Path(__file__).resolve().parents[2] / 'mobile'
         with tempfile.TemporaryDirectory(prefix='L32-project-negative-') as directory:
             dest = Path(directory)/'mobile'
             shutil.copytree(mobile/'ios',dest/'ios')

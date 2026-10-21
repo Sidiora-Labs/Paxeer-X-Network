@@ -68,7 +68,7 @@ async function freePort() { const s=createServer();s.listen(0,'127.0.0.1');await
   fs.copyFileSync(path.join(__dirname,'../../web/public/shadcn.png'),fallbackFixture);
   const port=await freePort();
   const fixtureModules=path.join(__dirname,'fixture/node_modules');
-  if(!fs.existsSync(fixtureModules)) fs.symlinkSync('../../../apps/web/node_modules',fixtureModules,'dir');
+  if(!fs.existsSync(fixtureModules)) fs.symlinkSync('../../../web/node_modules',fixtureModules,'dir');
   const logDir = process.env.IMAGE_QUALIFICATION_LOG_DIR || __dirname;
   fs.mkdirSync(logDir, { recursive: true });
   const log=fs.createWriteStream(path.join(logDir,'next-http.log'));

@@ -2,7 +2,7 @@
   "version": 4,
   "task": "4.50",
   "final_gate": "9.1",
-  "extends": "tools/production/feature-acceptance/phase-3-evidence-policy.json",
+  "extends": "tools/launchpad/production/feature-acceptance/phase-3-evidence-policy.json",
   "readiness_entrypoint": "policy.validator_readiness",
   "final_closure_entrypoint": "policy.final_release_closure",
   "trusted_readiness_authority_fields": [
@@ -22,8 +22,8 @@
   "gate_signature_scope": "OC25 with exact per-task coordinator-owned signer/tool assignment, declared verify command, native zero-exit unskipped result and hashed raw log",
   "required_features": 55,
   "required_lane_tasks": 200,
-  "root_capacity_ledger": "Actual pinned JSON projection of tools/production/load/workload.py ledger()",
-  "root_workload_mix": "Actual pinned JSON projection of tools/production/load/workload.py MIX",
+  "root_capacity_ledger": "Actual pinned JSON projection of tools/launchpad/production/load/workload.py ledger()",
+  "root_workload_mix": "Actual pinned JSON projection of tools/launchpad/production/load/workload.py MIX",
   "shared_capture": "Actual read_manifest plus gateway_summary through current load capture.py and types.Bindings; isolated captures never close release",
   "final_interval_seconds_min": 86400,
   "final_acceptance_freshness_seconds_max": 86400,
@@ -41,7 +41,7 @@
     "capture_acceptance_config",
     "capture_acceptance_tool_sha256"
   ],
-  "shared_acceptance_entrypoint": "tools/production/load/capture.py:final_acceptance",
+  "shared_acceptance_entrypoint": "tools/launchpad/production/load/capture.py:final_acceptance",
   "shared_acceptance_config": "Pinned actual current bindings/capture/runtime authority/budget and all signed native scenario proof references; recomputed readout must match saved object exactly",
   "runtime_lane_coverage": "49 service/domain runtime registrations excluding capture-owning L48; L48 remains mandatory in the complete200 task gate join"
 }

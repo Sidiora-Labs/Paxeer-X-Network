@@ -49,7 +49,7 @@ func httpFixture(t *testing.T) *safety.Store {
 		}
 		admin.Close()
 	})
-	ddl, e := os.ReadFile("../../../../spec/production-system/handoffs/L38/schema-proposal.sql")
+	ddl, e := os.ReadFile("../../../../../launchpad/spec/production-system/handoffs/L38/schema-proposal.sql")
 	if e != nil {
 		t.Fatal(e)
 	}

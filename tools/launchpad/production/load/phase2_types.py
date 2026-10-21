@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 from urllib.parse import urlsplit
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 HEX = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -48,7 +48,7 @@ def origin(value, schemes=("https",)):
 
 def validate_v2(name, value):
     from jsonschema import Draft202012Validator, FormatChecker
-    definitions = json.loads((ROOT / "spec/production-system/integration/contracts/v2/schema-definitions.json").read_text())
+    definitions = json.loads((ROOT / "launchpad/spec/production-system/integration/contracts/v2/schema-definitions.json").read_text())
     if name not in definitions["$defs"]:
         raise ValueError("unknown v2 contract")
     schema = {**definitions, "$ref": "#/$defs/" + name}
@@ -79,7 +79,7 @@ class Artifacts:
         if type(phase) is not int or phase not in (2, 3, 4):
             raise ValueError("exact lane evidence phase required")
         self.directory = Path(directory).resolve()
-        allowed = (ROOT / ("evidence/production-system/L48/phase" + str(phase))).resolve()
+        allowed = (ROOT / ("launchpad/evidence/production-system/L48/phase" + str(phase))).resolve()
         if not self.directory.is_relative_to(allowed):
             raise ValueError("lane-owned evidence directory required")
         self.directory.mkdir(parents=True, exist_ok=False)

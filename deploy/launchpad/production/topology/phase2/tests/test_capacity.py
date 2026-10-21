@@ -65,7 +65,7 @@ class NativeCapacityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output=Path(directory)/'result.json'
             exit_code=main(['check','--inputs',str(Path(directory)/'absent.json'),
-                            '--source-root',str(TOPOLOGY.parents[2]),'--output',str(output)])
+                            '--source-root',str(TOPOLOGY.parents[3]),'--output',str(output)])
             self.assertEqual(exit_code,1)
             value=json.loads(output.read_text())
             self.assertFalse(value['passed']);self.assertFalse(value['capacity_qualified'])

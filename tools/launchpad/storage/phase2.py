@@ -17,7 +17,7 @@ import sys
 import time
 import uuid
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 
 def phase3_restore(docker, ready, port, image, primary, network, password,
@@ -60,7 +60,7 @@ def phase3_restore(docker, ready, port, image, primary, network, password,
 
     sql('CREATE SCHEMA indexer;CREATE SCHEMA stats;')
     for migration in ('60000.sql', '130000.sql', '80000.sql'):
-        sql((ROOT / 'spec/production-system/integration/migrations' / migration).read_text())
+        sql((ROOT / 'launchpad/spec/production-system/integration/migrations' / migration).read_text())
 
     def transaction(number, volume, fee, published):
         transaction_hash = '0x' + f'{number:064x}'
@@ -95,7 +95,7 @@ COMMIT;""")
     shutil.rmtree(base)
     encrypted_base, base_signature = seal(archive)
     transaction(1, 9, 1, True)
-    source = (ROOT / 'shared/db/production/migrations.go').read_text()
+    source = (ROOT / 'sdk/launchpad/shared/db/production/migrations.go').read_text()
     snapshot_query = source.split('const recoverySnapshotSQL = `', 1)[1].split('`', 1)[0]
     raw = docker('exec', '-i', primary, 'psql', '-X', '--csv', '-t', '-v',
                  'ON_ERROR_STOP=1', '-U', 'l07_admin', '-d', 'kindle_test', input=snapshot_query)
@@ -293,7 +293,7 @@ exec su-exec postgres postgres -D "$PGDATA" -c hot_standby=on -c shared_buffers=
             env.update(phase3_restore(docker, ready, port, image, primary, network, password,
                                      replication_password, containers, directories))
         process = subprocess.Popen(['go', 'test', '-p', '1', '-count=1', '-json', './db', './db/production'],
-                                   cwd=ROOT / 'shared', env=env, start_new_session=True)
+                                   cwd=ROOT / 'sdk/launchpad/shared', env=env, start_new_session=True)
         result = process.wait(timeout=600)
     finally:
         if process is not None and process.poll() is None:

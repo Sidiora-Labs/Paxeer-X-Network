@@ -265,14 +265,14 @@ func validateInventoryMeasurementPlan(worker *LiveTransferWorker, plan Inventory
 			return errors.New("invalid source manifest path")
 		}
 		seenFiles[clean] = true
-		if clean == "spec/production-system/integration/contracts/v2/manifest.json" && file.SHA256 != plan.InterfaceDigest {
+		if clean == "launchpad/spec/production-system/integration/contracts/v2/manifest.json" && file.SHA256 != plan.InterfaceDigest {
 			return errors.New("measurement interface digest does not match actual frozen manifest")
 		}
 		if _, err = measurementReadFile(file, plan.SourceRoot); err != nil {
 			return err
 		}
 	}
-	for _, name := range []string{"core/pnl-tracker/internal/production/l16/measurement.go", "core/pnl-tracker/internal/production/l16/measurement_production_test.go", "core/pnl-tracker/internal/production/l16/live_transfers.go", "core/pnl-tracker/internal/production/l16/service.go", "core/pnl-tracker/internal/production/l16/inventory.go", "spec/production-system/integration/contracts/v2/manifest.json"} {
+	for _, name := range []string{"services/launchpad/pnl-tracker/internal/production/l16/measurement.go", "services/launchpad/pnl-tracker/internal/production/l16/measurement_production_test.go", "services/launchpad/pnl-tracker/internal/production/l16/live_transfers.go", "services/launchpad/pnl-tracker/internal/production/l16/service.go", "services/launchpad/pnl-tracker/internal/production/l16/inventory.go", "launchpad/spec/production-system/integration/contracts/v2/manifest.json"} {
 		if !seenFiles[name] {
 			return errors.New("inventory measurement source binding incomplete")
 		}

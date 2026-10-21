@@ -62,7 +62,7 @@ OPERATIONS = dict(chart="IF_CANDLES", portfolio="IF_PORTFOLIO", search="IF_SEARC
 def resolve_routes(routes):
     if set(routes) != set(MIX):
         raise ValueError("exact shared traffic categories required")
-    document = json.loads((ROOT / "spec/production-system/integration/contracts/v2/openapi.json").read_text())
+    document = json.loads((ROOT / "launchpad/spec/production-system/integration/contracts/v2/openapi.json").read_text())
     resolved = {}
     for category, identifier in OPERATIONS.items():
         matches = [(path, method, operation) for path, path_item in document["paths"].items() for method, operation in path_item.items() if isinstance(operation, dict) and operation.get("operationId") == identifier]

@@ -75,7 +75,7 @@ func TestPostgres(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer db.Close()
-	proposal, e := os.ReadFile(filepath.Join("../../../..", "spec/production-system/handoffs/L37/phase1/schema-proposal.sql"))
+	proposal, e := os.ReadFile(filepath.Join("../../../../..", "launchpad/spec/production-system/handoffs/L37/phase1/schema-proposal.sql"))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -83,7 +83,7 @@ func TestPostgres(t *testing.T) {
 	if _, e = db.Exec(ctx, ddl); e != nil {
 		t.Fatal(e)
 	}
-	phase2, e := os.ReadFile(filepath.Join("../../../..", "spec/production-system/handoffs/L37/phase2/schema-proposal.sql"))
+	phase2, e := os.ReadFile(filepath.Join("../../../../..", "launchpad/spec/production-system/handoffs/L37/phase2/schema-proposal.sql"))
 	if e != nil {
 		t.Fatal(e)
 	}

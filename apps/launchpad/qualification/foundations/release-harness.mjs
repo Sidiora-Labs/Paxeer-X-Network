@@ -54,7 +54,7 @@ async function checkedObservedEvidence(root, reference, input, requirementId) {
 }
 async function bundleMeasurement(root, input, output, retain) {
   const buildRoot = await realpath(resolve(root, input.buildRoot));
-  assert.ok(relative(await realpath(root), buildRoot).startsWith('client/apps/web/'), 'Build must belong to the candidate web source');
+  assert.ok(relative(await realpath(root), buildRoot).startsWith('apps/launchpad/web/'), 'Build must belong to the candidate web source');
   const buildId = (await readFile(join(buildRoot, 'BUILD_ID'), 'utf8')).trim();
   assert.equal(buildId, input.buildId);
   const appBytes = await readFile(join(buildRoot, 'app-build-manifest.json'));
@@ -223,9 +223,9 @@ export async function runReleaseHarness() {
   const root = await realpath(process.cwd());
   const inputPath = required('L29_RELEASE_INPUT'); const expected = required('L29_RELEASE_INPUT_SHA256'); digest(expected);
   const inputBytes = await readFile(inputPath); assert.equal(hash(inputBytes), expected); const input = JSON.parse(inputBytes);
-  const output = resolve(root, 'evidence/production-system/L29/phase4'); await mkdir(output, { recursive: true });
+  const output = resolve(root, 'launchpad/evidence/production-system/L29/phase4'); await mkdir(output, { recursive: true });
   const manifest = { schemaVersion: 1, task: '4.29', inputSha256: expected, candidateRevision: input.candidateRevision, artifactDigest: input.artifactDigest, startedAt: new Date().toISOString(), artifacts: [], checks: [], laneMeasurementsPassed: false, finalSharedAcceptance: 'deferred-to-serial9.1' };
-  async function retain(name, data) { assert.match(name, /^[a-zA-Z0-9._-]+\.json$/); const bytes = Buffer.from(JSON.stringify(data, null, 2) + '\n'); await writeFile(join(output, name), bytes); const entry = { path: `evidence/production-system/L29/phase4/${name}`, sha256: hash(bytes), bytes: bytes.length }; manifest.artifacts = manifest.artifacts.filter(value => value.path !== entry.path); manifest.artifacts.push(entry); }
+  async function retain(name, data) { assert.match(name, /^[a-zA-Z0-9._-]+\.json$/); const bytes = Buffer.from(JSON.stringify(data, null, 2) + '\n'); await writeFile(join(output, name), bytes); const entry = { path: `launchpad/evidence/production-system/L29/phase4/${name}`, sha256: hash(bytes), bytes: bytes.length }; manifest.artifacts = manifest.artifacts.filter(value => value.path !== entry.path); manifest.artifacts.push(entry); }
   try {
     assert.equal(input.schemaVersion, 1); assert.match(input.candidateRevision, /^[a-f0-9]{40,64}$/); digest(input.artifactDigest); checkedOrigin(input.origin, ['https:']);
     assert.ok(Array.isArray(input.assetOrigins) && input.assetOrigins.length > 0); for (const assetOrigin of input.assetOrigins) checkedOrigin(assetOrigin, ['https:']);

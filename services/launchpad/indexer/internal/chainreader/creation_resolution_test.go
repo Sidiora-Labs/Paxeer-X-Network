@@ -25,7 +25,7 @@ func TestExactCreationQueryValidation(t *testing.T) {
 }
 
 func TestTwoAuthenticSameBlockCreationsRemainIndependent(t *testing.T) {
-	root := "../../../../spec/production-system/integration/contracts/v1/chain/"
+	root := "../../../../../launchpad/spec/production-system/integration/contracts/v1/chain/"
 	catalog, err := os.ReadFile(root + "abi-catalog.json")
 	if err != nil {
 		t.Fatal(err)

@@ -149,11 +149,11 @@ log_path = "fleet/logs/layout-4.5.log"
 observed_and_assumption = "Every cargo build step of platform-build now passes and the last step, layerx-platform-release --check tools/platform/release/registries.kvx, rejects the if: always() on the ten-line-counts upload step of the release-verification job in .github/workflows/platform.yml, which commit 78b0e5d78 added before the move and task 4.5 does not touch, so it is left for the owner of the release workflow and the task stays in progress."
 
 [finding.6.3-launchpad-self-qualification-client-paths]
-revision = "696461f54 with the follow-up path changes applied"
-command = "python3 -m unittest test_policy test_phase2 in services/launchpad/security/supplychain, go vet ./services/launchpad/indexer/..., py_compile of qualify.py and baseline.py"
-exit_code = 0
-log_path = "fleet/logs/layout-6.2c.log"
-observed_and_assumption = "qualify.py, its check registry cwds, argv, env and interface bundle patterns, baseline.py, the indexer decoder measurement and the supply-chain SBOM root now resolve from the repository root, but the frozen interface bundle and accepted-candidate digests were taken over the old paths and the subordinate harness scripts under tools/launchpad/production (charts, feature-acceptance, load, integration, interfaces, bootstrap build, tests and wallet fixture), the services/launchpad api repoFile and social phase4 bindings, the metadata and safety qualify scripts and the livestream and shared measurement lists still climb to the former launchpad root, so they are left for a dedicated harness rewrite that re-freezes the digests."
+revision = "756e9bd0d with the subordinate harness repoint applied"
+command = "python3 tools/launchpad/production/qualify.py --task 0.1 (and 1.99) --spec launchpad/spec/production-system/spec.kvx --require-current-source"
+exit_code = 1
+log_path = "fleet/logs/layout-6.2d.log"
+observed_and_assumption = "The subordinate harness scripts, the services and sdk Go test and Python qualify roots, the measurement lists, the client qualification scripts and the deploy production scripts now resolve from the repository root with the new homes and the supply-chain unit tests pass, but qualify.py stops at the absent launchpad/spec/production-system/spec.kvx because that production-system spec, its execution plan, migrations, catalog inputs and the 1.x coordinator state were never imported into this repository, so the interface and accepted-candidate digests cannot be re-frozen (the harness has no freeze command and its interface_bundle needs those inputs) and the serial gate path sets, its frozen ownership digests and the old-layout keys inside the frozen spec data stay as written until that authority is supplied."
 
 [finding.6.5-layout-check-key-handle]
 revision = "019bfdcfd with the task 6.5 changes applied"

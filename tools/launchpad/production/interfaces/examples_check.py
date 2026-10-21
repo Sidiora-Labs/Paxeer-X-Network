@@ -248,8 +248,8 @@ def check(actual, expected):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--spec',default='spec/production-system/spec.kvx')
-    parser.add_argument('--contracts',default='spec/production-system/integration/contracts/v1')
+    parser.add_argument('--spec',default='launchpad/spec/production-system/spec.kvx')
+    parser.add_argument('--contracts',default='launchpad/spec/production-system/integration/contracts/v1')
     parser.add_argument('--major',type=int,default=1)
     parser.add_argument('--api-base')
     parser.add_argument('--catalog')

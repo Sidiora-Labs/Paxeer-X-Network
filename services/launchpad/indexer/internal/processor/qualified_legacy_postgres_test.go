@@ -38,7 +38,7 @@ var (
 
 func repositoryRoot() string {
 	_, file, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(file), "..", "..", "..", "..")
+	return filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "..")
 }
 
 func applyProductionSchema(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
@@ -52,13 +52,13 @@ func applyProductionSchema(t *testing.T, ctx context.Context, pool *pgxpool.Pool
 		ddl = append(ddl, sql)
 	}
 	for _, id := range []string{"60001", "190001"} {
-		raw, err := os.ReadFile(filepath.Join(repositoryRoot(), "spec", "production-system", "integration", "migrations", id+".sql"))
+		raw, err := os.ReadFile(filepath.Join(repositoryRoot(), "launchpad", "spec", "production-system", "integration", "migrations", id+".sql"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		ddl = append(ddl, string(raw))
 	}
-	raw, err := os.ReadFile(filepath.Join(repositoryRoot(), "spec", "production-system", "integration", "migrations", "440000.sql"))
+	raw, err := os.ReadFile(filepath.Join(repositoryRoot(), "launchpad", "spec", "production-system", "integration", "migrations", "440000.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,11 +76,11 @@ func applyProductionSchema(t *testing.T, ctx context.Context, pool *pgxpool.Pool
 func realReceiptInputs(t *testing.T) runtimedocs.Inputs {
 	t.Helper()
 	root := repositoryRoot()
-	reviewed, err := os.ReadFile(filepath.Join(root, "protocol", "catalog", "reviewed.json"))
+	reviewed, err := os.ReadFile(filepath.Join(root, "sdk", "launchpad", "protocol", "catalog", "reviewed.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	artifact, err := os.ReadFile(filepath.Join(root, "contracts", "artifacts", "contracts", "core", "SidioraERC20.sol", "SidioraERC20.json"))
+	artifact, err := os.ReadFile(filepath.Join(root, "contracts", "launchpad", "artifacts", "contracts", "core", "SidioraERC20.sol", "SidioraERC20.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

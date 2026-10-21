@@ -258,7 +258,7 @@ func verifyCapacityBinding(ctx context.Context, options CapacityOptions, p Capac
 		}
 		actual = append(actual, CapacityBoundFile{path, digest})
 	}
-	for _, directory := range []string{"core/indexer/internal/source", "core/indexer/internal/processor", "core/indexer/internal/app", "core/indexer/internal/store", "core/indexer/internal/receipt"} {
+	for _, directory := range []string{"services/launchpad/indexer/internal/source", "services/launchpad/indexer/internal/processor", "services/launchpad/indexer/internal/app", "services/launchpad/indexer/internal/store", "services/launchpad/indexer/internal/receipt"} {
 		entries, err := os.ReadDir(filepath.Join(options.SourceRoot, directory))
 		if err != nil {
 			return sourceError(IdentityError, "capacity-source-inventory", nil)
@@ -269,7 +269,7 @@ func verifyCapacityBinding(ctx context.Context, options CapacityOptions, p Capac
 			}
 		}
 	}
-	for _, path := range []string{"core/indexer/go.mod", "core/indexer/go.sum"} {
+	for _, path := range []string{"services/launchpad/indexer/go.mod", "services/launchpad/indexer/go.sum"} {
 		if !seen[path] {
 			return sourceError(IncompleteError, "capacity-source-inventory", nil)
 		}

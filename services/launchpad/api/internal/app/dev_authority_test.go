@@ -37,7 +37,7 @@ const webOrigin = "https://web-production-d956e.up.railway.app"
 
 func repoFile(t *testing.T, rel string) []byte {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", rel))
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", rel))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestDevelopmentReviewedInputsMatchRepository(t *testing.T) {
 	var artifact struct {
 		DeployedBytecode string `json:"deployedBytecode"`
 	}
-	if err := json.Unmarshal(repoFile(t, "contracts/artifacts/contracts/base/BeaconProxy.sol/BeaconProxy.json"), &artifact); err != nil {
+	if err := json.Unmarshal(repoFile(t, "contracts/launchpad/artifacts/contracts/base/BeaconProxy.sol/BeaconProxy.json"), &artifact); err != nil {
 		t.Fatal(err)
 	}
 	code, err := hexutil.Decode(artifact.DeployedBytecode)
@@ -60,11 +60,11 @@ func TestDevelopmentReviewedInputsMatchRepository(t *testing.T) {
 	if got := crypto.Keccak256Hash(code).Hex(); got != developmentPoolRuntime {
 		t.Fatalf("pool runtime = %s, want %s", got, developmentPoolRuntime)
 	}
-	if bytes.Contains(repoFile(t, "contracts/contracts/base/BeaconProxy.sol"), []byte("immutable")) {
+	if bytes.Contains(repoFile(t, "contracts/launchpad/contracts/base/BeaconProxy.sol"), []byte("immutable")) {
 		t.Fatal("BeaconProxy gained immutables; the runtime hash is no longer pool independent")
 	}
 	var registry map[string]any
-	if err := json.Unmarshal(repoFile(t, "tools/production/bootstrap/check-registry.json"), &registry); err != nil {
+	if err := json.Unmarshal(repoFile(t, "tools/launchpad/production/bootstrap/check-registry.json"), &registry); err != nil {
 		t.Fatal(err)
 	}
 	var find func(any) string
@@ -97,7 +97,7 @@ func TestDevelopmentReviewedInputsMatchRepository(t *testing.T) {
 	}
 	// The web pins sourceManifestSha256 and every role address to CORE_DEPLOYMENT;
 	// the export uses the manifest addresses as the frontend map.
-	web := string(repoFile(t, "client/apps/web/src/core/network/deployment.ts"))
+	web := string(repoFile(t, "apps/launchpad/web/src/core/network/deployment.ts"))
 	field := func(name string) string {
 		m := regexp.MustCompile(`"` + name + `": "([^"]+)"`).FindStringSubmatch(web)
 		if m == nil {
@@ -214,7 +214,7 @@ func TestDevelopmentAuthorityWithoutRPC(t *testing.T) {
 // indexerCursors creates indexer.cursors from the indexer's own migration.
 func indexerCursors(t *testing.T, pool *pgxpool.Pool, height uint64) {
 	t.Helper()
-	ddl := regexp.MustCompile(`(?s)CREATE TABLE "indexer"\."cursors" \(.*?\);`).Find(repoFile(t, "core/indexer/migrations/00001_init.sql"))
+	ddl := regexp.MustCompile(`(?s)CREATE TABLE "indexer"\."cursors" \(.*?\);`).Find(repoFile(t, "services/launchpad/indexer/migrations/00001_init.sql"))
 	if ddl == nil {
 		t.Fatal("indexer.cursors DDL not found")
 	}

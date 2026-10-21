@@ -22,7 +22,7 @@ def connected_plan(config, source_root, adapter_sha256, documents, chain_file, c
     v1.need(config.get('schemaVersion') == 2, 'connected operator requires additive topology v2')
     base = v1.compile_plan(config)
     root = Path(source_root).resolve()
-    path = root / 'spec/production-system/integration/runtime/adapters.py'
+    path = root / 'launchpad/spec/production-system/integration/runtime/adapters.py'
     v1.need(hashlib.sha256(regular_bytes(path)).hexdigest() == adapter_sha256,
             'integrated runtime adapter digest mismatch')
     spec = spec_from_file_location('kindle_integrated_runtime', path)

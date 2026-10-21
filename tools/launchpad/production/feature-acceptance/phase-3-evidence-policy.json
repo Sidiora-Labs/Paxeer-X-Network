@@ -1,8 +1,8 @@
 {
   "version": 3,
   "task": "3.50",
-  "extends": "tools/production/feature-acceptance/phase-2-evidence-policy.json",
-  "schema": "tools/production/feature-acceptance/evidence.schema.json#/$defs/audit_envelope",
+  "extends": "tools/launchpad/production/feature-acceptance/phase-2-evidence-policy.json",
+  "schema": "tools/launchpad/production/feature-acceptance/evidence.schema.json#/$defs/audit_envelope",
   "collector_entrypoint": "collect_journeys.collect",
   "collector_cli_phase": 3,
   "qualification_entrypoint": "journey_policy.qualify_audited_feature",

@@ -8,7 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-root = Path(__file__).resolve().parents[3]
+root = Path(__file__).resolve().parents[4]
 
 def artifact(record):
     if not isinstance(record, dict) or set(record) != {"path", "sha256"} or not isinstance(record["path"], str) or not record["path"] or not isinstance(record["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", record["sha256"]):
@@ -72,7 +72,7 @@ def validate_manifest(manifest):
 
 def exercise_missing_assets(manifest):
     absent = copy.deepcopy(manifest)
-    absent["assets"][0] = {"path": str(root / "tools/production/charts-history/__absent_library_asset__"), "sha256": "0"*64}
+    absent["assets"][0] = {"path": str(root / "tools/launchpad/production/charts-history/__absent_library_asset__"), "sha256": "0"*64}
     try:
         validate_manifest(absent)
     except ValueError as error:
@@ -98,7 +98,7 @@ def main():
     validate_manifest(manifest)
     exercise_missing_assets(manifest)
     env = dict(os.environ, GOWORK="off", GOMAXPROCS="2", GOFLAGS="-mod=readonly")
-    return subprocess.run(["go","test","-p","1","-count=1","-json","./internal/httpapi","-run","^TestProduction|^TestHistory(Cancelled5000|SQLTimeout|LegacyRegistration)|^FuzzHistoryValidatedInputs$"],cwd=root/"core/trading-charts",env=env,timeout=240).returncode
+    return subprocess.run(["go","test","-p","1","-count=1","-json","./internal/httpapi","-run","^TestProduction|^TestHistory(Cancelled5000|SQLTimeout|LegacyRegistration)|^FuzzHistoryValidatedInputs$"],cwd=root/"services/launchpad/trading-charts",env=env,timeout=240).returncode
 
 if __name__ == "__main__":
     try:

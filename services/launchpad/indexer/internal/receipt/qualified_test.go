@@ -48,7 +48,7 @@ func TestCanonicalRecordRequiresQualifiedReceipt(t *testing.T) {
 
 func genuineGoldenLog(t *testing.T) *types.Log {
 	t.Helper()
-	raw, err := os.ReadFile("../../../../spec/production-system/integration/contracts/v1/chain/golden-fixtures.json")
+	raw, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v1/chain/golden-fixtures.json")
 	if err != nil {
 		t.Fatal(err)
 	}

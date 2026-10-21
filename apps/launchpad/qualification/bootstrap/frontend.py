@@ -9,12 +9,12 @@ import subprocess
 import sys
 
 CLIENT = pathlib.Path(__file__).resolve().parents[2]
-WEB = CLIENT / 'apps/web'
+WEB = CLIENT / 'web'
 
 def inspect():
     root = json.loads((CLIENT / 'package.json').read_text())
     app = json.loads((WEB / 'package.json').read_text())
-    manifests = list((CLIENT / 'packages').glob('*/package.json'))
+    manifests = list((CLIENT.parents[1] / 'sdk/launchpad/packages').glob('*/package.json'))
     packages = {json.loads(p.read_text())['name']: p.parent for p in manifests}
     required = sorted(k for k, v in app['dependencies'].items() if v.startswith('workspace:'))
     missing = [k for k in required if k not in packages]

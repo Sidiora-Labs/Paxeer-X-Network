@@ -123,7 +123,7 @@ def check_project(mobile, sdk, plugin):
     assert "../../node_modules/react-native" in app_gradle
     assert (mobile / 'android/gradlew').stat().st_mode & 0o111
     properties = dict(line.split('=', 1) for line in (mobile / 'android/gradle/wrapper/gradle-wrapper.properties').read_text().splitlines() if '=' in line)
-    provenance = json.loads((mobile.parents[2] / 'evidence/production-system/L32/phase1/native-source-provenance.json').read_text())
+    provenance = json.loads((mobile.parents[2] / 'launchpad/evidence/production-system/L32/phase1/native-source-provenance.json').read_text())
     assert properties['distributionSha256Sum'] == provenance['gradle']['distributionSHA256']
     assert hashlib.sha256((mobile / 'android/gradle/wrapper/gradle-wrapper.jar').read_bytes()).hexdigest() == provenance['gradle']['wrapperSHA256']
     package = json.loads((sdk / 'package.json').read_text())
@@ -151,5 +151,5 @@ if __name__ == '__main__':
     parser.add_argument('--sdk-root', type=Path, required=True)
     parser.add_argument('--plugin-root', type=Path, required=True)
     args = parser.parse_args()
-    mobile = Path(__file__).resolve().parents[2] / 'apps/mobile'
+    mobile = Path(__file__).resolve().parents[2] / 'mobile'
     print(json.dumps(check_project(mobile, args.sdk_root, args.plugin_root), indent=2))

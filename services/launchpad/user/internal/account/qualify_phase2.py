@@ -7,11 +7,11 @@ import subprocess
 import sys
 import time
 
-root = Path(__file__).resolve().parents[4]
+root = Path(__file__).resolve().parents[5]
 parser = argparse.ArgumentParser()
 parser.add_argument('--phase', type=int, choices=(2, 3), default=2)
 args = parser.parse_args()
-evidence = root / f'evidence/production-system/L35/phase{args.phase}'
+evidence = root / f'launchpad/evidence/production-system/L35/phase{args.phase}'
 evidence.mkdir(parents=True, exist_ok=True)
 required = {
     'TestConnectedOwnerPreferencesAndConsentExport',
@@ -34,7 +34,7 @@ if args.phase == 3:
         'TestConnectedPhase3IdentityDependencyInterruption',
         'TestConnectedPhase3PreferenceFieldsAndOlderClients',
     })
-command = ['go', '-C', str(root / 'media/user'), 'test', '-p', '1', '-count=1', '-json', './internal/account', '-run', '^(' + '|'.join(sorted(required)) + ')$']
+command = ['go', '-C', str(root / 'services/launchpad/user'), 'test', '-p', '1', '-count=1', '-json', './internal/account', '-run', '^(' + '|'.join(sorted(required)) + ')$']
 started = time.time()
 log = evidence / 'native-connected.jsonl'
 with log.open('wb') as output:

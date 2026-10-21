@@ -86,7 +86,7 @@ class ReportValidationTests(unittest.TestCase):
     def test_vitest_expected_file_and_totals(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            file = 'client/apps/web/src/value.test.ts'
+            file = 'apps/launchpad/web/src/value.test.ts'
             report = {'success': True, 'numTotalTests': 1, 'numPassedTests': 1,
                       'testResults': [{'name': str(root / file), 'status': 'passed',
                                        'assertionResults': [{'status': 'passed'}]}]}
@@ -102,7 +102,7 @@ class ReportValidationTests(unittest.TestCase):
     def test_vitest_missing_file_rejects(self):
         report = {'success': True, 'numTotalTests': 1, 'numPassedTests': 1, 'testResults': []}
         with self.assertRaisesRegex(ValueError, 'missing expected'):
-            catalog.validate_vitest(report, Path('/tmp'), [{'path': 'client/apps/web/src/test.test.ts'}])
+            catalog.validate_vitest(report, Path('/tmp'), [{'path': 'apps/launchpad/web/src/test.test.ts'}])
 
     def test_missing_modules_recorded_not_skipped(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -66,7 +66,7 @@ func RepositoryRoot(t *testing.T) string {
 	if !ok {
 		t.Fatal("caller unavailable")
 	}
-	return filepath.Join(filepath.Dir(file), "..", "..", "..", "..")
+	return filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "..")
 }
 
 func readBound(t *testing.T, root, relative, want string) []byte {
@@ -96,7 +96,7 @@ func NewAPIRuntimeDatabase(t *testing.T, runtimeRole string, planned ...string) 
 	}
 	ctx := context.Background()
 	root := RepositoryRoot(t)
-	const migrations = "spec/production-system/integration/migrations"
+	const migrations = "launchpad/spec/production-system/integration/migrations"
 
 	registryBytes := readBound(t, root, migrations+"/registry.json", "")
 	var registry production.MigrationRegistry

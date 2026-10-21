@@ -17,7 +17,7 @@ describe('real disclosure primitives with synthetic financial inputs, no receipt
     const dom = new JSDOM(html).window.document;
     expect(dom.querySelector('section')?.getAttribute('aria-label')).toBe('Accounting disclosure');
     expect([...dom.querySelectorAll('dd')].map(node=>node.textContent)).toEqual(['Unavailable','1.000000 USDL','Unavailable','-2.000000 USDL']);
-    writeFileSync('evidence/production-system/L31/phase1/partial-account.synthetic.html', html);
+    writeFileSync('launchpad/evidence/production-system/L31/phase1/partial-account.synthetic.html', html);
     expect(html).toContain('proportional_floor_v1'); expect(html).toContain('Partial accounting history'); expect(html).toContain('Mark timestamp unavailable'); expect(html).toContain('Unavailable'); expect(html).toContain('-2.000000 USDL');
     expect(portfolioLabels(portfolio).value).toBe('Unavailable');
   });
@@ -37,7 +37,7 @@ describe('real disclosure primitives with synthetic financial inputs, no receipt
     expect([...dom.querySelectorAll('dt')].map(node=>node.textContent)).toEqual(['realized']);
     expect(dom.querySelector('dd')?.textContent).toBe('-1.000000 USDL');
     expect(dom.querySelectorAll('a,img,script').length).toBe(0);
-    writeFileSync('evidence/production-system/L31/phase1/share-preview.synthetic.html', html);
+    writeFileSync('launchpad/evidence/production-system/L31/phase1/share-preview.synthetic.html', html);
     expect(html).toContain('wallet hidden'); expect(html).not.toContain(a); expect(html).not.toContain('unrealized');
     expect(sharePreview(snapshot, { ...selection, privacyMode: 'wallet' })).toHaveProperty('wallet', a);
   });

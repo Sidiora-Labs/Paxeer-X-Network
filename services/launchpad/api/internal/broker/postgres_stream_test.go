@@ -30,7 +30,7 @@ func postgresStreamStorage(t *testing.T) (context.Context, *PostgresStream) {
 	}
 	t.Cleanup(pool.Close)
 	schema := fmt.Sprintf("stream_%d", time.Now().UnixNano())
-	migration, err := os.ReadFile("../../../../spec/production-system/integration/migrations/150002.sql")
+	migration, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/migrations/150002.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

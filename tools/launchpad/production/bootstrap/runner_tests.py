@@ -24,7 +24,7 @@ class RunnerTests(unittest.TestCase):
     def test_protocol_coverage_is_source_and_nested_outputs_stay_ignored(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source = root / 'protocol' / 'coverage'
+            source = root / 'sdk/launchpad/protocol' / 'coverage'
             source.mkdir(parents=True)
             (source / 'checkpoint.go').write_text('package coverage\n')
             (source / 'fixture.json').write_text('{"height":"125"}')
@@ -37,7 +37,7 @@ class RunnerTests(unittest.TestCase):
             (root / 'coverage').mkdir()
             (root / 'coverage' / 'index.html').write_text('ignored')
             first = runner.snapshot(root)
-            self.assertEqual(set(first['files']), {'protocol/coverage/checkpoint.go', 'protocol/coverage/fixture.json'})
+            self.assertEqual(set(first['files']), {'sdk/launchpad/protocol/coverage/checkpoint.go', 'sdk/launchpad/protocol/coverage/fixture.json'})
             (source / 'checkpoint.go').write_text('package coverage\n// actual source edit\n')
             self.assertNotEqual(first['sha256'], runner.snapshot(root)['sha256'])
             second = runner.snapshot(root)
@@ -47,7 +47,7 @@ class RunnerTests(unittest.TestCase):
     def test_shared_secrets_hashes_only_direct_go_source(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source = root / 'shared' / 'secrets'
+            source = root / 'sdk/launchpad/shared' / 'secrets'
             source.mkdir(parents=True)
             (source / 'manager.go').write_text('package secrets\n')
             (source / 'manager_test.go').write_text('package secrets\n')
@@ -56,7 +56,7 @@ class RunnerTests(unittest.TestCase):
             (source / 'generated').mkdir()
             (source / 'generated' / 'secret.go').symlink_to(root / 'unread-secret')
             first = runner.snapshot(root)
-            self.assertEqual(set(first['files']), {'shared/secrets/manager.go', 'shared/secrets/manager_test.go'})
+            self.assertEqual(set(first['files']), {'sdk/launchpad/shared/secrets/manager.go', 'sdk/launchpad/shared/secrets/manager_test.go'})
             (source / 'manager.go').write_text('package secrets\n// actual source edit\n')
             self.assertNotEqual(first['sha256'], runner.snapshot(root)['sha256'])
 
@@ -103,7 +103,8 @@ class RunnerTests(unittest.TestCase):
         self.assertIn('launch_error', result)
 
     def test_source_digest_changes_on_added_modified_deleted_files(self):
-        source = self.root / 'source.go'
+        source = self.root / 'services/launchpad/source.go'
+        source.parent.mkdir(parents=True)
         empty = runner.snapshot(self.root)
         source.write_text('package source\n')
         added = runner.snapshot(self.root)
@@ -149,7 +150,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_unknown_task_rejects_before_execution(self):
         process = subprocess.run([sys.executable, str(RUNNER_PATH), '--task', '999.999',
-                                  '--spec', 'spec/production-system/spec.kvx',
+                                  '--spec', 'launchpad/spec/production-system/spec.kvx',
                                   '--require-current-source'], capture_output=True, text=True)
         self.assertEqual(process.returncode, 1)
         observed = json.loads(process.stdout)
@@ -169,13 +170,13 @@ class RunnerTests(unittest.TestCase):
 
     def test_dist_build_outputs_do_not_change_source_digest(self):
         before = runner.snapshot(self.root)
-        output = self.root / 'client/packages/example/dist'
+        output = self.root / 'sdk/launchpad/packages/example/dist'
         output.mkdir(parents=True)
         (output / 'index.js').write_text('export const generated = true;\n')
         self.assertEqual(before['sha256'], runner.snapshot(self.root)['sha256'])
 
     def test_sdk_declared_test_requires_registered_target(self):
-        package = self.root / 'client/packages/example'
+        package = self.root / 'sdk/launchpad/packages/example'
         package.mkdir(parents=True)
         (package / 'package.json').write_text(json.dumps({'scripts': {'test': 'node --test'}}))
         with self.assertRaises(runner.QualificationError):
@@ -332,7 +333,7 @@ sys.exit(int(code))
         checks=registry['tasks']['0.2']['checks']
         checks[:]=[check for check in checks if check['target']!='migration-ownership']
         postgres=next(check for check in checks if check['target']=='postgres-privileges')
-        postgres['argv']=['python3','tools/production/interfaces/persistence_check.py','--compose','deploy/production/bootstrap/compose.yml']
+        postgres['argv']=['python3','tools/launchpad/production/interfaces/persistence_check.py','--compose','deploy/launchpad/production/bootstrap/compose.yml']
         with self.assertRaises(runner.QualificationError):
             runner.validate_registry(registry,'0.2',self.root)
         postgres['covers']={'baseline':['migration-ownership']}
@@ -438,7 +439,7 @@ sys.exit(int(code))
 
     def test_dispatcher_registry_missing_checker_and_wrong_command_reject(self):
         bundle=self.interface_registry()['tasks']['0.2']['interface_bundle']
-        argv=['python3','tools/production/dispatcher/qualification.py','--spec','spec/production-system/spec.kvx','--plan','spec/production-system/execution-plan.json','--state-dir','{evidence_dir}/dispatcher-state','--evidence-dir','{evidence_dir}/dispatcher','--case','all']
+        argv=['python3','tools/launchpad/production/dispatcher/qualification.py','--spec','launchpad/spec/production-system/spec.kvx','--plan','launchpad/spec/production-system/execution-plan.json','--state-dir','{evidence_dir}/dispatcher-state','--evidence-dir','{evidence_dir}/dispatcher','--case','all']
         entry={'interface_bundle':bundle,'checks':[{'id':'dispatcher','kind':'dispatcher','target':'scheduler-harness','required':True,'evidence_format':'dispatcher-json','argv':argv,'cwd':'.','timeout_seconds':600}]}
         registry={'schema_version':1,'tasks':{'0.3':entry}}
         with self.assertRaises(runner.QualificationError):runner.validate_registry(registry,'0.3',self.root)
@@ -451,15 +452,15 @@ sys.exit(int(code))
         # This tests the generic acceptance protocol using an isolated real unittest.
         # It does not register or qualify any production feature task.
         dispatcher=Path(os.environ.get('PRODUCTION_DISPATCHER_SOURCE',str(RUNNER_PATH.parent/'dispatcher')))
-        canonical=Path(os.environ.get('PRODUCTION_DISPATCHER_SPEC_ROOT',str(RUNNER_PATH.parents[2])))
+        canonical=Path(os.environ.get('PRODUCTION_DISPATCHER_SPEC_ROOT',str(RUNNER_PATH.parents[3])))
         self.assertTrue((dispatcher/'cli.py').is_file(),'actual dispatcher CLI required')
         target=self.root/'coordinator-source';target.mkdir()
-        specdir=target/'spec/production-system';specdir.mkdir(parents=True)
-        text=(canonical/'spec/production-system/spec.kvx').read_text()
+        specdir=target/'launchpad/spec/production-system';specdir.mkdir(parents=True)
+        text=(canonical/'launchpad/spec/production-system/spec.kvx').read_text()
         import importlib.util, re
         fixture_spec=importlib.util.spec_from_file_location('qualification_fixture',dispatcher/'qualification_fixture.py')
         fixture_module=importlib.util.module_from_spec(fixture_spec);fixture_spec.loader.exec_module(fixture_module)
-        plan=json.loads((canonical/'spec/production-system/execution-plan.json').read_text())
+        plan=json.loads((canonical/'launchpad/spec/production-system/execution-plan.json').read_text())
         text,plan=fixture_module.normalize_fixture(text,plan)
         specpath=specdir/'spec.kvx';specpath.write_text(text)
         planpath=specdir/'execution-plan.json';planpath.write_text(json.dumps(plan))
@@ -517,11 +518,11 @@ sys.exit(int(code))
             for projected_task in projected_lane['tasks']:
                 if projected_task['id']=='1.01':projected_task['status']='implemented'
         planpath.write_text(json.dumps(plan))
-        tools=target/'tools/production';(tools/'bootstrap').mkdir(parents=True)
+        tools=target/'tools/launchpad/production';(tools/'bootstrap').mkdir(parents=True)
         (tools/'qualify.py').write_bytes(RUNNER_PATH.read_bytes())
         (tools/'dispatcher').symlink_to(dispatcher,target_is_directory=True)
         (tools/'bootstrap/check-registry.json').write_text(json.dumps({'schema_version':1,'tasks':{'0.2':{'interface_bundle':bundle},'1.01':entry}}))
-        process=subprocess.run([sys.executable,str(tools/'qualify.py'),'--task','1.01','--spec','spec/production-system/spec.kvx','--require-current-source'],capture_output=True,text=True,timeout=30,env={**os.environ,'PYTHONDONTWRITEBYTECODE':'1'})
+        process=subprocess.run([sys.executable,str(tools/'qualify.py'),'--task','1.01','--spec','launchpad/spec/production-system/spec.kvx','--require-current-source'],capture_output=True,text=True,timeout=30,env={**os.environ,'PYTHONDONTWRITEBYTECODE':'1'})
         self.assertEqual(process.returncode,0,process.stdout+process.stderr)
         qualification=json.loads(Path(json.loads(process.stdout)['result']).read_text())
         self.assertTrue(qualification['qualified']);self.assertFalse(qualification['canonical_integrated'])

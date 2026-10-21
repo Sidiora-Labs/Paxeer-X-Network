@@ -11,7 +11,7 @@ import (
 )
 
 func TestCreationFromAuthenticFrozenReceipt(t *testing.T) {
-	root := "../../../../spec/production-system/integration/contracts/v1/chain/"
+	root := "../../../../../launchpad/spec/production-system/integration/contracts/v1/chain/"
 	catalog, err := os.ReadFile(root + "abi-catalog.json")
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestCreationFromAuthenticFrozenReceipt(t *testing.T) {
 }
 
 func TestCreationReceiptAdmissionCaps(t *testing.T) {
-	b, err := os.ReadFile("../../../../spec/production-system/integration/contracts/v1/chain/abi-catalog.json")
+	b, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v1/chain/abi-catalog.json")
 	if err != nil {
 		t.Fatal(err)
 	}

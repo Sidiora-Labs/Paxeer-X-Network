@@ -4,11 +4,11 @@
   "checks": [
     {
       "id": "wallet-and-webhook",
-      "cwd": "shared",
+      "cwd": "sdk/launchpad/shared",
       "command": "GOWORK=off GOMAXPROCS=2 go test -p 1 -count=1 -json ./auth -run ^TestWebhook",
       "sources": [
         {
-          "path": "shared/auth/webhook_test.go",
+          "path": "sdk/launchpad/shared/auth/webhook_test.go",
           "sha256": "d459f44765ec114f0bdfc797e4ae219ee9b29c927efc6badbcf4ae401f154147",
           "tests": [
             "TestSignWebhookGolden",
@@ -26,11 +26,11 @@
     },
     {
       "id": "http-security",
-      "cwd": "shared",
+      "cwd": "sdk/launchpad/shared",
       "command": "GOWORK=off GOMAXPROCS=2 go test -p 1 -count=1 -json ./http",
       "sources": [
         {
-          "path": "shared/http/http_test.go",
+          "path": "sdk/launchpad/shared/http/http_test.go",
           "sha256": "51c8d74d7a1e1eadb32a0bebda9c71e45515ac871b8726843f719a27d70215df",
           "tests": [
             "TestNewRouterHealth",
@@ -64,11 +64,11 @@
     },
     {
       "id": "secret-provider",
-      "cwd": "shared",
+      "cwd": "sdk/launchpad/shared",
       "command": "GOWORK=off GOMAXPROCS=2 go test -p 1 -count=1 -json ./secrets",
       "sources": [
         {
-          "path": "shared/secrets/manager_test.go",
+          "path": "sdk/launchpad/shared/secrets/manager_test.go",
           "sha256": "adb6d9b1bd3ee6db1fd39f975dfcc9e4911efd1528d7d0392e5d503b850bfe7e",
           "tests": [
             "TestNewLogsWarnings",
@@ -89,11 +89,11 @@
     },
     {
       "id": "gateway-session",
-      "cwd": "media/gateway",
+      "cwd": "services/launchpad/gateway",
       "command": "GOWORK=off GOMAXPROCS=2 go test -p 1 -count=1 -json ./internal/auth",
       "sources": [
         {
-          "path": "media/gateway/internal/auth/auth_test.go",
+          "path": "services/launchpad/gateway/internal/auth/auth_test.go",
           "sha256": "31d4b3d40acadf7a03b8ff8472e52073f615e7be26ce16f867d399e5d0a30873",
           "tests": [
             "TestAuth_FullLoginFlow",
@@ -105,7 +105,7 @@
           ]
         },
         {
-          "path": "media/gateway/internal/auth/jwt_test.go",
+          "path": "services/launchpad/gateway/internal/auth/jwt_test.go",
           "sha256": "8ae2e41a1b1a951eddcaea1705f55052e608bf34cae1da518de27e1e592cce2f",
           "tests": [
             "TestSigner_MintVerify",
@@ -123,11 +123,11 @@
     },
     {
       "id": "gateway-upload",
-      "cwd": "media/gateway",
+      "cwd": "services/launchpad/gateway",
       "command": "GOWORK=off GOMAXPROCS=2 go test -p 1 -count=1 -json ./internal/upload ./internal/image",
       "sources": [
         {
-          "path": "media/gateway/internal/upload/upload_test.go",
+          "path": "services/launchpad/gateway/internal/upload/upload_test.go",
           "sha256": "5cdd9ebc668ca4c712cf015a7b24ef44f58aedf0efd1971273085eea81e7643d",
           "tests": [
             "TestUpload_ForwardsValidUpload",
@@ -140,7 +140,7 @@
           ]
         },
         {
-          "path": "media/gateway/internal/image/image_test.go",
+          "path": "services/launchpad/gateway/internal/image/image_test.go",
           "sha256": "0710598855c8689703ab7a812fa20e069133c534440f16d303534e5591153c3d",
           "tests": [
             "TestAllowedMime",
@@ -158,11 +158,11 @@
     },
     {
       "id": "gateway-proxy",
-      "cwd": "media/gateway",
+      "cwd": "services/launchpad/gateway",
       "command": "GOWORK=off GOMAXPROCS=2 go test -p 1 -count=1 -json ./internal/proxy",
       "sources": [
         {
-          "path": "media/gateway/internal/proxy/rest_test.go",
+          "path": "services/launchpad/gateway/internal/proxy/rest_test.go",
           "sha256": "df1d31e2f0d812e1de320c62e1d5e547765fdc145f8a196913525575c839fcc6",
           "tests": [
             "TestREST_StripsPrefix_AndInjectsActor",
@@ -172,7 +172,7 @@
           ]
         },
         {
-          "path": "media/gateway/internal/proxy/ws_test.go",
+          "path": "services/launchpad/gateway/internal/proxy/ws_test.go",
           "sha256": "0cff484dfe3bfcc1182abef573af03e068ac285c2b6b841c3901fedcabf68702",
           "tests": [
             "TestWS_TunnelsAndInjectsActor",
@@ -189,11 +189,11 @@
     },
     {
       "id": "gateway-object-key",
-      "cwd": "media/gateway",
+      "cwd": "services/launchpad/gateway",
       "command": "GOWORK=off GOMAXPROCS=2 go test -p 1 -count=1 -json ./internal/serve",
       "sources": [
         {
-          "path": "media/gateway/internal/serve/serve_test.go",
+          "path": "services/launchpad/gateway/internal/serve/serve_test.go",
           "sha256": "5e36a8b1c0270e1b4152ea958cc625c24673a920b75c2ed7eeb342f5c959b5dd",
           "tests": [
             "TestServe_OK_WithCacheHeaders",
@@ -218,11 +218,11 @@
     },
     {
       "id": "api-rate-limit",
-      "cwd": "core/api",
+      "cwd": "services/launchpad/api",
       "command": "GOWORK=off GOMAXPROCS=2 go test -p 1 -count=1 -json ./internal/ratelimit",
       "sources": [
         {
-          "path": "core/api/internal/ratelimit/ratelimit_test.go",
+          "path": "services/launchpad/api/internal/ratelimit/ratelimit_test.go",
           "sha256": "53e324cc9641bdae20f988194b08fcffeaf0de7c3368d57bd46166b31a3c6d2c",
           "tests": [
             "TestClientKey_PrefersAPIKeyThenIP",
@@ -240,11 +240,11 @@
     },
     {
       "id": "stats-webhook",
-      "cwd": "core/stats-workers",
+      "cwd": "services/launchpad/stats-workers",
       "command": "GOWORK=off GOMAXPROCS=2 go test -p 1 -count=1 -json ./internal/httpapi -run ^TestWebhook",
       "sources": [
         {
-          "path": "core/stats-workers/internal/httpapi/webhook_test.go",
+          "path": "services/launchpad/stats-workers/internal/httpapi/webhook_test.go",
           "sha256": "978a9f35906a76deb572fac5485e4a155f862f8a0301c5bed55587f1de808406",
           "tests": [
             "TestWebhookAuth",
@@ -260,11 +260,11 @@
     },
     {
       "id": "pnl-webhook",
-      "cwd": "core/pnl-tracker",
+      "cwd": "services/launchpad/pnl-tracker",
       "command": "GOWORK=off GOMAXPROCS=2 go test -p 1 -count=1 -json ./internal/httpapi -run ^TestWebhook",
       "sources": [
         {
-          "path": "core/pnl-tracker/internal/httpapi/webhook_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/httpapi/webhook_test.go",
           "sha256": "85d94e053599d878c6baedb5fc14cab4add541c5231e5375d8e06053f86bd8cd",
           "tests": [
             "TestWebhookAuth",
@@ -282,11 +282,11 @@
     },
     {
       "id": "charts-webhook",
-      "cwd": "core/trading-charts",
+      "cwd": "services/launchpad/trading-charts",
       "command": "GOWORK=off GOMAXPROCS=2 go test -p 1 -count=1 -json ./internal/httpapi -run ^TestWebhook",
       "sources": [
         {
-          "path": "core/trading-charts/internal/httpapi/webhook_test.go",
+          "path": "services/launchpad/trading-charts/internal/httpapi/webhook_test.go",
           "sha256": "92180a3379cff0570104bbe8aa3f76cbfec9db21e1bf44eca9004bbdeae94178",
           "tests": [
             "TestWebhookValidSwap",
@@ -306,18 +306,18 @@
     },
     {
       "id": "metadata-signature",
-      "cwd": "media/metadata",
+      "cwd": "services/launchpad/metadata",
       "command": "GOWORK=off GOMAXPROCS=2 go test -p 1 -count=1 -json ./internal/metadata",
       "sources": [
         {
-          "path": "media/metadata/internal/metadata/handlers_test.go",
+          "path": "services/launchpad/metadata/internal/metadata/handlers_test.go",
           "sha256": "6f88329dab66ee916598ded5c5969312d83cec957d52d5c5746cb45145e03370",
           "tests": [
             "TestMetadataService"
           ]
         },
         {
-          "path": "media/metadata/internal/metadata/helpers_internal_test.go",
+          "path": "services/launchpad/metadata/internal/metadata/helpers_internal_test.go",
           "sha256": "90b2228aaed3695ff80f113006408e9169c38b237be43393a24d20c1a6a51793",
           "tests": [
             "TestNormalizeAddr",
@@ -341,18 +341,18 @@
     },
     {
       "id": "user-signature",
-      "cwd": "media/user",
+      "cwd": "services/launchpad/user",
       "command": "GOWORK=off GOMAXPROCS=2 go test -p 1 -count=1 -json ./internal/user",
       "sources": [
         {
-          "path": "media/user/internal/user/handlers_test.go",
+          "path": "services/launchpad/user/internal/user/handlers_test.go",
           "sha256": "baf05d3a0149c0b0aebf2bf87d96ef3937c473fd074f1878c94b54c4a098b133",
           "tests": [
             "TestUserService"
           ]
         },
         {
-          "path": "media/user/internal/user/helpers_internal_test.go",
+          "path": "services/launchpad/user/internal/user/helpers_internal_test.go",
           "sha256": "db90746a89161360c6ac55754cede54dd441bf91b8050e8ab302c0f3d226fbde",
           "tests": [
             "TestNormalizeAddr",

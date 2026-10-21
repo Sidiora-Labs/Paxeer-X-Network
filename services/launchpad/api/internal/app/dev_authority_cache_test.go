@@ -97,7 +97,7 @@ func TestDevelopmentAuthorityAttestationCache(t *testing.T) {
 	var artifact struct {
 		DeployedBytecode string `json:"deployedBytecode"`
 	}
-	if err := json.Unmarshal(repoFile(t, "contracts/artifacts/contracts/base/BeaconProxy.sol/BeaconProxy.json"), &artifact); err != nil {
+	if err := json.Unmarshal(repoFile(t, "contracts/launchpad/artifacts/contracts/base/BeaconProxy.sol/BeaconProxy.json"), &artifact); err != nil {
 		t.Fatal(err)
 	}
 	code, err := hexutil.Decode(artifact.DeployedBytecode)

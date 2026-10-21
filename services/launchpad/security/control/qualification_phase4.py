@@ -75,7 +75,7 @@ class OperatorReleaseHarness:
         self.workload_metrics = None
         self.resources = []
         self.failures = []
-        self.source_hashes = {str(f.relative_to(root)): sha(f.read_bytes()) for f in sorted((root / 'security/control').iterdir()) if f.suffix in ('.go', '.py', '.ts', '.cjs')}
+        self.source_hashes = {str(f.relative_to(root)): sha(f.read_bytes()) for f in sorted((root / 'services/launchpad/security/control').iterdir()) if f.suffix in ('.go', '.py', '.ts', '.cjs')}
         self.source_digest = sha(canonical(self.source_hashes))
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect(), urllib.request.HTTPSHandler(context=ssl.create_default_context()))
 
@@ -271,7 +271,7 @@ class OperatorReleaseHarness:
         result_path = Path(browser['result_path']).resolve()
         required(result_path.parent == self.output and not result_path.exists(), 'fresh_owned_browser_output_required')
         required(browser['node_path'] == shutil.which('node'), 'actual_node_runtime_required')
-        process = subprocess.run([browser['node_path'], str(root / 'security/control/phase4-browser.cjs'), '--config', str(self.config_path), '--config-sha256', self.config_digest, '--output', str(result_path)], env=dict(os.environ, L47_RUN_MARKER=self.marker), capture_output=True, timeout=45)
+        process = subprocess.run([browser['node_path'], str(root / 'services/launchpad/security/control/phase4-browser.cjs'), '--config', str(self.config_path), '--config-sha256', self.config_digest, '--output', str(result_path)], env=dict(os.environ, L47_RUN_MARKER=self.marker), capture_output=True, timeout=45)
         required(not any(token.encode() in process.stdout or token.encode() in process.stderr for token in self.roles.values()), 'browser_disclosed_credentials')
         self.artifact('browser.stdout', process.stdout)
         self.artifact('browser.stderr', process.stderr)
@@ -542,7 +542,7 @@ class OperatorReleaseHarness:
     def finish(self):
         self.artifact('raw-http-samples.jsonl', b''.join(canonical(row)+b'\n' for row in self.samples))
         self.artifact('resource-observations.json', canonical(self.resources))
-        unchanged = {str(f.relative_to(root)): sha(f.read_bytes()) for f in sorted((root / 'security/control').iterdir()) if f.suffix in ('.go', '.py', '.ts', '.cjs')}
+        unchanged = {str(f.relative_to(root)): sha(f.read_bytes()) for f in sorted((root / 'services/launchpad/security/control').iterdir()) if f.suffix in ('.go', '.py', '.ts', '.cjs')}
         if unchanged != self.source_hashes:
             self.failures.append({'scenario': 'binding', 'code': 'source_changed_during_execution'})
         passed = len(self.scenarios) == 9 and all(row['status'] == 'passed' for row in self.scenarios.values()) and not self.failures
@@ -571,7 +571,7 @@ def run_phase4(arguments):
     required(len(raw) <= 1048576 and sha(raw) == arguments.config_sha256, 'phase4_configuration_digest_mismatch')
     config = strict_document(raw)
     output = Path(arguments.output).resolve()
-    allowed = (root / 'evidence/production-system/L47/phase4').resolve()
+    allowed = (root / 'launchpad/evidence/production-system/L47/phase4').resolve()
     required(output.parent == allowed and not output.exists() and not output.is_symlink(), 'fresh_owned_phase4_output_required')
     output.mkdir(parents=True)
     harness = OperatorReleaseHarness(config, output, arguments.config_sha256)
@@ -585,7 +585,7 @@ def run_phase4(arguments):
     return code
 
 
-root = Path(__file__).resolve().parents[2]
+root = Path(__file__).resolve().parents[4]
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

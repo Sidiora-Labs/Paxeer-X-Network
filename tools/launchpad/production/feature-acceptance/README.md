@@ -27,7 +27,7 @@ Review is a separately signed exact-scope envelope binding the evidence envelope
 
 Cryptographic checks prove provenance and integrity of admitted attestations. They cannot prove an admitted harness or reviewer is truthful, that a provider really delivered, or that an object store enforces immutable retention. Root must execute trusted harness adapters freshly and compare actual receipts/state/service/browser/device outputs before signing. The checked-in tests use real ephemeral Ed25519 keys and deliberately labeled policy-only artifacts; none is a product or capacity proof. No example production signing key is shipped.
 
-Run `python3 -m unittest discover -s tools/production/feature-acceptance/tests -v`. The suite creates private local ephemeral keys with installed OpenSSL, never contacts a service, and tests real signature verification plus rejection paths. OpenSSL absence or verifier timeout rejects evidence. Final immutable storage/WORM enforcement, secure key custody, real device/provider harnesses and root-runner registration remain integration prerequisites.
+Run `python3 -m unittest discover -s tools/launchpad/production/feature-acceptance/tests -v`. The suite creates private local ephemeral keys with installed OpenSSL, never contacts a service, and tests real signature verification plus rejection paths. OpenSSL absence or verifier timeout rejects evidence. Final immutable storage/WORM enforcement, secure key custody, real device/provider harnesses and root-runner registration remain integration prerequisites.
 
 ## Adversarial audit policy
 

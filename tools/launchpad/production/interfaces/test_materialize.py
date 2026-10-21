@@ -2,11 +2,11 @@ import copy,importlib.util,json,pathlib,tomllib,unittest
 from jsonschema import Draft202012Validator,FormatChecker
 HERE=pathlib.Path(__file__).resolve().parent
 loader=importlib.util.spec_from_file_location('materialize',HERE/'materialize.py');m=importlib.util.module_from_spec(loader);loader.loader.exec_module(m)
-ROOT=HERE.parents[2];OUT=ROOT/'spec/production-system/integration/contracts/v1'
+ROOT=HERE.parents[3];OUT=ROOT/'launchpad/spec/production-system/integration/contracts/v1'
 class MaterializeTests(unittest.TestCase):
  @classmethod
  def setUpClass(cls):
-  cls.spec=tomllib.load(open(ROOT/'spec/production-system/spec.kvx','rb'));cls.supp=json.load(open(OUT/'inputs/supplementary.json'));cls.files=m.generate(cls.spec,cls.supp);cls.doc=json.loads(cls.files['schema-definitions.json']);cls.api=json.loads(cls.files['openapi.json']);cls.asyncapi=json.loads(cls.files['asyncapi.json']);cls.map=json.loads(cls.files['catalog-map.json'])
+  cls.spec=tomllib.load(open(ROOT/'launchpad/spec/production-system/spec.kvx','rb'));cls.supp=json.load(open(OUT/'inputs/supplementary.json'));cls.files=m.generate(cls.spec,cls.supp);cls.doc=json.loads(cls.files['schema-definitions.json']);cls.api=json.loads(cls.files['openapi.json']);cls.asyncapi=json.loads(cls.files['asyncapi.json']);cls.map=json.loads(cls.files['catalog-map.json'])
  def valid(self,name,value):
   doc={'$schema':m.DIALECT,'$ref':'#/$defs/'+name,'$defs':self.doc['$defs']};return Draft202012Validator(doc,format_checker=FormatChecker()).is_valid(value)
  def test_all_catalog_entries_mapped(self):

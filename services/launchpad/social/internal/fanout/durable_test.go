@@ -46,7 +46,7 @@ func durableFixture(t *testing.T) *fanout.DurableStore {
 		}
 		admin.Close(context.Background())
 	})
-	ddl, err := os.ReadFile("../../../../spec/production-system/handoffs/L36/phase1/schema.sql")
+	ddl, err := os.ReadFile("../../../../../launchpad/spec/production-system/handoffs/L36/phase1/schema.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

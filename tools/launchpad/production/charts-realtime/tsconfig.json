@@ -1,5 +1,5 @@
 {
-  "extends": "../../../client/apps/web/tsconfig.json",
+  "extends": "../../../../apps/launchpad/web/tsconfig.json",
   "compilerOptions": {
     "incremental": false,
     "noEmit": true,
@@ -7,15 +7,15 @@
       "node"
     ],
     "typeRoots": [
-      "../../../client/apps/web/node_modules/@types"
+      "../../../../apps/launchpad/web/node_modules/@types"
     ]
   },
   "include": [
-    "../../../client/apps/web/src/widgets/trading/udf-datafeed.ts",
-    "../../../client/apps/web/src/widgets/trading/tv-chart.tsx",
-    "../../../client/apps/web/src/widgets/trading/chart-datafeed-revision.test.ts",
-    "../../../client/apps/web/src/widgets/trading/chart-datafeed-lifecycle.test.ts",
-    "../../../client/apps/web/src/widgets/trading/chart-datafeed-recovery.test.ts"
+    "../../../../apps/launchpad/web/src/widgets/trading/udf-datafeed.ts",
+    "../../../../apps/launchpad/web/src/widgets/trading/tv-chart.tsx",
+    "../../../../apps/launchpad/web/src/widgets/trading/chart-datafeed-revision.test.ts",
+    "../../../../apps/launchpad/web/src/widgets/trading/chart-datafeed-lifecycle.test.ts",
+    "../../../../apps/launchpad/web/src/widgets/trading/chart-datafeed-recovery.test.ts"
   ],
   "exclude": []
 }

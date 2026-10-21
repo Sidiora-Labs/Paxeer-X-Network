@@ -13,10 +13,10 @@ import sys
 import time
 from urllib.parse import urlparse
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'tools/production/load'))
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / 'tools/launchpad/production/load'))
 from phase2_feeder import PostgresObserver
-sys.path.insert(0,str(ROOT/'tools/production'))
+sys.path.insert(0,str(ROOT/'tools/launchpad/production'))
 from qualify import snapshot as candidate_snapshot, canonical_hash as candidate_hash, ignored_source_directory
 
 HEX = re.compile(r'^[0-9a-f]{64}$')

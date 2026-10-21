@@ -53,7 +53,7 @@ func productionAccountingFixture(t *testing.T) (*store.AccountingReadModel, *pgx
 	t.Helper()
 	pool := internaltest.NewPostgres(t)
 	ctx := context.Background()
-	dir := "../../../../spec/production-system/integration/migrations/"
+	dir := "../../../../../launchpad/spec/production-system/integration/migrations/"
 	for _, name := range []string{"80001", "80002", "100000", "130000", "60000"} {
 		raw, err := os.ReadFile(dir + name + ".sql")
 		if err != nil {

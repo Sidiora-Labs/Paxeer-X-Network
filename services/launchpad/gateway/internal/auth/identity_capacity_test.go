@@ -51,7 +51,7 @@ func TestIdentityOwnerRealChain125ProofKinds(t *testing.T) {
 	if err = rpc.Client().CallContext(ctx, nil, "anvil_setBalance", sender, "0x56bc75e2d63100000"); err != nil {
 		t.Fatal(err)
 	}
-	bytecode, err := os.ReadFile("../../../../shared/auth/testdata/TestWallet.bin")
+	bytecode, err := os.ReadFile("../../../../../sdk/launchpad/shared/auth/testdata/TestWallet.bin")
 	if err != nil {
 		t.Fatal(err)
 	}

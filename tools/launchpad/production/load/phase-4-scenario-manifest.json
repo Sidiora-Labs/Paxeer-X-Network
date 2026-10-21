@@ -5,13 +5,13 @@
   "phase_version": "l48-integrated-harness-v1",
   "workload_version": "kindle-500k-dau-v1",
   "root_capacity_ledger": {
-    "source_path": "tools/production/load/workload.py",
+    "source_path": "tools/launchpad/production/load/workload.py",
     "source_sha256": "029bec855d6fad3c961e9f02e61f40b77949ddde9c9b97ac0e7600ac7c174667",
     "projection": "ledger()",
     "runtime_artifact": "workload-ledger.json"
   },
   "root_mix": {
-    "source_path": "tools/production/load/workload.py",
+    "source_path": "tools/launchpad/production/load/workload.py",
     "projection": "MIX",
     "runtime_artifact": "root-mix.json",
     "total_http_rps": 10000,
@@ -28,10 +28,10 @@
     "event_boundary": "actual unchanged canonical PostgreSQL envelopes to file-backed JetStream acknowledgment",
     "new_raw_ingestion_qualified": false,
     "capacity_qualified": false,
-    "native_driver_source": "tools/production/load/eventdriver/main.go",
+    "native_driver_source": "tools/launchpad/production/load/eventdriver/main.go",
     "entrypoint": [
       "python3",
-      "tools/production/load/phase4_runner.py",
+      "tools/launchpad/production/load/phase4_runner.py",
       "--config",
       "{private_config}",
       "--config-sha256",
@@ -110,10 +110,10 @@
   },
   "final_shared_execution_owner": "serial task9.1 after4.99 source freeze",
   "final_readout_entrypoint": "capture.final_acceptance(config)",
-  "shared_capture_schema": "tools/production/load/final-shared-capture.schema.json",
+  "shared_capture_schema": "tools/launchpad/production/load/final-shared-capture.schema.json",
   "calibration_rule": "actual4independent external60second generator executions, deliveryerror<=2%,schedulerp99<=10ms,CPU/NIC<=70%, independently admitted clock offset/uncertainty<=5ms",
   "qualification_boundary": "Isolated proof and harness readiness are distinct from final integrated acceptance. No per-lane24hour soak.",
-  "verify_cmd": "python3 tools/production/qualify.py --task 4.48 --spec spec/production-system/spec.kvx --require-current-source",
+  "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.48 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
   "capacity_qualified": false,
   "release_qualified": false
 }

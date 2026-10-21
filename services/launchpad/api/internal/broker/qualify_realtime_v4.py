@@ -13,9 +13,9 @@ import sys
 import time
 from urllib.parse import quote
 
-ROOT = Path(__file__).resolve().parents[4]
-LOAD = ROOT / "tools/production/load"
-INTEGRATION = ROOT / "tools/production/integration"
+ROOT = Path(__file__).resolve().parents[5]
+LOAD = ROOT / "tools/launchpad/production/load"
+INTEGRATION = ROOT / "tools/launchpad/production/integration"
 sys.path.insert(0, str(LOAD))
 sys.path.insert(0, str(INTEGRATION))
 
@@ -69,7 +69,7 @@ class Capture:
         require(type(maximum_bytes) is int and 1048576 <= maximum_bytes <= 2**60, "explicit finite raw capture byte budget required")
         path = Path(directory)
         require(path.is_absolute() and not any(p.is_symlink() for p in (path, *path.parents)), "direct lane-owned artifact path required")
-        allowed = ROOT / "evidence/production-system/L23/phase4"
+        allowed = ROOT / "launchpad/evidence/production-system/L23/phase4"
         self.directory = path.resolve()
         require(self.directory.is_relative_to(allowed) and self.directory != allowed, "unique L23 phase4 run directory required")
         self.directory.mkdir(parents=True, exist_ok=False, mode=0o700)
@@ -680,7 +680,7 @@ def main():
         rows = bound_document(args.aggregate_inputs, args.aggregate_inputs_sha256)
         result = aggregate(config, rows)
         target = Path(args.output)
-        require(target.is_absolute() and not any(p.is_symlink() for p in (target, *target.parents)) and target.resolve().is_relative_to(ROOT / "evidence/production-system/L23/phase4"), "lane-owned aggregate output required")
+        require(target.is_absolute() and not any(p.is_symlink() for p in (target, *target.parents)) and target.resolve().is_relative_to(ROOT / "launchpad/evidence/production-system/L23/phase4"), "lane-owned aggregate output required")
         fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "wb") as output:
             output.write(canonical(result)+b"\n")

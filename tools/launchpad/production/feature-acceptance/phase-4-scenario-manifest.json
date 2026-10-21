@@ -6,9 +6,9 @@
   "final_gate": "9.1",
   "qualification_entrypoint": "policy.validator_readiness",
   "closure_entrypoint": "policy.final_release_closure",
-  "cli": "tools/production/feature-acceptance/readiness.py",
-  "schema": "tools/production/feature-acceptance/evidence.schema.json",
-  "capture_schema": "tools/production/load/final-shared-capture.schema.json",
+  "cli": "tools/launchpad/production/feature-acceptance/readiness.py",
+  "schema": "tools/launchpad/production/feature-acceptance/evidence.schema.json",
+  "capture_schema": "tools/launchpad/production/load/final-shared-capture.schema.json",
   "required_native_cases": [
     {
       "id": "all55-review-schema-mapping",
@@ -37,12 +37,12 @@
     "unittest",
     "discover",
     "-s",
-    "tools/production/feature-acceptance/tests",
+    "tools/launchpad/production/feature-acceptance/tests",
     "-p",
     "test_phase4.py",
     "-v"
   ],
-  "verify_cmd": "python3 tools/production/qualify.py --task 4.50 --spec spec/production-system/spec.kvx --require-current-source",
+  "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.50 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
   "qualification_boundary": "Lane validator and isolated policy calibration only; task9.1 alone owns final shared integrated24h soak and all full-platform acceptance",
   "capacity_qualified": false,
   "release_qualified": false

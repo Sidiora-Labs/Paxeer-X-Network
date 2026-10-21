@@ -197,7 +197,7 @@ func (c MediaMeasurementConfig) validate() (MediaLicenseAuthority, BudgetPolicy,
 			return license, budget, errors.New("candidate interface topology generator bindings required")
 		}
 	}
-	for _, path := range []string{"media/livestream/internal/streams/production_measurement.go", "media/livestream/internal/streams/lifecycle.go", "media/livestream/internal/streams/credentials.go", "media/livestream/internal/streams/provision_worker.go", "media/livestream/internal/streams/reconcile_worker.go", "media/livestream/internal/streams/handlers.go", "media/livestream/internal/livepeer/client.go", "media/livestream/internal/config/config.go", "client/apps/web/src/widgets/trading/live-stream.tsx", "client/apps/web/src/core/clients/livestream-api.ts"} {
+	for _, path := range []string{"services/launchpad/livestream/internal/streams/production_measurement.go", "services/launchpad/livestream/internal/streams/lifecycle.go", "services/launchpad/livestream/internal/streams/credentials.go", "services/launchpad/livestream/internal/streams/provision_worker.go", "services/launchpad/livestream/internal/streams/reconcile_worker.go", "services/launchpad/livestream/internal/streams/handlers.go", "services/launchpad/livestream/internal/livepeer/client.go", "services/launchpad/livestream/internal/config/config.go", "apps/launchpad/web/src/widgets/trading/live-stream.tsx", "apps/launchpad/web/src/core/clients/livestream-api.ts"} {
 		if !measurementHashValid(c.SourceFiles[path]) {
 			return license, budget, errors.New("complete runtime/harness source inventory required")
 		}

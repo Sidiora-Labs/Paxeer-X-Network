@@ -17,9 +17,9 @@ import threading
 import time
 from urllib.parse import urlsplit
 
-ROOT = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(ROOT / 'tools/production/load'))
-sys.path.insert(0, str(ROOT / 'tools/production'))
+ROOT = Path(__file__).resolve().parents[5]
+sys.path.insert(0, str(ROOT / 'tools/launchpad/production/load'))
+sys.path.insert(0, str(ROOT / 'tools/launchpad/production'))
 from phase2_types import Bindings, canonical, digest, unique
 from workload import MIX, VERSION
 from dispatcher.evidence import source_digest as candidate_digest
@@ -91,7 +91,7 @@ class Capture:
         requested = Path(directory).absolute()
         require('..' not in requested.parts and not any(parent.is_symlink() for parent in (requested, *requested.parents)), 'capture_path_scope')
         self.directory = requested.resolve()
-        require(self.directory.is_relative_to(ROOT / 'evidence/production-system/L39/phase4'), 'lane_capture_directory')
+        require(self.directory.is_relative_to(ROOT / 'launchpad/evidence/production-system/L39/phase4'), 'lane_capture_directory')
         require(not self.directory.exists(), 'capture_already_exists')
         self.directory.mkdir(parents=True, mode=0o700)
         self.bindings = bindings
@@ -132,7 +132,7 @@ def env_headers(entries):
 @lru_cache(maxsize=4)
 def response_validator(name):
     from jsonschema import Draft202012Validator, FormatChecker
-    definitions = json.loads((ROOT / 'spec/production-system/integration/contracts/v2/schema-definitions.json').read_bytes(), object_pairs_hook=unique)
+    definitions = json.loads((ROOT / 'launchpad/spec/production-system/integration/contracts/v2/schema-definitions.json').read_bytes(), object_pairs_hook=unique)
     require(name in definitions['$defs'], 'known_response_contract')
     return Draft202012Validator({**definitions, '$ref': '#/$defs/' + name}, format_checker=FormatChecker())
 
@@ -354,7 +354,7 @@ def mixed_load(config, capture, resource_future):
 
 def browser_measurement(config, capture, bindings):
     node = reference(config['node'], 512 * 1024 * 1024)
-    script = ROOT / 'client/apps/web/src/features/metadata-media/measure.browser.mjs'
+    script = ROOT / 'apps/launchpad/web/src/features/metadata-media/measure.browser.mjs'
     require(file_hash(script) == config['script_sha256'], 'browser_source_digest')
     browser_input = dict(config['inputs'], bindings=bindings, output=str(capture.directory / 'browser.json'))
     try:

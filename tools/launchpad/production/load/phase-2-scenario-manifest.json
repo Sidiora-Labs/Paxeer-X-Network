@@ -22,7 +22,7 @@
       "required_real_dependencies": ["PostgreSQL", "file-backed NATS JetStream", "Redis", "chain125 receipts", "SIWE identity", "v2 API", "v2 anonymous and authenticated sockets", "actual Chromium browser"],
       "per_host_connections": 25000,
       "per_host_scheduled_http_requests": 1500000,
-      "entrypoint": "tools/production/load/phase2_runner.py"
+      "entrypoint": "tools/launchpad/production/load/phase2_runner.py"
     },
     {
       "id": "disconnected-durable-fill-replay",
@@ -41,7 +41,7 @@
       "receiver_source": "phase2_browser.ts"
     }
   ],
-  "command": ["python3", "tools/production/load/phase2_runner.py", "--config", "{private_config}", "--config-sha256", "{private_config_sha256}", "--output", "{owned_evidence_directory}"],
-  "verify_cmd": "python3 tools/production/qualify.py --task 2.48 --spec spec/production-system/spec.kvx --require-current-source",
+  "command": ["python3", "tools/launchpad/production/load/phase2_runner.py", "--config", "{private_config}", "--config-sha256", "{private_config_sha256}", "--output", "{owned_evidence_directory}"],
+  "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.48 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
   "pending_final_scenarios": ["24hour integrated peak soak", "200k connection surge", "1million frames per second burst", "80percent hot-pool stress", "3million canonical event surge", "managed CDN actual playback", "monthly availability"]
 }

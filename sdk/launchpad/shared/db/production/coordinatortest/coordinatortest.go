@@ -49,7 +49,7 @@ const Region = "fixture-loopback"
 // Epoch is the recovery epoch the private bootstrap seeds.
 const Epoch = 1
 
-const migrationsDir = "spec/production-system/integration/migrations"
+const migrationsDir = "launchpad/spec/production-system/integration/migrations"
 
 // Runtime is one bootstrapped least-privilege runtime role.
 type Runtime struct {
@@ -125,7 +125,7 @@ func RepositoryRoot(t testing.TB) string {
 	if !ok {
 		t.Fatal("caller unavailable")
 	}
-	return filepath.Join(filepath.Dir(file), "..", "..", "..", "..")
+	return filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "..", "..")
 }
 
 func readBound(t testing.TB, root, relative, want string) []byte {

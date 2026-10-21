@@ -15,7 +15,7 @@ assert.ok(['http:', 'https:'].includes(driver.protocol));
 const queryA = required('L29_QUERY_A'), queryB = required('L29_QUERY_B'), expectedAddress = required('L29_EXPECTED_B_ADDRESS').toLowerCase();
 assert.match(expectedAddress, /^0x[0-9a-f]{40}$/);
 const phase = process.env.L29_QUALIFICATION_PHASE || 'phase2'; assert.ok(['phase2', 'phase3'].includes(phase));
-const output = resolve('evidence/production-system/L29/' + phase); await mkdir(output, { recursive: true });
+const output = resolve('launchpad/evidence/production-system/L29/' + phase); await mkdir(output, { recursive: true });
 const observations = { schemaVersion: 1, origin: origin.origin, startedAt: new Date().toISOString(), checks: [], focusedChecksPassed: false };
 let session;
 async function request(path, method = 'GET', body) {
@@ -69,7 +69,7 @@ try {
     observations.checks.push({ name: 'persisted-canary-excluded-from-public-html', canarySha256: createHash('sha256').update(canary).digest('hex'), recentRemoved: recentState.removed });
     await command('/execute/sync', 'POST', { script: 'localStorage.removeItem("kindle:draft:v1:launch"); return true;', args: [] });
   }
-  const buildRoot = resolve('client/apps/web/.next');
+  const buildRoot = resolve('apps/launchpad/web/.next');
   const manifest = JSON.parse(await readFile(join(buildRoot, 'app-build-manifest.json'), 'utf8'));
   const paths = [...new Set(manifest.pages['/layout'] || [])]; assert.ok(paths.length, 'Actual shell build manifest required');
   const chunks = await Promise.all(paths.filter(path => path.endsWith('.js')).map(async path => ({ path, compressedBytes: gzipSync(await readFile(join(buildRoot, path))).length, bytes: (await stat(join(buildRoot, path))).size })));

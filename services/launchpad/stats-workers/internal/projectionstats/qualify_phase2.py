@@ -19,7 +19,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = Path(__file__).resolve().parents[5]
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 ADDRESS = re.compile(r"0x[0-9a-f]{40}\Z")
 TOKEN = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
@@ -78,7 +78,7 @@ def percentile(values, total, quantile):
 class Artifacts:
     def __init__(self, directory):
         self.path = Path(directory).resolve()
-        require(self.path.is_relative_to((ROOT/"evidence/production-system/L13/phase4").resolve()), "L13 phase4 evidence directory required")
+        require(self.path.is_relative_to((ROOT/"launchpad/evidence/production-system/L13/phase4").resolve()), "L13 phase4 evidence directory required")
         self.path.mkdir(parents=True, exist_ok=False)
         self.lock = threading.Lock()
         self.opened = {}

@@ -169,7 +169,7 @@ func TestHostnameFormatBoundaries(t *testing.T) {
 }
 
 func TestAccountingWireCorpus(t *testing.T) {
-	raw, err := os.ReadFile("../../../spec/production-system/integration/contracts/v1/accounting-cases.json")
+	raw, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v1/accounting-cases.json")
 	if err != nil {
 		t.Fatal(err)
 	}

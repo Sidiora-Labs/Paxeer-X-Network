@@ -34,7 +34,7 @@ func productionReadsFixture(t *testing.T) (*pgxpool.Pool, *store.AccountingReadM
 	pool := internaltest.NewPostgres(t)
 	ctx := context.Background()
 	schema := fmt.Sprintf("l22_stream_%d", time.Now().UnixNano())
-	migration, err := os.ReadFile("../../../../spec/production-system/integration/migrations/150002.sql")
+	migration, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/migrations/150002.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func productionReadsFixture(t *testing.T) (*pgxpool.Pool, *store.AccountingReadM
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile("../../../../spec/production-system/integration/contracts/v2/examples.json")
+	raw, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v2/examples.json")
 	if err != nil {
 		t.Fatal(err)
 	}

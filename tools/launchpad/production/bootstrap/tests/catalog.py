@@ -9,10 +9,10 @@ import re
 import subprocess
 import sys
 
-MODULES = ('shared', 'protocol', 'core/api', 'core/indexer', 'core/pnl-tracker',
-           'core/ranking-algo', 'core/stats-workers', 'core/trading-charts',
-           'media/gateway', 'media/livestream', 'media/metadata', 'media/social', 'media/user')
-ROOT = Path(__file__).resolve().parents[4]
+MODULES = ('sdk/launchpad/shared', 'sdk/launchpad/protocol', 'services/launchpad/api', 'services/launchpad/indexer', 'services/launchpad/pnl-tracker', 'services/launchpad/ranking-algo',
+           'services/launchpad/stats-workers', 'services/launchpad/trading-charts', 'services/launchpad/gateway', 'services/launchpad/livestream',
+           'services/launchpad/metadata', 'services/launchpad/social', 'services/launchpad/user')
+ROOT = Path(__file__).resolve().parents[5]
 GO_TEST = re.compile(r'^func\s+(Test\w+|Example\w*|Fuzz\w+)\s*\(', re.M)
 WEB_TEST = re.compile(r'\b(?:test|it)\s*(?:\.(?:skip|todo|only))?\s*\(\s*([\'"`])(.+?)\1', re.S)
 SKIP = re.compile(r'\.(?:Skip(?:f|Now)?|skip|todo|only)\b')
@@ -57,7 +57,7 @@ def inventory(root):
         if not item['declared_test_count']:
             result['testing_gaps'].append('build-only module with no declared Go tests: ' + name)
         result['go_modules'].append(item)
-    web = root / 'client/apps/web'
+    web = root / 'apps/launchpad/web'
     for path in sorted(web.rglob('*')):
         if not path.is_file() or any(x in path.parts for x in ('node_modules', '.next')):
             continue
@@ -137,7 +137,7 @@ def validate_vitest(report, root, expected_files):
             raise ValueError('suite did not pass: ' + str(suite.get('name')))
         path = Path(suite['name'])
         if not path.is_absolute():
-            path = root / 'client/apps/web' / path
+            path = root / 'apps/launchpad/web' / path
         seen.add(path.resolve())
         entries = suite.get('assertionResults', [])
         if not entries:
@@ -208,7 +208,7 @@ def main():
                 env = dict(os.environ, GOWORK='off', GOMAXPROCS='2')
             else:
                 command = ['pnpm', 'exec', 'vitest', 'run', '--reporter=json']
-                cwd = root / 'client/apps/web'
+                cwd = root / 'apps/launchpad/web'
                 env = dict(os.environ)
             args.log.parent.mkdir(parents=True, exist_ok=True)
             error_log = args.log.with_name(args.log.name + '.stderr')

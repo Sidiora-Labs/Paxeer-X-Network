@@ -59,8 +59,8 @@ def catalog_errors(definitions, catalog, api, schemas, endpoints):
 
 
 def validate(document, root, spec, authorities, require_materialized=True, not_before=None, bundle=None, chain_bundle=None, catalog_input=None):
-    bundle=(bundle or root / "spec/production-system/integration/contracts/v1").resolve()
-    chain_bundle=(chain_bundle or root / "spec/production-system/integration/contracts/v1").resolve()
+    bundle=(bundle or root / "launchpad/spec/production-system/integration/contracts/v1").resolve()
+    chain_bundle=(chain_bundle or root / "launchpad/spec/production-system/integration/contracts/v1").resolve()
     if not bundle.is_relative_to(root.resolve()) or not chain_bundle.is_relative_to(root.resolve()):return ["contract bundles must belong to source root"]
     required_artifacts={str((bundle/name).relative_to(root.resolve())) for name in ("schema-definitions.json","openapi.json","asyncapi.json","catalog-map.json")} | {str((chain_bundle/"chain"/name).relative_to(root.resolve())) for name in ("abi-catalog.json","event-authorities.json","golden-fixtures.json","mainnet-attestation.json","files-manifest.json")}
     errors = []
@@ -255,10 +255,10 @@ def main():
     args = parser.parse_args()
     root = args.root.resolve()
     try:
-        bundle=(args.bundle or root / "spec/production-system/integration/contracts/v1").resolve()
-        chain_bundle=(args.chain_bundle or root / "spec/production-system/integration/contracts/v1").resolve()
+        bundle=(args.bundle or root / "launchpad/spec/production-system/integration/contracts/v1").resolve()
+        chain_bundle=(args.chain_bundle or root / "launchpad/spec/production-system/integration/contracts/v1").resolve()
         document = load(bundle / "capabilities.json")
-        errors = validate(document, root, args.spec or root / "spec/production-system/spec.kvx", {"workspace": root, "contracts": args.contracts_root or root.parent / "contracts", "evidence": args.evidence_root}, not_before=epoch(args.not_before),bundle=bundle,chain_bundle=chain_bundle,catalog_input=args.catalog)
+        errors = validate(document, root, args.spec or root / "launchpad/spec/production-system/spec.kvx", {"workspace": root, "contracts": args.contracts_root or root / "contracts/launchpad", "evidence": args.evidence_root}, not_before=epoch(args.not_before),bundle=bundle,chain_bundle=chain_bundle,catalog_input=args.catalog)
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         errors = [f"invalid or missing frozen input: {exc}"]
     result = {"coverage": "interface:capability-prerequisites", "passed": not errors, "errors": errors, "releaseQualified": False, "note": "Interface consistency does not qualify blocked product capabilities."}

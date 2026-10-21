@@ -14,8 +14,8 @@ import sys
 import time
 from fractions import Fraction
 
-ROOT = Path(__file__).resolve().parents[2]
-LOAD = ROOT / 'tools/production/load'
+ROOT = Path(__file__).resolve().parents[4]
+LOAD = ROOT / 'tools/launchpad/production/load'
 sys.path.insert(0, str(LOAD))
 from capture import read_manifest, iter_artifact, sha_file
 from phase2_types import Bindings, bound_document, canonical, unique
@@ -461,10 +461,10 @@ def source_binding(path,checksum):
     for relative,expected in value['files'].items():
         if Path(relative).is_absolute() or '..' in Path(relative).parts or not HEX.fullmatch(expected) or sha_file(ordinary(ROOT / relative)) != expected:
             raise ValueError('native source differs from admitted candidate')
-    required = {str(p.relative_to(ROOT)) for p in (ROOT/'security/policy').glob('*.go')}
-    required |= {str(p.relative_to(ROOT)) for p in (ROOT/'shared/secrets').glob('*.go')}
-    required |= {'security/policy/release_harness.py','security/policy/test_release_harness.py','security/go.mod','security/go.sum','shared/go.mod','shared/go.sum','go.work','tools/production/load/capture.py','tools/production/load/phase2_types.py','tools/production/load/workload.py','tools/production/load/final-shared-capture.schema.json'}
-    required |= {str(p.relative_to(ROOT)) for p in (ROOT/'shared/auth').glob('*.go')}
+    required = {str(p.relative_to(ROOT)) for p in (ROOT/'services/launchpad/security/policy').glob('*.go')}
+    required |= {str(p.relative_to(ROOT)) for p in (ROOT/'sdk/launchpad/shared/secrets').glob('*.go')}
+    required |= {'services/launchpad/security/policy/release_harness.py','services/launchpad/security/policy/test_release_harness.py','services/launchpad/security/go.mod','services/launchpad/security/go.sum','sdk/launchpad/shared/go.mod','sdk/launchpad/shared/go.sum','services/launchpad/go.work','tools/launchpad/production/load/capture.py','tools/launchpad/production/load/phase2_types.py','tools/launchpad/production/load/workload.py','tools/launchpad/production/load/final-shared-capture.schema.json'}
+    required |= {str(p.relative_to(ROOT)) for p in (ROOT/'sdk/launchpad/shared/auth').glob('*.go')}
     if not required.issubset(value['files']):
         raise ValueError('security implementation/test binding incomplete')
     return value
@@ -478,7 +478,7 @@ def components(binding_path,binding_sha,go_binary,go_sha,output):
     if not os.environ.get('L45_DATABASE_URL'):
         raise ValueError('explicit real component PostgreSQL credential required')
     output = owned_output(output)
-    groups = {'policy': ROOT/'security', 'secrets':ROOT/'shared'}
+    groups = {'policy': ROOT/'services/launchpad/security', 'secrets':ROOT/'sdk/launchpad/shared'}
     summaries = {}
     deadline = time.monotonic()+1500
     for name,directory in groups.items():

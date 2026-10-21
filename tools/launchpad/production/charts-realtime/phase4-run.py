@@ -14,8 +14,8 @@ import time
 import sqlite3
 import tempfile
 
-ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(ROOT / 'tools/production/load'))
+ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(ROOT / 'tools/launchpad/production/load'))
 from phase2_feeder import PostgresObserver, owned_command
 from phase2_types import Bindings, bound_document, canonical, digest, unique, validate_v2
 
@@ -97,7 +97,7 @@ def configuration(reference, mode):
         bound_path(config[name], 67108864)
     require(config['bindings']['interface'] == config['interface_manifest']['sha256'], 'Interface binding differs')
     require(config['bindings']['topology'] == config['topology_manifest']['sha256'], 'Topology binding differs')
-    harness_files = sorted(Path(__file__).parent.glob('phase4-*')) + [ROOT / 'client/apps/web/src/widgets/trading/udf-datafeed.ts']
+    harness_files = sorted(Path(__file__).parent.glob('phase4-*')) + [ROOT / 'apps/launchpad/web/src/widgets/trading/udf-datafeed.ts']
     harness_digest = digest(json.dumps({str(p.relative_to(ROOT)): hash_file(p) for p in harness_files if p.is_file()}, sort_keys=True, separators=(',', ':')).encode())
     require(config['harness_sha256'] == harness_digest, 'Current chart measurement harness binding differs')
     return config
@@ -288,7 +288,7 @@ class NativeSamples:
 
 def shared_capture(config):
     from capture import read_manifest, gateway_summary, iter_artifact
-    require(config['shared_schema']['path'] == str(ROOT / 'tools/production/load/final-shared-capture.schema.json'), 'Actual shared capture interface required')
+    require(config['shared_schema']['path'] == str(ROOT / 'tools/launchpad/production/load/final-shared-capture.schema.json'), 'Actual shared capture interface required')
     manifest = read_manifest(config['shared_manifest']['path'], config['shared_manifest']['sha256'], bindings=Bindings(**config['bindings']))
     require(manifest['run_id'] == config['run_id'] and manifest['scope'] == 'final_shared', 'Isolated evidence cannot substitute for final shared run')
     require('L12' in manifest['required_lane_ids'] and manifest['final_gate'] == '9.1', 'Chart lane must participate in final shared gate')
@@ -403,7 +403,7 @@ def main():
     try:
         config = configuration({'path': args.config, 'sha256': args.config_sha256}, args.mode)
         output = Path(config['output']).resolve()
-        require(output.is_relative_to((ROOT / 'evidence/production-system/L12/phase4').resolve()) and not output.exists(), 'Fresh chart-owned measurement output required')
+        require(output.is_relative_to((ROOT / 'launchpad/evidence/production-system/L12/phase4').resolve()) and not output.exists(), 'Fresh chart-owned measurement output required')
         output.mkdir(parents=True, mode=0o700)
         callback = {'prepare': prepare, 'capture': capture, 'release': release}[args.mode]
         result.update(asyncio.run(callback(config)))

@@ -65,7 +65,7 @@ func productionMigrations(t *testing.T, ctx context.Context, pool *pgxpool.Pool)
 	if !ok {
 		t.Fatal("test source path unavailable")
 	}
-	dir := filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "spec", "production-system", "integration", "migrations")
+	dir := filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "..", "launchpad", "spec", "production-system", "integration", "migrations")
 	if _, err := pool.Exec(ctx, "CREATE SCHEMA indexer; CREATE SCHEMA candles"); err != nil {
 		t.Fatal(err)
 	}

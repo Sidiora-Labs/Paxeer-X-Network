@@ -45,17 +45,17 @@ var (
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(file), "..", "..", "..", "..")
+	return filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "..")
 }
 
 func realInputs(t *testing.T) Inputs {
 	t.Helper()
 	root := repoRoot(t)
-	reviewed, err := os.ReadFile(filepath.Join(root, "protocol", "catalog", "reviewed.json"))
+	reviewed, err := os.ReadFile(filepath.Join(root, "sdk", "launchpad", "protocol", "catalog", "reviewed.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	artifact, err := os.ReadFile(filepath.Join(root, "contracts", "artifacts", "contracts", "core", "SidioraERC20.sol", "SidioraERC20.json"))
+	artifact, err := os.ReadFile(filepath.Join(root, "contracts", "launchpad", "artifacts", "contracts", "core", "SidioraERC20.sol", "SidioraERC20.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

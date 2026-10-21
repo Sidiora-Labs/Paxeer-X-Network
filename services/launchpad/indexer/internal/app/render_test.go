@@ -24,12 +24,12 @@ import (
 func renderInputs(t *testing.T) runtimedocs.Inputs {
 	t.Helper()
 	_, file, _, _ := runtime.Caller(0)
-	root := filepath.Join(filepath.Dir(file), "..", "..", "..", "..")
-	reviewed, err := os.ReadFile(filepath.Join(root, "protocol", "catalog", "reviewed.json"))
+	root := filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "..")
+	reviewed, err := os.ReadFile(filepath.Join(root, "sdk", "launchpad", "protocol", "catalog", "reviewed.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	artifact, err := os.ReadFile(filepath.Join(root, "contracts", "artifacts", "contracts", "core", "SidioraERC20.sol", "SidioraERC20.json"))
+	artifact, err := os.ReadFile(filepath.Join(root, "contracts", "launchpad", "artifacts", "contracts", "core", "SidioraERC20.sol", "SidioraERC20.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

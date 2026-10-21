@@ -23,7 +23,7 @@ import (
 func frozenV2Operation(t *testing.T, path, operationID string) string {
 	t.Helper()
 	read := func(name string, into any) {
-		raw, err := os.ReadFile("../../../../spec/production-system/integration/contracts/v2/" + name)
+		raw, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v2/" + name)
 		if err != nil || json.Unmarshal(raw, into) != nil {
 			t.Fatal("frozen v2 contract unreadable", name, err)
 		}

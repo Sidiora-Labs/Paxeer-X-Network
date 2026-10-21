@@ -371,7 +371,7 @@ func TestActualRoutedBuyKeepsThreeActorsAndUnknownRevisions(t *testing.T) {
 		t.Fatal("actual routed swap", err)
 	}
 	receipt := c.mined(t, tx)
-	catalogBytes, err := os.ReadFile("../../../../spec/production-system/integration/contracts/v1/chain/abi-catalog.json")
+	catalogBytes, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v1/chain/abi-catalog.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,7 +455,7 @@ func TestActualSameTransactionUpgradeSelectsNewABIEpoch(t *testing.T) {
 		t.Fatal("actual upgrade event absent")
 	}
 	boundary := decode.Order{Block: receipt.BlockNumber.Uint64(), Transaction: receipt.TransactionIndex, Log: upgrade.Index + 1}
-	catalogBytes, err := os.ReadFile("../../../../spec/production-system/integration/contracts/v1/chain/abi-catalog.json")
+	catalogBytes, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v1/chain/abi-catalog.json")
 	if err != nil {
 		t.Fatal(err)
 	}

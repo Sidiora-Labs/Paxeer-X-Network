@@ -1,7 +1,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 const out=process.env.CONTRACT_FREEZE_OUTPUT;assert.ok(out,'CONTRACT_FREEZE_OUTPUT required');
-const frozen=path.resolve(__dirname,'../../../../spec/production-system/integration/contracts/v1/chain');
+const frozen=path.resolve(__dirname,'../../../../../launchpad/spec/production-system/integration/contracts/v1/chain');
 const read=(name,dir=out)=>JSON.parse(fs.readFileSync(path.join(dir,name)));
 const c=read('abi-catalog.json'),g=read('golden-fixtures.json');assert.equal(c.chainId,125);assert.equal(g.chainId,125);assert.equal(g.creationFeeRaw,'1000000');assert.equal(g.native.symbol,'PAX');assert.equal(g.native.decimals,18);assert.equal(g.settlement.decimals,6);assert.equal(g.replayVerified,true);assert.ok(g.receipts.length>=38);assert.ok(g.decodedLogs.length>=300);assert.ok(g.getters.length>=5);assert.ok(g.negativeCases.length>=10);assert.equal(g.walletEvidence.length,2);for(const r of g.receipts)assert.equal(r.status,1);for(const n of g.negativeCases)assert.match(n.selector,/^0x[0-9a-f]{8}$/);
 const required=['GF01','GF02','GF03','GF04','GF05','GF06','GF07','GF08','GF09','GF11','GF12-burn','GF12-lp','GF13','GF14','GF15','GF16','GF18','GF25'];assert.deepEqual([...new Set(g.scenarios.map(s=>s.id))].sort(),required.sort());for(const s of g.scenarios)assert.equal(s.status,'asserted_from_real_contract_execution');for(const name of ['SidioraFactory','SidioraPool','SidioraERC20','EventEmitter','Router','Quoter','FeeAccumulator','FeesRouter','SidioraNFT'])assert.ok(c.contracts.find(x=>x.name===name));assert.ok(g.capabilityBlockers.some(b=>b.id==='optional-pecor-fixtures'&&b.status==='not_executed'));

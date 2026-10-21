@@ -22,7 +22,7 @@ import (
 // hash, which differs from go-ethereum's recomputed Header.Hash(). Resolution
 // must bind the receipt to the node-reported hash of its height.
 func TestResolveBindsReceiptToNodeReportedBlockHash(t *testing.T) {
-	catalog, err := os.ReadFile("../../../../spec/production-system/integration/contracts/v1/chain/abi-catalog.json")
+	catalog, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v1/chain/abi-catalog.json")
 	if err != nil {
 		t.Fatal(err)
 	}

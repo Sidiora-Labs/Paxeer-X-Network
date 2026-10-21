@@ -949,18 +949,18 @@ func phase4Calibration(ctx context.Context, p Phase4Plan, a *phase4Artifacts) er
 	if _, err := phase4BoundFile(p.PythonExecutable, p.PythonSHA256, 268435456); err != nil {
 		return err
 	}
-	for _, source := range []string{"tools/production/load/calibration.py", "tools/production/load/scheduler.py"} {
+	for _, source := range []string{"tools/launchpad/production/load/calibration.py", "tools/launchpad/production/load/scheduler.py"} {
 		if p.Sources[source] == "" {
 			return errors.New("existing raw calibration validator source binding required")
 		}
 	}
 	program := "import json,sys;sys.path.insert(0,sys.argv[1]);from calibration import evaluate;r=evaluate(json.load(open(sys.argv[2])),candidate=sys.argv[3],topology=sys.argv[4],generator=sys.argv[5]);print(json.dumps(r));sys.exit(0 if r['generator_calibrated'] else 1)"
-	command := exec.CommandContext(ctx, p.PythonExecutable, "-c", program, filepath.Join(p.SourceRoot, "tools/production/load"), p.CalibrationPath, p.Candidate, p.Topology, p.Generator)
+	command := exec.CommandContext(ctx, p.PythonExecutable, "-c", program, filepath.Join(p.SourceRoot, "tools/launchpad/production/load"), p.CalibrationPath, p.Candidate, p.Topology, p.Generator)
 	output, err := command.Output()
 	if len(output) > 1048576 {
 		return errors.New("calibration output byte bound")
 	}
-	if captureErr := a.append("calibration.ndjson", map[string]any{"sourceSha256": p.Sources["tools/production/load/calibration.py"], "reportsSha256": p.CalibrationSHA256, "raw": string(output), "exitSuccess": err == nil}); captureErr != nil {
+	if captureErr := a.append("calibration.ndjson", map[string]any{"sourceSha256": p.Sources["tools/launchpad/production/load/calibration.py"], "reportsSha256": p.CalibrationSHA256, "raw": string(output), "exitSuccess": err == nil}); captureErr != nil {
 		return captureErr
 	}
 	if err != nil {
@@ -1020,7 +1020,7 @@ func phase4Budget(p Phase4Plan, a *phase4Artifacts) error {
 	return a.append("budget.ndjson", map[string]any{"inputSha256": p.BudgetSHA256, "candidate": p.Candidate, "topology": p.Topology, "modeledWithContingencyMinor": cost.String(), "approvedMinor": approved.String(), "currency": budget.Currency, "quoteCount": len(budget.Quotes)})
 }
 func phase4SourceBindings(ctx context.Context, p Phase4Plan) error {
-	for _, required := range []string{"core/stats-workers/internal/holdings/phase4_measurement.go", "core/stats-workers/internal/holdings/phase4_measurement_test.go", "core/stats-workers/internal/httpapi/pool_holders.go", "core/stats-workers/internal/holdings/ingestion.go", "core/stats-workers/internal/holdings/postgres.go", "spec/production-system/spec.kvx"} {
+	for _, required := range []string{"services/launchpad/stats-workers/internal/holdings/phase4_measurement.go", "services/launchpad/stats-workers/internal/holdings/phase4_measurement_test.go", "services/launchpad/stats-workers/internal/httpapi/pool_holders.go", "services/launchpad/stats-workers/internal/holdings/ingestion.go", "services/launchpad/stats-workers/internal/holdings/postgres.go", "launchpad/spec/production-system/spec.kvx"} {
 		if p.Sources[required] == "" {
 			return errors.New("measurement/production/spec source missing from candidate binding")
 		}

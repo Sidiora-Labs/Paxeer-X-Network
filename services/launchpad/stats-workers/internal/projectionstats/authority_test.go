@@ -11,7 +11,7 @@ import (
 
 func historicalAuthority(t *testing.T) (*CoreReceiptAuthority, map[string]string) {
 	t.Helper()
-	dir := "../../../../spec/production-system/integration/contracts/v1/chain"
+	dir := "../../../../../launchpad/spec/production-system/integration/contracts/v1/chain"
 	a, e := OpenHistoricalCoreAuthority(dir)
 	if e != nil {
 		t.Fatal(e)
@@ -102,7 +102,7 @@ func TestHistoricalCoreReceiptAuthority(t *testing.T) {
 
 func TestHistoricalCoreAuthorityRejectsUnreviewedInputs(t *testing.T) {
 	dir := t.TempDir()
-	source := "../../../../spec/production-system/integration/contracts/v1/chain"
+	source := "../../../../../launchpad/spec/production-system/integration/contracts/v1/chain"
 	for name := range historicalCorePins {
 		b, e := os.ReadFile(filepath.Join(source, name))
 		if e != nil {

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Inventory existing source tests; never substitutes for executing them."""
 import hashlib,json,pathlib,re
-ROOT=pathlib.Path(__file__).resolve().parents[4]
-GROUPS=[('wallet-and-webhook','shared',['auth']),('http-security','shared',['http']),('secret-provider','shared',['secrets']),('gateway-session','media/gateway',['internal/auth']),('gateway-upload','media/gateway',['internal/upload','internal/image']),('gateway-proxy','media/gateway',['internal/proxy']),('gateway-object-key','media/gateway',['internal/serve']),('api-rate-limit','core/api',['internal/ratelimit']),('stats-webhook','core/stats-workers',['internal/httpapi']),('pnl-webhook','core/pnl-tracker',['internal/httpapi']),('charts-webhook','core/trading-charts',['internal/httpapi']),('metadata-signature','media/metadata',['internal/metadata']),('user-signature','media/user',['internal/user'])]
+ROOT=pathlib.Path(__file__).resolve().parents[5]
+GROUPS=[('wallet-and-webhook','sdk/launchpad/shared',['auth']),('http-security','sdk/launchpad/shared',['http']),('secret-provider','sdk/launchpad/shared',['secrets']),('gateway-session','services/launchpad/gateway',['internal/auth']),('gateway-upload','services/launchpad/gateway',['internal/upload','internal/image']),('gateway-proxy','services/launchpad/gateway',['internal/proxy']),('gateway-object-key','services/launchpad/gateway',['internal/serve']),('api-rate-limit','services/launchpad/api',['internal/ratelimit']),('stats-webhook','services/launchpad/stats-workers',['internal/httpapi']),('pnl-webhook','services/launchpad/pnl-tracker',['internal/httpapi']),('charts-webhook','services/launchpad/trading-charts',['internal/httpapi']),('metadata-signature','services/launchpad/metadata',['internal/metadata']),('user-signature','services/launchpad/user',['internal/user'])]
 rows=[]
 for ident,module,packages in GROUPS:
     sources=[]

@@ -14,9 +14,9 @@ import sys
 import time
 from urllib.parse import urlencode
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'phase2'))
-sys.path.insert(0, str(ROOT / 'tools/production/load'))
+sys.path.insert(0, str(ROOT / 'tools/launchpad/production/load'))
 from providers import BoundTools, PostgreSQL, ProviderFailure, Unavailable, file_sha, regular
 from render import RecoveryIdentity
 from phase2_types import Bindings
@@ -35,7 +35,7 @@ def bound(binding, *, private=True):
 
 
 def current_source(expected):
-    spec = importlib.util.spec_from_file_location('recovery_release_source_binding', ROOT / 'tools/production/qualify.py')
+    spec = importlib.util.spec_from_file_location('recovery_release_source_binding', ROOT / 'tools/launchpad/production/qualify.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     recovery.require(module.snapshot(ROOT)['sha256'] == expected, 'recovery release candidate source changed')

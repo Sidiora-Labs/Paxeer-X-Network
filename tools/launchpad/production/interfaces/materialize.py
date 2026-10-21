@@ -384,8 +384,8 @@ def validate_documents(files,inputs):
     return 'official bundled OpenAPI3.1/AsyncAPI3.0 document schemas + JSONSchema2020-12 meta-schema'
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--spec',default='spec/production-system/spec.kvx');p.add_argument('--out',default='spec/production-system/integration/contracts/v1');p.add_argument('--check',action='store_true');p.add_argument('--validate',action='store_true');p.add_argument('--major',type=int,default=1);p.add_argument('--version');p.add_argument('--api-base');p.add_argument('--catalog');p.add_argument('--supplementary');a=p.parse_args();out=pathlib.Path(a.out)
-    if a.major!=1 and out.resolve()==pathlib.Path('spec/production-system/integration/contracts/v1').resolve():raise ContractError('version2 generation cannot overwrite v1')
+    p=argparse.ArgumentParser();p.add_argument('--spec',default='launchpad/spec/production-system/spec.kvx');p.add_argument('--out',default='launchpad/spec/production-system/integration/contracts/v1');p.add_argument('--check',action='store_true');p.add_argument('--validate',action='store_true');p.add_argument('--major',type=int,default=1);p.add_argument('--version');p.add_argument('--api-base');p.add_argument('--catalog');p.add_argument('--supplementary');a=p.parse_args();out=pathlib.Path(a.out)
+    if a.major!=1 and out.resolve()==pathlib.Path('launchpad/spec/production-system/integration/contracts/v1').resolve():raise ContractError('version2 generation cannot overwrite v1')
     spec=json.load(open(a.catalog)) if a.catalog else tomllib.load(open(a.spec,'rb'))
     if 'sections' in spec:spec=spec['sections']
     supp=json.load(open(a.supplementary or (out/'inputs/supplementary.json' if a.major==1 else out/'supplementary.json')));files=generate(spec,supp,a.major,a.version,a.api_base)

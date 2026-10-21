@@ -7,7 +7,7 @@ const { once } = require('node:events');
 const { spawn } = require('node:child_process');
 (async () => {
   const standalone = path.resolve(process.env.NEXT_STANDALONE_ROOT || path.join(__dirname, '../../web/.next/standalone'));
-  const app = path.join(standalone, 'apps/web');
+  const app = path.join(standalone, 'web');
   const server = path.join(app, 'server.js');
   assert.ok(fs.existsSync(server), 'Build the standalone Next app before probing');
   const builtConfig = JSON.parse(fs.readFileSync(path.join(app, '.next/required-server-files.json'), 'utf8')).config;

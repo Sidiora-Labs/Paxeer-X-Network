@@ -10,7 +10,8 @@ import subprocess
 import sys
 
 BASE = Path(__file__).resolve().parent
-DEFAULT_ROOT = BASE.parents[3]
+DEFAULT_ROOT = BASE.parents[4]
+HOMES = ('launchpad', 'apps/launchpad', 'services/launchpad', 'sdk/launchpad', 'contracts/launchpad', 'deploy/launchpad', 'tools/launchpad')
 PRUNE = {'.git', 'node_modules', 'vendor', '.next', 'dist', '.cache'}
 
 
@@ -42,10 +43,11 @@ def load_manifest(root, manifest_path):
             if not entry.is_relative_to(directory) or not (entry / 'main.go').is_file():
                 raise ValueError('missing/unsafe service entrypoint: ' + row['path'])
     actual = set()
-    for current, dirs, files in os.walk(root):
-        dirs[:] = [name for name in dirs if name not in PRUNE and not name.startswith('.env')]
-        if 'go.mod' in files:
-            actual.add(Path(current).relative_to(root).as_posix())
+    for home in HOMES:
+        for current, dirs, files in os.walk(root / home):
+            dirs[:] = [name for name in dirs if name not in PRUNE and not name.startswith('.env')]
+            if 'go.mod' in files:
+                actual.add(Path(current).relative_to(root).as_posix())
     if actual != seen:
         raise ValueError('module coverage mismatch: missing=' + repr(sorted(seen - actual)) + '; unlisted=' + repr(sorted(actual - seen)))
     return manifest

@@ -478,7 +478,7 @@ func TestDevelopmentDiscoveryLeaderboardsAndWrites(t *testing.T) {
 
 // Every development route is a frozen v2 contract operation.
 func TestDevelopmentHistoryDiscoveryRoutesAreContractOperations(t *testing.T) {
-	raw, err := os.ReadFile("../../../../spec/production-system/integration/contracts/v2/openapi.json")
+	raw, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v2/openapi.json")
 	if err != nil {
 		t.Fatal(err)
 	}

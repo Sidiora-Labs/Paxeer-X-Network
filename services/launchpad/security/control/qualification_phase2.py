@@ -9,12 +9,12 @@ import subprocess
 import tempfile
 import time
 
-root = Path(__file__).resolve().parents[2]
-owned = root / 'security/control'
+root = Path(__file__).resolve().parents[4]
+owned = root / 'services/launchpad/security/control'
 parser = argparse.ArgumentParser()
 parser.add_argument('--phase', choices=('2', '3'), default='2')
 phase = parser.parse_args().phase
-output = root / ('evidence/production-system/L47/phase' + phase)
+output = root / ('launchpad/evidence/production-system/L47/phase' + phase)
 output.mkdir(parents=True, exist_ok=True)
 expected = {
     'TestPhase2AuthenticatedReplayTenRetriesOneDurableJob',
@@ -40,9 +40,9 @@ with tempfile.TemporaryDirectory(prefix='kindle-l47-phase' + phase + '-') as dir
     work = Path(directory)
     for file in owned.glob('*.go'):
         shutil.copy2(file, work / file.name)
-    module = (root / 'shared/go.mod').read_text().replace('=> ../protocol', '=> ' + str(root / 'protocol'))
+    module = (root / 'sdk/launchpad/shared/go.mod').read_text().replace('=> ../protocol', '=> ' + str(root / 'sdk/launchpad/protocol'))
     (work / 'go.mod').write_text(module)
-    shutil.copy2(root / 'shared/go.sum', work / 'go.sum')
+    shutil.copy2(root / 'sdk/launchpad/shared/go.sum', work / 'go.sum')
     environment = dict(os.environ, GOWORK='off', GOMAXPROCS='2', GOFLAGS='-mod=readonly', L47_SOURCE_ROOT=str(root))
     command = ['go', 'test', '-race', '-p', '1', '-count=1', '-json', '-run', '^TestPhase2' if phase == '2' else '^TestPhase[23]', '.']
     started = time.time()

@@ -1,6 +1,6 @@
 # L48 workload primitives
 
-Run `python3 -m unittest discover -s tools/production/load -p 'test_*.py' -v`.
+Run `python3 -m unittest discover -s tools/launchpad/production/load -p 'test_*.py' -v`.
 Only loopback ports 24800/24801 are opened; occupied ports fail rather than reusing peers.
 The tests collect actual monotonic sender/receiver timestamps, retain every scheduled
 arrival, and exercise a real two-second receiver pause and RFC6455 masked subscription.

@@ -39,7 +39,7 @@ def main():
     args = parser.parse_args()
     if args.prepare_harness and args.phase != 4:
         raise SystemExit('harness preparation requires phase 4')
-    root = Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[3]
     required = ['DELIVERY_TEST_DSN', 'DELIVERY_ARCHIVE_ENDPOINT', 'DELIVERY_ARCHIVE_BUCKET',
                 'DELIVERY_ARCHIVE_ACCESS_KEY', 'DELIVERY_ARCHIVE_SECRET_KEY', 'DELIVERY_ARCHIVE_FROM',
                 'DELIVERY_ARCHIVE_TO', 'DELIVERY_ARCHIVE_STREAM', 'DELIVERY_ARCHIVE_DEPLOYMENT',
@@ -53,15 +53,15 @@ def main():
         raise SystemExit('actual private runtime inputs unavailable: ' + ','.join(missing))
     args.output.mkdir(parents=True, exist_ok=True, mode=0o700)
     commands = [
-        ['go', 'test', '-count=1', '-timeout=180s', '-run', 'Test(WebhookTargetsResumeIndependentlyPostgresTLS|ArchiveActualCanonicalPostgresAndObjectStorage|ArchiveManifestRequiresEveryBlockIncludingEmpty|ShadowExactSetAndDuplicateRejection|MeasuredRunwayFailsUnavailableInputs)$', './shared/delivery'],
-        ['go', 'test', '-count=1', '-timeout=60s', '-run', 'Test(CanonicalShadowUsesFrozenDurableIdentity|WebhookStagerRejectsMissingRealProviders)$', './core/indexer/internal/publisher']]
+        ['go', '-C', 'services/launchpad', 'test', '-count=1', '-timeout=180s', '-run', 'Test(WebhookTargetsResumeIndependentlyPostgresTLS|ArchiveActualCanonicalPostgresAndObjectStorage|ArchiveManifestRequiresEveryBlockIncludingEmpty|ShadowExactSetAndDuplicateRejection|MeasuredRunwayFailsUnavailableInputs)$', '../../sdk/launchpad/shared/delivery'],
+        ['go', '-C', 'services/launchpad', 'test', '-count=1', '-timeout=60s', '-run', 'Test(CanonicalShadowUsesFrozenDurableIdentity|WebhookStagerRejectsMissingRealProviders)$', './indexer/internal/publisher']]
     if args.phase == 3:
         commands = [
-            ['go', 'test', '-count=1', '-timeout=180s', '-run', 'TestPhase3Actual(RelayCrashAndConsumerRestart|OrderedPoisonAndHundredDuplicates)$', './shared/delivery/natsdriver'],
-            ['go', 'test', '-count=1', '-timeout=180s', '-run', 'Test(PostgresDelivery|OrderedPostgres|WebhookTargetsResumeIndependentlyPostgresTLS)$', './shared/delivery']]
+            ['go', '-C', 'services/launchpad', 'test', '-count=1', '-timeout=180s', '-run', 'TestPhase3Actual(RelayCrashAndConsumerRestart|OrderedPoisonAndHundredDuplicates)$', '../../sdk/launchpad/shared/delivery/natsdriver'],
+            ['go', '-C', 'services/launchpad', 'test', '-count=1', '-timeout=180s', '-run', 'Test(PostgresDelivery|OrderedPostgres|WebhookTargetsResumeIndependentlyPostgresTLS)$', '../../sdk/launchpad/shared/delivery']]
     timeout = 200
     if args.phase == 4:
-        measurement = [sys.executable, 'tools/delivery/measure_phase4.py', '--ledger', os.environ['DELIVERY_PHASE4_LEDGER'], '--ledger-sha256', os.environ['DELIVERY_PHASE4_LEDGER_SHA256'], '--candidate-sha256', os.environ['DELIVERY_PHASE4_CANDIDATE_SHA256'], '--output', str(args.output / 'measurement')]
+        measurement = [sys.executable, 'tools/launchpad/delivery/measure_phase4.py', '--ledger', os.environ['DELIVERY_PHASE4_LEDGER'], '--ledger-sha256', os.environ['DELIVERY_PHASE4_LEDGER_SHA256'], '--candidate-sha256', os.environ['DELIVERY_PHASE4_CANDIDATE_SHA256'], '--output', str(args.output / 'measurement')]
         if args.prepare_harness:
             measurement.append('--prepare-harness')
         else:
@@ -71,7 +71,7 @@ def main():
                 raise SystemExit('approved total measurement timeout required')
         if not args.prepare_harness:
             timeout += ledger['budgets']['cleanup_seconds']
-        commands = [[sys.executable, '-m', 'unittest', 'discover', '-s', 'tools/delivery', '-p', 'test_measure_phase4.py'], measurement]
+        commands = [[sys.executable, '-m', 'unittest', 'discover', '-s', 'tools/launchpad/delivery', '-p', 'test_measure_phase4.py'], measurement]
     results = []
     for index, command in enumerate(commands):
         log = args.output / f'native-{index}.log'

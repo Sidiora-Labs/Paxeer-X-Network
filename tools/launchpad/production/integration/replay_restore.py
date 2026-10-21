@@ -16,8 +16,8 @@ import time
 from adapters import RecoveryFaults, RecoveryPermit
 from journeys import Journey, load_configuration, persistence, write
 
-ROOT = Path(__file__).resolve().parents[3]
-PROVIDERS = ROOT / 'deploy/production/recovery/phase2'
+ROOT = Path(__file__).resolve().parents[4]
+PROVIDERS = ROOT / 'deploy/launchpad/production/recovery/phase2'
 SOURCES = ('replay_restore.py', 'persisted-state.py', 'evidence_policy.py', 'adapters.py', 'journeys.py', 'browser-journeys.mjs')
 SCENARIOS = frozenset({'isolated-regressions', 'durable-replay-calibration', 'physical-pitr-checkpoint', 'recovery-journey-timestamps'})
 
@@ -71,7 +71,7 @@ def deployment_modules():
 
 
 def shared_modules():
-    path = str(ROOT / 'tools/production/load')
+    path = str(ROOT / 'tools/launchpad/production/load')
     if path not in sys.path:
         sys.path.insert(0, path)
     import capture
@@ -100,7 +100,7 @@ def load_configuration4(path, sha256, source):
     manifest = Path(__file__).with_name('phase-4-scenario-manifest.json')
     require(c.get('scenario_manifest_sha256') == digest(manifest.read_bytes()), 'phase4 scenario manifest changed')
     require(c.get('scope') == 'isolated_component' and c.get('final_gate') == '9.1', 'phase4 isolated proof cannot run final global gate')
-    require(set(c.get('provider_sources',{})) == {'deploy/production/recovery/recovery.py','deploy/production/recovery/phase2/providers.py','deploy/production/recovery/phase2/render.py','deploy/production/recovery/phase2/reconciliation.sql'}, 'actual recovery provider source inventory required')
+    require(set(c.get('provider_sources',{})) == {'deploy/launchpad/production/recovery/recovery.py','deploy/launchpad/production/recovery/phase2/providers.py','deploy/launchpad/production/recovery/phase2/render.py','deploy/launchpad/production/recovery/phase2/reconciliation.sql'}, 'actual recovery provider source inventory required')
     for relative, sha in c['provider_sources'].items():
         path = ROOT / relative
         require(path.is_file() and not path.is_symlink() and digest(path.read_bytes()) == sha, 'actual recovery provider source changed')

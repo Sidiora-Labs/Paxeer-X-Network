@@ -384,7 +384,7 @@ func restMeasurementSource(c restMeasurementInput) error {
 	if err != nil || fmt.Sprintf("%x", sha256.Sum256(canonical)) != manifest.SHA {
 		return errors.New("source manifest digest invalid")
 	}
-	root, err := filepath.Abs("../../../..")
+	root, err := filepath.Abs("../../../../..")
 	if err != nil {
 		return err
 	}

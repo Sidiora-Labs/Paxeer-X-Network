@@ -2,8 +2,8 @@
 import json
 import pathlib
 import tomllib
-ROOT = pathlib.Path(__file__).resolve().parents[3]
-SPEC = ROOT/'spec/production-system/spec.kvx'
+ROOT = pathlib.Path(__file__).resolve().parents[4]
+SPEC = ROOT/'launchpad/spec/production-system/spec.kvx'
 # Explicit behavioral owners, not aggregate domain-coverage inference.
 OWNERS = {
 'PF01':[27,39,41], 'PF02':[27,20], 'PF03':[19,20,30], 'PF04':[21,37,38],

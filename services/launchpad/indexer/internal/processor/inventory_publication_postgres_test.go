@@ -66,7 +66,7 @@ func newInventoryHarnessWithWait(t *testing.T, ctx context.Context, wait int64) 
 	applyProductionSchema(t, ctx, pool)
 	ddl := []string{`CREATE SCHEMA IF NOT EXISTS "pnl"`}
 	for _, id := range []string{"160000", "160001"} {
-		raw, err := os.ReadFile(filepath.Join(repositoryRoot(), "spec", "production-system", "integration", "migrations", id+".sql"))
+		raw, err := os.ReadFile(filepath.Join(repositoryRoot(), "launchpad", "spec", "production-system", "integration", "migrations", id+".sql"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -283,7 +283,7 @@ type pnlIssuedRow struct {
 
 func loadPnlIssuedRow(t *testing.T) pnlIssuedRow {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(repositoryRoot(), "core", "pnl-tracker", "internal", "production", "l16", "testdata", "indexer_real_market", "traded.json"))
+	data, err := os.ReadFile(filepath.Join(repositoryRoot(), "services", "launchpad", "pnl-tracker", "internal", "production", "l16", "testdata", "indexer_real_market", "traded.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -70,7 +70,7 @@ func TestDevelopmentNetworkReadsMountOnlyFrozenOperations(t *testing.T) {
 	}
 	router := chi.NewRouter()
 	d.register(router, nil)
-	raw, err := os.ReadFile("../../../../spec/production-system/integration/contracts/v2/openapi.json")
+	raw, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v2/openapi.json")
 	if err != nil {
 		t.Fatal(err)
 	}

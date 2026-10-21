@@ -62,14 +62,14 @@ func TestPhase4RealMeasurementProvidersAndIntegerReference(t *testing.T) {
 	if config == "" || !qualifiedDigest.MatchString(configDigest) {
 		t.Fatal("admitted current-source Phase4 config and SHA256 required")
 	}
-	root, err := filepath.Abs("../../../..")
+	root, err := filepath.Abs("../../../../..")
 	if err != nil {
 		t.Fatal(err)
 	}
-	output := filepath.Join(root, "evidence/production-system/L13/phase4", fmt.Sprintf("native-reference-%d", time.Now().UnixNano()))
+	output := filepath.Join(root, "launchpad/evidence/production-system/L13/phase4", fmt.Sprintf("native-reference-%d", time.Now().UnixNano()))
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	runner := filepath.Join(root, "core/stats-workers/internal/projectionstats/qualify_phase2.py")
+	runner := filepath.Join(root, "services/launchpad/stats-workers/internal/projectionstats/qualify_phase2.py")
 	command := exec.CommandContext(ctx, "python3", runner, "--config", config, "--config-sha256", configDigest, "--output", output, "--reconcile-only")
 	captured, err := command.CombinedOutput()
 	if err != nil {

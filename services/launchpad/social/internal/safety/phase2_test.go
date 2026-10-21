@@ -18,7 +18,7 @@ import (
 func TestPostgresLinkedAppealReversalPreservesIndependentGlobalBan(t *testing.T) {
 	s := fixture(t)
 	ctx := principal(s, walletA, "room_moderator")
-	ddl, e := os.ReadFile("../../../../spec/production-system/handoffs/L38/phase2/schema-proposal.sql")
+	ddl, e := os.ReadFile("../../../../../launchpad/spec/production-system/handoffs/L38/phase2/schema-proposal.sql")
 	if e != nil {
 		t.Fatal(e)
 	}

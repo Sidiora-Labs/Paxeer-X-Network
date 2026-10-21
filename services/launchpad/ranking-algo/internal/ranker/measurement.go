@@ -96,7 +96,7 @@ type FormulaManifest struct {
 
 func CurrentFormulaManifest(files map[string]string) (FormulaManifest, string, error) {
 	m := FormulaManifest{AlgorithmVersion: AlgorithmVersion, FeatureSchemaVersion: FeatureSchemaVersion, Policies: []CategoryPolicy{}, Sources: map[string]string{}}
-	for _, name := range []string{"core/ranking-algo/internal/ranker/finite.go", "core/ranking-algo/internal/ranker/score.go", "core/ranking-algo/internal/ranker/snapshot.go"} {
+	for _, name := range []string{"services/launchpad/ranking-algo/internal/ranker/finite.go", "services/launchpad/ranking-algo/internal/ranker/score.go", "services/launchpad/ranking-algo/internal/ranker/snapshot.go"} {
 		if !hashGrammar.MatchString(files[name]) {
 			return m, "", ErrUnavailable
 		}

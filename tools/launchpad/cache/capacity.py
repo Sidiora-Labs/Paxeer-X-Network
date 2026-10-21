@@ -18,8 +18,8 @@ import time
 import uuid
 from urllib.parse import urlencode
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'tools/production/load'))
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / 'tools/launchpad/production/load'))
 from phase2_accounts import WalletSigner, Account
 from phase2_feeder import PostgresObserver
 from phase2_runner import resolve_routes, route_category
@@ -31,8 +31,8 @@ from calibration import linux_cpu_snapshot, cpu_fraction, nic_fraction
 
 
 def source_binding():
-    paths = [ROOT / 'tools/cache/capacity.py', ROOT / 'core/api/internal/cache/adapter.go']
-    paths += sorted((ROOT / 'tools/production/load').glob('*.py'))
+    paths = [ROOT / 'tools/launchpad/cache/capacity.py', ROOT / 'services/launchpad/api/internal/cache/adapter.go']
+    paths += sorted((ROOT / 'tools/launchpad/production/load').glob('*.py'))
     return digest(canonical({str(p.relative_to(ROOT)): digest(p.read_bytes()) for p in paths}))
 
 
@@ -278,7 +278,7 @@ async def run(config,output,harness_check=False):
     bindings = Bindings(**config['bindings'])
     if bindings.generator != source_binding(): raise ValueError('current measurement/provider source binding mismatch')
     out = Path(output).resolve()
-    if not out.is_relative_to((ROOT/'evidence/production-system/L09/phase4').resolve()): raise ValueError('lane-owned evidence output required')
+    if not out.is_relative_to((ROOT/'launchpad/evidence/production-system/L09/phase4').resolve()): raise ValueError('lane-owned evidence output required')
     out.mkdir(mode=0o700,parents=True,exist_ok=False)
     files = {name:(out/(name+'.ndjson')).open('x',encoding='utf-8') for name in ('http-samples','metrics','fault-control','control-requests')}
     signer = WalletSigner(config['node'],config['node_sha256'],config['ethers_module'])

@@ -71,376 +71,376 @@
   },
   "mandatory_gates": {
     "0.1": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 0.1 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 0.1 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [],
       "kind": "serial_gate"
     },
     "0.2": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 0.2 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 0.2 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.1"
       ],
       "kind": "serial_gate"
     },
     "0.3": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 0.3 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 0.3 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.2"
       ],
       "kind": "serial_gate"
     },
     "1.01": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.01 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.01 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.02": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.02 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.02 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.03": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.03 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.03 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.04": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.04 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.04 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.05": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.05 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.05 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.06": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.06 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.06 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.07": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.07 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.07 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.08": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.08 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.08 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.09": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.09 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.09 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.10": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.10 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.10 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.11": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.11 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.11 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.12": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.12 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.12 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.13": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.13 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.13 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.14": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.14 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.14 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.15": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.15 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.15 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.16": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.16 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.16 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.17": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.17 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.17 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.18": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.18 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.18 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.19": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.19 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.19 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.20": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.20 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.20 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.21": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.21 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.21 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.22": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.22 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.22 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.23": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.23 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.23 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.24": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.24 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.24 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.25": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.25 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.25 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.26": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.26 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.26 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.27": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.27 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.27 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.28": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.28 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.28 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.29": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.29 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.29 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.30": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.30 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.30 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.31": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.31 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.31 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.32": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.32 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.32 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.33": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.33 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.33 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.34": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.34 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.34 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.35": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.35 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.35 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.36": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.36 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.36 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.37": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.37 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.37 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.38": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.38 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.38 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.39": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.39 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.39 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.40": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.40 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.40 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.41": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.41 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.41 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.42": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.42 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.42 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.43": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.43 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.43 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.44": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.44 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.44 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.45": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.45 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.45 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.46": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.46 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.46 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.47": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.47 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.47 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.48": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.48 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.48 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.49": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.49 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.49 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.50": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.50 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.50 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "0.3"
       ],
       "kind": "parallel_lane"
     },
     "1.99": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 1.99 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 1.99 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.01",
         "1.02",
@@ -496,357 +496,357 @@
       "kind": "serial_gate"
     },
     "2.01": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.01 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.01 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.02": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.02 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.02 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.03": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.03 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.03 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.04": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.04 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.04 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.05": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.05 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.05 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.06": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.06 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.06 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.07": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.07 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.07 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.08": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.08 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.08 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.09": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.09 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.09 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.10": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.10 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.10 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.11": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.11 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.11 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.12": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.12 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.12 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.13": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.13 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.13 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.14": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.14 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.14 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.15": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.15 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.15 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.16": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.16 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.16 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.17": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.17 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.17 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.18": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.18 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.18 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.19": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.19 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.19 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.20": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.20 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.20 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.21": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.21 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.21 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.22": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.22 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.22 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.23": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.23 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.23 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.24": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.24 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.24 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.25": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.25 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.25 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.26": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.26 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.26 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.27": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.27 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.27 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.28": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.28 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.28 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.29": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.29 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.29 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.30": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.30 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.30 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.31": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.31 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.31 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.32": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.32 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.32 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.33": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.33 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.33 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.34": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.34 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.34 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.35": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.35 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.35 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.36": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.36 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.36 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.37": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.37 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.37 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.38": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.38 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.38 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.39": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.39 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.39 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.40": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.40 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.40 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.41": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.41 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.41 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.42": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.42 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.42 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.43": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.43 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.43 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.44": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.44 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.44 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.45": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.45 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.45 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.46": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.46 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.46 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.47": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.47 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.47 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.48": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.48 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.48 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.49": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.49 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.49 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.50": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.50 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.50 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "1.99"
       ],
       "kind": "parallel_lane"
     },
     "2.99": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 2.99 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 2.99 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.01",
         "2.02",
@@ -902,357 +902,357 @@
       "kind": "serial_gate"
     },
     "3.01": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.01 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.01 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.02": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.02 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.02 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.03": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.03 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.03 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.04": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.04 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.04 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.05": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.05 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.05 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.06": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.06 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.06 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.07": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.07 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.07 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.08": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.08 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.08 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.09": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.09 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.09 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.10": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.10 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.10 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.11": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.11 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.11 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.12": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.12 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.12 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.13": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.13 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.13 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.14": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.14 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.14 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.15": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.15 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.15 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.16": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.16 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.16 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.17": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.17 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.17 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.18": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.18 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.18 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.19": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.19 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.19 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.20": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.20 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.20 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.21": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.21 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.21 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.22": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.22 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.22 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.23": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.23 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.23 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.24": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.24 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.24 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.25": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.25 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.25 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.26": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.26 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.26 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.27": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.27 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.27 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.28": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.28 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.28 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.29": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.29 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.29 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.30": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.30 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.30 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.31": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.31 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.31 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.32": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.32 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.32 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.33": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.33 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.33 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.34": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.34 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.34 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.35": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.35 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.35 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.36": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.36 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.36 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.37": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.37 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.37 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.38": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.38 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.38 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.39": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.39 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.39 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.40": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.40 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.40 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.41": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.41 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.41 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.42": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.42 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.42 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.43": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.43 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.43 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.44": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.44 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.44 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.45": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.45 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.45 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.46": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.46 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.46 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.47": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.47 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.47 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.48": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.48 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.48 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.49": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.49 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.49 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.50": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.50 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.50 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "2.99"
       ],
       "kind": "parallel_lane"
     },
     "3.99": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 3.99 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.99 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.01",
         "3.02",
@@ -1308,357 +1308,357 @@
       "kind": "serial_gate"
     },
     "4.01": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.01 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.01 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.02": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.02 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.02 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.03": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.03 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.03 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.04": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.04 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.04 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.05": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.05 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.05 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.06": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.06 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.06 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.07": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.07 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.07 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.08": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.08 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.08 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.09": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.09 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.09 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.10": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.10 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.10 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.11": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.11 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.11 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.12": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.12 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.12 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.13": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.13 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.13 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.14": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.14 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.14 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.15": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.15 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.15 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.16": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.16 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.16 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.17": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.17 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.17 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.18": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.18 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.18 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.19": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.19 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.19 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.20": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.20 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.20 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.21": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.21 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.21 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.22": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.22 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.22 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.23": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.23 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.23 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.24": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.24 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.24 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.25": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.25 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.25 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.26": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.26 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.26 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.27": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.27 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.27 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.28": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.28 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.28 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.29": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.29 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.29 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.30": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.30 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.30 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.31": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.31 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.31 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.32": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.32 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.32 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.33": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.33 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.33 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.34": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.34 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.34 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.35": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.35 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.35 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.36": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.36 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.36 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.37": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.37 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.37 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.38": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.38 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.38 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.39": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.39 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.39 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.40": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.40 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.40 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.41": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.41 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.41 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.42": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.42 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.42 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.43": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.43 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.43 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.44": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.44 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.44 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.45": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.45 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.45 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.46": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.46 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.46 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.47": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.47 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.47 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.48": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.48 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.48 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.49": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.49 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.49 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.50": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.50 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.50 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "3.99"
       ],
       "kind": "parallel_lane"
     },
     "4.99": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 4.99 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 4.99 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "4.01",
         "4.02",
@@ -1714,16 +1714,16 @@
       "kind": "serial_gate"
     },
     "9.1": {
-      "verify_cmd": "python3 tools/production/qualify.py --task 9.1 --spec spec/production-system/spec.kvx --require-current-source",
+      "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 9.1 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
       "requires": [
         "4.99"
       ],
       "kind": "serial_gate"
     }
   },
-  "capacity_ledger_source": "tools/production/load/workload.py:ledger",
-  "workload_mix_source": "tools/production/load/workload.py:MIX",
-  "capture_schema": "tools/production/load/final-shared-capture.schema.json",
+  "capacity_ledger_source": "tools/launchpad/production/load/workload.py:ledger",
+  "workload_mix_source": "tools/launchpad/production/load/workload.py:MIX",
+  "capture_schema": "tools/launchpad/production/load/final-shared-capture.schema.json",
   "final_integrated_evidence_state": "pending",
   "validator_ready": false,
   "capacity_qualified": false,

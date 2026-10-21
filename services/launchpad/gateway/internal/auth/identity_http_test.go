@@ -374,7 +374,7 @@ func TestIdentityOwnerRealJetStreamRevisionDedup(t *testing.T) {
 	if _, err = js.CreateConsumer(ctx, stream, broker); err != nil {
 		t.Fatal(err)
 	}
-	sourceRoot, err := filepath.Abs("../../../..")
+	sourceRoot, err := filepath.Abs("../../../../..")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +382,7 @@ func TestIdentityOwnerRealJetStreamRevisionDedup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	contract, err := os.ReadFile(filepath.Join(sourceRoot, "spec/production-system/integration/contracts/v2/catalog.json"))
+	contract, err := os.ReadFile(filepath.Join(sourceRoot, "launchpad/spec/production-system/integration/contracts/v2/catalog.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

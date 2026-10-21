@@ -34,14 +34,15 @@ def escaped_module(value):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[4])
+    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[5])
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     root = args.root.resolve()
     paths = []
-    for directory, children, files in os.walk(root, followlinks=False):
-        children[:] = sorted(d for d in children if d not in EXCLUDED and not Path(directory, d).is_symlink())
-        paths.extend(Path(directory, f) for f in sorted(files) if f in {'go.mod', 'package.json'} or f.lower().startswith(('license', 'copying', 'notice', 'copyright')))
+    for home in ('launchpad', 'apps/launchpad', 'services/launchpad', 'sdk/launchpad', 'contracts/launchpad', 'deploy/launchpad', 'tools/launchpad'):
+        for directory, children, files in os.walk(root / home, followlinks=False):
+            children[:] = sorted(d for d in children if d not in EXCLUDED and not Path(directory, d).is_symlink())
+            paths.extend(Path(directory, f) for f in sorted(files) if f in {'go.mod', 'package.json'} or f.lower().startswith(('license', 'copying', 'notice', 'copyright')))
     if len(paths) > 10000:
         raise SystemExit('inventory exceeded 10000 source file bound')
     tools = [command(a, root) for a in [['go', 'version'], ['node', '--version'], ['npm', '--version'], ['pnpm', '--version'], ['corepack', '--version'], ['python3', '--version'], ['protoc', '--version'], ['buf', '--version'], ['docker', '--version'], ['solc', '--version'], ['forge', '--version']]]

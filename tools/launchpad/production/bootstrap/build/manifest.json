@@ -8,7 +8,7 @@
   },
   "modules": [
     {
-      "path": "shared",
+      "path": "sdk/launchpad/shared",
       "module": "github.com/Sidiora-Technologies/KindleLaunch/shared",
       "goVersion": "1.25.0",
       "listArgv": [
@@ -26,7 +26,7 @@
       "entrypoints": []
     },
     {
-      "path": "protocol",
+      "path": "sdk/launchpad/protocol",
       "module": "github.com/Sidiora-Technologies/KindleLaunch/protocol",
       "goVersion": "1.25.0",
       "listArgv": [
@@ -44,7 +44,7 @@
       "entrypoints": []
     },
     {
-      "path": "core/api",
+      "path": "services/launchpad/api",
       "module": "github.com/Sidiora-Technologies/KindleLaunch/core/api",
       "goVersion": "1.25.0",
       "listArgv": [
@@ -64,7 +64,7 @@
       ]
     },
     {
-      "path": "core/indexer",
+      "path": "services/launchpad/indexer",
       "module": "github.com/Sidiora-Technologies/KindleLaunch/core/indexer",
       "goVersion": "1.25.0",
       "listArgv": [
@@ -84,7 +84,7 @@
       ]
     },
     {
-      "path": "core/pnl-tracker",
+      "path": "services/launchpad/pnl-tracker",
       "module": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker",
       "goVersion": "1.25.0",
       "listArgv": [
@@ -104,7 +104,7 @@
       ]
     },
     {
-      "path": "core/ranking-algo",
+      "path": "services/launchpad/ranking-algo",
       "module": "github.com/Sidiora-Technologies/KindleLaunch/core/ranking-algo",
       "goVersion": "1.25.0",
       "listArgv": [
@@ -124,7 +124,7 @@
       ]
     },
     {
-      "path": "core/stats-workers",
+      "path": "services/launchpad/stats-workers",
       "module": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers",
       "goVersion": "1.25.0",
       "listArgv": [
@@ -144,7 +144,7 @@
       ]
     },
     {
-      "path": "core/trading-charts",
+      "path": "services/launchpad/trading-charts",
       "module": "github.com/Sidiora-Technologies/KindleLaunch/core/trading-charts",
       "goVersion": "1.25.0",
       "listArgv": [
@@ -164,7 +164,7 @@
       ]
     },
     {
-      "path": "media/gateway",
+      "path": "services/launchpad/gateway",
       "module": "github.com/Sidiora-Technologies/KindleLaunch/media/gateway",
       "goVersion": "1.25.0",
       "listArgv": [
@@ -184,7 +184,7 @@
       ]
     },
     {
-      "path": "media/livestream",
+      "path": "services/launchpad/livestream",
       "module": "github.com/Sidiora-Technologies/KindleLaunch/media/livestream",
       "goVersion": "1.25.0",
       "listArgv": [
@@ -204,7 +204,7 @@
       ]
     },
     {
-      "path": "media/metadata",
+      "path": "services/launchpad/metadata",
       "module": "github.com/Sidiora-Technologies/KindleLaunch/media/metadata",
       "goVersion": "1.25.0",
       "listArgv": [
@@ -224,7 +224,7 @@
       ]
     },
     {
-      "path": "media/social",
+      "path": "services/launchpad/social",
       "module": "github.com/Sidiora-Technologies/KindleLaunch/media/social",
       "goVersion": "1.25.0",
       "listArgv": [
@@ -244,7 +244,7 @@
       ]
     },
     {
-      "path": "media/user",
+      "path": "services/launchpad/user",
       "module": "github.com/Sidiora-Technologies/KindleLaunch/media/user",
       "goVersion": "1.25.0",
       "listArgv": [

@@ -7,7 +7,7 @@ import sys
 import time
 import uuid
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+ROOT = pathlib.Path(__file__).resolve().parents[3]
 NAME = 'kindle-l07-postgres-' + uuid.uuid4().hex
 IMAGE = 'postgres:16-alpine'
 
@@ -51,7 +51,7 @@ def main():
                    L07_POSTGRES_DSN=f'postgres://kl:kl@127.0.0.1:{port}/kindle_test?sslmode=disable')
         process = subprocess.Popen(
             ['go', 'test', '-p', '1', '-count=1', '-json', './db', './db/production'],
-            cwd=ROOT / 'shared', env=env, start_new_session=True)
+            cwd=ROOT / 'sdk/launchpad/shared', env=env, start_new_session=True)
         try:
             result = process.wait(timeout=900)
         finally:
@@ -156,11 +156,11 @@ def phase4_main(configuration, expected_sha256):
     for signum in (signal.SIGINT, signal.SIGTERM):
         signal.signal(signum, interrupted)
 
-    provider_path = ROOT / 'deploy/production/recovery/phase2/providers.py'
+    provider_path = ROOT / 'deploy/launchpad/production/recovery/phase2/providers.py'
     specification = importlib.util.spec_from_file_location('kindle_storage_recovery_providers', provider_path)
     recovery = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(recovery)
-    sys.path.insert(0, str(ROOT / 'deploy/production/topology'))
+    sys.path.insert(0, str(ROOT / 'deploy/launchpad/production/topology'))
     from phase2.providers import Kubernetes, validate_connected_plan, v1
     tools = recovery.BoundTools(config['tools'])
     topology = document(config['topologyConfiguration'])
@@ -466,7 +466,7 @@ def phase4_native_restore():
         signal.signal(signum, interrupted)
     def need(condition, message):
         if not condition: raise RuntimeError(message)
-    spec = importlib.util.spec_from_file_location('kindle_native_restore', ROOT / 'deploy/production/recovery/phase2/providers.py')
+    spec = importlib.util.spec_from_file_location('kindle_native_restore', ROOT / 'deploy/launchpad/production/recovery/phase2/providers.py')
     provider = importlib.util.module_from_spec(spec); spec.loader.exec_module(provider)
     path = provider.regular(arguments.configuration, 2 * 1024 * 1024, private=True)
     need(provider.file_sha(path) == arguments.configuration_sha256, 'native restore authority changed')
@@ -511,7 +511,7 @@ def phase4_native_restore():
         while postgres.query('SELECT NOT pg_is_in_recovery()') != 't':
             need(time.monotonic() < promotion_deadline, 'isolated restored writer did not promote')
             time.sleep(0.1)
-        recovery_query = (ROOT / 'shared/db/production/migrations.go').read_text().split('const recoverySnapshotSQL = `', 1)[1].split('`', 1)[0]
+        recovery_query = (ROOT / 'sdk/launchpad/shared/db/production/migrations.go').read_text().split('const recoverySnapshotSQL = `', 1)[1].split('`', 1)[0]
         recovery_query = recovery_query.replace("coalesce(jsonb_agg(to_jsonb(e) ORDER BY chain_id,height,transaction_index,log_index),'[]'::jsonb)::text", "encode(sha256(convert_to(coalesce(jsonb_agg(to_jsonb(e) ORDER BY chain_id,height,transaction_index,log_index),'[]'::jsonb)::text,'UTF8')),'hex')")
         recovery_query = recovery_query.replace("coalesce(jsonb_agg(to_jsonb(o) ORDER BY event_id),'[]'::jsonb)::text", "encode(sha256(convert_to(coalesce(jsonb_agg(to_jsonb(o) ORDER BY event_id),'[]'::jsonb)::text,'UTF8')),'hex')")
         import csv, io

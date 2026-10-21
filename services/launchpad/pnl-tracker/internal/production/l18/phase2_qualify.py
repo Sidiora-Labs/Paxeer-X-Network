@@ -35,7 +35,7 @@ def main():
         code = None
         try:
             with (output/'measurement-tests.log').open('x') as log:
-                code = run_bounded(lifecycle,command,cwd=location.parents[5],env=env,stdout=log,stderr=subprocess.STDOUT)
+                code = run_bounded(lifecycle,command,cwd=location.parents[6],env=env,stdout=log,stderr=subprocess.STDOUT)
         finally:
             (output/'commands.json').write_text(json.dumps({'phase':4,'release_digest':args.release_digest,'interface_digest':args.interface_digest,'commands':[{'command':command,'exit':code}],'capacity_qualified':False,'payout_qualified':False,'global_qualification_owner':'serial9.1'},indent=2)+'\n')
         return code
@@ -55,7 +55,7 @@ def main():
             fixture=output/'fixture.json';lifecycle.assert_owned(child)
             with fixture.open('x') as out,(output/'fixture-error.log').open('x') as err:
                 command=['node',str(location.with_name('phase2_fixture.cjs'))]
-                code=run_bounded(lifecycle,command,cwd=location.parents[5],env=env,stdout=out,stderr=err);commands.append({'command':command,'exit':code})
+                code=run_bounded(lifecycle,command,cwd=location.parents[6],env=env,stdout=out,stderr=err);commands.append({'command':command,'exit':code})
             if code:raise RuntimeError('real contract fixture failed')
             env.update(GOWORK='off',GOMAXPROCS='2',GOFLAGS='-mod=readonly',L18_CHAIN_FIXTURE=str(fixture),L18_RELEASE_DIGEST=args.release_digest,L18_INTERFACE_DIGEST=args.interface_digest)
             command=['go','test','-p','1','-count=1','-json','-run','^TestPhase'+str(args.phase),'./internal/production/l18','./internal/referral'];lifecycle.assert_owned(child)
@@ -65,7 +65,7 @@ def main():
     finally:
         if child is not None:lifecycle.stop(child)
         (output/'commands.json').write_text(json.dumps({'phase':args.phase,'release_digest':args.release_digest,'interface_digest':args.interface_digest,'commands':commands,'capacity_qualified':False,'payout_qualified':False},indent=2)+'\n')
-    capabilities=location.parents[5]/'spec/production-system/handoffs/L18/phase2/capabilities.json'
+    capabilities=location.parents[6]/'launchpad/spec/production-system/handoffs/L18/phase2/capabilities.json'
     blockers=json.loads(capabilities.read_text())['mandatory_release_blockers']
     if blockers:
         (output/'remaining-blockers.json').write_text(json.dumps(blockers,indent=2)+'\n')

@@ -56,7 +56,7 @@ func fixture(t *testing.T) Store {
 		}
 		admin.Close()
 	})
-	b, e := os.ReadFile(filepath.Join("..", "..", "..", "..", "spec", "production-system", "handoffs", "L35", "schema.sql"))
+	b, e := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "launchpad", "spec", "production-system", "handoffs", "L35", "schema.sql"))
 	if e != nil {
 		t.Fatal(e)
 	}

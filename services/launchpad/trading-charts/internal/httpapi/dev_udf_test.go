@@ -111,7 +111,7 @@ func (c *devChain) send(t *testing.T, to *common.Address, data []byte, gas uint6
 // fixed-supply token) with the given constructor arguments.
 func (c *devChain) deployToken(t *testing.T, name, symbol string, supply *big.Int) common.Address {
 	t.Helper()
-	raw, err := os.ReadFile("../../../../contracts/artifacts/contracts/core/SidioraERC20.sol/SidioraERC20.json")
+	raw, err := os.ReadFile("../../../../../contracts/launchpad/artifacts/contracts/core/SidioraERC20.sol/SidioraERC20.json")
 	if err != nil {
 		t.Fatal(err)
 	}

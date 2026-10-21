@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {deriveDeployment,renderHelper,checkClient}=require('./client-deployment.cjs');
-const clientRoot=path.resolve(__dirname,'../../../../client/apps/web/src');
+const clientRoot=path.resolve(__dirname,'../../../../../apps/launchpad/web/src');
 const helper=require(path.join(clientRoot,'core/network/deployment.ts'));
 const data=deriveDeployment(process.env.CONTRACT_SOURCE_ROOT);
 test('helper bytes and all identity fields derive from reviewed manifest',()=>{assert.equal(fs.readFileSync(path.join(clientRoot,'core/network/deployment.ts'),'utf8'),renderHelper(data));assert.deepEqual(helper.CORE_DEPLOYMENT,data);assert.equal(data.chainId,125);});

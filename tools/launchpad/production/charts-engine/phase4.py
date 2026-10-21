@@ -14,9 +14,9 @@ import signal
 import sys
 import time
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 HASH = re.compile(r"[0-9a-f]{64}")
-REQUIRED_SOURCES = {"core/trading-charts/cmd/charts-measure/main.go", "core/trading-charts/internal/engine/series.go", "core/trading-charts/internal/store/retention.go", "tools/production/charts-engine/phase4.py"}
+REQUIRED_SOURCES = {"services/launchpad/trading-charts/cmd/charts-measure/main.go", "services/launchpad/trading-charts/internal/engine/series.go", "services/launchpad/trading-charts/internal/store/retention.go", "tools/launchpad/production/charts-engine/phase4.py"}
 
 
 def digest_file(path: Path) -> str:
@@ -48,10 +48,10 @@ def validate_binding(plan):
         raise ValueError("exact current executable/provider plan required")
     files = plan["sourceFiles"]
     required = set(REQUIRED_SOURCES)
-    for package in ("core/trading-charts", "shared/accounting", "shared/delivery", "shared/storage", "shared/interfaces/v2"):
+    for package in ("services/launchpad/trading-charts", "sdk/launchpad/shared/accounting", "sdk/launchpad/shared/delivery", "sdk/launchpad/shared/storage", "sdk/launchpad/shared/interfaces/v2"):
         for source in (ROOT / package).rglob("*.go"):
             required.add(str(source.relative_to(ROOT)))
-    for module in ("core/trading-charts", "shared"):
+    for module in ("services/launchpad/trading-charts", "sdk/launchpad/shared"):
         for filename in ("go.mod", "go.sum"):
             required.add(f"{module}/{filename}")
     if not required <= files.keys():

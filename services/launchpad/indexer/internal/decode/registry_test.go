@@ -17,7 +17,7 @@ import (
 
 func frozen(t *testing.T) ([]byte, Catalog) {
 	t.Helper()
-	b, err := os.ReadFile("../../../../spec/production-system/integration/contracts/v1/chain/abi-catalog.json")
+	b, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v1/chain/abi-catalog.json")
 	if err != nil {
 		t.Fatal(err)
 	}

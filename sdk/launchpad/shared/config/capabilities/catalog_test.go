@@ -28,7 +28,7 @@ func policyFixture() (deployment.Manifest, deployment.ActivationAttestation, dep
 	return m, a, deployment.Policy{Now: now, MaxAge: time.Minute, Timeout: time.Second}
 }
 func TestFrozenIDsAndPrerequisitesMatchBaseline(t *testing.T) {
-	b, e := os.ReadFile("../../../spec/production-system/integration/contracts/v1/capabilities.json")
+	b, e := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v1/capabilities.json")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -154,7 +154,7 @@ func TestFamilyStalenessAndGovernanceRevocation(t *testing.T) {
 func TestSupportSourceProvenance(t *testing.T) {
 	s := ContractSupport()
 	for path, want := range map[string]string{"abi-catalog.json": s.ABICatalogSHA256, "event-authorities.json": s.EventAuthoritiesSHA256} {
-		b, e := os.ReadFile("../../../spec/production-system/integration/contracts/v1/chain/" + path)
+		b, e := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v1/chain/" + path)
 		if e != nil {
 			t.Fatal(e)
 		}

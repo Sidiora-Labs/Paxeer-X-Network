@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
+ROOT = HERE.parents[3]
 module_spec = importlib.util.spec_from_file_location("capability_check", HERE / "capability_check.py")
 check = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(check)
@@ -14,8 +14,8 @@ module_spec.loader.exec_module(check)
 
 class CapabilityTests(unittest.TestCase):
     def setUp(self):
-        self.document = check.load(ROOT / "spec/production-system/integration/contracts/v1/capabilities.json")
-        self.spec = Path(os.environ.get("CAPABILITY_SPEC", str(ROOT / "spec/production-system/spec.kvx")))
+        self.document = check.load(ROOT / "launchpad/spec/production-system/integration/contracts/v1/capabilities.json")
+        self.spec = Path(os.environ.get("CAPABILITY_SPEC", str(ROOT / "launchpad/spec/production-system/spec.kvx")))
         self.authorities = {"workspace": ROOT, "contracts": Path("/root/mk-falcon/contracts"), "evidence": Path("/tmp/kindle-implementation-20261009/results")}
 
     def errors(self, document=None, materialized=False):
@@ -93,7 +93,7 @@ class CapabilityTests(unittest.TestCase):
         self.assertTrue(check.catalog_errors({}, {}, {}, schemas, endpoints))
 
     def test_actual_materialized_bundle_maps_catalog_not_defs_count(self):
-        bundle = Path(os.environ.get("CAPABILITY_MATERIALIZED_ROOT", str(ROOT))) / "spec/production-system/integration/contracts/v1"
+        bundle = Path(os.environ.get("CAPABILITY_MATERIALIZED_ROOT", str(ROOT))) / "launchpad/spec/production-system/integration/contracts/v1"
         definitions = check.load(bundle / "schema-definitions.json")["$defs"]
         catalog = check.load(bundle / "catalog-map.json")
         api = check.load(bundle / "openapi.json")

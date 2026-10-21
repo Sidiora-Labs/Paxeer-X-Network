@@ -5,11 +5,11 @@
   "evidence_level": "source_inventory_only",
   "go_modules": [
     {
-      "path": "shared",
+      "path": "sdk/launchpad/shared",
       "manifest_exists": true,
       "files": [
         {
-          "path": "shared/auth/eip191_test.go",
+          "path": "sdk/launchpad/shared/auth/eip191_test.go",
           "sha256": "d65e1c99e1200be374530c79c5b834fcfe3b676d1461b9ebe47b453c7897d98f",
           "declarations": [
             {
@@ -30,7 +30,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/auth/webhook_test.go",
+          "path": "sdk/launchpad/shared/auth/webhook_test.go",
           "sha256": "d459f44765ec114f0bdfc797e4ae219ee9b29c927efc6badbcf4ae401f154147",
           "declarations": [
             {
@@ -55,7 +55,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/chain/client_test.go",
+          "path": "sdk/launchpad/shared/chain/client_test.go",
           "sha256": "3323f8020d1bafea296b873e60b587a89e4910cf6257c71416b5266bf409a167",
           "declarations": [
             {
@@ -84,7 +84,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/chain/contracts_test.go",
+          "path": "sdk/launchpad/shared/chain/contracts_test.go",
           "sha256": "2838d8b9179982b7119a109f1f85033e2724782ca6d67bab94ca4fa6117239a1",
           "declarations": [
             {
@@ -117,7 +117,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/config/env_test.go",
+          "path": "sdk/launchpad/shared/config/env_test.go",
           "sha256": "39c59406f17abbfab203478f5c29b5a5978c8b874b7c1cb69617fd2cdfa53f82",
           "declarations": [
             {
@@ -158,7 +158,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/constants/constants_test.go",
+          "path": "sdk/launchpad/shared/constants/constants_test.go",
           "sha256": "4e40c512b876c786a250a7e4a41426f77315e65b88950b26a96d5e0f5ae4cdc9",
           "declarations": [
             {
@@ -179,7 +179,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/db/bigint_test.go",
+          "path": "sdk/launchpad/shared/db/bigint_test.go",
           "sha256": "fc6c4bce34dea50ef745d9273c6ddc9a762c3fad3eb5c6c22a8886d60ff4254a",
           "declarations": [
             {
@@ -212,7 +212,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/db/client_test.go",
+          "path": "sdk/launchpad/shared/db/client_test.go",
           "sha256": "40d99bb86de0f13161bfe10b52c29bfa66d9cb8317cbeaf5cdb15addbfbf1c4d",
           "declarations": [
             {
@@ -233,7 +233,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/db/crossschema_test.go",
+          "path": "sdk/launchpad/shared/db/crossschema_test.go",
           "sha256": "cff11bdf189a9407c3cda41d8ce22a4965cd3c0f1dbcb397419f8dd3996996b8",
           "declarations": [
             {
@@ -246,7 +246,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/http/http_test.go",
+          "path": "sdk/launchpad/shared/http/http_test.go",
           "sha256": "51c8d74d7a1e1eadb32a0bebda9c71e45515ac871b8726843f719a27d70215df",
           "declarations": [
             {
@@ -331,7 +331,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/log/log_test.go",
+          "path": "sdk/launchpad/shared/log/log_test.go",
           "sha256": "aa4a1cfddb4cfe91e5cfd142d66ade800567c07990c49971fdba7c011d635fe2",
           "declarations": [
             {
@@ -360,7 +360,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/process/lifecycle_test.go",
+          "path": "sdk/launchpad/shared/process/lifecycle_test.go",
           "sha256": "3d453eab6d5368f5a664e16988d4c4e12e5b6bcb7756613cd835efd9a202fccd",
           "declarations": [
             {
@@ -393,7 +393,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/queue/queue_test.go",
+          "path": "sdk/launchpad/shared/queue/queue_test.go",
           "sha256": "29dcaf5f53cb8f320a9c3e1264c6145471d7e53ea662807a50e1d200f3918015",
           "declarations": [
             {
@@ -426,7 +426,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/redis/redis_test.go",
+          "path": "sdk/launchpad/shared/redis/redis_test.go",
           "sha256": "65694bf7e81efc2bccbd10102d813226e8c818629179e7e581cff9b9ab3c5c69",
           "declarations": [
             {
@@ -463,7 +463,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/secrets/manager_test.go",
+          "path": "sdk/launchpad/shared/secrets/manager_test.go",
           "sha256": "adb6d9b1bd3ee6db1fd39f975dfcc9e4911efd1528d7d0392e5d503b850bfe7e",
           "declarations": [
             {
@@ -500,7 +500,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/storage/r2_test.go",
+          "path": "sdk/launchpad/shared/storage/r2_test.go",
           "sha256": "dd8d2be9a81a8a85de5b278ab4c4132db6fa2fddf0fe34e41f1a876faa8e5306",
           "declarations": [
             {
@@ -545,7 +545,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "shared/util/util_test.go",
+          "path": "sdk/launchpad/shared/util/util_test.go",
           "sha256": "c431bbbb3e50043455643f7d5f11cf601c9a3644e2a880239dacddec0725908b",
           "declarations": [
             {
@@ -596,11 +596,11 @@
       "declared_test_count": 104
     },
     {
-      "path": "protocol",
+      "path": "sdk/launchpad/protocol",
       "manifest_exists": true,
       "files": [
         {
-          "path": "protocol/addresses_test.go",
+          "path": "sdk/launchpad/protocol/addresses_test.go",
           "sha256": "cec557f01938d47804e3dbf11e85586a41fc9b83fd76123b1a8a6dfa5cfea09c",
           "declarations": [
             {
@@ -633,7 +633,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "protocol/events_test.go",
+          "path": "sdk/launchpad/protocol/events_test.go",
           "sha256": "cc1a054e4595cb27634079c65be3e0373aa266a43ca4163d83b9ac30818404e7",
           "declarations": [
             {
@@ -680,11 +680,11 @@
       "declared_test_count": 11
     },
     {
-      "path": "core/api",
+      "path": "services/launchpad/api",
       "manifest_exists": true,
       "files": [
         {
-          "path": "core/api/internal/app/app_test.go",
+          "path": "services/launchpad/api/internal/app/app_test.go",
           "sha256": "e56c84b17725d7bba54455ba118bc62c68d2e67af0dad6f689331ef3270fa6a9",
           "declarations": [
             {
@@ -709,7 +709,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/api/internal/broker/broker_test.go",
+          "path": "services/launchpad/api/internal/broker/broker_test.go",
           "sha256": "f8c99b8008dbf6ea817e0dbbf4c7fa3613c846e8c00afeceea125cd95c2f4cb6",
           "declarations": [
             {
@@ -798,7 +798,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/api/internal/broker/integration_test.go",
+          "path": "services/launchpad/api/internal/broker/integration_test.go",
           "sha256": "5bf775b08f17087afbbcc22fa465dfbbf9210dedf2105e5d33cb8ac2ede74b93",
           "declarations": [
             {
@@ -811,7 +811,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/api/internal/cache/cache_test.go",
+          "path": "services/launchpad/api/internal/cache/cache_test.go",
           "sha256": "4d0d4058e4bb84ac191fc99847064e6e6cd1f1128f47bb4c90091aee798f82f1",
           "declarations": [
             {
@@ -852,7 +852,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/api/internal/config/config_test.go",
+          "path": "services/launchpad/api/internal/config/config_test.go",
           "sha256": "5e6524cb37814eb2b8c3988275550d2225b4e3d27a915dc52a9d01f7ca33fb96",
           "declarations": [
             {
@@ -877,7 +877,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/api/internal/ratelimit/ratelimit_test.go",
+          "path": "services/launchpad/api/internal/ratelimit/ratelimit_test.go",
           "sha256": "53e324cc9641bdae20f988194b08fcffeaf0de7c3368d57bd46166b31a3c6d2c",
           "declarations": [
             {
@@ -902,7 +902,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/api/internal/rest/rest_test.go",
+          "path": "services/launchpad/api/internal/rest/rest_test.go",
           "sha256": "3191dcc7a04bf69f4e6923a748cc69421fb3fd41964112e961bd1163c26dfe81",
           "declarations": [
             {
@@ -959,7 +959,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/api/internal/sse/sse_test.go",
+          "path": "services/launchpad/api/internal/sse/sse_test.go",
           "sha256": "961f2c0f2988dad5530da6917eda89e2d39a4b433b518be298a2cbea3c049fde",
           "declarations": [
             {
@@ -988,7 +988,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/api/internal/store/store_test.go",
+          "path": "services/launchpad/api/internal/store/store_test.go",
           "sha256": "29bf58ae7c04f195938c72ecbb9cea1e4ba3145f1469aacbec1b8d52d5cc3908",
           "declarations": [
             {
@@ -1037,7 +1037,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/api/internal/ws/ws_test.go",
+          "path": "services/launchpad/api/internal/ws/ws_test.go",
           "sha256": "cda3fb866c0f10053660c2dc57932ffb47447e4b24dad6440d6149d849ec76c6",
           "declarations": [
             {
@@ -1092,11 +1092,11 @@
       "declared_test_count": 75
     },
     {
-      "path": "core/indexer",
+      "path": "services/launchpad/indexer",
       "manifest_exists": true,
       "files": [
         {
-          "path": "core/indexer/internal/chainreader/nft_test.go",
+          "path": "services/launchpad/indexer/internal/chainreader/nft_test.go",
           "sha256": "f4c79e57ad5fbe442e1b7db17ead7d7c5e837d5929d461f635eed7cbc14f8ef2",
           "declarations": [
             {
@@ -1113,7 +1113,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/indexer/internal/config/config_test.go",
+          "path": "services/launchpad/indexer/internal/config/config_test.go",
           "sha256": "eea1e38e42bf7ecf2c90cc39aff662dfdb7f083bdfad87e1a755e4084e212114",
           "declarations": [
             {
@@ -1150,7 +1150,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/indexer/internal/decode/decode_test.go",
+          "path": "services/launchpad/indexer/internal/decode/decode_test.go",
           "sha256": "969ace26360198f8ba37b091151939c6c4dfc71494571f4e5ce8ccd5c50d694c",
           "declarations": [
             {
@@ -1215,7 +1215,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/indexer/internal/publisher/publisher_test.go",
+          "path": "services/launchpad/indexer/internal/publisher/publisher_test.go",
           "sha256": "5e25f2dba8963f1a560a47159638f28ba77de180c3bd5f14663bfde84642a71c",
           "declarations": [
             {
@@ -1256,7 +1256,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/indexer/internal/source/evm_test.go",
+          "path": "services/launchpad/indexer/internal/source/evm_test.go",
           "sha256": "9cb894226a3baffdf1671a58eed5296cdabe2ba7b96d8c3a618f901932095dab",
           "declarations": [
             {
@@ -1305,7 +1305,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/indexer/internal/source/factory_test.go",
+          "path": "services/launchpad/indexer/internal/source/factory_test.go",
           "sha256": "4adee3ef2a2e28c620bce6e82d9456be4b93de68cc9cd9605c94f097459b72cb",
           "declarations": [
             {
@@ -1330,7 +1330,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/indexer/internal/source/paxscan_test.go",
+          "path": "services/launchpad/indexer/internal/source/paxscan_test.go",
           "sha256": "0023aa5bb0d79d3335bf4a4ce7c4cd6fc5124eaf4ed83a0aa5898456de1dd708",
           "declarations": [
             {
@@ -1351,7 +1351,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/indexer/internal/store/store_test.go",
+          "path": "services/launchpad/indexer/internal/store/store_test.go",
           "sha256": "69514dfffbc194a0b63d26d5c4f48e730cd0ee482e868e4139db6490aa0d296a",
           "declarations": [
             {
@@ -1398,11 +1398,11 @@
       "declared_test_count": 53
     },
     {
-      "path": "core/pnl-tracker",
+      "path": "services/launchpad/pnl-tracker",
       "manifest_exists": true,
       "files": [
         {
-          "path": "core/pnl-tracker/internal/app/app_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/app/app_test.go",
           "sha256": "67e570d8e88eed53b8160b941ae260ed56f9a386ebb31e9aaebe5c795a9f8af1",
           "declarations": [
             {
@@ -1415,7 +1415,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/card/card_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/card/card_test.go",
           "sha256": "e76f715ee2cf5b2c5fc2976e723b4c88d3afc14f54e2a4170dfc177c4bfe32e2",
           "declarations": [
             {
@@ -1444,7 +1444,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/config/config_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/config/config_test.go",
           "sha256": "403a2fa0c9e930553722f7a91848783cb3a2a45068cb792bf5c1ad94f5faa540",
           "declarations": [
             {
@@ -1469,7 +1469,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/httpapi/cards_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/httpapi/cards_test.go",
           "sha256": "e931a69531f493dffc3d6b8c535ef83be8e7ae1ad42c626e3b77c13135c62604",
           "declarations": [
             {
@@ -1494,7 +1494,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/httpapi/events_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/httpapi/events_test.go",
           "sha256": "855042436224709f2b2f82a2a15767718562767eae2c15932dfeb8c6ec07fc87",
           "declarations": [
             {
@@ -1507,7 +1507,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/httpapi/httpapi_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/httpapi/httpapi_test.go",
           "sha256": "5c11e0a6849aa102be89833b9c6e0ef8dd37dc36e4226320b6e680c51774a3e0",
           "declarations": [],
           "package": "github.com/Sidiora-Technologies/KindleLaunch/core/pnl-tracker/internal/httpapi",
@@ -1515,7 +1515,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/httpapi/reads_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/httpapi/reads_test.go",
           "sha256": "45abadfb092c25b9b057a7cb6837338d18f84c7cc502fcad489ab9e536523cd5",
           "declarations": [
             {
@@ -1536,7 +1536,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/httpapi/status_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/httpapi/status_test.go",
           "sha256": "5ca42be6135f7e46e69dac96292c8821d3fd68cb510d5dc517072933d11979f8",
           "declarations": [
             {
@@ -1549,7 +1549,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/httpapi/webhook_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/httpapi/webhook_test.go",
           "sha256": "85d94e053599d878c6baedb5fc14cab4add541c5231e5375d8e06053f86bd8cd",
           "declarations": [
             {
@@ -1574,7 +1574,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/ogrender/ogrender_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/ogrender/ogrender_test.go",
           "sha256": "5ede231cc8fbeced304fab1d75906d4566a7e7211f707b73231c564a37f62581",
           "declarations": [
             {
@@ -1595,7 +1595,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/pnlmath/pnlmath_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/pnlmath/pnlmath_test.go",
           "sha256": "2527e56ce94f91f4b371b45e6a0fbecd5db35444aae5ced15f1dd3dc43436ea1",
           "declarations": [
             {
@@ -1636,7 +1636,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/position/consumer_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/position/consumer_test.go",
           "sha256": "7562bf5348b403aa55d37df5f3e0b0dbb9243dd130596c9dc3172584e67aa2f7",
           "declarations": [
             {
@@ -1661,7 +1661,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/reconcile/reconcile_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/reconcile/reconcile_test.go",
           "sha256": "a397f146866e15448b20229f60e25ddddcd75bebbe0cb23cb68022eb3b5989cc",
           "declarations": [
             {
@@ -1682,7 +1682,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/referral/referral_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/referral/referral_test.go",
           "sha256": "1247e4625c283540ed9373951b70cf8c24a17bef5310e4d2d294ae2ff3be092c",
           "declarations": [
             {
@@ -1715,7 +1715,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/store/cards_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/store/cards_test.go",
           "sha256": "33a7ceab626ba413000ee4e2517f4421e0bc396d4c3a31883faab9a367c05094",
           "declarations": [
             {
@@ -1728,7 +1728,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/store/portfolio_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/store/portfolio_test.go",
           "sha256": "a23285d7aeabc01a5f0eac020bff94609848b45b45a89289fc3eb1c6494b9ede",
           "declarations": [
             {
@@ -1745,7 +1745,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/store/positions_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/store/positions_test.go",
           "sha256": "264916663747ad92469377d89c1f00459027da55f62474b26b238c03dd919620",
           "declarations": [
             {
@@ -1766,7 +1766,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/store/reconcile_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/store/reconcile_test.go",
           "sha256": "dce76fd57e3140427f634cc7d82b1250668fd4ee3645af4877efa8847ddc34a1",
           "declarations": [
             {
@@ -1783,7 +1783,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/store/referrals_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/store/referrals_test.go",
           "sha256": "2fdf3d328666191d0f0337786f43c1b1e4711c5795cd3f93fc19ee671d7eb0d4",
           "declarations": [
             {
@@ -1808,7 +1808,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/pnl-tracker/internal/store/store_test.go",
+          "path": "services/launchpad/pnl-tracker/internal/store/store_test.go",
           "sha256": "43700369e6823bc7682d324ac2bdee501803b3e8fa4538297d5cec980e5f9bc6",
           "declarations": [
             {
@@ -1839,11 +1839,11 @@
       "declared_test_count": 60
     },
     {
-      "path": "core/ranking-algo",
+      "path": "services/launchpad/ranking-algo",
       "manifest_exists": true,
       "files": [
         {
-          "path": "core/ranking-algo/internal/app/app_test.go",
+          "path": "services/launchpad/ranking-algo/internal/app/app_test.go",
           "sha256": "a2f464cee985c7e924c8f8fe280a96f417e8ad68fd6ab2d78435a572609dca1c",
           "declarations": [
             {
@@ -1860,7 +1860,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/ranking-algo/internal/config/config_test.go",
+          "path": "services/launchpad/ranking-algo/internal/config/config_test.go",
           "sha256": "446df3c03b573cf5c8a463d1fb7da4e123c1e5b9fed8b9a9edbbebcaf0b196c8",
           "declarations": [
             {
@@ -1889,7 +1889,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/ranking-algo/internal/httpapi/rankings_test.go",
+          "path": "services/launchpad/ranking-algo/internal/httpapi/rankings_test.go",
           "sha256": "2817ce47a4135a237fda12ccac79c87332026421ea679fa859ca8ea5a06aec93",
           "declarations": [
             {
@@ -1914,7 +1914,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/ranking-algo/internal/ranker/integration_test.go",
+          "path": "services/launchpad/ranking-algo/internal/ranker/integration_test.go",
           "sha256": "1fb564c7996aac3046052592887674414d4313baf780b6940fd6d7014c84ba25",
           "declarations": [
             {
@@ -1939,7 +1939,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/ranking-algo/internal/ranker/score_test.go",
+          "path": "services/launchpad/ranking-algo/internal/ranker/score_test.go",
           "sha256": "b741707a4e595bb700c54ce6ea1078d6d564482c245ebca5cb8bc43f75c8de44",
           "declarations": [
             {
@@ -1984,7 +1984,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/ranking-algo/internal/ranker/write_test.go",
+          "path": "services/launchpad/ranking-algo/internal/ranker/write_test.go",
           "sha256": "79720e2cc0b36407ab7c77963245e09d60e9985238e450c28589c41ba4ca0364",
           "declarations": [
             {
@@ -2013,7 +2013,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/ranking-algo/internal/store/store_test.go",
+          "path": "services/launchpad/ranking-algo/internal/store/store_test.go",
           "sha256": "e16b41973c261e309d70c64b974503148c4a7a342f5d0d1add16ca83ed369cc4",
           "declarations": [
             {
@@ -2064,11 +2064,11 @@
       "declared_test_count": 35
     },
     {
-      "path": "core/stats-workers",
+      "path": "services/launchpad/stats-workers",
       "manifest_exists": true,
       "files": [
         {
-          "path": "core/stats-workers/internal/consumer/consumer_test.go",
+          "path": "services/launchpad/stats-workers/internal/consumer/consumer_test.go",
           "sha256": "1cd38b267fc30db3e4af96e1abbc9da389c87b3d7ca87cdfe5746937b9ae7049",
           "declarations": [],
           "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/consumer",
@@ -2076,7 +2076,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/consumer/holder_test.go",
+          "path": "services/launchpad/stats-workers/internal/consumer/holder_test.go",
           "sha256": "2e3107d8d6294dce470f914bf48f1739c87c8cb71528afbcf2ab2801c8285ed2",
           "declarations": [
             {
@@ -2089,7 +2089,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/consumer/market_test.go",
+          "path": "services/launchpad/stats-workers/internal/consumer/market_test.go",
           "sha256": "958d43aac2c145408c0d1d4929abcf10cea960b72dd9a65ec215d5ede03d9cc3",
           "declarations": [
             {
@@ -2102,7 +2102,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/consumer/multihop_test.go",
+          "path": "services/launchpad/stats-workers/internal/consumer/multihop_test.go",
           "sha256": "ad94e2562143d043dda038e2fe597bf00ce8fd4ac105ecd81643d814319c2cbc",
           "declarations": [
             {
@@ -2115,7 +2115,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/consumer/publish_test.go",
+          "path": "services/launchpad/stats-workers/internal/consumer/publish_test.go",
           "sha256": "59247be36297b850647e68c3991915bec183d66fae870ab4727be4228c57241b",
           "declarations": [
             {
@@ -2132,7 +2132,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/consumer/state_test.go",
+          "path": "services/launchpad/stats-workers/internal/consumer/state_test.go",
           "sha256": "25cc7d9a3a6ccaa65b7f8c7e5d497c999d9a8e01d9dd5914f6bb8ac5e6048f16",
           "declarations": [
             {
@@ -2145,7 +2145,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/consumer/swap_test.go",
+          "path": "services/launchpad/stats-workers/internal/consumer/swap_test.go",
           "sha256": "ef2b989a71b057c18850bd197349caf015aca1639e4355957418c84181912c1b",
           "declarations": [
             {
@@ -2158,7 +2158,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/httpapi/cache_test.go",
+          "path": "services/launchpad/stats-workers/internal/httpapi/cache_test.go",
           "sha256": "7fe618127ceb22f80233d23650abf1fccc738983f93f21463997a8659ff7e6bc",
           "declarations": [
             {
@@ -2183,7 +2183,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/httpapi/httpapi_test.go",
+          "path": "services/launchpad/stats-workers/internal/httpapi/httpapi_test.go",
           "sha256": "4a1d3e534c07305e43d26169623b4173dcd8ab747fdf7547d837347f72bc42e3",
           "declarations": [],
           "package": "github.com/Sidiora-Technologies/KindleLaunch/core/stats-workers/internal/httpapi",
@@ -2191,7 +2191,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/httpapi/publish_test.go",
+          "path": "services/launchpad/stats-workers/internal/httpapi/publish_test.go",
           "sha256": "8fba990af81f8deac675cb9f4d6147618540d95aeb2e420dda9f3dbd3d5d76a1",
           "declarations": [
             {
@@ -2208,7 +2208,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/httpapi/reactions_test.go",
+          "path": "services/launchpad/stats-workers/internal/httpapi/reactions_test.go",
           "sha256": "3b75bf2f819afec0d53e80dbf3089fd3f164ba3e747a0a34ee5d43815e48a859",
           "declarations": [
             {
@@ -2221,7 +2221,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/httpapi/reads_test.go",
+          "path": "services/launchpad/stats-workers/internal/httpapi/reads_test.go",
           "sha256": "eac2b7eb67819d608e7144bcf69498f7edf12b9143f59182402def48e7fc1aab",
           "declarations": [
             {
@@ -2258,7 +2258,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/httpapi/webhook_test.go",
+          "path": "services/launchpad/stats-workers/internal/httpapi/webhook_test.go",
           "sha256": "978a9f35906a76deb572fac5485e4a155f862f8a0301c5bed55587f1de808406",
           "declarations": [
             {
@@ -2275,7 +2275,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/risk/risk_test.go",
+          "path": "services/launchpad/stats-workers/internal/risk/risk_test.go",
           "sha256": "26714247888be37111b5b772843deff7e5c5de2cd2707b72698f75fefd90393f",
           "declarations": [
             {
@@ -2296,7 +2296,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/store/buckets_test.go",
+          "path": "services/launchpad/stats-workers/internal/store/buckets_test.go",
           "sha256": "cde8941e53a2e69a6f220b65c0fd97371c73e3ba44086216c648b0286eab2bc6",
           "declarations": [
             {
@@ -2325,7 +2325,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/store/holders_test.go",
+          "path": "services/launchpad/stats-workers/internal/store/holders_test.go",
           "sha256": "e8a31ac6d35d29d518a8a86b04248e1a7a39d4e60513d11357511af9d8c97057",
           "declarations": [
             {
@@ -2346,7 +2346,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/store/platform_test.go",
+          "path": "services/launchpad/stats-workers/internal/store/platform_test.go",
           "sha256": "742a5474c73288ae6dadd0cc5a919ea035725e1a0004b4799173dfa000d92c8c",
           "declarations": [
             {
@@ -2371,7 +2371,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/store/store_test.go",
+          "path": "services/launchpad/stats-workers/internal/store/store_test.go",
           "sha256": "abdadad1f8a224dffc3d51523705fd7fbe8492e5bf47edfbd17db7be6267fd5a",
           "declarations": [
             {
@@ -2388,7 +2388,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/stats-workers/internal/store/transactions_test.go",
+          "path": "services/launchpad/stats-workers/internal/store/transactions_test.go",
           "sha256": "bd7c1d3696209ad0600bb251caec0745e6db8b51871ce359318f2e8a99d9ec4c",
           "declarations": [
             {
@@ -2423,11 +2423,11 @@
       "declared_test_count": 42
     },
     {
-      "path": "core/trading-charts",
+      "path": "services/launchpad/trading-charts",
       "manifest_exists": true,
       "files": [
         {
-          "path": "core/trading-charts/internal/app/app_test.go",
+          "path": "services/launchpad/trading-charts/internal/app/app_test.go",
           "sha256": "40ac7321e7a49f256da3eebf2a8acf52417426d448ab7aa11394d03a01ab4533",
           "declarations": [
             {
@@ -2448,7 +2448,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/trading-charts/internal/config/config_test.go",
+          "path": "services/launchpad/trading-charts/internal/config/config_test.go",
           "sha256": "c4412562ba93719f92f9b39999d29f3fe01e8b004df722a559a8177e8a48b5f1",
           "declarations": [
             {
@@ -2481,7 +2481,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/trading-charts/internal/consumer/swap_consumer_test.go",
+          "path": "services/launchpad/trading-charts/internal/consumer/swap_consumer_test.go",
           "sha256": "07077005ea28af473a7d5ac3e8b23083f730412da089c9d49c89c0cecffed11e",
           "declarations": [
             {
@@ -2518,7 +2518,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/trading-charts/internal/engine/builder_test.go",
+          "path": "services/launchpad/trading-charts/internal/engine/builder_test.go",
           "sha256": "ef862b811e6109251ab302a2e93cb42882985c357bdf8b1ae94afc840a2e3e07",
           "declarations": [
             {
@@ -2555,7 +2555,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/trading-charts/internal/httpapi/convert_test.go",
+          "path": "services/launchpad/trading-charts/internal/httpapi/convert_test.go",
           "sha256": "47df02ef7820f68318e8a19455121b874e33e7c97791a5da4ce2f4ebd3da3124",
           "declarations": [
             {
@@ -2572,7 +2572,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/trading-charts/internal/httpapi/udf_test.go",
+          "path": "services/launchpad/trading-charts/internal/httpapi/udf_test.go",
           "sha256": "86871b363979995d94f7158dbe70fa5e5e66c1e09b253df7bcdf3361e8f81664",
           "declarations": [
             {
@@ -2605,7 +2605,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/trading-charts/internal/httpapi/webhook_test.go",
+          "path": "services/launchpad/trading-charts/internal/httpapi/webhook_test.go",
           "sha256": "92180a3379cff0570104bbe8aa3f76cbfec9db21e1bf44eca9004bbdeae94178",
           "declarations": [
             {
@@ -2638,7 +2638,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/trading-charts/internal/httpapi/ws_test.go",
+          "path": "services/launchpad/trading-charts/internal/httpapi/ws_test.go",
           "sha256": "1032a3647e312405c7ad2b8f52b11ad41401e5485eac90413d3680765d353682",
           "declarations": [
             {
@@ -2687,7 +2687,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/trading-charts/internal/migrate/migrate_test.go",
+          "path": "services/launchpad/trading-charts/internal/migrate/migrate_test.go",
           "sha256": "dd2f9286b88dc5c53aee8e3fb92fbe9f1b047355f2d6c037bc5649ebbe5a7d05",
           "declarations": [
             {
@@ -2704,7 +2704,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "core/trading-charts/internal/store/store_test.go",
+          "path": "services/launchpad/trading-charts/internal/store/store_test.go",
           "sha256": "19db0a523fddec927effbc6e64b292f7d3a4f9a95b017ab6a83d8d43a4f8e3fd",
           "declarations": [
             {
@@ -2747,11 +2747,11 @@
       "declared_test_count": 53
     },
     {
-      "path": "media/gateway",
+      "path": "services/launchpad/gateway",
       "manifest_exists": true,
       "files": [
         {
-          "path": "media/gateway/internal/app/app_test.go",
+          "path": "services/launchpad/gateway/internal/app/app_test.go",
           "sha256": "5c6d5e1bacd3f4a9f5cd9985f5f9aee5546eec61313c4d2926a97dc00aad6de0",
           "declarations": [
             {
@@ -2784,7 +2784,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/gateway/internal/auth/auth_test.go",
+          "path": "services/launchpad/gateway/internal/auth/auth_test.go",
           "sha256": "31d4b3d40acadf7a03b8ff8472e52073f615e7be26ce16f867d399e5d0a30873",
           "declarations": [
             {
@@ -2817,7 +2817,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/gateway/internal/auth/jwt_test.go",
+          "path": "services/launchpad/gateway/internal/auth/jwt_test.go",
           "sha256": "8ae2e41a1b1a951eddcaea1705f55052e608bf34cae1da518de27e1e592cce2f",
           "declarations": [
             {
@@ -2838,7 +2838,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/gateway/internal/common/common_test.go",
+          "path": "services/launchpad/gateway/internal/common/common_test.go",
           "sha256": "829f8a8c1d2c12489fdd97b649bc67a9b08615fec98225eb70c0ae93fed7e4a0",
           "declarations": [
             {
@@ -2855,7 +2855,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/gateway/internal/config/config_test.go",
+          "path": "services/launchpad/gateway/internal/config/config_test.go",
           "sha256": "8f490648806604a91275e1f3a727ae13881368405092f7ba2a9360911a46fb43",
           "declarations": [
             {
@@ -2876,7 +2876,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/gateway/internal/image/image_test.go",
+          "path": "services/launchpad/gateway/internal/image/image_test.go",
           "sha256": "0710598855c8689703ab7a812fa20e069133c534440f16d303534e5591153c3d",
           "declarations": [
             {
@@ -2901,7 +2901,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/gateway/internal/proxy/rest_test.go",
+          "path": "services/launchpad/gateway/internal/proxy/rest_test.go",
           "sha256": "df1d31e2f0d812e1de320c62e1d5e547765fdc145f8a196913525575c839fcc6",
           "declarations": [
             {
@@ -2926,7 +2926,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/gateway/internal/proxy/ws_test.go",
+          "path": "services/launchpad/gateway/internal/proxy/ws_test.go",
           "sha256": "0cff484dfe3bfcc1182abef573af03e068ac285c2b6b841c3901fedcabf68702",
           "declarations": [
             {
@@ -2947,7 +2947,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/gateway/internal/serve/serve_test.go",
+          "path": "services/launchpad/gateway/internal/serve/serve_test.go",
           "sha256": "5e36a8b1c0270e1b4152ea958cc625c24673a920b75c2ed7eeb342f5c959b5dd",
           "declarations": [
             {
@@ -3000,7 +3000,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/gateway/internal/upload/upload_test.go",
+          "path": "services/launchpad/gateway/internal/upload/upload_test.go",
           "sha256": "5cdd9ebc668ca4c712cf015a7b24ef44f58aedf0efd1971273085eea81e7643d",
           "declarations": [
             {
@@ -3055,7 +3055,7 @@
       "declared_test_count": 49
     },
     {
-      "path": "media/livestream",
+      "path": "services/launchpad/livestream",
       "manifest_exists": true,
       "files": [],
       "command": [
@@ -3076,11 +3076,11 @@
       "declared_test_count": 0
     },
     {
-      "path": "media/metadata",
+      "path": "services/launchpad/metadata",
       "manifest_exists": true,
       "files": [
         {
-          "path": "media/metadata/internal/config/config_test.go",
+          "path": "services/launchpad/metadata/internal/config/config_test.go",
           "sha256": "3de3ede10daaa262a1e4ea4bde788d0ceb23ce031e5d74736e600d132bc5c45e",
           "declarations": [
             {
@@ -3101,7 +3101,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/metadata/internal/image/image_test.go",
+          "path": "services/launchpad/metadata/internal/image/image_test.go",
           "sha256": "ddf80496af4ed2cbb1d84f3b7917c4f26807635500df464022f60402ffd12a29",
           "declarations": [
             {
@@ -3126,7 +3126,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/metadata/internal/metadata/handlers_test.go",
+          "path": "services/launchpad/metadata/internal/metadata/handlers_test.go",
           "sha256": "6f88329dab66ee916598ded5c5969312d83cec957d52d5c5746cb45145e03370",
           "declarations": [
             {
@@ -3139,7 +3139,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/metadata/internal/metadata/helpers_internal_test.go",
+          "path": "services/launchpad/metadata/internal/metadata/helpers_internal_test.go",
           "sha256": "90b2228aaed3695ff80f113006408e9169c38b237be43393a24d20c1a6a51793",
           "declarations": [
             {
@@ -3202,11 +3202,11 @@
       "declared_test_count": 17
     },
     {
-      "path": "media/social",
+      "path": "services/launchpad/social",
       "manifest_exists": true,
       "files": [
         {
-          "path": "media/social/internal/common/common_test.go",
+          "path": "services/launchpad/social/internal/common/common_test.go",
           "sha256": "c4d56a89d33694176d87bb3f8a5d6e19424b4cac49558a87a6e433d52b4e1fbe",
           "declarations": [
             {
@@ -3239,7 +3239,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/social/internal/config/config_test.go",
+          "path": "services/launchpad/social/internal/config/config_test.go",
           "sha256": "58fca8de164ae735cfadfa6007c56a843c0a022ab42cfca663712e8cacd1c9af",
           "declarations": [
             {
@@ -3264,7 +3264,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/social/internal/fanout/hub_test.go",
+          "path": "services/launchpad/social/internal/fanout/hub_test.go",
           "sha256": "65b4e1756bdc8189b8b94ec17e9af5e9b674d7fbb4dd49c27b42ddee85f13c91",
           "declarations": [
             {
@@ -3297,7 +3297,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/social/internal/social/handlers_test.go",
+          "path": "services/launchpad/social/internal/social/handlers_test.go",
           "sha256": "7f17d0f02b98a7aa72b5be80f3a4c618306010c5f9941753a458f5093a6d1c31",
           "declarations": [
             {
@@ -3348,11 +3348,11 @@
       "declared_test_count": 22
     },
     {
-      "path": "media/user",
+      "path": "services/launchpad/user",
       "manifest_exists": true,
       "files": [
         {
-          "path": "media/user/internal/config/config_test.go",
+          "path": "services/launchpad/user/internal/config/config_test.go",
           "sha256": "454c0ffcc4d9bc76c4f0d1174602633ae60aeabba28b635ba41340231fed1789",
           "declarations": [
             {
@@ -3373,7 +3373,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/user/internal/image/image_test.go",
+          "path": "services/launchpad/user/internal/image/image_test.go",
           "sha256": "1926ec2f472959a4973c55c977ce24ed881a836030f4125d27d92e16dda3bd32",
           "declarations": [
             {
@@ -3406,7 +3406,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/user/internal/user/handlers_test.go",
+          "path": "services/launchpad/user/internal/user/handlers_test.go",
           "sha256": "baf05d3a0149c0b0aebf2bf87d96ef3937c473fd074f1878c94b54c4a098b133",
           "declarations": [
             {
@@ -3419,7 +3419,7 @@
           "skip_or_focus_markers": []
         },
         {
-          "path": "media/user/internal/user/helpers_internal_test.go",
+          "path": "services/launchpad/user/internal/user/helpers_internal_test.go",
           "sha256": "db90746a89161360c6ac55754cede54dd441bf91b8050e8ab302c0f3d226fbde",
           "declarations": [
             {
@@ -3484,7 +3484,7 @@
   ],
   "web_files": [
     {
-      "path": "client/apps/web/src/core/realtime/data-stream.test.ts",
+      "path": "apps/launchpad/web/src/core/realtime/data-stream.test.ts",
       "sha256": "4991846598fc805896d9d86230a1da2bfb015af629f4c7d06df4b27f55a210fa",
       "literal_declarations": [
         "sends the full union subscribe frame on connect",
@@ -3498,7 +3498,7 @@
       "skip_or_focus_markers": []
     },
     {
-      "path": "client/apps/web/src/core/realtime/raf-batch.test.ts",
+      "path": "apps/launchpad/web/src/core/realtime/raf-batch.test.ts",
       "sha256": "95439be18a6caabdcf353e130a5396492a12aeadbf9e719e04861e0c65563aec",
       "literal_declarations": [
         "keeps only the latest value per key (coalesces stale ticks)",
@@ -3513,7 +3513,7 @@
       "skip_or_focus_markers": []
     },
     {
-      "path": "client/apps/web/src/utils/format.test.ts",
+      "path": "apps/launchpad/web/src/utils/format.test.ts",
       "sha256": "2e0645216c6efda0a9fcd1bef86c81b589c14bb0f6ddc42d9154a5883d1143f1",
       "literal_declarations": [
         "returns 0 for empty/null/undefined/zero",
@@ -3537,7 +3537,7 @@
       "skip_or_focus_markers": []
     },
     {
-      "path": "client/apps/web/src/utils/units.test.ts",
+      "path": "apps/launchpad/web/src/utils/units.test.ts",
       "sha256": "d88f7985a7c6fe94187779c1cdebbb038cd29ccd6dd4ee6773de00cd3969ce07",
       "literal_declarations": [
         "formats sub-unit raw values exactly with no float loss",

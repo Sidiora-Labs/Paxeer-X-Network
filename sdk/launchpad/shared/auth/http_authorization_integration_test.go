@@ -67,7 +67,7 @@ func phase2AuthDatabase(t *testing.T) (*pgxpool.Pool, string) {
 		}
 		admin.Close()
 	})
-	identitySQL, err := os.ReadFile(filepath.Join("../../spec/production-system/handoffs/L33/schema-proposal.sql"))
+	identitySQL, err := os.ReadFile(filepath.Join("../../../../launchpad/spec/production-system/handoffs/L33/schema-proposal.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}

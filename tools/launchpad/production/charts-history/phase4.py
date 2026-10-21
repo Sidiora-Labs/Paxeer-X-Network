@@ -17,7 +17,7 @@ import time
 import uuid
 from urllib.parse import urlencode, urlsplit
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 HEX = re.compile(r"^[0-9a-f]{64}$")
 ADDRESS = re.compile(r"^0x[0-9a-f]{40}$")
 RESOLUTIONS = {"1": "1m", "5": "5m", "15": "15m", "60": "1h", "240": "4h", "D": "1d", "1D": "1d", "W": "1w", "1W": "1w"}
@@ -96,7 +96,7 @@ def validate_config(config):
             raise ValueError("positive explicit capacity budgets required")
     if not 60 <= config["duration_seconds"] <= 900 or not 1 <= config["max_inflight"] <= 4096 or not re.fullmatch(r"[A-Z][A-Z0-9_]{0,100}", config["postgres_dsn_env"]) or not re.fullmatch(r"[A-Z][A-Z0-9_]{0,100}", config["redis_url_env"]):
         raise ValueError("bounded lane duration, concurrency and secret reference required")
-    qualification = load_module("chart_source_snapshot", ROOT / "tools/production/qualify.py")
+    qualification = load_module("chart_source_snapshot", ROOT / "tools/launchpad/production/qualify.py")
     if qualification.snapshot(ROOT)["sha256"] != config["candidate_source_sha256"]:
         raise ValueError("candidate source binding differs")
     topology = document(config["topology"])
@@ -261,7 +261,7 @@ def validate_shared_soak(record,config):
 class Capture:
     def __init__(self, output, config):
         self.path = Path(output).resolve()
-        self.path.relative_to((ROOT / "evidence/production-system/L11/phase4").resolve())
+        self.path.relative_to((ROOT / "launchpad/evidence/production-system/L11/phase4").resolve())
         self.path.mkdir(parents=True,exist_ok=False)
         self.config = config
         self.opened = []

@@ -70,7 +70,7 @@ const (
 
 func migrationSQL(t *testing.T, id string) string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "spec", "production-system", "integration", "migrations", id+".sql"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "launchpad", "spec", "production-system", "integration", "migrations", id+".sql"))
 	if err != nil {
 		t.Fatal(err)
 	}

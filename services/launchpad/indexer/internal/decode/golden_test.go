@@ -35,7 +35,7 @@ func (g goldenRaw) log() ethtypes.Log {
 // fixture, not mainnet observations. All indexed and nonindexed fields are
 // compared with the independent frozen JS decoder output.
 func TestFrozenGoldenReceiptReplay(t *testing.T) {
-	b, err := os.ReadFile("../../../../spec/production-system/integration/contracts/v1/chain/golden-fixtures.json")
+	b, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v1/chain/golden-fixtures.json")
 	if err != nil {
 		t.Fatal(err)
 	}

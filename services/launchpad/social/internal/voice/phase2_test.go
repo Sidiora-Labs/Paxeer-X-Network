@@ -66,7 +66,7 @@ func TestNativeLiveKitListenerGrantCannotPublish(t *testing.T) {
 }
 func TestPostgresDeclinedConsentStopsBeforeProviderContact(t *testing.T) {
 	c, ctx := fixture(t)
-	ddl, e := os.ReadFile("../../../../spec/production-system/handoffs/L38/phase2/schema-proposal.sql")
+	ddl, e := os.ReadFile("../../../../../launchpad/spec/production-system/handoffs/L38/phase2/schema-proposal.sql")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -140,7 +140,7 @@ func phase3Provider(t *testing.T) *LiveKit {
 }
 func phase3Schema(t *testing.T, c *Control, ctx context.Context) {
 	t.Helper()
-	ddl, e := os.ReadFile("../../../../spec/production-system/handoffs/L38/phase2/schema-proposal.sql")
+	ddl, e := os.ReadFile("../../../../../launchpad/spec/production-system/handoffs/L38/phase2/schema-proposal.sql")
 	if e != nil {
 		t.Fatal(e)
 	}

@@ -110,7 +110,7 @@ class WorkspaceTests(unittest.TestCase):
             survivor.kill(); survivor.wait()
     def test_sigterm_coordinator_cleans_child_and_grandchild(self):
         from ..qualification_timeout import qualify_timeout
-        result = qualify_timeout(Path(__file__).resolve().parents[4])
+        result = qualify_timeout(Path(__file__).resolve().parents[5])
         self.assertTrue(result['passed'])
         self.assertTrue(result['owned_descendants_stopped'])
         self.assertTrue(result['unrelated_process_survived'])

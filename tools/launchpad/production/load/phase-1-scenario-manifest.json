@@ -20,7 +20,7 @@
     "unittest",
     "discover",
     "-s",
-    "tools/production/load",
+    "tools/launchpad/production/load",
     "-p",
     "test_*.py",
     "-v"

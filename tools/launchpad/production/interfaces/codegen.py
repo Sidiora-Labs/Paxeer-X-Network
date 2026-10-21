@@ -55,12 +55,12 @@ class Generator:
   if type(major) is not int or major<1:raise GenerationError('positive schema major required')
   self.major=major;self.go_package=go_package or 'v'+str(major)
   if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',self.go_package):raise GenerationError('invalid Go package identity')
-  self.go_out=go_out or 'shared/interfaces/v'+str(major)
-  self.ts_out=ts_out or ('client/packages/production-contracts/src' if major==1 else 'client/packages/production-contracts-v'+str(major)+'/src')
-  for path,prefix in ((self.go_out,'shared/interfaces/'),(self.ts_out,'client/packages/')):
+  self.go_out=go_out or 'sdk/launchpad/shared/interfaces/v'+str(major)
+  self.ts_out=ts_out or ('sdk/launchpad/packages/production-contracts/src' if major==1 else 'sdk/launchpad/packages/production-contracts-v'+str(major)+'/src')
+  for path,prefix in ((self.go_out,'sdk/launchpad/shared/interfaces/'),(self.ts_out,'sdk/launchpad/packages/')):
    candidate=pathlib.PurePosixPath(path)
    if candidate.is_absolute() or '..' in candidate.parts or not path.startswith(prefix):raise GenerationError('output path outside generated allowlist')
-  if major!=1 and (self.go_out=='shared/interfaces/v1' or self.ts_out=='client/packages/production-contracts/src'):raise GenerationError('versioned output cannot overwrite v1')
+  if major!=1 and (self.go_out=='sdk/launchpad/shared/interfaces/v1' or self.ts_out=='sdk/launchpad/packages/production-contracts/src'):raise GenerationError('versioned output cannot overwrite v1')
   self.format_output=format_output;self.document=document;self.nodes=dict(document['$defs']);self.output={};self.unions={};self.used=set(self.nodes)
  def lift(self,node,hint):
   name=hint;counter=2
@@ -147,18 +147,18 @@ class Generator:
   return result.stdout
 
 def main(argv=None):
- parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--root',type=pathlib.Path,default=pathlib.Path(__file__).resolve().parents[3]);parser.add_argument('--schema',type=pathlib.Path);parser.add_argument('--check',action='store_true');parser.add_argument('--major',type=int,default=1);parser.add_argument('--go-package');parser.add_argument('--go-out');parser.add_argument('--ts-out');parser.add_argument('--manifest',type=pathlib.Path);parser.add_argument('--no-format',action='store_true');args=parser.parse_args(argv)
- root=args.root.resolve();source=args.schema or root/('spec/production-system/integration/contracts/v'+str(args.major)+'/schema-definitions.json')
+ parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--root',type=pathlib.Path,default=pathlib.Path(__file__).resolve().parents[4]);parser.add_argument('--schema',type=pathlib.Path);parser.add_argument('--check',action='store_true');parser.add_argument('--major',type=int,default=1);parser.add_argument('--go-package');parser.add_argument('--go-out');parser.add_argument('--ts-out');parser.add_argument('--manifest',type=pathlib.Path);parser.add_argument('--no-format',action='store_true');args=parser.parse_args(argv)
+ root=args.root.resolve();source=args.schema or root/('launchpad/spec/production-system/integration/contracts/v'+str(args.major)+'/schema-definitions.json')
  try:
   data=source.read_bytes();doc=json.loads(data)
   if not isinstance(doc.get('$defs'),dict) or not doc['$defs']:raise GenerationError('nonempty $defs required')
   for name,node in doc['$defs'].items():validate_schema(node,doc['$defs'],name)
   outputs=Generator(doc,args.major,args.go_package,args.go_out,args.ts_out,not args.no_format).emit();manifest={'formatVersion':1,'generator':'tools/production/interfaces/codegen.py','generatorSha256':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),'validatorTemplateSha256':hashlib.sha256(pathlib.Path(__file__).with_name('validator.go.txt').read_bytes()).hexdigest(),'schemaPath':str(source.relative_to(root)) if source.is_relative_to(root) else str(source),'schemaSha256':hashlib.sha256(data).hexdigest(),'definitionCount':len(doc['$defs']),'outputs':{p:hashlib.sha256(v.encode()).hexdigest() for p,v in outputs.items()}}
-  manifest_path=args.manifest or pathlib.Path('spec/production-system/integration/contracts/v'+str(args.major)+'/codegen-manifest.json')
+  manifest_path=args.manifest or pathlib.Path('launchpad/spec/production-system/integration/contracts/v'+str(args.major)+'/codegen-manifest.json')
   if manifest_path.is_absolute():
    if not manifest_path.is_relative_to(root):raise GenerationError('manifest outside source root')
    manifest_path=manifest_path.relative_to(root)
-  if '..' in manifest_path.parts or not str(manifest_path).startswith('spec/production-system/integration/contracts/'):raise GenerationError('manifest outside contract allowlist')
+  if '..' in manifest_path.parts or not str(manifest_path).startswith('launchpad/spec/production-system/integration/contracts/'):raise GenerationError('manifest outside contract allowlist')
   if args.major==1:
    frozen=json.loads((root/manifest_path).read_bytes())
    if frozen['schemaSha256']!=manifest['schemaSha256'] or frozen['outputs']!=manifest['outputs']:raise GenerationError('immutable v1 input/output reproduction differs')

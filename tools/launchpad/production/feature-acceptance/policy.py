@@ -451,7 +451,7 @@ def root_capacity_references(authority, context):
     spec_ref = authority['spec']
     keys(spec_ref, {'path', 'sha256'}, 'spec authority')
     source = pathlib.Path(spec_ref['path'])
-    require(source.resolve() == pathlib.Path(__file__).resolve().parents[3]/'spec/production-system/spec.kvx' and not source.is_symlink(), 'current root specification required')
+    require(source.resolve() == pathlib.Path(__file__).resolve().parents[4]/'launchpad/spec/production-system/spec.kvx' and not source.is_symlink(), 'current root specification required')
     require(hashlib.sha256(source.read_bytes()).hexdigest() == spec_ref['sha256'], 'root spec digest mismatch')
     return schemas, capture, types, workload, bindings
 

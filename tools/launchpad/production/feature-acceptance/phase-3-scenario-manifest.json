@@ -4,8 +4,8 @@
   "phase": 3,
   "baseline_gate": "2.99",
   "prior_interface": "coordinator-admitted interface emitted by successful2.99; incompatible audit inputs require explicit lane handoff",
-  "policy": "tools/production/feature-acceptance/policy.py",
-  "collector": "tools/production/feature-acceptance/collect_journeys.py",
+  "policy": "tools/launchpad/production/feature-acceptance/policy.py",
+  "collector": "tools/launchpad/production/feature-acceptance/collect_journeys.py",
   "qualification_entrypoint": "journey_policy.qualify_audited_feature",
   "required_native_cases": [
     {
@@ -50,10 +50,10 @@
     "unittest",
     "discover",
     "-s",
-    "tools/production/feature-acceptance/tests",
+    "tools/launchpad/production/feature-acceptance/tests",
     "-v"
   ],
-  "verify_cmd": "python3 tools/production/qualify.py --task 3.50 --spec spec/production-system/spec.kvx --require-current-source",
+  "verify_cmd": "python3 tools/launchpad/production/qualify.py --task 3.50 --spec launchpad/spec/production-system/spec.kvx --require-current-source",
   "qualification_boundary": "Policy adversarial execution never establishes actual full feature behavior, capacity or release certification",
   "release_qualified": false
 }

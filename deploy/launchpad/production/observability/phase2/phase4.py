@@ -18,8 +18,8 @@ from probes import run_once_concurrent
 from render import atomic_write, safe_directory
 from runtime import COUNTERS, prometheus_samples, scrape_concurrent
 
-ROOT=Path(__file__).resolve().parents[4]
-LOAD=ROOT/'tools/production/load'
+ROOT=Path(__file__).resolve().parents[5]
+LOAD=ROOT/'tools/launchpad/production/load'
 METADATA_LIMIT=64*1024*1024
 sys.path.insert(0,str(LOAD))
 from capture import read_manifest, iter_artifact, gateway_summary

@@ -12,7 +12,7 @@ import (
 )
 
 func TestFrozenStreamExactRegistryShapeAndStates(t *testing.T) {
-	raw, e := os.ReadFile("../../../../spec/production-system/integration/contracts/v1/openapi.json")
+	raw, e := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v1/openapi.json")
 	if e != nil {
 		t.Fatal(e)
 	}

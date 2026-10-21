@@ -27,7 +27,7 @@ func TestProductionRegisteredOperationsHaveFrozenContracts(t *testing.T) {
 	}
 	contracts := map[string]map[string]map[string]json.RawMessage{}
 	for _, version := range []string{"v1", "v2"} {
-		raw, err := os.ReadFile("../../../../spec/production-system/integration/contracts/" + version + "/openapi.json")
+		raw, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/" + version + "/openapi.json")
 		if err != nil {
 			t.Fatal(err)
 		}

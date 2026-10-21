@@ -87,7 +87,7 @@ func newLegacyBridgeFixture(t *testing.T, batch int) legacyBridgeFixture {
 	}
 	exec("CREATE SCHEMA indexer")
 	for _, id := range []string{"60000", "80000", "190001"} {
-		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "spec", "production-system", "integration", "migrations", id+".sql"))
+		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "launchpad", "spec", "production-system", "integration", "migrations", id+".sql"))
 		if err != nil {
 			t.Fatal(err)
 		}

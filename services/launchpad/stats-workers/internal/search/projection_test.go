@@ -69,7 +69,7 @@ func TestRealBrokerInboxProjectionAndOutboxAtomicity(t *testing.T) {
 	pool := integratedDatabase(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	sourceDDL, err := os.ReadFile("../../../../spec/production-system/integration/migrations/190001.sql")
+	sourceDDL, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/migrations/190001.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

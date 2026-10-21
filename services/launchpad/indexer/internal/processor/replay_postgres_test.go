@@ -29,7 +29,7 @@ func replayPostgres(t *testing.T) (context.Context, string, *pgxpool.Pool) {
 	t.Cleanup(cancel)
 	dsn, pool := canonicaltest.New(t)
 	_, file, _, _ := runtime.Caller(0)
-	ddl, err := os.ReadFile(filepath.Join(filepath.Dir(file), "../../../../spec/production-system/handoffs/L06/phase2/ingestion.sql"))
+	ddl, err := os.ReadFile(filepath.Join(filepath.Dir(file), "../../../../../launchpad/spec/production-system/handoffs/L06/phase2/ingestion.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestReplayCheckpointAtomicAndLiveCursorIndependent(t *testing.T) {
 
 func sourceRegistry(t *testing.T, emitter common.Address) *decode.Registry {
 	t.Helper()
-	body, err := os.ReadFile("../../../../spec/production-system/integration/contracts/v1/chain/abi-catalog.json")
+	body, err := os.ReadFile("../../../../../launchpad/spec/production-system/integration/contracts/v1/chain/abi-catalog.json")
 	if err != nil {
 		t.Fatal(err)
 	}

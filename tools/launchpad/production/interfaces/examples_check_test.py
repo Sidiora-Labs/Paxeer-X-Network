@@ -14,9 +14,9 @@ from jsonschema import ValidationError
 HERE=pathlib.Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('examples_check',HERE/'examples_check.py')
 e=importlib.util.module_from_spec(spec);spec.loader.exec_module(e)
-ROOT=HERE.parents[2]
-CONTRACTS=pathlib.Path(os.environ.get('EXAMPLE_CONTRACTS',ROOT/'spec/production-system/integration/contracts/v1'))
-SPEC=pathlib.Path(os.environ.get('EXAMPLE_SPEC',ROOT/'spec/production-system/spec.kvx'))
+ROOT=HERE.parents[3]
+CONTRACTS=pathlib.Path(os.environ.get('EXAMPLE_CONTRACTS',ROOT/'launchpad/spec/production-system/integration/contracts/v1'))
+SPEC=pathlib.Path(os.environ.get('EXAMPLE_SPEC',ROOT/'launchpad/spec/production-system/spec.kvx'))
 MATERIALIZER=pathlib.Path(os.environ.get('EXAMPLE_MATERIALIZER',HERE/'materialize.py'))
 
 class ExamplesTests(unittest.TestCase):
