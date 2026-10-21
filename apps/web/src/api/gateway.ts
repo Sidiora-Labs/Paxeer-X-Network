@@ -8,7 +8,7 @@ const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
 const HEX32 = /^[0-9a-f]{64}$/u;
 const DID = /^did:layerx:[0-9a-f]{64}$/u;
 const DECIMAL = /^(0|[1-9][0-9]*)$/u;
-const CURSOR = /^[0-9A-Za-z]{1,32}$/u;
+const CURSOR = /^[0-9a-f]{32}$/u;
 const KIND = /^[a-z0-9_]{1,64}$/u;
 const QUANTITY = /^0x[0-9a-fA-F]{1,64}$/u;
 const DATA = /^0x(?:[0-9a-fA-F]{2})*$/u;
@@ -270,11 +270,16 @@ export interface HistoryRow {
   readonly txId: string;
   readonly final: boolean;
   readonly side: HistoryChain | null;
+  readonly blockHeight: number;
+  readonly txIndex: number;
+  readonly logIndex: number;
 }
 
 export interface HistoryPage {
   readonly items: readonly HistoryRow[];
   readonly nextCursor: string | null;
+  readonly indexedHeight: number | null;
+  readonly chainHeight: number;
 }
 
 export interface HistoryOptions {
@@ -285,6 +290,13 @@ export interface HistoryOptions {
 function chainOf(value: unknown): HistoryChain {
   if (value !== "layerx" && value !== "paxeer") {
     throw new GatewayUnavailableError("history answered an unknown chain");
+  }
+  return value;
+}
+
+function heightOf(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new GatewayUnavailableError("history answered a malformed position");
   }
   return value;
 }
@@ -334,6 +346,9 @@ function historyRow(value: unknown, unified: boolean): HistoryRow {
     txId: textOf(value.tx_id),
     final: value.final,
     side: unified ? chainOf(value.side) : null,
+    blockHeight: heightOf(value.blockHeight),
+    txIndex: heightOf(value.txIndex),
+    logIndex: heightOf(value.logIndex),
   };
 }
 
@@ -348,6 +363,8 @@ function historyPage(value: unknown, unified: boolean): HistoryPage {
   return {
     items: value.items.map((row: unknown) => historyRow(row, unified)),
     nextCursor: cursor,
+    indexedHeight: value.indexedHeight === null ? null : heightOf(value.indexedHeight),
+    chainHeight: heightOf(value.chainHeight),
   };
 }
 
@@ -357,29 +374,20 @@ function historyParams(account: string, options: HistoryOptions): readonly unkno
   return [account, cursor, HISTORY_PAGE_LIMIT, kind];
 }
 
-/** `lx_getHistory`: the indexed history of one LayerX account id. */
-export async function layerxHistory(account: string, options: HistoryOptions = {}): Promise<HistoryPage> {
-  const lowered = account.trim().toLowerCase();
-  if (!HEX32.test(lowered)) {
-    throw new GatewayUnavailableError("lx_getHistory takes a LayerX account id");
-  }
-  return historyPage(await rpc("lx_getHistory", historyParams(lowered, options)), false);
-}
-
-/** `px_getHistory`: the indexed history of one Paxeer EVM address. */
+/** `px_getHistory`: the indexed history of one EVM address or the address a `did:layerx` DID is bound to. */
 export async function paxeerHistory(account: string, options: HistoryOptions = {}): Promise<HistoryPage> {
   const lowered = account.trim().toLowerCase();
-  if (!EVM_ADDRESS.test(lowered)) {
-    throw new GatewayUnavailableError("px_getHistory takes an EVM address");
+  if (!EVM_ADDRESS.test(lowered) && !DID.test(lowered)) {
+    throw new GatewayUnavailableError("px_getHistory takes an EVM address or a did:layerx DID");
   }
   return historyPage(await rpc("px_getHistory", historyParams(lowered, options)), false);
 }
 
-/** `px_getUnifiedHistory`: both halves of a unified account, newest first. */
+/** `px_getUnifiedHistory`: the history of the one EVM address a unified account resolves to. */
 export async function unifiedHistory(account: string, options: HistoryOptions = {}): Promise<HistoryPage> {
   const lowered = account.trim().toLowerCase();
-  if (!EVM_ADDRESS.test(lowered) && !HEX32.test(lowered) && !DID.test(lowered)) {
-    throw new GatewayUnavailableError("px_getUnifiedHistory takes an account identifier");
+  if (!EVM_ADDRESS.test(lowered) && !DID.test(lowered)) {
+    throw new GatewayUnavailableError("px_getUnifiedHistory takes an EVM address or a did:layerx DID");
   }
   return historyPage(await rpc("px_getUnifiedHistory", historyParams(lowered, options)), true);
 }

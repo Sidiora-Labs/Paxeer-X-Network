@@ -397,6 +397,9 @@ fn register_replaced() {
         assert!(answer.get("result").is_none(), "{answer}");
         assert_eq!(answer["error"]["code"], -32601, "{answer}");
     }
+    let served = gateway.call("px_register", &json!([signer, signature]));
+    assert!(served.get("result").is_none(), "{served}");
+    assert_eq!(served["error"]["code"], -32002, "{served}");
     let (status, schema) = gateway
         .exchange("GET", "/rpc/schema", b"")
         .unwrap_or_else(|error| panic!("schema must be answered: {error}"));
@@ -412,6 +415,7 @@ fn register_replaced() {
     assert!(!names.contains(&"lx_register"), "{names:?}");
     assert!(!names.contains(&"lx_getHistory"), "{names:?}");
     assert!(names.contains(&"px_getHistory"), "{names:?}");
+    assert!(names.contains(&"px_register"), "{names:?}");
 }
 
 #[test]

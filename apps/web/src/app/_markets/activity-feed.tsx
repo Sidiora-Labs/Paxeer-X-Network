@@ -3,7 +3,6 @@ import { Badge } from "../../kit/collection";
 import {
   GatewayRpcError,
   GatewayUnavailableError,
-  layerxHistory,
   paxeerHistory,
   unifiedHistory,
   type HistoryPage,
@@ -13,10 +12,10 @@ import { StateEmpty } from "../../kit/surface";
 import { MarketUnavailable } from "./frame";
 import { formatUnits, shortId } from "./format";
 
-export type ActivitySide = "unified" | "layerx" | "paxeer";
+export type ActivitySide = "unified" | "paxeer";
 
 export function activitySide(value: string | undefined): ActivitySide {
-  return value === "layerx" || value === "paxeer" ? value : "unified";
+  return value === "paxeer" ? value : "unified";
 }
 
 async function page(
@@ -26,8 +25,6 @@ async function page(
   kind: string | undefined,
 ): Promise<HistoryPage> {
   switch (side) {
-    case "layerx":
-      return layerxHistory(account, { cursor, kind });
     case "paxeer":
       return paxeerHistory(account, { cursor, kind });
     case "unified":
@@ -37,7 +34,6 @@ async function page(
 
 const METHOD: Readonly<Record<ActivitySide, string>> = {
   unified: "px_getUnifiedHistory",
-  layerx: "lx_getHistory",
   paxeer: "px_getHistory",
 };
 
@@ -83,12 +79,15 @@ export async function ActivityFeed({
   return (
     <ExplorerPanel title={title}>
       <nav aria-label="History source" className="flex flex-wrap gap-3 text-sm">
-        {(["unified", "paxeer", "layerx"] as const).map((option) => (
+        {(["unified", "paxeer"] as const).map((option) => (
           <ExplorerLink key={option} href={query({ side: option })}>
             {option === side ? `[${METHOD[option]}]` : METHOD[option]}
           </ExplorerLink>
         ))}
       </nav>
+      <p className="text-sm">
+        {`Indexed to height ${history.indexedHeight === null ? "none yet" : history.indexedHeight.toString()} of chain height ${history.chainHeight.toString()}`}
+      </p>
       {history.items.length === 0 ? (
         <StateEmpty title="No activity" description="The indexer has no rows for this account yet." />
       ) : (

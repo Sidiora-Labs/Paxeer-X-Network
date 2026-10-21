@@ -2296,3 +2296,17 @@ command = "cargo test --locked --manifest-path services/platform/Cargo.toml -p l
 exit_code = 101
 log_path = "logs/FX-HW-11-A-verify.log"
 observed_and_assumption = "real_registered_wallet_handlers_have_the_same_unified_owner and actual_sdk_callers_and_existing_ownership_checks_stay_connected fail on source strings that services/wallet/gateway/src/routes/wallet.ts no longer contains on an unmodified main; assumed drift from an earlier wallet gateway change, left as written."
+
+[finding.gateway.switched-off-method-callers-left]
+revision = "a8bd002f2"
+command = "git grep -n -e lx_getHistory -e lx_register -- ':!spec'"
+exit_code = 0
+log_path = "logs/FX-HW-12-grep.log"
+observed_and_assumption = "After the web app moves to px_getHistory and registration is served as px_register, the agent SDKs (typescript rpc.ts and history.ts, python px.py, rust rpc.rs), the CLI register and rpc commands with their openrpc fixture and tests, tools/bringup check-live.sh and xweb-config.sh, the route catalogue and the docs still name lx_getHistory or lx_register; each is owned by a later spec task, left as written."
+
+[finding.web.suite-baseline-red]
+revision = "a8bd002f2"
+command = "cd apps/web && npm test -- --run"
+exit_code = 1
+log_path = "logs/FX-HW-12-web-baseline.log"
+observed_and_assumption = "With this change's web sources set aside the suite fails the same eight tests it fails with them: the two golden vector tests, the generated client boundary test naming src/states/error.tsx, the two unified account decode tests expecting layerx_activity, and the custody-evidence, custody and gas-station files; assumed drift from earlier generated client and custody changes, left as written."

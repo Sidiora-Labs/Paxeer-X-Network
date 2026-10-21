@@ -75,6 +75,7 @@ struct Config {
     capabilities: capabilities::Cache,
     indexer: Option<history::Indexer>,
     registration_token: Option<Zeroizing<String>>,
+    trusted_proxies: rpc_register::TrustedProxies,
     faucet: Option<rpc_faucet::Faucet>,
     store: Arc<RedisStore>,
     event_producer: bool,
@@ -1133,6 +1134,7 @@ fn config(event_producer: bool) -> Result<Config, String> {
         capabilities: capabilities::configured()?,
         indexer: history::configured_endpoint()?,
         registration_token: rpc_register::configured_token()?,
+        trusted_proxies: rpc_register::configured_trusted_proxies()?,
         faucet: rpc_faucet::configured()?,
         store: Arc::new(RedisStore::new(
             RedisEndpoint::parse(
@@ -3740,6 +3742,7 @@ impl Drop for ConnectionGuard {
 
 fn serve(config: &Arc<Config>, tcp: TcpStream) -> Result<(), String> {
     let peer = tcp.peer_addr().map_err(|error| error.to_string())?;
+    rpc_register::bind_peer(peer);
     tcp.set_nodelay(true).map_err(|error| error.to_string())?;
     tcp.set_read_timeout(Some(Duration::from_secs(10)))
         .map_err(|error| error.to_string())?;
