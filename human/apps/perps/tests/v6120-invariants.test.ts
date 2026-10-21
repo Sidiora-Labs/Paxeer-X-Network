@@ -626,7 +626,14 @@ describe("v6120Invariants", () => {
     assert.ok(boundary, "FundingHistoryChart converts to a plot number in plotFundingRate");
     assert.doesNotMatch(chart.replace(boundary[0], "\n"), /\bNumber\(|parseFloat|\bnum\(|\/ ?1e18/);
     assert.match(chart, /const rate = parseFundingRateWad\(s\.fundingRate24h\);/);
-    assert.match(chart, /formatFundingRatePct\(item\.payload\.rate\)/);
+    assert.match(chart, /formatSignedFundingDecimalPct\(fundingWadDecimal\(item\.payload\?\.rate \?\? null\)\)/);
+    assert.doesNotMatch(chart, /formatFundingRatePct|formatFundingDecimalPct\(|\.percent\(/);
+    const table = read("src/widgets/analytics/MarketSnapshotTable.tsx");
+    for (const line of table.split("\n").filter((l) => /fundingRate|fundingSign/.test(l))) {
+      assert.doesNotMatch(line, /\bNumber\(|parseFloat|\bnum\(|parse18|\/ ?1e18|\.percent\(|formatFundingRatePct|formatFundingDecimalPct\(/, `MarketSnapshotTable.tsx: ${line.trim()}`);
+    }
+    assert.match(table, /fundingWadDecimal\(parseFundingRateWad\(s\.fundingRate24h\)\)/);
+    assert.match(table, /formatSignedFundingDecimalPct\(fundingRate\)/);
   });
 
   it("noEstFundingRate", () => {

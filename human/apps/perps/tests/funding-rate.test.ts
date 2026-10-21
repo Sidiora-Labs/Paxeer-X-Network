@@ -172,7 +172,7 @@ describe("venue funding consumers", () => {
     const header = read("src/widgets/trading/PairHeader.tsx");
     assert.match(header, /fundingFigures\(venueHourly\)/);
     assert.match(header, /\[FUNDING_LABEL_1H, FUNDING_LABEL_24H\]/);
-    assert.match(read("src/core/perps/fundingRate.ts"), /if \(venueHourly === null\) return \{ label: FUNDING_LABEL_1H, text: "\\u2014", sign: 0 \};\n  return \{ label: FUNDING_LABEL_1H, text: formatFundingRatePct\(venueHourly\),/);
+    assert.match(read("src/core/perps/fundingRate.ts"), /const rate = socketRate \?\? fundingWadDecimal\(venueHourly\);\n  return \{\n    label: socketRate != null \? FUNDING_LABEL_PREDICTED : FUNDING_LABEL_1H,\n    text: formatSignedFundingDecimalPct\(rate\),\n    sign: fundingDecimalSign\(rate\) \?\? 0,/);
     const tab = read("src/page-modules/markets/index.tsx");
     assert.match(tab, /\{FUNDING_LABEL_1H\}/);
     assert.match(tab, /formatFundingRatePct\(row\.fundingHourly\)/);
@@ -262,7 +262,7 @@ describe("exact funding_8h, perp_funding_rate and symbol socket rates", () => {
     assert.match(read("src/page-modules/markets/index.tsx"), /row\.funding8h === null \? "—" : formatFundingRatePct\(row\.funding8h\)/);
     assert.match(read("src/widgets/trading/PairHeader.tsx"), /formatSignedFundingDecimalPct\(estFunding\)/);
     assert.match(read("src/widgets/trading/MobileTradingLayout.tsx"), /fundingRowFigure\(wsStats\?\.funding_rate, ticker\?\.last_funding_rate_hourly \?\? null\)/);
-    assert.match(read("src/core/perps/fundingRate.ts"), /text: formatSignedFundingDecimalPct\(socketRate\)/);
+    assert.match(read("src/core/perps/fundingRate.ts"), /text: formatSignedFundingDecimalPct\(rate\)/);
     const stream = read("src/hooks/perps/useSidPaxMarketStream.ts");
     assert.match(stream, /funding_rate: {9}fundingRateFromJsonNumber\(d\.funding_rate\),/);
     assert.match(stream, /last_funding_rate: {4}fundingRateFromJsonNumber\(d\.last_funding_rate\),/);
@@ -274,10 +274,12 @@ describe("mobile funding row and signed tiny rates", () => {
     const { fundingRowFigure, FUNDING_LABEL_PREDICTED } = await import("../src/core/perps/fundingRate");
     const hourly = parseFundingRateHourly("0.0000125");
     for (const absent of [null, undefined]) {
-      assert.deepEqual(fundingRowFigure(absent, hourly), { label: FUNDING_LABEL_1H, text: "0.0013%", sign: 1 });
+      assert.deepEqual(fundingRowFigure(absent, hourly), { label: FUNDING_LABEL_1H, text: "+0.0013%", sign: 1 });
     }
     assert.deepEqual(fundingRowFigure(null, parseFundingRateHourly("-0.0001")), { label: FUNDING_LABEL_1H, text: "-0.0100%", sign: -1 });
     assert.deepEqual(fundingRowFigure(null, null), { label: FUNDING_LABEL_1H, text: "—", sign: 0 });
+    assert.deepEqual(fundingRowFigure(null, -1n), { label: FUNDING_LABEL_1H, text: "-0.0000%", sign: -1 });
+    assert.deepEqual(fundingRowFigure(undefined, 0n), { label: FUNDING_LABEL_1H, text: "0.0000%", sign: 0 });
     assert.deepEqual(fundingRowFigure("0.0002", hourly), { label: FUNDING_LABEL_PREDICTED, text: "+0.0200%", sign: 1 });
     assert.deepEqual(fundingRowFigure("-0.0000000001", hourly), { label: FUNDING_LABEL_PREDICTED, text: "-0.0000%", sign: -1 });
   });
@@ -302,5 +304,24 @@ describe("mobile funding row and signed tiny rates", () => {
     assert.equal(parseFundingRateWad("123456789123456789123"), 123_456_789_123_456_789_123n);
     assert.equal(formatFundingRatePct(parseFundingRateWad("300000000000000")!), "0.0300%");
     for (const bad of [null, undefined, "", "0.5", "1e18", " 1"]) assert.equal(parseFundingRateWad(bad), null);
+  });
+
+  it("the chart tooltip and snapshot table print a tiny negative on-chain rate signed, zero neutral and an absent one as a dash", async () => {
+    const { formatSignedFundingDecimalPct, fundingDecimalSign, fundingWadDecimal, parseFundingRateWad } = await import("../src/core/perps/fundingRate");
+    const shown = (v: string | null) => {
+      const rate = fundingWadDecimal(parseFundingRateWad(v));
+      return { text: formatSignedFundingDecimalPct(rate), sign: fundingDecimalSign(rate) };
+    };
+    assert.deepEqual(shown("-1"), { text: "-0.0000%", sign: -1 });
+    assert.deepEqual(shown("-12500000000000"), { text: "-0.0013%", sign: -1 });
+    assert.deepEqual(shown("0"), { text: "0.0000%", sign: 0 });
+    assert.deepEqual(shown("300000000000000"), { text: "+0.0300%", sign: 1 });
+    assert.deepEqual(shown(null), { text: "—", sign: null });
+    assert.equal(fundingWadDecimal(123_456_789_123_456_789_123n), "123.456789123456789123");
+    const read = (file: string) => readFileSync(ROOT + file, "utf8");
+    assert.match(read("src/widgets/analytics/FundingHistoryChart.tsx"), /formatSignedFundingDecimalPct\(fundingWadDecimal\(item\.payload\?\.rate \?\? null\)\)/);
+    const table = read("src/widgets/analytics/MarketSnapshotTable.tsx");
+    assert.match(table, /const fundingRate = fundingWadDecimal\(parseFundingRateWad\(s\.fundingRate24h\)\);\n\s*const fundingSign = fundingDecimalSign\(fundingRate\);/);
+    assert.match(table, /\{formatSignedFundingDecimalPct\(fundingRate\)\}/);
   });
 });

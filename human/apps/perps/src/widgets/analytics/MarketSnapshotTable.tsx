@@ -7,6 +7,7 @@ import {
   TRACK_B_STRINGS,
 } from "@/core/perps/config";
 import { useMarketSnapshots } from "@/hooks/perps/useAnalytics";
+import { formatSignedFundingDecimalPct, fundingDecimalSign, fundingWadDecimal, parseFundingRateWad } from "@/core/perps/fundingRate";
 
 /** The subgraph snapshot's on-chain 24h funding figure, never the venue rate. */
 export const FUNDING_LABEL_ONCHAIN_24H = "funding paid (24h, on-chain)";
@@ -88,7 +89,8 @@ export function MarketSnapshotTable({ marketId }: MarketSnapshotTableProps) {
           </thead>
           <tbody>
             {data.slice(0, 20).map((s) => {
-              const fundingRate = parse18(s.fundingRate24h);
+              const fundingRate = fundingWadDecimal(parseFundingRateWad(s.fundingRate24h));
+              const fundingSign = fundingDecimalSign(fundingRate);
               return (
                 <tr key={s.id} className="border-b border-foreground/5 hover:bg-foreground/[0.03] transition-colors ease-data duration-150">
                   <td className="px-4 py-2 text-muted-foreground">
@@ -109,8 +111,8 @@ export function MarketSnapshotTable({ marketId }: MarketSnapshotTableProps) {
                   <td className="px-4 py-2 text-right font-mono">
                     {ANALYTICS_AXIS_FORMATTERS.compactUsd(parse18(s.volume24hUsd))}
                   </td>
-                  <td className={`px-4 py-2 text-right font-mono ${fundingRate > 0 ? "text-long" : fundingRate < 0 ? "text-short" : "text-muted-foreground"}`}>
-                    {ANALYTICS_AXIS_FORMATTERS.percent(fundingRate)}
+                  <td className={`px-4 py-2 text-right font-mono ${fundingSign === 1 ? "text-long" : fundingSign === -1 ? "text-short" : "text-muted-foreground"}`}>
+                    {formatSignedFundingDecimalPct(fundingRate)}
                   </td>
                 </tr>
               );

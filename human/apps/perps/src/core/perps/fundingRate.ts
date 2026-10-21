@@ -8,7 +8,7 @@
  * settlement and not an estimate of the next one.
  */
 
-import { formatWadFixed } from "./pnlHelpers";
+import { formatWadFixed, wadToDecimal } from "./pnlHelpers";
 
 /** Decimals of the fixed-point funding rate: 1e18 = a rate of 1.0. */
 export const FUNDING_RATE_DECIMALS = 18;
@@ -123,15 +123,20 @@ export function fundingRowFigure(
   socketRate: string | null | undefined,
   venueHourly: bigint | null,
 ): { label: string; text: string; sign: -1 | 0 | 1 } {
-  if (socketRate != null) {
-    const sign = fundingDecimalSign(socketRate);
-    return { label: FUNDING_LABEL_PREDICTED, text: formatSignedFundingDecimalPct(socketRate), sign: sign ?? 0 };
-  }
-  if (venueHourly === null) return { label: FUNDING_LABEL_1H, text: "\u2014", sign: 0 };
-  return { label: FUNDING_LABEL_1H, text: formatFundingRatePct(venueHourly), sign: venueHourly > 0n ? 1 : venueHourly < 0n ? -1 : 0 };
+  const rate = socketRate ?? fundingWadDecimal(venueHourly);
+  return {
+    label: socketRate != null ? FUNDING_LABEL_PREDICTED : FUNDING_LABEL_1H,
+    text: formatSignedFundingDecimalPct(rate),
+    sign: fundingDecimalSign(rate) ?? 0,
+  };
 }
 
 /** An on-chain 18-decimal integer rate string (the subgraph's fundingRate24h) as a bigint; null or malformed is null, never zero. */
 export function parseFundingRateWad(v: string | null | undefined): bigint | null {
   return typeof v === "string" && /^-?\d+$/.test(v) ? BigInt(v) : null;
+}
+
+/** An 18-decimal rate as the exact decimal string formatSignedFundingDecimalPct and fundingDecimalSign read; null stays null. */
+export function fundingWadDecimal(rate: bigint | null): string | null {
+  return rate === null ? null : wadToDecimal(rate);
 }

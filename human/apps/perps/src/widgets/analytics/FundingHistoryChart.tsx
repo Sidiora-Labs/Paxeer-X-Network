@@ -17,7 +17,7 @@ import {
   TRACK_B_STRINGS,
 } from "@/core/perps/config";
 import { useMarketSnapshots } from "@/hooks/perps/useAnalytics";
-import { formatFundingRatePct, parseFundingRateWad } from "@/core/perps/fundingRate";
+import { formatSignedFundingDecimalPct, fundingWadDecimal, parseFundingRateWad } from "@/core/perps/fundingRate";
 import { FUNDING_LABEL_ONCHAIN_24H } from "./MarketSnapshotTable";
 
 interface FundingHistoryChartProps {
@@ -110,7 +110,7 @@ export function FundingHistoryChart({ marketId, isMobile }: FundingHistoryChartP
               }}
               labelStyle={{ color: "hsl(var(--muted-foreground))" }}
               formatter={(_value: number, _name: string, item: { payload?: ChartPoint }) => [
-                item.payload?.rate == null ? "\u2014" : formatFundingRatePct(item.payload.rate),
+                formatSignedFundingDecimalPct(fundingWadDecimal(item.payload?.rate ?? null)),
                 FUNDING_LABEL_ONCHAIN_24H,
               ]}
             />
