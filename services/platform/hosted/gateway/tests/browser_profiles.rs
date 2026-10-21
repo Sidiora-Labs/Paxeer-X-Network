@@ -200,7 +200,7 @@ fn explorer_account_profile_is_exact_scoped_and_keeps_public_data_admission() {
     assert_eq!(entry["path"], "/v1/accounts/{accountId}/unified");
     assert_eq!(
         entry["source"],
-        "human/crates/layerx-explorer-index/src/main.rs"
+        "services/human/crates/layerx-explorer-index/src/main.rs"
     );
     for account in [
         "11".repeat(32),

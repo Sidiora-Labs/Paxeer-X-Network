@@ -66,7 +66,7 @@ def main():
             destination / 'go-daemon-build.log', ROOT / 'human/wallet/attestor', environment)
         run(['go', 'test', '-mod=readonly', '-c', '-o', str(destination / 'native-server.test'), './internal/server'],
             destination / 'go-corpus-build.log', ROOT / 'human/wallet/attestor', environment)
-        command = ['/root/.cargo/bin/cargo', 'test', '--locked', '--manifest-path', 'human/Cargo.toml',
+        command = ['/root/.cargo/bin/cargo', 'test', '--locked', '--manifest-path', 'services/human/Cargo.toml',
                    '-p', 'layerx-human-kms', '--test', 'attestor_native_profile', '--no-run', '--message-format=json']
         run(command, destination / 'rust-corpus-build.log', ROOT, environment)
         executables = []

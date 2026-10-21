@@ -1,7 +1,7 @@
 # Human custody and verification
 
 The Human web app is custodial by default. This page is the product
-custody model from `human/schema/human-api/identity.kvx`,
+custody model from `services/human/schema/human-api/identity.kvx`,
 `journeys.kvx`, `home.kvx`, and `spec/layerx-platform/spec.kvx`.
 Native Bridge custody credit is a different surface:
 [Authenticated custody credit](Custody.md). Protocol settlement on
@@ -66,7 +66,7 @@ then pay on Paxeer with a nullifier.
 ## Verification levels
 
 Journey and evidence types use
-(`human/schema/human-api/journeys.kvx`):
+(`services/human/schema/human-api/journeys.kvx`):
 
 `unverified` < `receipt-verified` < `checkpoint-finalised` <
 `paxeer-finalised`

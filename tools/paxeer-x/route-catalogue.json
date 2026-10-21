@@ -2358,7 +2358,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/home.kvx",
+      "source": "services/human/schema/human-api/home.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2380,7 +2380,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/home.kvx",
+      "source": "services/human/schema/human-api/home.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2402,7 +2402,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/v1.kvx",
+      "source": "services/human/schema/human-api/v1.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2424,7 +2424,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2446,7 +2446,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2468,7 +2468,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2490,7 +2490,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2512,7 +2512,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2534,7 +2534,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2556,7 +2556,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2578,7 +2578,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2600,7 +2600,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2622,7 +2622,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2644,7 +2644,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2666,7 +2666,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2688,7 +2688,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2710,7 +2710,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2732,7 +2732,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2754,7 +2754,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2776,7 +2776,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2798,7 +2798,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2820,7 +2820,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2842,7 +2842,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2864,7 +2864,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2886,7 +2886,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2908,7 +2908,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2930,7 +2930,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2952,7 +2952,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2974,7 +2974,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -2996,7 +2996,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3018,7 +3018,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3040,7 +3040,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3062,7 +3062,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3084,7 +3084,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3106,7 +3106,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3128,7 +3128,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3150,7 +3150,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3172,7 +3172,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3194,7 +3194,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3216,7 +3216,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3238,7 +3238,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3260,7 +3260,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3282,7 +3282,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3304,7 +3304,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3326,7 +3326,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3348,7 +3348,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3370,7 +3370,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3392,7 +3392,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3414,7 +3414,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3436,7 +3436,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3458,7 +3458,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3480,7 +3480,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3502,7 +3502,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3524,7 +3524,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3546,7 +3546,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3568,7 +3568,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3590,7 +3590,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3612,7 +3612,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3634,7 +3634,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3656,7 +3656,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3678,7 +3678,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3700,7 +3700,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3722,7 +3722,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3744,7 +3744,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3766,7 +3766,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/intent.kvx",
+      "source": "services/human/schema/human-api/intent.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3788,7 +3788,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/intent.kvx",
+      "source": "services/human/schema/human-api/intent.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3810,7 +3810,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/stream.kvx",
+      "source": "services/human/schema/human-api/stream.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3832,7 +3832,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/stream.kvx",
+      "source": "services/human/schema/human-api/stream.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3854,7 +3854,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3876,7 +3876,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3898,7 +3898,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3920,7 +3920,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3942,7 +3942,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3964,7 +3964,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -3986,7 +3986,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -4008,7 +4008,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -4030,7 +4030,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/journeys.kvx",
+      "source": "services/human/schema/human-api/journeys.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -4052,7 +4052,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/journeys.kvx",
+      "source": "services/human/schema/human-api/journeys.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -4074,7 +4074,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/journeys.kvx",
+      "source": "services/human/schema/human-api/journeys.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -4096,7 +4096,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/support.kvx",
+      "source": "services/human/schema/human-api/support.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -4118,7 +4118,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/support.kvx",
+      "source": "services/human/schema/human-api/support.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -4140,7 +4140,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/support.kvx",
+      "source": "services/human/schema/human-api/support.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -4162,7 +4162,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/support.kvx",
+      "source": "services/human/schema/human-api/support.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -4184,7 +4184,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/support.kvx",
+      "source": "services/human/schema/human-api/support.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -4206,7 +4206,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/support.kvx",
+      "source": "services/human/schema/human-api/support.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -6706,7 +6706,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/home.kvx",
+      "source": "services/human/schema/human-api/home.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -6727,7 +6727,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/home.kvx",
+      "source": "services/human/schema/human-api/home.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -6748,7 +6748,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/v1.kvx",
+      "source": "services/human/schema/human-api/v1.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -6769,7 +6769,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -6790,7 +6790,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -6811,7 +6811,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -6832,7 +6832,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -6853,7 +6853,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -6874,7 +6874,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -6895,7 +6895,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -6916,7 +6916,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/movement.kvx",
+      "source": "services/human/schema/human-api/movement.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -6937,7 +6937,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -6958,7 +6958,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -6979,7 +6979,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7000,7 +7000,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7021,7 +7021,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7042,7 +7042,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7063,7 +7063,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7084,7 +7084,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7105,7 +7105,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7126,7 +7126,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7147,7 +7147,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7168,7 +7168,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7189,7 +7189,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7210,7 +7210,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7231,7 +7231,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7252,7 +7252,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7273,7 +7273,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7294,7 +7294,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7315,7 +7315,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7336,7 +7336,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7357,7 +7357,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7378,7 +7378,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7399,7 +7399,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7420,7 +7420,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7441,7 +7441,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7462,7 +7462,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7483,7 +7483,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7504,7 +7504,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7525,7 +7525,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7546,7 +7546,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7567,7 +7567,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7588,7 +7588,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7609,7 +7609,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7630,7 +7630,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7651,7 +7651,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7672,7 +7672,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7693,7 +7693,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/identity.kvx",
+      "source": "services/human/schema/human-api/identity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7714,7 +7714,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7735,7 +7735,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7756,7 +7756,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7777,7 +7777,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7798,7 +7798,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7819,7 +7819,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7840,7 +7840,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7861,7 +7861,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7882,7 +7882,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7903,7 +7903,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7924,7 +7924,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7945,7 +7945,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7966,7 +7966,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -7987,7 +7987,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/agents.kvx",
+      "source": "services/human/schema/human-api/agents.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8008,7 +8008,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/intent.kvx",
+      "source": "services/human/schema/human-api/intent.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8029,7 +8029,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/intent.kvx",
+      "source": "services/human/schema/human-api/intent.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8050,7 +8050,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/stream.kvx",
+      "source": "services/human/schema/human-api/stream.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8071,7 +8071,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/stream.kvx",
+      "source": "services/human/schema/human-api/stream.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8092,7 +8092,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8113,7 +8113,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8134,7 +8134,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8155,7 +8155,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8176,7 +8176,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8197,7 +8197,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8218,7 +8218,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8239,7 +8239,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/activity.kvx",
+      "source": "services/human/schema/human-api/activity.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8260,7 +8260,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/journeys.kvx",
+      "source": "services/human/schema/human-api/journeys.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8281,7 +8281,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/journeys.kvx",
+      "source": "services/human/schema/human-api/journeys.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8302,7 +8302,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/journeys.kvx",
+      "source": "services/human/schema/human-api/journeys.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8323,7 +8323,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/support.kvx",
+      "source": "services/human/schema/human-api/support.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8344,7 +8344,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/support.kvx",
+      "source": "services/human/schema/human-api/support.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8365,7 +8365,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/support.kvx",
+      "source": "services/human/schema/human-api/support.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8386,7 +8386,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/support.kvx",
+      "source": "services/human/schema/human-api/support.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8407,7 +8407,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/support.kvx",
+      "source": "services/human/schema/human-api/support.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -8428,7 +8428,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/support.kvx",
+      "source": "services/human/schema/human-api/support.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -45194,7 +45194,7 @@
         "wallet",
         "explorer"
       ],
-      "source": "human/crates/layerx-explorer-index/src/main.rs",
+      "source": "services/human/crates/layerx-explorer-index/src/main.rs",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -45216,7 +45216,7 @@
         "wallet",
         "explorer"
       ],
-      "source": "human/crates/layerx-explorer-index/src/main.rs",
+      "source": "services/human/crates/layerx-explorer-index/src/main.rs",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -45238,7 +45238,7 @@
         "wallet",
         "explorer"
       ],
-      "source": "human/crates/layerx-explorer-index/src/main.rs",
+      "source": "services/human/crates/layerx-explorer-index/src/main.rs",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -45574,7 +45574,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/program-approvals.kvx",
+      "source": "services/human/schema/human-api/program-approvals.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -45596,7 +45596,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/program-approvals.kvx",
+      "source": "services/human/schema/human-api/program-approvals.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -45617,7 +45617,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/program-approvals.kvx",
+      "source": "services/human/schema/human-api/program-approvals.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -45639,7 +45639,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/program-approvals.kvx",
+      "source": "services/human/schema/human-api/program-approvals.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -45660,7 +45660,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/program-approvals.kvx",
+      "source": "services/human/schema/human-api/program-approvals.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -45682,7 +45682,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/program-approvals.kvx",
+      "source": "services/human/schema/human-api/program-approvals.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -45703,7 +45703,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/program-approvals.kvx",
+      "source": "services/human/schema/human-api/program-approvals.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -45725,7 +45725,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/program-approvals.kvx",
+      "source": "services/human/schema/human-api/program-approvals.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -45746,7 +45746,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/program-approvals.kvx",
+      "source": "services/human/schema/human-api/program-approvals.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -45768,7 +45768,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/program-approvals.kvx",
+      "source": "services/human/schema/human-api/program-approvals.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -45789,7 +45789,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/program-approvals.kvx",
+      "source": "services/human/schema/human-api/program-approvals.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -45811,7 +45811,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/program-approvals.kvx",
+      "source": "services/human/schema/human-api/program-approvals.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -45832,7 +45832,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/program-approvals.kvx",
+      "source": "services/human/schema/human-api/program-approvals.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -45854,7 +45854,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/program-approvals.kvx",
+      "source": "services/human/schema/human-api/program-approvals.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
@@ -45875,7 +45875,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/v1.kvx",
+      "source": "services/human/schema/human-api/v1.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -45897,7 +45897,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/v1.kvx",
+      "source": "services/human/schema/human-api/v1.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -45919,7 +45919,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/journeys.kvx",
+      "source": "services/human/schema/human-api/journeys.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
@@ -45941,7 +45941,7 @@
         "wallet",
         "developer"
       ],
-      "source": "human/schema/human-api/journeys.kvx",
+      "source": "services/human/schema/human-api/journeys.kvx",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3

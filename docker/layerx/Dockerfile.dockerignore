@@ -32,6 +32,7 @@ services/agent
 cmd
 explorer
 human
+services/human
 include
 services/interop
 layerx
@@ -45,7 +46,7 @@ test
 tests
 
 !services/agent/Cargo.toml
-!human/Cargo.toml
+!services/human/Cargo.toml
 !services/interop/Cargo.toml
 !services/platform/Cargo.toml
 !programs/Cargo.toml
@@ -60,7 +61,7 @@ tests
 !services/agent/crates/layerx-sdk/**
 !services/agent/crates/layerx-types/**
 !services/agent/crates/layerx-wire/**
-!human/crates/layerx-intents/**
+!services/human/crates/layerx-intents/**
 !services/interop/crates/layerx-ap2/**
 !services/interop/crates/layerx-bridge-relayer/**
 !services/interop/crates/layerx-fiat/**

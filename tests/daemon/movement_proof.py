@@ -141,7 +141,7 @@ def run(work, settlement, rpc, account, launch, ca_key, ca_cert, batch):
             assert path.read_bytes() == original
         environment.update(LAYERX_HUMAN_MOVEMENT_TEST_PAXEER_RPC=origins[0],
             LAYERX_HUMAN_MOVEMENT_TEST_TRANSACTION=transaction)
-        subprocess.run(['cargo', 'test', '--locked', '--manifest-path', str(repo / 'human/Cargo.toml'),
+        subprocess.run(['cargo', 'test', '--locked', '--manifest-path', str(repo / 'services/human/Cargo.toml'),
             '-p', 'layerx-human-movement-provider',
             'tests::live_paxeer_deposit_proof_is_reverified_after_restart', '--', '--ignored', '--exact'],
             env=environment, stdout=log, stderr=log, check=True, timeout=120)

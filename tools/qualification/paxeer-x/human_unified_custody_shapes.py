@@ -21,9 +21,9 @@ import time
 ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = 'paxeer-x.human-unified-custody-shapes.v1'
 MANIFEST = Path(os.environ.get('PAXEER_X_UNIFIED_SHAPES_MANIFEST',
-                               ROOT / 'human/target/paxeer-x/human-unified-custody-shapes.json'))
+                               ROOT / 'services/human/target/paxeer-x/human-unified-custody-shapes.json'))
 EVIDENCE = Path(os.environ.get('PAXEER_X_UNIFIED_SHAPES_EVIDENCE', '/root/lx-fleet/logs/10.4/evidence'))
-SOURCES = ['human/Cargo.toml', 'human/Cargo.lock', 'human/crates', 'services/agent/crates', 'human/schema/human-api',
+SOURCES = ['services/human/Cargo.toml', 'services/human/Cargo.lock', 'services/human/crates', 'services/agent/crates', 'services/human/schema/human-api',
            'tools/qualification/paxeer-x/human_unified_custody_shapes.py']
 FILTER = 'unified_shape_'
 CASES = [
@@ -79,7 +79,7 @@ def private_write(path, document):
 
 def build():
     revision = source()
-    command = ['cargo', 'test', '--locked', '--manifest-path', 'human/Cargo.toml', '-p', 'layerx-human-service',
+    command = ['cargo', 'test', '--locked', '--manifest-path', 'services/human/Cargo.toml', '-p', 'layerx-human-service',
                '--test', 'intent_submit', '--no-run', '--message-format=json']
     result = subprocess.run(command, cwd=ROOT, text=True, stdout=subprocess.PIPE, stdin=subprocess.DEVNULL)
     found = []
@@ -119,7 +119,7 @@ def prerequisites():
     if digest(path) != data['artifact']['sha256']:
         raise Stale('the test executable changed since the build')
     for schema in ('intent.kvx', 'golden/intent.submit.response.json'):
-        require((ROOT / 'human/schema/human-api' / schema).is_file(), 'missing contract: ' + schema)
+        require((ROOT / 'services/human/schema/human-api' / schema).is_file(), 'missing contract: ' + schema)
     return revision, path
 
 
@@ -131,10 +131,10 @@ def qualify():
     state = Path(tempfile.mkdtemp(prefix='unified-shapes-', dir=EVIDENCE))
     command = [str(executable), FILTER, '--test-threads=1']
     environment = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'TMPDIR': str(state), 'HOME': str(state),
-                   'CARGO_MANIFEST_DIR': str(ROOT / 'human/crates/layerx-human-service'), 'RUST_BACKTRACE': '1'}
+                   'CARGO_MANIFEST_DIR': str(ROOT / 'services/human/crates/layerx-human-service'), 'RUST_BACKTRACE': '1'}
     descriptor = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, 'w') as output:
-        result = subprocess.run(command, cwd=ROOT / 'human/crates/layerx-human-service', env=environment,
+        result = subprocess.run(command, cwd=ROOT / 'services/human/crates/layerx-human-service', env=environment,
                                 stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, timeout=1500)
     text = log.read_text()
     results = dict(re.findall(r'^test (\S+) \.\.\. (\w+)$', text, re.M))

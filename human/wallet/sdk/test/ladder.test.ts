@@ -13,7 +13,7 @@ import {
 } from '../src/index.js';
 
 const fixtureDir = new URL('./fixtures/endpoint/', import.meta.url);
-const schemaDir = new URL('../../../schema/human-api/', import.meta.url);
+const schemaDir = new URL('../../../../services/human/schema/human-api/', import.meta.url);
 
 const explorerStatuses = JSON.parse(readFileSync(new URL('explorer-status.json', fixtureDir), 'utf8')) as Record<
   string,

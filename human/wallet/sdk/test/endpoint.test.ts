@@ -19,7 +19,7 @@ type Exchange = { request: { method: string; params: unknown[] }; response: Reco
 type Golden = { method?: string; path?: string; headers?: Record<string, string>; body?: unknown; status?: number };
 
 const fixtureDir = new URL('./fixtures/endpoint/', import.meta.url);
-const goldenDir = new URL('../../../schema/human-api/golden/', import.meta.url);
+const goldenDir = new URL('../../../../services/human/schema/human-api/golden/', import.meta.url);
 const scenarios = ['available', 'kernel-unreachable', 'no-finalised-checkpoint', 'kernel-not-configured'] as const;
 type Scenario = (typeof scenarios)[number];
 

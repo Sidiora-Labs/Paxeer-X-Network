@@ -55,7 +55,7 @@ def operations(repo: Path) -> list[Operation]:
     found: dict[tuple[str, str], Operation] = {}
     for plane, relative in (
         ("agent", "services/agent/schema/agent-api"),
-        ("human", "human/schema/human-api"),
+        ("human", "services/human/schema/human-api"),
     ):
         root = repo / relative
         sections: dict[str, dict[str, str]] = {}

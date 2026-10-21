@@ -471,10 +471,10 @@ def reference_page(root: Path, plane: str, relative: str, title: str, transport:
 
 
 def errors_page(root: Path) -> str:
-    human = parse_document(root / "human/schema/human-api/errors.kvx")
+    human = parse_document(root / "services/human/schema/human-api/errors.kvx")
     agent = parse_document(root / "services/agent/schema/agent-api/errors.kvx")
     lines = [
-        "<!-- Generated from human/schema/human-api/errors.kvx and services/agent/schema/agent-api/errors.kvx"
+        "<!-- Generated from services/human/schema/human-api/errors.kvx and services/agent/schema/agent-api/errors.kvx"
         " by services/platform/docs/build/build_site.py. Do not hand-edit. -->",
         "",
         "# Error reference",
@@ -950,7 +950,7 @@ def generated_documents(root: Path, repository: Path, capabilities: dict[str, Ca
         / "human-api.md": reference_page(
             repository,
             "human",
-            "human/schema/human-api",
+            "services/human/schema/human-api",
             "Human API reference",
             "Transport is HTTPS with JSON bodies under the `/v1` base path. Every amount is a decimal string"
             " of base units and always travels with its currency code. Every mutation that can move money"

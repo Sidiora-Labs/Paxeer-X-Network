@@ -16,13 +16,13 @@ RECORD = Path('/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.24-artif
 CLOCK_RECORD = RECORD.with_name('task-104.13.25-artifacts.json')
 V1_GATE_DIGEST = 'c13cff140997c8cbde2a6602221ce92df850ab8736c47fbc9576f92678673549'
 SOURCES = (
-    'human/crates/layerx-human-service/src/server/agent_runtime.rs',
-    'human/crates/layerx-human-service/src/server/production_rotation.rs',
-    'human/crates/layerx-human-service/src/server/production_components.rs',
-    'human/crates/layerx-human-service/src/server/http.rs',
-    'human/crates/layerx-human-service/tests/server_browser_boundary.rs',
-    'human/crates/layerx-human-service/Cargo.toml',
-    'human/Cargo.toml', 'human/Cargo.lock',
+    'services/human/crates/layerx-human-service/src/server/agent_runtime.rs',
+    'services/human/crates/layerx-human-service/src/server/production_rotation.rs',
+    'services/human/crates/layerx-human-service/src/server/production_components.rs',
+    'services/human/crates/layerx-human-service/src/server/http.rs',
+    'services/human/crates/layerx-human-service/tests/server_browser_boundary.rs',
+    'services/human/crates/layerx-human-service/Cargo.toml',
+    'services/human/Cargo.toml', 'services/human/Cargo.lock',
     'tools/qualification/paxeer-x/human-service-contract.py',
 )
 CLOCK_SOURCES = (
@@ -83,7 +83,7 @@ def save_record(path, record):
 def build():
     hashes = source_hashes()
     command = [os.environ.get('CARGO', '/root/.cargo/bin/cargo'), 'build', '--locked',
-               '--manifest-path', str(ROOT / 'human/Cargo.toml'),
+               '--manifest-path', str(ROOT / 'services/human/Cargo.toml'),
                '-p', 'layerx-human-service', '--bin', 'layerx-human-service',
                '--test', 'server_browser_boundary', '--message-format=json-render-diagnostics']
     env = dict(os.environ)

@@ -93,6 +93,8 @@ tmp/*
 /.worktrees/
 services/agent/target/
 services/agent/tools/*/target/
+services/human/target/
+services/human/**/target/
 sdk/platform/dotnet/bin/
 sdk/platform/dotnet/obj/
 sdk/platform/dotnet/tests/*/bin/

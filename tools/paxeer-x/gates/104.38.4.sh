@@ -9,14 +9,14 @@ if (($#)); then
     exit 2
 fi
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.." || exit 1
-export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$PWD/human/target}
+export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$PWD/services/human/target}
 tests=0
 skipped=0
 code=0
 
 suite() {
     local output status passed ignored
-    output=$(timeout 15m sh tools/runtime/run-with-clock.sh cargo test --locked --manifest-path human/Cargo.toml "$@" 2>&1)
+    output=$(timeout 15m sh tools/runtime/run-with-clock.sh cargo test --locked --manifest-path services/human/Cargo.toml "$@" 2>&1)
     status=$?
     printf '%s\n' "$output"
     passed=$(sed -n 's/^test result: [a-zA-Z]*\. \([0-9][0-9]*\) passed; \([0-9][0-9]*\) failed; .*/\1 \2/p' <<<"$output" | awk '{n += $1 + $2} END {print n + 0}')
@@ -31,7 +31,7 @@ suite() {
     fi
 }
 
-if ! timeout 15m cargo build --locked --manifest-path human/Cargo.toml \
+if ! timeout 15m cargo build --locked --manifest-path services/human/Cargo.toml \
     -p layerx-human-kms --bin layerx-human-kms \
     -p layerx-human-service --bin layerx-human-kms-gateway; then
     echo "PAXEER_X_GATE tests=0 skipped=0"

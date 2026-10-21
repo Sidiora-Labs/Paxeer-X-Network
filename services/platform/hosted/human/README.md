@@ -4,7 +4,7 @@ This directory holds the Kubernetes manifests and provisioning scripts that run
 the Human services (API, components, identity/security/movement providers, KMS,
 owner and agentd) inside the LayerX kernel node pod, plus the separate
 `layerx-human-web` website Deployment ([`web-deployment.yaml`](web-deployment.yaml)).
-The service crates themselves live under [`human/crates`](../../../../human/crates).
+The service crates themselves live under [`services/human/crates`](../../../human/crates).
 Shell entry points are [`material.sh`](material.sh), [`provision.sh`](provision.sh)
 and [`onboarding_provision.sh`](onboarding_provision.sh); they are sourced by the
 cluster script. Python helpers ([`material.py`](material.py),

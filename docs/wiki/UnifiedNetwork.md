@@ -110,7 +110,7 @@ this account, and a margin withdrawal is paid out later by a proof-carrying
 View methods `getIntent`, `intentNonce`, `getMarket`, `getOrder`,
 `getPosition` and `getMargin` prove LayerX state under a caller-supplied
 witness and finalized batch number rather than reading over the network.
-`human/crates/layerx-intents/src/precompile.rs` decodes and types these
+`services/human/crates/layerx-intents/src/precompile.rs` decodes and types these
 events (`ExchangeOrder`, `ExchangeCancel`, `ExchangeSettle`,
 `ExchangeMarginDeposit`, `ExchangeMarginWithdraw`), but nothing in the tree
 calls that router outside its own tests yet — see
@@ -201,5 +201,5 @@ The following components are planned but not yet implemented:
 
 - **Shared single endpoint** — a unified RPC endpoint that routes requests to the appropriate domain without requiring callers to know which chain to target.
 - **Unified index / explorer account page** — a single view that merges activity from both domains for one account. `services/platform/hosted/indexer` (`layerx-indexer`) now ingests both chains into one SQLite store behind one `GET /v1/history/{account}` shape (`services/platform/hosted/indexer/src/store.rs`), but a query is still keyed by one domain's own identifier — a LayerX account id or a Paxeer address — since the indexer does not resolve the `Addr` binding between them. There is still no page that merges one person's activity across both domains automatically.
-- **Intent routing, end to end** — `human/crates/layerx-intents` decodes and types `layerxexchange`, `layerxbridge` and `launchpad` precompile events into LayerX intents (`human/crates/layerx-intents/src/precompile.rs`), so the mapping itself exists. Nothing in the tree calls that router outside its own tests, so no running service yet resolves a cross-domain intent automatically end to end.
+- **Intent routing, end to end** — `services/human/crates/layerx-intents` decodes and types `layerxexchange`, `layerxbridge` and `launchpad` precompile events into LayerX intents (`services/human/crates/layerx-intents/src/precompile.rs`), so the mapping itself exists. Nothing in the tree calls that router outside its own tests, so no running service yet resolves a cross-domain intent automatically end to end.
 - **Light-client verification of Paxeer deposits on LayerX** — a light-client proof that a deposit transaction was included in a Paxeer block, verifiable on the LayerX side without a full Paxeer node.

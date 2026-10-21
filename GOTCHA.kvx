@@ -8765,3 +8765,8 @@ detail = "pnpm -C apps/launchpad install fails with ERR_PNPM_BAD_PM_VERSION; run
 area = "apps/launchpad"
 summary = "a pnpm workspace can list packages outside its root"
 detail = "pnpm-workspace.yaml accepts ../../sdk/launchpad/packages/* and the lockfile importer keys take the same relative form, so a path-only key rewrite keeps install --frozen-lockfile passing with no resolved version change; --filter takes the same relative path selector."
+
+[gotcha.1839]
+area = "layout/human"
+summary = "a fresh worktree cannot run make human-build until human/wallet/sdk/dist is built"
+detail = "The web app links @paxeer/wallet to human/wallet/sdk, whose exports point at the untracked dist; run pnpm install and pnpm --filter @paxeer/wallet build in human/wallet first, and a fresh dist exposes the GasQuoteRequest did field the web app does not send yet."

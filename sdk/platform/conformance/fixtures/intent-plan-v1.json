@@ -1,7 +1,7 @@
 {
   "name": "intent-plan-v1",
   "contract_major": 1,
-  "provenance": "human/schema/human-api golden intent.plan.request.json and intent.plan.response.json; wire-shape vector, no execution claim",
+  "provenance": "services/human/schema/human-api golden intent.plan.request.json and intent.plan.response.json; wire-shape vector, no execution claim",
   "plan_request": {
     "source": {
       "kind": "paxeer-wallet"

@@ -73,7 +73,7 @@ jobs:
         run: make human-build human-test human-test-intents
       - name: Scan the web bundle for payload-encoding code paths
         run: >-
-          cargo run --manifest-path human/tools/boundary-check/Cargo.toml
+          cargo run --manifest-path services/human/tools/boundary-check/Cargo.toml
           --locked -- --web-bundle human/apps/web/.next
 
   browser-real-stack:

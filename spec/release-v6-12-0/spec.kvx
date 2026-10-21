@@ -2170,9 +2170,9 @@ ac_4 = "Parameters change only through MsgUpdateParams from the governance autho
 
 [req.2030]
 title = "The intents crate decodes the launchpad events of the new interface"
-ac_1 = "The launchpad decode of the intents crate (human/crates/layerx-intents/src/precompile.rs:557) decodes the twelve EventEmitter launchpad events emitted at LAUNCHPAD_PRECOMPILE (human/crates/layerx-intents/src/precompile.rs:24), which replace the logs the generation 2 EventEmitter emitted for launchpad flows, and PrecompileEventKind (human/crates/layerx-intents/src/precompile.rs:28) lists them with their topic0."
-ac_2 = "The intent map (human/crates/layerx-intents/src/precompile.rs:1005-1014) maps Swap to LaunchpadSwap, MarketCreated to LaunchpadCreate, FeeStrategyChanged to LaunchpadFeeStrategy and FeeDistributed by strategy to LaunchpadFeesClaim, LaunchpadFeesBurn, LaunchpadAirdropExecute and LaunchpadLpRewards, with the vocabulary variants of human/crates/layerx-intents/src/vocabulary.rs:134-145."
-ac_3 = "every_abi_event_is_declared_with_its_computed_topic (human/crates/layerx-intents/tests/precompile_router.rs:203) keeps passing with LAUNCHPAD_ABI (human/crates/layerx-intents/tests/precompile_router.rs:26) now the new abi.json."
+ac_1 = "The launchpad decode of the intents crate (services/human/crates/layerx-intents/src/precompile.rs:557) decodes the twelve EventEmitter launchpad events emitted at LAUNCHPAD_PRECOMPILE (services/human/crates/layerx-intents/src/precompile.rs:24), which replace the logs the generation 2 EventEmitter emitted for launchpad flows, and PrecompileEventKind (services/human/crates/layerx-intents/src/precompile.rs:28) lists them with their topic0."
+ac_2 = "The intent map (services/human/crates/layerx-intents/src/precompile.rs:1005-1014) maps Swap to LaunchpadSwap, MarketCreated to LaunchpadCreate, FeeStrategyChanged to LaunchpadFeeStrategy and FeeDistributed by strategy to LaunchpadFeesClaim, LaunchpadFeesBurn, LaunchpadAirdropExecute and LaunchpadLpRewards, with the vocabulary variants of services/human/crates/layerx-intents/src/vocabulary.rs:134-145."
+ac_3 = "every_abi_event_is_declared_with_its_computed_topic (services/human/crates/layerx-intents/tests/precompile_router.rs:203) keeps passing with LAUNCHPAD_ABI (services/human/crates/layerx-intents/tests/precompile_router.rs:26) now the new abi.json."
 
 [req.2031]
 title = "The hosted indexer and gateway read the new launchpad interface"
@@ -2476,13 +2476,13 @@ do_4 = "Add retired.go with the fixed retirement runtime that reverts Retired(ad
 [capability.2.5.1]
 title = "Intents crate decode"
 reqs = ["2030.1", "2030.2", "2030.3"]
-touches = ["human/crates/layerx-intents/src/precompile.rs", "human/crates/layerx-intents/src/vocabulary.rs", "human/crates/layerx-intents/tests/precompile_router.rs"]
-tests = ["human/crates/layerx-intents/tests/precompile_router.rs"]
-verification_contract = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-intents --test precompile_router"
-do_1 = "Replace the launchpad variants of PrecompileEventKind (human/crates/layerx-intents/src/precompile.rs:28) with the twelve EventEmitter launchpad events (symbol PrecompileEventKind)."
-do_2 = "Extend precompile_router.rs next to human/crates/layerx-intents/tests/precompile_router.rs:203 with the new decode cases (symbol launchpad_v6120_events_decode)."
-do_3 = "Remap the intent table (human/crates/layerx-intents/src/precompile.rs:1005-1014) and the vocabulary variants (human/crates/layerx-intents/src/vocabulary.rs:134-145) (symbol IntentKind)."
-do_4 = "Merge after tasks 8.7.17, 11.7.36 and 11.5.87, which edit the same crate; task 3.6.15 must keep human/crates/layerx-intents/src/precompile.rs and human/crates/layerx-intents/tests/precompile_router.rs in place."
+touches = ["services/human/crates/layerx-intents/src/precompile.rs", "services/human/crates/layerx-intents/src/vocabulary.rs", "services/human/crates/layerx-intents/tests/precompile_router.rs"]
+tests = ["services/human/crates/layerx-intents/tests/precompile_router.rs"]
+verification_contract = "cargo test --locked --manifest-path services/human/Cargo.toml -p layerx-intents --test precompile_router"
+do_1 = "Replace the launchpad variants of PrecompileEventKind (services/human/crates/layerx-intents/src/precompile.rs:28) with the twelve EventEmitter launchpad events (symbol PrecompileEventKind)."
+do_2 = "Extend precompile_router.rs next to services/human/crates/layerx-intents/tests/precompile_router.rs:203 with the new decode cases (symbol launchpad_v6120_events_decode)."
+do_3 = "Remap the intent table (services/human/crates/layerx-intents/src/precompile.rs:1005-1014) and the vocabulary variants (services/human/crates/layerx-intents/src/vocabulary.rs:134-145) (symbol IntentKind)."
+do_4 = "Merge after tasks 8.7.17, 11.7.36 and 11.5.87, which edit the same crate; task 3.6.15 must keep services/human/crates/layerx-intents/src/precompile.rs and services/human/crates/layerx-intents/tests/precompile_router.rs in place."
 
 [capability.2.5.2]
 title = "Hosted indexer and gateway"
@@ -5845,7 +5845,7 @@ feature = "2"
 req = "2030.1"
 scenario = "Given a Swap log at 0x1017 with topic0 of Swap(bytes32,address,bool,uint256,uint256,uint256,uint256,uint256,uint256), when decode runs, then it returns PrecompileEvent::Swap with the pool id, trader, side and amounts."
 contract = "contracts/launchpad.md#18-dependents-and-backend-binding"
-test = "human/crates/layerx-intents/tests/precompile_router.rs::launchpad_v6120_events_decode (planned)"
+test = "services/human/crates/layerx-intents/tests/precompile_router.rs::launchpad_v6120_events_decode (planned)"
 qualification = "UNRUN"
 
 [acceptance.2.30.2]
@@ -5853,7 +5853,7 @@ feature = "2"
 req = "2030.2"
 scenario = "Given a FeeDistributed log with strategy 1, when the intent map runs, then it yields LaunchpadFeesBurn."
 contract = "contracts/launchpad.md#18-dependents-and-backend-binding"
-test = "human/crates/layerx-intents/tests/precompile_router.rs::launchpad_v6120_intent_map (planned)"
+test = "services/human/crates/layerx-intents/tests/precompile_router.rs::launchpad_v6120_intent_map (planned)"
 qualification = "UNRUN"
 
 [acceptance.2.30.3]
@@ -5861,7 +5861,7 @@ feature = "2"
 req = "2030.3"
 scenario = "Given the new abi.json, when the test runs, then every launchpad event is declared with its computed topic."
 contract = "contracts/launchpad.md#18-dependents-and-backend-binding"
-test = "human/crates/layerx-intents/tests/precompile_router.rs::every_abi_event_is_declared_with_its_computed_topic"
+test = "services/human/crates/layerx-intents/tests/precompile_router.rs::every_abi_event_is_declared_with_its_computed_topic"
 qualification = "UNRUN"
 
 [acceptance.2.31.1]
@@ -7540,16 +7540,16 @@ wave = 3
 requires = ["2.0.4"]
 reqs = ["2030.1", "2030.2"]
 capabilities = ["2.5.1"]
-do_1 = "Replace the launchpad variants of PrecompileEventKind (human/crates/layerx-intents/src/precompile.rs:28) with the twelve EventEmitter launchpad events (symbol PrecompileEventKind)."
-do_2 = "Rewrite decode_launchpad (human/crates/layerx-intents/src/precompile.rs:557) for the new layouts (symbol decode_launchpad)."
-do_3 = "Remap the intent table (human/crates/layerx-intents/src/precompile.rs:1005-1014) and the vocabulary variants (human/crates/layerx-intents/src/vocabulary.rs:134-145) (symbol IntentKind)."
-do_4 = "Merge after tasks 8.7.17, 11.7.36 and 11.5.87, which edit the same crate; task 3.6.15 must keep human/crates/layerx-intents/src/precompile.rs and human/crates/layerx-intents/tests/precompile_router.rs in place."
-do_5 = "The custody-credit reserve is the treasury module account: NativeCustodyCredit::new (human/crates/layerx-intents/src/native_custody.rs:27) and the reserve of the vocabulary test (human/crates/layerx-intents/src/vocabulary.rs:1197) bind the credit to the treasury module account id, and no other reserve account id remains in the crate."
+do_1 = "Replace the launchpad variants of PrecompileEventKind (services/human/crates/layerx-intents/src/precompile.rs:28) with the twelve EventEmitter launchpad events (symbol PrecompileEventKind)."
+do_2 = "Rewrite decode_launchpad (services/human/crates/layerx-intents/src/precompile.rs:557) for the new layouts (symbol decode_launchpad)."
+do_3 = "Remap the intent table (services/human/crates/layerx-intents/src/precompile.rs:1005-1014) and the vocabulary variants (services/human/crates/layerx-intents/src/vocabulary.rs:134-145) (symbol IntentKind)."
+do_4 = "Merge after tasks 8.7.17, 11.7.36 and 11.5.87, which edit the same crate; task 3.6.15 must keep services/human/crates/layerx-intents/src/precompile.rs and services/human/crates/layerx-intents/tests/precompile_router.rs in place."
+do_5 = "The custody-credit reserve is the treasury module account: NativeCustodyCredit::new (services/human/crates/layerx-intents/src/native_custody.rs:27) and the reserve of the vocabulary test (services/human/crates/layerx-intents/src/vocabulary.rs:1197) bind the credit to the treasury module account id, and no other reserve account id remains in the crate."
 do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["PrecompileEventKind", "decode_launchpad", "IntentKind"]
-touches = ["human/crates/layerx-intents/src/precompile.rs", "human/crates/layerx-intents/src/vocabulary.rs", "human/crates/layerx-intents/src/native_custody.rs"]
-build_cmd = "cargo build --locked --manifest-path human/Cargo.toml -p layerx-intents"
-verify_cmd = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-intents --test precompile_router"
+touches = ["services/human/crates/layerx-intents/src/precompile.rs", "services/human/crates/layerx-intents/src/vocabulary.rs", "services/human/crates/layerx-intents/src/native_custody.rs"]
+build_cmd = "cargo build --locked --manifest-path services/human/Cargo.toml -p layerx-intents"
+verify_cmd = "cargo test --locked --manifest-path services/human/Cargo.toml -p layerx-intents --test precompile_router"
 gate_kind = "existing"
 planned_paths = []
 max_builds = 1
@@ -7568,17 +7568,17 @@ wave = 3
 requires = ["2.3.1"]
 reqs = ["2030.1", "2030.2", "2030.3"]
 capabilities = ["2.5.1"]
-do_1 = "Extend precompile_router.rs next to human/crates/layerx-intents/tests/precompile_router.rs:203 with the new decode cases (symbol launchpad_v6120_events_decode)."
-do_2 = "Replace the launchpad cases near human/crates/layerx-intents/tests/precompile_router.rs:6 with the twelve EventEmitter events."
-do_3 = "Add launchpad_v6120_intent_map in human/crates/layerx-intents/tests/precompile_router.rs for criterion 2.30.2 (symbol launchpad_v6120_intent_map)."
-do_4 = "Add every_abi_event_is_declared_with_its_computed_topic in human/crates/layerx-intents/tests/precompile_router.rs for criterion 2.30.3 (symbol every_abi_event_is_declared_with_its_computed_topic)."
-do_5 = "Open spec/layerx-merge tasks 3.6.15 and 8.7.17 edit human/crates/layerx-intents/tests/precompile_router.rs; land after them and rebase onto their result."
-do_6 = "Rewrite the reserve helper of the custody credit test (human/crates/layerx-intents/tests/precompile_router.rs:1099) to the treasury module account id, the custody-credit reserve, so margin_deposit_routes_to_the_matching_custody_credit binds the credit to that account."
+do_1 = "Extend precompile_router.rs next to services/human/crates/layerx-intents/tests/precompile_router.rs:203 with the new decode cases (symbol launchpad_v6120_events_decode)."
+do_2 = "Replace the launchpad cases near services/human/crates/layerx-intents/tests/precompile_router.rs:6 with the twelve EventEmitter events."
+do_3 = "Add launchpad_v6120_intent_map in services/human/crates/layerx-intents/tests/precompile_router.rs for criterion 2.30.2 (symbol launchpad_v6120_intent_map)."
+do_4 = "Add every_abi_event_is_declared_with_its_computed_topic in services/human/crates/layerx-intents/tests/precompile_router.rs for criterion 2.30.3 (symbol every_abi_event_is_declared_with_its_computed_topic)."
+do_5 = "Open spec/layerx-merge tasks 3.6.15 and 8.7.17 edit services/human/crates/layerx-intents/tests/precompile_router.rs; land after them and rebase onto their result."
+do_6 = "Rewrite the reserve helper of the custody credit test (services/human/crates/layerx-intents/tests/precompile_router.rs:1099) to the treasury module account id, the custody-credit reserve, so margin_deposit_routes_to_the_matching_custody_credit binds the credit to that account."
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["launchpad_v6120_events_decode"]
-touches = ["human/crates/layerx-intents/tests/precompile_router.rs"]
-build_cmd = "cargo build --locked --manifest-path human/Cargo.toml -p layerx-intents"
-verify_cmd = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-intents --test precompile_router"
+touches = ["services/human/crates/layerx-intents/tests/precompile_router.rs"]
+build_cmd = "cargo build --locked --manifest-path services/human/Cargo.toml -p layerx-intents"
+verify_cmd = "cargo test --locked --manifest-path services/human/Cargo.toml -p layerx-intents --test precompile_router"
 gate_kind = "existing"
 planned_paths = []
 max_builds = 1

@@ -11,7 +11,7 @@ import owner_custody
 import provision
 
 HERE = Path(__file__).resolve().parent
-PROVIDER = HERE.parents[3] / 'human/crates/layerx-human-movement-provider/src'
+PROVIDER = HERE.parents[3] / 'services/human/crates/layerx-human-movement-provider/src'
 CLUSTER = HERE.parents[0] / 'tests/beta-cluster.sh'
 FIXTURES = HERE.parents[3] / 'tests/fixtures/custody/paxeer-light-v1'
 TRANSACTION = '0x' + bytes(range(32)).hex()
@@ -42,7 +42,7 @@ class OwnerCustodyCreditMaterialTests(unittest.TestCase):
         self.assertIn('.join(format!("credit-{}.bin", hex_string(&transaction.bytes())));', service)
         self.assertIn('read_private(&path, layerx_paxeer_client::NATIVE_CUSTODY_CREDIT_MAX_BYTES)', service)
         self.assertIn('pub const NATIVE_CUSTODY_CREDIT_MAX_BYTES: usize = MAX_PAYLOAD_BYTES;',
-                      (HERE.parents[3] / 'human/crates/layerx-paxeer-client/src/native_custody.rs').read_text())
+                      (HERE.parents[3] / 'services/human/crates/layerx-paxeer-client/src/native_custody.rs').read_text())
         self.assertIn('const DIGITS: &[u8; 16] = b"0123456789abcdef";', (PROVIDER / 'config.rs').read_text())
         for refused in ('ab' * 32, '0x' + 'ab' * 31, '0x' + 'ab' * 33, '0x' + 'zz' * 32):
             with self.assertRaises(ValueError):

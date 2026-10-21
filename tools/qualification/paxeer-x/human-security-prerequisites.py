@@ -18,11 +18,11 @@ FIXTURE = 'LAYERX_HUMAN_SECURITY_PREREQUISITES_FIXTURE'
 SCHEMA = 'layerx.human.security-prerequisites.fixture.v1'
 SOURCE_FILES = [
     'docker/kernel/init.sh', 'docker/human-service/entrypoint.sh',
-    'human/crates/layerx-human-security-provider/src/main.rs',
-    'human/crates/layerx-human-security-provider/src/lib.rs',
-    'human/crates/layerx-human-security-provider/src/state.rs',
-    'human/crates/layerx-human-security-provider/src/transport.rs',
-    'human/crates/layerx-human-security-provider/src/probe.rs',
+    'services/human/crates/layerx-human-security-provider/src/main.rs',
+    'services/human/crates/layerx-human-security-provider/src/lib.rs',
+    'services/human/crates/layerx-human-security-provider/src/state.rs',
+    'services/human/crates/layerx-human-security-provider/src/transport.rs',
+    'services/human/crates/layerx-human-security-provider/src/probe.rs',
     'services/platform/hosted/runtime-clock/src/main.rs',
     'services/platform/hosted/runtime-clock/src/server.rs',
 ]

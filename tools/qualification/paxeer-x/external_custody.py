@@ -12,7 +12,7 @@ import time
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
-SCOPE = ['human/tools/copy-lint', 'human/apps/web/copy', 'human/apps/web/src',
+SCOPE = ['services/human/tools/copy-lint', 'human/apps/web/copy', 'human/apps/web/src',
          'human/apps/web/e2e/copy.test.ts', 'tools/paxeer-x/gates/104.26.2.sh',
          'tools/qualification/paxeer-x/external_custody.py']
 DEADLINE = time.monotonic() + 1740
@@ -80,7 +80,7 @@ def build():
     environment['CARGO_BUILD_JOBS'] = '2'
     environment.setdefault('CARGO_TARGET_DIR', str(directory / 'copy-lint-target'))
     cargo = '/root/.cargo/bin/cargo'
-    manifest = 'human/tools/copy-lint/Cargo.toml'
+    manifest = 'services/human/tools/copy-lint/Cargo.toml'
     output = execute([cargo, 'build', '--locked', '--manifest-path', manifest,
                       '--all-targets', '--message-format=json'], 'external-custody-build', environment)
     rows = []

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 TEST = 'real_remote_native_budget_proofs_refuse_report_selector_principal_and_finality_substitution'
 SOURCES = ('services/agent/crates/layerx-agentd/src/human_runtime.rs', 'services/agent/crates/layerx-agentd/src/human.rs',
            'services/agent/crates/layerx-agentd/src/budget/budget_proof.rs', 'services/agent/crates/layerx-agentd/src/budget/mod.rs',
-           'human/crates/layerx-human-service/src/server/agent_runtime.rs',
+           'services/human/crates/layerx-human-service/src/server/agent_runtime.rs',
            'services/agent/crates/layerx-agentd/tests/budget_proof_intake.rs',
            'tools/qualification/paxeer-x/budget-proof-intake.py',
            'services/platform/hosted/authority/src/human/budget_state.rs', 'services/platform/hosted/authority/src/human/dynamic.rs')

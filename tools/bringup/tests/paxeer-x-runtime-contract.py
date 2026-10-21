@@ -1428,7 +1428,7 @@ def kms_service_prerequisite():
         metadata = json.loads(docker('image', 'inspect', image).stdout)[0]
         image_revision = (metadata['Config'].get('Labels') or {}).get('org.opencontainers.image.revision', '')
         require(metadata['Id'] == image and re.fullmatch('[0-9a-f]{40}', image_revision) is not None, 'image source identity refused')
-        paths = ['human/Cargo.toml', 'human/Cargo.lock', 'human/crates', 'agent', 'programs', 'services/interop',
+        paths = ['services/human/Cargo.toml', 'services/human/Cargo.lock', 'services/human/crates', 'agent', 'programs', 'services/interop',
                  'services/platform/hosted/internal', 'platform/crates', 'services/platform/Cargo.toml', 'services/platform/Cargo.lock']
         def binding(source):
             return command(['git', '-C', str(ROOT), 'ls-tree', '-r', '--full-tree', '-z', source, '--', *paths]).stdout

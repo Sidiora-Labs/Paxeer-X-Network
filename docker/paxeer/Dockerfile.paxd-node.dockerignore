@@ -17,6 +17,7 @@ services/agent
 docker
 explorer
 human
+services/human
 hpx
 services/interop
 services/platform

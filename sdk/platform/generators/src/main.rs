@@ -30,7 +30,7 @@ const DOTNET_RECEIPT_GENERATED_PATH: &str = "sdk/platform/dotnet/Generated/Recei
 
 const SOURCES: [(&str, &str); 3] = [
     ("agent-api", "services/agent/schema/agent-api"),
-    ("human-api", "human/schema/human-api"),
+    ("human-api", "services/human/schema/human-api"),
     ("mirror-v2", "sdk/platform/schema"),
 ];
 
@@ -54,7 +54,7 @@ const GENERATORS: [(&str, &str, &[&str]); 3] = [
     ),
     (
         "human-api-gen",
-        "human/tools/api-gen",
+        "services/human/tools/api-gen",
         &["Cargo.lock", "Cargo.toml", "src"],
     ),
 ];
@@ -1792,7 +1792,7 @@ name = \"jvm\"\n\
 artifact = \"com.sidiora.layerx:layerx-sdk\"\n\
 root = \"sdk/platform/jvm\"\n\
 agent_schema = \"services/agent/schema/agent-api\"\n\
-human_schema = \"human/schema/human-api\"\n\
+human_schema = \"services/human/schema/human-api\"\n\
 protocol_version = 2\n\
 agent_operations = {agent_operations}\n\
 human_operations = {human_operations}\n\
@@ -1816,7 +1816,7 @@ merkle = \"com.sidiora.layerx.sdk.verify.LocalVerifier.verifyMerkleInclusion\"\n
 agent_request = \"services/agent/schema/agent-api/golden/version-request.hex\"\n\
 agent_response = \"services/agent/schema/agent-api/golden/version-response.hex\"\n\
 agent_schema_goldens = \"services/agent/schema/agent-api/golden/*.kvx\"\n\
-human_schema_goldens = \"human/schema/human-api/golden/*.json\"\n\
+human_schema_goldens = \"services/human/schema/human-api/golden/*.json\"\n\
 codec_valid = \"tests/vectors/codec/valid.lxv\"\n\
 codec_adversarial = \"tests/vectors/codec/adversarial.lxv\"\n"
     ))

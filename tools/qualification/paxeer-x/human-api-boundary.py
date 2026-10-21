@@ -407,8 +407,8 @@ def main():
     url = endpoint(material['url'])
     require(urlsplit(material['origin']).scheme == 'https', 'browser HTTPS origin')
     for label, argv in (
-        ('schema', [artifacts['schema_check'], ROOT / 'human/schema/human-api']),
-        ('generated-drift', [artifacts['api_gen'], '--check', ROOT / 'human/schema/human-api',
+        ('schema', [artifacts['schema_check'], ROOT / 'services/human/schema/human-api']),
+        ('generated-drift', [artifacts['api_gen'], '--check', ROOT / 'services/human/schema/human-api',
                              ROOT / 'human/apps/web/src/api/generated']),
     ):
         with (directory / (label + '.log')).open('xb') as log:

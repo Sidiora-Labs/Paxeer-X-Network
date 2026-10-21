@@ -221,7 +221,7 @@ class MaterialTests(unittest.TestCase):
     def test_explorer_read_principal_is_funded_to_cover_its_signed_fee_limit(self):
         import re
         provision = (ROOT / 'services/platform/hosted/human/provision.sh').read_text()
-        reads = (ROOT / 'human/crates/layerx-explorer-index/src/reads.rs').read_text()
+        reads = (ROOT / 'services/human/crates/layerx-explorer-index/src/reads.rs').read_text()
         bootstrap = (ROOT / 'services/platform/hosted/node/bootstrap.sh').read_text()
         resources = [int(value.replace('_', '')) for value in re.search(
             r'const READ_RESOURCES: \[u64; 7\] = \[([0-9_,\s]+)\];', reads).group(1).split(',') if value.strip()]

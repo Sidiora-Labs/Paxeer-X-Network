@@ -308,7 +308,7 @@ def render_operations(plane: Plane, specs: list[dict[str, object]]) -> list[str]
 
 def generate(repo: Path) -> str:
     agent = Plane("Agent", sections(repo / "services/agent/schema/agent-api"))
-    human = Plane("Human", sections(repo / "human/schema/human-api"))
+    human = Plane("Human", sections(repo / "services/human/schema/human-api"))
     output = [
         "// Code generated from the LayerX Agent API and Human API schemas. DO NOT EDIT.",
         "", "package com.sidiora.layerx.sdk;", "",

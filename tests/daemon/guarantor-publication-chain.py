@@ -160,7 +160,7 @@ def publish(request, work, label):
 
 def drive(work, env, url):
     build = Path(env['LAYERX_TEST_CUSTODY_BUILD_DIR'])
-    subprocess.run(['cargo', 'build', '--locked', '--manifest-path', 'human/Cargo.toml', '-p', 'layerx-paxeer-client', '--example', 'native_publication_fetch'], cwd=ROOT, check=True)
+    subprocess.run(['cargo', 'build', '--locked', '--manifest-path', 'services/human/Cargo.toml', '-p', 'layerx-paxeer-client', '--example', 'native_publication_fetch'], cwd=ROOT, check=True)
     anchor_dir = work / 'anchor'
     anchor_dir.mkdir(mode=0o755)
     os.chown(anchor_dir, 4021, 4021)
@@ -177,7 +177,7 @@ def drive(work, env, url):
     chain = Chain(env['LAYERX_TEST_CUSTODY_CHAIN_FILE'])
     assert chain.url == url
     chain.transaction('0x', submitter.address, value=10 ** 21)
-    rust_target = Path(os.environ.get('CARGO_TARGET_DIR', ROOT / 'human/target'))
+    rust_target = Path(os.environ.get('CARGO_TARGET_DIR', ROOT / 'services/human/target'))
     with (work / 'admission-publication.log').open('w') as log:
         process = subprocess.Popen(['bash', 'tests/daemon/program-admission.sh', env['LAYERX_TEST_CUSTODY_BUILD_DIR'], '--withdraw'], cwd=ROOT, env=env, stdout=log, stderr=log)
         try:

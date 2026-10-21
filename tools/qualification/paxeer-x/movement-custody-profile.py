@@ -92,11 +92,11 @@ def digest(value):
 def sources():
     paths = set()
     for package in ('layerx-human-movement-provider', 'layerx-paxeer-client'):
-        base = ROOT / 'human/crates' / package
+        base = ROOT / 'services/human/crates' / package
         paths.update(path for path in (base / 'src').rglob('*') if path.is_file())
         paths.update(path for path in (base / 'tests').rglob('*') if path.is_file())
         paths.add(base / 'Cargo.toml')
-    for relative in ('human/Cargo.toml', 'human/Cargo.lock', 'services/platform/hosted/human/owner_custody.py',
+    for relative in ('services/human/Cargo.toml', 'services/human/Cargo.lock', 'services/platform/hosted/human/owner_custody.py',
                      'services/platform/hosted/human/material.py', 'docker/kernel/init.sh',
                      'docker/human-service/entrypoint.sh', 'tests/bridge/custody_credit.py',
                      'tests/bridge/comet_credit.py', 'tests/fixtures/custody/native-credit-receipt/profile',

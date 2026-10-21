@@ -1,0 +1,23 @@
+[package]
+name = "layerx-intents-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+layerx-intents = { path = ".." }
+layerx-types = { path = "../../../../agent/crates/layerx-types" }
+layerx-wire = { path = "../../../../agent/crates/layerx-wire" }
+
+[[bin]]
+name = "intent"
+path = "fuzz_targets/intent.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

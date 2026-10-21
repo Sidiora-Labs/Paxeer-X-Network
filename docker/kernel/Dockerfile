@@ -23,9 +23,9 @@ RUN CARGO_TARGET_DIR=/src/.lane-target cargo build --locked --manifest-path serv
         --package layerx-mirror --bin layerx-mirror-publisher --bin layerx-mirror-verify \
     && CARGO_TARGET_DIR=/src/.lane-target cargo build --locked --manifest-path services/interop/Cargo.toml --release \
         --package layerx-mirror-signer --bin layerx-mirror-signer
-RUN cargo build --locked --release --manifest-path human/Cargo.toml -p layerx-human-service -p layerx-human-kms -p layerx-explorer-index --bins
+RUN cargo build --locked --release --manifest-path services/human/Cargo.toml -p layerx-human-service -p layerx-human-kms -p layerx-explorer-index --bins
 RUN cargo build --locked --release --manifest-path services/agent/Cargo.toml -p layerx-agentd-host --bin layerx-agentd -p layerx-mcp --bin layerx-mcp
-RUN cargo build --locked --release --manifest-path human/Cargo.toml -p layerx-human-identity-provider -p layerx-human-security-provider -p layerx-human-movement-provider --bins
+RUN cargo build --locked --release --manifest-path services/human/Cargo.toml -p layerx-human-identity-provider -p layerx-human-security-provider -p layerx-human-movement-provider --bins
 # The relay archive origin of docker/kernel/init.sh (task 4.6): its codec.
 RUN make LXP_REVISION="$LXP_REVISION" layerx-archive-codec && test -x build/bin/layerx-archive-codec
 # The value loop of tools/bringup/value-loop.sh (task 1.6): the node probe and the credit signer.
@@ -410,10 +410,10 @@ COPY --from=build /src/services/platform/target/release/layerx-core-boundary /sr
      /src/services/platform/target/release/layerx-paxeer-boundary /usr/local/bin/
 COPY --from=build /src/.lane-target/release/layerx-mirror-publisher /src/.lane-target/release/layerx-mirror-verify \
      /src/.lane-target/release/layerx-mirror-signer /usr/local/bin/
-COPY --from=build /src/human/target/release/layerx-human-service /src/human/target/release/layerx-human-components \
-     /src/human/target/release/layerx-human-onboarding /src/human/target/release/layerx-human-kms \
-     /src/human/target/release/layerx-explorer-index /src/human/target/release/layerx-human-identity-provider \
-     /src/human/target/release/layerx-human-security-provider /src/human/target/release/layerx-human-movement-provider \
+COPY --from=build /src/services/human/target/release/layerx-human-service /src/services/human/target/release/layerx-human-components \
+     /src/services/human/target/release/layerx-human-onboarding /src/services/human/target/release/layerx-human-kms \
+     /src/services/human/target/release/layerx-explorer-index /src/services/human/target/release/layerx-human-identity-provider \
+     /src/services/human/target/release/layerx-human-security-provider /src/services/human/target/release/layerx-human-movement-provider \
      /src/services/agent/target/release/layerx-agentd /src/services/agent/target/release/layerx-mcp /usr/local/bin/
 COPY --from=build /src/cmd/layerxctl/target/release/layerxctl /usr/local/bin/layerxctl
 COPY services/platform/hosted/human/provision.py services/platform/hosted/human/owner_native.py services/platform/hosted/human/owner_kms.py \

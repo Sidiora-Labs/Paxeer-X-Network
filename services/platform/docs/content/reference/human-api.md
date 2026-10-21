@@ -1,8 +1,8 @@
-<!-- Generated from human/schema/human-api by services/platform/docs/build/build_site.py. Do not hand-edit. -->
+<!-- Generated from services/human/schema/human-api by services/platform/docs/build/build_site.py. Do not hand-edit. -->
 
 # Human API reference
 
-Schema `LayerX Human API`, contract major `1`, minor `5`, generated from `human/schema/human-api`.
+Schema `LayerX Human API`, contract major `1`, minor `5`, generated from `services/human/schema/human-api`.
 
 Transport is HTTPS with JSON bodies under the `/v1` base path. Every amount is a decimal string of base units and always travels with its currency code. Every mutation that can move money requires the `Idempotency-Key` header, and repeating the request returns the original journey rather than a second effect.
 

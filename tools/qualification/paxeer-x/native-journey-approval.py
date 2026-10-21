@@ -13,20 +13,20 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
 TEST = "genuine_native_journey_holds_reopens_and_resumes_original_authority"
 SOURCES = (
-    "human/crates/layerx-human-service/src/journeys/engine.rs",
-    "human/crates/layerx-human-service/src/server/agent_runtime.rs",
-    "human/crates/layerx-human-service/src/server/production_components.rs",
-    "human/crates/layerx-human-service/src/server/native_send.rs",
-    "human/crates/layerx-human-service/src/custody/signer.rs",
-    "human/crates/layerx-human-service/src/custody/provider.rs",
-    "human/crates/layerx-human-service/src/custody/mod.rs",
+    "services/human/crates/layerx-human-service/src/journeys/engine.rs",
+    "services/human/crates/layerx-human-service/src/server/agent_runtime.rs",
+    "services/human/crates/layerx-human-service/src/server/production_components.rs",
+    "services/human/crates/layerx-human-service/src/server/native_send.rs",
+    "services/human/crates/layerx-human-service/src/custody/signer.rs",
+    "services/human/crates/layerx-human-service/src/custody/provider.rs",
+    "services/human/crates/layerx-human-service/src/custody/mod.rs",
     "services/agent/crates/layerx-agentd/src/human_runtime.rs",
     "services/agent/crates/layerx-agentd/src/approval/native_effect.rs",
     "services/agent/crates/layerx-agentd/src/agent_rpc_wire.rs",
     "services/agent/crates/layerx-agent-api/src/identity.rs",
     "services/agent/crates/layerx-sdk/src/native_effect.rs",
-    "human/schema/human-api/v1.kvx",
-    "human/crates/layerx-human-service/tests/native_journey_approval.rs",
+    "services/human/schema/human-api/v1.kvx",
+    "services/human/crates/layerx-human-service/tests/native_journey_approval.rs",
     "tools/qualification/paxeer-x/native-journey-approval.py",
 )
 

@@ -76,11 +76,11 @@ fn repo_fixture(label: &str) -> PathBuf {
     );
     place(
         &root,
-        "human/tools/api-gen/Cargo.toml",
+        "services/human/tools/api-gen/Cargo.toml",
         "[package]\nname = \"layerx-human-api-gen\"\n",
     );
-    place(&root, "human/tools/api-gen/Cargo.lock", "version = 4\n");
-    place(&root, "human/tools/api-gen/src/main.rs", "fn main() {}\n");
+    place(&root, "services/human/tools/api-gen/Cargo.lock", "version = 4\n");
+    place(&root, "services/human/tools/api-gen/src/main.rs", "fn main() {}\n");
     place(
         &root,
         "programs/sdk/rust/src/abi_policy.rs",
@@ -123,25 +123,25 @@ fn repo_fixture(label: &str) -> PathBuf {
         "services/agent/schema/agent-api/golden/version-request.hex",
         "00ff\n",
     );
-    place(&root, "human/schema/human-api/v1.kvx", "[schema]\nincludes = [\"errors.kvx\",\"journeys.kvx\",\"stream.kvx\"]\n\n[operation.version]\nmethod = \"GET\"\npath = \"/v1/version\"\nrequest = \"Empty\"\nresponse = \"VersionInfo\"\n");
+    place(&root, "services/human/schema/human-api/v1.kvx", "[schema]\nincludes = [\"errors.kvx\",\"journeys.kvx\",\"stream.kvx\"]\n\n[operation.version]\nmethod = \"GET\"\npath = \"/v1/version\"\nrequest = \"Empty\"\nresponse = \"VersionInfo\"\n");
     place(
         &root,
-        "human/schema/human-api/errors.kvx",
+        "services/human/schema/human-api/errors.kvx",
         "[type.ErrorCode]\nvariants = [\"unavailable\"]\n\n[type.Retriability]\nvariants = [\"retriable\"]\n",
     );
     place(
         &root,
-        "human/schema/human-api/journeys.kvx",
+        "services/human/schema/human-api/journeys.kvx",
         "[type.JourneyKind]\nvariants = [\"onboarding\"]\n\n[type.JourneyState]\nvariants = [\"processing\"]\n\n[type.VerificationLevel]\nvariants = [\"unverified\"]\n\n[type.ApprovalState]\nvariants = [\"pending\"]\n",
     );
     place(
         &root,
-        "human/schema/human-api/stream.kvx",
+        "services/human/schema/human-api/stream.kvx",
         "[type.StreamEventKind]\nvariants = [\"journey-progress\"]\n",
     );
     place(
         &root,
-        "human/schema/human-api/golden/account.create.request.json",
+        "services/human/schema/human-api/golden/account.create.request.json",
         "{}\n",
     );
     place_generated_fixture(&root);
@@ -355,7 +355,7 @@ fn human_schema_edit_fails_the_gate_as_stale() {
     generate(&root);
     place(
         &root,
-        "human/schema/human-api/golden/account.create.request.json",
+        "services/human/schema/human-api/golden/account.create.request.json",
         "{\"edited\":true}\n",
     );
     expect_failure(&root, "stale generated SDKs: schema human-api");

@@ -8,7 +8,7 @@ root = "services/agent/schema/agent-api"
 digest = "f140758cb4a75363f3e0ddbe859875863acf9697d998d9e76a1dd30634b229da"
 
 [source.human-api]
-root = "human/schema/human-api"
+root = "services/human/schema/human-api"
 digest = "77607fe257e4f9e5b89f95037d7f9ec93de9ab56d9295b2524cc4f4b62e23ee5"
 
 [source.mirror-v2]
@@ -24,7 +24,7 @@ root = "services/agent/tools/sdk-gen"
 digest = "f7d11eb5472120abb22d0b0dcbc5a093a981d1fc5e3c4d6e70df58c35a934ed3"
 
 [generator.human-api-gen]
-root = "human/tools/api-gen"
+root = "services/human/tools/api-gen"
 digest = "a1bc95c3cb076014c0d93322b761c4e1d855853b1f8707468a6a913df4f6e4ee"
 
 [output.agent-api-rust]

@@ -16,7 +16,7 @@ AGENT_FUZZ_TOOLCHAIN ?= nightly-2025-11-10
 AGENT_BOUNDARY_HARNESS := $(abspath $(or $(CARGO_TARGET_DIR),services/agent/tests/boundary/target))/debug/agent-boundary-conformance
 AGENT_WIRE_HARNESS := $(abspath $(or $(CARGO_TARGET_DIR),services/agent/tools/wire-differential/target))/debug/agent-wire-differential
 HUMAN_CARGO ?= cargo
-HUMAN_MANIFEST := human/Cargo.toml
+HUMAN_MANIFEST := services/human/Cargo.toml
 HUMAN_WEB_DIR := human/apps/web
 HUMAN_NPM ?= npm --prefix $(HUMAN_WEB_DIR)
 INTEROP_CARGO ?= cargo
@@ -2283,11 +2283,11 @@ human-js-install:
 	$(HUMAN_NPM) ci --ignore-scripts --no-audit --no-fund
 
 human-gen-api:
-	$(HUMAN_CARGO) run --manifest-path human/tools/api-gen/Cargo.toml --locked -- human/schema/human-api human/apps/web/src/api/generated
+	$(HUMAN_CARGO) run --manifest-path services/human/tools/api-gen/Cargo.toml --locked -- services/human/schema/human-api human/apps/web/src/api/generated
 
 human-build:
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path human/tools/api-gen/Cargo.toml --locked
-	$(HUMAN_CARGO) run --manifest-path human/tools/api-gen/Cargo.toml --locked -- --check human/schema/human-api human/apps/web/src/api/generated
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path services/human/tools/api-gen/Cargo.toml --locked
+	$(HUMAN_CARGO) run --manifest-path services/human/tools/api-gen/Cargo.toml --locked -- --check services/human/schema/human-api human/apps/web/src/api/generated
 	$(HUMAN_CARGO) build --manifest-path $(HUMAN_MANIFEST) --locked --workspace
 	$(HUMAN_NPM) run build
 
@@ -2296,12 +2296,12 @@ human-test: $(BUILD_DIR)/tests/explorer_fixture human-test-hosted-provisioning
 		sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path $(HUMAN_MANIFEST) --locked --workspace
 	$(HUMAN_NPM) test
 
-HUMAN_TARGET_DIR ?= $(or $(CARGO_TARGET_DIR),$(CURDIR)/human/target)
+HUMAN_TARGET_DIR ?= $(or $(CARGO_TARGET_DIR),$(CURDIR)/services/human/target)
 
 MOVEMENT_PROOF_TARGET = $(abspath $(or $(CARGO_TARGET_DIR),.lane-target))
 .PHONY: test-owner-movement-proof
 test-owner-movement-proof: build/bin/layerxd build/bin/layerx-genesis-build build/bin/layerx-guarantor build/tests/lxp_test_guarantor_runtime
-	cargo build --locked --manifest-path human/Cargo.toml --target-dir $(MOVEMENT_PROOF_TARGET) -p layerx-human-identity-provider -p layerx-human-movement-provider
+	cargo build --locked --manifest-path services/human/Cargo.toml --target-dir $(MOVEMENT_PROOF_TARGET) -p layerx-human-identity-provider -p layerx-human-movement-provider
 	cargo build --locked --manifest-path services/platform/Cargo.toml --target-dir $(MOVEMENT_PROOF_TARGET) -p layerx-platform-authority -p layerx-platform-paxeer-boundary -p layerx-runtime-clock
 	cargo build --locked --manifest-path cmd/layerxctl/Cargo.toml --target-dir $(MOVEMENT_PROOF_TARGET)
 	CARGO_TARGET_DIR=$(MOVEMENT_PROOF_TARGET) LAYERX_RUNTIME_CLOCK_BIN=$(MOVEMENT_PROOF_TARGET)/debug/layerx-runtime-clock sh tools/runtime/run-with-clock.sh python3 tests/bridge/owner-custody.py --native --governance --checkpoint --settlement-only --movement-proof
@@ -2399,7 +2399,7 @@ human-test-paxeer: test-bridge-deposit
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path $(HUMAN_MANIFEST) --locked -p layerx-paxeer-client
 
 human-fuzz-intents:
-	cargo +nightly-2025-11-10 fuzz run intent --fuzz-dir human/crates/layerx-intents/fuzz -- -max_total_time=120 -timeout=10
+	cargo +nightly-2025-11-10 fuzz run intent --fuzz-dir services/human/crates/layerx-intents/fuzz -- -max_total_time=120 -timeout=10
 
 human-test-property:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path $(HUMAN_MANIFEST) --locked --workspace property_
@@ -2441,38 +2441,38 @@ human-test-e2e-long:
 
 human-lint: human-lint-copy
 	$(HUMAN_CARGO) clippy --manifest-path $(HUMAN_MANIFEST) --locked --workspace --all-targets -- -D warnings
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path human/tools/boundary-check/Cargo.toml --locked
-	$(HUMAN_CARGO) run --manifest-path human/tools/boundary-check/Cargo.toml --locked -- human/crates
-	sh human/tools/dependency-policy.sh
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path services/human/tools/boundary-check/Cargo.toml --locked
+	$(HUMAN_CARGO) run --manifest-path services/human/tools/boundary-check/Cargo.toml --locked -- services/human/crates
+	sh services/human/tools/dependency-policy.sh
 	cargo deny --manifest-path $(HUMAN_MANIFEST) check advisories bans sources
 	$(HUMAN_NPM) run lint
 
 human-lint-copy:
-	$(HUMAN_CARGO) clippy --manifest-path human/tools/copy-lint/Cargo.toml --locked --all-targets -- -D warnings
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path human/tools/copy-lint/Cargo.toml --locked
-	$(HUMAN_CARGO) run --manifest-path human/tools/copy-lint/Cargo.toml --locked -- human/apps/web
+	$(HUMAN_CARGO) clippy --manifest-path services/human/tools/copy-lint/Cargo.toml --locked --all-targets -- -D warnings
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path services/human/tools/copy-lint/Cargo.toml --locked
+	$(HUMAN_CARGO) run --manifest-path services/human/tools/copy-lint/Cargo.toml --locked -- human/apps/web
 	$(HUMAN_NPM) run typecheck
 	$(HUMAN_NPM) test
 
 human-check-ui:
-	$(HUMAN_CARGO) clippy --manifest-path human/tools/ui-gate/Cargo.toml --locked --all-targets -- -D warnings
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path human/tools/ui-gate/Cargo.toml --locked
-	$(HUMAN_CARGO) run --manifest-path human/tools/ui-gate/Cargo.toml --locked -- human/apps/web
+	$(HUMAN_CARGO) clippy --manifest-path services/human/tools/ui-gate/Cargo.toml --locked --all-targets -- -D warnings
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path services/human/tools/ui-gate/Cargo.toml --locked
+	$(HUMAN_CARGO) run --manifest-path services/human/tools/ui-gate/Cargo.toml --locked -- human/apps/web
 	$(HUMAN_NPM) run build:ui
 	$(HUMAN_NPM) run typecheck
 	$(HUMAN_NPM) test
 
 human-check:
 	$(HUMAN_CARGO) check --manifest-path $(HUMAN_MANIFEST) --locked --workspace
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path human/tools/boundary-check/Cargo.toml --locked
-	$(HUMAN_CARGO) run --manifest-path human/tools/boundary-check/Cargo.toml --locked -- human/crates
-	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path human/tools/schema-check/Cargo.toml --locked
-	$(HUMAN_CARGO) run --manifest-path human/tools/schema-check/Cargo.toml --locked -- human/schema/human-api
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path services/human/tools/boundary-check/Cargo.toml --locked
+	$(HUMAN_CARGO) run --manifest-path services/human/tools/boundary-check/Cargo.toml --locked -- services/human/crates
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path services/human/tools/schema-check/Cargo.toml --locked
+	$(HUMAN_CARGO) run --manifest-path services/human/tools/schema-check/Cargo.toml --locked -- services/human/schema/human-api
 	$(HUMAN_NPM) run typecheck
 
 human-check-bundle:
 	$(HUMAN_NPM) run build
-	$(HUMAN_CARGO) run --manifest-path human/tools/boundary-check/Cargo.toml --locked -- --web-bundle human/apps/web/.next
+	$(HUMAN_CARGO) run --manifest-path services/human/tools/boundary-check/Cargo.toml --locked -- --web-bundle human/apps/web/.next
 
 human-e2e: human-test-e2e
 
@@ -3296,7 +3296,7 @@ core-qualification-environment: test-replay-golden qualify-replay qualify-fuzz
 workspace-install:
 	$(MAKE) workspace-node-preflight
 	cargo fetch --manifest-path services/agent/Cargo.toml --locked
-	cargo fetch --manifest-path human/Cargo.toml --locked
+	cargo fetch --manifest-path services/human/Cargo.toml --locked
 	cargo fetch --manifest-path services/platform/Cargo.toml --locked
 	cargo fetch --manifest-path tools/platform/Cargo.toml --locked
 	cargo fetch --manifest-path sdk/platform/generators/Cargo.toml --locked
@@ -4156,7 +4156,7 @@ test-state-proof: $(BUILD_DIR)/tests/lxp_test_state_proof
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_state_proof
 	$(BUILD_DIR)/tests/lxp_test_state_proof --vectors > $(BUILD_DIR)/tests/native-state-proofs.json
 	cmp $(BUILD_DIR)/tests/native-state-proofs.json contracts/config/native-state-proofs.json
-	cmp $(BUILD_DIR)/tests/native-state-proofs.json human/crates/layerx-paxeer-client/tests/vectors/native-state-proofs.json
+	cmp $(BUILD_DIR)/tests/native-state-proofs.json services/human/crates/layerx-paxeer-client/tests/vectors/native-state-proofs.json
 
 .PHONY: test-asset-withdraw-activity
 test-asset-withdraw-activity: $(BUILD_DIR)/tests/test_asset_withdraw_activity
@@ -4172,7 +4172,7 @@ $(BUILD_DIR)/tests/test_asset_withdraw_activity: tests/modules/test_asset_withdr
 test-native-withdrawal-proof: $(BUILD_DIR)/tests/test_asset_withdraw_activity
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_asset_withdraw_activity
 	$(BUILD_DIR)/tests/test_asset_withdraw_activity --vectors > $(BUILD_DIR)/tests/native-withdrawal-proof.json
-	cmp $(BUILD_DIR)/tests/native-withdrawal-proof.json human/crates/layerx-paxeer-client/tests/vectors/native-withdrawal-proof.json
+	cmp $(BUILD_DIR)/tests/native-withdrawal-proof.json services/human/crates/layerx-paxeer-client/tests/vectors/native-withdrawal-proof.json
 	cmp $(BUILD_DIR)/tests/native-withdrawal-proof.json contracts/config/native-withdrawal-proof.json
 
 .PHONY: layerx-module-registry test-module-registry

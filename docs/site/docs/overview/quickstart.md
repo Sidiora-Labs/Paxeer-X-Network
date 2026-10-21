@@ -471,7 +471,7 @@ reads `quote_id` from `/result/quote_id` (`tools/platform/cli/src/payment.rs:24-
 `idempotency_key` (`tools/platform/cli/src/main.rs:991-994`;
 `tools/platform/cli/src/payment.rs:33-37`). It does not run `verify_outcome`
 (`tools/platform/cli/src/payment.rs:5-37`). These two routes are Human-plane
-operations (`human/schema/human-api/movement.kvx:116-131`). The emulator serves
+operations (`services/human/schema/human-api/movement.kvx:116-131`). The emulator serves
 that Human contract directly (`tools/platform/emulator/src/main.rs:2667-2668`).
 
 The hosted smoke harness also posts the Human-plane `/v1/moves/quote` and

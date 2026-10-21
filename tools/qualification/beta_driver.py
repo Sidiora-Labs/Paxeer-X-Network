@@ -109,10 +109,10 @@ GAUNTLET_INVENTORY = ROOT / "programs" / "tests" / "gauntlet" / "attack-inventor
 FAULT_HEADER = ROOT / "include" / "layerx" / "lxp_fault.h"
 PROGRAMS_DIRECTORY = ROOT / "programs"
 AGENT_MANIFEST = ROOT / "agent" / "Cargo.toml"
-HUMAN_MANIFEST = ROOT / "human" / "Cargo.toml"
+HUMAN_MANIFEST = ROOT / "services" / "human" / "Cargo.toml"
 INTEROP_MANIFEST = ROOT / "services" / "interop" / "Cargo.toml"
 PLATFORM_MANIFEST = ROOT / "services" / "platform" / "Cargo.toml"
-SCHEMA_CHECK_MANIFEST = ROOT / "human" / "tools" / "schema-check" / "Cargo.toml"
+SCHEMA_CHECK_MANIFEST = ROOT / "services" / "human" / "tools" / "schema-check" / "Cargo.toml"
 
 
 class CaseFailure(Exception):
@@ -1461,7 +1461,7 @@ def one_ledger(ctx: CaseContext) -> None:
             str(SCHEMA_CHECK_MANIFEST),
             "--locked",
             "--",
-            str(ROOT / "human" / "schema" / "human-api"),
+            str(ROOT / "services" / "human" / "schema" / "human-api"),
         ),
         label="schema-check",
     )

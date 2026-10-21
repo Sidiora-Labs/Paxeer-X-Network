@@ -43,7 +43,7 @@ func main() {
 }
 
 func verifyHumanVectors(repo string) error {
-	goldenRoot := filepath.Join(repo, "human", "schema", "human-api", "golden")
+	goldenRoot := filepath.Join(repo, "services", "human", "schema", "human-api", "golden")
 	for _, operation := range layerx.AllHumanOperations() {
 		metadata, ok := operation.Metadata()
 		if !ok {

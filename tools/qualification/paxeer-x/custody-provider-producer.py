@@ -9,8 +9,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = 'paxeer-x.custody-provider-build.v1'
-SERVICE = ROOT / 'human/crates/layerx-human-service'
-KMS = ROOT / 'human/crates/layerx-human-kms'
+SERVICE = ROOT / 'services/human/crates/layerx-human-service'
+KMS = ROOT / 'services/human/crates/layerx-human-kms'
 
 
 def refuse(message):
@@ -94,7 +94,7 @@ def build(manifest):
         ('layerx-human-kms', ['--test', 'provider'], KMS),
     ]:
         metadata = subprocess.check_output(['cargo', '+1.91.1', 'metadata', '--frozen',
-            '--no-deps', '--format-version', '1', '--manifest-path', 'human/Cargo.toml'],
+            '--no-deps', '--format-version', '1', '--manifest-path', 'services/human/Cargo.toml'],
             cwd=ROOT, env=env, text=True)
         packages = json.loads(metadata)['packages']
         target_package = next(p for p in packages if p['name'] == package)
@@ -103,7 +103,7 @@ def build(manifest):
                    any(k in ['lib', 'bin', 'test'] for k in t['kind'])]
         expected.extend((package, t['name'], tuple(t['kind'])) for t in targets)
         output = capture(['cargo', '+1.91.1', 'test', '--frozen', '--manifest-path',
-            'human/Cargo.toml', '-p', package, *extra, '--no-run', '--message-format=json'], env)
+            'services/human/Cargo.toml', '-p', package, *extra, '--no-run', '--message-format=json'], env)
         for line in output.splitlines():
             try:
                 item = json.loads(line)
@@ -172,7 +172,7 @@ def verify(manifest):
         print('FULL TEST TARGET', item['package'], item['name'], flush=True)
         total += counts(capture([*run, item['path'], '--test-threads=1'], env))
     docs = capture([*run, 'cargo', '+1.91.1', 'test', '--frozen', '--manifest-path',
-                    'human/Cargo.toml', '-p', 'layerx-human-service', '--doc'], env)
+                    'services/human/Cargo.toml', '-p', 'layerx-human-service', '--doc'], env)
     doc_total = counts(docs)
     if doc_total != data['expected_doc_tests'] or doc_total != 3:
         refuse('all three original rustdoc examples are mandatory')

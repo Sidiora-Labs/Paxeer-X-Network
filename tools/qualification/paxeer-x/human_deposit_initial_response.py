@@ -258,14 +258,14 @@ def main():
     state = B.private(fixture['disposable_state_directory'], True)
     B.require(state != directory, 'private disposable qualification authority state')
     source_paths = [
-        'human/crates/layerx-human-service/src/server/production_components.rs',
-        'human/crates/layerx-human-service/src/journeys/deposit.rs',
-        'human/crates/layerx-human-service/src/server/movement_provider.rs',
-        'human/crates/layerx-human-service/src/store/mod.rs',
-        'human/crates/layerx-human-service/src/store/codec.rs',
+        'services/human/crates/layerx-human-service/src/server/production_components.rs',
+        'services/human/crates/layerx-human-service/src/journeys/deposit.rs',
+        'services/human/crates/layerx-human-service/src/server/movement_provider.rs',
+        'services/human/crates/layerx-human-service/src/store/mod.rs',
+        'services/human/crates/layerx-human-service/src/store/codec.rs',
         'human/apps/web/src/api/generated/index.ts',
         'human/apps/web/src/api/generated/conformance.ts',
-        'human/schema/human-api/movement.kvx',
+        'services/human/schema/human-api/movement.kvx',
         'tools/qualification/paxeer-x/human-api-boundary.py',
         'tools/qualification/paxeer-x/human_deposit_initial_response.py',
     ]

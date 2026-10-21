@@ -363,7 +363,7 @@ human() {
 		exit 2
 	fi
 	base="${base%/}"
-	golden="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/human/schema/human-api/golden/intent.plan.request.json"
+	golden="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/services/human/schema/human-api/golden/intent.plan.request.json"
 	for check in live preflight plan; do
 		status=0
 		case "$check" in
@@ -466,7 +466,7 @@ human_session() {
 		fi
 	done
 	base="${base%/}"
-	golden="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/human/schema/human-api/golden/intent.plan.request.json"
+	golden="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/services/human/schema/human-api/golden/intent.plan.request.json"
 	body="$(python3 -c '
 import datetime, json, sys
 body = json.load(open(sys.argv[1]))["body"]

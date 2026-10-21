@@ -246,7 +246,7 @@ unmatched method or path, is `404 not_found`
 internal `Err` to `503 source_unavailable` with `retry_after_seconds`
 5 (`services/platform/hosted/internal/src/events.rs:258-259`).
 
-No source file under `services/platform/hosted/*/src` or `human/crates` issues
+No source file under `services/platform/hosted/*/src` or `services/human/crates` issues
 `POST /internal/v1/observe`. The route is defined only at
 `services/platform/hosted/internal/src/events.rs:256`. Webhooks
 `POST /internal/v1/events/{kind}/{id}` authorizes
@@ -270,10 +270,10 @@ must be HTTP 200, `Content-Type` starting `application/json`,
 Human `GET /internal/v1/principal` is the session cookie
 `__Host-layerx_access` and returns envelope `ok` / `result`
 `{"active":true,"sub":…}`
-(`human/crates/layerx-human-service/src/server/http.rs:20`;
-`human/crates/layerx-human-service/src/server/http.rs:141`;
-`human/crates/layerx-human-service/src/server/http.rs:278-284`;
-`human/crates/layerx-human-service/src/server/http.rs:644-654`).
+(`services/human/crates/layerx-human-service/src/server/http.rs:20`;
+`services/human/crates/layerx-human-service/src/server/http.rs:141`;
+`services/human/crates/layerx-human-service/src/server/http.rs:278-284`;
+`services/human/crates/layerx-human-service/src/server/http.rs:644-654`).
 Gateway `GET /internal/v1/principal` is `Authorization: LayerX-Key`
 and returns `result.principal_digest`
 (`services/platform/hosted/gateway/src/main.rs:1726-1738`;
@@ -289,11 +289,11 @@ Derived facts, after requiring `result.{identity} == resource`:
 | Payment | `activity_id` | none as facts; `receipt` hex is decoded as a protocol receipt; `activity_id`, `amount`, `asset`, and `occurred_at` are taken from that receipt (`services/platform/hosted/internal/src/events.rs:325`; `services/platform/hosted/internal/src/events.rs:341-359`) |
 
 Human `Journey` requires `journey_id`, `kind`, `state`, `updated_at`
-among other fields (`human/schema/human-api/journeys.kvx:36-37`;
-`human/schema/human-api/journeys.kvx:57-62`). Human `ApprovalDetail`
+among other fields (`services/human/schema/human-api/journeys.kvx:36-37`;
+`services/human/schema/human-api/journeys.kvx:57-62`). Human `ApprovalDetail`
 requires `approval_id`, `agent_id`, `state`, `created_at` among other
-fields (`human/schema/human-api/baseline.kvx:222`;
-`human/schema/human-api/agents.kvx:203-208`). Gateway receipt `result`
+fields (`services/human/schema/human-api/baseline.kvx:222`;
+`services/human/schema/human-api/agents.kvx:203-208`). Gateway receipt `result`
 is `activity_id` and hex `receipt`
 (`services/platform/hosted/gateway/src/main.rs:2526-2532`). Gateway program
 registry `result` includes `program_id`, `lifecycle`, `version`,

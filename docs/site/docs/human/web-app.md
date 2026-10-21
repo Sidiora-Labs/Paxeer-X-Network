@@ -8,7 +8,7 @@ shells that share state and journey logic.
 The application lives at `human/apps/web`. It must use the owner-supplied
 `@layerx/ui` package. The browser never assembles protocol payloads and never
 receives LayerX private key material. The TypeScript client is generated from
-`human/schema/human-api`.
+`services/human/schema/human-api`.
 
 Hosted Human material and KMS seal handling are
 [Hosted Human](hosted.md). Custody credit at the protocol boundary is

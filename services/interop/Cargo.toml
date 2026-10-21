@@ -34,7 +34,7 @@ layerx-proof = { path = "../../services/agent/crates/layerx-proof" }
 layerx-interop-gateway = { path = "crates/layerx-interop-gateway" }
 layerx-mirror = { path = "crates/layerx-mirror" }
 layerx-portable = { path = "crates/layerx-portable" }
-layerx-intents = { path = "../../human/crates/layerx-intents" }
+layerx-intents = { path = "../human/crates/layerx-intents" }
 layerx-agent-api = { path = "../../services/agent/crates/layerx-agent-api" }
 layerx-client = { path = "../../services/agent/crates/layerx-client" }
 k256 = { version = "=0.13.4", default-features = false, features = ["ecdsa", "std"] }

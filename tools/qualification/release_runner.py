@@ -679,7 +679,7 @@ class ReleaseRunner:
             "beta-qualify",
         ):
             return
-        compatibility = self.root / "human" / "schema" / "human-api" / "compatibility.kvx"
+        compatibility = self.root / "services" / "human" / "schema" / "human-api" / "compatibility.kvx"
         compatibility_record: dict[str, str] | None = None
         if compatibility.is_file():
             copied = self.output / "artifacts" / "human-api-compatibility.kvx"

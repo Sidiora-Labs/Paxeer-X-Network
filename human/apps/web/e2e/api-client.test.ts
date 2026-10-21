@@ -17,7 +17,7 @@ import {
   type OperationShape,
 } from "../src/api/generated/index.ts";
 
-const goldenRoot = new URL("../../../schema/human-api/golden/", import.meta.url);
+const goldenRoot = new URL("../../../../services/human/schema/human-api/golden/", import.meta.url);
 
 interface GoldenRequest {
   method: string;

@@ -159,7 +159,7 @@ fn unknown_declaration_is_refused() {
 #[test]
 fn directory_escaping_the_workspace_root_is_refused() {
     let root = repo_fixture("escape");
-    let source = manifest().replace("path = \"platform/middleware\"", "path = \"human/crates\"");
+    let source = manifest().replace("path = \"platform/middleware\"", "path = \"services/human/crates\"");
     expect_refusal(&root, &source, "escapes the workspace root");
     cleanup(&root);
 }

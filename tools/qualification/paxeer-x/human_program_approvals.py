@@ -100,15 +100,15 @@ def main():
     revision = B.git('rev-parse', 'HEAD').decode().strip()
     B.require(candidate['source']['revision'] == revision and not candidate['source']['dirty'], 'genuine published candidate')
     required = {
-        'human/crates/layerx-human-service/src/server/' + name + '.rs'
+        'services/human/crates/layerx-human-service/src/server/' + name + '.rs'
         for name in ('agent_runtime', 'production_components', 'schema', 'mod', 'projection', 'stream_journal')
     } | {
-        'human/schema/human-api/' + name + '.kvx'
+        'services/human/schema/human-api/' + name + '.kvx'
         for name in ('program-approvals', 'v1', 'home', 'stream')
     } | {
         'human/apps/web/src/api/generated/' + name + '.ts' for name in ('index', 'conformance')
     } | {'tools/paxeer-x/route-catalogue.json', 'tools/qualification/paxeer-x/human_program_approvals.py', 'human/apps/web/copy/catalog.ts', 'human/apps/web/copy/messages.generated.ts'}
-    required |= {'human/schema/human-api/golden/approval.program.' + operation + '.' + variant + '.json'
+    required |= {'services/human/schema/human-api/golden/approval.program.' + operation + '.' + variant + '.json'
                  for operation in ('list', 'get', 'material', 'budget', 'approve', 'reject', 'disclosure')
                  for variant in ('request', 'response', 'failure')}
     inventory = material['source_files']

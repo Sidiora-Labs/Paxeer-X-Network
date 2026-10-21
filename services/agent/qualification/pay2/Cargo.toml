@@ -23,7 +23,7 @@ layerx-agent-api = { path = "../../crates/layerx-agent-api" }
 layerx-agentd = { path = "../../crates/layerx-agentd" }
 layerx-client = { path = "../../crates/layerx-client" }
 layerx-crypto = { path = "../../crates/layerx-crypto" }
-layerx-intents = { path = "../../../../human/crates/layerx-intents" }
+layerx-intents = { path = "../../../human/crates/layerx-intents" }
 layerx-mcp = { path = "../../crates/layerx-mcp" }
 layerx-platform-authority = { path = "../../../../services/platform/hosted/authority" }
 layerx-platform-core = { path = "../../../../services/platform/hosted/core" }

@@ -25,7 +25,9 @@ area:programs:
 
 area:human:
   - changed-files:
-      - any-glob-to-any-file: human/**
+      - any-glob-to-any-file:
+          - human/**
+          - services/human/**
 
 area:contracts:
   - changed-files:

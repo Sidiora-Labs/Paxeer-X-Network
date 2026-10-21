@@ -27,7 +27,7 @@ layerx-types = { path = "../../../../../../services/agent/crates/layerx-types" }
 layerx-wire = { path = "../../../../../../services/agent/crates/layerx-wire" }
 
 [dev-dependencies]
-layerx-intents = { path = "../../../../../../human/crates/layerx-intents" }
+layerx-intents = { path = "../../../../../human/crates/layerx-intents" }
 ed25519-dalek = "2.2"
 layerx-client = { path = "../../../../../../services/agent/crates/layerx-client" }
 layerx-crypto = { path = "../../../../../../services/agent/crates/layerx-crypto" }

@@ -4,7 +4,7 @@
 Nothing custodial is simulated or deployed here. The chain is a real ``paxd``
 brought up by ``tests/daemon/custody_chain.py``, the same path
 ``tests/daemon/withdraw-custody.py`` and
-``human/crates/layerx-paxeer-client/tests/disposable_custody.py`` drive, from
+``services/human/crates/layerx-paxeer-client/tests/disposable_custody.py`` drive, from
 genesis whose ``layerxcustody`` section is written by
 ``services/platform/hosted/paxeer/custody-genesis.py``. Custody is therefore the native
 module behind the precompile at ``0x0000000000000000000000000000000000001013``

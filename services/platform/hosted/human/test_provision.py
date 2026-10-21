@@ -10,7 +10,7 @@ import provision
 
 IDENTITY_PROVIDER_VARIABLE = 'LAYERX_HUMAN_IDENTITY_PROVIDER_BIN'
 IDENTITY_PROVIDER_DEFAULT = (Path(__file__).resolve().parents[4]
-                             / 'human/target/debug/layerx-human-identity-provider')
+                             / 'services/human/target/debug/layerx-human-identity-provider')
 
 
 def identity_provider_binary():

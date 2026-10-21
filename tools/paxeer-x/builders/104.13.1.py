@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 WEB = ROOT / "human/apps/web"
 SOURCE_PATHS = ["human/apps/web", "services/agent/sdk/typescript", "tools/paxeer-x/gates/104.13.1.sh",
                 "tools/paxeer-x/builders/104.13.1.py",
-                "human/crates/layerx-human-service/src/server/identity_dispatch.rs"]
+                "services/human/crates/layerx-human-service/src/server/identity_dispatch.rs"]
 
 
 def refuse(reason):

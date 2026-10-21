@@ -1,10 +1,10 @@
 # Human journeys
 
-The browser product contract is `human/schema/human-api/` (major 1,
+The browser product contract is `services/human/schema/human-api/` (major 1,
 minor 4 in `v1.kvx`). Journey vocabulary lives in `journeys.kvx`.
 Identity, passkeys, and sessions live in `identity.kvx`. Movement
 quote/commit lives in `movement.kvx`. Executable wire examples are
-the golden files under `human/schema/human-api/golden/`.
+the golden files under `services/human/schema/human-api/golden/`.
 
 Normative product behaviour is in `spec/layerx-platform/spec.kvx`.
 The published tree does not contain
@@ -26,7 +26,7 @@ Every response envelope is `{ ok, result?, error?, trace }`
 ## Journey vocabulary
 
 `JourneyKind` variants
-(`human/schema/human-api/journeys.kvx`):
+(`services/human/schema/human-api/journeys.kvx`):
 
 `onboarding`, `wallet-binding`, `deposit`, `withdraw`, `exit`,
 `move`, `agent-create`, `agent-fund`, `agent-pause`, `agent-retire`
@@ -90,7 +90,7 @@ Stage `copy_key` values in the golden status response:
 `onboarding.stage.setting-up-your-protocol-identity`,
 `onboarding.stage.putting-recovery-in-place`.
 
-Service-internal stages (`human/crates/layerx-human-service`) map
+Service-internal stages (`services/human/crates/layerx-human-service`) map
 those copy keys onto `ApplicationIdentity`, `CustodyKey`,
 `DidRegistration`, `InitialFunding`, and `RecoveryRegistration`.
 
@@ -172,7 +172,7 @@ Kind: `exit`.
 | Start | `POST /v1/exit` | `confirmation`; optional `settlement_domain` | `Journey` |
 
 The golden confirmation phrase is exactly `get my money out`
-(`human/schema/human-api/golden/exit.start.request.json`). Stages:
+(`services/human/schema/human-api/golden/exit.start.request.json`). Stages:
 `exit.stage.getting-ready`, `exit.stage.waiting-for-wallet`,
 `exit.stage.confirming-on-paxeer`. Wallet copy key:
 `exit.sign.exit-claim`.

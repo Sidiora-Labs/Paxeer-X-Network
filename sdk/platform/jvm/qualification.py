@@ -17,7 +17,7 @@ def digest(path):
 
 def snapshot():
     inputs = {}
-    for directory in ('sdk/platform/jvm/src', 'services/agent/schema/agent-api', 'human/schema/human-api',
+    for directory in ('sdk/platform/jvm/src', 'services/agent/schema/agent-api', 'services/human/schema/human-api',
                       'sdk/platform/conformance/fixtures', 'tests/vectors/codec'):
         for path in sorted((ROOT / directory).rglob('*')):
             if path.name == '.env' or path.name.startswith('.env.'):

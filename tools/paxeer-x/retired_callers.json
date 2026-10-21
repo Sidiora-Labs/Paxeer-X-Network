@@ -428,7 +428,7 @@
         "RouteBinding"
       ],
       "deleted_trees": [
-        "human/crates/layerx-intents/src/precompile.rs"
+        "services/human/crates/layerx-intents/src/precompile.rs"
       ],
       "replacement": "disclosure switches to the 0x1015 v2 method kinds; bridge kinds go because the bridge settles natively"
     },
@@ -581,9 +581,9 @@
         "layerx_paxeer_client"
       ],
       "deleted_trees": [
-        "human/crates/layerx-paxeer-client",
-        "human/crates/layerx-human-movement-provider",
-        "human/crates/layerx-explorer-index"
+        "services/human/crates/layerx-paxeer-client",
+        "services/human/crates/layerx-human-movement-provider",
+        "services/human/crates/layerx-explorer-index"
       ],
       "replacement": "remove the deposit, withdraw, exit and binding hops; balances come from bank state and the explorer pages are the native explorer pages"
     },
@@ -646,7 +646,7 @@
       ]
     },
     {
-      "path": "human/tools/boundary-check/src/lib.rs",
+      "path": "services/human/tools/boundary-check/src/lib.rs",
       "lines": [
         "if body.contains(\"lni::transport::Uds\")",
         "|| body.contains(\"lni::transport::Tls\")",

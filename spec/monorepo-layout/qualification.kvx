@@ -161,3 +161,10 @@ command = "scripts/ci/layout-check.sh bridge"
 exit_code = 1
 log_path = "fleet/logs/layout-6.5.log"
 observed_and_assumption = "Every tracked file left bridge and no build, CI, deploy or tool file names an old bridge path; the only hits are docker/bridge-relayer/entrypoint.sh lines 61 and 62, which name the signer key handle bridge/attestor that services/interop/deploy/bridge-relayer/signer-keys.json declares, not a directory, so the handle and the check are both left as written for the wave 6 check to rule on."
+
+[finding.4.6-web-wallet-gas-quote]
+revision = "019bfdcfd with the task 4.6 changes applied"
+command = "make human-build"
+exit_code = 2
+log_path = "fleet/logs/layout-4.6.log"
+observed_and_assumption = "The Rust stages of human-build pass from services/human, then next build fails type check because human/apps/web/src/api/wallet.ts and e2e/gas-station.test.ts call the freshly built human/wallet/sdk without the GasQuoteRequest did field; neither file is touched by the move, so a checkout with a stale wallet sdk dist passes and a fresh build does not."

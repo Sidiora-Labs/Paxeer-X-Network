@@ -9,10 +9,10 @@ import sys
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE_PATHS = [
-    'human/crates/layerx-explorer-index/src/main.rs',
-    'human/crates/layerx-explorer-index/src/unified.rs',
-    'human/crates/layerx-explorer-index/src/query.rs',
-    'human/crates/layerx-explorer-index/tests/unified_availability.rs',
+    'services/human/crates/layerx-explorer-index/src/main.rs',
+    'services/human/crates/layerx-explorer-index/src/unified.rs',
+    'services/human/crates/layerx-explorer-index/src/query.rs',
+    'services/human/crates/layerx-explorer-index/tests/unified_availability.rs',
     'human/apps/web/src/explorer/model.ts',
     'human/apps/web/src/explorer/client.ts',
     'human/apps/web/src/app/explorer/accounts/[accountId]/page.tsx',

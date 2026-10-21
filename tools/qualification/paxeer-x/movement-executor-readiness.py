@@ -21,8 +21,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = 'paxeer-x.movement-executor-readiness.v1'
 MANIFEST = Path(os.environ.get('PAXEER_X_MOVEMENT_READINESS_MANIFEST',
-                               ROOT / 'human/target/paxeer-x/movement-executor-readiness.json'))
-SOURCES = ['human/Cargo.toml', 'human/Cargo.lock', 'human/crates', 'services/agent/crates',
+                               ROOT / 'services/human/target/paxeer-x/movement-executor-readiness.json'))
+SOURCES = ['services/human/Cargo.toml', 'services/human/Cargo.lock', 'services/human/crates', 'services/agent/crates',
            'services/platform/Cargo.toml', 'services/platform/Cargo.lock', 'services/platform/hosted/runtime-clock',
            'tools/runtime/run-with-clock.sh']
 CASES = [
@@ -82,7 +82,7 @@ def artifacts(argv, wanted):
 
 def build():
     revision = source()
-    human = ['--locked', '--manifest-path', 'human/Cargo.toml', '--message-format=json']
+    human = ['--locked', '--manifest-path', 'services/human/Cargo.toml', '--message-format=json']
     built = {}
     built.update(artifacts(['cargo', 'test', '--no-run', '-p', 'layerx-human-movement-provider', *human], {
         ('layerx-human-movement-provider', ('bin',), True): 'unit',

@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 work = Path(sys.argv[1])
-provider = repo / 'human/target/debug/layerx-human-identity-provider'
+provider = repo / 'services/human/target/debug/layerx-human-identity-provider'
 cli = repo / 'cmd/layerxctl/target/debug/layerxctl'
 socket = Path(os.environ.get('LAYERX_TEST_OWNER_AUTHORITY_SOCKET',
                              work / 'run/layerxd.lni.sock'))

@@ -30,15 +30,15 @@ import time
 ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = 'paxeer-x.human-movement-kms-assembly.v1'
 MANIFEST = Path(os.environ.get('PAXEER_X_MOVEMENT_KMS_ASSEMBLY_MANIFEST',
-                               ROOT / 'human/target/paxeer-x/human-movement-kms-assembly.json'))
-SOURCES = ['human/Cargo.toml', 'human/Cargo.lock', 'human/crates', 'services/agent/crates',
+                               ROOT / 'services/human/target/paxeer-x/human-movement-kms-assembly.json'))
+SOURCES = ['services/human/Cargo.toml', 'services/human/Cargo.lock', 'services/human/crates', 'services/agent/crates',
            'services/platform/Cargo.toml', 'services/platform/Cargo.lock', 'platform/crates', 'services/platform/hosted/runtime-clock',
            'docker/kernel/init.sh', 'docker/human-service/entrypoint.sh', 'tools/bringup/ca.sh',
            'services/platform/hosted/human/material.py', 'tests/fixtures/custody/native-credit-receipt/profile',
            'tools/qualification/paxeer-x/human-movement-kms-assembly.py']
 TOUCHES = ['docker/kernel/init.sh', 'docker/human-service/entrypoint.sh', 'tools/bringup/ca.sh',
            'tools/bringup/check-live.test.sh', 'services/platform/hosted/human/material.py',
-           'services/platform/hosted/human/material.sh', 'human/crates/layerx-human-movement-provider/src/config.rs']
+           'services/platform/hosted/human/material.sh', 'services/human/crates/layerx-human-movement-provider/src/config.rs']
 INIT = ROOT / 'docker/kernel/init.sh'
 CA = ROOT / 'tools/bringup/ca.sh'
 IDENTITIES = ('human-kms', 'human-kms-client', 'human-kms-executor')
@@ -96,7 +96,7 @@ def artifacts(argv, wanted):
 def build():
     revision = source()
     built = {}
-    built.update(artifacts(['cargo', 'build', '--locked', '--manifest-path', 'human/Cargo.toml',
+    built.update(artifacts(['cargo', 'build', '--locked', '--manifest-path', 'services/human/Cargo.toml',
                             '-p', 'layerx-human-kms', '--bin', 'layerx-human-kms',
                             '-p', 'layerx-human-movement-provider', '--bin', 'layerx-human-movement-provider',
                             '--message-format=json'], {

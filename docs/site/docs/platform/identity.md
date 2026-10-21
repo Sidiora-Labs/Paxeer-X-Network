@@ -53,9 +53,9 @@ names that start with `..`, which are skipped
 | Ramp | `ramp` | `POST /v1/introspect` with `audience` (`services/platform/hosted/identity/src/main.rs:580-582`; `services/platform/hosted/identity/src/main.rs:651-681`) | `RampShape`: `active`, `principal_id`, `account`, `audience`, `expires_at` (`services/platform/hosted/identity/src/main.rs:137-143`) |
 | Provisioning | `provisioning` | `POST /v1/principals`, `POST /v1/sessions`, `DELETE /v1/sessions/{id}` (`services/platform/hosted/identity/src/main.rs:869-886`; `services/platform/hosted/tests/beta-cluster.sh:1000-1026`) | `PrincipalResponse`, `SessionResponse`, `RevocationResponse` (`services/platform/hosted/identity/src/main.rs:146-167`) |
 
-`human/crates` maps `GET /internal/v1/principal` onto schema path
+`services/human/crates` maps `GET /internal/v1/principal` onto schema path
 `/v1/sessions` inside the human HTTP server
-(`human/crates/layerx-human-service/src/server/http.rs:141-146`). That
+(`services/human/crates/layerx-human-service/src/server/http.rs:141-146`). That
 path is not a request to `layerx-identity`. `services/agent/crates` has no
 `/v1/introspect`, `/v1/sessions`, or `/v1/principals` route to this
 service.

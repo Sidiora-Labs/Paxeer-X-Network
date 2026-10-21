@@ -24,7 +24,7 @@ use immutable source URLs so they resolve when the site is hosted alone.
 
 ## What is generated
 
-`content/reference/human-api.md`, `content/reference/agent-api.md` and `content/reference/errors.md` are generated from `human/schema/human-api` and `services/agent/schema/agent-api`. `content/reference/enforcement.md` is generated from `capabilities.kvx`, and `content/reference/samples.md` from `samples.kvx`. None of the five is hand-edited; the build overwrites them.
+`content/reference/human-api.md`, `content/reference/agent-api.md` and `content/reference/errors.md` are generated from `services/human/schema/human-api` and `services/agent/schema/agent-api`. `content/reference/enforcement.md` is generated from `capabilities.kvx`, and `content/reference/samples.md` from `samples.kvx`. None of the five is hand-edited; the build overwrites them.
 
 Every other page under `content/` is written by hand and must carry an `Enforced by` table naming, for each capability it documents, the layer that enforces it: `protocol`, `agent-layer`, `service` or `hosted-surface`. A page without one fails the build.
 

@@ -76,5 +76,5 @@ daemon/layerx-custody-proof by `make custody-proof-build` into build/bin/layerx-
 paxd serves one historical store proof per second (sc-historical-proof-rate-limit); light-credit retries that
 refusal up to 10 times, 1.1 s apart.
 go test ./custodyproof/ loads these files and checks them against the Go reference verifier. The Rust tests
-of human/crates/layerx-paxeer-client, human/crates/layerx-human-service, human/crates/layerx-intents and
+of services/human/crates/layerx-paxeer-client, services/human/crates/layerx-human-service, services/human/crates/layerx-intents and
 services/agent/crates/layerx-agentd read them as well.

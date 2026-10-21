@@ -347,7 +347,7 @@ const HUMAN_INSTALL: &[Step] = &[
     Step::command(
         "Fetch the locked human workspace crates",
         "cargo",
-        &["fetch", "--manifest-path", "human/Cargo.toml", "--locked"],
+        &["fetch", "--manifest-path", "services/human/Cargo.toml", "--locked"],
         ".",
         &["cargo"],
     ),

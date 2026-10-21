@@ -14,18 +14,18 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
 TEST = 'genuine_human_owner_session_consent_preview_and_reopen'
 SOURCES = (
-    'human/crates/layerx-human-service/src/server/agent_creation_native.rs',
-    'human/crates/layerx-human-service/src/server/agent_creation.rs',
-    'human/crates/layerx-human-service/src/server/agent_runtime.rs',
-    'human/crates/layerx-human-service/src/server/native_send.rs',
-    'human/crates/layerx-human-service/src/server/production_components.rs',
-    'human/crates/layerx-human-service/src/custody/signer.rs',
-    'human/crates/layerx-human-service/src/custody/provider.rs',
+    'services/human/crates/layerx-human-service/src/server/agent_creation_native.rs',
+    'services/human/crates/layerx-human-service/src/server/agent_creation.rs',
+    'services/human/crates/layerx-human-service/src/server/agent_runtime.rs',
+    'services/human/crates/layerx-human-service/src/server/native_send.rs',
+    'services/human/crates/layerx-human-service/src/server/production_components.rs',
+    'services/human/crates/layerx-human-service/src/custody/signer.rs',
+    'services/human/crates/layerx-human-service/src/custody/provider.rs',
     'services/agent/crates/layerx-agentd/src/human_runtime.rs',
     'services/agent/crates/layerx-agentd/src/capability/binding.rs',
     'services/agent/crates/layerx-agentd/src/session_control.rs',
-    'human/crates/layerx-human-service/tests/native_send_producer.rs',
-    'human/crates/layerx-human-service/Cargo.toml',
+    'services/human/crates/layerx-human-service/tests/native_send_producer.rs',
+    'services/human/crates/layerx-human-service/Cargo.toml',
     'tools/qualification/paxeer-x/human-native-send-producer.py',
 )
 CASES = {

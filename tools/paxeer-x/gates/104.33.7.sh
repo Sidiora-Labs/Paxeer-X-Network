@@ -5,7 +5,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 exec python3 - <<'GATE'
 import hashlib,json,os,pathlib,re,ssl,stat,subprocess,sys,urllib.error,urllib.parse,urllib.request
 root=pathlib.Path.cwd();tests=0
-sources=['services/platform/hosted/gateway/Cargo.toml','services/platform/hosted/gateway/src/main.rs','services/platform/hosted/gateway/src/native_call.rs','services/platform/hosted/gateway/src/lib.rs','human/apps/web/src/explorer/client.ts','human/apps/web/src/explorer/model.ts','human/apps/web/src/explorer/program-contract.test.ts','human/crates/layerx-explorer-index/src/programs.rs','tools/paxeer-x/gates/104.33.7.sh']
+sources=['services/platform/hosted/gateway/Cargo.toml','services/platform/hosted/gateway/src/main.rs','services/platform/hosted/gateway/src/native_call.rs','services/platform/hosted/gateway/src/lib.rs','human/apps/web/src/explorer/client.ts','human/apps/web/src/explorer/model.ts','human/apps/web/src/explorer/program-contract.test.ts','services/human/crates/layerx-explorer-index/src/programs.rs','tools/paxeer-x/gates/104.33.7.sh']
 def require(value,reason):
     if not value:raise RuntimeError(reason)
 def sha(path):return hashlib.sha256(path.read_bytes()).hexdigest()

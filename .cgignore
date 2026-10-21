@@ -164,7 +164,7 @@ services/platform/docs/
 services/platform/examples/
 services/platform/tools/
 human/apps/wallet/public/
-human/tools/
+services/human/tools/
 core/deps/
 sdk/js/
 tools/loadtest/

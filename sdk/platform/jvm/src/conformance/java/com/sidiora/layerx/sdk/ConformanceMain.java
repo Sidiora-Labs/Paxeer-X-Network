@@ -22,7 +22,7 @@ public final class ConformanceMain {
 
     public static void main(String[] arguments) throws Exception {
         Path root = arguments.length == 0 ? Path.of("../../..") : Path.of(arguments[0]);
-        Path golden = root.resolve("human/schema/human-api/golden");
+        Path golden = root.resolve("services/human/schema/human-api/golden");
         for (Map.Entry<String, OperationCatalog.Route> operation : OperationCatalog.HUMAN_ROUTES.entrySet()) {
             verifyTriplet(golden, operation.getKey(), operation.getValue());
         }
