@@ -1,0 +1,9 @@
+.vercel
+.env*
+/development/openapi
+/docs
+/Dockerfile
+/web/vercel.json
+/web/.vercel
+*.tsbuildinfo
+evidence/

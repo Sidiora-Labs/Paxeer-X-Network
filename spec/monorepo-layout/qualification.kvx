@@ -147,3 +147,10 @@ command = "make platform-build"
 exit_code = 2
 log_path = "fleet/logs/layout-4.5.log"
 observed_and_assumption = "Every cargo build step of platform-build now passes and the last step, layerx-platform-release --check tools/platform/release/registries.kvx, rejects the if: always() on the ten-line-counts upload step of the release-verification job in .github/workflows/platform.yml, which commit 78b0e5d78 added before the move and task 4.5 does not touch, so it is left for the owner of the release workflow and the task stays in progress."
+
+[finding.6.3-launchpad-self-qualification-client-paths]
+revision = "34d6fa046 with the task 6.3 changes applied"
+command = "pnpm -C apps/launchpad build:packages"
+exit_code = 0
+log_path = "fleet/logs/layout-6.3.log"
+observed_and_assumption = "The same launchpad-root self-qualification tooling recorded for 6.2 also names client/apps and client/packages against the former launchpad root (tools/launchpad/production, the services/launchpad api repoFile and social phase4 bindings, metadata and safety qualify scripts, the livestream and shared measurement lists, and the qualification and sdk test scripts whose root now points explicitly at launchpad/); plain relative imports and test paths were rewritten to apps/launchpad and sdk/launchpad/packages and the harness root is left for the same dedicated rewrite."

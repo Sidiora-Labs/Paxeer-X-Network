@@ -1,0 +1,58 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "DOM",
+      "ES2022"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "typeRoots": [
+      "../../web/node_modules/@types"
+    ],
+    "paths": {
+      "react": [
+        "../../web/node_modules/@types/react/index.d.ts"
+      ],
+      "react/jsx-runtime": [
+        "../../web/node_modules/@types/react/jsx-runtime.d.ts"
+      ],
+      "@/*": [
+        "../../web/src/*"
+      ]
+    }
+  },
+  "include": [
+    "../../web/src/widgets/profile/account-disclosure.ts",
+    "../../web/src/widgets/profile/account-disclosure-view.tsx",
+    "../../web/src/widgets/pnl/share-disclosure.ts",
+    "../../web/src/widgets/pnl/share-disclosure-preview.tsx",
+    "../../web/src/widgets/rewards/reward-disclosure.ts",
+    "../../web/src/widgets/profile/account-transport.ts",
+    "../../web/src/widgets/profile/use-account-session.ts",
+    "../../web/src/widgets/profile/profile-edit-state.ts",
+    "../../web/src/widgets/profile/watchlist-state.ts",
+    "../../web/src/widgets/profile/profile-edit-modal.tsx",
+    "../../web/src/widgets/profile/profile-view.tsx",
+    "../../web/src/widgets/profile/positions-tab.tsx",
+    "../../web/src/widgets/profile/referrals-tab.tsx",
+    "../../web/src/widgets/rewards/reward-claim-state.ts",
+    "../../web/src/hooks/ui/use-watchlist.ts",
+    "../../web/src/widgets/home/watchlist-grid.tsx",
+    "../../web/src/widgets/pnl/share-publication-state.ts",
+    "../../web/src/widgets/pnl/use-card-minter.ts",
+    "../../web/src/widgets/pnl/pnl-card-landing.tsx",
+    "../../web/src/widgets/profile/account-preferences.tsx",
+    "../../web/src/widgets/profile/use-private-account-query.ts",
+    "../../web/src/widgets/profile/net-worth-chart.tsx",
+    "../../web/src/widgets/pnl/share-transport.ts",
+    "../../web/src/widgets/pnl/share-pnl-modal.tsx",
+    "../../web/src/widgets/pnl/share-pnl-button.tsx",
+    "../../web/src/app/pnl/[cardId]/page.tsx",
+    "../../web/src/app/api/og/pnl/[cardId]/route.ts"
+  ]
+}

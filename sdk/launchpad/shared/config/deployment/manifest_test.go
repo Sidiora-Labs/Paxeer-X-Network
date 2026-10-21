@@ -123,7 +123,7 @@ func TestDuplicateAndWrongIdentityKindRejected(t *testing.T) {
 
 func TestEveryFrontendGeneratedRoleMatchesGoManifest(t *testing.T) {
 	m := Current()
-	source, e := os.ReadFile("../../../client/apps/web/src/core/network/deployment.ts")
+	source, e := os.ReadFile("../../../../../apps/launchpad/web/src/core/network/deployment.ts")
 	if e != nil {
 		t.Fatal(e)
 	}

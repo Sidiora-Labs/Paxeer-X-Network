@@ -992,7 +992,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.3]
 title = "Move the launchpad client: apps to apps/launchpad, packages to sdk/launchpad/packages"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 6

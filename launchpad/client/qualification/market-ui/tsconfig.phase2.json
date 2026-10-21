@@ -1,6 +1,0 @@
-{
-  "extends": "../../apps/web/tsconfig.json",
-  "compilerOptions": { "incremental": false, "jsx": "react-jsx", "noEmit": true },
-  "include": ["../../apps/web/src/page-modules/home/**/*.tsx", "../../apps/web/src/page-modules/new/**/*.tsx", "../../apps/web/src/page-modules/token/**/*.ts", "../../apps/web/src/page-modules/token/**/*.tsx", "../../apps/web/src/page-modules/terminal/**/*.tsx", "../../apps/web/src/widgets/home/**/*.tsx", "../../apps/web/src/widgets/terminal/**/*.tsx", "./phase2-service-journey.ts", "./phase2-dom.test.tsx"],
-  "exclude": ["node_modules"]
-}

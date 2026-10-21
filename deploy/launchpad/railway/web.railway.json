@@ -4,7 +4,8 @@
     "builder": "DOCKERFILE",
     "dockerfilePath": "deploy/launchpad/Dockerfile.web",
     "watchPatterns": [
-      "/launchpad/client/**",
+      "/apps/launchpad/**",
+      "/sdk/launchpad/packages/**",
       "/services/launchpad/security/control/cap-admission.ts",
       "/deploy/launchpad/Dockerfile.web"
     ]

@@ -5,11 +5,6 @@
 *.prof
 bin/
 dist/
-client/apps/web/.env
-client/apps/web/node_modules
-client/development/openapi
-client/docs
-client/node_modules
 knowledge/fix-log
 knowledge/*.md
 knowledge/*.png
@@ -19,7 +14,6 @@ knowledge/*.log
 !docker-envs/*.env.example
 .env
 .env.*
-client/Dockerfile
 
 # Editor / OS
 .DS_Store
@@ -30,9 +24,6 @@ client/Dockerfile
 .golangci-cache/
 contracts/node_modules
 contracts/.env
-client/.vercel
-client/apps/web/vercel.json
-client/apps/web/.vercel
 # Generated client and qualification outputs
 node_modules/
 .next/

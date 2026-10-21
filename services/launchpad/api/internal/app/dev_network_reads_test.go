@@ -128,7 +128,7 @@ func TestDevelopmentDeploymentFromReviewedManifest(t *testing.T) {
 		}
 	}
 	// The web pins the same manifest digest (core/network/deployment.ts).
-	web, err := os.ReadFile("../../../../client/apps/web/src/core/network/deployment.ts")
+	web, err := os.ReadFile("../../../../../apps/launchpad/web/src/core/network/deployment.ts")
 	if err != nil {
 		t.Fatal(err)
 	}

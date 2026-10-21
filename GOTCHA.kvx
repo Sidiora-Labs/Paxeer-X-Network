@@ -8755,3 +8755,13 @@ detail = "tools/release/extld.sh drops absolute rpath arguments, also inside Go'
 area = "release/build"
 summary = "release builds are serialised per host by the build lock"
 detail = "A second build-paxd.sh on the same host waits for the lock on the shared source symlink."
+
+[gotcha.1837]
+area = "apps/launchpad"
+summary = "pnpm on PATH is 12.x under corepack and refuses the launchpad workspace pinned to pnpm 9.15.0"
+detail = "pnpm -C apps/launchpad install fails with ERR_PNPM_BAD_PM_VERSION; run the cached 9.15.0 with node ~/.cache/node/corepack/v1/pnpm/9.15.0/bin/pnpm.cjs through a scratch pnpm wrapper first on PATH."
+
+[gotcha.1838]
+area = "apps/launchpad"
+summary = "a pnpm workspace can list packages outside its root"
+detail = "pnpm-workspace.yaml accepts ../../sdk/launchpad/packages/* and the lockfile importer keys take the same relative form, so a path-only key rewrite keeps install --frozen-lockfile passing with no resolved version change; --filter takes the same relative path selector."

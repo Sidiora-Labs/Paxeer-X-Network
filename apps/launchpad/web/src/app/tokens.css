@@ -1,0 +1,443 @@
+/* Sidiora Launch design tokens (generated from replica/design/tokens.json).
+   Import from client/apps/web/src/app/globals.css AFTER `@import "tailwindcss";`:
+       @import "../../../replica/design/tokens.css";   (or copy next to globals.css)
+   Only NEW names are declared here (--sl-* custom properties and --color-<role> etc. in @theme),
+   so every existing ad-hoc utility (bg-dark-gray2, text-green-middle, ...) keeps working while
+   components migrate to role utilities (bg-surface-2, text-accent). Existing --font-sans,
+   --breakpoint-xs/mmd, --color-background/--color-foreground are NOT redefined.
+
+   HARD rules baked in: no border role exists (separation = surface ladder contrast only; the
+   single outline below is focus-visible only), no glow/coloured shadows, no gradients, no emojis. */
+
+:root {
+  /* surface ladder: canvas < surface-1 < surface-2 < surface-3 < surface-hover < surface-active */
+  --sl-canvas: #07090D;
+  --sl-surface-1: #10141C;
+  --sl-surface-2: #171D28;
+  --sl-surface-3: #1F2733;
+  --sl-surface-hover: #28313F;
+  --sl-surface-active: #323D4D;
+  --sl-surface-inverse: #F4F5F9;
+  --sl-text: #F4F5F9;
+  --sl-text-muted: #A9B2C4;
+  --sl-text-faint: #939CAF;
+  --sl-text-disabled: #5F6577;
+  --sl-text-inverse: #07090D;
+  --sl-accent: #44E8C8;
+  --sl-accent-hover: #6BEDD5;
+  --sl-accent-active: #2BB89E;
+  --sl-on-accent: #06201B;
+  --sl-accent-soft: #173234;
+  --sl-accent-soft-strong: #1F4F4C;
+  --sl-success: #44E8C8;
+  --sl-on-success: #06201B;
+  --sl-success-soft: #173234;
+  --sl-danger: #FF6367;
+  --sl-danger-strong: #FF4146;
+  --sl-on-danger: #1F0809;
+  --sl-danger-soft: #362128;
+  --sl-warning: #FFDA44;
+  --sl-warning-strong: #EC8E18;
+  --sl-on-warning: #201A00;
+  --sl-warning-soft: #313022;
+  --sl-info: #829FFF;
+  --sl-on-info: #0B1030;
+  --sl-info-soft: #222A40;
+  --sl-focus: #8BFFC5;
+  --sl-percent-up: #44E8C8;
+  --sl-percent-up-soft: #173234;
+  --sl-percent-down: #FF6367;
+  --sl-percent-down-soft: #362128;
+  --sl-percent-flat: #A9B2C4;
+  --sl-candle-up: #44E8C8;
+  --sl-candle-down: #FF6367;
+  --sl-volume-up: #277369;
+  --sl-volume-down: #7C383E;
+  --sl-chart-grid: #1F2733;
+  --sl-chart-crosshair: #939CAF;
+  --sl-track: #1F2733;
+  --sl-track-fill: #44E8C8;
+  --sl-rank-1: #FFDA44;
+  --sl-rank-2: #C9D1E0;
+  --sl-rank-3: #FFA861;
+  --sl-rank-1-soft: #282820;
+  --sl-stage-new: #829FFF;
+  --sl-stage-curve: #44E8C8;
+  --sl-stage-soon: #FFDA44;
+  --sl-stage-graduated: #F4F5F9;
+  --sl-stage-drawdown: #FF6367;
+  --sl-tier-graduated: #F4F5F9;
+  --sl-tier-healthy: #44E8C8;
+  --sl-tier-at-ath: #FFDA44;
+  --sl-tier-drawdown: #FF6367;
+  --sl-risk-ok: #44E8C8;
+  --sl-risk-warn: #FFDA44;
+  --sl-risk-bad: #FF6367;
+  --sl-risk-unknown: #939CAF;
+  --sl-agent-active: #44E8C8;
+  --sl-agent-paused: #EC8E18;
+  --sl-agent-ended: #939CAF;
+  --sl-status-open: #44E8C8;
+  --sl-status-paid: #FFDA44;
+  --sl-status-submission: #829FFF;
+  --sl-status-ending: #EC8E18;
+  --sl-status-finished: #FF6367;
+  --sl-scrim: #000000;
+  --sl-skeleton: #1F2733;
+  --sl-skeleton-shine: #28313F;
+
+  /* alpha tints (overlays on media, chart fills, row washes). never borders */
+  --sl-tint-scrim: rgba(0,0,0,0.72);
+  --sl-tint-media-overlay: rgba(7,9,13,0.80);
+  --sl-tint-accent-fill-chart: rgba(68,232,200,0.18);
+  --sl-tint-danger-fill-chart: rgba(255,99,103,0.18);
+  --sl-tint-accent-row-wash: rgba(68,232,200,0.07);
+  --sl-tint-danger-row-wash: rgba(255,99,103,0.07);
+  --sl-tint-marquee-fade: rgba(7,9,13,0);
+
+  /* type */
+  --sl-font-sans: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  --sl-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sl-text-2xs: 11px; --sl-leading-2xs: 14px; --sl-weight-2xs: 600;
+  --sl-text-xs: 12px; --sl-leading-xs: 16px; --sl-weight-xs: 600;
+  --sl-text-sm: 13px; --sl-leading-sm: 18px; --sl-weight-sm: 600;
+  --sl-text-base: 14px; --sl-leading-base: 20px; --sl-weight-base: 600;
+  --sl-text-md: 16px; --sl-leading-md: 24px; --sl-weight-md: 700;
+  --sl-text-lg: 20px; --sl-leading-lg: 28px; --sl-weight-lg: 700;
+  --sl-text-xl: 24px; --sl-leading-xl: 32px; --sl-weight-xl: 800;
+  --sl-text-2xl: 32px; --sl-leading-2xl: 40px; --sl-weight-2xl: 800;
+  --sl-text-display: 48px; --sl-leading-display: 52px; --sl-weight-display: 800;
+  --sl-text-num-sm: 13px; --sl-leading-num-sm: 18px; --sl-weight-num-sm: 700;
+  --sl-text-num-md: 14px; --sl-leading-num-md: 20px; --sl-weight-num-md: 700;
+
+  /* radius */
+  --sl-radius-xs: 4px;
+  --sl-radius-sm: 6px;
+  --sl-radius-md: 8px;
+  --sl-radius-lg: 12px;
+  --sl-radius-xl: 16px;
+  --sl-radius-pill: 999px;
+
+  /* shadow: floating layers only */
+  --sl-shadow-none: none;
+  --sl-shadow-pop: 0 8px 24px rgba(0,0,0,0.45);
+  --sl-shadow-modal: 0 16px 48px rgba(0,0,0,0.55);
+
+  /* motion */
+  --sl-duration-instant: 80ms;
+  --sl-duration-fast: 120ms;
+  --sl-duration-base: 180ms;
+  --sl-duration-slow: 260ms;
+  --sl-ease: cubic-bezier(.2,.8,.2,1);
+  --sl-ease-in: cubic-bezier(.4,0,1,1);
+  --sl-marquee-duration: 30s;
+
+  /* layout */
+  --sl-rail-width: 56px;
+  --sl-rail-expanded-width: 232px;
+  --sl-header-height: 48px;
+  --sl-ticker-height: 32px;
+  --sl-shell-top-total: 108px;
+  --sl-right-rail-width: 320px;
+  --sl-right-rail-width-wide: 360px;
+  --sl-callout-column-width: 300px;
+  --sl-callout-column-width-wide: 340px;
+  --sl-dashboard-column-width: 380px;
+  --sl-dashboard-column-gap: 8px;
+  --sl-content-max-width: 1600px;
+  --sl-content-narrow-max-width: 1320px;
+  --sl-form-max-width: 960px;
+  --sl-preview-column-width: 200px;
+  --sl-modal-width-sm: 420px;
+  --sl-modal-width-md: 560px;
+  --sl-modal-width-lg: 760px;
+  --sl-table-row-dense: 40px;
+  --sl-table-row: 48px;
+  --sl-table-row-comfortable: 56px;
+  --sl-table-header-height: 36px;
+  --sl-list-row: 56px;
+  --sl-list-row-lg: 64px;
+  --sl-screener-card: 72px;
+  --sl-stream-card-min-width: 300px;
+  --sl-bounty-card-min-width: 320px;
+  --sl-token-card-min-width: 240px;
+  --sl-control-height-sm: 28px;
+  --sl-control-height-md: 36px;
+  --sl-control-height-lg: 44px;
+  --sl-icon-sm: 14px;
+  --sl-icon-md: 16px;
+  --sl-icon-lg: 20px;
+  --sl-icon-rail: 20px;
+  --sl-avatar-xs: 20px;
+  --sl-avatar-sm: 24px;
+  --sl-avatar-md: 32px;
+  --sl-avatar-lg: 40px;
+  --sl-avatar-xl: 48px;
+  --sl-avatar-2xl: 64px;
+  --sl-avatar-profile: 84px;
+  --sl-chart-min-height: 320px;
+  --sl-chart-default-height: 380px;
+  --sl-touch-target-min: 44px;
+  --sl-z-base: 0;
+  --sl-z-raised: 1;
+  --sl-z-sticky: 10;
+  --sl-z-rail: 20;
+  --sl-z-header: 30;
+  --sl-z-dropdown: 40;
+  --sl-z-toast: 50;
+  --sl-z-modal: 60;
+  --sl-z-tooltip: 70;
+}
+
+@theme inline {
+  /* colour roles -> bg-*, text-*, fill-*, stroke-* (stroke only for SVG chart lines), ring-* (focus only) */
+  --color-canvas: var(--sl-canvas);
+  --color-surface-1: var(--sl-surface-1);
+  --color-surface-2: var(--sl-surface-2);
+  --color-surface-3: var(--sl-surface-3);
+  --color-surface-hover: var(--sl-surface-hover);
+  --color-surface-active: var(--sl-surface-active);
+  --color-surface-inverse: var(--sl-surface-inverse);
+  --color-text: var(--sl-text);
+  --color-text-muted: var(--sl-text-muted);
+  --color-text-faint: var(--sl-text-faint);
+  --color-text-disabled: var(--sl-text-disabled);
+  --color-text-inverse: var(--sl-text-inverse);
+  --color-accent: var(--sl-accent);
+  --color-accent-hover: var(--sl-accent-hover);
+  --color-accent-active: var(--sl-accent-active);
+  --color-on-accent: var(--sl-on-accent);
+  --color-accent-soft: var(--sl-accent-soft);
+  --color-accent-soft-strong: var(--sl-accent-soft-strong);
+  --color-success: var(--sl-success);
+  --color-on-success: var(--sl-on-success);
+  --color-success-soft: var(--sl-success-soft);
+  --color-danger: var(--sl-danger);
+  --color-danger-strong: var(--sl-danger-strong);
+  --color-on-danger: var(--sl-on-danger);
+  --color-danger-soft: var(--sl-danger-soft);
+  --color-warning: var(--sl-warning);
+  --color-warning-strong: var(--sl-warning-strong);
+  --color-on-warning: var(--sl-on-warning);
+  --color-warning-soft: var(--sl-warning-soft);
+  --color-info: var(--sl-info);
+  --color-on-info: var(--sl-on-info);
+  --color-info-soft: var(--sl-info-soft);
+  --color-focus: var(--sl-focus);
+  --color-percent-up: var(--sl-percent-up);
+  --color-percent-up-soft: var(--sl-percent-up-soft);
+  --color-percent-down: var(--sl-percent-down);
+  --color-percent-down-soft: var(--sl-percent-down-soft);
+  --color-percent-flat: var(--sl-percent-flat);
+  --color-candle-up: var(--sl-candle-up);
+  --color-candle-down: var(--sl-candle-down);
+  --color-volume-up: var(--sl-volume-up);
+  --color-volume-down: var(--sl-volume-down);
+  --color-chart-grid: var(--sl-chart-grid);
+  --color-chart-crosshair: var(--sl-chart-crosshair);
+  --color-track: var(--sl-track);
+  --color-track-fill: var(--sl-track-fill);
+  --color-rank-1: var(--sl-rank-1);
+  --color-rank-2: var(--sl-rank-2);
+  --color-rank-3: var(--sl-rank-3);
+  --color-rank-1-soft: var(--sl-rank-1-soft);
+  --color-stage-new: var(--sl-stage-new);
+  --color-stage-curve: var(--sl-stage-curve);
+  --color-stage-soon: var(--sl-stage-soon);
+  --color-stage-graduated: var(--sl-stage-graduated);
+  --color-stage-drawdown: var(--sl-stage-drawdown);
+  --color-tier-graduated: var(--sl-tier-graduated);
+  --color-tier-healthy: var(--sl-tier-healthy);
+  --color-tier-at-ath: var(--sl-tier-at-ath);
+  --color-tier-drawdown: var(--sl-tier-drawdown);
+  --color-risk-ok: var(--sl-risk-ok);
+  --color-risk-warn: var(--sl-risk-warn);
+  --color-risk-bad: var(--sl-risk-bad);
+  --color-risk-unknown: var(--sl-risk-unknown);
+  --color-agent-active: var(--sl-agent-active);
+  --color-agent-paused: var(--sl-agent-paused);
+  --color-agent-ended: var(--sl-agent-ended);
+  --color-status-open: var(--sl-status-open);
+  --color-status-paid: var(--sl-status-paid);
+  --color-status-submission: var(--sl-status-submission);
+  --color-status-ending: var(--sl-status-ending);
+  --color-status-finished: var(--sl-status-finished);
+  --color-scrim: var(--sl-scrim);
+  --color-media-overlay: var(--sl-tint-media-overlay);
+  --color-skeleton: var(--sl-skeleton);
+  --color-skeleton-shine: var(--sl-skeleton-shine);
+
+  /* radius -> rounded-xs .. rounded-pill */
+  --radius-xs: var(--sl-radius-xs);
+  --radius-sm: var(--sl-radius-sm);
+  --radius-md: var(--sl-radius-md);
+  --radius-lg: var(--sl-radius-lg);
+  --radius-xl: var(--sl-radius-xl);
+  --radius-pill: var(--sl-radius-pill);
+
+  /* shadows -> shadow-pop, shadow-modal (floating layers only) */
+  --shadow-pop: var(--sl-shadow-pop);
+  --shadow-modal: var(--sl-shadow-modal);
+
+  /* type scale -> text-2xs .. text-display (size + line-height) */
+  --text-2xs: 11px;
+  --text-2xs--line-height: 14px;
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 18px;
+  --text-base: 14px;
+  --text-base--line-height: 20px;
+  --text-md: 16px;
+  --text-md--line-height: 24px;
+  --text-lg: 20px;
+  --text-lg--line-height: 28px;
+  --text-xl: 24px;
+  --text-xl--line-height: 32px;
+  --text-2xl: 32px;
+  --text-2xl--line-height: 40px;
+  --text-display: 48px;
+  --text-display--line-height: 52px;
+  --text-num-sm: 13px;
+  --text-num-sm--line-height: 18px;
+  --text-num-md: 14px;
+  --text-num-md--line-height: 20px;
+  --font-brand: var(--sl-font-sans);   /* use font-brand until --font-sans is switched over */
+  --font-mono-sl: var(--sl-font-mono);
+
+  /* layout dims -> w-rail, h-header, w-right-rail, h-table-row ... (spacing namespace) */
+  --spacing-rail-width: var(--sl-rail-width);
+  --spacing-rail-expanded-width: var(--sl-rail-expanded-width);
+  --spacing-header-height: var(--sl-header-height);
+  --spacing-ticker-height: var(--sl-ticker-height);
+  --spacing-shell-top-total: var(--sl-shell-top-total);
+  --spacing-right-rail-width: var(--sl-right-rail-width);
+  --spacing-right-rail-width-wide: var(--sl-right-rail-width-wide);
+  --spacing-callout-column-width: var(--sl-callout-column-width);
+  --spacing-callout-column-width-wide: var(--sl-callout-column-width-wide);
+  --spacing-dashboard-column-width: var(--sl-dashboard-column-width);
+  --spacing-dashboard-column-gap: var(--sl-dashboard-column-gap);
+  --spacing-content-max-width: var(--sl-content-max-width);
+  --spacing-content-narrow-max-width: var(--sl-content-narrow-max-width);
+  --spacing-form-max-width: var(--sl-form-max-width);
+  --spacing-preview-column-width: var(--sl-preview-column-width);
+  --spacing-modal-width-sm: var(--sl-modal-width-sm);
+  --spacing-modal-width-md: var(--sl-modal-width-md);
+  --spacing-modal-width-lg: var(--sl-modal-width-lg);
+  --spacing-table-row-dense: var(--sl-table-row-dense);
+  --spacing-table-row: var(--sl-table-row);
+  --spacing-table-row-comfortable: var(--sl-table-row-comfortable);
+  --spacing-table-header-height: var(--sl-table-header-height);
+  --spacing-list-row: var(--sl-list-row);
+  --spacing-list-row-lg: var(--sl-list-row-lg);
+  --spacing-screener-card: var(--sl-screener-card);
+  --spacing-stream-card-min-width: var(--sl-stream-card-min-width);
+  --spacing-bounty-card-min-width: var(--sl-bounty-card-min-width);
+  --spacing-token-card-min-width: var(--sl-token-card-min-width);
+  --spacing-control-height-sm: var(--sl-control-height-sm);
+  --spacing-control-height-md: var(--sl-control-height-md);
+  --spacing-control-height-lg: var(--sl-control-height-lg);
+  --spacing-icon-sm: var(--sl-icon-sm);
+  --spacing-icon-md: var(--sl-icon-md);
+  --spacing-icon-lg: var(--sl-icon-lg);
+  --spacing-icon-rail: var(--sl-icon-rail);
+  --spacing-avatar-xs: var(--sl-avatar-xs);
+  --spacing-avatar-sm: var(--sl-avatar-sm);
+  --spacing-avatar-md: var(--sl-avatar-md);
+  --spacing-avatar-lg: var(--sl-avatar-lg);
+  --spacing-avatar-xl: var(--sl-avatar-xl);
+  --spacing-avatar-2xl: var(--sl-avatar-2xl);
+  --spacing-avatar-profile: var(--sl-avatar-profile);
+  --spacing-chart-min-height: var(--sl-chart-min-height);
+  --spacing-chart-default-height: var(--sl-chart-default-height);
+  --spacing-touch-target-min: var(--sl-touch-target-min);
+
+  /* breakpoints: only 2xl/3xl are new or changed; xs(375) and mmd(900) in globals.css stay.
+     Written in rem like Tailwind's defaults (sm 40rem .. xl 80rem): Tailwind sorts
+     breakpoint variants by value only within one unit, so a px breakpoint was emitted
+     before every rem one and a bare xl: rule beat 2xl: at 1440px and up. */
+  --breakpoint-2xl: 90rem; /* 1440px */
+  --breakpoint-3xl: 120rem; /* 1920px */
+
+  /* motion -> duration-fast, ease-sl */
+  --duration-instant: var(--sl-duration-instant);
+  --duration-fast: var(--sl-duration-fast);
+  --duration-base: var(--sl-duration-base);
+  --duration-slow: var(--sl-duration-slow);
+  --ease-sl: var(--sl-ease);
+  --ease-sl-in: var(--sl-ease-in);
+}
+
+@layer base {
+  /* The only outline in the system: keyboard focus. Never a resting border. */
+  :where(:focus-visible) { outline: 2px solid var(--sl-focus); outline-offset: 2px; }
+  :where(input, textarea, select, button) { border: 0; }
+  :where(input, textarea, select):focus-visible { outline-offset: 0; }
+  :where(table) { border-collapse: collapse; border-spacing: 0; }
+  :where(td, th) { border: 0; }
+  :where(hr) { border: 0; height: 1px; background: transparent; }  /* separators are spacing + surface change */
+  :where([data-numeric]) { font-variant-numeric: tabular-nums; }
+  @media (prefers-reduced-motion: reduce) {
+    :root { --sl-duration-instant: 0ms; --sl-duration-fast: 0ms; --sl-duration-base: 0ms; --sl-duration-slow: 0ms; --sl-marquee-duration: 0s; }
+  }
+}
+
+@layer components {
+  .sl-skeleton { background: var(--sl-skeleton); border-radius: var(--sl-radius-xs); position: relative; overflow: hidden; }
+  .sl-skeleton::after { content: ''; position: absolute; inset: 0; background: var(--sl-skeleton-shine); opacity: .6; animation: sl-shimmer 1.6s linear infinite; transform: translateX(-100%); }
+  @keyframes sl-shimmer { to { transform: translateX(100%); } }
+  .sl-flash-up   { animation: sl-flash-up 600ms var(--sl-ease) 1; }
+  .sl-flash-down { animation: sl-flash-down 600ms var(--sl-ease) 1; }
+  @keyframes sl-flash-up   { from { background-color: var(--sl-accent-soft); } to { background-color: transparent; } }
+  @keyframes sl-flash-down { from { background-color: var(--sl-danger-soft); } to { background-color: transparent; } }
+  .sl-marquee { animation: sl-marquee var(--sl-marquee-duration) linear infinite; }
+  .sl-marquee:hover, .sl-marquee:focus-within { animation-play-state: paused; }
+  @keyframes sl-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+}
+
+/* MIGRATION TABLE: old ad-hoc token (globals.css / design-tokens.css) -> new role
+   old                                                                    -> new role                                 note
+   --background / --color-background (#000)                               -> canvas                                   page background
+   --foreground / --color-foreground (#F4F5F9)                            -> text                                     
+   dark-gray, dark-gray5, black-gray, gradient-black-gray (#000000)       -> canvas                                   
+   gray-common (#0A0D14)                                                  -> canvas                                   
+   black-gray2 (#131A24), gradient-dark-gray (#141C26)                    -> surface-1                                cards, panels, table bodies
+   dark-gray2, dark-gray4 (#18202B)                                       -> surface-2                                inputs, embeds, chips on cards
+   dark-gray7 (#1E2736)                                                   -> surface-3                                selected row, popover, nested pill
+   dark-gray8 (#222E3E)                                                   -> surface-hover                            row/item hover
+   dark-gray6 (#3D4251)                                                   -> surface-active                           pressed control, selected segment
+   dark-gray10 (#4B5060)                                                  -> skeleton-shine                           or text-disabled where used as text
+   dark-disabled (#5F6577)                                                -> text-disabled                            
+   dark-disabled-opacity-6/3/1                                            -> skeleton / tint                          replace alpha greys with a surface level
+   dark-gray-opacity-4 (rgba 11,14,24,.4)                                 -> tint-media-overlay                       
+   dark-gray3 (#8990A3), dark-gray9 (#8A92A9), dark-gray-opacity-5        -> text-faint                               secondary lines, placeholders
+   half-enabled (#F4F5F9)                                                 -> text                                     
+   green-middle, green-from, green-border (#44E8C8)                       -> accent                                   green-border: delete the border, use surface step or focus ring
+   green-to (#2BB89E)                                                     -> accent-active                            gradients are removed: use solid accent, active = accent-active
+   green-middle2/3/4, green-table (#78F0CC..#A4F0E0)                      -> accent-hover                             lighter greens collapse to one hover tone
+   green-opacity-002/005                                                  -> tint-accent-row-wash                     
+   green-opacity-1/015                                                    -> accent-soft                              solid blend; use for selected pills, up-percent bg
+   green-opacity-3                                                        -> accent-soft-strong                       
+   yellow-middle (#FFDA44)                                                -> warning  (also rank-1 / status-paid)     
+   yellow-middle-opacity-1                                                -> warning-soft                             
+   yellow-middle2/3, yellow-table (#FFECB8..#FFF5D9)                      -> warning (text) on warning-soft           pale yellows removed
+   dark-yellow (#EC8E18)                                                  -> warning-strong                           at-ATH bar, ENDING SOON, agent-paused
+   yellow-dark (#FFCAA2), red-yellow (#FFA861), red-yellow2 (#FFB370)     -> rank-3                                   bronze
+   red-middle (#FF6367)                                                   -> danger  (= percent-down, candle-down)    
+   red-middle2 (#FF9292)                                                  -> danger                                   hover tone merged
+   red-middle3 (#FF4146), red-common (#D94549)                            -> danger-strong                            destructive buttons
+   red-opacity-002/005                                                    -> tint-danger-row-wash                     
+   red-opacity-015/3                                                      -> danger-soft                              
+   pink-middle (#829FFF), pink-middle2/3/4                                -> info                                     SUBMISSION badge, stage-new
+   pink-opacity-1, red-pink (#F9DBFF)                                     -> info-soft                                
+   cyan-middle (#A6D6FF), cyan-white, cyan-white2                         -> info                                     
+   dark-green (#425F7C)                                                   -> info-soft                                steel-blue panel fills
+   shadow-custom-white                                                    -> shadow-none                              delete; depth comes from surface ladder
+   foundation-canvas / -surface / -raised                                 -> canvas / surface-1 / surface-3           app-foundation design-tokens.css
+   foundation-text / -muted / -focus                                      -> text / text-muted / focus                
+   .trending-buy-flash (border-color + box-shadow)                        -> .sl-flash-up                             no border, no glow
+   .momentum-bar-green / -red (box-shadow glow)                           -> .sl-flash-up / .sl-flash-down            glow removed
+   .ticker-scroll                                                         -> .sl-marquee                              
+   .text-size-16 .. .text-size-8                                          -> text-md / text-base / text-sm / text-xs / text-2xs 9px and 8px sizes are dropped (below legibility floor 11px)
+   .font-manrope-medium/-bold/-extra-bold                                 -> font-medium / font-bold / font-extrabold with font-brand 
+*/

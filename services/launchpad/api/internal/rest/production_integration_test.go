@@ -242,7 +242,7 @@ func TestProductionGeneratedSDKUsesActualHTTPAndExactAmounts(t *testing.T) {
 	}
 	srv := httptest.NewServer(router)
 	defer srv.Close()
-	sdk, err := filepath.Abs("../../../../client/packages/sdk/dist/index.js")
+	sdk, err := filepath.Abs("../../../../../sdk/launchpad/packages/sdk/dist/index.js")
 	if err != nil {
 		t.Fatal(err)
 	}
