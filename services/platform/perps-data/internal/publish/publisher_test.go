@@ -37,6 +37,8 @@ const (
 	testDatabaseEnv = "PERPS_DATA_TEST_DATABASE_URL"
 	chain           = 125
 	market          = 7
+	// restrictedUser may publish anywhere but on the fill subject.
+	restrictedUser, restrictedPassword = "restricted", "restricted-password"
 )
 
 var (
@@ -166,12 +168,18 @@ func startCluster(t *testing.T) *nats.Conn {
 	}
 	servers := make([]*server.Server, 3)
 	urls := make([]string, 3)
+	fill, _ := subjects(t)
 	for i := range servers {
 		ns, err := server.NewServer(&server.Options{
 			ServerName: "perps-" + strconv.Itoa(i), Host: "127.0.0.1", Port: server.RANDOM_PORT,
 			JetStream: true, StoreDir: t.TempDir(), NoLog: true, NoSigs: true,
-			Cluster: server.ClusterOpts{Name: "perps-test", Host: "127.0.0.1", Port: ports[i]},
-			Routes:  server.RoutesFromStr(strings.Join(routes, ",")),
+			Users: []*server.User{
+				{Username: "perps", Password: "perps-password"},
+				{Username: restrictedUser, Password: restrictedPassword, Permissions: &server.Permissions{Publish: &server.SubjectPermission{Deny: []string{fill}}}},
+			},
+			NoAuthUser: "perps",
+			Cluster:    server.ClusterOpts{Name: "perps-test", Host: "127.0.0.1", Port: ports[i]},
+			Routes:     server.RoutesFromStr(strings.Join(routes, ",")),
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -814,7 +822,8 @@ func TestPublisher(t *testing.T) {
 			e := fillEvent(t, 800+uint64(i), hashA, 0, 0)
 			leases = append(leases, delivery.Lease{EventID: e.env.EventID, Subject: e.subject, Wire: wireOf(t, policy, e), PerpsSeq: int64(i + 1)})
 		}
-		s := &sink{js: jsPub(t, nc), policy: policy}
+		s := &sink{nc: nc, js: jsPub(t, nc), policy: policy}
+		live := func() bool { return false }
 		// A batch whose first message is already persisted is answered as a
 		// duplicate and the rest follow it.
 		if res := s.PublishBatch(ctx, leases[:1]); res[0].Err != nil || res[0].Ack.Sequence != base+1 {
@@ -827,11 +836,11 @@ func TestPublisher(t *testing.T) {
 		}
 		// A message expected after an unpersisted one is refused.
 		stale := fillEvent(t, 900, hashA, 0, 0)
-		f, err := s.send(delivery.Lease{EventID: stale.env.EventID, Subject: stale.subject, Wire: wireOf(t, policy, stale), PerpsSeq: 21}, jetstream.WithExpectLastSequence(base+19))
+		f, err := s.send(delivery.Lease{EventID: stale.env.EventID, Subject: stale.subject, Wire: wireOf(t, policy, stale), PerpsSeq: 21}, live, jetstream.WithExpectLastSequence(base+19))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res := await(ctx, f, true); res.Err == nil {
+		if res := await(ctx, f, live); res.Err == nil {
 			t.Fatalf("message expecting sequence %d was persisted at %d", base+19, res.Ack.Sequence)
 		}
 		if state := streamState(t, ctx, perps); state.LastSeq != base+20 {
@@ -1006,6 +1015,74 @@ func TestPublisher(t *testing.T) {
 		}
 		if line := logs.String(); strings.Contains(line, "cannot reach the broker") {
 			t.Fatalf("a refusal was logged as an outage: %q", line)
+		}
+	})
+
+	t.Run("permission_violation_exhausted", func(t *testing.T) {
+		reset(t, ctx, db)
+		base := streamState(t, ctx, perps).LastSeq
+		// The server drops a publish the user may not make and answers no
+		// acknowledgement while the connection stays up.
+		rc, err := nats.Connect(strings.Join(nc.Servers(), ","), nats.UserInfo(restrictedUser, restrictedPassword), nats.ErrorHandler(func(*nats.Conn, *nats.Subscription, error) {}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(rc.Close)
+		head := fillEvent(t, 1300, hashA, 0, 0)
+		enqueue(t, ctx, db, outboxStore, head)
+		var logs bytes.Buffer
+		cfg := testConfig()
+		cfg.PublishTimeout = time.Second
+		cfg.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+		p, err := New(db, rc, policy, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runCtx, stop := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() { done <- p.Run(runCtx) }()
+		deadline := time.Now().Add(60 * time.Second)
+		for count(t, db, openRows) != 0 {
+			if time.Now().After(deadline) {
+				stop()
+				t.Fatalf("unpermitted row not announced: %+v; Run = %v", outbox(t, db), <-done)
+			}
+			if metricValue(t, p.brokerDown) != 0 {
+				stop()
+				t.Fatalf("a permission violation on a live connection set perps_outbox_broker_down; Run = %v", <-done)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		stop()
+		if err := <-done; !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run = %v", err)
+		}
+		rows := outbox(t, db)
+		if len(rows) != 1 {
+			t.Fatalf("outbox = %+v", rows)
+		}
+		// Every publication attempt is spent, then one more announces the row.
+		if r := rows[0]; r.eventID != head.env.EventID || r.state != "quarantined" || r.failure != "exhausted" || r.attempts != cfg.MaxAttempts+1 || r.brokerSequence != int64(base)+1 {
+			t.Fatalf("unpermitted row = %+v", r)
+		}
+		msg, err := perps.GetMsg(ctx, base+1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if msg.Subject != "perps.125.control" || msg.Header.Get(jetstream.MsgIDHeader) != controlID(rows[0].seq, head.env.EventID) {
+			t.Fatalf("control message = %s %v", msg.Subject, msg.Header)
+		}
+		if n := metricValue(t, p.quarantined); n != 1 {
+			t.Fatalf("perps_outbox_quarantined_total = %v, want 1", n)
+		}
+		if metricValue(t, p.brokerDown) != 0 {
+			t.Fatal("a permission violation on a live connection set perps_outbox_broker_down")
+		}
+		if line := logs.String(); strings.Contains(line, "cannot reach the broker") {
+			t.Fatalf("a permission violation was logged as an outage: %q", line)
+		}
+		if !errors.Is(rc.LastError(), nats.ErrPermissionViolation) || rc.Status() != nats.CONNECTED || rc.Stats().Reconnects != 0 {
+			t.Fatalf("connection = %v, last error %v, %d reconnects; want a live connection that met a permission violation", rc.Status(), rc.LastError(), rc.Stats().Reconnects)
 		}
 	})
 }

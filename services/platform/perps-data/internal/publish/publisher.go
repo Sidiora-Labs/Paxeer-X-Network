@@ -180,7 +180,7 @@ func New(db *sql.DB, nc *nats.Conn, policy delivery.Policy, cfg Config) (*Publis
 	if logger == nil {
 		logger = slog.Default()
 	}
-	sink := &sink{js: js, policy: policy}
+	sink := &sink{nc: nc, js: js, policy: policy}
 	p := &Publisher{
 		relay: delivery.Relay{
 			Store: store, Publisher: sink, Owner: cfg.Owner, Batch: cfg.Batch, MaxAttempts: cfg.MaxAttempts,
@@ -307,6 +307,7 @@ func (p *Publisher) observe(err error, now time.Time) {
 // without its acknowledgement is answered as a duplicate. The client never
 // republishes a message on its own.
 type sink struct {
+	nc     *nats.Conn
 	js     jetstream.JetStream
 	policy delivery.Policy
 }
@@ -319,11 +320,13 @@ func (s *sink) PublishBatch(ctx context.Context, leases []delivery.Lease) []deli
 	if len(leases) == 0 {
 		return out
 	}
-	f, err := s.send(leases[0])
+	// A timeout or no-responders is a broker outage only while the
+	// connection is down or after it reconnected during the batch.
+	reconnects := s.nc.Stats().Reconnects
+	down := func() bool { return s.nc.Status() != nats.CONNECTED || s.nc.Stats().Reconnects != reconnects }
+	f, err := s.send(leases[0], down)
 	if err == nil {
-		// No message of the batch persisted yet: a missing acknowledgement
-		// means the broker was not reached.
-		out[0] = await(ctx, f, false)
+		out[0] = await(ctx, f, down)
 	} else {
 		out[0].Err = err
 	}
@@ -336,7 +339,7 @@ func (s *sink) PublishBatch(ctx context.Context, leases []delivery.Lease) []deli
 	futures := make([]jetstream.PubAckFuture, len(leases))
 	last := out[0].Ack.Sequence
 	for i := 1; i < len(leases); i++ {
-		if futures[i], out[i].Err = s.send(leases[i], jetstream.WithExpectLastSequence(last+uint64(i)-1)); out[i].Err != nil {
+		if futures[i], out[i].Err = s.send(leases[i], down, jetstream.WithExpectLastSequence(last+uint64(i)-1)); out[i].Err != nil {
 			// The broker refuses every later message on its expectation;
 			// they are not sent.
 			for j := i + 1; j < len(out); j++ {
@@ -347,15 +350,15 @@ func (s *sink) PublishBatch(ctx context.Context, leases []delivery.Lease) []deli
 	}
 	for i, f := range futures {
 		if f != nil {
-			out[i] = await(ctx, f, true)
+			out[i] = await(ctx, f, down)
 		}
 	}
 	return out
 }
 
-// await reads the acknowledgement of f; acked reports that an earlier message
-// of the same batch persisted, so the broker was reachable.
-func await(ctx context.Context, f jetstream.PubAckFuture, acked bool) delivery.Publication {
+// await reads the acknowledgement of f; down reports whether the connection
+// was lost during the batch.
+func await(ctx context.Context, f jetstream.PubAckFuture, down func() bool) delivery.Publication {
 	select {
 	case ack := <-f.Ok():
 		if ack == nil || ack.Stream != stream.Name || ack.Sequence == 0 || ack.Sequence > 1<<63-1 {
@@ -363,20 +366,23 @@ func await(ctx context.Context, f jetstream.PubAckFuture, acked bool) delivery.P
 		}
 		return delivery.Publication{Ack: delivery.PersistenceAck{Stream: ack.Stream, Sequence: ack.Sequence}}
 	case err := <-f.Err():
-		return delivery.Publication{Err: classify(err, acked)}
+		return delivery.Publication{Err: classify(err, down())}
 	case <-ctx.Done():
-		return delivery.Publication{Err: classify(ctx.Err(), acked)}
+		return delivery.Publication{Err: classify(ctx.Err(), down())}
 	}
 }
 
-func (s *sink) send(l delivery.Lease, opts ...jetstream.PublishOpt) (jetstream.PubAckFuture, error) {
+func (s *sink) send(l delivery.Lease, down func() bool, opts ...jetstream.PublishOpt) (jetstream.PubAckFuture, error) {
 	msg, id, err := s.message(l)
 	if err != nil {
 		return nil, err
 	}
 	opts = append(opts, jetstream.WithMsgID(id), jetstream.WithExpectStream(stream.Name), jetstream.WithRetryAttempts(0))
 	f, err := s.js.PublishMsgAsync(msg, opts...)
-	return f, classify(err, true)
+	if err != nil {
+		return nil, classify(err, down())
+	}
+	return f, nil
 }
 
 // message builds the broker message of l and its Nats-Msg-Id.
@@ -419,9 +425,10 @@ const (
 // classify is the one place where a NATS or JetStream client error is told
 // apart: a connection-level failure, which says nothing about the message,
 // is wrapped with delivery.ErrBrokerDown; a refusal of this message keeps its
-// class. A timeout is a connection-level failure unless acked reports that an
-// earlier message of the same batch persisted.
-func classify(err error, acked bool) error {
+// class. A timeout or no-responders is a connection-level failure only when
+// down reports the connection lost; on a live connection it is a failure of
+// this message, such as one the server dropped for a permission violation.
+func classify(err error, down bool) error {
 	if err == nil {
 		return nil
 	}
@@ -435,9 +442,10 @@ func classify(err error, acked bool) error {
 	case errors.Is(err, nats.ErrConnectionClosed), errors.Is(err, nats.ErrConnectionDraining), errors.Is(err, nats.ErrConnectionReconnecting),
 		errors.Is(err, nats.ErrDisconnected), errors.Is(err, nats.ErrNoServers), errors.Is(err, nats.ErrReconnectBufExceeded),
 		errors.Is(err, nats.ErrStaleConnection), errors.Is(err, nats.ErrAuthorization), errors.Is(err, nats.ErrAuthExpired),
-		errors.Is(err, nats.ErrAuthRevoked), errors.Is(err, nats.ErrNoResponders), errors.Is(err, jetstream.ErrNoStreamResponse),
+		errors.Is(err, nats.ErrAuthRevoked),
 		isAPI && (api.ErrorCode == errCodeClusterNotAvailable || api.ErrorCode == errCodeNotEnabled || api.ErrorCode == errCodeNotEnabledAccount),
-		!acked && (errors.Is(err, jetstream.ErrAsyncPublishTimeout) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, nats.ErrTimeout)):
+		down && (errors.Is(err, nats.ErrNoResponders) || errors.Is(err, jetstream.ErrNoStreamResponse) || errors.Is(err, jetstream.ErrAsyncPublishTimeout) ||
+			errors.Is(err, context.DeadlineExceeded) || errors.Is(err, nats.ErrTimeout)):
 		return fmt.Errorf("%w: %w", delivery.ErrBrokerDown, err)
 	}
 	return err
