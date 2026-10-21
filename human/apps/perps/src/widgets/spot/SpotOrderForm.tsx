@@ -513,7 +513,7 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
           if (atLimit) {
             const minOut = limitMinOut(
               stablecoinAmount,
-              parsePrice(limitNum.toString()),
+              parsePrice(toPlainDecimal(limitPrice)),
               true,
               decimalsStable,
               decimalsBase,
@@ -554,7 +554,7 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
           if (atLimit) {
             const minOut = limitMinOut(
               tokenAmount,
-              parsePrice(limitNum.toString()),
+              parsePrice(toPlainDecimal(limitPrice)),
               false,
               decimalsBase,
               decimalsStable,

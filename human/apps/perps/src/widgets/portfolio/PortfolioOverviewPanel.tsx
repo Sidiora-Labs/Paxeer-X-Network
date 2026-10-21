@@ -4,7 +4,7 @@ import React, { useMemo } from "react";
 import { ArrowDownToLine, ArrowUpFromLine, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { cn } from "@/ui/utils/cn";
 import { Button } from "@/ui/atoms/button";
-import { fmtUsdCompact as fmtUsd, parse18 } from "@/ui/utils/format";
+import { fmtUsdCompact as fmtUsd } from "@/ui/utils/format";
 import { coinLogoUrl } from "@/core/perps/config";
 import type { DailyPnl } from "@/hooks/perps/useDailyPnl";
 import { PortfolioAssetsChart } from "./PortfolioAssetsChart";
@@ -32,6 +32,10 @@ interface PortfolioOverviewPanelProps {
   balances: TokenBalance[];
   dailyPnl: DailyPnl[];
   dailyPnlLoading: boolean;
+  /** Set when both PerfDB daily PnL reads failed. */
+  dailyPnlError: Error | null;
+  /** Days PerfDB returned with incomplete values. */
+  dailyPnlSkippedDays: number;
   isLoading: boolean;
   privacy: boolean;
   onTogglePrivacy: () => void;
@@ -64,7 +68,7 @@ export function PortfolioOverviewPanel(props: PortfolioOverviewPanelProps) {
   const {
     isConnected, hasVault, address,
     totalVaultUsd, unrealizedPnl, openPositions, realizedPnl, totalTrades,
-    balances, dailyPnl, dailyPnlLoading, isLoading, privacy,
+    balances, dailyPnl, dailyPnlLoading, dailyPnlError, dailyPnlSkippedDays, isLoading, privacy,
     onTogglePrivacy, onRefresh, onConnect, onDeposit, onWithdraw,
   } = props;
 
@@ -103,7 +107,12 @@ export function PortfolioOverviewPanel(props: PortfolioOverviewPanelProps) {
       </div>
 
       {/* ── Row 2 — Performance grid ── */}
-      <PortfolioPerformanceGrid dailyPnl={dailyPnl} isLoading={dailyPnlLoading} />
+      <PortfolioPerformanceGrid
+        dailyPnl={dailyPnl}
+        isLoading={dailyPnlLoading}
+        error={dailyPnlError}
+        skippedDays={dailyPnlSkippedDays}
+      />
     </div>
   );
 }

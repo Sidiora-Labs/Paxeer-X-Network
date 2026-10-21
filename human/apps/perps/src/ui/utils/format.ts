@@ -120,6 +120,22 @@ export function weiToNumber(wei: bigint): number {
   return Number(wei / WEI) + Number(wei % WEI) / 1e18;
 }
 
+/** Exact wei of an 18-decimal string, 0n on null/undefined/unparseable. */
+export function weiOrZero(v: string | null | undefined): bigint {
+  if (!v) return 0n;
+  try {
+    return parseWei(v);
+  } catch {
+    return 0n;
+  }
+}
+
+/** Display edge for an exact signed ratio: a/b as a percent with two decimals, null when b is 0. */
+export function weiPct(a: bigint, b: bigint): number | null {
+  if (b === 0n) return null;
+  return Number((a * 10_000n) / b) / 100;
+}
+
 /**
  * Display-only: an 18-decimal wei string as a JS number, 0 on
  * null/undefined/unparseable. Sum wei with parseWei, not with this.

@@ -46,6 +46,16 @@ import { PortfolioSpotSection } from "@/widgets/portfolio/PortfolioSpotSection";
             right tab panel. Every panel lives in its own widget file.
    ══════════════════════════════════════════════════════════════════════ */
 
+/** The overview panel's daily PnL props from one useDailyPnl result. */
+export function overviewDailyPnlProps(result: ReturnType<typeof useDailyPnl>) {
+  return {
+    dailyPnl: result.dailyPnl,
+    dailyPnlLoading: result.isLoading,
+    dailyPnlError: result.error,
+    dailyPnlSkippedDays: result.skippedDays,
+  };
+}
+
 const ALLOWED_NAV: PortfolioNavKey[] = [
   "overview",
   "positions",
@@ -68,7 +78,7 @@ export default function PortfolioPage() {
     positions,
     isLoading: statsLoading,
   } = usePortfolioStats();
-  const { dailyPnl, isLoading: dailyPnlLoading } = useDailyPnl(address ?? undefined);
+  const dailyPnlResult = useDailyPnl(address ?? undefined);
   const { stats: traderStats } = usePerfdbTraderStats(address ?? undefined);
 
   // ── Page-local UI state ──
@@ -176,8 +186,7 @@ export default function PortfolioPage() {
               realizedPnl={realizedPnl}
               totalTrades={totalTrades}
               balances={balances}
-              dailyPnl={dailyPnl}
-              dailyPnlLoading={dailyPnlLoading}
+              {...overviewDailyPnlProps(dailyPnlResult)}
               isLoading={statsLoading}
               privacy={privacy}
               onTogglePrivacy={onTogglePrivacy}

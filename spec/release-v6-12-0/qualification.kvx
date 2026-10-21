@@ -2580,3 +2580,11 @@ exit = 0
 log = "PD-F11-verify-r1.log"
 observed = "Ruled: a size refusal and an exhausted attempt budget are permanent classes (oversized, exhausted), quarantined once and announced by a control message so successors proceed; TestPublisher/envelope_limit and failed_message_blocks_successors (now refused_message_skipped_in_order) and the delivery retry_backoff, ordered_requeue and exhausted_row_holds_batch (now exhausted_row_announced) cases were rewritten to assert that, replacing findings perps-data-envelope-limit-transient and perps-data-control-message-scope."
 assumption = "Rows an earlier release quarantined as transient are still requeued by Requeue and then follow the ruled path."
+
+[finding.perps-spot-limit-min-out-exact-ruling]
+revision = "e3d4b3bd6"
+command = "node --test --import tsx $(ls tests/*.test.ts | grep -v e2e-local-node) (human/apps/perps)"
+exit = 0
+log = "FX-HP-4-verify-r2.log"
+observed = "Ruled: limitMinOut takes the exact decimal parse of the typed limit price, parsePrice(toPlainDecimal(limitPrice)); the two spot-tif assertions that pinned parsePrice(limitNum.toString()) were rewritten to that form and every tests/spot-*.test.ts case passes."
+assumption = "Every other price path in SpotOrderForm already used parsePrice(toPlainDecimal(...)), so the IOC and FOK bounds now agree with them."

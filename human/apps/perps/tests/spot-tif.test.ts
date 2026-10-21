@@ -58,8 +58,8 @@ describe("spot time in force", () => {
     assert.throws(() => limitMinOut(E6, limit, false, 6, 39), /decimals out of range/);
 
     // The form sends that bound as the market call's minimum output with no slippage.
-    assert.match(FORM, /limitMinOut\(\s*stablecoinAmount,\s*parsePrice\(limitNum\.toString\(\)\),\s*true,/);
-    assert.match(FORM, /limitMinOut\(\s*tokenAmount,\s*parsePrice\(limitNum\.toString\(\)\),\s*false,/);
+    assert.match(FORM, /limitMinOut\(\s*stablecoinAmount,\s*parsePrice\(toPlainDecimal\(limitPrice\)\),\s*true,/);
+    assert.match(FORM, /limitMinOut\(\s*tokenAmount,\s*parsePrice\(toPlainDecimal\(limitPrice\)\),\s*false,/);
     assert.match(FORM, /slippageBps: atLimit \? 0 : slippageBps/);
   });
 

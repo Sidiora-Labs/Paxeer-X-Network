@@ -8,7 +8,7 @@ import {
   TRACK_B_STRINGS,
   ANALYTICS_CHART_COLORS,
 } from "@/core/perps/config";
-import { fmtUsdCompact as fmtUsd, parse18 } from "@/ui/utils/format";
+import { fmtUsdCompact as fmtUsd, weiOrZero, weiPct, weiToNumber } from "@/ui/utils/format";
 
 interface FeesBreakdownCardProps {
   userAddress: string | undefined;
@@ -24,8 +24,29 @@ const FEE_TYPE_COLORS: Record<number, string> = {
 interface FeeGroup {
   feeType: number;
   label: string;
-  totalUsd: number;
+  totalWei: bigint;
   count: number;
+}
+
+/** Fees grouped by type with exact wei totals, largest first. */
+export function groupFees(data: readonly { feeType: number; feeTypeName?: string | null; feeUsd: string | null | undefined }[]): FeeGroup[] {
+  const map = new Map<number, FeeGroup>();
+  for (const fee of data) {
+    const wei = weiOrZero(fee.feeUsd);
+    const existing = map.get(fee.feeType);
+    if (existing) {
+      existing.totalWei += wei;
+      existing.count += 1;
+    } else {
+      map.set(fee.feeType, {
+        feeType: fee.feeType,
+        label: FEE_TYPE_LABELS[fee.feeType] ?? fee.feeTypeName ?? `Type ${fee.feeType}`,
+        totalWei: wei,
+        count: 1,
+      });
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => (b.totalWei > a.totalWei ? 1 : b.totalWei < a.totalWei ? -1 : 0));
 }
 
 export function FeesBreakdownCard({ userAddress }: FeesBreakdownCardProps) {
@@ -33,31 +54,10 @@ export function FeesBreakdownCard({ userAddress }: FeesBreakdownCardProps) {
     userAddress ? { userAddress } : undefined
   );
 
-  const groups = useMemo<FeeGroup[]>(() => {
-    if (!data || data.length === 0) return [];
-    const map = new Map<number, FeeGroup>();
-    for (const fee of data) {
-      const existing = map.get(fee.feeType);
-      const usd = parse18(fee.feeUsd);
-      if (existing) {
-        existing.totalUsd += usd;
-        existing.count += 1;
-      } else {
-        map.set(fee.feeType, {
-          feeType: fee.feeType,
-          label: FEE_TYPE_LABELS[fee.feeType] ?? fee.feeTypeName ?? `Type ${fee.feeType}`,
-          totalUsd: usd,
-          count: 1,
-        });
-      }
-    }
-    return Array.from(map.values()).sort((a, b) => b.totalUsd - a.totalUsd);
-  }, [data]);
+  const groups = useMemo<FeeGroup[]>(() => (data && data.length > 0 ? groupFees(data) : []), [data]);
 
-  const totalFees = useMemo(
-    () => groups.reduce((sum, g) => sum + g.totalUsd, 0),
-    [groups]
-  );
+  const totalFeesWei = useMemo(() => groups.reduce((sum, g) => sum + g.totalWei, 0n), [groups]);
+  const totalFees = weiToNumber(totalFeesWei);
 
   if (!userAddress) {
     return null;
@@ -100,14 +100,14 @@ export function FeesBreakdownCard({ userAddress }: FeesBreakdownCardProps) {
       </p>
 
       {/* Bar breakdown */}
-      {totalFees > 0 && (
+      {totalFeesWei > 0n && (
         <div className="flex h-2 rounded-full overflow-hidden mb-3">
           {groups.map((g) => (
             <div
               key={g.feeType}
               className="h-full"
               style={{
-                width: `${(g.totalUsd / totalFees) * 100}%`,
+                width: `${weiPct(g.totalWei, totalFeesWei) ?? 0}%`,
                 backgroundColor: FEE_TYPE_COLORS[g.feeType] ?? "hsl(var(--muted-foreground))",
               }}
             />
@@ -130,7 +130,7 @@ export function FeesBreakdownCard({ userAddress }: FeesBreakdownCardProps) {
               <span className="text-xs text-muted-foreground">({g.count})</span>
             </div>
             <span className="font-mono font-medium text-red-400">
-              -{fmtUsd(g.totalUsd)}
+              -{fmtUsd(weiToNumber(g.totalWei))}
             </span>
           </div>
         ))}

@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { ChevronDown } from "lucide-react";
 import type { DailyPnl } from "@/hooks/perps/useDailyPnl";
-import { parse18 } from "@/ui/utils/format";
+import { weiOrZero, weiToNumber } from "@/ui/utils/format";
 import { cn } from "@/ui/utils/cn";
 
 export type AssetsTimeRange = "7D" | "30D" | "90D" | "ALL";
@@ -186,7 +186,7 @@ function rangeToDays(range: AssetsTimeRange): number {
   return Number.POSITIVE_INFINITY;
 }
 
-function buildAssetSeries(
+export function buildAssetSeries(
   dailyPnl: DailyPnl[],
   anchorValue: number,
   range: AssetsTimeRange,
@@ -204,14 +204,15 @@ function buildAssetSeries(
   // The result is a monotonic-ish series where the last point matches
   // `anchorValue` and each earlier day reflects "value before that day's pnl".
   const fromEnd: ChartPoint[] = [];
-  let running = anchorValue;
+  // The later days' pnl is summed exactly in wei; only the anchor offset is a float.
+  let laterWei = 0n;
   for (let i = sliced.length - 1; i >= 0; i--) {
     const day = sliced[i]!;
     fromEnd.push({
       date: formatShortDate(day.date),
-      value: Math.max(0, running),
+      value: Math.max(0, anchorValue - weiToNumber(laterWei)),
     });
-    running -= parse18(day.pnl);
+    laterWei += weiOrZero(day.pnl);
   }
   return fromEnd.reverse();
 }

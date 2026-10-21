@@ -7,7 +7,7 @@ import {
 import { cn } from "@/ui/utils/cn";
 import { Button } from "@/ui/atoms/button";
 import { perfdbRest } from "@/core/perfdb/client";
-import { fmtUsdCompact as fmtUsd, parse18, shortAddr } from "@/ui/utils/format";
+import { fmtUsdCompact as fmtUsd, parse18, parseWei, shortAddr, weiToNumber } from "@/ui/utils/format";
 
 // ── Interfaces ───────────────────────────────────────────────────────
 interface LeaderboardEntry {
@@ -32,14 +32,27 @@ interface PerfdbLeaderboardEntry {
 }
 
 // PerfDB occasionally returns wei values in scientific notation
-// (e.g. "108310e+20"). parse18's BigInt path rejects those, so normalize to
-// a plain integer string before storing.
-function normalizeWeiStr(v: string | null | undefined): string {
+// (e.g. "108310e+20"). Rewrite them exactly as a plain integer wei string
+// (sub-wei digits truncate) and store "0" for anything unparseable.
+export function normalizeWeiStr(v: string | null | undefined): string {
   if (!v) return "0";
-  if (!/[eE]/.test(v)) return v;
-  const n = Number(v);
-  if (!isFinite(n) || isNaN(n)) return "0";
-  return n.toFixed(0);
+  try {
+    return parseWei(v).toString();
+  } catch {
+    return "0";
+  }
+}
+
+/** Exact ordering of two normalized wei strings. */
+export function compareWei(a: string, b: string): number {
+  const x = BigInt(a);
+  const y = BigInt(b);
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
+/** Exact sum of the normalized realized-PnL wei strings. */
+export function totalPnlWei(entries: readonly { totalRealizedPnl: string }[]): bigint {
+  return entries.reduce((sum, e) => sum + BigInt(e.totalRealizedPnl), 0n);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -117,11 +130,11 @@ export default function LeaderboardPage() {
       let cmp = 0;
       switch (sortKey) {
         case "rank": cmp = a.rank - b.rank; break;
-        case "pnl": cmp = parse18(a.totalRealizedPnl) - parse18(b.totalRealizedPnl); break;
+        case "pnl": cmp = compareWei(a.totalRealizedPnl, b.totalRealizedPnl); break;
         case "trades": cmp = a.totalTrades - b.totalTrades; break;
         case "winRate": cmp = (a.winRate ?? 0) - (b.winRate ?? 0); break;
         case "avgHoldTime": cmp = parseInt(a.avgHoldTime || "0") - parseInt(b.avgHoldTime || "0"); break;
-        case "volume": cmp = parse18(a.totalVolume) - parse18(b.totalVolume); break;
+        case "volume": cmp = compareWei(a.totalVolume, b.totalVolume); break;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -151,7 +164,7 @@ export default function LeaderboardPage() {
   const stats = useMemo(() => {
     if (entries.length === 0) return null;
     const totalTraders = entries.length;
-    const totalPnl = entries.reduce((sum, e) => sum + parse18(e.totalRealizedPnl), 0);
+    const totalPnl = weiToNumber(totalPnlWei(entries));
     const totalTrades = entries.reduce((sum, e) => sum + e.totalTrades, 0);
     const avgWinRate = entries.reduce((sum, e) => sum + (e.winRate ?? 0), 0) / entries.length;
     return { totalTraders, totalPnl, totalTrades, avgWinRate };

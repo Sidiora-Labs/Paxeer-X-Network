@@ -21,7 +21,7 @@ import {
   TRACK_B_STRINGS,
 } from "@/core/perps/config";
 import { useIsMobile } from "@/hooks/ui/useMobile";
-import { fmtUsdCompact as fmtUsd, parse18, fmtDate } from "@/ui/utils/format";
+import { fmtUsdCompact as fmtUsd, parse18, fmtDate, weiOrZero, weiToNumber } from "@/ui/utils/format";
 
 interface TradeSettlementHistoryProps {
   userAddress: string | undefined;
@@ -29,6 +29,12 @@ interface TradeSettlementHistoryProps {
 
 function getMarketSymbol(marketId: number): string {
   return PERPS_MARKETS.find((m) => m.marketId === marketId)?.symbol ?? `MKT-${marketId}`;
+}
+
+/** Magnitude of a wei string, taken exactly before the display edge. */
+export function absUsd(v: string | null | undefined): number {
+  const wei = weiOrZero(v);
+  return weiToNumber(wei < 0n ? -wei : wei);
 }
 
 export function TradeSettlementHistory({ userAddress }: TradeSettlementHistoryProps) {
@@ -42,9 +48,9 @@ export function TradeSettlementHistory({ userAddress }: TradeSettlementHistoryPr
     return data.slice(0, 20).map((s) => ({
       label: `${getMarketSymbol(s.marketId)} #${s.positionId.slice(0, 6)}`,
       grossPnl: parse18(s.grossPnl),
-      fees: -Math.abs(parse18(s.totalFeesUsd)),
-      borrowing: -Math.abs(parse18(s.borrowingFeeUsd)),
-      funding: -Math.abs(parse18(s.fundingPaidUsd)),
+      fees: -absUsd(s.totalFeesUsd),
+      borrowing: -absUsd(s.borrowingFeeUsd),
+      funding: -absUsd(s.fundingPaidUsd),
       netPayout: parse18(s.netPayoutTokens),
     }));
   }, [data]);
@@ -157,13 +163,13 @@ export function TradeSettlementHistory({ userAddress }: TradeSettlementHistoryPr
                       {fmtUsd(grossPnl)}
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-red-400 hidden md:table-cell">
-                      -{fmtUsd(Math.abs(parse18(s.totalFeesUsd)))}
+                      -{fmtUsd(absUsd(s.totalFeesUsd))}
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-red-400 hidden md:table-cell">
-                      -{fmtUsd(Math.abs(parse18(s.borrowingFeeUsd)))}
+                      -{fmtUsd(absUsd(s.borrowingFeeUsd))}
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-red-400 hidden lg:table-cell">
-                      -{fmtUsd(Math.abs(parse18(s.fundingPaidUsd)))}
+                      -{fmtUsd(absUsd(s.fundingPaidUsd))}
                     </td>
                     <td className={`px-4 py-2 text-right font-mono font-semibold ${netPayout >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                       {fmtUsd(netPayout)}

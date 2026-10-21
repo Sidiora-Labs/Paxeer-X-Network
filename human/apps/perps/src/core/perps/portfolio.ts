@@ -1,5 +1,7 @@
 import { formatUnits } from "viem";
 
+import { weiOrZero as wei } from "@/ui/utils/format";
+
 import type { AccountState } from "./calls";
 
 /** USD notionals and leverage are 18-decimal; USDL amounts are 6-decimal. */
@@ -28,27 +30,22 @@ function usd(value: bigint, decimals: number): number {
   return Number(formatUnits(value, decimals));
 }
 
-function parse18(value: string | null | undefined): number {
-  if (!value) return 0;
-  return parseFloat(value) / 1e18;
-}
-
 /** The totals of usePortfolioStats from getAccount(account) at 0x1015 and the open positions. */
 export function portfolioFromAccount(
   accountState: Pick<AccountState, "collateral" | "equityUsd" | "withdrawable">,
   positions: readonly PortfolioPosition[],
 ): PortfolioTotals {
-  let weightedLeverage = 0;
-  let totalSize = 0;
+  let weightedLeverage = 0n;
+  let totalSize = 0n;
   for (const position of positions) {
-    const size = parse18(position.sizeUsd);
-    weightedLeverage += parse18(position.leverage) * size;
+    const size = wei(position.sizeUsd);
+    weightedLeverage += wei(position.leverage) * size;
     totalSize += size;
   }
   return {
     totalVaultUsd: usd(accountState.collateral, USDL_DECIMALS),
     freeCollateral: usd(accountState.withdrawable, USDL_DECIMALS),
     unrealizedPnl: usd(accountState.equityUsd - accountState.collateral * USDL_TO_USD, USD_DECIMALS),
-    totalLeverage: totalSize > 0 ? weightedLeverage / totalSize : 0,
+    totalLeverage: totalSize > 0n ? usd(weightedLeverage / totalSize, USD_DECIMALS) : 0,
   };
 }
