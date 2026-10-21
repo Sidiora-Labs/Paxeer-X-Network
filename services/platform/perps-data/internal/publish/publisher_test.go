@@ -823,7 +823,7 @@ func TestPublisher(t *testing.T) {
 			leases = append(leases, delivery.Lease{EventID: e.env.EventID, Subject: e.subject, Wire: wireOf(t, policy, e), PerpsSeq: int64(i + 1)})
 		}
 		s := &sink{nc: nc, js: jsPub(t, nc), policy: policy}
-		live := func() bool { return false }
+		live := func(string) bool { return false }
 		// A batch whose first message is already persisted is answered as a
 		// duplicate and the rest follow it.
 		if res := s.PublishBatch(ctx, leases[:1]); res[0].Err != nil || res[0].Ack.Sequence != base+1 {
@@ -1085,6 +1085,117 @@ func TestPublisher(t *testing.T) {
 			t.Fatalf("connection = %v, last error %v, %d reconnects; want a live connection that met a permission violation", rc.Status(), rc.LastError(), rc.Stats().Reconnects)
 		}
 	})
+
+	t.Run("jetstream_outage_spends_no_attempt", func(t *testing.T) {
+		reset(t, ctx, db)
+		// One server whose JetStream is switched off and on again while its
+		// core connection stays up: every publish meets no responders.
+		dir := t.TempDir()
+		ns, err := server.NewServer(&server.Options{ServerName: "perps-solo", Host: "127.0.0.1", Port: server.RANDOM_PORT, JetStream: true, StoreDir: dir, NoLog: true, NoSigs: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		go ns.Start()
+		t.Cleanup(func() { ns.Shutdown(); ns.WaitForShutdown() })
+		if !ns.ReadyForConnections(10 * time.Second) {
+			t.Fatal("server not ready")
+		}
+		sc, err := nats.Connect(ns.ClientURL())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(sc.Close)
+		sjs, err := jetstream.New(sc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		solo := stream.Config(chain)
+		solo.Replicas = 1
+		s, err := sjs.CreateStream(ctx, solo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var logs bytes.Buffer
+		cfg := testConfig()
+		cfg.PublishTimeout = time.Second
+		cfg.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+		p, err := New(db, sc, policy, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runCtx, stop := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() { done <- p.Run(runCtx) }()
+		waitFor := func(what string, cond func() bool) {
+			t.Helper()
+			deadline := time.Now().Add(30 * time.Second)
+			for !cond() {
+				if time.Now().After(deadline) {
+					stop()
+					t.Fatalf("%s: %+v; Run = %v", what, outbox(t, db), <-done)
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+		}
+		first := fillEvent(t, 1400, hashA, 0, 0)
+		enqueue(t, ctx, db, outboxStore, first)
+		waitFor("first row not published", func() bool { return count(t, db, openRows) == 0 })
+
+		if err := ns.DisableJetStream(); err != nil {
+			t.Fatal(err)
+		}
+		head, next := fillEvent(t, 1401, hashA, 0, 0), fillEvent(t, 1402, hashA, 0, 0)
+		enqueue(t, ctx, db, outboxStore, head, next)
+		waitFor("perps_outbox_broker_down not set", func() bool { return metricValue(t, p.brokerDown) == 1 })
+		// Far longer than the backoff budget of MaxAttempts attempts.
+		time.Sleep(6 * time.Second)
+		if n := count(t, db, `SELECT count(*) FROM perps.delivery_outbox WHERE state<>'pending' AND event_id<>$1 OR failure_class IS NOT NULL`, first.env.EventID); n != 0 {
+			t.Fatalf("%d rows failed during the JetStream outage: %+v", n, outbox(t, db))
+		}
+		if n := metricValue(t, p.quarantined); n != 0 {
+			t.Fatalf("perps_outbox_quarantined_total = %v during the JetStream outage", n)
+		}
+		if metricValue(t, p.brokerDown) != 1 {
+			t.Fatal("perps_outbox_broker_down cleared during the JetStream outage")
+		}
+		if sc.Status() != nats.CONNECTED || sc.Stats().Reconnects != 0 {
+			t.Fatalf("connection = %v, %d reconnects; want a live core connection", sc.Status(), sc.Stats().Reconnects)
+		}
+
+		// JetStream returns with the stream: publishing resumes at the head.
+		if err := ns.EnableJetStream(&server.JetStreamConfig{StoreDir: dir}); err != nil {
+			t.Fatal(err)
+		}
+		waitFor("outbox not drained after JetStream returned", func() bool { return count(t, db, openRows) == 0 })
+		waitFor("perps_outbox_broker_down not cleared", func() bool { return metricValue(t, p.brokerDown) == 0 })
+		stop()
+		if err := <-done; !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run = %v", err)
+		}
+		rows := outbox(t, db)
+		if len(rows) != 3 {
+			t.Fatalf("outbox = %+v", rows)
+		}
+		events := []event{first, head, next}
+		for i, r := range rows {
+			if r.eventID != events[i].env.EventID || r.state != "published" || r.failure != "" || r.attempts != 1 || r.brokerSequence != int64(i)+1 {
+				t.Fatalf("row %d = %+v; log %q", i, r, logs.String())
+			}
+			msg, err := s.GetMsg(ctx, uint64(r.brokerSequence))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if msg.Subject != events[i].subject || msg.Header.Get(delivery.HeaderControl) != "" || msg.Header.Get(jetstream.MsgIDHeader) != events[i].env.EventID {
+				t.Fatalf("message %d = %s %v", r.brokerSequence, msg.Subject, msg.Header)
+			}
+		}
+		if n := metricValue(t, p.quarantined); n != 0 {
+			t.Fatalf("perps_outbox_quarantined_total = %v, want 0", n)
+		}
+		if line := logs.String(); !strings.Contains(line, "cannot reach the broker") || strings.Contains(line, "level=ERROR") {
+			t.Fatalf("JetStream outage not logged as a broker outage, or logged an Error: %q", line)
+		}
+	})
 }
 
 // gate is a TCP path to one broker whose port can be closed and reopened,
@@ -1162,4 +1273,18 @@ func jsPub(t *testing.T, nc *nats.Conn) jetstream.JetStream {
 		t.Fatal(err)
 	}
 	return js
+}
+
+func TestClassifyInFlight(t *testing.T) {
+	inFlight := &jetstream.APIError{Code: 409, ErrorCode: errCodeDuplicateInProcess, Description: "duplicate message id is in process"}
+	for _, down := range []bool{false, true} {
+		err := classify(inFlight, down)
+		if !errors.Is(err, delivery.ErrInFlight) || errors.Is(err, delivery.ErrBrokerDown) || !errors.Is(err, inFlight) {
+			t.Fatalf("classify(10158, down=%v) = %v, want delivery.ErrInFlight and not broker-down", down, err)
+		}
+	}
+	other := &jetstream.APIError{Code: 400, ErrorCode: 10071, Description: "wrong last sequence"}
+	if err := classify(other, false); errors.Is(err, delivery.ErrInFlight) || errors.Is(err, delivery.ErrBrokerDown) {
+		t.Fatalf("classify(10071) = %v, want a failure of the message", err)
+	}
 }

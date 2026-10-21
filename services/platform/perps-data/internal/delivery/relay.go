@@ -14,6 +14,14 @@ import (
 // with it.
 var ErrBrokerDown = errors.New("delivery: broker unreachable")
 
+// ErrInFlight marks a publication the broker refused because it is still
+// processing a message under the same Nats-Msg-Id, such as the first send of
+// a message whose acknowledgement was lost to a reconnect. The broker holds
+// that very message: the relay puts the row back without spending an
+// attempt, holds the rows behind it, and the next pass retries it. The
+// BatchPublisher wraps its error with it.
+var ErrInFlight = errors.New("delivery: message still in flight at the broker")
+
 // PersistentPublisher must await the server JetStream persistence acknowledgement
 // (not socket write completion), set Nats-Msg-Id to eventID, and return the actual
 // stream and sequence. natsdriver.Publisher supplies this contract.
@@ -84,7 +92,8 @@ func (r Relay) Pass(ctx context.Context) error {
 // its budget, lost its lease or fails to decode holds back the rest of the
 // batch the same way. A row whose publication failed with ErrBrokerDown is
 // released like the rows behind it: an unreachable broker spends no attempt,
-// and the pass reports the failure. A row that fails to decode, that the broker refuses for
+// and the pass reports the failure. A row failed with ErrInFlight is released
+// the same way. A row that fails to decode, that the broker refuses for
 // its size or whose transient failures spent MaxAttempts attempts is
 // quarantined permanently; a later pass publishes its control message in its
 // Perps-Seq place and then the rows behind it, so no row holds the outbox
@@ -157,8 +166,9 @@ func (r Relay) run(ctx context.Context) error {
 				published, acks = append(published, l), append(acks, res.Ack)
 			case blocked:
 				release = append(release, l)
-			case errors.Is(res.Err, ErrBrokerDown):
-				// The broker was not reached: the row goes back unspent.
+			case errors.Is(res.Err, ErrBrokerDown), errors.Is(res.Err, ErrInFlight):
+				// The broker was not reached, or already holds this very
+				// message in flight: the row goes back unspent.
 				release = append(release, l)
 				failure = errors.Join(failure, res.Err)
 				blocked = true

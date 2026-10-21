@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -272,8 +273,18 @@ func (p *Publisher) Run(ctx context.Context) error {
 
 // observe records the outcome of one pass: a broker outage sets
 // perps_outbox_broker_down and is logged at Warn when it starts and then at
-// most once per brokerDownLogInterval; any other failure is logged at Error.
+// most once per brokerDownLogInterval; a message still in flight at the
+// broker is logged at Info; any other failure is logged at Error.
 func (p *Publisher) observe(err error, now time.Time) {
+	if errors.Is(err, delivery.ErrInFlight) && !errors.Is(err, delivery.ErrBrokerDown) {
+		if !p.downSince.IsZero() {
+			p.logger.Info("perps publisher reached the broker again", slog.Duration("outage", now.Sub(p.downSince)))
+		}
+		p.brokerDown.Set(0)
+		p.downSince, p.downLogged = time.Time{}, time.Time{}
+		p.logger.Info("perps publisher head message still in flight at the broker; it is retried without spending an attempt", slog.Any("err", err))
+		return
+	}
 	if !errors.Is(err, delivery.ErrBrokerDown) {
 		if !p.downSince.IsZero() {
 			p.logger.Info("perps publisher reached the broker again", slog.Duration("outage", now.Sub(p.downSince)))
@@ -320,10 +331,20 @@ func (s *sink) PublishBatch(ctx context.Context, leases []delivery.Lease) []deli
 	if len(leases) == 0 {
 		return out
 	}
-	// A timeout or no-responders is a broker outage only while the
-	// connection is down or after it reconnected during the batch.
-	reconnects := s.nc.Stats().Reconnects
-	down := func() bool { return s.nc.Status() != nats.CONNECTED || s.nc.Stats().Reconnects != reconnects }
+	// A timeout or no-responders on a message is a broker outage, such as a
+	// JetStream outage behind a live core connection or a half-open
+	// connection, unless the server announced during the batch, as the last
+	// error of a connection that neither dropped nor reconnected, a
+	// permissions violation for the publish subject of that message.
+	reconnects, baseline := s.nc.Stats().Reconnects, s.nc.LastError()
+	down := func(subject string) bool {
+		if s.nc.Status() != nats.CONNECTED || s.nc.Stats().Reconnects != reconnects {
+			return true
+		}
+		last := s.nc.LastError()
+		return last == baseline || !errors.Is(last, nats.ErrPermissionViolation) ||
+			!strings.Contains(last.Error(), "Permissions Violation for Publish to "+strconv.Quote(subject))
+	}
 	f, err := s.send(leases[0], down)
 	if err == nil {
 		out[0] = await(ctx, f, down)
@@ -356,9 +377,9 @@ func (s *sink) PublishBatch(ctx context.Context, leases []delivery.Lease) []deli
 	return out
 }
 
-// await reads the acknowledgement of f; down reports whether the connection
-// was lost during the batch.
-func await(ctx context.Context, f jetstream.PubAckFuture, down func() bool) delivery.Publication {
+// await reads the acknowledgement of f; down reports whether a timeout or
+// no-responders on a message of the subject is a broker outage.
+func await(ctx context.Context, f jetstream.PubAckFuture, down func(string) bool) delivery.Publication {
 	select {
 	case ack := <-f.Ok():
 		if ack == nil || ack.Stream != stream.Name || ack.Sequence == 0 || ack.Sequence > 1<<63-1 {
@@ -366,13 +387,13 @@ func await(ctx context.Context, f jetstream.PubAckFuture, down func() bool) deli
 		}
 		return delivery.Publication{Ack: delivery.PersistenceAck{Stream: ack.Stream, Sequence: ack.Sequence}}
 	case err := <-f.Err():
-		return delivery.Publication{Err: classify(err, down())}
+		return delivery.Publication{Err: classify(err, down(f.Msg().Subject))}
 	case <-ctx.Done():
-		return delivery.Publication{Err: classify(ctx.Err(), down())}
+		return delivery.Publication{Err: classify(ctx.Err(), down(f.Msg().Subject))}
 	}
 }
 
-func (s *sink) send(l delivery.Lease, down func() bool, opts ...jetstream.PublishOpt) (jetstream.PubAckFuture, error) {
+func (s *sink) send(l delivery.Lease, down func(string) bool, opts ...jetstream.PublishOpt) (jetstream.PubAckFuture, error) {
 	msg, id, err := s.message(l)
 	if err != nil {
 		return nil, err
@@ -380,7 +401,7 @@ func (s *sink) send(l delivery.Lease, down func() bool, opts ...jetstream.Publis
 	opts = append(opts, jetstream.WithMsgID(id), jetstream.WithExpectStream(stream.Name), jetstream.WithRetryAttempts(0))
 	f, err := s.js.PublishMsgAsync(msg, opts...)
 	if err != nil {
-		return nil, classify(err, down())
+		return nil, classify(err, down(msg.Subject))
 	}
 	return f, nil
 }
@@ -415,6 +436,10 @@ func (s *sink) message(l delivery.Lease) (*nats.Msg, string, error) {
 // than the max_msg_size of the stream.
 const errCodeMessageTooLarge jetstream.ErrorCode = 10054
 
+// errCodeDuplicateInProcess is the JetStream API error code of a message whose
+// Nats-Msg-Id the stream is still processing from an earlier send.
+const errCodeDuplicateInProcess jetstream.ErrorCode = 10158
+
 // JetStream API error codes of a broker that cannot serve any message.
 const (
 	errCodeClusterNotAvailable jetstream.ErrorCode = 10008
@@ -425,9 +450,10 @@ const (
 // classify is the one place where a NATS or JetStream client error is told
 // apart: a connection-level failure, which says nothing about the message,
 // is wrapped with delivery.ErrBrokerDown; a refusal of this message keeps its
-// class. A timeout or no-responders is a connection-level failure only when
-// down reports the connection lost; on a live connection it is a failure of
-// this message, such as one the server dropped for a permission violation.
+// class; a message the stream is still processing under the same
+// Nats-Msg-Id is wrapped with delivery.ErrInFlight. A timeout or no-responders is a connection-level failure when down
+// says so; otherwise it is a failure of this message, one the server dropped
+// for a permissions violation on its subject.
 func classify(err error, down bool) error {
 	if err == nil {
 		return nil
@@ -439,6 +465,8 @@ func classify(err error, down bool) error {
 		return fmt.Errorf("%w: %w", delivery.ErrOversized, err)
 	case errors.Is(err, nats.ErrPermissionViolation):
 		return fmt.Errorf("%w: %w", delivery.ErrAuthorization, err)
+	case isAPI && api.ErrorCode == errCodeDuplicateInProcess:
+		return fmt.Errorf("%w: %w", delivery.ErrInFlight, err)
 	case errors.Is(err, nats.ErrConnectionClosed), errors.Is(err, nats.ErrConnectionDraining), errors.Is(err, nats.ErrConnectionReconnecting),
 		errors.Is(err, nats.ErrDisconnected), errors.Is(err, nats.ErrNoServers), errors.Is(err, nats.ErrReconnectBufExceeded),
 		errors.Is(err, nats.ErrStaleConnection), errors.Is(err, nats.ErrAuthorization), errors.Is(err, nats.ErrAuthExpired),
