@@ -10,6 +10,7 @@ import {
   marketQuoteFromPrecompile,
   partialCloseQuoteFromPrecompile,
 } from "@/core/perps/quoteFallback";
+import { type VenueTicker, parseFundingRateHourly, projectFunding24h } from "@/core/perps/fundingRate";
 import { MARKET_DATA_URL as REST_API_URL } from "@/core/feeds";
 import { readContract } from "./useContract";
 
@@ -37,6 +38,15 @@ export interface ClosePositionQuote {
 }
 
 export type { MarketQuote, PartialCloseQuote };
+
+/**
+ * fundingRate24h on the venue path is the last settled hourly rate ×24, a
+ * projection; lastSettledFundingRate1h is that hourly rate, null when the
+ * quote came from the on-chain fallback.
+ */
+export interface QuoterMarketQuote extends MarketQuote {
+  lastSettledFundingRate1h: bigint | null;
+}
 
 // ── Open-interest singleton cache ──────────────────────────────────
 interface OiEntry {
@@ -82,14 +92,15 @@ export function useQuoter() {
    * Returns a MarketQuote with values scaled to 18 decimals (bigint)
    * for backward compatibility with consumers that expect bigints.
    */
-  async function quoteMarket(marketId: bigint): Promise<MarketQuote> {
+  async function quoteMarket(marketId: bigint): Promise<QuoterMarketQuote> {
     const symbol = getSymbolForMarket(Number(marketId));
     try {
       const res = await fetch(`${REST_API_URL}/ticker/${symbol}`);
       if (!res.ok) throw new Error(`Ticker fetch failed: ${res.status}`);
       const json = await res.json();
       if (!json.success) throw new Error("Ticker response unsuccessful");
-      const t = json.data;
+      const t: VenueTicker = json.data;
+      const lastSettledFundingRate1h = parseFundingRateHourly(t.last_funding_rate_hourly);
 
       // Also fetch OI breakdown — cached, refreshed at most every 60 s
       let longOI = 0;
@@ -108,7 +119,8 @@ export function useQuoter() {
         markPrice: toBigInt18(t.mark_price ?? 0),
         oracleTWAP: toBigInt18(t.index_price ?? 0),
         fundingRatePerSecond: BigInt(0),
-        fundingRate24h: toBigInt18(t.est_funding_rate ?? 0),
+        fundingRate24h: projectFunding24h(lastSettledFundingRate1h),
+        lastSettledFundingRate1h,
         longOI: toBigInt18(longOI),
         shortOI: toBigInt18(shortOI),
         maxLeverage: BigInt(PERPS_MARKETS.find((m) => m.marketId === Number(marketId))?.maxLeverage ?? 100),
@@ -125,7 +137,7 @@ export function useQuoter() {
         functionName: "quoteMarket",
         args: [marketId],
       });
-      return marketQuoteFromPrecompile(result as PrecompileMarketQuote);
+      return { ...marketQuoteFromPrecompile(result as PrecompileMarketQuote), lastSettledFundingRate1h: null };
     }
   }
 

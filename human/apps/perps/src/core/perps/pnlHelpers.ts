@@ -15,8 +15,9 @@
  *   remainingCollateral = initialCollateral + unrealizedPnl − fundingPaid − fees
  *
  *   Liquidation occurs when remainingCollateral ≤ maintenanceMargin (10% of initial).
- *     LONG  liqPrice = entryPrice × (1 − (1 − mm) / leverage)
- *     SHORT liqPrice = entryPrice × (1 + (1 − mm) / leverage)
+ *     cushion  = (1 − mm) / leverage − (fundingPaid + fees) / sizeUsd
+ *     LONG  liqPrice = entryPrice × (1 − cushion)
+ *     SHORT liqPrice = entryPrice × (1 + cushion)
  *
  * Rounding: every division truncates toward zero (sub-wei digits are
  * dropped), so a long and a short of the same size have PnL and ROE that are
@@ -176,23 +177,27 @@ export function computePositionPnl(pos: ParsedPosition, markPrice: bigint): Posi
     ? (move * (leverage > 0n ? leverage : WAD) * 100n) / entryPrice
     : 0n;
 
-  // Liq when loss = initialCollateral × (1 − mm), i.e. |Δ| = (1 − mm) / leverage.
+  // Liq when remaining collateral = mm × initial, i.e. the loss equals
+  // initial × (1 − mm) − funding − fees. Over size, with initial = size / lev:
+  //   |Δ| / entry = (1 − mm) / lev − charges / size
+  // kept over the one denominator BPS × lev × size so nothing truncates early.
   let liqPrice = 0n;
-  if (leverage > 0n) {
-    const den = BPS * leverage;
-    const cushion = (BPS - MAINTENANCE_MARGIN_BPS) * WAD;
+  if (leverage > 0n && sizeUsd > 0n) {
+    const den = BPS * leverage * sizeUsd;
+    const cushion = (BPS - MAINTENANCE_MARGIN_BPS) * WAD * sizeUsd - charges * BPS * leverage;
     liqPrice = pos.isLong
       ? den > cushion ? ceilDiv(entryPrice * (den - cushion), den) : 0n
-      : (entryPrice * (den + cushion)) / den;
+      : den + cushion > 0n ? (entryPrice * (den + cushion)) / den : 0n;
   }
 
   // Safety: distance from mark to liq over the distance from entry to liq.
+  // Charges beyond the cushion put liq on the far side of entry: no room left.
   let liqSafetyBps = BPS;
   if (liqPrice > 0n) {
     const range = pos.isLong ? entryPrice - liqPrice : liqPrice - entryPrice;
     const room = pos.isLong ? markPrice - liqPrice : liqPrice - markPrice;
-    const raw = range > 0n ? (room * BPS) / range : BPS;
-    liqSafetyBps = raw < 0n ? 0n : raw > BPS ? BPS : raw;
+    const raw = room <= 0n ? 0n : range > 0n ? (room * BPS) / range : BPS;
+    liqSafetyBps = raw > BPS ? BPS : raw;
   }
 
   return {

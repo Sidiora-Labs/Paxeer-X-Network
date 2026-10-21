@@ -111,6 +111,31 @@ describe("position pnl", () => {
     assert.equal(low.liqPrice, 0n);
   });
 
+  it("liquidation price subtracts funding and fees like remaining collateral does", () => {
+    const charged = { entryPrice: usd(100n), sizeUsd: usd(1_000n), leverage: usd(10n), fundingPaidUsd: usd(3n), feesUsd: usd(2n) };
+    const long = computePositionPnl(position(charged), usd(100n));
+    assert.equal(long.liqPrice, 91_500_000_000_000_000_000n);
+    const short = computePositionPnl(position({ ...charged, isLong: false }), usd(100n));
+    assert.equal(short.liqPrice, 108_500_000_000_000_000_000n);
+    assert.equal(long.liqPrice - usd(100n), usd(100n) - short.liqPrice);
+    for (const p of [long, short]) {
+      const atLiq = computePositionPnl(position({ ...charged, isLong: p === long }), p.liqPrice);
+      assert.equal(atLiq.remainingCollateral, usd(10n));
+    }
+    const uncharged = computePositionPnl(position({ ...charged, fundingPaidUsd: 0n, feesUsd: 0n }), usd(100n));
+    assert.equal(uncharged.liqPrice, usd(91n));
+  });
+
+  it("charges beyond the cushion put liquidation past entry with no safety left", () => {
+    const over = { entryPrice: usd(100n), sizeUsd: usd(1_000n), leverage: usd(10n), feesUsd: usd(95n) };
+    const long = computePositionPnl(position(over), usd(100n));
+    assert.equal(long.liqPrice, usd(100n) + 500_000_000_000_000_000n);
+    assert.equal(long.liqSafetyBps, 0n);
+    const short = computePositionPnl(position({ ...over, isLong: false }), usd(100n));
+    assert.equal(short.liqPrice, usd(100n) - 500_000_000_000_000_000n);
+    assert.equal(short.liqSafetyBps, 0n);
+  });
+
   it("no mark or no entry yields the idle state", () => {
     const p = computePositionPnl(position({ feesUsd: usd(100n) }), 0n);
     assert.equal(p.markPrice, 0n);
