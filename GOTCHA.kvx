@@ -8785,3 +8785,8 @@ detail = "A Bash call that runs pkill -f 'proc/loadavg' and then the gate matche
 area = "services/platform/hosted/gateway"
 summary = "rustfmt over gateway paxeer.rs rewrites about a hundred unrelated lines because that file is not rustfmt clean on main"
 detail = "Format only the files whose main revision is already clean (rustfmt --check first) and add new code to paxeer.rs in its existing style; cargo and rustfmt live in ~/.cargo/bin, which a fresh shell may not have on PATH."
+
+[gotcha.1843]
+area = "services/platform/hosted/gateway"
+summary = "The gateway binary cannot answer JSON-RPC in a test without a reachable TLS Redis"
+detail = "Config construction requires LAYERX_GATEWAY_REDIS_URL with username and password files, so integration tests that post JSON-RPC to the real binary start a redis-server with tls-port and an openssl localhost certificate, as tests/paxeer_failover.rs and tests/unified_service_paths.rs do."

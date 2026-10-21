@@ -2282,3 +2282,17 @@ command = "corepack pnpm@11.5.2 -C apps/wallet test"
 exit_code = 1
 log_path = "logs/FX-HW-10-verify2-app.log"
 observed_and_assumption = "Besides the recorded DepositFlow failure and visual system timeout, storage-forensics and atomic-json-store hit the 5000 ms default timeout in the same run while every WebDataView test passes; assumed host load timing, left as written."
+
+[finding.gateway.lx-reads-wait-on-ingress-off]
+revision = "4bccc15fa"
+command = "cargo test --locked --manifest-path services/platform/Cargo.toml -p layerx-platform-gateway --test unified_service_paths"
+exit_code = 101
+log_path = "logs/FX-HW-11-A-verify.log"
+observed_and_assumption = "register_replaced passes and lx_getHistory answers -32601, while lx_reads_switched_off stops at lx_getSequence answering -32010 kernel_unavailable from the central backend admission; per task 6.5.47 do_5 this assertion qualifies only after task 10.6.2 puts the lx_ refusal ahead of that admission, left as written."
+
+[finding.gateway.unified-paths-wallet-source-drift]
+revision = "4bccc15fa"
+command = "cargo test --locked --manifest-path services/platform/Cargo.toml -p layerx-platform-gateway --test unified_service_paths"
+exit_code = 101
+log_path = "logs/FX-HW-11-A-verify.log"
+observed_and_assumption = "real_registered_wallet_handlers_have_the_same_unified_owner and actual_sdk_callers_and_existing_ownership_checks_stay_connected fail on source strings that services/wallet/gateway/src/routes/wallet.ts no longer contains on an unmodified main; assumed drift from an earlier wallet gateway change, left as written."

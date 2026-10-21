@@ -1,6 +1,5 @@
-//! Account history on the single network endpoint: `lx_getHistory`,
-//! `px_getHistory` and `px_getUnifiedHistory`, answered from the
-//! `layerx-indexer` read API.
+//! Account history on the single network endpoint: `px_getHistory` and
+//! `px_getUnifiedHistory`, answered from the `layerx-indexer` read API.
 //!
 //! Every answer is the indexer's own rows, oldest first in
 //! `(blockHeight, txIndex, logIndex)` position order, each joined with its
@@ -193,14 +192,6 @@ pub(super) fn params(params: Option<&Value>) -> Result<(String, Query), i32> {
             kind,
         },
     ))
-}
-
-/// A `LayerX` account identifier as the indexer keys it: 64 lowercase hex.
-pub(super) fn layerx_key(account: &str) -> Option<String> {
-    super::parse_hex32(account)
-        .ok()
-        .filter(|key| key.iter().any(|byte| *byte != 0))
-        .map(|key| super::hex(&key))
 }
 
 /// A Paxeer account as the indexer keys it: a lowercase `0x` address.
@@ -481,10 +472,6 @@ fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> 
         Err(code) => return super::rpc::error(id, code, "Invalid params"),
     };
     let (document, accounts) = match method {
-        "lx_getHistory" => match layerx_key(&account) {
-            Some(key) => (json!(key.clone()), vec![("layerx", key)]),
-            None => return super::rpc::error(id, -32602, "Invalid params"),
-        },
         "px_getHistory" => match paxeer_key(&account) {
             Some(key) => (json!(key.clone()), vec![("paxeer", key)]),
             None => return super::rpc::error(id, -32602, "Invalid params"),
@@ -671,7 +658,7 @@ fn answer_holders(config: &Config, id: &Value, params: Option<&Value>) -> Value 
     json!({"jsonrpc": "2.0", "id": id, "result": result})
 }
 
-/// Answers the three history methods and `px_listHolderRecords`, or `None`
+/// Answers the two history methods and `px_listHolderRecords`, or `None`
 /// for any other method.
 pub(super) fn dispatch(
     config: &Config,
@@ -680,9 +667,7 @@ pub(super) fn dispatch(
     params: Option<&Value>,
 ) -> Option<Value> {
     match method {
-        "lx_getHistory" | "px_getHistory" | "px_getUnifiedHistory" => {
-            Some(answer(config, method, id, params))
-        }
+        "px_getHistory" | "px_getUnifiedHistory" => Some(answer(config, method, id, params)),
         "px_listHolderRecords" => Some(answer_holders(config, id, params)),
         _ => None,
     }
@@ -1544,12 +1529,6 @@ mod tests {
             format!("limit=7&cursor={cursor}&kind=erc20_transfer")
         );
         assert_eq!(encode(TICKET), "denom%3Afactory%2Fpax1issuer%2Fticket");
-        assert_eq!(
-            layerx_key(&ALICE.to_ascii_uppercase()),
-            Some(ALICE.to_owned())
-        );
-        assert_eq!(layerx_key(&"00".repeat(32)), None);
-        assert_eq!(layerx_key(EVE), None);
         assert_eq!(
             paxeer_key(&EVE.to_ascii_uppercase().replacen("0X", "0x", 1)),
             Some(EVE.to_owned())

@@ -337,7 +337,7 @@ pub(super) fn invalid_request(value: &Value) -> Option<Value> {
 
 fn kernel_backend(method: &str) -> Option<KernelBackend> {
     match method {
-        "lx_register" | "lx_requestFunds" => Some(KernelBackend::Identity),
+        "lx_requestFunds" => Some(KernelBackend::Identity),
         "lx_sendActivity" => Some(KernelBackend::Component),
         "lx_getAccount"
         | "lx_getBalance"
@@ -380,11 +380,6 @@ pub(super) fn dispatch(config: &Config, request: &IncomingRequest, value: &Value
         kernel_backend(method).and_then(|backend| config.backend(backend).err())
     {
         return value.get("id").map(|_| unavailable.rpc(&id));
-    }
-    if let Some(result) =
-        crate::rpc_register::dispatch(config, request, method, &id, value.get("params"))
-    {
-        return value.get("id").map(|_| result);
     }
     if let Some(result) =
         crate::rpc_faucet::dispatch(config, request, method, &id, value.get("params"))
@@ -1118,7 +1113,6 @@ mod tests {
             .as_array()
             .unwrap_or_else(|| panic!("methods missing"));
         let published = [
-            "lx_register",
             "lx_requestFunds",
             "lx_getAccount",
             "lx_getBalance",
@@ -1142,7 +1136,6 @@ mod tests {
             "px_getBalances",
             "px_listAssets",
             "px_getNetwork",
-            "lx_getHistory",
             "px_getHistory",
             "px_getUnifiedHistory",
             "px_getCapabilities",
