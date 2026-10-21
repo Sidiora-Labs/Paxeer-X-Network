@@ -33,8 +33,11 @@ free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",
 status_of() { curl -sS -o /dev/null -w '%{http_code}' "$@"; }
 
 # ac_1 / do_2: monorepo-derived sources, no machine-specific checkout or obsolete origin.
+for path in tools/hpx .github/workflows/paxeer-hpx-registry.yml docker/hpx-registry; do
+	[ -e "$path" ] || fail "private-path scan target $path is missing"
+done
 if grep -rnE '/root/(Layerx-protocol|project-Quorum|lx-)|project-Quorum|paxeer-network/|paxeer\.app|sidiora\.xyz' \
-	hpx .github/workflows/paxeer-hpx-registry.yml docker/hpx-registry; then
+	tools/hpx .github/workflows/paxeer-hpx-registry.yml docker/hpx-registry; then
 	fail "HPX publication references a private checkout or obsolete origin"
 fi
 for file in tools/hpx/get-hpx.sh tools/hpx/hpx tools/hpx/stake-fleet.sh tools/hpx/fleet-keygen.sh; do
@@ -68,7 +71,7 @@ pass "loopback systemd service, Nginx HTTPS proxy and revision-bound automation 
 art="$work/artifacts"
 publish() {
 	(cd / && env -u SRC_CFG -u WASM_ROOT SRC_BIN="$PAXEER_X_HPX_PAXD" HPX_RUNTIME_CONFIG_DIR="$PAXEER_X_HPX_RUNTIME_CONFIG" \
-		HPX_ARTIFACTS_ROOT="$art" HPX_RELEASE_ID="$1" "${@:2}" bash "$root/hpx/publish.sh")
+		HPX_ARTIFACTS_ROOT="$art" HPX_RELEASE_ID="$1" "${@:2}" bash "$root/tools/hpx/publish.sh")
 }
 publish gate-a > "$work/publish-a.log" 2>&1 || fail "publication of the first release failed"
 [ "$(readlink "$art/current")" = releases/gate-a ] || fail "current pointer does not name the assembled release"

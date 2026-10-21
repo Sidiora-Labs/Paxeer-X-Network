@@ -1216,7 +1216,7 @@ if [ ! -s "$work/port" ]; then
 fi
 origin="http://127.0.0.1:$(cat "$work/port")"
 
-hpx_app="$(sed -n 's/^app = "\(.*\)"$/\1/p' "$root/hpx/hosting/fly.toml")"
+hpx_app="$(sed -n 's/^app = "\(.*\)"$/\1/p' "$root/tools/hpx/hosting/fly.toml")"
 
 CHECK_LIVE_HPX_ORIGIN="$origin/good" CHECK_LIVE_HPX_APP_ORIGIN="$origin/good" expect check_live_hpx_passing "$work/hosts-good.env" 0 hpx -- \
 	"pass healthz http=200 ok=true chain_id=hyperpax_125-1 source_revision=$(printf 'a%.0s' $(seq 40))" \

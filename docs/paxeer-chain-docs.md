@@ -12,7 +12,7 @@ Paxeer is the EVM L1 (chain ID `125`) LayerX uses for custody and checkpoint set
 | [`../docker/README.md`](../docker/README.md) | Local Docker node and cluster |
 | [`../contracts/README.md`](../contracts/README.md) | Foundry / Hardhat for Paxeer-native contracts |
 | [`../modules/README.md`](../modules/README.md) | Chain modules under `modules/` |
-| [`../hpx/README.md`](../hpx/README.md) | `paxd` distribution and peer registry tooling |
+| [`../tools/hpx/README.md`](../tools/hpx/README.md) | `paxd` distribution and peer registry tooling |
 
 LayerX settlement contracts (custody, checkpoints, bonds, exits) are documented with the protocol at the repository root (`contracts/`, `spec/layerx-protocol/`). They are not this subtree's `contracts/` directory.
 

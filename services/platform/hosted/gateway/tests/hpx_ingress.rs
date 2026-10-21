@@ -132,7 +132,7 @@ fn exact_hpx_routes_preserve_the_existing_binding_and_authentication() {
     }
     assert!(unified_service_route("GET", "/hpx/api/register").is_none());
     assert!(unified_service_route("POST", "/hpx/api/myip").is_none());
-    let caller = include_str!("../../../../../hpx/hpx");
+    let caller = include_str!("../../../../../tools/hpx/hpx");
     assert!(caller.contains("hpx_api_request GET /api/myip 6"));
     assert!(caller.contains("hpx_api_request POST /api/register 12"));
     assert!(caller.contains("base=\"${base}/hpx\""));

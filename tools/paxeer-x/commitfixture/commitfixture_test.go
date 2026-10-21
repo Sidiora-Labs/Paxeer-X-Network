@@ -24,7 +24,7 @@ const (
 	round          = int32(0)
 	validatorCount = 4
 	votingPower    = int64(10)
-	fixturePath    = "../../../explorer/backend/apps/explorer/test/support/fixture/paxeer_x/comet_commit.json"
+	fixturePath    = "../../../services/explorer/backend/apps/explorer/test/support/fixture/paxeer_x/comet_commit.json"
 )
 
 type entry struct {
