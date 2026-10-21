@@ -28,7 +28,7 @@ set -uo pipefail
 
 # ── Paths / binary ────────────────────────────────────────────────────────────
 readonly SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly ENV_FILE="${HPX_ENV_FILE:-${SELF_DIR}/../.env}"
+readonly ENV_FILE="${HPX_ENV_FILE:-${SELF_DIR}/../../.env}"
 readonly PAXD="${PAXD:-/usr/local/bin/paxd}"
 readonly WORKDIR="${HPX_WORKDIR:-${SELF_DIR}/.fleet}"
 readonly KDIR="${HPX_KEYRING_DIR:-${WORKDIR}/keyring}"

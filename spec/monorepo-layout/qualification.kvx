@@ -133,3 +133,10 @@ command = "git grep -n -E '\"platform\"|\\x27agent\\x27|\"agent\"|\"interop\"' -
 exit_code = 0
 log_path = "fleet/logs/layout-4.5.log"
 observed_and_assumption = "Segment-joined paths left by tasks 4.1, 4.2 and 4.4 still name agent, interop and platform/integrations in tests/agent/sdk/python/test_web_search.py, test_x402.py, tools/jev/checks/deps.py, tests/daemon/custody_chain.py, tests/bridge/paxeer_x_multiasset_credit.py, program-http-producer.py, human_native_custody.py and native_send_purpose.py; task 4.5 rewrote only their platform segments and leaves the rest for the wave 4 check."
+
+[finding.6.6-hpx-origin-502]
+revision = "019bfdcfd with the task 6.6 changes applied"
+command = "(cd tools/hpx/registry && go build ./... && go test ./...) && make hpx-public-check"
+exit_code = 2
+log_path = "fleet/logs/layout-6.6.log"
+observed_and_assumption = "The registry build and tests pass from tools/hpx/registry, and make hpx-public-check fails because https://node.hyperpaxeer.com/healthz answers 502; the target reads only the live public origin and no tree path, so the move cannot cause or repair it and task 6.6 stays open until the origin answers."

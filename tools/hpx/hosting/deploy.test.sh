@@ -5,7 +5,7 @@ set -euo pipefail
 # preflight must accept the committed logo and stop only at the missing release,
 # before any host change. Also checks every logo path the installer reads exists.
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "$here/../.." && pwd)"
+root="$(cd "$here/../../.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "${work:?}"' EXIT
 

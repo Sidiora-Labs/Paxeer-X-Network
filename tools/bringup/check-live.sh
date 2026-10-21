@@ -78,7 +78,7 @@ ca        reads the internal CA under LAYERX_CA_DIR on this host and the
 
 hpx       reads the hpx registry at CHECK_LIVE_HPX_ORIGIN, by default
           https://node.hyperpaxeer.com, and at CHECK_LIVE_HPX_APP_ORIGIN, by
-          default https://<app>.fly.dev for the app of hpx/hosting/fly.toml,
+          default https://<app>.fly.dev for the app of tools/hpx/hosting/fly.toml,
           and prints one line per check; the app's lines carry the app- prefix:
   healthz    GET <origin>/healthz answers 200 with ok true, chain_id
              hyperpax_125-1 and a forty-hex source_revision
@@ -89,7 +89,7 @@ hpx       reads the hpx registry at CHECK_LIVE_HPX_ORIGIN, by default
   api-nodes  GET <origin>/api/nodes answers 200 with chain_id hyperpax_125-1
              and a nodes list whose length is count
   landing    GET <origin>/ answers 200 with the landing page of
-             hpx/hosting/index.html
+             tools/hpx/hosting/index.html
   served-by  the public origin's /healthz carries the Fly edge's
              fly-request-id header and equals the app's /healthz, so the name
              is served by the app and not by the registry on the edge host;
@@ -846,7 +846,7 @@ check_ca() {
 }
 
 # check_hpx: reads the hpx registry at its public origin and at the fly.dev
-# name of the Fly app of hpx/hosting/fly.toml: at both, /healthz with the chain
+# name of the Fly app of tools/hpx/hosting/fly.toml: at both, /healthz with the chain
 # id and the source revision, checksums.txt verified against every served
 # artifact it lists and /api/nodes answering; the landing page at the public
 # origin; and the public origin served by the app: its /healthz carries the
@@ -857,7 +857,7 @@ check_hpx() {
 	local entry='^([0-9a-f]{64})  ([A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*)$'
 	local app app_origin base prefix code name_health app_health fly_id
 	origin="${origin%/}"
-	app="$(fly_app hpx/hosting/fly.toml)" || app=absent
+	app="$(fly_app tools/hpx/hosting/fly.toml)" || app=absent
 	app_origin="${CHECK_LIVE_HPX_APP_ORIGIN:-https://$app.fly.dev}"
 	app_origin="${app_origin%/}"
 

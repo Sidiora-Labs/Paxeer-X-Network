@@ -3107,7 +3107,7 @@ PAXEER_LOCKED_RUST_MANIFESTS := \
 	tests/fixtures/example/cosmwasm/parallelization/wasm/Cargo.toml \
 	wasm-runtime/libwasmvm/Cargo.toml
 
-PAXEER_NESTED_GO_DIRS := hpx/registry \
+PAXEER_NESTED_GO_DIRS := tools/hpx/registry \
 	sdk/cosmovisor sdk/ics23
 PAXEER_TOOLS_DIR := $(CURDIR)/build/paxeer-tools
 PAXEER_GOLANGCI_LINT := $(PAXEER_TOOLS_DIR)/golangci-lint

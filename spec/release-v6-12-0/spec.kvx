@@ -1,7 +1,7 @@
 [meta]
 name = "Paxeer X Network release v6.12.0: launchpad parity, perpetuals and spot precompiles, perps data services"
 slug = "release-v6-12-0"
-version = "1.3.0"
+version = "1.4.0"
 status = "draft"
 goal = "One coordinated upgrade of the Paxeer X Network to v6.12.0 in which the launchpad precompile 0x1017 presents the exact interface of the deployed launchpad contracts and absorbs their pools, the perpetuals and spot venue runs natively in the chain as precompiles with a validator-run price sidecar, the Hyperpax application trades against those precompiles, and a dedicated indexer, gateway and portal serve the venue's data; the upgrade is applied by every validator and full node at one halt height and released as the first tagged build."
 scope = "The node binary paxd (Cosmos SDK, EVM, precompiles, upgrade handler), the launchpad, perpetuals and spot precompiles and the pricefeed precompile at 0x1020 with their keepers (modules/launchpad, modules/perps, modules/spot, modules/pricefeed), the price sidecar, the perps data services in this repository, the launchpad backend bindings in github.com/Sidiora-Labs/Launch-x, the Hyperpax application in github.com/paxlabs-inc/Hyperpax, the release pipeline and the fleet upgrade runbook."
@@ -28149,7 +28149,7 @@ ac_4 = "tools/release/tests/completion-check.sh runs run-all.sh once, requires e
 
 [req.8014]
 title = "Retire the v6.11 name; its SID work ships inside v6.12.0"
-ac_1 = "No release, governance or bring-up file names the plan v6.11: tools/paxeer-x/gov/templates/01-software-upgrade.json:2,5,6, tools/paxeer-x/gov/README.md:3,19, tools/paxeer-x/gov/test.sh:19,45, tools/paxeer-x/sid-snapshot/README.md:3, tools/bringup/sync-fleet.test.sh:639-727, hpx/publish.sh:20, RELEASE.md:7 and the comments of contracts/src/SidioraNativeERC20.sol:31,70 name v6.12.0."
+ac_1 = "No release, governance or bring-up file names the plan v6.11: tools/paxeer-x/gov/templates/01-software-upgrade.json:2,5,6, tools/paxeer-x/gov/README.md:3,19, tools/paxeer-x/gov/test.sh:19,45, tools/paxeer-x/sid-snapshot/README.md:3, tools/bringup/sync-fleet.test.sh:639-727, tools/hpx/publish.sh:20, RELEASE.md:7 and the comments of contracts/src/SidioraNativeERC20.sol:31,70 name v6.12.0."
 ac_2 = "The SID holder migration and the SID mint-authority move of the v6.11 work run as hooks of the v6.12.0 handler (baseline task 1.0.3, req 1.4 ac_8), and tools/paxeer-x/sid-snapshot/README.md and RELEASE.md describe them as v6.12.0 work (RELEASE.md:7 names modules/layerxcustody/types/governance_activation.go), so no release ships them separately."
 ac_3 = "tools/paxeer-x/gov/test.sh asserts that the rendered proposal names v6.12.0 as .name of the software-upgrade plan and fails on v6.11."
 
@@ -28253,10 +28253,10 @@ do_5 = "Change the build-essential steps of .github/workflows/paxeer-release-che
 [capability.8.1.5]
 title = "Retirement of the v6.11 name"
 reqs = ["8014.1", "8014.2", "8014.3"]
-touches = ["tools/paxeer-x/gov/templates/01-software-upgrade.json", "tools/paxeer-x/gov/README.md", "tools/paxeer-x/gov/test.sh", "tools/paxeer-x/sid-snapshot/README.md", "tools/bringup/sync-fleet.test.sh", "hpx/publish.sh", "RELEASE.md", "contracts/src/SidioraNativeERC20.sol"]
+touches = ["tools/paxeer-x/gov/templates/01-software-upgrade.json", "tools/paxeer-x/gov/README.md", "tools/paxeer-x/gov/test.sh", "tools/paxeer-x/sid-snapshot/README.md", "tools/bringup/sync-fleet.test.sh", "tools/hpx/publish.sh", "RELEASE.md", "contracts/src/SidioraNativeERC20.sol"]
 tests = ["tools/paxeer-x/gov/test.sh"]
 verification_contract = "bash tools/paxeer-x/gov/test.sh"
-do_1 = "Rename the plan v6.11 to v6.12.0 in tools/paxeer-x/gov/templates/01-software-upgrade.json:2,5,6, tools/paxeer-x/gov/README.md:3,19, tools/paxeer-x/sid-snapshot/README.md:3, hpx/publish.sh:20, RELEASE.md:7 and the comments of contracts/src/SidioraNativeERC20.sol:31,70."
+do_1 = "Rename the plan v6.11 to v6.12.0 in tools/paxeer-x/gov/templates/01-software-upgrade.json:2,5,6, tools/paxeer-x/gov/README.md:3,19, tools/paxeer-x/sid-snapshot/README.md:3, tools/hpx/publish.sh:20, RELEASE.md:7 and the comments of contracts/src/SidioraNativeERC20.sol:31,70."
 do_2 = "Rename the plan in the fixtures and assertions of tools/bringup/sync-fleet.test.sh:639,647,666,667,673,677,678,680,715,727."
 do_3 = "Make tools/paxeer-x/gov/test.sh:19,45 assert that the rendered proposal's plan .name is v6.12.0."
 

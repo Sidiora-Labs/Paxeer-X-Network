@@ -31,7 +31,7 @@ on:
       - 'docker/**'
       - 'engine/**'
       - 'tests/fixtures/example/**'
-      - 'hpx/**'
+      - 'tools/hpx/**'
       - 'tests/integration/**'
       - 'interchain/**'
       - 'modules/**'

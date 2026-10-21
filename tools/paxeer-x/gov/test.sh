@@ -36,7 +36,7 @@ sid_docs_name_v6120
 for file in tools/paxeer-x/gov/templates/01-software-upgrade.json \
   tools/paxeer-x/gov/README.md tools/paxeer-x/gov/test.sh \
   tools/paxeer-x/sid-snapshot/README.md tools/bringup/sync-fleet.test.sh \
-  hpx/publish.sh RELEASE.md contracts/src/SidioraNativeERC20.sol; do
+  tools/hpx/publish.sh RELEASE.md contracts/src/SidioraNativeERC20.sol; do
   grep -Fq 'v6.12.0' "$ROOT/$file" || fail "release name missing in $file"
   if grep -Eq 'v6[.]11\b' "$ROOT/$file"; then
     fail "retired release name in $file"

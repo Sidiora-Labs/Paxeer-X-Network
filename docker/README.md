@@ -1,6 +1,6 @@
 # Docker
 
-This directory holds the Docker build contexts and compose files of the repository. Every subdirectory with a `Dockerfile` is the build context of one image: `localnode/` and `rpcnode/` for the local cluster below, `hpx-registry/` for the node registry described in [`hpx/README.md`](../hpx/README.md), and the other directories for the remaining node and service images (kernel, explorer, platform, wallet, interop, CI runner and others). `monitornode/` and `docker_compose_monitoring/` hold the Prometheus and Grafana setup. Images are built from the repository root.
+This directory holds the Docker build contexts and compose files of the repository. Every subdirectory with a `Dockerfile` is the build context of one image: `localnode/` and `rpcnode/` for the local cluster below, `hpx-registry/` for the node registry described in [`tools/hpx/README.md`](../tools/hpx/README.md), and the other directories for the remaining node and service images (kernel, explorer, platform, wallet, interop, CI runner and others). `monitornode/` and `docker_compose_monitoring/` hold the Prometheus and Grafana setup. Images are built from the repository root.
 
 The rest of this page covers the local `paxd` cluster defined by [`docker-compose.yml`](docker-compose.yml).
 

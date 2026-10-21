@@ -2,7 +2,7 @@ build/
 **/node_modules/
 **/target/
 .github
-hpx/hosting/PaxeerLogo.png
+tools/hpx/hosting/PaxeerLogo.png
 docker
 **/*.md
 **/README*

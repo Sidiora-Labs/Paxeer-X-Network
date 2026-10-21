@@ -19,7 +19,7 @@ LayerX is under active development and release qualification. The public network
 
 `402LXP` remains the only LayerX balance writer. There is no LayerX token. Paxeer is the custody domain; Ethereum and Solana mirrors in `services/interop/` are archives, not settlement venues.
 
-The Cosmos-style chain identifier used by node distribution is `hyperpax_125-1` (EVM chain ID `125`). See [`hpx/`](../hpx/).
+The Cosmos-style chain identifier used by node distribution is `hyperpax_125-1` (EVM chain ID `125`). See [`tools/hpx/`](../tools/hpx/).
 
 ## Layout
 
@@ -32,7 +32,7 @@ The Cosmos-style chain identifier used by node distribution is `hyperpax_125-1` 
 | `contracts/` | Paxeer-native Solidity (WPAX, pointers, precompile interfaces) - not the LayerX settlement contracts |
 | `consensus/`, `sdk/`, `storage/` | Consensus, Cosmos SDK fork, storage engines |
 | `docker/` | Local single-node and cluster compose |
-| `hpx/` | Native `paxd` distribution and peer registry tooling |
+| `tools/hpx/` | Native `paxd` distribution and peer registry tooling |
 | `docs/` | Subtree documentation (OpenAPI/Swagger, RPC notes) |
 
 Go module: `github.com/Sidiora-Labs/Paxeer-X-Network`.

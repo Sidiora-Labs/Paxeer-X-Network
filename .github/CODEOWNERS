@@ -17,7 +17,7 @@ contracts/ @Sidiora-Labs/core
 /docker/ @Sidiora-Labs/core
 /engine/ @Sidiora-Labs/core
 /tests/fixtures/example/ @Sidiora-Labs/core
-/hpx/ @Sidiora-Labs/core
+/tools/hpx/ @Sidiora-Labs/core
 /tests/integration/ @Sidiora-Labs/core
 /interchain/ @Sidiora-Labs/core
 /modules/ @Sidiora-Labs/core

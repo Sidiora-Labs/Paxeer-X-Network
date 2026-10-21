@@ -37,29 +37,29 @@ if grep -rnE '/root/(Layerx-protocol|project-Quorum|lx-)|project-Quorum|paxeer-n
 	hpx .github/workflows/paxeer-hpx-registry.yml docker/hpx-registry; then
 	fail "HPX publication references a private checkout or obsolete origin"
 fi
-for file in hpx/get-hpx.sh hpx/hpx hpx/stake-fleet.sh hpx/fleet-keygen.sh; do
+for file in tools/hpx/get-hpx.sh tools/hpx/hpx tools/hpx/stake-fleet.sh tools/hpx/fleet-keygen.sh; do
 	grep -qF 'MIRROR="${HPX_MIRROR:-https://node.hyperpaxeer.com}"' "$file" || fail "$file default mirror is not node.hyperpaxeer.com"
 done
-grep -qF 'HPX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' hpx/publish.sh || fail "publish.sh does not derive its source root from hpx"
-grep -q 'HPX_RUNTIME_CONFIG_DIR' hpx/publish.sh && grep -q 'HPX_ARTIFACTS_ROOT' hpx/publish.sh || fail "publish.sh lacks runtime-config or artifact-root overrides"
+grep -qF 'HPX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' tools/hpx/publish.sh || fail "publish.sh does not derive its source root from hpx"
+grep -q 'HPX_RUNTIME_CONFIG_DIR' tools/hpx/publish.sh && grep -q 'HPX_ARTIFACTS_ROOT' tools/hpx/publish.sh || fail "publish.sh lacks runtime-config or artifact-root overrides"
 pass "publication sources derive from the monorepo with explicit overrides"
 
 # ac_4 / ac_6: the registry's real handlers, persistence, address boundary and static surface.
-(cd hpx/registry && go vet ./... && go test -count=1 -v ./...) > "$work/registry-test.log" 2>&1 || fail "registry tests failed"
+(cd tools/hpx/registry && go vet ./... && go test -count=1 -v ./...) > "$work/registry-test.log" 2>&1 || fail "registry tests failed"
 if grep -qE -- '--- (FAIL|SKIP)' "$work/registry-test.log"; then fail "registry tests failed or skipped"; fi
 registry_tests=$(grep -c -- '--- PASS' "$work/registry-test.log")
 [ "$registry_tests" -ge 7 ] || fail "registry test corpus incomplete"
 tests=$((tests + registry_tests))
 echo "ok registry go tests $registry_tests"
-(cd hpx/registry && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.sourceRevision=$revision" -o "$work/hpx-registry" .) \
+(cd tools/hpx/registry && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.sourceRevision=$revision" -o "$work/hpx-registry" .) \
 	> "$work/registry-build.log" 2>&1 || fail "revision-bound registry build failed"
-pass "registry executable built from hpx/registry at $revision"
-grep -qxF 'User=hpx-registry' hpx/hosting/deploy.sh && grep -qxF 'HPX_ADDR=127.0.0.1:8099' hpx/hosting/deploy.sh &&
-	grep -qxF 'ReadWritePaths=${DATA_DIR}' hpx/hosting/deploy.sh && grep -qxF 'Restart=on-failure' hpx/hosting/deploy.sh &&
-	grep -qF 'sha256sum -c "$asset.sha256"' hpx/hosting/deploy.sh || fail "production service is not unprivileged, loopback, durable and checksum-bound"
-grep -qF 'ssl_certificate /etc/letsencrypt/live/node.hyperpaxeer.com/fullchain.pem;' hpx/hosting/nginx.conf &&
-	grep -qF 'limit_req zone=hpx_register' hpx/hosting/nginx.conf && grep -qF 'proxy_set_header X-Real-IP $remote_addr;' hpx/hosting/nginx.conf &&
-	! grep -q 'autoindex on' hpx/hosting/nginx.conf || fail "Nginx HTTPS boundary incomplete"
+pass "registry executable built from tools/hpx/registry at $revision"
+grep -qxF 'User=hpx-registry' tools/hpx/hosting/deploy.sh && grep -qxF 'HPX_ADDR=127.0.0.1:8099' tools/hpx/hosting/deploy.sh &&
+	grep -qxF 'ReadWritePaths=${DATA_DIR}' tools/hpx/hosting/deploy.sh && grep -qxF 'Restart=on-failure' tools/hpx/hosting/deploy.sh &&
+	grep -qF 'sha256sum -c "$asset.sha256"' tools/hpx/hosting/deploy.sh || fail "production service is not unprivileged, loopback, durable and checksum-bound"
+grep -qF 'ssl_certificate /etc/letsencrypt/live/node.hyperpaxeer.com/fullchain.pem;' tools/hpx/hosting/nginx.conf &&
+	grep -qF 'limit_req zone=hpx_register' tools/hpx/hosting/nginx.conf && grep -qF 'proxy_set_header X-Real-IP $remote_addr;' tools/hpx/hosting/nginx.conf &&
+	! grep -q 'autoindex on' tools/hpx/hosting/nginx.conf || fail "Nginx HTTPS boundary incomplete"
 grep -qF 'main.sourceRevision=${SOURCE_REVISION}' .github/workflows/paxeer-hpx-registry.yml &&
 	grep -qF 'hpx-registry-${{ github.sha }}' .github/workflows/paxeer-hpx-registry.yml || fail "registry automation is not revision-bound"
 pass "loopback systemd service, Nginx HTTPS proxy and revision-bound automation declared"
@@ -247,7 +247,7 @@ done
 pass "public origin serves manifest-bound artifacts and APIs and rejects malformed registration"
 live=$(curl -fsS "$origin/healthz" | jq -er '.source_revision')
 [[ "$live" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "$live^{commit}" 2> /dev/null || fail "deployed registry revision $live is not a known source revision"
-git diff --quiet "$live" HEAD -- hpx/registry || fail "deployed registry revision $live does not carry this candidate's hpx/registry"
+git diff --quiet "$live" HEAD -- tools/hpx/registry || fail "deployed registry revision $live does not carry this candidate's tools/hpx/registry"
 pass "deployed registry is the revision-bound build of this candidate"
 
 # ac_7: a clean host installs through the public HTTPS command and its node reaches the declared chain.

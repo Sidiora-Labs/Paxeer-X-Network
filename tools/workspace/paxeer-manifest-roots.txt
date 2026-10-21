@@ -3,7 +3,7 @@ foundry|foundry.paxeer.toml|build_test_lint
 foundry|tools/benchmark/loadtest/contracts/evm/foundry.toml|build_test_lint
 npm|tools/benchmark/loadtest/contracts/evm/lib/openzeppelin-contracts/contracts/package.json|vendored_source_checksum_bound
 go|go.mod|build_test_lint
-go|hpx/registry/go.mod|build_test_lint
+go|tools/hpx/registry/go.mod|build_test_lint
 go|sdk/cosmovisor/go.mod|build_test_lint
 go|sdk/ics23/go.mod|build_test_lint
 npm|contracts/package.json|build_static_live_test_blocked

@@ -12,7 +12,7 @@ kill_signal = "SIGTERM"
 kill_timeout = "30s"
 
 [build]
-  dockerfile = "../../docker/hpx-registry/Dockerfile"
+  dockerfile = "../../../docker/hpx-registry/Dockerfile"
 
 [deploy]
   strategy = "immediate"

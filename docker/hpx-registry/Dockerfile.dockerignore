@@ -1,9 +1,9 @@
 *
-!hpx/registry/go.mod
-!hpx/registry/main.go
-!hpx/hosting/fonts.sha256
-!hpx/hosting/index.html
-!hpx/hosting/nginx-registry.conf.template
+!tools/hpx/registry/go.mod
+!tools/hpx/registry/main.go
+!tools/hpx/hosting/fonts.sha256
+!tools/hpx/hosting/index.html
+!tools/hpx/hosting/nginx-registry.conf.template
 !docker/search-front/real-ip.sh
-!hpx/hosting/PaxeerLogo.png
+!tools/hpx/hosting/PaxeerLogo.png
 !docker/hpx-registry/entrypoint.sh

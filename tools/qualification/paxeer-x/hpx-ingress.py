@@ -15,7 +15,7 @@ DEFAULT = Path('/root/lx-ops/paxeer-x-integration-2026-10-03/task-0.16-hpx-gate'
 SOURCES = ('services/platform/hosted/gateway/src/lib.rs', 'services/platform/hosted/gateway/src/main.rs',
            'services/platform/hosted/gateway/src/routes.rs', 'services/platform/hosted/gateway/src/http.rs',
            'tools/paxeer-x/route-catalogue.json', 'services/platform/hosted/gateway/tests/hpx_ingress.rs',
-           'hpx/registry/main.go', 'hpx/registry/go.mod', 'hpx/hpx', 'tools/qualification/paxeer-x/hpx-ingress.py')
+           'tools/hpx/registry/main.go', 'tools/hpx/registry/go.mod', 'tools/hpx/hpx', 'tools/qualification/paxeer-x/hpx-ingress.py')
 FIXTURE = r'''
 package main
 
@@ -150,14 +150,14 @@ def main():
             require(all((ROOT/path).stat().st_mtime_ns <= completed_at for path in SOURCES
                         if path.endswith('.rs') or path.endswith('.json')),
                     'gateway source changed since retained build')
-            require(all(digest(source/name) == digest(ROOT/'hpx/registry'/name) for name in ('main.go','go.mod')),
+            require(all(digest(source/name) == digest(ROOT/'tools/hpx/registry'/name) for name in ('main.go','go.mod')),
                     'HPX source changed since retained copy')
         else:
             source.mkdir(mode=0o700)
             for name in ('main.go','go.mod'):
-                shutil.copyfile(ROOT / 'hpx/registry' / name, source / name)
+                shutil.copyfile(ROOT / 'tools/hpx/registry' / name, source / name)
             (source / 'hpx_ingress_test.go').write_text(FIXTURE)
-            command(['bash','-n',str(ROOT/'hpx/hpx')],ROOT,directory/'hpx-cli-build.log',env,10)
+            command(['bash','-n',str(ROOT/'tools/hpx/hpx')],ROOT,directory/'hpx-cli-build.log',env,10)
             command(['/root/.cargo/bin/cargo','test','--locked','--manifest-path','services/platform/Cargo.toml',
                      '-p','layerx-platform-gateway','--test','hpx_ingress','--no-run'],
                     ROOT,directory/'gateway-build.log',env,600)
