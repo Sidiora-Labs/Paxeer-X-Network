@@ -46,12 +46,6 @@ This repository is the Paxeer X Network monorepo: the Paxeer X chain node (`paxd
 | `contracts/launchpad` | Launchpad contracts |
 | `deploy/` | Deployment descriptors, including `deploy/launchpad` |
 
-## Trees that move in this layout release
-
-| Current path | Destination |
-| --- | --- |
-| `human/wallet` | `services/wallet` |
-
 ## Trees that move under core in a later release
 
 | Current path | Destination |

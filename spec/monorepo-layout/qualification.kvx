@@ -161,3 +161,10 @@ command = "scripts/ci/layout-check.sh bridge"
 exit_code = 1
 log_path = "fleet/logs/layout-6.5.log"
 observed_and_assumption = "Every tracked file left bridge and no build, CI, deploy or tool file names an old bridge path; the only hits are docker/bridge-relayer/entrypoint.sh lines 61 and 62, which name the signer key handle bridge/attestor that services/interop/deploy/bridge-relayer/signer-keys.json declares, not a directory, so the handle and the check are both left as written for the wave 6 check to rule on."
+
+[finding.public-text-private-paths]
+revision = "e620b6354 with the README, MONOREPO, qualification and sw.js.map fixes applied"
+command = "git grep -n -e <private lane root> -e <private ops directory> -- . ':!GOTCHA.kvx'"
+exit_code = 1
+log_path = "fleet/logs/FX-DOC-2-verify-r1.log"
+observed_and_assumption = "The README and MONOREPO rows, the release qualification log references and the perps service worker source map no longer name private paths, but 52 lines in 46 tracked files still name the private operations directory: default evidence roots in tools/qualification/paxeer-x, tools/paxeer-x/gates, tests/bridge and tools/rollout (whose ledger and its test enforce that root), the Dockerfile.dockerignore exclusion of it and the specgen validate test that forbids it in spec text; the last two are guards and the defaults are where those gates read and write evidence, so all are left as written for a decision on a neutral evidence root."

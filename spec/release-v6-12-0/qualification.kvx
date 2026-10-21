@@ -2689,7 +2689,7 @@ assumption = "Pre-existing environment dependence of those two tests, untouched 
 revision = "2d7d693f6"
 command = "paxd tx evm call-contract <precompile> <payload> --evm-rpc=<sequencer-served node>"
 exit = 2
-log = "UPG-S1 bring-up log"
+log = "release bring-up log"
 observed = "getNonce in modules/evm/client/cli/tx.go type-asserts resObj[result] as a string unchecked, so when the node refuses the pending nonce query with a JSON-RPC error the command panics instead of returning the error; passing --nonce avoids the query."
 assumption = "Repo defect outside the sidecar ticker change; the CLI should return the RPC error, left unfixed here."
 
@@ -2697,6 +2697,6 @@ assumption = "Repo defect outside the sidecar ticker change; the CLI should retu
 revision = "2d7d693f6"
 command = "python3 tools/release/feed_key.py payload <pubkey> | paxd tx evm call-contract <precompile> -"
 exit = 1
-log = "UPG-S1 bring-up log"
+log = "release bring-up log"
 observed = "feed_key.py payload prints the calldata with a 0x prefix while call-contract decodes its payload argument with hex.DecodeString, which refuses the prefix, so the RELEASE.md step that feeds one into the other fails unless the prefix is stripped."
 assumption = "Repo interface mismatch outside the sidecar ticker change, left unfixed here."
