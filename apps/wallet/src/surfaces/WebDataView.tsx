@@ -40,6 +40,9 @@ export function DrawCaps({ caps }: Pick<WebDataViewProps, 'caps'>) {
                 : 'reason' in caps ? <p role="status">{caps.reason}</p>
                 : <>
                     <p data-role="caps-observation">{caps.observation.verification} · sequence {caps.observation.sequence} · batch {caps.observation.batch}</p>
+                    <p data-role="caps-height">Observed at height {caps.observation.observed_head}</p>
+                    <p data-role="caps-principal" className="break-all">Principal {caps.context.principal}</p>
+                    <p data-role="caps-expiry">Earliest grant expiry {caps.context.expires_at}</p>
                     <p data-role="caps-account" className="break-all">Account {caps.account_id}</p>
                     {caps.state === 'empty' ? <p data-role="caps-empty">No budgets or grants at this verified observation.</p> : null}
                     {caps.budgets.map((budget) => <div key={budget.id} data-budget={budget.id} className="space-y-1 rounded-xl bg-[var(--color-surface-card)] p-2">

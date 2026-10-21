@@ -6,12 +6,18 @@ import {
     PAXEER_CHAIN_ID, gasStation, GasStationError,
     type GasStationModule, type SponsoredBatch, type SponsoredConsent,
     webData,
+    ethCall,
+    ethQuantity,
+    LEDGER_PRECOMPILE,
     type WalletCapsState,
+    type WalletGrantCap,
     feeToken,
     type FeeChoiceId,
     type ModuleProvider,
     type ModuleTransaction,
 } from '@paxeer/wallet';
+import { ADDR_PRECOMPILE_ADDRESS } from '@sidiora/layerx-sdk/browser';
+import { decodeFunctionResult, encodeFunctionData, getAddress, parseAbi, toEventSelector, type Hex } from 'viem';
 import { useWallet } from '@/wallet/WalletProvider';
 
 export interface SurfaceLog {
@@ -285,12 +291,15 @@ export function useFeeSelection(provider: ModuleProvider | null, address: string
         try{
             const client=station();const outstanding=await client.pending(address);
             if(outstanding){await recover();return;}
+            if(!provider)throw new GasStationError({code:'unavailable',field:'provider'});
+            const [didPublicKey,did]=await layerXDid(provider,address);
+            if(didPublicKey===ZERO_WORD)throw new GasStationError({code:'refused',field:'did'});
             const nonce=await client.batchNonce(address);
-            const answer=await client.requestQuote({account:address,nonce,calls:[call],maxTokenAmount:maximum,gasCost},{signal:abort.signal});
+            const answer=await client.requestQuote({account:address,did,nonce,calls:[call],maxTokenAmount:maximum,gasCost},{signal:abort.signal});
             const batch:SponsoredBatch=Object.freeze({chainId:client.config.chainId,account:address.toLowerCase(),nonce,calls:Object.freeze([call]),quote:Object.freeze(answer.quote)});
             if(ticket===generation.current)publish({phase:'quoted',batch,relayerSignature:answer.relayerSignature,digest:client.digest(batch)});
         }catch(cause){if(ticket===generation.current)publish({phase:'refused',reason:sponsoredReason(cause)});}
-    },[address,station,recover]);
+    },[address,provider,station,recover]);
     const approve=useCallback(()=>{
         const current=sponsoredRef.current;
         if(current.phase!=='quoted'||!current.batch||current.batch.quote.deadline<=BigInt(Math.floor(Date.now()/1000))){publish({...current,phase:'refused',reason:'expired_quote:deadline'});return;}
@@ -328,6 +337,91 @@ export function useFeeSelection(provider: ModuleProvider | null, address: string
 }
 
 
+const GRANT_LOOKUP_ABI = parseAbi([
+    'function getLayerXDid(address addr) view returns (bytes32 didPublicKey, string did)',
+    'function accountId(bytes32 didPublicKey, bytes32 assetId) view returns (bytes32)',
+]);
+const PAYER_GRANT_ISSUED = toEventSelector('PayerGrantIssued(bytes32)');
+const ZERO_WORD: Hex = `0x${'0'.repeat(64)}`;
+const REFUSED_CAPS: WalletCapsState = { state: 'refused', reason: 'The account or its evidence was refused.' };
+
+async function view(provider: ModuleProvider, to: string, data: Hex): Promise<Hex> {
+    return (await ethCall(provider, to, data)) as Hex;
+}
+
+async function layerXDid(provider: ModuleProvider, address: string): Promise<readonly [Hex, string]> {
+    return decodeFunctionResult({
+        abi: GRANT_LOOKUP_ABI,
+        functionName: 'getLayerXDid',
+        data: await view(provider, ADDR_PRECOMPILE_ADDRESS, encodeFunctionData({ abi: GRANT_LOOKUP_ABI, functionName: 'getLayerXDid', args: [getAddress(address)] })),
+    });
+}
+
+// ponytail: scans every PayerGrantIssued log for the holder's grant ids; read them from the indexer when grant counts grow.
+async function issuedGrantIds(provider: ModuleProvider, toBlock: string): Promise<string[]> {
+    const logs = await provider.request({
+        method: 'eth_getLogs',
+        params: [{ address: LEDGER_PRECOMPILE, topics: [PAYER_GRANT_ISSUED], fromBlock: '0x0', toBlock }],
+    });
+    if (!Array.isArray(logs)) throw new TypeError('invalid grant logs');
+    return [...new Set(logs.map((log) => {
+        if (!isLog(log)) throw new TypeError('invalid grant log');
+        const [topic, grantId, ...rest] = log.topics;
+        if (log.address.toLowerCase() !== LEDGER_PRECOMPILE || topic?.toLowerCase() !== PAYER_GRANT_ISSUED || grantId === undefined || rest.length !== 0) {
+            throw new TypeError('invalid grant log');
+        }
+        return grantId.toLowerCase();
+    }))];
+}
+
+async function readGrantCaps(provider: ModuleProvider, address: string): Promise<WalletCapsState> {
+    const chainId = await ethQuantity(provider, 'eth_chainId');
+    const head = await provider.request({ method: 'eth_getBlockByNumber', params: ['latest', false] });
+    if (!isRecord(head) || typeof head.number !== 'string' || !/^0x[0-9a-fA-F]+$/u.test(head.number)
+        || typeof head.stateRoot !== 'string' || !/^0x[0-9a-fA-F]{64}$/u.test(head.stateRoot)) {
+        throw new TypeError('invalid block header');
+    }
+    const [didPublicKey, did] = await layerXDid(provider, address);
+    if (didPublicKey === ZERO_WORD) return REFUSED_CAPS;
+    const account = decodeFunctionResult({
+        abi: GRANT_LOOKUP_ABI,
+        functionName: 'accountId',
+        data: await view(provider, LEDGER_PRECOMPILE, encodeFunctionData({ abi: GRANT_LOOKUP_ABI, functionName: 'accountId', args: [didPublicKey, ZERO_WORD] })),
+    }).toLowerCase();
+    const { grants } = await webData(provider).caps(await issuedGrantIds(provider, head.number));
+    const owned = grants.filter((grant) => grant.from === account);
+    if (owned.length === 0) return REFUSED_CAPS;
+    const expires = owned.reduce((earliest, grant) => (grant.expiration < earliest ? grant.expiration : earliest), owned[0].expiration);
+    const height = BigInt(head.number).toString();
+    return {
+        state: 'ready',
+        did,
+        account_id: account.slice(2),
+        network_id: Number(chainId),
+        context: { principal: did, session_id: '', address: address.toLowerCase(), chain_id: Number(chainId), expires_at: expires.toString() },
+        observation: { verification: 'checkpoint_finalised', state_root: head.stateRoot.slice(2).toLowerCase(), sequence: height, observed_head: height, batch: height },
+        budgets: [],
+        grants: owned.map((grant): WalletGrantCap => ({
+            id: grant.grantId.slice(2),
+            owner: grant.from.slice(2),
+            recipient: grant.recipient.slice(2),
+            asset: grant.asset.slice(2),
+            per_draw_maximum: grant.perDrawMaximum.toString(),
+            allowance: grant.allowance.toString(),
+            drawn_total: grant.drawnTotal.toString(),
+            drawn_this_period: grant.drawnThisPeriod.toString(),
+            recurring: grant.recurring,
+            window_length: grant.windowLength.toString(),
+            window_start: grant.windowStart.toString(),
+            expiration: grant.expiration.toString(),
+            revocation_sequence: grant.revocationSequence.toString(),
+            revoked_at_sequence: grant.revokedAt.toString(),
+            revoked: grant.revoked,
+            invoice_settled: grant.invoiceSettled,
+        })),
+    };
+}
+
 export function useWebDataCaps(): { readonly caps: WalletCapsState; readonly refreshCaps: () => void } {
     const connection = useWallet();
     const { provider, address } = useSurfaceWallet();
@@ -348,7 +442,7 @@ export function useWebDataCaps(): { readonly caps: WalletCapsState; readonly ref
             const request = ++generation;
             loading();
             try {
-                const value = await webData(provider).caps(address);
+                const value = await readGrantCaps(provider, address);
                 if (alive && request === generation) setRetained({ key, value });
             } catch (cause) {
                 const code = isRecord(cause) && typeof cause.code === 'number' ? cause.code : null;

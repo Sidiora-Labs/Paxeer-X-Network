@@ -152,7 +152,7 @@ export class HumanClient {
     const response = await this.fetchImpl(`${this.base}${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     let payload: unknown;
     try {

@@ -145,9 +145,7 @@ export class PaxeerWallet {
       typeof config.lxActivity.storage?.getItem !== 'function' ||
       typeof config.lxActivity.storage?.setItem !== 'function'
     )) throw lxError('LX_ACTIVITY_CONFIGURATION', 'Explicit confirmation and durable storage are required');
-    this.lxActivity = config.lxActivity
-      ? { storage: config.lxActivity.storage, confirm: config.lxActivity.confirm }
-      : undefined;
+    if (config.lxActivity) this.lxActivity = { storage: config.lxActivity.storage, confirm: config.lxActivity.confirm };
     this.supabase = createClient(config.supabaseUrl, config.supabaseAnonKey, {
       auth: {
         persistSession: true,
@@ -166,7 +164,7 @@ export class PaxeerWallet {
     return this.supabase.auth
       .signInWithOtp({
         email,
-        options: redirectTo ? { emailRedirectTo: redirectTo } : undefined,
+        ...(redirectTo ? { options: { emailRedirectTo: redirectTo } } : {}),
       })
       .then((r) => ({ error: r.error }));
   }
@@ -178,7 +176,7 @@ export class PaxeerWallet {
   ): Promise<void> {
     const { error } = await this.supabase.auth.signInWithOAuth({
       provider,
-      options: redirectTo ? { redirectTo } : undefined,
+      ...(redirectTo ? { options: { redirectTo } } : {}),
     });
     if (error) throw new PaxeerWalletError(error.message, 'OAUTH_FAILED');
   }
@@ -415,7 +413,7 @@ export class PaxeerWallet {
     const response = await this.fetchImpl(`${this.apiUrl}${path}`, {
       method,
       headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       redirect: 'error',
     });
     const payload: unknown = await response.json();
@@ -549,7 +547,7 @@ export class PaxeerWallet {
     const res = await this.fetchImpl(`${this.apiUrl}${path}`, {
       method,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
 
     let payload: unknown;

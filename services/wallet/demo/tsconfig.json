@@ -16,7 +16,9 @@
     "esModuleInterop": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@paxeer/wallet": ["../../../sdk/wallet/src/index.ts"],
+      "@paxeer/wallet/react": ["../../../sdk/wallet/src/react.ts"]
     },
     "plugins": [{ "name": "next" }]
   },

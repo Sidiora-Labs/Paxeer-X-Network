@@ -810,7 +810,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1]
 title = "Move human/apps perps, wallet and web to apps"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 5
@@ -836,7 +836,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.2]
 title = "Move the wallet SDK to sdk/wallet"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 5
@@ -862,7 +862,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.3]
 title = "Move human/wallet to services/wallet"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 5

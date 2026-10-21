@@ -53,12 +53,6 @@
       "viem/*": [
         "./node_modules/viem/*"
       ],
-      "@noble/curves/*": [
-        "./node_modules/@noble/curves/*"
-      ],
-      "@noble/hashes/*": [
-        "./node_modules/@noble/hashes/*"
-      ],
       "@scure/bip39/*": [
         "./node_modules/@scure/bip39/*"
       ]

@@ -568,7 +568,7 @@ export class PaxeerProvider implements Eip1193Provider {
       res = await this.fetchImpl(`${this.gatewayUrl}${path}`, {
         method,
         headers,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     } catch (error) {
       throw new DisconnectedError('the wallet gateway is unreachable', { cause: (error as Error).message });

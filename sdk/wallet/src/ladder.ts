@@ -226,7 +226,11 @@ export async function observeTransfer(
   const { identity } = submittedTransfer(previous.identity);
   const chainId = quantity(await rpc('eth_chainId', []), 'eth_chainId');
   if (chainId !== identity.chainId) throw new Error(`connected to chain ${chainId}, transfer was submitted on chain ${identity.chainId}`);
-  const unknown = (): TransferObservation => ({ ...previous, identity, truth: 'unknown', steps: [], blockNumber: null, blockHash: undefined });
+  const unknown = (): TransferObservation => {
+    const next: TransferObservation = { ...previous, identity, truth: 'unknown', steps: [], blockNumber: null };
+    delete next.blockHash;
+    return next;
+  };
   const receipt = await rpc('eth_getTransactionReceipt', [identity.hash]);
   if (receipt !== null) {
     if (!isRecord(receipt) || hash(receipt.transactionHash, 'receipt transactionHash') !== identity.hash.toLowerCase()) {
@@ -243,7 +247,7 @@ export async function observeTransfer(
       typeof transaction === 'string' && transaction.toLowerCase() === identity.hash.toLowerCase())) {
       throw new TypeError('canonical block does not contain the submitted transaction');
     }
-    if (receipt.status === '0x0') return { identity, truth: 'reverted', steps: [], blockNumber, blockHash, lastVerified: previous.lastVerified };
+    if (receipt.status === '0x0') return { identity, truth: 'reverted', steps: [], blockNumber, blockHash, ...(previous.lastVerified ? { lastVerified: previous.lastVerified } : {}) };
     let sender = previous.sender;
     let nonce = previous.nonce;
     if (identity.intent) {
@@ -271,7 +275,8 @@ export async function observeTransfer(
         warning = error instanceof Error ? error.message : 'Explorer evidence unavailable';
       }
     }
-    return { identity, truth: 'included', steps, blockNumber, blockHash, warning, sender, nonce,
+    return { identity, truth: 'included', steps, blockNumber, blockHash,
+      ...(warning === undefined ? {} : { warning }), ...(sender === undefined ? {} : { sender }), ...(nonce === undefined ? {} : { nonce }),
       lastVerified: previous.lastVerified?.blockHash === blockHash &&
         rank(statusLadder.highest(previous.lastVerified.steps)?.rung ?? null) > rank(statusLadder.highest(steps)?.rung ?? null)
         ? previous.lastVerified : { blockNumber, blockHash, steps } };
@@ -300,12 +305,12 @@ export async function observeTransfer(
             hash(replacement.hash, 'replacement hash') !== identity.hash.toLowerCase() &&
             hash(replacement.blockHash, 'replacement transaction block') === blockHash) {
           return { identity, truth: 'replaced', steps: [], blockNumber, blockHash, ...known,
-            replacementHash: hash(replacement.hash, 'replacement hash'), lastVerified: previous.lastVerified };
+            replacementHash: hash(replacement.hash, 'replacement hash'), ...(previous.lastVerified ? { lastVerified: previous.lastVerified } : {}) };
         }
       }
       return { ...unknown(), ...known };
     }
   }
   return { identity, truth: tx === null ? 'unknown' : 'pending', steps: [], blockNumber: null,
-    ...(known ?? {}), lastVerified: previous.lastVerified };
+    ...(known ?? {}), ...(previous.lastVerified ? { lastVerified: previous.lastVerified } : {}) };
 }

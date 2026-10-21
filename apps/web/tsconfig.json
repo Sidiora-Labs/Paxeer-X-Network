@@ -27,7 +27,15 @@
       {
         "name": "next"
       }
-    ]
+    ],
+    "paths": {
+      "@paxeer/wallet": [
+        "../../sdk/wallet/src/index.ts"
+      ],
+      "@paxeer/wallet/provider": [
+        "../../sdk/wallet/src/provider.ts"
+      ]
+    }
   },
   "include": [
     "next-env.d.ts",
