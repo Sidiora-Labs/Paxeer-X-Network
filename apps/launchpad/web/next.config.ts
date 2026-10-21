@@ -129,8 +129,8 @@ const nextConfig: NextConfig = {
   // Next forces turbopack.root to equal outputFileTracingRoot. The create flow
   // imports services/launchpad/security/control/cap-admission.ts, so in dev both
   // roots are the repository root; production builds (webpack) keep apps/launchpad/.
-  outputFileTracingRoot: process.env.NODE_ENV === 'development' ? path.join(__dirname, '..', '..', '..') : path.join(__dirname, '..', '..'),
-  turbopack: { root: process.env.NODE_ENV === 'development' ? path.join(__dirname, '..', '..', '..') : path.join(__dirname, '..', '..') },
+  outputFileTracingRoot: process.env.NODE_ENV === 'development' ? path.join(__dirname, '..', '..', '..') : path.join(__dirname, '..'),
+  turbopack: { root: process.env.NODE_ENV === 'development' ? path.join(__dirname, '..', '..', '..') : path.join(__dirname, '..') },
   outputFileTracingIncludes: {
     '/*': [
       '../node_modules/.pnpm/sharp@*/node_modules/@img/sharp-libvips-*/versions.json',

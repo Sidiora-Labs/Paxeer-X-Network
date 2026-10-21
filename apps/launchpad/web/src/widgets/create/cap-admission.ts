@@ -2,7 +2,7 @@ import type { RuntimeAuthority } from '@/core/runtime-authority';
 import type { AccountScope, LaunchDeployment } from './creation-adapters';
 import type { CreationDraftV2 } from './creation-storage';
 import { address } from './creation-domain';
-import { readFreshCapability, CapabilityAdmissionError } from '../../../../../../../services/launchpad/security/control/cap-admission';
+import { readFreshCapability, CapabilityAdmissionError } from '../../../../../../services/launchpad/security/control/cap-admission';
 
 export class KnownCapabilityAdmissionError extends Error {
  constructor(message:string,readonly cause?:unknown){super(message);this.name='KnownCapabilityAdmissionError';}
