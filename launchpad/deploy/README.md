@@ -18,7 +18,7 @@ registry or host; the registry is supplied at deploy time via `REGISTRY`.
 docker build -f deploy/Dockerfile.svc \
   --build-arg SERVICE=core/indexer \
   --build-arg BIN=indexerd \
-  -t kindlelaunch-core-indexer:dev .
+  -t launchpad-core-indexer:dev .
 ```
 
 ## Once D6 is locked

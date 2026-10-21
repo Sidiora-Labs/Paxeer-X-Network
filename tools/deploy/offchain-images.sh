@@ -28,9 +28,9 @@ for pair in core/api:apid core/indexer:indexerd core/pnl-tracker:pnld core/ranki
 	core/stats-workers:statsd core/trading-charts:chartsd media/gateway:mediagatewayd \
 	media/livestream:livestreamd media/social:sociald media/user:userd; do
 	svc=${pair%%:*} bin=${pair#*:}
-	rows+=("kindlelaunch-${svc//\//-}|launchpad|launchpad/deploy/Dockerfile.svc|release|SERVICE=$svc BIN=$bin $lp_args|1")
+	rows+=("launchpad-${svc//\//-}|launchpad|launchpad/deploy/Dockerfile.svc|release|SERVICE=$svc BIN=$bin $lp_args|1")
 done
-rows+=("kindlelaunch-media-metadata|launchpad|launchpad/deploy/Dockerfile.native|release|SERVICE=media/metadata BIN=metadatad $lp_args|1")
+rows+=("launchpad-media-metadata|launchpad|launchpad/deploy/Dockerfile.native|release|SERVICE=media/metadata BIN=metadatad $lp_args|1")
 # next_public_args <row> <dockerfile> <value fn> [<may-be-empty fn>]: sets args to every NEXT_PUBLIC_* and WEB_* ARG
 # of the dockerfile with its value, missing to the names with no value and spaced to the names whose value has whitespace
 next_public_args() {
@@ -70,10 +70,10 @@ lp_may_be_empty() {
 }
 web_args="" web_missing=() web_spaced=()
 if [ -f "$root/launchpad/deploy/Dockerfile.web" ] && [ -f "$lp_vars" ]; then
-	next_public_args kindlelaunch-web launchpad/deploy/Dockerfile.web lp_value lp_may_be_empty
+	next_public_args launchpad-web launchpad/deploy/Dockerfile.web lp_value lp_may_be_empty
 	web_args=$args web_missing=("${missing[@]}") web_spaced=("${spaced[@]}")
 fi
-rows+=("kindlelaunch-web|launchpad|launchpad/deploy/Dockerfile.web||${web_args# }|1")
+rows+=("launchpad-web|launchpad|launchpad/deploy/Dockerfile.web||${web_args# }|1")
 # perps backend: one image per SERVICE, named as services/platform/perps-data/deploy/services.json names them
 for pair in perps-data-indexer:perps-indexer perps-gateway:perps-gateway perps-explorer:perps-explorer perps-portal:perps-portal; do
 	rows+=("${pair%%:*}|.|services/platform/perps-data/deploy/Dockerfile|runtime|SERVICE=${pair#*:} $px_args|1")
@@ -94,6 +94,7 @@ perps_may_be_empty() {
 	AUTH_REDIRECT_URL) ;;                          # window origin /auth/callback (src/core/wallet/embedded/client.ts)
 	WALLET_IFRAME_ORIGIN) ;;                       # the iframe provider is not installed (src/core/wallet/postMessageEip1193.ts)
 	SENTRY_DSN | SENTRY_ENV | SENTRY_TUNNEL) ;;    # Sentry off, NODE_ENV, no tunnel (sentry.client.config.ts, next.config.js)
+	STATUS_PAGE_URL) ;;                            # no status link (src/instrumentation.ts, src/app/shell/Footer.tsx)
 	VERCEL_GIT_COMMIT_SHA) ;;                      # "development" meta tag (src/pages/_document.tsx)
 	*) return 1 ;;
 	esac
@@ -118,7 +119,7 @@ row_problem() {
 	if ! present "$1" "$2" "$3"; then
 		[ "$4" = 1 ] || return 1
 		echo "missing context $2 or dockerfile $3"
-	elif [ "$1" = kindlelaunch-web ]; then
+	elif [ "$1" = launchpad-web ]; then
 		if [ ! -f "$lp_vars" ]; then
 			echo "missing launchpad/deploy/railway/variables.json"
 		elif [ "${#web_missing[@]}" -gt 0 ]; then
@@ -148,7 +149,7 @@ case "$mode" in
 		fi
 	done
 	if [ "${#web_missing[@]}" -gt 0 ]; then
-		echo "kindlelaunch-web: no value in launchpad/deploy/railway/variables.json web entry for ${web_missing[*]}" >&2
+		echo "launchpad-web: no value in launchpad/deploy/railway/variables.json web entry for ${web_missing[*]}" >&2
 		bad=1
 	fi
 	if [ "${#perps_missing[@]}" -gt 0 ]; then
@@ -160,7 +161,7 @@ case "$mode" in
 		bad=1
 	fi
 	if [ ! -f "$lp_vars" ]; then
-		echo "kindlelaunch-web: missing launchpad/deploy/railway/variables.json" >&2
+		echo "launchpad-web: missing launchpad/deploy/railway/variables.json" >&2
 		bad=1
 	fi
 	exit "$bad"

@@ -14,7 +14,7 @@ environment = "production"
 
 [service.api]
 target = "railway-image"
-image = "kindlelaunch-core-api"
+image = "launchpad-core-api"
 railway_service = "api"
 health = "/health/ready"
 order = 1
@@ -23,84 +23,84 @@ order = 1
 # key, so it is set from launchpad/deploy/railway/variables.json.
 [service.api-sockets]
 target = "railway-image"
-image = "kindlelaunch-core-api"
+image = "launchpad-core-api"
 railway_service = "api-sockets"
 health = "/health/ready"
 order = 1
 
 [service.indexer]
 target = "railway-image"
-image = "kindlelaunch-core-indexer"
+image = "launchpad-core-indexer"
 railway_service = "indexer"
 health = "/health/ready"
 order = 1
 
 [service.charts]
 target = "railway-image"
-image = "kindlelaunch-core-trading-charts"
+image = "launchpad-core-trading-charts"
 railway_service = "charts"
 health = "/health/ready"
 order = 2
 
 [service.ranking]
 target = "railway-image"
-image = "kindlelaunch-core-ranking-algo"
+image = "launchpad-core-ranking-algo"
 railway_service = "ranking"
 health = "/health/ready"
 order = 2
 
 [service.stats]
 target = "railway-image"
-image = "kindlelaunch-core-stats-workers"
+image = "launchpad-core-stats-workers"
 railway_service = "stats"
 health = "/health/ready"
 order = 2
 
 [service.pnl]
 target = "railway-image"
-image = "kindlelaunch-core-pnl-tracker"
+image = "launchpad-core-pnl-tracker"
 railway_service = "pnl"
 health = "/health/ready"
 order = 2
 
 [service.user]
 target = "railway-image"
-image = "kindlelaunch-media-user"
+image = "launchpad-media-user"
 railway_service = "user"
 health = "/health/ready"
 order = 2
 
 [service.metadata]
 target = "railway-image"
-image = "kindlelaunch-media-metadata"
+image = "launchpad-media-metadata"
 railway_service = "metadata"
 health = "/health/ready"
 order = 2
 
 [service.social]
 target = "railway-image"
-image = "kindlelaunch-media-social"
+image = "launchpad-media-social"
 railway_service = "social"
 health = "/health/ready"
 order = 2
 
 [service.livestream]
 target = "railway-image"
-image = "kindlelaunch-media-livestream"
+image = "launchpad-media-livestream"
 railway_service = "livestream"
 health = "/health/ready"
 order = 2
 
 [service.gateway]
 target = "railway-image"
-image = "kindlelaunch-media-gateway"
+image = "launchpad-media-gateway"
 railway_service = "gateway"
 health = "/health/ready"
 order = 3
 
 [service.web]
 target = "railway-image"
-image = "kindlelaunch-web"
+image = "launchpad-web"
 railway_service = "web"
 health = "/api/health"
 order = 4

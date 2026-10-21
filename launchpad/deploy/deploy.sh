@@ -13,7 +13,7 @@ BIN="${2:?usage: deploy.sh <group>/<svc> <bin>}"
 TAG="${TAG:-dev}"
 REGISTRY="${REGISTRY:-}"
 
-slug="kindlelaunch-$(echo "$SERVICE" | tr '/' '-')"
+slug="launchpad-$(echo "$SERVICE" | tr '/' '-')"
 if [ -n "$REGISTRY" ]; then
 	image="${REGISTRY}/${slug}:${TAG}"
 else

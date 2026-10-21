@@ -43,17 +43,29 @@ run bash "$script" --check || fail "--check must pass on a complete tree"
 # unset base images are left out so the Dockerfile defaults hold
 m=$(run bash "$script" --matrix)
 jq -e 'length > 0 and all(.[]; keys == ["build_args","context","dockerfile","name","target"])' <<<"$m" >/dev/null || fail "matrix shape changed"
+# every launchpad image is named launchpad-<service>; no kindlelaunch- image name remains
+lp_names=$(jq -r '.[] | select(.context == "launchpad") | .name' <<<"$m")
+[ "$lp_names" = "$(printf '%s\n' launchpad-core-api launchpad-core-indexer launchpad-core-pnl-tracker \
+	launchpad-core-ranking-algo launchpad-core-stats-workers launchpad-core-trading-charts launchpad-media-gateway \
+	launchpad-media-livestream launchpad-media-social launchpad-media-user launchpad-media-metadata launchpad-web)" ] ||
+	fail "launchpad image names: $lp_names"
+! jq -r '.[].name' <<<"$m" | grep -q 'kindlelaunch-' || fail "a kindlelaunch- image name remains in the matrix"
+! grep -q 'kindlelaunch-' "$repo/tools/deploy/offchain-images.sh" "$repo/deploy/rollout-launchpad.kvx" ||
+	fail "a kindlelaunch- image name remains in the image table or the rollout manifest"
+[ "$(sed -n 's/^image = "\(.*\)"$/\1/p' "$repo/deploy/rollout-launchpad.kvx" | sort -u)" = \
+	"$(jq -r '.[] | select(.context == "launchpad") | .name' <<<"$m" | sort -u)" ] ||
+	fail "the rollout manifest images differ from the launchpad matrix rows"
 ! jq -r '.[].build_args' <<<"$m" | grep -E '^[A-Z_]+=$' || fail "matrix carries an empty build arg"
 ! jq -r '.[].build_args' <<<"$m" | grep -E '^(BUILD|RUNTIME)_IMAGE=' || fail "unset base images must be omitted"
-[ "$(args_of "$m" kindlelaunch-core-api)" = $'SERVICE=core/api\nBIN=apid' ] || fail "api args: $(args_of "$m" kindlelaunch-core-api)"
+[ "$(args_of "$m" launchpad-core-api)" = $'SERVICE=core/api\nBIN=apid' ] || fail "api args: $(args_of "$m" launchpad-core-api)"
 
 # the repository variable names reach the launchpad and perps rows
 m=$(run env REVIEWED_BUILD_IMAGE=rb@sha256:1 REVIEWED_RUNTIME_IMAGE=rr@sha256:2 PERPS_BUILD_IMAGE=pb@sha256:3 bash "$script" --matrix)
-[ "$(args_of "$m" kindlelaunch-media-metadata)" = $'SERVICE=media/metadata\nBIN=metadatad\nBUILD_IMAGE=rb@sha256:1\nRUNTIME_IMAGE=rr@sha256:2' ] || fail "metadata args: $(args_of "$m" kindlelaunch-media-metadata)"
+[ "$(args_of "$m" launchpad-media-metadata)" = $'SERVICE=media/metadata\nBIN=metadatad\nBUILD_IMAGE=rb@sha256:1\nRUNTIME_IMAGE=rr@sha256:2' ] || fail "metadata args: $(args_of "$m" launchpad-media-metadata)"
 [ "$(args_of "$m" perps-gateway)" = $'SERVICE=perps-gateway\nBUILD_IMAGE=pb@sha256:3' ] || fail "perps args: $(args_of "$m" perps-gateway)"
 
 # the web row carries every NEXT_PUBLIC_* arg with its manifest value, and the build sha as the Sentry release
-web=$(args_of "$m" kindlelaunch-web)
+web=$(args_of "$m" launchpad-web)
 for n in $names; do
 	[ "$n" = NEXT_PUBLIC_SENTRY_RELEASE ] && continue
 	grep -qx "$n=https://${n,,}.example" <<<"$web" || fail "web row lacks $n"
@@ -65,7 +77,7 @@ grep -qx "WEB_API_UPSTREAM=https://web_api_upstream.example" <<<"$web" || fail "
 # a WEB_* arg without a manifest value fails --check and is named, like a NEXT_PUBLIC_* one
 jq 'del(.web.buildArgs.WEB_API_UPSTREAM)' <<<"$pristine" > "$manifest"
 if out=$(run bash "$script" --check 2>&1); then fail "--check must fail on a missing WEB_API_UPSTREAM"; fi
-grep -q 'kindlelaunch-web: .*WEB_API_UPSTREAM' <<<"$out" || fail "--check must name WEB_API_UPSTREAM: $out"
+grep -q 'launchpad-web: .*WEB_API_UPSTREAM' <<<"$out" || fail "--check must name WEB_API_UPSTREAM: $out"
 printf '%s\n' "$pristine" > "$manifest"
 
 # a value with a space is refused with exit 2
@@ -93,11 +105,11 @@ may="NEXT_PUBLIC_SOCIAL_API_URL NEXT_PUBLIC_USER_API_URL NEXT_PUBLIC_ANALYTICS_K
 jq --arg may "$may" '.web.buildArgs |= with_entries(select(.key as $k | $may | split(" ") | index($k) | not)) | del(.web.buildArgs.NEXT_PUBLIC_SENTRY_RELEASE)' \
 	<<<"$pristine" > "$manifest"
 run bash "$script" --check || fail "--check must allow the four may-be-empty web names and take the release from the sha"
-[ "$(args_of "$(run bash "$script" --matrix)" kindlelaunch-web | grep '^NEXT_PUBLIC_SENTRY_RELEASE=')" = "NEXT_PUBLIC_SENTRY_RELEASE=$sha" ] ||
+[ "$(args_of "$(run bash "$script" --matrix)" launchpad-web | grep '^NEXT_PUBLIC_SENTRY_RELEASE=')" = "NEXT_PUBLIC_SENTRY_RELEASE=$sha" ] ||
 	fail "the Sentry release is not the sha passed"
 jq '.web.buildArgs.NEXT_PUBLIC_DATA_API_URL = ""' <<<"$(cat "$manifest")" > "$manifest.tmp" && mv "$manifest.tmp" "$manifest"
 if out=$(run bash "$script" --check 2>&1); then fail "--check must fail on an empty data API URL"; fi
-grep -q 'kindlelaunch-web: .*NEXT_PUBLIC_DATA_API_URL' <<<"$out" || fail "--check must name the data API URL: $out"
+grep -q 'launchpad-web: .*NEXT_PUBLIC_DATA_API_URL' <<<"$out" || fail "--check must name the data API URL: $out"
 ! grep -qE 'SOCIAL_API_URL|USER_API_URL|ANALYTICS_KEY|QUALIFICATION_AUTHORITY_PROFILE|SENTRY_RELEASE' <<<"$out" ||
 	fail "--check named an allowed web name: $out"
 printf '%s\n' "$pristine" > "$manifest"
@@ -109,15 +121,15 @@ jq 'del(.web.buildArgs.NEXT_PUBLIC_DATA_API_URL)' "$real" > "$manifest"
 if run bash "$script" --check 2>/dev/null; then fail "--check must fail on the committed web values"; fi
 run bash "$script" --plan > "$work/plan.out" 2> "$work/plan.err" || fail "--plan must pass when a row passes: $(cat "$work/plan.err")"
 [ "$(grep -c . "$work/plan.out")" -eq 2 ] || fail "--plan must print exactly images= and unbuilt=: $(cat "$work/plan.out")"
-[ "$(sed -n 's/^unbuilt=//p' "$work/plan.out")" = '["kindlelaunch-web"]' ] || fail "unbuilt: $(cat "$work/plan.out")"
-grep -q '^::error title=kindlelaunch-web::.*NEXT_PUBLIC_DATA_API_URL' "$work/plan.err" || fail "--plan must annotate the web row: $(cat "$work/plan.err")"
+[ "$(sed -n 's/^unbuilt=//p' "$work/plan.out")" = '["launchpad-web"]' ] || fail "unbuilt: $(cat "$work/plan.out")"
+grep -q '^::error title=launchpad-web::.*NEXT_PUBLIC_DATA_API_URL' "$work/plan.err" || fail "--plan must annotate the web row: $(cat "$work/plan.err")"
 [ "$(grep -c '^::error' "$work/plan.err")" -eq 1 ] || fail "--plan must annotate only the web row: $(cat "$work/plan.err")"
 planned=$(sed -n 's/^images=//p' "$work/plan.out")
-[ "$planned" = "$(jq -c 'map(select(.name != "kindlelaunch-web"))' <<<"$full")" ] || fail "--plan images differ from --matrix: $planned"
+[ "$planned" = "$(jq -c 'map(select(.name != "launchpad-web"))' <<<"$full")" ] || fail "--plan images differ from --matrix: $planned"
 # a perps value with whitespace leaves only perps-web unbuilt as well, and no passing row exits 1
 sed -i 's|^NEXT_PUBLIC_LOG_LEVEL=.*|NEXT_PUBLIC_LOG_LEVEL=warn x|' "$perps_env"
 out=$(run bash "$script" --plan 2>/dev/null) || fail "--plan must pass with a perps value with whitespace"
-[ "$(sed -n 's/^unbuilt=//p' <<<"$out")" = '["kindlelaunch-web","perps-web"]' ] || fail "unbuilt: $out"
+[ "$(sed -n 's/^unbuilt=//p' <<<"$out")" = '["launchpad-web","perps-web"]' ] || fail "unbuilt: $out"
 printf '%s\n' "$perps_pristine" > "$perps_env"
 mv "$work/launchpad" "$work/launchpad.away" && mv "$work/services" "$work/services.away"
 sed -i 's|^NEXT_PUBLIC_PERPS_GATEWAY_URL=.*|NEXT_PUBLIC_PERPS_GATEWAY_URL=|' "$perps_env"
@@ -148,7 +160,7 @@ printf '%s\n' "$perps_pristine" > "$perps_env"
 # a missing Dockerfile of a required row fails --check
 rm "$work/launchpad/deploy/Dockerfile.native"
 if out=$(run bash "$script" --check 2>&1); then fail "--check must fail on a missing dockerfile"; fi
-grep -q 'kindlelaunch-media-metadata' <<<"$out" || fail "--check must name the row: $out"
+grep -q 'launchpad-media-metadata' <<<"$out" || fail "--check must name the row: $out"
 
 
 # the workflow: the build matrix does not fail fast, and the digests job runs after any image row fails as long as the
@@ -166,20 +178,20 @@ merge() {
 	local d="$work/merge.$1"; shift
 	rm -rf "$d" && mkdir -p "$d/digests" && : > "$d/out" && : > "$d/summary"
 	local f; for f in "$@"; do printf '%s=sha256:%064d\n' "$f" 0 > "$d/digests/$f"; done
-	(cd "$d" && IMAGES='[{"name":"perps-gateway"},{"name":"kindlelaunch-core-api"}]' UNBUILT='["kindlelaunch-web"]' \
+	(cd "$d" && IMAGES='[{"name":"perps-gateway"},{"name":"launchpad-core-api"}]' UNBUILT='["launchpad-web"]' \
 		GITHUB_OUTPUT="$d/out" GITHUB_STEP_SUMMARY="$d/summary" bash "$work/merge.sh" >"$d/log" 2>&1)
 }
 merge partial perps-gateway || fail "the merge must pass when one row pushed: $(cat "$work/merge.partial/log")"
 [ "$(jq -c 'keys' "$work/merge.partial/digests.json")" = '["perps-gateway"]' ] || fail "digests.json: $(cat "$work/merge.partial/digests.json")"
-grep -qx 'failed=\["kindlelaunch-core-api"\]' "$work/merge.partial/out" || fail "failed output: $(cat "$work/merge.partial/out")"
-grep -qx -e '- kindlelaunch-core-api was planned but its build or push failed: .*' "$work/merge.partial/summary" ||
+grep -qx 'failed=\["launchpad-core-api"\]' "$work/merge.partial/out" || fail "failed output: $(cat "$work/merge.partial/out")"
+grep -qx -e '- launchpad-core-api was planned but its build or push failed: .*' "$work/merge.partial/summary" ||
 	fail "the summary must list the failed row: $(cat "$work/merge.partial/summary")"
-grep -qx -e '- kindlelaunch-web was not built: .*' "$work/merge.partial/summary" || fail "the summary must list the unbuilt row"
+grep -qx -e '- launchpad-web was not built: .*' "$work/merge.partial/summary" || fail "the summary must list the unbuilt row"
 ! grep -q 'perps-gateway' "$work/merge.partial/summary" || fail "the summary lists the pushed row"
 # nothing pushed fails the job; an unbuilt row with a digest fails it as well
 if merge none; then fail "the merge must fail when digests.json is empty"; fi
 grep -q 'digests.json is empty' "$work/merge.none/log" || fail "empty merge log: $(cat "$work/merge.none/log")"
 grep -c 'build or push failed' "$work/merge.none/summary" | grep -qx 2 || fail "the empty merge must still list both failed rows"
-if merge unbuilt perps-gateway kindlelaunch-web; then fail "the merge must fail when an unbuilt row has a digest"; fi
+if merge unbuilt perps-gateway launchpad-web; then fail "the merge must fail when an unbuilt row has a digest"; fi
 grep -q 'an unbuilt row has a digest' "$work/merge.unbuilt/log" || fail "unbuilt merge log: $(cat "$work/merge.unbuilt/log")"
 echo "PASS offchain-images"
