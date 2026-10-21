@@ -21,6 +21,7 @@ import (
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/config"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/gateway"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/ratelimit"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/source"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/store"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/telemetry"
@@ -72,6 +73,9 @@ func run(logger *slog.Logger) error {
 
 	metrics, err := telemetry.New(config.Gateway)
 	if err != nil {
+		return err
+	}
+	if err := ratelimit.Report(logger, metrics.Register); err != nil {
 		return err
 	}
 	srv, err := gateway.NewServer(ctx, gateway.Options{

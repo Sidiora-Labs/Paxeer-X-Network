@@ -3,6 +3,8 @@ package ratelimit
 import (
 	"net/http/httptest"
 	"testing"
+
+	dto "github.com/prometheus/client_model/go"
 )
 
 func TestClientKey(t *testing.T) {
@@ -53,4 +55,52 @@ func TestClientKeyIgnoresAPIKey(t *testing.T) {
 	if ka, kb := ClientKey(a), ClientKey(b); ka != kb || ka != "ip:203.0.113.9" {
 		t.Fatalf("ClientKey = %q, %q; want one ip bucket", ka, kb)
 	}
+}
+
+func TestClientIPRealIP(t *testing.T) {
+	trusted, err := ParseTrustedProxies("100.64.0.0/10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name, remote, realIP, xff, want string
+		counted                         bool
+	}{
+		{"trusted peer takes x-real-ip", "100.64.1.2:443", "198.51.100.7", "203.0.113.1", "198.51.100.7", false},
+		{"trusted peer mapped x-real-ip", "100.64.1.2:443", " ::ffff:198.51.100.8 ", "", "198.51.100.8", false},
+		{"trusted peer xff only", "100.64.1.2:443", "", "1.1.1.1, 198.51.100.9", "198.51.100.9", false},
+		{"malformed x-real-ip falls back to xff", "100.64.1.2:443", "not-an-ip", "198.51.100.10", "198.51.100.10", false},
+		{"malformed x-real-ip without xff keys peer", "100.64.1.2:443", "198.51.100.300", "", "100.64.1.2", false},
+		{"untrusted peer with x-real-ip", "203.0.113.9:443", "198.51.100.7", "", "203.0.113.9", true},
+		{"untrusted peer with xff", "203.0.113.9:443", "", "198.51.100.7", "203.0.113.9", true},
+		{"untrusted peer without headers", "203.0.113.9:443", "", "", "203.0.113.9", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest("GET", "/", nil)
+			r.RemoteAddr = c.remote
+			if c.realIP != "" {
+				r.Header.Set("X-Real-IP", c.realIP)
+			}
+			if c.xff != "" {
+				r.Header.Set("X-Forwarded-For", c.xff)
+			}
+			before := untrustedCount(t)
+			if got := clientIP(r, trusted); got != c.want {
+				t.Fatalf("clientIP = %q, want %q", got, c.want)
+			}
+			delta := untrustedCount(t) - before
+			if want := map[bool]float64{true: 1, false: 0}[c.counted]; delta != want {
+				t.Fatalf("perps_untrusted_proxy_headers_total delta = %v, want %v", delta, want)
+			}
+		})
+	}
+}
+
+func untrustedCount(t *testing.T) float64 {
+	t.Helper()
+	var m dto.Metric
+	if err := UntrustedProxyHeaders.Write(&m); err != nil {
+		t.Fatal(err)
+	}
+	return m.GetCounter().GetValue()
 }

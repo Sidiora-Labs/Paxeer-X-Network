@@ -66,6 +66,9 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	if err := ratelimit.Report(logger, metrics.Register); err != nil {
+		return err
+	}
 	srv, err := explorer.NewServer(db, explorer.Options{
 		LinkBase: cfg.ExplorerTxBase,
 		Requests: clientRequests,
