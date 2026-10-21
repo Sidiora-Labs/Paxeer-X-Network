@@ -719,7 +719,7 @@ impl Cluster {
 }
 
 fn build_daemon(root: &Path) -> Result<PathBuf> {
-    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../human/wallet/attestor");
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../services/wallet/attestor");
     let binary = root.join("attestor");
     let output = Command::new("go")
         .current_dir(&source)

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Runs as root inside the kernel app's machine (human/wallet/deploy/human.toml);
+# Runs as root inside the kernel app's machine (services/wallet/deploy/human.toml);
 # tools/bringup/check-live.sh kernel-value-loop pipes it to bash -s through
 # flyctl ssh console. It proves the value loop of the kernel:
 #

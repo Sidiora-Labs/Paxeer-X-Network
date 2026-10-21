@@ -566,7 +566,7 @@
         "signCustody"
       ],
       "deleted_trees": [
-        "human/wallet/gateway/src/jobs/layerxSync.ts"
+        "services/wallet/gateway/src/jobs/layerxSync.ts"
       ],
       "replacement": "review and send an EVM transaction with the signed receipt; the lx review re-points to EVM review and the deposit action is removed"
     },

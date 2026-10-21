@@ -6,7 +6,7 @@ usage() {
 usage: scripts/wallet/check-deploy.sh [dir]
 
 Validates the wallet deployment definitions offline, without contacting the
-platform. dir defaults to human/wallet/deploy and must hold the attestor-*.toml,
+platform. dir defaults to services/wallet/deploy and must hold the attestor-*.toml,
 gateway.toml and endpoint.toml definitions and the env documentation file.
 Every build dockerfile is resolved against the repository root. TOML is parsed
 with the python3 standard library (tomllib, Python 3.11 or newer).
@@ -48,7 +48,7 @@ if [ "$#" -gt 1 ]; then
 fi
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-dir="${1:-$root/human/wallet/deploy}"
+dir="${1:-$root/services/wallet/deploy}"
 
 if [ ! -d "$dir" ]; then
 	echo "check-deploy: $dir is not a directory" >&2

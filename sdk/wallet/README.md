@@ -4,10 +4,10 @@ TypeScript SDK for the Paxeer X wallet gateway: Supabase email and OAuth sign-in
 
 ## Install and build
 
-The package is a member of the `human/wallet` pnpm workspace and is not published to a registry; workspace packages depend on it as `"@paxeer/wallet": "workspace:*"`, and `apps/wallet` links it from this directory. Its entry points are `@paxeer/wallet`, `@paxeer/wallet/react` and `@paxeer/wallet/provider`.
+The package is a member of the `services/wallet` pnpm workspace and is not published to a registry; workspace packages depend on it as `"@paxeer/wallet": "workspace:*"`, and `apps/wallet` links it from this directory. Its entry points are `@paxeer/wallet`, `@paxeer/wallet/react` and `@paxeer/wallet/provider`.
 
 ```sh
-cd human/wallet
+cd services/wallet
 pnpm install
 pnpm --filter @paxeer/wallet build       # also builds services/agent/sdk/typescript first
 pnpm --filter @paxeer/wallet test        # vitest

@@ -93,7 +93,7 @@ reviews:
         Next.js Blockscout fork with Chakra v3. Check that API types match the
         backend JSON, that feature flags gate Paxeer X surfaces, and that no
         product-specific value is hard-coded outside configs/envs presets.
-    - path: "human/**/*.{ts,tsx}"
+    - path: "services/wallet/**/*.{ts,tsx}"
       instructions: >-
         Human-facing apps. Check accessibility basics, error handling on
         network calls, and that no secret or internal URL is bundled.

@@ -27,7 +27,7 @@ Other directories are not pnpm packages:
 Requires pnpm and the runtime version named in the `engines` field of `package.json`.
 
 ```sh
-cd human/wallet
+cd services/wallet
 pnpm install
 pnpm -r --filter ./gateway --filter ../../sdk/wallet build
 pnpm -r test
@@ -35,7 +35,7 @@ pnpm -r test
 
 The gateway suites load `gateway/test/setup.ts`, which supplies synthetic environment values so no configuration file is needed to run them.
 
-From the repository root, `scripts/wallet/scan-secrets.sh human/wallet` scans the workspace for key-shaped, token-shaped and credentialed connection-string content and exits non-zero on a match.
+From the repository root, `scripts/wallet/scan-secrets.sh services/wallet` scans the workspace for key-shaped, token-shaped and credentialed connection-string content and exits non-zero on a match.
 
 ## Configuration
 

@@ -5,7 +5,7 @@ Run every command from `apps/wallet`.
 ## Setup
 
 - Node 20 (`.nvmrc`) and pnpm.
-- The app links the wallet SDK from `../../sdk/wallet` (`"@paxeer/wallet": "link:../../sdk/wallet"`); build it first from `human/wallet` with `pnpm install` and `pnpm -r --filter ../../sdk/wallet build`.
+- The app links the wallet SDK from `../../sdk/wallet` (`"@paxeer/wallet": "link:../../sdk/wallet"`); build it first from `services/wallet` with `pnpm install` and `pnpm -r --filter ../../sdk/wallet build`.
 
 ```sh
 pnpm install --frozen-lockfile

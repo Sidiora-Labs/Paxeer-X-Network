@@ -1,5 +1,5 @@
 {
-  "generator": "human/wallet/attestor/internal/policy/lx/testdata/kernelvectors",
+  "generator": "services/wallet/attestor/internal/policy/lx/testdata/kernelvectors",
   "public_key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
   "peer_public_key": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca",
   "network_id": 125,

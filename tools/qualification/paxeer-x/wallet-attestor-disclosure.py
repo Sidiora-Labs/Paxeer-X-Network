@@ -15,8 +15,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-ATTESTOR = ROOT / "human/wallet/attestor"
-GATEWAY_CLIENT = ROOT / "human/wallet/gateway/dist/attestor/client.js"
+ATTESTOR = ROOT / "services/wallet/attestor"
+GATEWAY_CLIENT = ROOT / "services/wallet/gateway/dist/attestor/client.js"
 GO_CASES = "^(TestApprovedDisclosureBindsActivitySignatures|TestFiveNodeEndToEnd)$"
 
 U128_MAX = str((1 << 128) - 1)

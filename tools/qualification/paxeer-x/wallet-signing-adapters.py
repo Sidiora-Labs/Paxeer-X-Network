@@ -69,16 +69,16 @@ def main():
     require(manifest_path.is_relative_to(bundle), 'source manifest must remain inside protected bundle')
     manifest = json.loads(protected(manifest_path).read_text())
     expected = set()
-    for relative in ('human/wallet/gateway/src', 'human/wallet/gateway/dist', 'human/wallet/gateway/migrations',
+    for relative in ('services/wallet/gateway/src', 'services/wallet/gateway/dist', 'services/wallet/gateway/migrations',
                      'sdk/wallet/src', 'sdk/wallet/dist',
                      'services/agent/sdk/typescript/src', 'services/agent/sdk/typescript/dist',
                      'services/interop/crates/layerx-gas-station/src'):
         expected.update(str(path.relative_to(ROOT)) for path in (ROOT / relative).rglob('*') if path.is_file())
-    expected.update(str(path.relative_to(ROOT)) for path in (ROOT / 'human/wallet/attestor').rglob('*.go'))
-    expected.update(('human/wallet/attestor/go.mod', 'human/wallet/attestor/go.sum',
+    expected.update(str(path.relative_to(ROOT)) for path in (ROOT / 'services/wallet/attestor').rglob('*.go'))
+    expected.update(('services/wallet/attestor/go.mod', 'services/wallet/attestor/go.sum',
                      'apps/wallet/src/account/DepositFlow.tsx',
-                     'human/wallet/gateway/test/e2e/wallet-signing-adapters.production.ts',
-                     'human/wallet/gateway/package.json', 'sdk/wallet/package.json',
+                     'services/wallet/gateway/test/e2e/wallet-signing-adapters.production.ts',
+                     'services/wallet/gateway/package.json', 'sdk/wallet/package.json',
                      'services/agent/sdk/typescript/package.json', 'services/interop/crates/layerx-gas-station/Cargo.toml'))
     require(expected and set(manifest) == expected, 'complete current source and prebuilt artifact manifest required')
     for relative, digest in manifest.items():
@@ -92,7 +92,7 @@ def main():
         require(isinstance(artifact['source_revision'], str) and len(artifact['source_revision']) == 40,
                 'executable source provenance missing: ' + name)
     driver_artifact = Path(config['artifacts']['driver']['path']).resolve()
-    require(driver_artifact.is_relative_to(ROOT / 'human/wallet/gateway/dist') and driver_artifact.suffix in ('.js', '.mjs'),
+    require(driver_artifact.is_relative_to(ROOT / 'services/wallet/gateway/dist') and driver_artifact.suffix in ('.js', '.mjs'),
             'source-bound prebuilt JavaScript driver under gateway/dist required; no runtime transpiler/build')
     STATE = Path(tempfile.mkdtemp(prefix='wallet-signing-adapters-', dir=os.environ.get('WALLET_SIGNING_ADAPTERS_EVIDENCE_ROOT')))
     STATE.chmod(0o700)
@@ -164,7 +164,7 @@ def main():
         local_url(endpoint)
     gateway_url = local_url(config['gateway_url'])
     def launch_gateway(name):
-        return start([config['artifacts']['node']['path'], str(ROOT / 'human/wallet/gateway/dist/index.js')], gateway_env, name)
+        return start([config['artifacts']['node']['path'], str(ROOT / 'services/wallet/gateway/dist/index.js')], gateway_env, name)
     def ready():
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline:

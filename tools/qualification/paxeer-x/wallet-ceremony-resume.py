@@ -287,9 +287,9 @@ def main():
     source_manifest = json.loads((bundle / config['source_manifest']).read_text())
     expected = set()
     for module in ('attestor', 'ceremony'):
-        directory = ROOT / 'human/wallet' / module
+        directory = ROOT / 'services/wallet' / module
         expected.update(str(path.relative_to(ROOT)) for path in directory.rglob('*.go'))
-        expected.update('human/wallet/' + module + '/' + name for name in ('go.mod', 'go.sum'))
+        expected.update('services/wallet/' + module + '/' + name for name in ('go.mod', 'go.sum'))
     require(set(source_manifest) == expected, 'complete attestor and ceremony source manifest required')
     for relative, digest in source_manifest.items():
         require(hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() == digest,

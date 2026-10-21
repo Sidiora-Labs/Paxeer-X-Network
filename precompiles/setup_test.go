@@ -194,7 +194,7 @@ func TestMergeAddressTable(t *testing.T) {
 	require.Equal(t, app.MergeUpgrade, precompiles.MergeUpgrade)
 
 	// The wallet gateway routes reach the agent-function addresses.
-	source, err := os.ReadFile("../human/wallet/gateway/src/precompiles.ts")
+	source, err := os.ReadFile("../services/wallet/gateway/src/precompiles.ts")
 	require.NoError(t, err)
 	routes := map[string]string{}
 	for _, match := range regexp.MustCompile(`(?m)^\s+(\w+): '(0x[0-9a-fA-F]{40})',$`).FindAllStringSubmatch(string(source), -1) {

@@ -1,9 +1,9 @@
 # Gateway rollback
 
 The wallet gateway runs as the application `paxeer-wallet-gateway` from
-`human/wallet/deploy/gateway.toml`, built from `docker/wallet-gateway/Dockerfile`
+`services/wallet/deploy/gateway.toml`, built from `docker/wallet-gateway/Dockerfile`
 at the repository root and deployed with `--image` (observation 3.7.4). It
-applies the SQL files under `human/wallet/gateway/migrations` in filename
+applies the SQL files under `services/wallet/gateway/migrations` in filename
 order at start and never reverts one. A rollback therefore returns the
 gateway's code to an earlier image; it never returns the database schema.
 
@@ -45,7 +45,7 @@ gateway's code to an earlier image; it never returns the database schema.
 
    ```sh
    psql "$DATABASE_URL" -Atc "select filename from _migrations order by filename"
-   git -C <repository-checkout> ls-tree --name-only <target-revision> human/wallet/gateway/migrations/
+   git -C <repository-checkout> ls-tree --name-only <target-revision> services/wallet/gateway/migrations/
    ```
 
    Expected: every name in the first list appears in the second.
@@ -53,7 +53,7 @@ gateway's code to an earlier image; it never returns the database schema.
 3. Deploy the target image.
 
    ```sh
-   flyctl deploy --config human/wallet/deploy/gateway.toml --image <previous-image> --app paxeer-wallet-gateway --ha=false -y
+   flyctl deploy --config services/wallet/deploy/gateway.toml --image <previous-image> --app paxeer-wallet-gateway --ha=false -y
    ```
 
    Expected: every machine replaced with the target image and passing the

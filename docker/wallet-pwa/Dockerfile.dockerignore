@@ -1,7 +1,7 @@
 *
 !services/agent/sdk/typescript
 !apps/wallet
-!human/wallet
+!services/wallet
 !sdk/wallet
 **/.git
 **/.github
@@ -22,7 +22,7 @@
 **/.env
 **/.env.*
 apps/wallet/android
-human/wallet/attestor
-human/wallet/ceremony
-human/wallet/deploy
-human/wallet/docs
+services/wallet/attestor
+services/wallet/ceremony
+services/wallet/deploy
+services/wallet/docs

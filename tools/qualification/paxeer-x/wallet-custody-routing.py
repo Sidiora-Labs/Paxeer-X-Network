@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[3]
-GATEWAY = ROOT / 'human/wallet/gateway'
+GATEWAY = ROOT / 'services/wallet/gateway'
 PROCESSES = []
 STATE = None
 PG_STOP = None
@@ -81,8 +81,8 @@ def main():
         require(hashlib.sha256(path.read_bytes()).hexdigest() == digest, 'prebuilt artifact/source digest mismatch: ' + relative)
     require((GATEWAY / 'node_modules/tsx').is_dir(), 'prerequisite: installed tsx runtime; no install/build allowed')
     attestor_sources = json.loads((bundle / config['attestor_source_manifest']).read_text())
-    source_files = {str(p.relative_to(ROOT)) for p in (ROOT / 'human/wallet/attestor').rglob('*.go')}
-    source_files.update({'human/wallet/attestor/go.mod', 'human/wallet/attestor/go.sum'})
+    source_files = {str(p.relative_to(ROOT)) for p in (ROOT / 'services/wallet/attestor').rglob('*.go')}
+    source_files.update({'services/wallet/attestor/go.mod', 'services/wallet/attestor/go.sum'})
     require(set(attestor_sources) == source_files, 'complete attestor source manifest required')
     for relative, digest in attestor_sources.items():
         require(hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() == digest, 'attestor source digest mismatch: ' + relative)

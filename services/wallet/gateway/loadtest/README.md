@@ -1,6 +1,6 @@
 # Wallet gateway load test
 
-`wallet.js` is a k6 script for the wallet gateway. Run it from `human/wallet`. `API_BASE` sets the gateway base (default `http://localhost:8787`).
+`wallet.js` is a k6 script for the wallet gateway. Run it from `services/wallet`. `API_BASE` sets the gateway base (default `http://localhost:8787`).
 
 ## Health only
 

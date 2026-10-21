@@ -23,7 +23,7 @@ GO_PATHS = ("chain.mk", "go.mod", "go.sum", "admin", "consensus", "custodyproof"
 NATIVE_PATHS = ("Makefile", "src", "include", "cmd", "programs", "agent",
                 "rust-toolchain.toml", "contracts/config/checkpoint-settlement.json")
 PATHS = {name: GO_PATHS if name in ("paxd", "layerx-custody-proof") else
-         GO_PATHS + ("human/wallet/attestor",) if name == "attestor" else NATIVE_PATHS
+         GO_PATHS + ("services/wallet/attestor",) if name == "attestor" else NATIVE_PATHS
          for name in NAMES}
 LIBRARIES = (
     "wasm-runtime/internal/api/libwasmvm.x86_64.so",
@@ -222,7 +222,7 @@ def build(destination):
             cwd = ROOT
             if index == 2:
                 env.update(CGO_ENABLED="0", GOOS="linux")
-                cwd = ROOT / "human/wallet/attestor"
+                cwd = ROOT / "services/wallet/attestor"
             command(argv, cwd=cwd, env=env)
         require(clean_identity() == (revision, tree), "source changed during build")
         for name in NAMES:

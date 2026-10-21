@@ -26,7 +26,7 @@ area:programs:
 area:human:
   - changed-files:
       - any-glob-to-any-file:
-          - human/**
+          - services/wallet/**
           - services/human/**
           - apps/perps/**
           - apps/wallet/**

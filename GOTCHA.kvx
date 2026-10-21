@@ -8770,3 +8770,13 @@ detail = "pnpm-workspace.yaml accepts ../../sdk/launchpad/packages/* and the loc
 area = "layout/human"
 summary = "a fresh worktree cannot run make human-build until human/wallet/sdk/dist is built"
 detail = "The web app links @paxeer/wallet to human/wallet/sdk, whose exports point at the untracked dist; run pnpm install and pnpm --filter @paxeer/wallet build in human/wallet first, and a fresh dist exposes the GasQuoteRequest did field the web app does not send yet."
+
+[gotcha.1840]
+area = "services/wallet"
+summary = "the services/wallet demo typecheck reports four extra errors in a fresh worktree because @paxeer/wallet resolves to the untracked sdk/wallet/dist"
+detail = "The sdk/wallet typecheck runs tsc --noEmit and never writes dist; run pnpm -C sdk/wallet run build before pnpm -C services/wallet -r typecheck, then delete the sdk/wallet/pnpm-lock.yaml that pnpm writes beside it."
+
+[gotcha.1841]
+area = "shell"
+summary = "pkill -f with a pattern from the same command line kills the calling shell"
+detail = "A Bash call that runs pkill -f 'proc/loadavg' and then the gate matches its own bash -c command line and exits 144 before the gate runs; stop the earlier job by its id or pid instead."

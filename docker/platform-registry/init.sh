@@ -27,7 +27,7 @@
 # Stage order of the deployment: material (ca.sh issue registry and
 # registry-event-client from the one internal CA, the env secrets below
 # (/etc/layerx/registry.env), the builder environment and the kernel material) -> registry-bootstrap (this
-# script) -> router-activation (human/wallet/deploy/endpoint.toml) ->
+# script) -> router-activation (services/wallet/deploy/endpoint.toml) ->
 # routed-proof. This stage consumes only material: nothing here waits on,
 # probes or names the router, so the registry comes up ready before the router
 # is activated. Every consumed prerequisite is refused by name when absent,

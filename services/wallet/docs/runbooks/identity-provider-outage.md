@@ -2,10 +2,10 @@
 
 Supabase Auth issues every user's access token. The gateway verifies tokens
 against the project's JWKS at `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`
-(`human/wallet/gateway/src/auth/jwt.ts`, ten-minute key cache, five-second
+(`services/wallet/gateway/src/auth/jwt.ts`, ten-minute key cache, five-second
 fetch timeout), and every attestor verifies the same token itself against
 `ATTESTOR_JWKS_URL` with `ATTESTOR_JWT_ISSUER` and `ATTESTOR_JWT_AUDIENCE`
-(`human/wallet/attestor/internal/auth/jwt`), keeping the fetched key set in
+(`services/wallet/attestor/internal/auth/jwt`), keeping the fetched key set in
 memory and refetching only on an unknown key id. Both fail closed: with no
 key that verifies a token, nothing is signed. There is no fallback identity
 path and none is added during an outage.

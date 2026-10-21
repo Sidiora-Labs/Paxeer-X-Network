@@ -28,8 +28,8 @@ SERVICES='
 layerx|docker/layerx/Dockerfile|Dockerfile|.
 wallet-pwa|docker/wallet-pwa/Dockerfile|apps/wallet/Dockerfile|.
 web|docker/web/Dockerfile|apps/web/Dockerfile|.
-wallet-gateway|docker/wallet-gateway/Dockerfile|human/wallet/gateway/Dockerfile|.
-wallet-attestor|docker/wallet-attestor/Dockerfile|human/wallet/attestor/Dockerfile|.
+wallet-gateway|docker/wallet-gateway/Dockerfile|services/wallet/gateway/Dockerfile|.
+wallet-attestor|docker/wallet-attestor/Dockerfile|services/wallet/attestor/Dockerfile|.
 interop-gateway|docker/interop-gateway/Dockerfile|services/interop/deploy/gateway/Dockerfile|.
 interop-mirror|docker/interop-mirror/Dockerfile|services/interop/deploy/mirror/Dockerfile|.
 x-websearch|docker/x-websearch/Dockerfile|services/interop/deploy/x-websearch/Dockerfile|.

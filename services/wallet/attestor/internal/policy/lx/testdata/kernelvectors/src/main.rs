@@ -436,7 +436,7 @@ fn main() {
     let _ = writeln!(rendered, "{{");
     let _ = writeln!(
         rendered,
-        "  \"generator\": \"human/wallet/attestor/internal/policy/lx/testdata/kernelvectors\","
+        "  \"generator\": \"services/wallet/attestor/internal/policy/lx/testdata/kernelvectors\","
     );
     let _ = writeln!(rendered, "  \"public_key\": \"{}\",", hex(&owner));
     let _ = writeln!(rendered, "  \"peer_public_key\": \"{}\",", hex(&peer));

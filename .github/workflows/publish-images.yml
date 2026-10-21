@@ -14,7 +14,7 @@ on:
       - docker/**
       - services/platform/**
       - services/interop/**
-      - human/wallet/**
+      - services/wallet/**
       - sdk/wallet/**
       - apps/explorer/**
       - services/explorer/**

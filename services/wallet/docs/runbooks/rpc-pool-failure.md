@@ -1,7 +1,7 @@
 # RPC pool failure
 
 The gateway broadcasts, estimates gas, simulates and allocates nonces through
-its RPC pool (`human/wallet/gateway/src/rpc/pool.ts`). The pool is configured
+its RPC pool (`services/wallet/gateway/src/rpc/pool.ts`). The pool is configured
 by `RPC_URLS` (comma-separated chain RPC URLs, defaulting to the public
 mainnet hosts listed in `docs/site/docs/reference/public-rpc.md`),
 `RPC_LAG_THRESHOLD_BLOCKS` (default 20), `RPC_HEALTH_INTERVAL_MS` (default

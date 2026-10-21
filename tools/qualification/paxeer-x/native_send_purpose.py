@@ -71,9 +71,9 @@ def main():
         environment = dict(os.environ, CARGO_BUILD_JOBS='4', CARGO_TARGET_DIR='/root/lx-target/human',
                            GOMAXPROCS='4', PATH='/root/lx-toolchains/node24/bin:/usr/local/go/bin:/root/.cargo/bin:' + os.environ.get('PATH', ''))
         run(['/usr/local/go/bin/go', 'build', '-mod=readonly', '-p', '4', '-o', str(destination / 'attestor'), './cmd/attestor'],
-            destination / 'go-daemon-build.log', ROOT / 'human/wallet/attestor', environment)
+            destination / 'go-daemon-build.log', ROOT / 'services/wallet/attestor', environment)
         run(['/usr/local/go/bin/go', 'test', '-mod=readonly', '-p', '4', '-c', '-o', str(destination / 'native-server.test'), './internal/server'],
-            destination / 'go-corpus-build.log', ROOT / 'human/wallet/attestor', environment)
+            destination / 'go-corpus-build.log', ROOT / 'services/wallet/attestor', environment)
         command = ['/root/.cargo/bin/cargo', 'test', '--locked', '--manifest-path', 'services/human/Cargo.toml',
                    '-p', 'layerx-human-service', '--test', 'native_send_purpose', '--no-run', '--message-format=json']
         run(command, destination / 'rust-corpus-build.log', ROOT, environment)
@@ -116,7 +116,7 @@ def main():
                        PATH='/root/lx-toolchains/node24/bin:/usr/local/go/bin:/root/.cargo/bin:' + os.environ.get('PATH', ''))
     log = destination / 'native-send-purpose-verify.log'
     run([str(artifacts['go_corpus']), '-test.run=^TestNativeSendPurposeRealProfiles$', '-test.count=1', '-test.v',
-         '-test.timeout=' + str(max(1, int(B.remaining()))) + 's'], log, ROOT / 'human/wallet/attestor', environment)
+         '-test.timeout=' + str(max(1, int(B.remaining()))) + 's'], log, ROOT / 'services/wallet/attestor', environment)
     observed = log.read_text()
     B.require('--- PASS: TestNativeSendPurposeRealProfiles' in observed and 'native_send_provider_and_sdk_real_cluster ... ok' in observed
               and 'native custody genuine passkey issuance and grant consent verified' in observed

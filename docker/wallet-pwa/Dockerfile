@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1.7
 
 FROM node:22-alpine AS sdk
-WORKDIR /src/human/wallet
+WORKDIR /src/services/wallet
 ENV NEXT_TELEMETRY_DISABLED=1 \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
 RUN corepack enable \
     && corepack prepare pnpm@12.6.0 --activate
 COPY services/agent/sdk/typescript /src/services/agent/sdk/typescript
-COPY human/wallet /src/human/wallet
+COPY services/wallet /src/services/wallet
 COPY sdk/wallet /src/sdk/wallet
 RUN pnpm install --frozen-lockfile --filter ../../sdk/wallet... \
     && pnpm --filter ../../sdk/wallet... run build

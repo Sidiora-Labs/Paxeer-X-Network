@@ -13,8 +13,8 @@ usage() {
 Usage: scripts/wallet/gate-lint.sh [--check | --help]
 
 Runs the lints of the wallet tree in order: gofmt -l and go vet ./... for
-the Go modules human/wallet/attestor and human/wallet/ceremony; eslint in
-every package of the pnpm workspace human/wallet that has an eslint config
+the Go modules services/wallet/attestor and services/wallet/ceremony; eslint in
+every package of the pnpm workspace services/wallet that has an eslint config
 and tsc --noEmit in every package that has a tsconfig.json, after building
 the sdk with its own build script, which first builds the linked sdk
 services/agent/sdk/typescript; eslint and
@@ -54,12 +54,12 @@ HUMAN_PKGS='-p layerx-human-kms -p layerx-human-identity-provider -p layerx-huma
 
 builtin_targets() {
   printf '%s\t%s\t%s\t%s\n' \
-    go-attestor-gofmt human/wallet/attestor "$GOFMT_CMD" go.mod \
-    go-attestor-vet human/wallet/attestor 'go vet ./...' go.mod \
-    go-ceremony-gofmt human/wallet/ceremony "$GOFMT_CMD" go.mod \
-    go-ceremony-vet human/wallet/ceremony 'go vet ./...' go.mod \
-    pnpm-wallet-eslint human/wallet "$PNPM_ESLINT_CMD" pnpm-workspace.yaml \
-    pnpm-wallet-tsc human/wallet "$PNPM_TSC_CMD" pnpm-workspace.yaml \
+    go-attestor-gofmt services/wallet/attestor "$GOFMT_CMD" go.mod \
+    go-attestor-vet services/wallet/attestor 'go vet ./...' go.mod \
+    go-ceremony-gofmt services/wallet/ceremony "$GOFMT_CMD" go.mod \
+    go-ceremony-vet services/wallet/ceremony 'go vet ./...' go.mod \
+    pnpm-wallet-eslint services/wallet "$PNPM_ESLINT_CMD" pnpm-workspace.yaml \
+    pnpm-wallet-tsc services/wallet "$PNPM_TSC_CMD" pnpm-workspace.yaml \
     pnpm-app-eslint apps/wallet 'pnpm exec eslint .' package.json \
     pnpm-app-tsc apps/wallet 'pnpm exec tsc --noEmit' package.json \
     rust-human-fmt human "cargo fmt --check $HUMAN_PKGS" Cargo.toml \

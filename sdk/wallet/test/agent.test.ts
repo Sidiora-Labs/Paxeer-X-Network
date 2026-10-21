@@ -21,8 +21,8 @@ import {
   signAgentRequest,
   signBinding,
 } from '../src/index.js';
-import { startPostgres, type EphemeralPostgres } from '../../../human/wallet/gateway/test/support/postgres.js';
-import { startIdentityProvider, type IdentityProvider } from '../../../human/wallet/gateway/test/support/identity.js';
+import { startPostgres, type EphemeralPostgres } from '../../../services/wallet/gateway/test/support/postgres.js';
+import { startIdentityProvider, type IdentityProvider } from '../../../services/wallet/gateway/test/support/identity.js';
 
 interface BindVector {
   name: string;
@@ -55,10 +55,10 @@ let idp: IdentityProvider;
 let pg: EphemeralPostgres;
 let app: FastifyInstance;
 let base: string;
-let verifyModule: typeof import('../../../human/wallet/gateway/src/agent/verify.js');
-let claimsModule: typeof import('../../../human/wallet/gateway/src/routes/agents.js');
-let agentsDb: typeof import('../../../human/wallet/gateway/src/db/agents.js');
-let poolModule: typeof import('../../../human/wallet/gateway/src/db/pool.js');
+let verifyModule: typeof import('../../../services/wallet/gateway/src/agent/verify.js');
+let claimsModule: typeof import('../../../services/wallet/gateway/src/routes/agents.js');
+let agentsDb: typeof import('../../../services/wallet/gateway/src/db/agents.js');
+let poolModule: typeof import('../../../services/wallet/gateway/src/db/pool.js');
 let labelCounter = 0;
 
 beforeAll(async () => {
@@ -73,11 +73,11 @@ beforeAll(async () => {
   process.env.AGENT_JWT_SECRET = randomBytes(32).toString('hex');
   process.env.AGENT_DEFAULT_FROZEN = 'false';
   pg = await startPostgres();
-  verifyModule = await import('../../../human/wallet/gateway/src/agent/verify.js');
-  claimsModule = await import('../../../human/wallet/gateway/src/routes/agents.js');
-  agentsDb = await import('../../../human/wallet/gateway/src/db/agents.js');
-  poolModule = await import('../../../human/wallet/gateway/src/db/pool.js');
-  const index = await import('../../../human/wallet/gateway/src/index.js');
+  verifyModule = await import('../../../services/wallet/gateway/src/agent/verify.js');
+  claimsModule = await import('../../../services/wallet/gateway/src/routes/agents.js');
+  agentsDb = await import('../../../services/wallet/gateway/src/db/agents.js');
+  poolModule = await import('../../../services/wallet/gateway/src/db/pool.js');
+  const index = await import('../../../services/wallet/gateway/src/index.js');
   app = await index.buildApp();
   await app.listen({ host: '127.0.0.1', port: 0 });
   base = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;

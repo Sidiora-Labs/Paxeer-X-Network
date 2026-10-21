@@ -185,7 +185,7 @@ jobs:
       - name: Install locked middleware and wallet dependencies
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
-          npm exec --yes --package=pnpm@9.15.9 -- pnpm --dir human/wallet install --frozen-lockfile --ignore-scripts --filter @paxeer/wallet
+          npm exec --yes --package=pnpm@9.15.9 -- pnpm --dir services/wallet install --frozen-lockfile --ignore-scripts --filter @paxeer/wallet
       - name: Build connected middleware and original-wallet consumer
         run: make platform-build-connected-middleware
       - name: Exercise original-wallet consent and receipt-backed merchant settlement

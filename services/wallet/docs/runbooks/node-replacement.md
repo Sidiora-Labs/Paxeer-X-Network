@@ -2,7 +2,7 @@
 
 A wallet key is shared three-of-five across the attestor applications
 `paxeer-attestor-1` to `paxeer-attestor-5` (definitions in
-`human/wallet/deploy/attestor-<N>.toml`). The loss of one or two nodes costs
+`services/wallet/deploy/attestor-<N>.toml`). The loss of one or two nodes costs
 no signature: any three healthy holders sign. A lost node is replaced by
 issuing it a fresh share of every key with `keys.addshare` from the surviving
 holders, followed by `keys.refresh` of every key, which retires every share
@@ -47,8 +47,8 @@ attestor_post() {
 and `keys.refresh` are protocol operations: the identical body,
 with the same `session_id`, is posted to every participant at once, and the
 nodes run the session between themselves over the peer transport. The
-request shapes are those of `human/wallet/schema/attestor-api/v1.kvx` and its
-goldens under `human/wallet/schema/attestor-api/golden/`.
+request shapes are those of `services/wallet/schema/attestor-api/v1.kvx` and its
+goldens under `services/wallet/schema/attestor-api/golden/`.
 
 ## Case A: the machine is lost and its volume is intact
 
@@ -99,10 +99,10 @@ goldens under `human/wallet/schema/attestor-api/golden/`.
 
 3. Choose a participant id `<new-id>` that no node has ever used. The
    add-share path proven by `TestAddShareBindsOwnerAcrossParticipants` in
-   `human/wallet/attestor/internal/server/e2e_test.go` issues the share to a
+   `services/wallet/attestor/internal/server/e2e_test.go` issues the share to a
    new id; reusing the lost node's id is not covered by a test.
 
-4. Change the definitions: in `human/wallet/deploy/attestor-<N>.toml` set
+4. Change the definitions: in `services/wallet/deploy/attestor-<N>.toml` set
    `ATTESTOR_NODE_ID` to `<new-id>`; in the four other definitions change the
    lost node's entry in `ATTESTOR_PEERS` to `<new-id>=` followed by the same
    peer address. Validate them offline.
@@ -153,7 +153,7 @@ goldens under `human/wallet/schema/attestor-api/golden/`.
    no public address (observation 3.5.8).
 
    ```sh
-   (cd human/wallet/deploy && flyctl deploy --config attestor-<N>.toml --image <attestor-image> --app paxeer-attestor-<N> --ha=false --no-public-ips -y)
+   (cd services/wallet/deploy && flyctl deploy --config attestor-<N>.toml --image <attestor-image> --app paxeer-attestor-<N> --ha=false --no-public-ips -y)
    ```
 
    Expected: one machine created with a new `attestor_data` volume, passing
@@ -164,7 +164,7 @@ goldens under `human/wallet/schema/attestor-api/golden/`.
    only when the quorum line passes.
 
    ```sh
-   (cd human/wallet/deploy && flyctl deploy --config attestor-<M>.toml --image <attestor-image> --app paxeer-attestor-<M> --ha=false --no-public-ips -y)
+   (cd services/wallet/deploy && flyctl deploy --config attestor-<M>.toml --image <attestor-image> --app paxeer-attestor-<M> --ha=false --no-public-ips -y)
    scripts/wallet/check-live.sh attestors
    ```
 
@@ -250,7 +250,7 @@ goldens under `human/wallet/schema/attestor-api/golden/`.
     now reports the same `public_key`, `owner` and `account`, the new epoch and
     the five holders. The sequence of steps 11 and 12 is proven by
     `TestDescribedFieldsReplaceALostParticipant` in
-    `human/wallet/attestor/internal/server/e2e_test.go`, which signs with a
+    `services/wallet/attestor/internal/server/e2e_test.go`, which signs with a
     quorum that includes the replacement afterwards.
 
 ## Readiness check that proves recovery

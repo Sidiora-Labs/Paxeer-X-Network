@@ -13,8 +13,8 @@ usage() {
 Usage: scripts/wallet/gate-test.sh [--check | --help]
 
 Runs the test suites of the wallet tree in order: the Go modules
-human/wallet/attestor and human/wallet/ceremony, the pnpm workspace
-human/wallet, the app apps/wallet, the Rust crates
+services/wallet/attestor and services/wallet/ceremony, the pnpm workspace
+services/wallet, the app apps/wallet, the Rust crates
 layerx-human-kms, layerx-human-identity-provider and layerx-human-service
 in the human workspace, and layerx-platform-gateway in the platform
 workspace. A target whose directory or manifest does not exist is reported
@@ -43,9 +43,9 @@ EOF
 
 builtin_targets() {
   printf '%s\t%s\t%s\t%s\n' \
-    go-attestor human/wallet/attestor 'go test ./...' go.mod \
-    go-ceremony human/wallet/ceremony 'go test ./...' go.mod \
-    pnpm-wallet human/wallet 'pnpm -r --no-bail test' pnpm-workspace.yaml \
+    go-attestor services/wallet/attestor 'go test ./...' go.mod \
+    go-ceremony services/wallet/ceremony 'go test ./...' go.mod \
+    pnpm-wallet services/wallet 'pnpm -r --no-bail test' pnpm-workspace.yaml \
     pnpm-app apps/wallet 'pnpm exec vitest run' package.json \
     rust-human human 'cargo test --no-fail-fast -p layerx-human-kms -p layerx-human-identity-provider -p layerx-human-service' Cargo.toml \
     rust-platform platform 'cargo test --no-fail-fast -p layerx-platform-gateway' hosted/gateway/Cargo.toml

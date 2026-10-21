@@ -3,7 +3,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 checker="$root/scripts/wallet/check-deploy.sh"
-source_dir="$root/human/wallet/deploy"
+source_dir="$root/services/wallet/deploy"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 

@@ -86,15 +86,15 @@ Rules that hold for every step:
   current service's database, with five locally started daemons (task 5.2).
 
   ```sh
-  (cd human/wallet/attestor && go build -o <attestor-binary-path> ./cmd/attestor)
+  (cd services/wallet/attestor && go build -o <attestor-binary-path> ./cmd/attestor)
   read -rs CEREMONY_SOURCE_DATABASE_URL && export CEREMONY_SOURCE_DATABASE_URL
-  export CEREMONY_GATEWAY_MIGRATIONS_DIR="$(pwd -P)/human/wallet/gateway/migrations"
+  export CEREMONY_GATEWAY_MIGRATIONS_DIR="$(pwd -P)/services/wallet/gateway/migrations"
   export CEREMONY_REHEARSAL_ADMIN_URL=<local-admin-connection>
   export CEREMONY_ATTESTOR_BIN=<attestor-binary-path>
   export CEREMONY_ARCHIVE_PATH=<rehearsal-archive-path>
   read -rs CEREMONY_ARCHIVE_PASSPHRASE && export CEREMONY_ARCHIVE_PASSPHRASE
   read -rs CEREMONY_MASTER_KEY && export CEREMONY_MASTER_KEY
-  (cd human/wallet/ceremony && go run ./cmd/ceremony rehearse --report-only-counts)
+  (cd services/wallet/ceremony && go run ./cmd/ceremony rehearse --report-only-counts)
   ```
 
   `CEREMONY_SOURCE_DATABASE_URL` is the read-only connection to the current
@@ -129,9 +129,9 @@ Rules that hold for every step:
   ```sh
   read -rs <source-connection-variable> && export <source-connection-variable>
   export CEREMONY_DATABASE_URL=<gateway-wallet-database-connection>
-  export CEREMONY_GATEWAY_MIGRATIONS_DIR="$(pwd -P)/human/wallet/gateway/migrations"
-  (cd human/wallet/ceremony && go run ./cmd/ceremony move)
-  (cd human/wallet/ceremony && go run ./cmd/ceremony plan)
+  export CEREMONY_GATEWAY_MIGRATIONS_DIR="$(pwd -P)/services/wallet/gateway/migrations"
+  (cd services/wallet/ceremony && go run ./cmd/ceremony move)
+  (cd services/wallet/ceremony && go run ./cmd/ceremony plan)
   ```
 
 - Readiness check: `move` exits 0 and prints, for every table, the row count
@@ -154,7 +154,7 @@ Rules that hold for every step:
   ```sh
   export CEREMONY_ARCHIVE_PATH=<archive-path>
   read -rs CEREMONY_ARCHIVE_PASSPHRASE && export CEREMONY_ARCHIVE_PASSPHRASE
-  (cd human/wallet/ceremony && go run ./cmd/ceremony archive)
+  (cd services/wallet/ceremony && go run ./cmd/ceremony archive)
   ```
 
 - Readiness check: exit 0 and `funded_archived=<f> verified=true` with `<f>`
@@ -173,7 +173,7 @@ Rules that hold for every step:
   one node at a time.
 
   ```sh
-  (cd human/wallet/deploy && flyctl deploy --config attestor-<N>.toml --image <attestor-image> --app paxeer-attestor-<N> --ha=false --no-public-ips -y --env ATTESTOR_CEREMONY=true)
+  (cd services/wallet/deploy && flyctl deploy --config attestor-<N>.toml --image <attestor-image> --app paxeer-attestor-<N> --ha=false --no-public-ips -y --env ATTESTOR_CEREMONY=true)
   scripts/wallet/check-live.sh attestors
   ```
 
@@ -200,8 +200,8 @@ Rules that hold for every step:
   export CEREMONY_TLS_KEY_FILE=<operator-client-key-path>
   export CEREMONY_TLS_CA_FILE=<peer-ca-bundle-path>
   read -rs CEREMONY_MASTER_KEY && export CEREMONY_MASTER_KEY
-  (cd human/wallet/ceremony && go run ./cmd/ceremony deliver)
-  (cd human/wallet/ceremony && go run ./cmd/ceremony deliver --report-only-counts)
+  (cd services/wallet/ceremony && go run ./cmd/ceremony deliver)
+  (cd services/wallet/ceremony && go run ./cmd/ceremony deliver --report-only-counts)
   ```
 
 - Readiness check: exit 0 and
@@ -224,7 +224,7 @@ Rules that hold for every step:
   `ATTESTOR_CEREMONY` to `false`, one node at a time.
 
   ```sh
-  (cd human/wallet/deploy && flyctl deploy --config attestor-<N>.toml --image <attestor-image> --app paxeer-attestor-<N> --ha=false --no-public-ips -y)
+  (cd services/wallet/deploy && flyctl deploy --config attestor-<N>.toml --image <attestor-image> --app paxeer-attestor-<N> --ha=false --no-public-ips -y)
   scripts/wallet/check-live.sh attestors
   ```
 
@@ -239,8 +239,8 @@ Rules that hold for every step:
   start without the attestor configuration.
 
   ```sh
-  pnpm --dir human/wallet/gateway build
-  pnpm --dir human/wallet/gateway backfill:accounts --batch-size 100 --max-batches 1000
+  pnpm --dir services/wallet/gateway build
+  pnpm --dir services/wallet/gateway backfill:accounts --batch-size 100 --max-batches 1000
   ```
 
   It generates each moved wallet's Ed25519 identity in bounded batches from

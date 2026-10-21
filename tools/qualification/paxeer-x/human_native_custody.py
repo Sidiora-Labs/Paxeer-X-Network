@@ -63,9 +63,9 @@ def main():
         source = source_digest(files)
         environment = dict(os.environ, CARGO_BUILD_JOBS='4', CARGO_TARGET_DIR='/root/lx-target/human')
         run(['go', 'build', '-mod=readonly', '-o', str(destination / 'attestor'), './cmd/attestor'],
-            destination / 'go-daemon-build.log', ROOT / 'human/wallet/attestor', environment)
+            destination / 'go-daemon-build.log', ROOT / 'services/wallet/attestor', environment)
         run(['go', 'test', '-mod=readonly', '-c', '-o', str(destination / 'native-server.test'), './internal/server'],
-            destination / 'go-corpus-build.log', ROOT / 'human/wallet/attestor', environment)
+            destination / 'go-corpus-build.log', ROOT / 'services/wallet/attestor', environment)
         command = ['/root/.cargo/bin/cargo', 'test', '--locked', '--manifest-path', 'services/human/Cargo.toml',
                    '-p', 'layerx-human-kms', '--test', 'attestor_native_profile', '--no-run', '--message-format=json']
         run(command, destination / 'rust-corpus-build.log', ROOT, environment)
@@ -107,7 +107,7 @@ def main():
     environment = dict(os.environ, PAXEER_X_NATIVE_CUSTODY_RUST_TEST=str(artifacts['rust_corpus']))
     log = destination / 'native-custody-verify.log'
     run([str(artifacts['go_corpus']), '-test.run=^TestNativeCustody', '-test.count=1', '-test.v',
-         '-test.timeout=' + str(max(1, int(B.remaining()))) + 's'], log, ROOT / 'human/wallet/attestor', environment)
+         '-test.timeout=' + str(max(1, int(B.remaining()))) + 's'], log, ROOT / 'services/wallet/attestor', environment)
     observed = log.read_text()
     B.require('--- PASS: TestNativeCustodyRealProfiles' in observed and 'native_provider_and_sdk_real_cluster ... ok' in observed
               and 'native custody genuine passkey issuance and grant consent verified' in observed

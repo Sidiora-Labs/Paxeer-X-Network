@@ -1,5 +1,5 @@
 #!/bin/bash
-# Runs as root inside the kernel app's machine (human/wallet/deploy/human.toml)
+# Runs as root inside the kernel app's machine (services/wallet/deploy/human.toml)
 # through flyctl ssh console, after docker/kernel/init.sh has made the volume
 # layout and the treasury key. The kernel genesis is made in two steps around
 # the governance step on chain 125:

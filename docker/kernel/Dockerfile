@@ -1,4 +1,4 @@
-# The kernel app image (human/wallet/deploy/human.toml): the union of
+# The kernel app image (services/wallet/deploy/human.toml): the union of
 # docker/platform-node, platform-core, platform-authority,
 # platform-agent-boundary, paxeer, interop-mirror and human-service plus layerx-mcp,
 # one machine running the node pod under docker/kernel/init.sh.

@@ -19,7 +19,7 @@ spec = importlib.util.spec_from_file_location('foundation_artifacts', Path(__fil
 ART = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ART)
 SOURCES = ('docker/kernel', 'services/platform/hosted/node', 'services/platform/hosted/paxeer',
-           'services/platform/hosted/tests/publication-policy.py', 'human/wallet/attestor',
+           'services/platform/hosted/tests/publication-policy.py', 'services/wallet/attestor',
            'tools/bringup/kernel-genesis.sh', 'contracts/config/checkpoint-settlement.json',
            'migrations/0007_history_index.sql')
 NETWORK_ID = 77

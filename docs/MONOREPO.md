@@ -30,12 +30,13 @@ This repository is the Paxeer X Network monorepo: the Paxeer X chain node (`paxd
 | `services/explorer` | Block explorer backend, services and deployment |
 | `services/launchpad` | Launchpad services |
 | `services/human` | Human control plane Rust workspace (crates, schema, tools) |
+| `services/wallet` | Embedded wallet service: attestor, ceremony, gateway, demo, schema, deployment and runbooks |
 | `services/bridge` | Bridge deployment |
 | `sdk/platform`, `sdk/integrations` | Platform SDKs (Go, JVM, .NET, Swift) and framework integrations |
 | `sdk/launchpad` | Launchpad protocol, shared libraries and client packages |
 | `sdk/chainflow` | Chainflow client libraries for Go, Python, Rust and TypeScript |
 | `sdk/js` | JavaScript SDK snapshot with its `VENDOR.kvx` pin record |
-| `sdk/wallet` | Wallet SDK (`@paxeer/wallet`), a member of the `human/wallet` pnpm workspace |
+| `sdk/wallet` | Wallet SDK (`@paxeer/wallet`), a member of the `services/wallet` pnpm workspace |
 | `core/deps` | Pinned snapshots of the upstream libraries the node builds from, each with a `VENDOR.kvx` pin record |
 | `tests/` | Kernel C tests, `tests/fuzz`, `tests/integration`, `tests/occ`, `tests/testutil`, `tests/fixtures`, Solidity and vector suites |
 | `tools/hpx`, `tools/platform`, `tools/launchpad` | Node installer and registry, platform CLI, emulator and release tooling, launchpad tools |

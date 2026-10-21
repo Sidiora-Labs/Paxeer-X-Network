@@ -43,8 +43,8 @@ with at least two machines across `ams` and `fra`:
   certificate, from the `developer` row of `tools/bringup/ca.sh`, names
   `ingress.process.paxeer-webhooks.internal`. Producers post events to
   `https://ingress.process.paxeer-webhooks.internal`: the router
-  (`human/wallet/deploy/endpoint.toml`), the kernel app
-  (`human/wallet/deploy/human.toml`) and the registry.
+  (`services/wallet/deploy/endpoint.toml`), the kernel app
+  (`services/wallet/deploy/human.toml`) and the registry.
 
 Webhook state lives in the internal Redis `paxeer-internal-redis`
 (`rediss://paxeer-internal-redis.internal:6379`). Event sources are the

@@ -6,7 +6,7 @@ cmd/ @Sidiora-Labs/core
 services/agent/ @Sidiora-Labs/core
 services/platform/ @Sidiora-Labs/core
 programs/ @Sidiora-Labs/core
-human/ @Sidiora-Labs/core
+services/wallet/ @Sidiora-Labs/core
 services/human/ @Sidiora-Labs/core
 apps/perps/ @Sidiora-Labs/core
 apps/wallet/ @Sidiora-Labs/core

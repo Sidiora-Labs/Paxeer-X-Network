@@ -29,7 +29,7 @@ ATTESTOR_CERT_DIR     attestor-1.crt .. attestor-5.crt, the deployed attestor
                       custody inventory members.
 MODULE_REGISTRY_FILE  the kernel deployment's module-registry.json.
 
-The issuer and tenant are read from human/wallet/deploy/attestor-*.env.example
+The issuer and tenant are read from services/wallet/deploy/attestor-*.env.example
 and must agree across the five attestors. <out-dir>/keys keeps the operator
 custody inventory signing key, the only copy; the inventory expires 30 days
 after minting and is re-signed with that key.
@@ -42,7 +42,7 @@ out=$1
 : "${ATTESTOR_CERT_DIR:?ATTESTOR_CERT_DIR is required}"
 : "${MODULE_REGISTRY_FILE:?MODULE_REGISTRY_FILE is required}"
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-deploy=$root/human/wallet/deploy
+deploy=$root/services/wallet/deploy
 
 dotenv() { sed -n "s/^$2=//p" "$1"; }
 issuer=$(dotenv "$deploy/attestor-1.env.example" ATTESTOR_AUTHORITY_ISSUER)

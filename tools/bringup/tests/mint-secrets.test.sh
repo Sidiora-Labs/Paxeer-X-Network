@@ -167,7 +167,7 @@ for pair in WALLET_IDENTITY_BINDING_KEY:binding.key WALLET_CUSTODY_INVENTORY:inv
 	chmod 600 "$gw/${pair#*:}"
 done
 touch "$gw/client.crt" "$gw/client.key" "$gw/ca.crt"
-issuer=$(sed -n 's/^ATTESTOR_AUTHORITY_ISSUER=//p' "$root/human/wallet/deploy/attestor-1.env.example")
+issuer=$(sed -n 's/^ATTESTOR_AUTHORITY_ISSUER=//p' "$root/services/wallet/deploy/attestor-1.env.example")
 pins=$(for i in 1 2 3 4 5; do openssl x509 -in "$work/certs/attestor-$i.crt" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | cut -d' ' -f1; done | paste -sd,)
 cat >"$work/check.mts" <<'EOF'
 import { createPrivateKey } from 'node:crypto';
@@ -183,16 +183,16 @@ if (inventory.members.map((m) => m.id).join(',') !== '1,2,3,4,5' || inventory.ke
 console.log('gateway env and inventory accepted');
 EOF
 (
-	cd "$root/human/wallet/gateway"
+	cd "$root/services/wallet/gateway"
 	env -i PATH="$PATH" HOME="$HOME" NODE_ENV=production CORS_ORIGINS=https://paxportwallet.com \
 		SUPABASE_URL="${issuer%/auth/v1}" DATABASE_URL=postgres://wallet@localhost:5432/wallet \
 		WALLET_MASTER_KEY="$(openssl rand -base64 32)" \
 		WALLET_IDENTITY_BINDING_TENANT="$(value wallet-gateway.railway.env WALLET_IDENTITY_BINDING_TENANT)" \
 		WALLET_IDENTITY_BINDING_PRIVATE_KEY_FILE="$gw/binding.key" \
 		WALLET_CUSTODY_INVENTORY_FILE="$gw/inventory.jwt" WALLET_CUSTODY_INVENTORY_PUBLIC_KEY_FILE="$gw/inventory.pem" \
-		ATTESTOR_ENDPOINTS="$(sed -n 's/^ATTESTOR_ENDPOINTS=//p' "$root/human/wallet/deploy/railway.env.example")" \
+		ATTESTOR_ENDPOINTS="$(sed -n 's/^ATTESTOR_ENDPOINTS=//p' "$root/services/wallet/deploy/railway.env.example")" \
 		ATTESTOR_CLIENT_CERT_FILE="$gw/client.crt" ATTESTOR_CLIENT_KEY_FILE="$gw/client.key" ATTESTOR_CA_FILE="$gw/ca.crt" \
-		ATTESTOR_QUORUM=3 EXPECTED_PINS="$pins" GATEWAY_SRC="$root/human/wallet/gateway/src" \
+		ATTESTOR_QUORUM=3 EXPECTED_PINS="$pins" GATEWAY_SRC="$root/services/wallet/gateway/src" \
 		node_modules/.bin/tsx "$work/check.mts"
 ) || fail "gateway rejected the minted files"
 

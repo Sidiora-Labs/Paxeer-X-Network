@@ -36,7 +36,7 @@ def source_paths():
         paths.update(path for path in directory.rglob('*') if path.is_file())
     paths.update((WEB / 'e2e/custody-evidence.test.ts', WEB / 'package.json', WEB / 'package-lock.json',
                   WEB / 'tsconfig.json', SDK / 'package.json', SDK / 'tsconfig.json',
-                  ROOT / 'human/wallet/tsconfig.base.json', Path(__file__).resolve()))
+                  ROOT / 'services/wallet/tsconfig.base.json', Path(__file__).resolve()))
     require(all(not any(part == '.env' or part.startswith('.env.') for part in path.parts) for path in paths),
             'credential files are not source artifacts')
     return sorted(paths)

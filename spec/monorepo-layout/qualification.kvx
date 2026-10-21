@@ -175,3 +175,10 @@ command = "pnpm -C human/wallet -r typecheck"
 exit_code = 1
 log_path = "fleet/logs/layout-5.2.log"
 observed_and_assumption = "The gateway and sdk/wallet typechecks pass and the demo fails only with seven TS2786 Dialog JSX errors because a fresh install links the SDK's @types/react 18.3.31 devDependency beside the demo's 19.3.0, the same package graph the lockfile held before the move, which only rewrote importer paths; left for the wallet demo owner and task 5.2 stays pending."
+
+[finding.5.3-wallet-demo-typecheck]
+revision = "96003c761 with the task 5.3 move applied"
+command = "(cd services/wallet/attestor && go build ./...) && (cd services/wallet/ceremony && go build ./...) && pnpm -C services/wallet -r typecheck"
+exit_code = 1
+log_path = "fleet/logs/layout-5.3.log"
+observed_and_assumption = "Both Go builds, the gateway and the sdk/wallet typechecks pass and the demo fails only with the seven TS2786 Dialog JSX errors of finding.5.2-wallet-demo-typecheck, from the same @types/react 18 and 19 pair the moved lockfile already held; left for the wallet demo owner and task 5.3 stays pending."

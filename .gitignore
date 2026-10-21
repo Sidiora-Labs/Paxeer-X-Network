@@ -95,6 +95,7 @@ services/agent/target/
 services/agent/tools/*/target/
 services/human/target/
 services/human/**/target/
+services/wallet/**/target/
 /apps/web/.next/
 /apps/web/test-results/
 /apps/web/playwright-report/

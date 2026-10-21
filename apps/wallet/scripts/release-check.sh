@@ -4,7 +4,7 @@ set -eu
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 app_dir=$(dirname -- "$script_dir")
 repo_dir=$(CDPATH= cd -- "$app_dir/../.." && pwd)
-names_file="$repo_dir/human/wallet/deploy/env"
+names_file="$repo_dir/services/wallet/deploy/env"
 
 cd "$app_dir"
 
@@ -125,7 +125,7 @@ else
     elif grep -q "^| \`$name\` |" README.md; then
       source=README.md
     elif [ -f "$names_file" ] && grep -q "^$name - " "$names_file"; then
-      source=human/wallet/deploy/env
+      source=services/wallet/deploy/env
     else
       source=""
     fi

@@ -3,9 +3,9 @@ use std::io::Cursor;
 use layerx_platform_gateway::http::read_request;
 use layerx_platform_gateway::{unified_service_catalogue, unified_service_route};
 
-const WALLET: &str = include_str!("../../../../../human/wallet/gateway/src/routes/wallet.ts");
-const SIGN: &str = include_str!("../../../../../human/wallet/gateway/src/routes/sign.ts");
-const OWNER: &str = include_str!("../../../../../human/wallet/gateway/src/index.ts");
+const WALLET: &str = include_str!("../../../../../services/wallet/gateway/src/routes/wallet.ts");
+const SIGN: &str = include_str!("../../../../../services/wallet/gateway/src/routes/sign.ts");
+const OWNER: &str = include_str!("../../../../../services/wallet/gateway/src/index.ts");
 const SDK_PROVIDER: &str = include_str!("../../../../../sdk/wallet/src/provider.ts");
 const SDK_LX: &str = include_str!("../../../../../sdk/wallet/src/index.ts");
 const SDK_GAS: &str = include_str!("../../../../../sdk/wallet/src/modules/gas-station.ts");
@@ -43,7 +43,7 @@ fn real_registered_wallet_handlers_have_the_same_unified_owner() {
     for name in ["submit", "status"] {
         let path = format!("/v1/wallet/sponsored/{name}");
         assert!(WALLET.contains(&format!("app.post('{path}',{{preHandler:requireAuth}}")));
-        operation("POST", &path, "human/wallet/gateway/src/routes/wallet.ts");
+        operation("POST", &path, "services/wallet/gateway/src/routes/wallet.ts");
     }
     for path in [
         "/v1/wallet/sign-digest",
@@ -53,17 +53,17 @@ fn real_registered_wallet_handlers_have_the_same_unified_owner() {
         "/v1/wallet/lx/sign",
     ] {
         assert!(SIGN.contains(&format!("app.post('{path}',{{preHandler:requireAuth")));
-        operation("POST", path, "human/wallet/gateway/src/routes/sign.ts");
+        operation("POST", path, "services/wallet/gateway/src/routes/sign.ts");
     }
     operation(
         "GET",
         &format!("/v1/wallet/custody/0x{}", "ab".repeat(32)),
-        "human/wallet/gateway/src/routes/sign.ts",
+        "services/wallet/gateway/src/routes/sign.ts",
     );
     operation(
         "GET",
         "/v1/wallet/lx/approvals/12345678-1234-4234-8234-123456789abc",
-        "human/wallet/gateway/src/routes/sign.ts",
+        "services/wallet/gateway/src/routes/sign.ts",
     );
     assert!(SIGN.contains("app.get('/v1/wallet/custody/:id',{preHandler:requireAuth"));
     assert!(SIGN.contains("app.get('/v1/wallet/lx/approvals/:id',{preHandler:requireAuth"));
@@ -140,7 +140,7 @@ fn real_ingress_retains_the_principal_credential_and_exact_financial_body() {
     operation(
         &request.method,
         &request.path,
-        "human/wallet/gateway/src/routes/sign.ts",
+        "services/wallet/gateway/src/routes/sign.ts",
     );
 }
 

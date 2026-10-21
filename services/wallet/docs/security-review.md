@@ -1,10 +1,10 @@
 # Attestor security review
 
-This review covers the threshold library the attestor daemon depends on and the daemon itself under `human/wallet/attestor`. It was done by reading the code. Every statement cites the file it comes from.
+This review covers the threshold library the attestor daemon depends on and the daemon itself under `services/wallet/attestor`. It was done by reading the code. Every statement cites the file it comes from.
 
 ## Scope
 
-- The library: `github.com/getamis/alice`, pinned in `human/wallet/attestor/go.mod` at commit `d8fd6861d3b2`. The last tagged release before that commit is `v1.0.8` (commit `96ba067b74a7`).
+- The library: `github.com/getamis/alice`, pinned in `services/wallet/attestor/go.mod` at commit `d8fd6861d3b2`. The last tagged release before that commit is `v1.0.8` (commit `96ba067b74a7`).
 - The daemon: `cmd/attestor`, `internal/server`, `internal/transport`, `internal/policy` (with `evm` and `lx`), `internal/auth`, `internal/store`, `internal/tss` and `internal/dealer`.
 
 ## Library delta

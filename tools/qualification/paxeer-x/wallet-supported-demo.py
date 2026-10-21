@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 NODE = Path('/root/lx-toolchains/node24/bin/node')
 EVIDENCE = Path(os.environ.get('WALLET_SUPPORTED_DEMO_EVIDENCE_ROOT', '/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.7'))
 MANIFEST = EVIDENCE / 'candidate.json'
-DEMO = ROOT / 'human/wallet/demo'
+DEMO = ROOT / 'services/wallet/demo'
 SDK = ROOT / 'sdk/wallet'
 
 

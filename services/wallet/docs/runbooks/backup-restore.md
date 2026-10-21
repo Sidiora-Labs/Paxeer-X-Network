@@ -12,11 +12,11 @@ Two backup layers exist:
 - Platform volume snapshots of `attestor_data`, listed and restored with
   `flyctl volumes snapshots` and `flyctl volumes create --snapshot-id`.
 - Encrypted store snapshots, the `store.Snapshot` format of
-  `human/wallet/attestor/internal/store/backup.go`, encrypted under the backup
+  `services/wallet/attestor/internal/store/backup.go`, encrypted under the backup
   key (`ATTESTOR_BACKUP_KEY`) and restored by `store.Restore` into an empty
   data directory. The daemon does not write them yet and no command restores
   them (observation 4.5.2); shipping them to the replica server
-  (`ATTESTOR_REPLICA_` variables in `human/wallet/deploy/env`) is added by
+  (`ATTESTOR_REPLICA_` variables in `services/wallet/deploy/env`) is added by
   task 3.14. Until a writer and a restore command exist, the volume snapshot
   is the restore path.
 
@@ -37,7 +37,7 @@ Two backup layers exist:
   the snapshot, use `node-replacement.md` Case B instead.
 - At least three other nodes answer ready (`scripts/wallet/check-live.sh attestors`).
 - The operator shell of `node-replacement.md`, and the node's region, the
-  `primary_region` of `human/wallet/deploy/attestor-<N>.toml`.
+  `primary_region` of `services/wallet/deploy/attestor-<N>.toml`.
 
 ## Commands
 
@@ -78,7 +78,7 @@ Two backup layers exist:
 
    ```sh
    flyctl image show --app paxeer-attestor-<M>
-   (cd human/wallet/deploy && flyctl deploy --config attestor-<N>.toml --image <attestor-image> --app paxeer-attestor-<N> --ha=false --no-public-ips -y)
+   (cd services/wallet/deploy && flyctl deploy --config attestor-<N>.toml --image <attestor-image> --app paxeer-attestor-<N> --ha=false --no-public-ips -y)
    ```
 
    Expected: one machine created on the restored volume, passing its tcp

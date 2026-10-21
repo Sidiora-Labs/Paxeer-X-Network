@@ -14,7 +14,7 @@ usage: tools/bringup/human-state-preserve.sh export <dir> | import <dir> | verif
 
 Carries the retained state and its matching cryptographic material from the
 writable root of the volumeless machine of the kernel app
-(human/wallet/deploy/human.toml) onto the kernel volume, so nothing is
+(services/wallet/deploy/human.toml) onto the kernel volume, so nothing is
 regenerated in its place.
 
 What is carried, from the old machine's root to the volume at /data:
@@ -81,7 +81,7 @@ Exits 0 on success, 1 on a refusal or mismatch, 2 on a usage error.
 EOF
 }
 
-toml=human/wallet/deploy/human.toml
+toml=services/wallet/deploy/human.toml
 
 worker_code=$(cat <<'PY'
 import fcntl

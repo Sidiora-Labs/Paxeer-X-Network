@@ -791,15 +791,15 @@ fx_app() {
 	app="${app//\//-}"
 	printf 'fx-%s' "${app//./-}"
 }
-for toml in human/wallet/deploy/human.toml human/wallet/deploy/redis.toml human/wallet/deploy/endpoint.toml \
+for toml in services/wallet/deploy/human.toml services/wallet/deploy/redis.toml services/wallet/deploy/endpoint.toml \
 	services/platform/hosted/identity/fly.toml services/platform/hosted/internal/fly.toml services/platform/hosted/internal/redis.toml \
 	services/platform/hosted/indexer/fly.toml services/platform/hosted/interop/fly.toml services/platform/hosted/webhooks/fly.toml \
 	services/platform/hosted/dashboard/fly.toml services/platform/ramps/fly.toml; do
 	mkdir -p "$fx/$(dirname "$toml")"
 	printf 'app = "%s"\n' "$(fx_app "$toml")" >"$fx/$toml"
 done
-kernel="$(fx_app human/wallet/deploy/human.toml)"
-endpoint="$(fx_app human/wallet/deploy/endpoint.toml)"
+kernel="$(fx_app services/wallet/deploy/human.toml)"
+endpoint="$(fx_app services/wallet/deploy/endpoint.toml)"
 identity="$(fx_app services/platform/hosted/identity/fly.toml)"
 internal="$(fx_app services/platform/hosted/internal/fly.toml)"
 interop="$(fx_app services/platform/hosted/interop/fly.toml)"
@@ -1839,8 +1839,8 @@ bridge_pids=""
 # fixture app; the public wallet name comes from the spec's wallet_endpoint.
 mkdir -p "$fx/scripts/wallet" "$fx/spec/paxeer-x-bringup"
 cp "$root/scripts/wallet/check-live.sh" "$fx/scripts/wallet/"
-gateway="$(fx_app human/wallet/deploy/gateway.toml)"
-printf 'app = "%s"\n' "$gateway" >"$fx/human/wallet/deploy/gateway.toml"
+gateway="$(fx_app services/wallet/deploy/gateway.toml)"
+printf 'app = "%s"\n' "$gateway" >"$fx/services/wallet/deploy/gateway.toml"
 CHECK_LIVE_TEST_WALLET_TOKEN="fixture-wallet-token-$(openssl rand -hex 16)"
 export CHECK_LIVE_TEST_WALLET_TOKEN
 printf '[decision.public_names]\nwallet_endpoint = "walletfx.example.com"\n\n[design]\n' >"$fx/spec/paxeer-x-bringup/spec.kvx"
@@ -1940,7 +1940,7 @@ SH
 chmod +x "$work/retire/bin/curl" "$work/retire/bin/docker"
 export RETIRE_TEST_STATE="$work/retire/container"
 echo "$(($(date -u +%s) - 120)) paxeer-wallet-gateway.fly.dev" >"$work/retire/state/applied-at"
-retire="$root/human/wallet/deploy/cutover/retire.sh"
+retire="$root/services/wallet/deploy/cutover/retire.sh"
 
 echo "true unless-stopped" >"$RETIRE_TEST_STATE"
 CUTOVER_CONTAINER=legacy-wallet CUTOVER_COMPOSE_DIR="$work/retire" CUTOVER_PUBLIC_HOST=walletfx.example.com \

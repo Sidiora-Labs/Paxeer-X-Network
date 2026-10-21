@@ -4,7 +4,7 @@ Next.js reference app for the wallet SDK (`@paxeer/wallet`, the workspace packag
 
 ## Run
 
-From `human/wallet`:
+From `services/wallet`:
 
 ```sh
 pnpm install

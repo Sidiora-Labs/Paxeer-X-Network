@@ -1,5 +1,5 @@
 {
-  "extends": "../../human/wallet/tsconfig.base.json",
+  "extends": "../../services/wallet/tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
