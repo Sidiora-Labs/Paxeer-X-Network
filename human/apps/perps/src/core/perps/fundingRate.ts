@@ -49,12 +49,17 @@ export function formatFundingRatePct(rate: bigint, dp = 4): string {
   return `${formatWadFixed(rate * 100n, dp)}%`;
 }
 
-/** The two labelled funding figures a display shows for one hourly rate. */
-export function fundingFigures(hourly: bigint): { label: string; rate: bigint; text: string }[] {
-  const daily = projectFunding24h(hourly);
+/** An 18-decimal rate as its signed percent and the exact value's sign; null is a dash with a null sign. */
+export function fundingWadFigure(rate: bigint | null): { text: string; sign: -1 | 0 | 1 | null } {
+  const decimal = fundingWadDecimal(rate);
+  return { text: formatSignedFundingDecimalPct(decimal), sign: fundingDecimalSign(decimal) };
+}
+
+/** The two labelled funding figures a display shows for one hourly rate; a missing rate keeps both labels with dashes. */
+export function fundingFigures(hourly: bigint | null): { label: string; text: string; sign: -1 | 0 | 1 | null }[] {
   return [
-    { label: FUNDING_LABEL_1H, rate: hourly, text: formatFundingRatePct(hourly) },
-    { label: FUNDING_LABEL_24H, rate: daily, text: formatFundingRatePct(daily) },
+    { label: FUNDING_LABEL_1H, ...fundingWadFigure(hourly) },
+    { label: FUNDING_LABEL_24H, ...fundingWadFigure(hourly === null ? null : projectFunding24h(hourly)) },
   ];
 }
 

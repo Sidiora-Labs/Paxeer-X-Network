@@ -19,7 +19,10 @@ import {
 } from "@/widgets/markets";
 import { SPOT_MARKETS, spotCoinLogoUrl } from "@/core/spot/config";
 import { useSpotStats } from "@/hooks/spot/useSpotMarketStream";
-import { FUNDING_LABEL_1H, formatFundingRatePct } from "@/core/perps/fundingRate";
+import { FUNDING_LABEL_1H, fundingWadFigure } from "@/core/perps/fundingRate";
+
+const fundingClass = (sign: -1 | 0 | 1 | null) =>
+  sign === 1 ? "text-emerald-400" : sign === -1 ? "text-red-400" : "text-muted-foreground";
 
 /* ══════════════════════════════════════════════════════════════════════
    /markets page — live, widget-composed layout.
@@ -342,8 +345,8 @@ function FundingTabPanel({
       </div>
       <div className="divide-y divide-white/[0.04]">
         {sorted.map((row) => {
-          const fp = row.funding8h === null || row.funding8h >= 0n;
-          const ep = row.fundingHourly === null || row.fundingHourly >= 0n;
+          const funding8h = fundingWadFigure(row.funding8h);
+          const fundingHourly = fundingWadFigure(row.fundingHourly);
           return (
             <button
               key={row.marketId}
@@ -361,11 +364,11 @@ function FundingTabPanel({
               <span className="text-xs font-mono tabular-nums text-foreground text-right">
                 {row.price > 0 ? `$${row.price.toLocaleString("en-US", { maximumFractionDigits: 4 })}` : "—"}
               </span>
-              <span className={`text-xs font-mono tabular-nums text-right ${fp ? "text-emerald-400" : "text-red-400"}`}>
-                {row.funding8h === null ? "—" : formatFundingRatePct(row.funding8h)}
+              <span className={`text-xs font-mono tabular-nums text-right ${fundingClass(funding8h.sign)}`}>
+                {funding8h.text}
               </span>
-              <span className={`text-xs font-mono tabular-nums text-right ${ep ? "text-emerald-400" : "text-red-400"}`}>
-                {row.fundingHourly === null ? "—" : formatFundingRatePct(row.fundingHourly)}
+              <span className={`text-xs font-mono tabular-nums text-right ${fundingClass(fundingHourly.sign)}`}>
+                {fundingHourly.text}
               </span>
               <span className="text-xs font-mono tabular-nums text-muted-foreground text-right">
                 {row.volume24h > 0 ? `$${(row.volume24h / 1e6).toFixed(2)}M` : "—"}

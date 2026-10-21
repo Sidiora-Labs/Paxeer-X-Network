@@ -634,6 +634,17 @@ describe("v6120Invariants", () => {
     }
     assert.match(table, /fundingWadDecimal\(parseFundingRateWad\(s\.fundingRate24h\)\)/);
     assert.match(table, /formatSignedFundingDecimalPct\(fundingRate\)/);
+    for (const file of ["src/widgets/trading/PairHeader.tsx", "src/widgets/markets/MarketsTable.tsx", "src/page-modules/markets/index.tsx"]) {
+      const src = read(file);
+      assert.doesNotMatch(src, /formatFundingRatePct|formatFundingDecimalPct\(|\.percent\(|\/ ?1e18/, file);
+      for (const line of src.split("\n").filter((l) => /funding8h|fundingHourly|venueHourly|venueFunding/.test(l))) {
+        assert.doesNotMatch(line, /\bNumber\(|parseFloat|\bnum\(|parse18|toFixed\(/, `${file}: ${line.trim()}`);
+      }
+    }
+    assert.match(read("src/widgets/trading/PairHeader.tsx"), /fundingFigures\(venueHourly\)/);
+    assert.match(read("src/widgets/markets/MarketsTable.tsx"), /fundingWadFigure\(row\.funding8h\)/);
+    assert.match(read("src/page-modules/markets/index.tsx"), /fundingWadFigure\(row\.fundingHourly\)/);
+    assert.match(read("src/core/perps/fundingRate.ts"), /const decimal = fundingWadDecimal\(rate\);\n  return \{ text: formatSignedFundingDecimalPct\(decimal\), sign: fundingDecimalSign\(decimal\) \};/);
   });
 
   it("noEstFundingRate", () => {

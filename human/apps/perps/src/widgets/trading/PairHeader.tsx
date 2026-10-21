@@ -6,7 +6,7 @@ import { useRealtimePrices } from "@/hooks/perps/useRealtimePrices";
 import { useEnrichedMarketStats } from "@/hooks/perps/useEnrichedStats";
 import { useSidPaxOrderbook, useSidPaxTrades, useSidPaxStats } from "@/hooks/perps/useSidPaxMarketStream";
 import { marketFundingHourly } from "@/hooks/perps/useMarketsStream";
-import { FUNDING_LABEL_1H, FUNDING_LABEL_24H, formatSignedFundingDecimalPct, fundingDecimalSign, fundingFigures } from "@/core/perps/fundingRate";
+import { formatSignedFundingDecimalPct, fundingDecimalSign, fundingFigures } from "@/core/perps/fundingRate";
 import { ChevronDown } from "lucide-react";
 import { PriceFlash } from "@/ui/atoms/PriceFlash";
 import { MarketWatchlist } from "./MarketSelectorPanel";
@@ -111,7 +111,7 @@ export function PairHeader({ selectedPair, onPairChange, onOpenMarketPanel }: Pa
   const estSign      = fundingDecimalSign(estFunding);
   const venueHourly  = ticker?.last_funding_rate_hourly
     ?? marketFundingHourly(market.symbol, "last_funding_rate_hourly", et?.last_funding_rate_hourly ?? enriched?.fundingRate?.last_funding_rate_hourly);
-  const venueFunding = venueHourly === null ? null : fundingFigures(venueHourly);
+  const venueFunding = fundingFigures(venueHourly);
   const openInterest = wsStats !== null ? wsStats.oi_usd             : pick(ticker?.open_interest, et?.open_interest);
   // Perp-specific stats — only available when wsStats is populated
   const basisBps         = wsStats?.basis_bps          ?? null;
@@ -219,12 +219,12 @@ export function PairHeader({ selectedPair, onPairChange, onOpenMarketPanel }: Pa
           />
         )}
 
-        {(venueFunding ?? [FUNDING_LABEL_1H, FUNDING_LABEL_24H].map((label) => ({ label, rate: 0n, text: "\u2014" }))).map((f) => (
+        {venueFunding.map((f) => (
           <StatChip
             key={f.label}
             label={f.label}
             value={f.text}
-            valueClass={f.rate > 0n ? "text-emerald-500" : f.rate < 0n ? "text-red-500" : ""}
+            valueClass={f.sign === 1 ? "text-emerald-500" : f.sign === -1 ? "text-red-500" : ""}
           />
         ))}
 

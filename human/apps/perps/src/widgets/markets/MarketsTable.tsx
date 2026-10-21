@@ -8,7 +8,7 @@ import {
   fmtChangePct,
   fmtUsdCompact as fmtUsd,
 } from "@/ui/utils/format";
-import { formatFundingRatePct } from "@/core/perps/fundingRate";
+import { fundingWadFigure } from "@/core/perps/fundingRate";
 import { coinLogoUrl } from "@/core/perps/config";
 import { PriceFlash } from "@/ui/atoms/PriceFlash";
 import { MarketsTableSkeleton } from "./MarketsSkeletons";
@@ -160,7 +160,7 @@ const MarketRowItem = React.memo(function MarketRowItem({
 }) {
   const router = useRouter();
   const positive = row.change24h >= 0;
-  const fundingPositive = row.funding8h !== null && row.funding8h >= 0n;
+  const funding8h = fundingWadFigure(row.funding8h);
 
   const goTrade = useCallback(
     (e?: React.MouseEvent | React.KeyboardEvent) => {
@@ -294,14 +294,14 @@ const MarketRowItem = React.memo(function MarketRowItem({
         <span
           className={cn(
             "text-xs font-mono tabular-nums",
-            row.funding8h === null || row.funding8h === 0n
-              ? "text-muted-foreground"
-              : fundingPositive
-                ? "text-emerald-400"
-                : "text-red-400",
+            funding8h.sign === 1
+              ? "text-emerald-400"
+              : funding8h.sign === -1
+                ? "text-red-400"
+                : "text-muted-foreground",
           )}
         >
-          {row.funding8h === null ? "—" : `${row.funding8h >= 0n ? "+" : ""}${formatFundingRatePct(row.funding8h)}`}
+          {funding8h.text}
         </span>
       </div>
 

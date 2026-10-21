@@ -46,8 +46,8 @@ describe("projectFunding24h", () => {
 
   it("labels the hourly figure as last settled and the daily one as a ×24 projection", () => {
     assert.deepEqual(fundingFigures(parseFundingRateHourly("0.0001")), [
-      { label: FUNDING_LABEL_1H, rate: 100_000_000_000_000n, text: "0.0100%" },
-      { label: FUNDING_LABEL_24H, rate: 2_400_000_000_000_000n, text: "0.2400%" },
+      { label: FUNDING_LABEL_1H, text: "+0.0100%", sign: 1 },
+      { label: FUNDING_LABEL_24H, text: "+0.2400%", sign: 1 },
     ]);
     assert.equal(FUNDING_LABEL_1H, "last settled funding (1h)");
     assert.match(FUNDING_LABEL_24H, /×24 projection/);
@@ -171,11 +171,11 @@ describe("venue funding consumers", () => {
   it("the trading header, mobile row and funding tab render the venue rate under the fundingRate.ts labels, with no Number()", () => {
     const header = read("src/widgets/trading/PairHeader.tsx");
     assert.match(header, /fundingFigures\(venueHourly\)/);
-    assert.match(header, /\[FUNDING_LABEL_1H, FUNDING_LABEL_24H\]/);
+    assert.match(header, /valueClass=\{f\.sign === 1 \? "text-emerald-500" : f\.sign === -1 \? "text-red-500" : ""\}/);
     assert.match(read("src/core/perps/fundingRate.ts"), /const rate = socketRate \?\? fundingWadDecimal\(venueHourly\);\n  return \{\n    label: socketRate != null \? FUNDING_LABEL_PREDICTED : FUNDING_LABEL_1H,\n    text: formatSignedFundingDecimalPct\(rate\),\n    sign: fundingDecimalSign\(rate\) \?\? 0,/);
     const tab = read("src/page-modules/markets/index.tsx");
     assert.match(tab, /\{FUNDING_LABEL_1H\}/);
-    assert.match(tab, /formatFundingRatePct\(row\.fundingHourly\)/);
+    assert.match(tab, /fundingWadFigure\(row\.fundingHourly\)/);
     for (const file of ["src/widgets/trading/PairHeader.tsx", "src/widgets/trading/MobileTradingLayout.tsx", "src/widgets/markets/useMarketsRows.ts", "src/hooks/perps/useMarketsStream.ts", "src/hooks/perps/useRealtimePrices.ts"]) {
       for (const line of read(file).split("\n").filter((l) => /funding_rate_hourly|venueHourly|fundingHourly/.test(l))) {
         assert.doesNotMatch(line, /Number\(|parseFloat|toBigInt18/, `${file}: ${line}`);
@@ -255,11 +255,16 @@ describe("exact funding_8h, perp_funding_rate and symbol socket rates", () => {
     assert.equal(formatFundingRatePct(parseFundingRateHourly("0.0008")), formatFundingDecimalPct("0.0008"));
   });
 
-  it("the markets table and funding tab render a missing 8h rate as a dash and the present one through formatFundingRatePct", () => {
+  it("the markets table and funding tab render a missing 8h rate as a dash and the present one signed through fundingWadFigure", () => {
     const read = (file: string) => readFileSync(ROOT + file, "utf8");
     assert.match(read("src/widgets/markets/useMarketsRows.ts"), /funding8h: snap\?\.funding_8h \?\? null,/);
-    assert.match(read("src/widgets/markets/MarketsTable.tsx"), /row\.funding8h === null \? "—" : `\$\{row\.funding8h >= 0n \? "\+" : ""\}\$\{formatFundingRatePct\(row\.funding8h\)\}`/);
-    assert.match(read("src/page-modules/markets/index.tsx"), /row\.funding8h === null \? "—" : formatFundingRatePct\(row\.funding8h\)/);
+    const table = read("src/widgets/markets/MarketsTable.tsx");
+    assert.match(table, /const funding8h = fundingWadFigure\(row\.funding8h\);/);
+    assert.match(table, /\{funding8h\.text\}/);
+    const tab = read("src/page-modules/markets/index.tsx");
+    assert.match(tab, /const funding8h = fundingWadFigure\(row\.funding8h\);/);
+    assert.match(tab, /\{funding8h\.text\}/);
+    assert.match(tab, /\{fundingHourly\.text\}/);
     assert.match(read("src/widgets/trading/PairHeader.tsx"), /formatSignedFundingDecimalPct\(estFunding\)/);
     assert.match(read("src/widgets/trading/MobileTradingLayout.tsx"), /fundingRowFigure\(wsStats\?\.funding_rate, ticker\?\.last_funding_rate_hourly \?\? null\)/);
     assert.match(read("src/core/perps/fundingRate.ts"), /text: formatSignedFundingDecimalPct\(rate\)/);
@@ -323,5 +328,56 @@ describe("mobile funding row and signed tiny rates", () => {
     const table = read("src/widgets/analytics/MarketSnapshotTable.tsx");
     assert.match(table, /const fundingRate = fundingWadDecimal\(parseFundingRateWad\(s\.fundingRate24h\)\);\n\s*const fundingSign = fundingDecimalSign\(fundingRate\);/);
     assert.match(table, /\{formatSignedFundingDecimalPct\(fundingRate\)\}/);
+  });
+});
+
+describe("header chips and markets columns print funding signed", () => {
+  it("the 1h and 24h header chips keep a tiny negative signed, zero neutral and a missing rate as labelled dashes", async () => {
+    const { fundingFigures } = await import("../src/core/perps/fundingRate");
+    assert.deepEqual(fundingFigures(-1n), [
+      { label: FUNDING_LABEL_1H, text: "-0.0000%", sign: -1 },
+      { label: FUNDING_LABEL_24H, text: "-0.0000%", sign: -1 },
+    ]);
+    assert.deepEqual(fundingFigures(parseFundingRateHourly("-0.0000125")), [
+      { label: FUNDING_LABEL_1H, text: "-0.0013%", sign: -1 },
+      { label: FUNDING_LABEL_24H, text: "-0.0300%", sign: -1 },
+    ]);
+    assert.deepEqual(fundingFigures(0n), [
+      { label: FUNDING_LABEL_1H, text: "0.0000%", sign: 0 },
+      { label: FUNDING_LABEL_24H, text: "0.0000%", sign: 0 },
+    ]);
+    assert.deepEqual(fundingFigures(null), [
+      { label: FUNDING_LABEL_1H, text: "—", sign: null },
+      { label: FUNDING_LABEL_24H, text: "—", sign: null },
+    ]);
+  });
+
+  it("the markets table 8h column and funding tab 8h and hourly columns print a tiny negative signed, zero neutral and null as a dash", async () => {
+    const { fundingWadFigure } = await import("../src/core/perps/fundingRate");
+    assert.deepEqual(fundingWadFigure(-1n), { text: "-0.0000%", sign: -1 });
+    assert.deepEqual(fundingWadFigure(-500_000_000_000n), { text: "-0.0001%", sign: -1 });
+    assert.deepEqual(fundingWadFigure(0n), { text: "0.0000%", sign: 0 });
+    assert.deepEqual(fundingWadFigure(100_000_000_000_000n), { text: "+0.0100%", sign: 1 });
+    assert.deepEqual(fundingWadFigure(null), { text: "—", sign: null });
+    const read = (file: string) => readFileSync(ROOT + file, "utf8");
+    const table = read("src/widgets/markets/MarketsTable.tsx");
+    assert.match(table, /funding8h\.sign === 1\n\s*\? "text-emerald-400"\n\s*: funding8h\.sign === -1\n\s*\? "text-red-400"\n\s*: "text-muted-foreground"/);
+    const tab = read("src/page-modules/markets/index.tsx");
+    assert.match(tab, /const fundingHourly = fundingWadFigure\(row\.fundingHourly\);/);
+    assert.match(tab, /sign === 1 \? "text-emerald-400" : sign === -1 \? "text-red-400" : "text-muted-foreground"/);
+    assert.match(tab, /\$\{fundingClass\(funding8h\.sign\)\}/);
+    assert.match(tab, /\$\{fundingClass\(fundingHourly\.sign\)\}/);
+  });
+
+  it("sorting the markets table on funding orders by the exact rate, a tiny negative below zero and null at the low end", async () => {
+    const { filterAndSort } = await import("../src/widgets/markets/useMarketsRows");
+    type Row = Parameters<typeof filterAndSort>[0][number];
+    const row = (symbol: string, funding8h: bigint | null) => ({ symbol, name: symbol, funding8h }) as unknown as Row;
+    const rows = [row("ZERO", 0n), row("NONE", null), row("TINYNEG", -1n), row("TINYPOS", 1n), row("NEG", -100_000_000_000_000n)];
+    const order = (sortDir: "asc" | "desc") => filterAndSort(rows, { sortKey: "funding8h", sortDir }).map((r) => r.symbol);
+    assert.deepEqual(order("asc"), ["NONE", "NEG", "TINYNEG", "ZERO", "TINYPOS"]);
+    assert.deepEqual(order("desc"), ["TINYPOS", "ZERO", "TINYNEG", "NEG", "NONE"]);
+    const tab = readFileSync(ROOT + "src/page-modules/markets/index.tsx", "utf8");
+    assert.match(tab, /const abs = \(v: bigint \| null\) => \(v === null \? -1n : v < 0n \? -v : v\);/);
   });
 });
