@@ -1163,8 +1163,13 @@ func TestOpenForOverwritingRefusesADriftedChangelog(t *testing.T) {
 	commitDriftedChangelog(t, db)
 	require.NoError(t, db.Close())
 
+	current, err := os.Readlink(currentPath(dir))
+	require.NoError(t, err)
 	_, err = OpenDB(3, Options{Dir: dir, LoadForOverwriting: true})
 	require.ErrorContains(t, err, "index offset is inconsistent")
+	unchanged, err := os.Readlink(currentPath(dir))
+	require.NoError(t, err)
+	require.Equal(t, current, unchanged)
 }
 
 func TestSnapshotSwitchDoesNotStallOnADriftedChangelog(t *testing.T) {
@@ -1202,4 +1207,29 @@ func TestSnapshotSwitchDoesNotStallOnADriftedChangelog(t *testing.T) {
 	require.Equal(t, int64(4), db.Version())
 	require.Equal(t, int64(4), db.SnapshotVersion())
 	require.Equal(t, RefHashes[3], db.TreeByName("test").RootHash())
+}
+
+func TestSnapshotSwitchIsSkippedWhenTheChangelogIsAheadOfTheCommit(t *testing.T) {
+	db, err := OpenDB(0, Options{
+		Config:          Config{SnapshotKeepRecent: 0},
+		Dir:             t.TempDir(),
+		CreateIfMissing: true,
+		InitialStores:   []string{"test"},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	commitDriftedChangelog(t, db)
+	require.NoError(t, db.GetWAL().Write(proto.ChangelogEntry{Version: 10}))
+
+	require.NoError(t, db.RewriteSnapshotBackground())
+	var switchErr error
+	require.Eventually(t, func() bool {
+		db.mtx.Lock()
+		defer db.mtx.Unlock()
+		switchErr = db.checkAsyncTasks()
+		return switchErr != nil || db.snapshotRewriteChan == nil
+	}, 10*time.Second, 10*time.Millisecond)
+	require.NoError(t, switchErr)
+	require.Equal(t, int64(4), db.Version())
+	require.Equal(t, int64(0), db.SnapshotVersion())
 }

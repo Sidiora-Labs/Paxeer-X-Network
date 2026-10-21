@@ -95,9 +95,6 @@ type DB struct {
 	snapshotWriterPool *pond.WorkerPool
 }
 
-// walDrainTimeout bounds how long a snapshot switch waits for pending changelog writes.
-const walDrainTimeout = 30 * time.Second
-
 const (
 	SnapshotPrefix = "snapshot-"
 	SnapshotDirLen = len(SnapshotPrefix) + 20
@@ -246,6 +243,10 @@ func OpenDB(targetVersion int64, opts Options) (database *DB, _err error) {
 		logger.Info("finished replay and caught up to target version", "version", targetVersion)
 	}
 
+	if opts.LoadForOverwriting && targetVersion > 0 && walDrifted {
+		return nil, fmt.Errorf("refusing to truncate the changelog WAL after version %d: its index offset is inconsistent, restore the state-commitment data from a consistent copy", targetVersion)
+	}
+
 	if opts.LoadForOverwriting && targetVersion > 0 {
 		currentSnapshot, err := os.Readlink(currentPath(opts.Dir))
 		if err != nil {
@@ -260,9 +261,6 @@ func OpenDB(targetVersion int64, opts Options) (database *DB, _err error) {
 			}
 		}
 
-		if walDrifted {
-			return nil, fmt.Errorf("refusing to truncate the changelog WAL after version %d: its index offset is inconsistent, restore the state-commitment data from a consistent copy", targetVersion)
-		}
 		// truncate the rlog file (if WAL is provided and has entries)
 		if walHasEntries {
 			logger.Info("truncate rlog after version", "version", targetVersion)
@@ -529,7 +527,6 @@ func (db *DB) checkBackgroundSnapshotRewrite() error {
 
 		// wait for potential pending writes to finish, to make sure we catch up to latest state.
 		// in real world, block execution should be slower than tree updates, so this should not block for long.
-		deadline := time.Now().Add(walDrainTimeout)
 		for {
 			committedVersion, err := db.CommittedVersion()
 			if err != nil {
@@ -538,12 +535,12 @@ func (db *DB) checkBackgroundSnapshotRewrite() error {
 			if committedVersion == db.lastCommitInfo.Version {
 				break
 			}
-			if committedVersion > db.lastCommitInfo.Version || time.Now().After(deadline) {
-				logger.Error("changelog WAL and committed version disagree, not switching to the new snapshot",
+			if committedVersion > db.lastCommitInfo.Version {
+				logger.Error("changelog WAL is ahead of the committed version, not switching to the new snapshot",
 					"wal_version", committedVersion, "committed_version", db.lastCommitInfo.Version)
 				_ = result.mtree.Close()
 				go db.pruneSnapshots()
-				return fmt.Errorf("changelog WAL is at version %d but the committed version is %d", committedVersion, db.lastCommitInfo.Version)
+				return nil
 			}
 			time.Sleep(time.Millisecond)
 		}
