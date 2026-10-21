@@ -2221,11 +2221,18 @@ log_path = "logs/0.160-verify-1.log"
 observed_and_assumption = "build exit 2: the per-package opt-level s profile yields a 538102-byte guest, 13918 bytes above the 524184 deploy bound, and the new Makefile size guard refuses it before the tests run (opt-level z gives 569603). The 493853-byte figure in do_1 predates later ai-market growth. Decision.94 adds a binaryen wasm-opt -Oz post-pass (448162 bytes measured on this guest); held in_progress for the rerun."
 
 [finding.wallet-app.deposit-flow]
-revision = "f2f873a2e"
-command = "eth_getTransactionCount pending and eth_estimateGas of the DepositFlow custody call against the public mainnet RPC"
+revision = "e7fb555de"
+command = "read-only eth_chainId, eth_getTransactionCount latest and pending, eth_estimateGas of depositToken, eth_maxPriorityFeePerGas, eth_getBlockByNumber and the custody precompile depositCount, nativeAssetId and assetByPointer views against the public mainnet RPC"
 exit_code = 1
 log_path = "logs/wallet-app-deposit-rpc.log"
-observed_and_assumption = "The public RPC answers eth_getTransactionCount with tag pending, which paxeer_prepareCustody sends, with -32000 pending served by sequencer and reverts the test's depositToken estimate with asset is not mapped, so no real recording lets the prepare, review and approve flow of paxeer-x task 13.4 reach review; DepositFlow.test.tsx stays as written until a sequencer route serves pending reads and the test runs against a mapped pointer and bound account."
+observed_and_assumption = "paxeer_prepareCustody now reads the nonce at latest because the gateway rechecks it against pending at submission, but the deposit still cannot reach review on mainnet: the custody module maps no asset (depositCount 0, nativeAssetId zero, the SID pointer unmapped) so every depositToken estimate reverts with asset is not mapped, the px_ account methods are not served there, and the gateway custody send still reads pending, which no node serves because the open block snapshot is never wired; DepositFlow.test.tsx stays as written until an asset is mapped and a bound account with a DID exists on chain."
+
+[finding.wallet-sdk.preexisting-suite-failures]
+revision = "e7fb555de"
+command = "corepack pnpm@9.15.9 -C sdk/wallet test"
+exit_code = 1
+log_path = "logs/wallet-sdk-test.log"
+observed_and_assumption = "Eleven sdk tests fail identically on the base revision (funded route retirement in client, v2 custody bytes against the v1 custody vector, eth_sign refusal class, launchpad and event module decoding, gas station digest, injected parity and the agent claim flow), and under a host load near 33 the wallet app suite also timed out in KernelPlan, WalletProvider and storage forensics; neither is caused by the prepare nonce change and both are left as written."
 
 [finding.wallet-app.visual-system-timeout]
 revision = "f2f873a2e"

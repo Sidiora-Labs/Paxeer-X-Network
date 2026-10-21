@@ -485,6 +485,23 @@ describe('PaxeerProvider', () => {
     expect(err).toMatchObject({ code: 4901, requestedChainId: 1 });
   });
 
+  it('provider_paxeer_prepareCustody_reads_the_latest_nonce_and_refuses_on_a_reverted_estimate', async () => {
+    const p = await connected();
+    const data = '0x84abac9500000000000000000000000021f7b20a555199fa73a238b1a91fd0f549068fee000000000000000000000000000000000000000000000000000000000016e360e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1' as Hex;
+    const call = { account: vectors.address, chainId: 125, to: '0x0000000000000000000000000000000000001013', value: '0', data };
+    const before = seen.length;
+    const err = await failure(p.request({ method: 'paxeer_prepareCustody', params: [call] }));
+    expect(err).toBeInstanceOf(RpcResponseError);
+    expect(err).toMatchObject({ code: 3, message: 'execution reverted: asset is not mapped' });
+    const rpcReads = () => seen.slice(before).filter((r) => r.scenario === 'rpc');
+    for (let i = 0; i < 100 && rpcReads().length < 5; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+    const reads = rpcReads().map((r) => r.body as { method: string; params: unknown[] });
+    expect(reads.map((r) => r.method).sort()).toEqual(['eth_chainId', 'eth_estimateGas', 'eth_getBlockByNumber', 'eth_getTransactionCount', 'eth_maxPriorityFeePerGas']);
+    expect(reads.find((r) => r.method === 'eth_getTransactionCount')?.params).toEqual([vectors.address, 'latest']);
+    expect(reads.some((r) => r.method === 'eth_getTransactionCount' && r.params[1] === 'pending')).toBe(false);
+    expect(reads.find((r) => r.method === 'eth_estimateGas')?.params).toEqual([{ from: vectors.address, to: call.to, value: '0x0', data }]);
+  });
+
   it('provider_proxies_every_other_method_as_a_read_to_the_rpc_base', async () => {
     const p = provider('default', { token: null });
     expect(await p.request({ method: 'eth_blockNumber' })).toBe('0x1a2b3c4');

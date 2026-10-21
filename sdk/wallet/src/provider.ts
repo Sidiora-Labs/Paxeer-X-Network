@@ -422,7 +422,7 @@ export class PaxeerProvider implements Eip1193Provider {
     if (typeof network !== 'string' || !QUANTITY.test(network)) throw new InvalidParamsError('chainId', 'RPC returned an invalid chain');
     if (BigInt(network) !== chainId) throw new ChainDisconnectedError(Number(chainId), Number(BigInt(network)));
     const [nonceRaw, gasRaw, priorityRaw, head] = await Promise.all([
-      this.proxy('eth_getTransactionCount', [account, 'pending']),
+      this.proxy('eth_getTransactionCount', [account, 'latest']),
       this.proxy('eth_estimateGas', [{ from: account, to, value: toQuantity(value), data }]),
       this.proxy('eth_maxPriorityFeePerGas', []), this.proxy('eth_getBlockByNumber', ['latest', false]),
     ]);
