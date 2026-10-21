@@ -2588,3 +2588,11 @@ exit = 0
 log = "FX-HP-4-verify-r2.log"
 observed = "Ruled: limitMinOut takes the exact decimal parse of the typed limit price, parsePrice(toPlainDecimal(limitPrice)); the two spot-tif assertions that pinned parsePrice(limitNum.toString()) were rewritten to that form and every tests/spot-*.test.ts case passes."
 assumption = "Every other price path in SpotOrderForm already used parsePrice(toPlainDecimal(...)), so the IOC and FOK bounds now agree with them."
+
+[finding.golden-holder-count-stale]
+revision = "bf161c988"
+command = "go test -count=1 ./modules/launchpad/keeper/ -run 'Fixture|Holder|Golden|Migrat'"
+exit = 1
+log = "UPG-F1-keeper-test.log"
+observed = "TestFixturesAreConsistent and TestPoolTokenBalancesMatchGolden fail only because golden.json still records 272 holders of pool token 0x471368EF4E11c6f8647e6743031Dfc346cB8A99c while holders.json lists the 285 that sum to totalSupply; every other selected test passes."
+assumption = "golden.json is re-recorded with the 285-holder list; both tests stay unchanged."
