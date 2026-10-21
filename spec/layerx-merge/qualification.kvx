@@ -2240,3 +2240,10 @@ command = "corepack pnpm@11.5.2 -C apps/wallet test"
 exit_code = 1
 log_path = "logs/wallet-app-verify-2.log"
 observed_and_assumption = "visual-system.acceptance.test.ts timed out at the 5000 ms default while scanning production components in one full run and passed in the previous full run with no change to the files it reads; assumed load-dependent timing, left as written."
+
+[finding.node.pending-snapshot-unwired]
+revision = "21d039f29"
+command = "grep -rn 'SetOpenBlock\|SetPendingSnapshot\|sequencer.NewExecutor' node rpc daemon"
+exit_code = 0
+log_path = "node/app.go"
+observed_and_assumption = "Pending is the sequencer open block L_open (req ac_2, contracts/K3-SEQUENCER-CONTRACT.md (b2)) and only the sequencer and standby serve it, every other node answers -32000 by design; no node builds the executor because that wiring is task 9.1.2, pending behind 9.0.15, so pending reads stay refused until 9.1.2 lands and serving the consensus deliver state as pending would invent a semantic the design rejects."
