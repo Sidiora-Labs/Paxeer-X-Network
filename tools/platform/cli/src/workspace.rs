@@ -356,7 +356,7 @@ const HUMAN_INSTALL: &[Step] = &[
         "npm",
         &[
             "--prefix",
-            "human/apps/web",
+            "apps/web",
             "ci",
             "--no-audit",
             "--no-fund",

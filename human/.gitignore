@@ -1,7 +1,2 @@
 /target/
 /**/target/
-/apps/web/.next/
-/apps/web/node_modules/
-/apps/web/test-results/
-/apps/web/playwright-report/
-/apps/web/tsconfig.tsbuildinfo

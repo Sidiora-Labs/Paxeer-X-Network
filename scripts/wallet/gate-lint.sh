@@ -18,7 +18,7 @@ every package of the pnpm workspace human/wallet that has an eslint config
 and tsc --noEmit in every package that has a tsconfig.json, after building
 the sdk with its own build script, which first builds the linked sdk
 services/agent/sdk/typescript; eslint and
-tsc --noEmit for the app human/apps/wallet; cargo fmt --check and
+tsc --noEmit for the app apps/wallet; cargo fmt --check and
 cargo clippy -- -D warnings for layerx-human-kms,
 layerx-human-identity-provider and layerx-human-service in the human
 workspace and for layerx-platform-gateway in the platform workspace. A
@@ -60,8 +60,8 @@ builtin_targets() {
     go-ceremony-vet human/wallet/ceremony 'go vet ./...' go.mod \
     pnpm-wallet-eslint human/wallet "$PNPM_ESLINT_CMD" pnpm-workspace.yaml \
     pnpm-wallet-tsc human/wallet "$PNPM_TSC_CMD" pnpm-workspace.yaml \
-    pnpm-app-eslint human/apps/wallet 'pnpm exec eslint .' package.json \
-    pnpm-app-tsc human/apps/wallet 'pnpm exec tsc --noEmit' package.json \
+    pnpm-app-eslint apps/wallet 'pnpm exec eslint .' package.json \
+    pnpm-app-tsc apps/wallet 'pnpm exec tsc --noEmit' package.json \
     rust-human-fmt human "cargo fmt --check $HUMAN_PKGS" Cargo.toml \
     rust-human-clippy human "cargo clippy $HUMAN_PKGS -- -D warnings" Cargo.toml \
     rust-platform-fmt platform 'cargo fmt --check -p layerx-platform-gateway' hosted/gateway/Cargo.toml \

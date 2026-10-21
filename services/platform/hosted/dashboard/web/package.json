@@ -10,7 +10,7 @@
     "start": "next start"
   },
   "dependencies": {
-    "@layerx/ui": "file:../../../../../human/apps/web/packages/layerx-ui",
+    "@layerx/ui": "file:../../../../../apps/web/packages/layerx-ui",
     "next": "16.3.5",
     "react": "19.2.8",
     "react-dom": "19.2.8"

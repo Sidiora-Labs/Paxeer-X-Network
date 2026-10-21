@@ -20,13 +20,13 @@ jq --arg names "$names" '.web.buildArgs = ([$names | splits("\n") | {key: ., val
 	"$repo/deploy/launchpad/railway/variables.json" > "$work/deploy/launchpad/railway/variables.json"
 # the perps frontend Dockerfile (until it lands, one ARG per name of the committed build args file) and the committed
 # values with the gateway origin filled in
-mkdir -p "$work/human/apps/perps/deploy"
-perps_src="$repo/human/apps/perps/deploy/build-args.production.env"
-perps_env="$work/human/apps/perps/deploy/build-args.production.env"
-if [ -f "$repo/human/apps/perps/Dockerfile" ]; then
-	cp "$repo/human/apps/perps/Dockerfile" "$work/human/apps/perps/"
+mkdir -p "$work/apps/perps/deploy"
+perps_src="$repo/apps/perps/deploy/build-args.production.env"
+perps_env="$work/apps/perps/deploy/build-args.production.env"
+if [ -f "$repo/apps/perps/Dockerfile" ]; then
+	cp "$repo/apps/perps/Dockerfile" "$work/apps/perps/"
 else
-	sed -n 's/^\(NEXT_PUBLIC_[A-Z0-9_]*\)=.*/ARG \1=/p' "$perps_src" > "$work/human/apps/perps/Dockerfile"
+	sed -n 's/^\(NEXT_PUBLIC_[A-Z0-9_]*\)=.*/ARG \1=/p' "$perps_src" > "$work/apps/perps/Dockerfile"
 fi
 sed 's|^NEXT_PUBLIC_PERPS_GATEWAY_URL=$|NEXT_PUBLIC_PERPS_GATEWAY_URL=https://gateway.example|' "$perps_src" > "$perps_env"
 perps_pristine=$(cat "$perps_env")

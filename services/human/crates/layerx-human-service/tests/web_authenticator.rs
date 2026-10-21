@@ -26,7 +26,7 @@ struct Authenticator {
 impl Authenticator {
     fn open() -> Self {
         let script = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../../human/apps/web/e2e/software-authenticator.ts");
+            .join("../../../../apps/web/e2e/software-authenticator.ts");
         let mut process = required(
             Command::new("node")
                 .arg(script)

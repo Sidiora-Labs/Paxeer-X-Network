@@ -1,0 +1,32 @@
+import { defineConfig } from 'vitest/config';
+import path from 'node:path';
+
+const walletSdk = path.resolve(__dirname, '../../human/wallet/sdk/src/index.ts');
+const layerxSdk = path.resolve(__dirname, '../../services/agent/sdk/typescript/src/index.ts');
+const layerxSdkBrowser = path.resolve(__dirname, '../../services/agent/sdk/typescript/src/browser.ts');
+
+export default defineConfig({
+  test: {
+    environment: 'node',
+    globals: true,
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+  },
+  resolve: {
+    alias: {
+      '@paxeer/wallet': walletSdk,
+      '@sidiora/layerx-sdk/browser': layerxSdkBrowser,
+      '@sidiora/layerx-sdk': layerxSdk,
+      '@': path.resolve(__dirname, 'src'),
+    },
+    dedupe: [
+      'viem',
+      '@supabase/supabase-js',
+      '@noble/curves',
+      '@noble/hashes',
+      '@scure/bip32',
+      '@scure/bip39',
+      'ws',
+      'react',
+    ],
+  },
+});

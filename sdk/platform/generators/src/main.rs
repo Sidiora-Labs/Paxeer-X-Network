@@ -120,7 +120,7 @@ const OUTPUTS: [(&str, &str, &str, Option<&[&str]>); 12] = [
     (
         "human-typescript",
         "typescript",
-        "human/apps/web/src/api/generated",
+        "apps/web/src/api/generated",
         None,
     ),
     (

@@ -59,7 +59,7 @@ def git(*args):
 def source_identity():
     names = git('ls-files').splitlines()
     selected = [n for n in names if n.endswith('.rs') or Path(n).name in ('Cargo.toml', 'Cargo.lock')]
-    selected += ['scripts/qualify-mirror-verification-live.sh', 'tools/paxeer-x/gates/104.25.2.sh', 'human/apps/web/src/explorer/components.tsx', 'human/apps/web/copy/catalog.ts', 'human/apps/web/copy/messages.generated.ts', 'human/apps/web/next.config.mjs', 'tools/paxeer-x/route-catalogue.json']
+    selected += ['scripts/qualify-mirror-verification-live.sh', 'tools/paxeer-x/gates/104.25.2.sh', 'apps/web/src/explorer/components.tsx', 'apps/web/copy/catalog.ts', 'apps/web/copy/messages.generated.ts', 'apps/web/next.config.mjs', 'tools/paxeer-x/route-catalogue.json']
     return {'revision': git('rev-parse', 'HEAD'), 'tree': git('rev-parse', 'HEAD^{tree}'),
             'hashes': {n: digest(ROOT / n) for n in sorted(set(selected))}}
 
@@ -127,10 +127,10 @@ def build(directory):
         refuse('actual compiler did not emit native test and production verifier executables')
     tsc_value = os.environ.get('PAXEER_X_MIRROR_WEB_TSC')
     if not tsc_value:
-        refuse('PAXEER_X_MIRROR_WEB_TSC must name the web TypeScript compiler (human/apps/web/node_modules/typescript/bin/tsc)')
+        refuse('PAXEER_X_MIRROR_WEB_TSC must name the web TypeScript compiler (apps/web/node_modules/typescript/bin/tsc)')
     tsc = Path(tsc_value)
     node = Path('/root/lx-toolchains/node24/bin/node')
-    execute([str(node), str(tsc), '--noEmit', '--incremental', 'false', '--project', str(ROOT / 'human/apps/web/tsconfig.json')], directory / 'web-typecheck.log', 300)
+    execute([str(node), str(tsc), '--noEmit', '--incremental', 'false', '--project', str(ROOT / 'apps/web/tsconfig.json')], directory / 'web-typecheck.log', 300)
     if source_identity() != before:
         refuse('consumer source changed during focused typecheck')
     manifest = {'schema': 'layerx.mirror-verification-build.v1', 'source': before, 'artifacts': artifacts,

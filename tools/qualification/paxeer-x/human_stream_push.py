@@ -19,8 +19,8 @@ import { pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 const [root, manifestPath, resultPath, phase, previousPath] = process.argv.slice(2);
 const fixture = JSON.parse(await readFile(manifestPath, 'utf8'));
-const { createHumanApiClient, HumanApiError, HumanApiDecodeError } = await import(pathToFileURL(root + '/human/apps/web/src/api/generated/index.ts').href);
-const { conformance } = await import(pathToFileURL(root + '/human/apps/web/src/api/generated/conformance.ts').href);
+const { createHumanApiClient, HumanApiError, HumanApiDecodeError } = await import(pathToFileURL(root + '/apps/web/src/api/generated/index.ts').href);
+const { conformance } = await import(pathToFileURL(root + '/apps/web/src/api/generated/conformance.ts').href);
 let tests = 0;
 function check(ok, message) { if (!ok) throw new Error(message); tests += 1; }
 const jars = new Map(Object.entries(fixture.sessions).map(([name, row]) => [name, new Map(Object.entries(row.cookies))]));

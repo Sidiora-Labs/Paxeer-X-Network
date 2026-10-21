@@ -145,10 +145,10 @@ import { pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 const [root, inputPath, resultPath] = process.argv.slice(2);
 const { HumanApiError, operationNames, schemaVersion } =
-  await import(pathToFileURL(root + '/human/apps/web/src/api/generated/index.ts').href);
-const { humanApi } = await import(pathToFileURL(root + '/human/apps/web/src/api/index.ts').href);
-const { default: webConfiguration } = await import(pathToFileURL(root + '/human/apps/web/next.config.mjs').href);
-const { conformance } = await import(pathToFileURL(root + '/human/apps/web/src/api/generated/conformance.ts').href);
+  await import(pathToFileURL(root + '/apps/web/src/api/generated/index.ts').href);
+const { humanApi } = await import(pathToFileURL(root + '/apps/web/src/api/index.ts').href);
+const { default: webConfiguration } = await import(pathToFileURL(root + '/apps/web/next.config.mjs').href);
+const { conformance } = await import(pathToFileURL(root + '/apps/web/src/api/generated/conformance.ts').href);
 const fixture = JSON.parse(await readFile(inputPath, 'utf8'));
 let tests = 0;
 function check(ok, message) { if (!ok) throw new Error(message); tests += 1; }
@@ -409,7 +409,7 @@ def main():
     for label, argv in (
         ('schema', [artifacts['schema_check'], ROOT / 'services/human/schema/human-api']),
         ('generated-drift', [artifacts['api_gen'], '--check', ROOT / 'services/human/schema/human-api',
-                             ROOT / 'human/apps/web/src/api/generated']),
+                             ROOT / 'apps/web/src/api/generated']),
     ):
         with (directory / (label + '.log')).open('xb') as log:
             os.chmod(log.name, 0o600)

@@ -31,7 +31,7 @@ lines = []
 for command in (["node", "--test", "e2e/settings.spec.ts"],
                 ["node", "node_modules/@playwright/test/cli.js", "test", "--grep", "@settings"]):
     process = subprocess.Popen(
-        command, cwd=root / "human/apps/web", env=environment,
+        command, cwd=root / "apps/web", env=environment,
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True,
     )
@@ -49,7 +49,7 @@ output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", "".join(lines)).replace("\r", "\
 def refuse(reason):
     raise SystemExit("settings gate refused: " + reason)
 
-source = (root / "human/apps/web/e2e/settings.spec.ts").read_text()
+source = (root / "apps/web/e2e/settings.spec.ts").read_text()
 expected = re.findall(r'^test\("([^"\n]+)"', source, re.M)
 executed = re.findall(r"^# Subtest: (.+)$", output, re.M)
 if not expected or executed != expected:
@@ -69,7 +69,7 @@ if len(passed) != 1 or int(passed[0]) < 2:
     refuse("missing real browser results for both shells")
 if re.search(r"\b[1-9]\d* (?:failed|flaky|skipped|did not run)\b", output):
     refuse("browser settings contains unsuccessful, retried or skipped cases")
-browser_source = (root / "human/apps/web/e2e/browser/settings.spec.ts").read_text()
+browser_source = (root / "apps/web/e2e/browser/settings.spec.ts").read_text()
 browser_expected = re.findall(r'^test\("(@settings[^"\n]+)"', browser_source, re.M)
 if not browser_expected or int(passed[0]) != len(browser_expected) * 2:
     refuse("the complete retained browser settings corpus did not execute in both shells")

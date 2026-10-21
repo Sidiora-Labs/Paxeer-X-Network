@@ -5,7 +5,7 @@ The platform specification (`spec/layerx-platform/spec.kvx`, decisions
 `/explorer` plane and an authenticated `/app` plane, plus mobile and desktop
 shells that share state and journey logic.
 
-The application lives at `human/apps/web`. It must use the owner-supplied
+The application lives at `apps/web`. It must use the owner-supplied
 `@layerx/ui` package. The browser never assembles protocol payloads and never
 receives LayerX private key material. The TypeScript client is generated from
 `services/human/schema/human-api`.
@@ -16,7 +16,7 @@ Hosted Human material and KMS seal handling are
 
 ## Planes in this tree
 
-Authenticated `/app` routes present in `human/apps/web/src/app/app/` include
+Authenticated `/app` routes present in `apps/web/src/app/app/` include
 home, deposit, move, withdraw, agents, approvals, notifications, activity,
 settings (including wallet, security, devices, and exit), support, journeys,
 and recovery. Public `/explorer` routes include the explorer home, accounts,

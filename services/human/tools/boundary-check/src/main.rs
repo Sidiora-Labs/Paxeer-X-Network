@@ -12,7 +12,7 @@ fn main() {
     if first.as_deref().is_some_and(|value| value == "--web-bundle") {
         let bundle = arguments
             .next()
-            .map_or_else(|| PathBuf::from("human/apps/web/.next"), PathBuf::from);
+            .map_or_else(|| PathBuf::from("apps/web/.next"), PathBuf::from);
         if !report(human_payload_bundle_gate(&bundle)) {
             std::process::exit(1);
         }

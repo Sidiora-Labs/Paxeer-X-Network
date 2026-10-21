@@ -1,13 +1,13 @@
 FROM node:24.6.0-bookworm-slim AS build
 WORKDIR /src
-COPY human/apps/web/package.json human/apps/web/package-lock.json /src/human/apps/web/
-COPY human/apps/web/packages/layerx-ui /src/human/apps/web/packages/layerx-ui
+COPY apps/web/package.json apps/web/package-lock.json /src/apps/web/
+COPY apps/web/packages/layerx-ui /src/apps/web/packages/layerx-ui
 COPY services/platform/hosted/dashboard/web /src/services/platform/hosted/dashboard/web
 COPY scripts/ci/developer-dashboard-lock.mjs /src/scripts/ci/developer-dashboard-lock.mjs
 RUN node scripts/ci/developer-dashboard-lock.mjs
-RUN npm --prefix /src/human/apps/web ci --ignore-scripts --no-audit --no-fund && \
-    npm --prefix /src/human/apps/web run build:ui && \
-    ln -s ../../../../../human/apps/web/node_modules /src/services/platform/hosted/dashboard/web/node_modules
+RUN npm --prefix /src/apps/web ci --ignore-scripts --no-audit --no-fund && \
+    npm --prefix /src/apps/web run build:ui && \
+    ln -s ../../../../../apps/web/node_modules /src/services/platform/hosted/dashboard/web/node_modules
 WORKDIR /src/services/platform/hosted/dashboard/web
 RUN npm run test:static && npm run build
 

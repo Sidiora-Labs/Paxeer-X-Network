@@ -10,22 +10,22 @@ import sys
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
 SOURCES = (
-    'human/apps/web/src/journeys/approvals/controller.ts',
-    'human/apps/web/src/journeys/approvals/model.ts',
-    'human/apps/web/src/journeys/approvals/screens.tsx',
-    'human/apps/web/src/journeys/approvals/journey-screen.tsx',
-    'human/apps/web/src/journeys/approvals/programs.tsx',
-    'human/apps/web/src/journeys/home/model.ts',
-    'human/apps/web/src/journeys/home/home.tsx',
-    'human/apps/web/src/journeys/notifications/controller.ts',
-    'human/apps/web/src/journeys/notifications/store.tsx',
-    'human/apps/web/src/app/app/approvals/[approvalId]/page.tsx',
-    'human/apps/web/e2e/program-approvals.test.ts',
+    'apps/web/src/journeys/approvals/controller.ts',
+    'apps/web/src/journeys/approvals/model.ts',
+    'apps/web/src/journeys/approvals/screens.tsx',
+    'apps/web/src/journeys/approvals/journey-screen.tsx',
+    'apps/web/src/journeys/approvals/programs.tsx',
+    'apps/web/src/journeys/home/model.ts',
+    'apps/web/src/journeys/home/home.tsx',
+    'apps/web/src/journeys/notifications/controller.ts',
+    'apps/web/src/journeys/notifications/store.tsx',
+    'apps/web/src/app/app/approvals/[approvalId]/page.tsx',
+    'apps/web/e2e/program-approvals.test.ts',
     'tools/qualification/paxeer-x/human-program-approvals.py',
-    'human/apps/web/src/api/generated/index.ts',
-    'human/apps/web/src/api/generated/conformance.ts',
-    'human/apps/web/copy/catalog.ts',
-    'human/apps/web/copy/messages.generated.ts',
+    'apps/web/src/api/generated/index.ts',
+    'apps/web/src/api/generated/conformance.ts',
+    'apps/web/copy/catalog.ts',
+    'apps/web/copy/messages.generated.ts',
 )
 
 
@@ -47,10 +47,10 @@ def main():
     hashes = fixture.get('source_hashes', {})
     require(all(hashes.get(source) == hashlib.sha256((ROOT / source).read_bytes()).hexdigest()
                 for source in SOURCES), 'genuine owner/browser fixture does not bind the final source')
-    require((ROOT / 'human/apps/web/.next/BUILD_ID').is_file(), 'actual production web build is required')
+    require((ROOT / 'apps/web/.next/BUILD_ID').is_file(), 'actual production web build is required')
     require(Path(fixture.get('browser_executable', '')).is_file(), 'genuine browser executable is required')
     result = subprocess.run(['/root/lx-toolchains/node24/bin/node', '--test',
-                             'e2e/program-approvals.test.ts'], cwd=ROOT / 'human/apps/web',
+                             'e2e/program-approvals.test.ts'], cwd=ROOT / 'apps/web',
                             env=os.environ, timeout=480, capture_output=True, check=False)
     sys.stdout.buffer.write(result.stdout)
     sys.stderr.buffer.write(result.stderr)

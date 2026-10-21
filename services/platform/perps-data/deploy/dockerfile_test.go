@@ -321,7 +321,7 @@ func TestDockerfileContext(t *testing.T) {
 				t.Errorf("%s is excluded from the build context", f)
 			}
 		}
-		for _, p := range []string{"human", "human/apps/x.ts", "launchpad", "launchpad/go.mod", "programs", "programs/Cargo.toml", "services/platform/perps-data/web/node_modules/x/index.js"} {
+		for _, p := range []string{"human", "apps/web/x.ts", "launchpad", "launchpad/go.mod", "programs", "programs/Cargo.toml", "services/platform/perps-data/web/node_modules/x/index.js"} {
 			if included(rules, p) {
 				t.Errorf("%s is in the build context", p)
 			}

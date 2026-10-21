@@ -25,7 +25,7 @@ fn main() -> ExitCode {
         .next()
         .map_or_else(|| PathBuf::from("services/human/schema/human-api"), PathBuf::from);
     let out_dir = arguments.next().map_or_else(
-        || PathBuf::from("human/apps/web/src/api/generated"),
+        || PathBuf::from("apps/web/src/api/generated"),
         PathBuf::from,
     );
     if checking {

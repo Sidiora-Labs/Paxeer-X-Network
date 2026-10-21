@@ -19,8 +19,8 @@ import {pathToFileURL} from 'node:url';
 import {randomBytes,createHash} from 'node:crypto';
 const [root,manifest,output,phase,previous] = process.argv.slice(2);
 const fixture = JSON.parse(await readFile(manifest,'utf8'));
-const {createHumanApiClient,HumanApiError} = await import(pathToFileURL(root+'/human/apps/web/src/api/generated/index.ts').href);
-const {conformance} = await import(pathToFileURL(root+'/human/apps/web/src/api/generated/conformance.ts').href);
+const {createHumanApiClient,HumanApiError} = await import(pathToFileURL(root+'/apps/web/src/api/generated/index.ts').href);
+const {conformance} = await import(pathToFileURL(root+'/apps/web/src/api/generated/conformance.ts').href);
 const stable = value => JSON.stringify(value,(_,item)=>typeof item==='bigint'?item.toString():item);
 let tests=0;
 function check(value,message){if(!value)throw new Error(message);tests++;}

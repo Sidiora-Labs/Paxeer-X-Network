@@ -13,9 +13,9 @@ SOURCE_PATHS = [
     'services/human/crates/layerx-explorer-index/src/unified.rs',
     'services/human/crates/layerx-explorer-index/src/query.rs',
     'services/human/crates/layerx-explorer-index/tests/unified_availability.rs',
-    'human/apps/web/src/explorer/model.ts',
-    'human/apps/web/src/explorer/client.ts',
-    'human/apps/web/src/app/explorer/accounts/[accountId]/page.tsx',
+    'apps/web/src/explorer/model.ts',
+    'apps/web/src/explorer/client.ts',
+    'apps/web/src/app/explorer/accounts/[accountId]/page.tsx',
     'tools/qualification/paxeer-x/explorer-availability.py',
 ]
 
@@ -54,7 +54,7 @@ def main():
     outcomes = []
     browser_log = evidence / 'explorer-availability-browser.log'
     with browser_log.open('wb') as output:
-        result = subprocess.run(['npm', '--prefix', str(ROOT / 'human/apps/web'), 'run', 'typecheck'],
+        result = subprocess.run(['npm', '--prefix', str(ROOT / 'apps/web'), 'run', 'typecheck'],
                                 cwd=ROOT, stdout=output, stderr=subprocess.STDOUT, timeout=240)
     browser_log.chmod(0o600)
     outcomes.append({'gate': 'actual_browser_typecheck', 'exit_code': result.returncode, 'log_path': str(browser_log)})

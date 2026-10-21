@@ -161,3 +161,10 @@ command = "scripts/ci/layout-check.sh bridge"
 exit_code = 1
 log_path = "fleet/logs/layout-6.5.log"
 observed_and_assumption = "Every tracked file left bridge and no build, CI, deploy or tool file names an old bridge path; the only hits are docker/bridge-relayer/entrypoint.sh lines 61 and 62, which name the signer key handle bridge/attestor that services/interop/deploy/bridge-relayer/signer-keys.json declares, not a directory, so the handle and the check are both left as written for the wave 6 check to rule on."
+
+[finding.5.1-wallet-web-typecheck]
+revision = "b19017179 with the task 5.1 move applied"
+command = "pnpm -C apps/perps -r typecheck && pnpm -C apps/wallet typecheck && pnpm -C apps/web typecheck"
+exit_code = 2
+log_path = "fleet/logs/layout-5.1.log"
+observed_and_assumption = "The perps typecheck passes, the wallet typecheck fails with the same four errors (GasQuoteRequest did, useSurface caps types, EdDSA ExtendedPoint in the wallet sdk) that human/apps/wallet shows at b19017179 before the move, and pnpm 12 reinstalls the npm-locked web app on its own before the script and copies the file: wallet sdk without its untracked dist, so @paxeer/wallet does not resolve; both are left for the wallet sdk and web dependency owners and task 5.1 stays pending."

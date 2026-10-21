@@ -10,8 +10,8 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[3]
-WEB = ROOT / "human/apps/web"
-SOURCE_PATHS = ["human/apps/web", "services/agent/sdk/typescript", "tools/paxeer-x/gates/104.13.1.sh",
+WEB = ROOT / "apps/web"
+SOURCE_PATHS = ["apps/web", "services/agent/sdk/typescript", "tools/paxeer-x/gates/104.13.1.sh",
                 "tools/paxeer-x/builders/104.13.1.py",
                 "services/human/crates/layerx-human-service/src/server/identity_dispatch.rs"]
 
@@ -128,7 +128,7 @@ def verify_artifacts(filename):
     if (not isinstance(manifest, dict) or set(manifest) != expected_keys
             or manifest["version"] != 1
             or manifest["producer"] != "tools/paxeer-x/builders/104.13.1.py"
-            or manifest["command"] != ["npm", "--prefix", "human/apps/web", "run", "build"]):
+            or manifest["command"] != ["npm", "--prefix", "apps/web", "run", "build"]):
         refuse("unrecognized build producer evidence")
     if manifest["source"] != source_binding():
         refuse("build source does not match the current source")
@@ -144,7 +144,7 @@ def main():
     source = source_binding()
     output = output_directory()
     environment = production_environment(output)
-    command = ["npm", "--prefix", "human/apps/web", "run", "build"]
+    command = ["npm", "--prefix", "apps/web", "run", "build"]
     subprocess.run(command, cwd=ROOT, env=environment, check=True)
     if source_binding() != source:
         refuse("source changed during the build")

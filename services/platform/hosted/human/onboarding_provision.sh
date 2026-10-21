@@ -89,7 +89,7 @@ PY
     fi
     python3 "$REPO_ROOT/services/platform/hosted/human/browser_onboarding.py" \
         --url "$HUMAN_URL" --ca "$CA_DIR/ca.crt" --origin "$origin" --request "$request" \
-        --authenticator "$REPO_ROOT/human/apps/web/e2e/software-authenticator.ts" \
+        --authenticator "$REPO_ROOT/apps/web/e2e/software-authenticator.ts" \
         --credential "$credential" --result "$result" "${mode[@]}"
     human_recipient_check
     local identity="$WORK_DIR/human-enrollment-identity.json"

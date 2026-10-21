@@ -57,9 +57,9 @@ def protected(path):
 
 def source_hashes():
     files = [ROOT / name for name in OWNED]
-    for folder in ('human/apps/wallet/src', 'human/wallet/sdk/src', 'services/agent/sdk/typescript/src'):
+    for folder in ('apps/wallet/src', 'human/wallet/sdk/src', 'services/agent/sdk/typescript/src'):
         files.extend(p for p in (ROOT / folder).rglob('*') if p.is_file() and p.suffix in ('.ts', '.tsx', '.css', '.json'))
-    files.extend(ROOT / name for name in ('human/apps/wallet/package.json', 'human/apps/wallet/pnpm-lock.yaml', 'human/wallet/sdk/package.json', 'services/agent/sdk/typescript/package.json'))
+    files.extend(ROOT / name for name in ('apps/wallet/package.json', 'apps/wallet/pnpm-lock.yaml', 'human/wallet/sdk/package.json', 'services/agent/sdk/typescript/package.json'))
     require(all(path.is_file() for path in files), 'complete actual wallet sources required')
     return {str(path.relative_to(ROOT)): digest(path) for path in sorted(set(files))}
 
@@ -125,17 +125,17 @@ def command(argv, name, timeout, environment=None):
 def build():
     extension, anvil = provision()
     dependency_value = os.environ.get('WALLET_INJECTED_NODE_MODULES')
-    require(dependency_value, 'WALLET_INJECTED_NODE_MODULES must name the wallet node_modules directory (human/apps/wallet/node_modules)')
+    require(dependency_value, 'WALLET_INJECTED_NODE_MODULES must name the wallet node_modules directory (apps/wallet/node_modules)')
     dependency_root = Path(dependency_value).resolve()
     node = Path(os.environ.get('WALLET_INJECTED_NODE', '/root/lx-toolchains/node24/bin/node')).resolve()
     require(node.is_file() and os.access(node, os.X_OK), 'actual Node executable required')
     playwright = dependency_root / '@playwright/test'
     package = json.loads((playwright / 'package.json').read_text())
     require(package['version'] == PLAYWRIGHT_VERSION and package['dependencies']['playwright'] == PLAYWRIGHT_VERSION, 'repository-pinned Playwright required')
-    expected = json.loads((ROOT / 'human/apps/wallet/package.json').read_text())['devDependencies']['@playwright/test']
+    expected = json.loads((ROOT / 'apps/wallet/package.json').read_text())['devDependencies']['@playwright/test']
     require(expected == PLAYWRIGHT_VERSION, 'repository browser automation pin changed')
     vite_package = json.loads((dependency_root / 'vite/package.json').read_text())
-    require('vite@' + vite_package['version'] in (ROOT / 'human/apps/wallet/pnpm-lock.yaml').read_text(), 'repository-pinned Vite installation required')
+    require('vite@' + vite_package['version'] in (ROOT / 'apps/wallet/pnpm-lock.yaml').read_text(), 'repository-pinned Vite installation required')
     inputs = source_hashes()
     work = EVIDENCE / 'build-input'
     work.mkdir(mode=0o700, exist_ok=True)
@@ -147,7 +147,7 @@ def build():
     script.write_text('''import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';import {pathToFileURL} from 'node:url';
 const c=JSON.parse(process.argv[2]);const req=createRequire(path.join(c.dependency_root,'../package.json'));
 const vite=await import(pathToFileURL(req.resolve('vite')).href);
-const aliases=[{find:'@paxeer/wallet',replacement:path.join(c.root,'human/wallet/sdk/src/index.ts')},{find:'@sidiora/layerx-sdk/browser',replacement:path.join(c.root,'services/agent/sdk/typescript/src/browser.ts')},{find:'@sidiora/layerx-sdk',replacement:path.join(c.root,'services/agent/sdk/typescript/src/index.ts')},{find:/^@\\//,replacement:path.join(c.root,'human/apps/wallet/src')+'/'}];
+const aliases=[{find:'@paxeer/wallet',replacement:path.join(c.root,'human/wallet/sdk/src/index.ts')},{find:'@sidiora/layerx-sdk/browser',replacement:path.join(c.root,'services/agent/sdk/typescript/src/browser.ts')},{find:'@sidiora/layerx-sdk',replacement:path.join(c.root,'services/agent/sdk/typescript/src/index.ts')},{find:/^@\\//,replacement:path.join(c.root,'apps/wallet/src')+'/'}];
 const modules=new Set();await vite.build({configFile:false,root:path.dirname(c.input),resolve:{alias:aliases,dedupe:['react','react-dom']},define:{'process.env':'{}','process.env.NODE_ENV':JSON.stringify('production')},plugins:[{name:'actual-pinned-dependencies',resolveId(id){if(!id.startsWith('.')&&!id.startsWith('/')&&!id.startsWith('\\0')){try{return req.resolve(id)}catch{return null}}},moduleParsed(info){modules.add(info.id)},closeBundle(){fs.writeFileSync(path.join(c.output,'source-modules.json'),JSON.stringify([...modules].sort()))}}],build:{outDir:c.output,emptyOutDir:true,rollupOptions:{input:c.input},minify:false}});
 const testReq=createRequire(req.resolve('@playwright/test/package.json'));const pwPackage=testReq.resolve('playwright/package.json');const pwMeta=JSON.parse(fs.readFileSync(pwPackage,'utf8'));const cli=path.join(path.dirname(pwPackage),pwMeta.bin.playwright);fs.writeFileSync(path.join(c.output,'playwright-cli.txt'),cli);const mod=req.resolve('@playwright/test');fs.writeFileSync(path.join(c.output,'playwright-module.txt'),mod);
 ''')

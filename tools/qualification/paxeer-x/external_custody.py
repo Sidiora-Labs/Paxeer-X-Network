@@ -12,8 +12,8 @@ import time
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
-SCOPE = ['services/human/tools/copy-lint', 'human/apps/web/copy', 'human/apps/web/src',
-         'human/apps/web/e2e/copy.test.ts', 'tools/paxeer-x/gates/104.26.2.sh',
+SCOPE = ['services/human/tools/copy-lint', 'apps/web/copy', 'apps/web/src',
+         'apps/web/e2e/copy.test.ts', 'tools/paxeer-x/gates/104.26.2.sh',
          'tools/qualification/paxeer-x/external_custody.py']
 DEADLINE = time.monotonic() + 1740
 NODE = '/root/lx-toolchains/node24/bin/node'
@@ -153,9 +153,9 @@ def verify():
     results = re.findall(r'test result: ok\. (\d+) passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;', output)
     require(len(results) == 1 and int(results[0]) > 0, 'full unfiltered copy lint corpus required')
     total = int(results[0])
-    execute([artifacts['copy-lint'], 'human/apps/web'], 'external-custody-live-copy-lint')
-    execute([NODE, 'human/apps/web/copy/generate-runtime.ts', '--check'], 'external-custody-runtime-copy')
-    output = execute([NODE, '--test', '--test-reporter=tap', 'human/apps/web/e2e/copy.test.ts'],
+    execute([artifacts['copy-lint'], 'apps/web'], 'external-custody-live-copy-lint')
+    execute([NODE, 'apps/web/copy/generate-runtime.ts', '--check'], 'external-custody-runtime-copy')
+    output = execute([NODE, '--test', '--test-reporter=tap', 'apps/web/e2e/copy.test.ts'],
                      'external-custody-ui-copy')
     require(re.search(r'^# tests 3$', output, re.M) and re.search(r'^# pass 3$', output, re.M)
             and re.search(r'^# skipped 0$', output, re.M), 'complete existing real UI copy corpus required')

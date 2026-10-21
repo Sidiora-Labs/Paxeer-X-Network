@@ -21,7 +21,7 @@ if os.environ.get('PAXEER_X_TASK_DEADLINE_UNIX'):
 def inventory():
     roots = (ROOT / 'human', ROOT / 'agent', ROOT / 'crates', ROOT / 'services/platform')
     paths = {ROOT / 'tools/qualification/paxeer-x/human_native_custody.py',
-             ROOT / 'human/apps/web/e2e/software-authenticator.ts'}
+             ROOT / 'apps/web/e2e/software-authenticator.ts'}
     for root in roots:
         for directory, children, files in os.walk(root):
             children[:] = [name for name in children if name not in ('target', 'node_modules', '.git', '.next')]

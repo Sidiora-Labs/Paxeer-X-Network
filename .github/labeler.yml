@@ -28,6 +28,9 @@ area:human:
       - any-glob-to-any-file:
           - human/**
           - services/human/**
+          - apps/perps/**
+          - apps/wallet/**
+          - apps/web/**
 
 area:contracts:
   - changed-files:

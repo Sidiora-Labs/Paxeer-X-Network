@@ -239,7 +239,7 @@ root = "services/agent/sdk"
 
 [output.human-typescript]
 language = "typescript"
-root = "human/apps/web/src/api/generated"
+root = "apps/web/src/api/generated"
 
 [files.human-typescript]
 "conformance.ts" = "f05a435cb80b1ec110354b74f4eab40f7a68d3f35502873836dd3fe3ab38fc2e"

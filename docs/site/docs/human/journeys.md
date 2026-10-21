@@ -7,7 +7,7 @@ inbox, notifications, the public explorer, the activity view, audit export,
 and support chat. Escrow, streams, services, and perps workspaces are
 post-v1.
 
-The application source under `human/apps/web/src/app/app/` contains routes
+The application source under `apps/web/src/app/app/` contains routes
 for deposit, move, withdraw, agents, approvals, notifications, activity,
 settings, exit, support, journeys, and recovery. Those files are the
 implementation surface. This page does not invent additional HTTP APIs.

@@ -430,7 +430,7 @@ fn human_copy_lint(web_root: &Path) -> Result<(), Vec<String>> {
 fn main() {
     let root = env::args_os()
         .nth(1)
-        .map_or_else(|| PathBuf::from("human/apps/web"), PathBuf::from);
+        .map_or_else(|| PathBuf::from("apps/web"), PathBuf::from);
     match human_copy_lint(&root) {
         Ok(()) => println!("human copy catalog and source lint passed"),
         Err(violations) => {

@@ -89,10 +89,10 @@
 #   LAYERX_BETA_HUMAN_WEB_PORT          443 (default) or empty. The browser origin of the human web application
 #                                       is https://paxportwallet.com and carries no port, so the
 #                                       passkey ceremony configuration, the human service allowed origin and
-#                                       human/apps/web/e2e/software-authenticator.ts only accept it on 443, and
+#                                       apps/web/e2e/software-authenticator.ts only accept it on 443, and
 #                                       the owner adds `127.0.0.1 paxportwallet.com` to /etc/hosts and
 #                                       trusts the beta internal CA. Set it empty on a host where
-#                                       human/apps/web/e2e/run-production-browser.sh serves that same origin from
+#                                       apps/web/e2e/run-production-browser.sh serves that same origin from
 #                                       its own authbind listener, which leaves the forward and its readiness
 #                                       gate out; any other value is refused
 #   LAYERX_BETA_RAMP_PORT               host port of the reference ramp port-forward (default 19459)

@@ -1,6 +1,6 @@
 *
 !services/agent/sdk/typescript
-!human/apps/wallet
+!apps/wallet
 !human/wallet
 **/.git
 **/.github
@@ -20,7 +20,7 @@
 **/*.tsbuildinfo
 **/.env
 **/.env.*
-human/apps/wallet/android
+apps/wallet/android
 human/wallet/attestor
 human/wallet/ceremony
 human/wallet/deploy

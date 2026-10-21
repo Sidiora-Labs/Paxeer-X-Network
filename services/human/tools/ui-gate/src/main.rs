@@ -534,7 +534,7 @@ fn human_ui_rule_gates(web_root: &Path) -> Result<(), Vec<Violation>> {
 fn main() {
     let root = env::args()
         .nth(1)
-        .unwrap_or_else(|| "human/apps/web".to_owned());
+        .unwrap_or_else(|| "apps/web".to_owned());
     match human_ui_rule_gates(Path::new(&root)) {
         Ok(()) => println!("LayerX UI component-library integrity gate passed"),
         Err(violations) => {
@@ -615,7 +615,7 @@ mod tests {
 
     #[test]
     fn checked_in_library_integration_preserves_existing_rules() {
-        let web_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../human/apps/web");
+        let web_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../apps/web");
         let mut violations = Vec::new();
         check_existing_rules(&web_root, &mut violations);
         assert!(violations.is_empty(), "{violations:?}");

@@ -12,10 +12,10 @@ ROOT = Path(__file__).resolve().parents[3]
 NODE = Path('/root/lx-toolchains/node24/bin/node')
 PNPM = Path('/root/lx-toolchains/node24/private-pnpm/corepack/v1/pnpm/9.15.9/bin/pnpm.cjs')
 SOURCES = [
-    'human/apps/wallet/src/surfaces/useSurface.ts', 'human/apps/wallet/src/surfaces/FeeChoice.tsx',
+    'apps/wallet/src/surfaces/useSurface.ts', 'apps/wallet/src/surfaces/FeeChoice.tsx',
     'human/wallet/sdk/src/modules/gas-station.ts', 'human/wallet/sdk/src/provider.ts',
     'human/wallet/gateway/src/routes/sign.ts', 'tools/qualification/paxeer-x/wallet-sponsored-fees.py',
-    *[f'human/apps/wallet/src/surfaces/{name}View.tsx' for name in ('Bridge', 'Exchange', 'Launchpad', 'WebData')],
+    *[f'apps/wallet/src/surfaces/{name}View.tsx' for name in ('Bridge', 'Exchange', 'Launchpad', 'WebData')],
 ]
 CASES = ['first_use', 'cancel_consent', 'expired_quote', 'account_changed', 'chain_changed',
          'calldata_changed', 'station_unavailable', 'retry', 'lost_response', 'reload', 'fee_paths_distinct']
@@ -55,7 +55,7 @@ def evidence_dir():
 
 def artifacts():
     paths = []
-    for directory in ('human/wallet/sdk/dist', 'human/wallet/gateway/dist', 'human/apps/wallet/.next/server', 'human/apps/wallet/.next/static'):
+    for directory in ('human/wallet/sdk/dist', 'human/wallet/gateway/dist', 'apps/wallet/.next/server', 'apps/wallet/.next/static'):
         tree = ROOT / directory
         require(tree.is_dir(), 'missing genuine build artifact tree: ' + directory)
         paths.extend(p for p in tree.rglob('*') if p.is_file() and p.suffix in ('.js', '.mjs', '.json'))
@@ -72,9 +72,9 @@ def build():
     env['NEXT_TELEMETRY_DISABLED'] = '1'
     targets = [('sdk', 'human/wallet/sdk', ['exec', 'tsc', '-p', 'tsconfig.json']),
                ('gateway', 'human/wallet/gateway', ['run', 'build']),
-               ('wallet', 'human/apps/wallet', ['run', 'build'])]
-    generated = [ROOT / p for p in ('human/apps/wallet/next-env.d.ts', 'human/apps/wallet/tsconfig.json',
-                                  'human/apps/wallet/public/manifest.json', 'human/apps/wallet/public/sw.js')]
+               ('wallet', 'apps/wallet', ['run', 'build'])]
+    generated = [ROOT / p for p in ('apps/wallet/next-env.d.ts', 'apps/wallet/tsconfig.json',
+                                  'apps/wallet/public/manifest.json', 'apps/wallet/public/sw.js')]
     original = {path: path.read_bytes() if path.exists() else None for path in generated}
     results = []
     try:
@@ -198,7 +198,7 @@ def verify():
     script.write_text(BROWSER)
     script.chmod(0o600)
     env = os.environ.copy()
-    env.update({'WALLET_APP_PACKAGE':str(ROOT / 'human/apps/wallet/package.json'), 'WALLET_SPONSORED_CONFIG':str(config_path), 'WALLET_SPONSORED_CASES':json.dumps(CASES)})
+    env.update({'WALLET_APP_PACKAGE':str(ROOT / 'apps/wallet/package.json'), 'WALLET_SPONSORED_CONFIG':str(config_path), 'WALLET_SPONSORED_CASES':json.dumps(CASES)})
     log = evidence / 'wallet-sponsored-browser.log'
     with log.open('wb') as output:
         log.chmod(0o600)

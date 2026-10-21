@@ -95,6 +95,10 @@ services/agent/target/
 services/agent/tools/*/target/
 services/human/target/
 services/human/**/target/
+/apps/web/.next/
+/apps/web/test-results/
+/apps/web/playwright-report/
+/apps/web/tsconfig.tsbuildinfo
 sdk/platform/dotnet/bin/
 sdk/platform/dotnet/obj/
 sdk/platform/dotnet/tests/*/bin/

@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 root = Path(sys.argv[1])
-web = root / 'human/apps/web'
+web = root / 'apps/web'
 spec = importlib.util.spec_from_file_location('human_production_build', root / 'tools/paxeer-x/builders/104.13.1.py')
 if spec is None or spec.loader is None:
     raise SystemExit('agents gate refused: production build producer unavailable')

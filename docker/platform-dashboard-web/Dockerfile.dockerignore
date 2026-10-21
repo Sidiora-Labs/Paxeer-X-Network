@@ -1,7 +1,7 @@
 *
-!human/apps/web/package.json
-!human/apps/web/package-lock.json
-!human/apps/web/packages/layerx-ui
+!apps/web/package.json
+!apps/web/package-lock.json
+!apps/web/packages/layerx-ui
 !services/platform/hosted/dashboard/web
 !scripts/ci/developer-dashboard-lock.mjs
 **/node_modules

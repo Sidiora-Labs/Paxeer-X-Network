@@ -76,7 +76,7 @@ def main():
         expected.update(str(path.relative_to(ROOT)) for path in (ROOT / relative).rglob('*') if path.is_file())
     expected.update(str(path.relative_to(ROOT)) for path in (ROOT / 'human/wallet/attestor').rglob('*.go'))
     expected.update(('human/wallet/attestor/go.mod', 'human/wallet/attestor/go.sum',
-                     'human/apps/wallet/src/account/DepositFlow.tsx',
+                     'apps/wallet/src/account/DepositFlow.tsx',
                      'human/wallet/gateway/test/e2e/wallet-signing-adapters.production.ts',
                      'human/wallet/gateway/package.json', 'human/wallet/sdk/package.json',
                      'services/agent/sdk/typescript/package.json', 'services/interop/crates/layerx-gas-station/Cargo.toml'))

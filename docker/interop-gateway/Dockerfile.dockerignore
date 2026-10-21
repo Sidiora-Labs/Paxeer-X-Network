@@ -36,7 +36,9 @@ tests/testutil
 utils
 wasm
 wasm-runtime
-human/apps
+apps/perps
+apps/wallet
+apps/web
 tools/qualification/output
 !docker/common/env-files.sh
 !docker/interop-gateway/files.tsv

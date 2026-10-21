@@ -13,7 +13,7 @@ import urllib.parse
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[3]
-APP = ROOT / 'human/apps/wallet'
+APP = ROOT / 'apps/wallet'
 SDK_DIST = ROOT / 'human/wallet/sdk/dist/index.js'
 CHAIN_ID = 125
 TESTS = 6

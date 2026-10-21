@@ -245,7 +245,7 @@ platform-sdk-check:
 
 platform-sdk-generate:
 	cargo run --manifest-path services/agent/tools/sdk-gen/Cargo.toml --locked -- --write
-	cargo run --manifest-path services/human/tools/api-gen/Cargo.toml --locked -- services/human/schema/human-api human/apps/web/src/api/generated
+	cargo run --manifest-path services/human/tools/api-gen/Cargo.toml --locked -- services/human/schema/human-api apps/web/src/api/generated
 	python3 sdk/platform/generators/generate_portable.py $(CURDIR)
 	python3 sdk/platform/generators/generate_jvm.py $(CURDIR)
 	$(PLATFORM_CARGO) run --manifest-path $(PLATFORM_SDKGEN_MANIFEST) --locked -p layerx-platform-sdkgen -- --write

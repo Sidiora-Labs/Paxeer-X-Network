@@ -56,9 +56,9 @@ DISAGREEING_SEVERITY = {
 }
 EXCERPT = r"""[observation.2.4.2]
 task = "2.4"
-file = "human/apps/web/src/explorer/mirror-server.ts"
+file = "apps/web/src/explorer/mirror-server.ts"
 symbol = "npm run lint"
-observed = "npx eslint --max-warnings=0 \"src/**/*.{ts,tsx}\" \"copy/**/*.ts\" in human/apps/web exits 1 with 8 errors in src/api/index.ts:23, src/auth/session.ts:15, src/explorer/mirror-server.ts:49 (four restrict-template-expressions), src/journeys/agents/shell.ts:6 and src/journeys/home/model.ts:108. git diff --stat main over those five files is empty, so they are byte-identical to main 15267435. tsc --noEmit, node policy/check.mjs and eslint over the files this task touched all pass."
+observed = "npx eslint --max-warnings=0 \"src/**/*.{ts,tsx}\" \"copy/**/*.ts\" in apps/web exits 1 with 8 errors in src/api/index.ts:23, src/auth/session.ts:15, src/explorer/mirror-server.ts:49 (four restrict-template-expressions), src/journeys/agents/shell.ts:6 and src/journeys/home/model.ts:108. git diff --stat main over those five files is empty, so they are byte-identical to main 15267435. tsc --noEmit, node policy/check.mjs and eslint over the files this task touched all pass."
 assumption = "Pre-existing lint failures outside this task's touches; left unmodified. The task verify_cmd (next build and node tests) does not run eslint, so the failures do not gate this task, but npm run lint fails on main until their owning tasks repair them."
 severity = "suspect"
 
@@ -138,7 +138,7 @@ class ParserTests(unittest.TestCase):
         observed = records()[0].observed
         self.assertTrue(
             observed.startswith(
-                'npx eslint --max-warnings=0 "src/**/*.{ts,tsx}" "copy/**/*.ts" in human/apps/web'
+                'npx eslint --max-warnings=0 "src/**/*.{ts,tsx}" "copy/**/*.ts" in apps/web'
             )
         )
         self.assertNotIn("\\", observed)

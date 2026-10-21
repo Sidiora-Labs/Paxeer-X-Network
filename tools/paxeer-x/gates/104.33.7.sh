@@ -5,7 +5,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 exec python3 - <<'GATE'
 import hashlib,json,os,pathlib,re,ssl,stat,subprocess,sys,urllib.error,urllib.parse,urllib.request
 root=pathlib.Path.cwd();tests=0
-sources=['services/platform/hosted/gateway/Cargo.toml','services/platform/hosted/gateway/src/main.rs','services/platform/hosted/gateway/src/native_call.rs','services/platform/hosted/gateway/src/lib.rs','human/apps/web/src/explorer/client.ts','human/apps/web/src/explorer/model.ts','human/apps/web/src/explorer/program-contract.test.ts','services/human/crates/layerx-explorer-index/src/programs.rs','tools/paxeer-x/gates/104.33.7.sh']
+sources=['services/platform/hosted/gateway/Cargo.toml','services/platform/hosted/gateway/src/main.rs','services/platform/hosted/gateway/src/native_call.rs','services/platform/hosted/gateway/src/lib.rs','apps/web/src/explorer/client.ts','apps/web/src/explorer/model.ts','apps/web/src/explorer/program-contract.test.ts','services/human/crates/layerx-explorer-index/src/programs.rs','tools/paxeer-x/gates/104.33.7.sh']
 def require(value,reason):
     if not value:raise RuntimeError(reason)
 def sha(path):return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -32,7 +32,7 @@ try:
             summary=re.findall(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;',run.stdout)
             require(len(summary)==1 and tuple(map(int,summary[0]))==(len(names),0,0),'scoped case omitted or ignored')
             tests+=len(names)
-    run=subprocess.run(['node','--test','human/apps/web/src/explorer/program-contract.test.ts'],capture_output=True,text=True,timeout=120)
+    run=subprocess.run(['node','--test','apps/web/src/explorer/program-contract.test.ts'],capture_output=True,text=True,timeout=120)
     sys.stdout.write(run.stdout);sys.stderr.write(run.stderr);require(run.returncode==0,'actual explorer consumer tests failed')
     count=re.findall(r'^# tests (\d+)$',run.stdout,re.M);require(len(count)==1 and int(count[0])==3 and '# fail 0' in run.stdout and '# skipped 0' in run.stdout,'complete explorer consumer corpus required');tests+=3
     # Reuse the genuine producer result without rerunning its historical gate.

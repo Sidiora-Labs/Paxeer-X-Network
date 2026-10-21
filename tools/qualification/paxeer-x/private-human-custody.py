@@ -13,7 +13,7 @@ import time
 ROOT = Path(__file__).resolve().parents[3]
 NODE = Path('/root/lx-toolchains/node24/bin/node')
 NPM = Path('/root/lx-toolchains/node24/bin/npm')
-WEB = ROOT / 'human/apps/web'
+WEB = ROOT / 'apps/web'
 SDK = ROOT / 'human/wallet/sdk'
 EVIDENCE = Path(os.environ.get('PRIVATE_HUMAN_CUSTODY_EVIDENCE_ROOT',
     '/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1412'))

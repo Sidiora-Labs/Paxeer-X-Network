@@ -13,7 +13,7 @@ import urllib.parse
 
 ROOT = Path(__file__).resolve().parents[3]
 NODE = Path('/root/lx-toolchains/node24/bin/node')
-WEB = ROOT / 'human/apps/web'
+WEB = ROOT / 'apps/web'
 EVIDENCE = Path(os.environ.get('PRIVATE_HUMAN_SPONSORED_EVIDENCE_ROOT', '/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task146'))
 MANIFEST = EVIDENCE / 'build-manifest.json'
 SDK_MANIFEST = Path(os.environ.get('PRIVATE_HUMAN_SPONSORED_SDK_MANIFEST', '/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.3-evidence/wallet-sponsored-sdk-candidate.json'))

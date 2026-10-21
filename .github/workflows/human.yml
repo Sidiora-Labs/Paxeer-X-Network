@@ -34,7 +34,7 @@ jobs:
         with:
           node-version: 24.11.0
           cache: npm
-          cache-dependency-path: human/apps/web/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
       - name: Install pinned Rust toolchain and policy auditor
         run: >-
           rustup toolchain install 1.91.1 --profile minimal --component clippy &&
@@ -74,7 +74,7 @@ jobs:
       - name: Scan the web bundle for payload-encoding code paths
         run: >-
           cargo run --manifest-path services/human/tools/boundary-check/Cargo.toml
-          --locked -- --web-bundle human/apps/web/.next
+          --locked -- --web-bundle apps/web/.next
 
   browser-real-stack:
     if: vars.HUMAN_E2E_BASE_URL != '' && (github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
@@ -94,11 +94,11 @@ jobs:
         with:
           node-version: 24.11.0
           cache: npm
-          cache-dependency-path: human/apps/web/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
       - name: Install browser harness
         run: >-
-          npm --prefix human/apps/web ci &&
-          npm --prefix human/apps/web exec playwright install --with-deps chromium
+          npm --prefix apps/web ci &&
+          npm --prefix apps/web exec playwright install --with-deps chromium
       - name: Run merge browser suite
         if: github.event_name == 'push'
         run: make human-test-e2e
@@ -123,11 +123,11 @@ jobs:
         with:
           node-version: 24.11.0
           cache: npm
-          cache-dependency-path: human/apps/web/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
       - name: Install pinned Chromium
         run: >-
-          npm --prefix human/apps/web ci &&
-          npm --prefix human/apps/web exec playwright install --with-deps chromium
+          npm --prefix apps/web ci &&
+          npm --prefix apps/web exec playwright install --with-deps chromium
       - name: Install the settlement tools and production TLS prerequisites
         uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
       - name: Prepare the disposable cluster host
@@ -149,7 +149,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: human-production-browser
-          path: human/apps/web/test-results
+          path: apps/web/test-results
           if-no-files-found: ignore
       - name: Tear down the disposable beta cluster
         if: always()

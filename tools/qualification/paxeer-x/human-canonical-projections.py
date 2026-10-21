@@ -19,11 +19,11 @@ import {pathToFileURL} from 'node:url';
 import {createHash, randomBytes} from 'node:crypto';
 const [root, manifestPath, outputPath] = process.argv.slice(2);
 const fixture = JSON.parse(await readFile(manifestPath, 'utf8'));
-const {createHumanApiClient, HumanApiError} = await import(pathToFileURL(root + '/human/apps/web/src/api/generated/index.ts').href);
-const {conformance} = await import(pathToFileURL(root + '/human/apps/web/src/api/generated/conformance.ts').href);
-const {copyEntry} = await import(pathToFileURL(root + '/human/apps/web/copy/runtime.ts').href);
-const {copyEntries} = await import(pathToFileURL(root + '/human/apps/web/copy/catalog.ts').href);
-const {runtimeMessages} = await import(pathToFileURL(root + '/human/apps/web/copy/messages.generated.ts').href);
+const {createHumanApiClient, HumanApiError} = await import(pathToFileURL(root + '/apps/web/src/api/generated/index.ts').href);
+const {conformance} = await import(pathToFileURL(root + '/apps/web/src/api/generated/conformance.ts').href);
+const {copyEntry} = await import(pathToFileURL(root + '/apps/web/copy/runtime.ts').href);
+const {copyEntries} = await import(pathToFileURL(root + '/apps/web/copy/catalog.ts').href);
+const {runtimeMessages} = await import(pathToFileURL(root + '/apps/web/copy/messages.generated.ts').href);
 let tests = 0;
 const stable = (value) => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item);
 function check(value, message) { if (!value) throw new Error(message); tests += 1; }

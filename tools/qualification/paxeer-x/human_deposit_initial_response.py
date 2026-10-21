@@ -30,7 +30,7 @@ import {randomBytes} from 'node:crypto';
 const [root,manifest,output,phase,prior,marker,release] = process.argv.slice(2);
 const fixture = JSON.parse(await readFile(manifest,'utf8'));
 const {createHumanApiClient,HumanApiError,decodeJourney,decodeDepositStartRequest,
-  decodeDepositConfirmRequest} = await import(pathToFileURL(root+'/human/apps/web/src/api/generated/index.ts').href);
+  decodeDepositConfirmRequest} = await import(pathToFileURL(root+'/apps/web/src/api/generated/index.ts').href);
 let tests=0;
 const cases=[];
 function check(value,message){if(!value)throw new Error(message);tests++;}
@@ -263,8 +263,8 @@ def main():
         'services/human/crates/layerx-human-service/src/server/movement_provider.rs',
         'services/human/crates/layerx-human-service/src/store/mod.rs',
         'services/human/crates/layerx-human-service/src/store/codec.rs',
-        'human/apps/web/src/api/generated/index.ts',
-        'human/apps/web/src/api/generated/conformance.ts',
+        'apps/web/src/api/generated/index.ts',
+        'apps/web/src/api/generated/conformance.ts',
         'services/human/schema/human-api/movement.kvx',
         'tools/qualification/paxeer-x/human-api-boundary.py',
         'tools/qualification/paxeer-x/human_deposit_initial_response.py',

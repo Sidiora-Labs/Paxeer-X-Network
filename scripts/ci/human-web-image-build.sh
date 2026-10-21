@@ -72,7 +72,7 @@ if ! docker build --file "$DOCKERFILE" --tag "$IMAGE_REF" - < "$CONTEXT" > "$LOG
 fi
 
 if ! docker run --rm --entrypoint node "$IMAGE_REF" \
-    -e 'require("node:fs").accessSync("/app/human/apps/web/server.js")' >> "$LOG" 2>&1; then
+    -e 'require("node:fs").accessSync("/app/apps/web/server.js")' >> "$LOG" 2>&1; then
     tail -n 40 "$LOG" >&2
     printf 'human-web-image-build: the built image does not carry its standalone server (log %s)\n' "$LOG" >&2
     exit 1

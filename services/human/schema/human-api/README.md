@@ -7,7 +7,7 @@ The versioned HTTPS and JSON contract between the human service and the web appl
 From the repository root:
 
 ```sh
-make human-gen-api   # generate the web client into human/apps/web/src/api/generated
+make human-gen-api   # generate the web client into apps/web/src/api/generated
 make human-check     # includes schema-check over this directory
 ```
 

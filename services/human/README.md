@@ -18,8 +18,8 @@
 | [`crates/layerx-explorer-index`](crates/layerx-explorer-index/README.md) | Rebuildable public explorer projections |
 | [`crates/layerx-human-test-support`](crates/layerx-human-test-support/README.md) | Shared helpers for the service integration suites |
 | [`schema/human-api`](schema/human-api/README.md) | Versioned HTTPS and JSON contract between the human service and the web application |
-| [`apps/web`](apps/web) | Human web application (`@layerx/human-web`) and its [`@layerx/ui`](apps/web/packages/layerx-ui/README.md) component library |
-| [`apps/wallet`](apps/wallet/README.md) | Wallet web app (`@paxeer/wallet-app`) |
+| [`apps/web`](../../apps/web) | Human web application (`@layerx/human-web`) and its [`@layerx/ui`](../../apps/web/packages/layerx-ui/README.md) component library |
+| [`apps/wallet`](../../apps/wallet/README.md) | Wallet web app (`@paxeer/wallet-app`) |
 | [`wallet`](wallet/README.md) | Wallet workspace: gateway, SDK, demo app, attestor and ceremony Go modules, deployment configuration |
 | [`tools`](tools) | Workspace gates: `api-gen`, `boundary-check`, `copy-lint`, `schema-check`, `ui-gate` and `dependency-policy.sh` |
 

@@ -40,7 +40,7 @@ use sha2::{Digest as _, Sha256};
 const NETWORK_ID: u32 = 77;
 const ACCOUNT_SEQUENCE: u64 = 7;
 const ENVELOPE_EXPIRY: u64 = 1_000;
-const CATALOG: &str = include_str!("../../../../../human/apps/web/copy/catalog.ts");
+const CATALOG: &str = include_str!("../../../../../apps/web/copy/catalog.ts");
 
 struct RecordedCore(CorePreparationState);
 

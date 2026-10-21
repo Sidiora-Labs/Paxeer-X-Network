@@ -17,7 +17,7 @@ AGENT_BOUNDARY_HARNESS := $(abspath $(or $(CARGO_TARGET_DIR),services/agent/test
 AGENT_WIRE_HARNESS := $(abspath $(or $(CARGO_TARGET_DIR),services/agent/tools/wire-differential/target))/debug/agent-wire-differential
 HUMAN_CARGO ?= cargo
 HUMAN_MANIFEST := services/human/Cargo.toml
-HUMAN_WEB_DIR := human/apps/web
+HUMAN_WEB_DIR := apps/web
 HUMAN_NPM ?= npm --prefix $(HUMAN_WEB_DIR)
 INTEROP_CARGO ?= cargo
 INTEROP_MANIFEST := services/interop/Cargo.toml
@@ -2283,11 +2283,11 @@ human-js-install:
 	$(HUMAN_NPM) ci --ignore-scripts --no-audit --no-fund
 
 human-gen-api:
-	$(HUMAN_CARGO) run --manifest-path services/human/tools/api-gen/Cargo.toml --locked -- services/human/schema/human-api human/apps/web/src/api/generated
+	$(HUMAN_CARGO) run --manifest-path services/human/tools/api-gen/Cargo.toml --locked -- services/human/schema/human-api apps/web/src/api/generated
 
 human-build:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path services/human/tools/api-gen/Cargo.toml --locked
-	$(HUMAN_CARGO) run --manifest-path services/human/tools/api-gen/Cargo.toml --locked -- --check services/human/schema/human-api human/apps/web/src/api/generated
+	$(HUMAN_CARGO) run --manifest-path services/human/tools/api-gen/Cargo.toml --locked -- --check services/human/schema/human-api apps/web/src/api/generated
 	$(HUMAN_CARGO) build --manifest-path $(HUMAN_MANIFEST) --locked --workspace
 	$(HUMAN_NPM) run build
 
@@ -2450,14 +2450,14 @@ human-lint: human-lint-copy
 human-lint-copy:
 	$(HUMAN_CARGO) clippy --manifest-path services/human/tools/copy-lint/Cargo.toml --locked --all-targets -- -D warnings
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path services/human/tools/copy-lint/Cargo.toml --locked
-	$(HUMAN_CARGO) run --manifest-path services/human/tools/copy-lint/Cargo.toml --locked -- human/apps/web
+	$(HUMAN_CARGO) run --manifest-path services/human/tools/copy-lint/Cargo.toml --locked -- apps/web
 	$(HUMAN_NPM) run typecheck
 	$(HUMAN_NPM) test
 
 human-check-ui:
 	$(HUMAN_CARGO) clippy --manifest-path services/human/tools/ui-gate/Cargo.toml --locked --all-targets -- -D warnings
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path services/human/tools/ui-gate/Cargo.toml --locked
-	$(HUMAN_CARGO) run --manifest-path services/human/tools/ui-gate/Cargo.toml --locked -- human/apps/web
+	$(HUMAN_CARGO) run --manifest-path services/human/tools/ui-gate/Cargo.toml --locked -- apps/web
 	$(HUMAN_NPM) run build:ui
 	$(HUMAN_NPM) run typecheck
 	$(HUMAN_NPM) test
@@ -2472,7 +2472,7 @@ human-check:
 
 human-check-bundle:
 	$(HUMAN_NPM) run build
-	$(HUMAN_CARGO) run --manifest-path services/human/tools/boundary-check/Cargo.toml --locked -- --web-bundle human/apps/web/.next
+	$(HUMAN_CARGO) run --manifest-path services/human/tools/boundary-check/Cargo.toml --locked -- --web-bundle apps/web/.next
 
 human-e2e: human-test-e2e
 
@@ -3252,12 +3252,12 @@ developer-dashboard-install:
 	node scripts/ci/developer-dashboard-lock.mjs
 	$(MAKE) human-js-install
 	@test ! -e services/platform/hosted/dashboard/web/node_modules || \
-		test "$$(readlink services/platform/hosted/dashboard/web/node_modules)" = "../../../../../human/apps/web/node_modules"
+		test "$$(readlink services/platform/hosted/dashboard/web/node_modules)" = "../../../../../apps/web/node_modules"
 	@test -e services/platform/hosted/dashboard/web/node_modules || \
-		ln -s ../../../../../human/apps/web/node_modules services/platform/hosted/dashboard/web/node_modules
+		ln -s ../../../../../apps/web/node_modules services/platform/hosted/dashboard/web/node_modules
 
 developer-dashboard-build:
-	npm --prefix human/apps/web run build --workspace @layerx/ui
+	npm --prefix apps/web run build --workspace @layerx/ui
 	npm --prefix services/platform/hosted/dashboard/web run build
 
 developer-dashboard-static-test:

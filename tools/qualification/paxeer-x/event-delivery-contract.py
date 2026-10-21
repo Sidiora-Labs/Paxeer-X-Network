@@ -2433,7 +2433,7 @@ def provisioning_worker(manifest, results, attachment, readiness=False):
             producer_readiness_empty(fixture, processes, human, source_clients, check)
         auth_log = (work / 'authenticator.log').open('ab')
         authenticator = subprocess.Popen([fixture['artifacts']['node']['path'], '--experimental-strip-types',
-            str(ROOT / 'human/apps/web/e2e/software-authenticator.ts'), 'https://localhost'],
+            str(ROOT / 'apps/web/e2e/software-authenticator.ts'), 'https://localhost'],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=auth_log, text=True, bufsize=1)
         email = 'event-' + uuid.uuid4().hex + '@paxeer.network'
         account = human_ok('POST', '/v1/accounts', {'email': email, 'display_name': 'Event qualification'},

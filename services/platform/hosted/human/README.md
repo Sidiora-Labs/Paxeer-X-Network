@@ -45,7 +45,7 @@ Contract fields are derived from `paxeer/deployment.json`: vault, checkpoint reg
 
 The cluster script generates the version-2 module registry and protected journal pair, prepares a fresh LXIP owner request and dedicated recovery guardians, and obtains the bootstrap custody profile before native genesis. After identity provisioning, `human_evidence_provision` creates the durable LXIP owner, admits that exact DID to native genesis, records the custody deposit, and runs the native Governance identity, rotation, recovery, custody, sequencer-receipt, and independent receipt-authority producer. Evidence assembly starts only after the generated owner registration and complete input set pass the protected-file validators.
 
-The image builds all real providers, components, service, KMS and agentd. API readiness requires the real component graph; provider probes use real binaries; KMS readiness is exercised through LXKP. `human/apps/web` remains a separate website and is not deployed by this pod.
+The image builds all real providers, components, service, KMS and agentd. API readiness requires the real component graph; provider probes use real binaries; KMS readiness is exercised through LXKP. `apps/web` remains a separate website and is not deployed by this pod.
 
 ## Offline owner provisioning
 

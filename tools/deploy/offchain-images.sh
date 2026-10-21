@@ -4,7 +4,7 @@
 #   --check   exit non-zero when a required row's context or dockerfile is missing, or when a NEXT_PUBLIC_* or WEB_*
 #             build arg of Dockerfile.web has no value in the web entry of deploy/launchpad/railway/variables.json, or
 #             when a NEXT_PUBLIC_* build arg of the perps Dockerfile without a code fallback has no value in
-#             human/apps/perps/deploy/build-args.production.env
+#             apps/perps/deploy/build-args.production.env
 #   --plan    print images=<matrix of every row that passes its --check test> and unbuilt=<JSON array of the rows
 #             that fail it>, with one ::error annotation per failing row on stderr; a value with whitespace fails
 #             only its row; exit 1 when no row passes
@@ -80,7 +80,7 @@ for pair in perps-data-indexer:perps-indexer perps-gateway:perps-gateway perps-e
 done
 rows+=("perps-data-nats|.|services/platform/perps-data/deploy/nats/Dockerfile|||1")
 # the Hyperpax perps frontend inlines every NEXT_PUBLIC_* arg of its Dockerfile from the committed build args file
-perps_env="$root/human/apps/perps/deploy/build-args.production.env"
+perps_env="$root/apps/perps/deploy/build-args.production.env"
 perps_value() { sed -n "s/^$1=//p" "$perps_env" | tail -n1; }
 # names the app reads with a code fallback, so an empty value is allowed; a name absent from the file is not
 perps_may_be_empty() {
@@ -100,11 +100,11 @@ perps_may_be_empty() {
 	esac
 }
 perps_args="" perps_missing=() perps_spaced=()
-if [ -f "$root/human/apps/perps/Dockerfile" ] && [ -f "$perps_env" ]; then
-	next_public_args perps-web human/apps/perps/Dockerfile perps_value perps_may_be_empty
+if [ -f "$root/apps/perps/Dockerfile" ] && [ -f "$perps_env" ]; then
+	next_public_args perps-web apps/perps/Dockerfile perps_value perps_may_be_empty
 	perps_args=$args perps_missing=("${missing[@]}") perps_spaced=("${spaced[@]}")
 fi
-rows+=("perps-web|human/apps/perps|human/apps/perps/Dockerfile||$perps_args|0")
+rows+=("perps-web|apps/perps|apps/perps/Dockerfile||$perps_args|0")
 
 present() { [ -d "$root/$2" ] && [ -f "$root/$3" ]; }
 # row_json <name> <context> <dockerfile> <target> <args>: one build matrix entry, empty build args left out
@@ -129,11 +129,11 @@ row_problem() {
 		fi
 	elif [ "$1" = perps-web ]; then
 		if [ ! -f "$perps_env" ]; then
-			echo "missing human/apps/perps/deploy/build-args.production.env"
+			echo "missing apps/perps/deploy/build-args.production.env"
 		elif [ "${#perps_missing[@]}" -gt 0 ]; then
-			echo "no value in human/apps/perps/deploy/build-args.production.env for ${perps_missing[*]}"
+			echo "no value in apps/perps/deploy/build-args.production.env for ${perps_missing[*]}"
 		elif [ "${#perps_spaced[@]}" -gt 0 ]; then
-			echo "value with whitespace in human/apps/perps/deploy/build-args.production.env for ${perps_spaced[*]}"
+			echo "value with whitespace in apps/perps/deploy/build-args.production.env for ${perps_spaced[*]}"
 		fi
 	fi
 }
@@ -153,11 +153,11 @@ case "$mode" in
 		bad=1
 	fi
 	if [ "${#perps_missing[@]}" -gt 0 ]; then
-		echo "perps-web: no value in human/apps/perps/deploy/build-args.production.env for ${perps_missing[*]}" >&2
+		echo "perps-web: no value in apps/perps/deploy/build-args.production.env for ${perps_missing[*]}" >&2
 		bad=1
 	fi
-	if [ -f "$root/human/apps/perps/Dockerfile" ] && [ ! -f "$perps_env" ]; then
-		echo "perps-web: missing human/apps/perps/deploy/build-args.production.env" >&2
+	if [ -f "$root/apps/perps/Dockerfile" ] && [ ! -f "$perps_env" ]; then
+		echo "perps-web: missing apps/perps/deploy/build-args.production.env" >&2
 		bad=1
 	fi
 	if [ ! -f "$lp_vars" ]; then

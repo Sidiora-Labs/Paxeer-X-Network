@@ -21,8 +21,8 @@ import {createHash,randomBytes} from 'node:crypto';
 const [root,manifestPath,outputPath,phase,previousPath] = process.argv.slice(2);
 const fixture=JSON.parse(await readFile(manifestPath,'utf8'));
 const previous=phase==='recover'?JSON.parse(await readFile(previousPath,'utf8')):undefined;
-const {createHumanApiClient,HumanApiError}=await import(pathToFileURL(root+'/human/apps/web/src/api/generated/index.ts').href);
-const {conformance}=await import(pathToFileURL(root+'/human/apps/web/src/api/generated/conformance.ts').href);
+const {createHumanApiClient,HumanApiError}=await import(pathToFileURL(root+'/apps/web/src/api/generated/index.ts').href);
+const {conformance}=await import(pathToFileURL(root+'/apps/web/src/api/generated/conformance.ts').href);
 let tests=0;const stable=x=>JSON.stringify(x,(_,v)=>typeof v==='bigint'?v.toString():v);
 function check(v,m){if(!v)throw new Error(m);tests++;}
 const jars=new Map(),clients=new Map();
@@ -106,8 +106,8 @@ def main():
         'services/human/schema/human-api/' + name + '.kvx'
         for name in ('program-approvals', 'v1', 'home', 'stream')
     } | {
-        'human/apps/web/src/api/generated/' + name + '.ts' for name in ('index', 'conformance')
-    } | {'tools/paxeer-x/route-catalogue.json', 'tools/qualification/paxeer-x/human_program_approvals.py', 'human/apps/web/copy/catalog.ts', 'human/apps/web/copy/messages.generated.ts'}
+        'apps/web/src/api/generated/' + name + '.ts' for name in ('index', 'conformance')
+    } | {'tools/paxeer-x/route-catalogue.json', 'tools/qualification/paxeer-x/human_program_approvals.py', 'apps/web/copy/catalog.ts', 'apps/web/copy/messages.generated.ts'}
     required |= {'services/human/schema/human-api/golden/approval.program.' + operation + '.' + variant + '.json'
                  for operation in ('list', 'get', 'material', 'budget', 'approve', 'reject', 'disclosure')
                  for variant in ('request', 'response', 'failure')}
@@ -117,7 +117,7 @@ def main():
     for name, expected in sorted(inventory.items()):
         path = ROOT / name
         B.require(not Path(name).is_absolute() and '..' not in Path(name).parts and path.is_file() and not path.is_symlink(), 'source inventory path')
-        B.require(not name.startswith('human/apps/web/') or name in required, 'exclude concurrent UI implementation from frozen backend source')
+        B.require(not name.startswith('apps/web/') or name in required, 'exclude concurrent UI implementation from frozen backend source')
         actual = B.digest(path)
         B.require(actual == expected, 'actual frozen source hash')
         digest.update(name.encode() + b'\0' + actual.encode() + b'\n')

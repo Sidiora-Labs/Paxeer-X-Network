@@ -177,7 +177,7 @@ fn place_generated_fixture(root: &Path) {
     place(root, "services/agent/sdk/COMPATIBILITY.md", "compatibility\n");
     place(
         root,
-        "human/apps/web/src/api/generated/index.ts",
+        "apps/web/src/api/generated/index.ts",
         "export const humanApi = true;\n",
     );
     place(
@@ -392,9 +392,9 @@ fn hand_edited_python_output_fails_the_gate() {
 fn deleted_generated_file_fails_the_gate() {
     let root = repo_fixture("deleted");
     generate(&root);
-    fs::remove_file(root.join("human/apps/web/src/api/generated/index.ts"))
+    fs::remove_file(root.join("apps/web/src/api/generated/index.ts"))
         .unwrap_or_else(|error| panic!("remove: {error}"));
-    expect_failure(&root, "human/apps/web/src/api/generated");
+    expect_failure(&root, "apps/web/src/api/generated");
     cleanup(&root);
 }
 

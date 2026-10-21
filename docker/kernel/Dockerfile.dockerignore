@@ -40,7 +40,9 @@ tests/testutil
 utils
 wasm
 wasm-runtime
-human/apps
+apps/perps
+apps/wallet
+apps/web
 tools/qualification/output
 **/.lane-target
 **/.build

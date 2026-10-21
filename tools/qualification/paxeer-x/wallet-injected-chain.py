@@ -19,7 +19,7 @@ MODULE = importlib.util.spec_from_file_location('wallet_injected_fixture', ROOT 
 fixture = importlib.util.module_from_spec(MODULE)
 MODULE.loader.exec_module(fixture)
 BASELINE_FILES = tuple(fixture.OWNED)
-fixture.OWNED += ['human/apps/wallet/e2e/send.spec.ts', 'tools/qualification/paxeer-x/wallet-injected-chain.py', 'tools/paxeer-x/gates/14.2.sh']
+fixture.OWNED += ['apps/wallet/e2e/send.spec.ts', 'tools/qualification/paxeer-x/wallet-injected-chain.py', 'tools/paxeer-x/gates/14.2.sh']
 fixture.EVIDENCE = Path(os.environ.get('WALLET_INJECTED_CHAIN_ROOT', '/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.2')).absolute()
 EVIDENCE = fixture.EVIDENCE
 
@@ -27,15 +27,15 @@ EVIDENCE = fixture.EVIDENCE
 def build():
     extension, anvil = fixture.provision()
     dependency_value = os.environ.get('WALLET_INJECTED_NODE_MODULES')
-    fixture.require(dependency_value, 'WALLET_INJECTED_NODE_MODULES must name the wallet node_modules directory (human/apps/wallet/node_modules)')
+    fixture.require(dependency_value, 'WALLET_INJECTED_NODE_MODULES must name the wallet node_modules directory (apps/wallet/node_modules)')
     dependency = Path(dependency_value).resolve()
     node = Path(os.environ.get('WALLET_INJECTED_NODE', '/root/lx-toolchains/node24/bin/node')).resolve()
     fixture.require(node.is_file() and os.access(node, os.X_OK), 'actual Node executable required')
     package = json.loads((dependency / '@playwright/test/package.json').read_text())
     fixture.require(package['version'] == fixture.PLAYWRIGHT_VERSION and package['dependencies']['playwright'] == fixture.PLAYWRIGHT_VERSION, 'pinned actual Playwright required')
-    fixture.require(json.loads((ROOT / 'human/apps/wallet/package.json').read_text())['devDependencies']['@playwright/test'] == fixture.PLAYWRIGHT_VERSION, 'repository Playwright pin differs')
+    fixture.require(json.loads((ROOT / 'apps/wallet/package.json').read_text())['devDependencies']['@playwright/test'] == fixture.PLAYWRIGHT_VERSION, 'repository Playwright pin differs')
     vite = json.loads((dependency / 'vite/package.json').read_text())
-    fixture.require('vite@' + vite['version'] in (ROOT / 'human/apps/wallet/pnpm-lock.yaml').read_text(), 'repository Vite pin differs')
+    fixture.require('vite@' + vite['version'] in (ROOT / 'apps/wallet/pnpm-lock.yaml').read_text(), 'repository Vite pin differs')
     sources = fixture.source_hashes()
     work = EVIDENCE / 'build-input'
     work.mkdir(mode=0o700, exist_ok=True)
@@ -47,7 +47,7 @@ def build():
     producer = work / 'build.mjs'
     producer.write_text("""import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';import {pathToFileURL} from 'node:url';
 const c=JSON.parse(process.argv[2]);const req=createRequire(path.join(c.dependency,'../package.json'));const vite=await import(pathToFileURL(req.resolve('vite')).href);const modules=new Set();
-await vite.build({configFile:false,root:path.dirname(c.html),resolve:{alias:[{find:'@paxeer/wallet',replacement:path.join(c.root,'human/wallet/sdk/src/index.ts')},{find:'@sidiora/layerx-sdk/browser',replacement:path.join(c.root,'services/agent/sdk/typescript/src/browser.ts')},{find:'@sidiora/layerx-sdk',replacement:path.join(c.root,'services/agent/sdk/typescript/src/index.ts')},{find:/^@\\//,replacement:path.join(c.root,'human/apps/wallet/src')+'/'}],dedupe:['react','react-dom']},define:{'process.env':'{}','process.env.NODE_ENV':JSON.stringify('production')},plugins:[{name:'actual-pinned-dependencies',resolveId(id){if(!id.startsWith('.')&&!id.startsWith('/')&&!id.startsWith('\\0')){try{return req.resolve(id)}catch{return null}}},moduleParsed(info){modules.add(info.id)},closeBundle(){fs.writeFileSync(path.join(c.output,'source-modules.json'),JSON.stringify([...modules].sort()))}}],build:{outDir:c.output,emptyOutDir:true,minify:false,rollupOptions:{input:{app:c.html,sdk:c.sdk},preserveEntrySignatures:'strict',output:{entryFileNames:'[name].js'}}}});
+await vite.build({configFile:false,root:path.dirname(c.html),resolve:{alias:[{find:'@paxeer/wallet',replacement:path.join(c.root,'human/wallet/sdk/src/index.ts')},{find:'@sidiora/layerx-sdk/browser',replacement:path.join(c.root,'services/agent/sdk/typescript/src/browser.ts')},{find:'@sidiora/layerx-sdk',replacement:path.join(c.root,'services/agent/sdk/typescript/src/index.ts')},{find:/^@\\//,replacement:path.join(c.root,'apps/wallet/src')+'/'}],dedupe:['react','react-dom']},define:{'process.env':'{}','process.env.NODE_ENV':JSON.stringify('production')},plugins:[{name:'actual-pinned-dependencies',resolveId(id){if(!id.startsWith('.')&&!id.startsWith('/')&&!id.startsWith('\\0')){try{return req.resolve(id)}catch{return null}}},moduleParsed(info){modules.add(info.id)},closeBundle(){fs.writeFileSync(path.join(c.output,'source-modules.json'),JSON.stringify([...modules].sort()))}}],build:{outDir:c.output,emptyOutDir:true,minify:false,rollupOptions:{input:{app:c.html,sdk:c.sdk},preserveEntrySignatures:'strict',output:{entryFileNames:'[name].js'}}}});
 const testReq=createRequire(req.resolve('@playwright/test/package.json'));const pwPackage=testReq.resolve('playwright/package.json');const metadata=JSON.parse(fs.readFileSync(pwPackage,'utf8'));fs.writeFileSync(path.join(c.output,'playwright-cli.txt'),path.join(path.dirname(pwPackage),metadata.bin.playwright));fs.writeFileSync(path.join(c.output,'playwright-module.txt'),req.resolve('@playwright/test'));
 """)
     fixture.command([str(node), str(producer), json.dumps({'root': str(ROOT), 'dependency': str(dependency), 'html': str(html), 'sdk': str(sdk), 'output': str(EVIDENCE / 'app')})], 'build.log', 300)
@@ -141,7 +141,7 @@ def verify():
             'app_url': f'http://127.0.0.1:{server.server_port}', 'recipient': server.recipient,
             'output_dir': str(run), 'source_hashes': build['sources']})
         config = run / 'playwright.config.cjs'
-        config.write_text('module.exports=' + json.dumps({'testDir': str(ROOT / 'human/apps/wallet/e2e'),
+        config.write_text('module.exports=' + json.dumps({'testDir': str(ROOT / 'apps/wallet/e2e'),
             'testMatch': 'send.spec.ts', 'grep': 'injected chain pinning', 'workers': 1, 'timeout': 600000,
             'fullyParallel': False, 'outputDir': str(run / 'browser-artifacts'), 'reporter': 'line'}) + ';\n')
         env = {'PATH': os.defpath, 'HOME': str(run), 'LANG': 'C.UTF-8',

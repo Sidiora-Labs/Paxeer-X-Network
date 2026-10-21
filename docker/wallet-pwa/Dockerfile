@@ -13,16 +13,16 @@ RUN pnpm install --frozen-lockfile --filter ./sdk... \
     && pnpm --filter ./sdk... run build
 
 FROM node:22-alpine AS builder
-WORKDIR /src/human/apps/wallet
+WORKDIR /src/apps/wallet
 ENV NEXT_TELEMETRY_DISABLED=1 \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
 RUN corepack enable \
     && corepack prepare pnpm@12.6.0 --activate
 COPY --from=sdk /src /src
-COPY human/apps/wallet/package.json human/apps/wallet/pnpm-lock.yaml human/apps/wallet/pnpm-workspace.yaml human/apps/wallet/.npmrc ./
+COPY apps/wallet/package.json apps/wallet/pnpm-lock.yaml apps/wallet/pnpm-workspace.yaml apps/wallet/.npmrc ./
 RUN pnpm install --frozen-lockfile --ignore-scripts
-COPY human/apps/wallet ./
+COPY apps/wallet ./
 
 ARG NEXT_PUBLIC_PAXEER_WALLET_API
 ARG NEXT_PUBLIC_PAXEER_RPC_URL
@@ -104,11 +104,11 @@ RUN apk add --no-cache nginx tini \
     && mkdir -p /data/paxport /tmp/nginx/client-body /tmp/nginx/proxy /tmp/nginx/fastcgi /tmp/nginx/uwsgi /tmp/nginx/scgi \
     && chown -R nextjs:nodejs /data/paxport /tmp/nginx
 
-COPY --from=builder --chown=nextjs:nodejs /src/human/apps/wallet/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /src/human/apps/wallet/public ./human/apps/wallet/public
-COPY --from=builder --chown=nextjs:nodejs /src/human/apps/wallet/.next/static ./human/apps/wallet/.next/static
-COPY --chown=nextjs:nodejs human/apps/wallet/deployment/nginx.conf /etc/nginx/nginx.conf
-COPY --chown=nextjs:nodejs --chmod=0755 human/apps/wallet/deployment/start-wallet.sh /app/start-wallet.sh
+COPY --from=builder --chown=nextjs:nodejs /src/apps/wallet/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /src/apps/wallet/public ./apps/wallet/public
+COPY --from=builder --chown=nextjs:nodejs /src/apps/wallet/.next/static ./apps/wallet/.next/static
+COPY --chown=nextjs:nodejs apps/wallet/deployment/nginx.conf /etc/nginx/nginx.conf
+COPY --chown=nextjs:nodejs --chmod=0755 apps/wallet/deployment/start-wallet.sh /app/start-wallet.sh
 
 USER nextjs
 EXPOSE 3001

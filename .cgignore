@@ -163,7 +163,7 @@ programs/porting/
 services/platform/docs/
 services/platform/examples/
 services/platform/tools/
-human/apps/wallet/public/
+apps/wallet/public/
 services/human/tools/
 core/deps/
 sdk/js/

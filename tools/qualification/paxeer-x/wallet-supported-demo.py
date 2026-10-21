@@ -272,7 +272,7 @@ def main():
         require(digest(path) == expected, 'real service candidate mismatch')
     require(runtime['service_artifacts'] and fixture.get('browser_context_index') == 0, 'dedicated real fixture services and browser profile required')
     protected(fixture['delivered_magic_link_file'])
-    playwright = ROOT / 'human/apps/wallet/node_modules/@playwright/test/index.mjs'
+    playwright = ROOT / 'apps/wallet/node_modules/@playwright/test/index.mjs'
     require(playwright.is_file(), 'preinstalled actual Playwright production-browser tooling required')
     browser = EVIDENCE / 'supported-demo-browser.mjs'
     browser.write_text(BROWSER)

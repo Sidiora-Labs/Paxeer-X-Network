@@ -5,7 +5,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
-app="$root/human/apps/wallet"
+app="$root/apps/wallet"
 dockerfile="$root/docker/wallet-pwa/Dockerfile"
 fail=0
 err() { echo "FAIL: $*" >&2; fail=1; }

@@ -8,6 +8,9 @@ services/platform/ @Sidiora-Labs/core
 programs/ @Sidiora-Labs/core
 human/ @Sidiora-Labs/core
 services/human/ @Sidiora-Labs/core
+apps/perps/ @Sidiora-Labs/core
+apps/wallet/ @Sidiora-Labs/core
+apps/web/ @Sidiora-Labs/core
 contracts/ @Sidiora-Labs/core
 /admin/ @Sidiora-Labs/core
 /api/ @Sidiora-Labs/core

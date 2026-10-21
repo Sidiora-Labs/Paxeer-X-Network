@@ -21,7 +21,7 @@ if os.environ.get('PAXEER_X_TASK_DEADLINE_UNIX'):
 def inventory():
     roots = (ROOT / 'human', ROOT / 'agent', ROOT / 'crates', ROOT / 'services/platform')
     paths = {ROOT / 'tools/qualification/paxeer-x/native_send_purpose.py',
-             ROOT / 'human/apps/web/e2e/software-authenticator.ts'}
+             ROOT / 'apps/web/e2e/software-authenticator.ts'}
     paths.add(ROOT / 'services/agent/schema/agent-api/v1.kvx')
     for root in roots:
         for directory, children, files in os.walk(root):

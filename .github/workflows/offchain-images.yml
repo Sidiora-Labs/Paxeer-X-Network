@@ -15,7 +15,7 @@ on:
       - sdk/launchpad/**
       - deploy/launchpad/**
       - services/platform/perps-data/**
-      - human/apps/perps/**
+      - apps/perps/**
       - tools/deploy/**
       - .github/workflows/offchain-images.yml
   workflow_dispatch:

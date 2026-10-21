@@ -14,7 +14,7 @@ fn real_schema_root() -> PathBuf {
 }
 
 fn committed_output_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../human/apps/web/src/api/generated")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../apps/web/src/api/generated")
 }
 
 fn copy_tree(from: &Path, to: &Path) {

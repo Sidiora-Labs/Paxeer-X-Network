@@ -26,8 +26,8 @@ cd "$REPO_ROOT"
 # service|Dockerfile under docker/|old path|build context
 SERVICES='
 layerx|docker/layerx/Dockerfile|Dockerfile|.
-wallet-pwa|docker/wallet-pwa/Dockerfile|human/apps/wallet/Dockerfile|.
-web|docker/web/Dockerfile|human/apps/web/Dockerfile|.
+wallet-pwa|docker/wallet-pwa/Dockerfile|apps/wallet/Dockerfile|.
+web|docker/web/Dockerfile|apps/web/Dockerfile|.
 wallet-gateway|docker/wallet-gateway/Dockerfile|human/wallet/gateway/Dockerfile|.
 wallet-attestor|docker/wallet-attestor/Dockerfile|human/wallet/attestor/Dockerfile|.
 interop-gateway|docker/interop-gateway/Dockerfile|services/interop/deploy/gateway/Dockerfile|.
@@ -73,8 +73,8 @@ search-front|docker/search-front/Dockerfile|docker/search-front/Dockerfile|.
 # ignore files that moved with their Dockerfile: service|new path|old path
 IGNORES='
 layerx|docker/layerx/Dockerfile.dockerignore|Dockerfile.dockerignore
-wallet-pwa|docker/wallet-pwa/Dockerfile.dockerignore|human/apps/wallet/.dockerignore
-web|docker/web/Dockerfile.dockerignore|human/apps/web/Dockerfile.dockerignore
+wallet-pwa|docker/wallet-pwa/Dockerfile.dockerignore|apps/wallet/.dockerignore
+web|docker/web/Dockerfile.dockerignore|apps/web/Dockerfile.dockerignore
 platform-node|docker/platform-node/Dockerfile.dockerignore|services/platform/hosted/node/Dockerfile.dockerignore
 explorer-frontend|docker/explorer-frontend/Dockerfile.dockerignore|apps/explorer/.dockerignore
 explorer-sig-provider|docker/explorer-sig-provider/Dockerfile.dockerignore|services/explorer/services/sig-provider/.dockerignore

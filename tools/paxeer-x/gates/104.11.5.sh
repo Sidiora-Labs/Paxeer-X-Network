@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 root = Path(sys.argv[1])
-web = root / 'human/apps/web'
+web = root / 'apps/web'
 
 
 def refuse(reason):

@@ -3,13 +3,13 @@ import { createRoot } from 'react-dom/client';
 import { ethers } from 'ethers';
 import { PAXEER_CHAIN_ID, WalletInterface } from '@paxeer/wallet';
 
-import { LocaleProvider } from '../../../human/apps/wallet/src/providers/LocaleProvider';
-import { WalletProvider, useWallet } from '../../../human/apps/wallet/src/wallet/WalletProvider';
-import { readWalletConfig, type WalletConfig } from '../../../human/apps/wallet/src/wallet/config';
-import { transferTransaction } from '../../../human/apps/wallet/src/wallet/session';
-import { SendConfirmation } from '../../../human/apps/wallet/src/widgets/send/SendConfirmation';
-import { useSendForm } from '../../../human/apps/wallet/src/widgets/send/useSendForm';
-import type { SendableToken } from '../../../human/apps/wallet/src/widgets/send/useSendableTokens';
+import { LocaleProvider } from '../../../apps/wallet/src/providers/LocaleProvider';
+import { WalletProvider, useWallet } from '../../../apps/wallet/src/wallet/WalletProvider';
+import { readWalletConfig, type WalletConfig } from '../../../apps/wallet/src/wallet/config';
+import { transferTransaction } from '../../../apps/wallet/src/wallet/session';
+import { SendConfirmation } from '../../../apps/wallet/src/widgets/send/SendConfirmation';
+import { useSendForm } from '../../../apps/wallet/src/widgets/send/useSendForm';
+import type { SendableToken } from '../../../apps/wallet/src/widgets/send/useSendableTokens';
 
 interface FixtureBootstrap {
     readonly recipient: string;
