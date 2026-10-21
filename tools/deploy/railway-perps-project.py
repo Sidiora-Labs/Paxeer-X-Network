@@ -13,6 +13,9 @@ sys.path.insert(0, str(ROOT / "tools/rollout"))
 from rollout import API, GHCR, IN_PROGRESS, TERMINAL, Malformed, load_digests  # noqa: E402
 
 MANIFEST = ROOT / "deploy/railway-perps-project.kvx"
+# maxTrustedProxies in services/platform/perps-data/internal/ratelimit/ratelimit.go:
+# the services refuse a longer PERPS_TRUSTED_PROXY_CIDRS list at start.
+MAX_TRUSTED_PROXIES = 32
 NAME = r"[a-z0-9][a-z0-9-]*"
 LINE = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|(-?\d+))\s*(?:#.*)?$')
 KEYS = {
@@ -94,7 +97,11 @@ def load(path):
             if v.startswith(("env:", "arg:")) and not re.fullmatch(r"env:[A-Z_][A-Z0-9_]*|arg:start-height", v):
                 raise Malformed(f"[vars.{svc['name']}]: bad source {v!r}")
         if "PERPS_TRUSTED_PROXY_CIDRS" in svc["vars"]:
-            for c in svc["vars"]["PERPS_TRUSTED_PROXY_CIDRS"].split(","):
+            cidrs = svc["vars"]["PERPS_TRUSTED_PROXY_CIDRS"].split(",")
+            if len(cidrs) > MAX_TRUSTED_PROXIES:
+                raise Malformed(f"[vars.{svc['name']}]: PERPS_TRUSTED_PROXY_CIDRS has {len(cidrs)} entries, "
+                                f"the services allow at most {MAX_TRUSTED_PROXIES}")
+            for c in cidrs:
                 bits = parse_prefix(c.strip())
                 if bits is None:
                     raise Malformed(f"[vars.{svc['name']}]: PERPS_TRUSTED_PROXY_CIDRS entry {c.strip()!r} is not a CIDR")

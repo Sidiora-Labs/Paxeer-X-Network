@@ -143,6 +143,30 @@ for cidr in 100.64.0.1/32 fd00::1/128 "100.64.0.0/10, 10.0.0.7/32,fd00::/8,2001:
 		fail "gateway $cidr not planned"
 done
 
+# The services refuse more than maxTrustedProxies entries at start; the tool
+# holds the same limit, read here from the Go source so the two cannot drift.
+go_max="$(sed -n 's/^const maxTrustedProxies = \([0-9][0-9]*\)$/\1/p' "$root/services/platform/perps-data/internal/ratelimit/ratelimit.go")"
+py_max="$(sed -n 's/^MAX_TRUSTED_PROXIES = \([0-9][0-9]*\)$/\1/p' "$tool")"
+[ -n "$go_max" ] || fail "maxTrustedProxies not found in the ratelimit Go source"
+[ "$py_max" = "$go_max" ] || fail "tool MAX_TRUSTED_PROXIES=$py_max differs from Go maxTrustedProxies=$go_max"
+many() { python3 -c 'import sys; print(",".join(f"10.0.{i}.0/24" for i in range(int(sys.argv[1]))))' "$1"; }
+for n in "$go_max" "$((go_max + 1))"; do
+	cidr="$(many "$n")"
+	sed "/^\[vars.gateway\]/,/^\[/s|^PERPS_TRUSTED_PROXY_CIDRS = .*|PERPS_TRUSTED_PROXY_CIDRS = \"$cidr\"|" \
+		"$root/deploy/railway-perps-project.kvx" >"$tmp/count-proxy.kvx"
+	grep -qF "PERPS_TRUSTED_PROXY_CIDRS = \"$cidr\"" "$tmp/count-proxy.kvx" || fail "test did not set $n entries"
+	run --plan --digests "$tmp/digests.json" --replay "$tmp/replay.json" --start-height 34800001 --manifest "$tmp/count-proxy.kvx"
+	if [ "$n" -eq "$go_max" ]; then
+		[ "$code" -eq 0 ] || { cat "$tmp/err" >&2; fail "gateway trusting $n entries exited $code, want 0"; }
+		sed -n "/^service [0-9]* gateway image/,/^service /p" "$tmp/out" | grep -qxF "  var PERPS_TRUSTED_PROXY_CIDRS add $cidr" ||
+			fail "gateway $n entries not planned"
+	else
+		[ "$code" -eq 2 ] || fail "gateway trusting $n entries exited $code, want 2"
+		grep -qF "[vars.gateway]: PERPS_TRUSTED_PROXY_CIDRS has $n entries, the services allow at most $go_max" "$tmp/err" ||
+			fail "gateway $n entries not refused with the count and limit"
+	fi
+done
+
 (unset PERPS_AUTH_SECRET; run --plan --digests "$tmp/digests.json" --replay "$tmp/replay.json"; echo "$code" >"$tmp/code")
 [ "$(cat "$tmp/code")" -eq 3 ] || fail "plan with unresolved values exited $(cat "$tmp/code"), want 3"
 grep -q '^  var PERPS_AUTH_SECRET <env PERPS_AUTH_SECRET> missing$' "$tmp/out" || fail "unset env source not listed"
