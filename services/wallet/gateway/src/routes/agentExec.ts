@@ -1,6 +1,5 @@
 import type { FastifyRequest } from 'fastify';
-import { createWalletClient, http, keccak256, parseTransaction, type Hex, type TransactionSerializable } from 'viem';
-import { hyperPaxeer } from '../chain.js';
+import { keccak256, parseTransaction, type Hex, type TransactionSerializable } from 'viem';
 import { env } from '../env.js';
 import { CustodyAuthorityError } from '../agent/authority.js';
 import { withWalletLock } from '../util/walletLock.js';
@@ -14,7 +13,9 @@ import {
 import { bindCustodyBudgetReservation, getPolicy, listRules, releaseBudget, releaseCustodyBudgetReservation } from '../db/agents.js';
 import { evaluateAgent, type AgentTxIntent } from '../policy/agent.js';
 import { AttestorError, AttestorTokenError, AttestorReauthorizationRequired, attestorErrorBody, attestorErrorStatus } from '../attestor/client.js';
-import { getNonce, resolveGas } from '../chainReads.js';
+import { resolveGas } from '../chainReads.js';
+import type { NonceLease } from '../nonce/store.js';
+import { TransactionRejectedError, sharedRpcPool } from '../rpc/pool.js';
 
 /**
  * Shared agent execution core.
@@ -96,13 +97,13 @@ function viemTxParams(tx: AgentTxInput): {
   return out;
 }
 
-async function transactionForRequest(ctx: AgentCtx, wallet: WalletRow, tx: AgentTxInput): Promise<TransactionSerializable> {
+async function transactionForRequest(ctx: AgentCtx, wallet: WalletRow, tx: AgentTxInput, lease: NonceLease): Promise<TransactionSerializable> {
   const params = viemTxParams(tx);
   const chainId = tx.chainId ?? env.HYPERPAXEER_CHAIN_ID;
   if (chainId !== wallet.chain_id || chainId !== env.HYPERPAXEER_CHAIN_ID) {
     throw new AttestorTokenError('agent_authorization_mismatch', 'transaction chain differs from the wallet');
   }
-  const expectedNonce = tx.nonce ?? await getNonce(wallet.address);
+  const expectedNonce = tx.nonce ?? await lease.next();
   const approved = ctx.custody?.reauthorization;
   if (approved) {
     let offered: ReturnType<typeof parseTransaction>;
@@ -163,13 +164,13 @@ export async function executeAgentTransaction(args: {
   let signedTx: Hex | null = null;
   let custodyBudgetReservationId: string | null = null;
   try {
-    const signed = await withWalletLock(wallet.address, async () => {
+    const signed = await withWalletLock(wallet.address, async (lease) => {
       const account = await getMigrationAwareSigningAccountForRow(wallet, ctx.custody ? {
         scheme: 'agent_request', publicKey: ctx.principal.public_key, ...ctx.custody,
       } : undefined, undefined, undefined, {
         subject: ctx.did, route: ctx.custody?.origin.method ?? '/v1/agent', requestHash: audit.request_hash,
       });
-      const transaction = await transactionForRequest(ctx, wallet, tx);
+      const transaction = await transactionForRequest(ctx, wallet, tx, lease);
       if (decision.reservedBudgetId && ctx.custody) {
         custodyBudgetReservationId = await bindCustodyBudgetReservation({
           did: ctx.did, budgetId: decision.reservedBudgetId, valueWei: decision.reservedValueWei,
@@ -177,13 +178,21 @@ export async function executeAgentTransaction(args: {
         });
       }
       const raw = await account.signTransaction(transaction);
-      if (!broadcast) return { raw, hash: null };
+      if (!broadcast) return { raw, hash: null, error: null };
       signedTx = raw;
       txHash = keccak256(raw);
-      const client = createWalletClient({ chain: hyperPaxeer, transport: http(env.HYPERPAXEER_RPC_URL) });
-      const hash = await client.sendRawTransaction({ serializedTransaction: raw });
-      return { raw, hash };
+      try {
+        return { raw, hash: await sharedRpcPool().sendRawTransaction(raw), error: null };
+      } catch (error) {
+        if (error instanceof TransactionRejectedError) {
+          if (tx.nonce === undefined) await lease.release(transaction.nonce!);
+          txHash = null;
+          signedTx = null;
+        }
+        return { raw, hash: null, error };
+      }
     });
+    if (signed.error !== null) throw signed.error;
     txHash = signed.hash;
     signedTx = signed.raw;
   } catch (err) {

@@ -1,29 +1,15 @@
-import { sharedNonceStore, type NonceStore } from '../nonce/store.js';
+import { sharedNonceStore, type NonceLease, type NonceStore } from '../nonce/store.js';
 
 const tails = new Map<string, Promise<unknown>>();
 
-type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
-
 export async function withWalletLock<T>(
   key: string,
-  fn: () => Promise<T>,
+  fn: (lease: NonceLease) => Promise<T>,
   store: NonceStore = sharedNonceStore(),
   ownerActionId?: string,
 ): Promise<T> {
   const k = key.toLowerCase();
-  const locked = async (): Promise<T> => {
-    const outcome = await store.withLock<Outcome<T>>(k, async (lease) => {
-      try {
-        return { ok: true, value: await fn() };
-      } catch (error) {
-        return { ok: false, error };
-      } finally {
-        await lease.markForReconcile();
-      }
-    }, ownerActionId);
-    if (!outcome.ok) throw outcome.error;
-    return outcome.value;
-  };
+  const locked = (): Promise<T> => store.withLock(k, fn, ownerActionId);
   const prev = tails.get(k) ?? Promise.resolve();
   const next = prev.then(locked, locked);
   const swallowed = next.then(

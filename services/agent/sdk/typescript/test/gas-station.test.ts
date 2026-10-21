@@ -803,13 +803,13 @@ async function paymaster_nonce_stream(): Promise<void> {
     );
     assert.deepEqual(requests, [
       { method: "eth_chainId", params: [] },
-      { method: "eth_getCode", params: [batch.account, "pending"] },
-      { method: "eth_getCode", params: [paymaster, "pending"] },
+      { method: "eth_getCode", params: [batch.account, "latest"] },
+      { method: "eth_getCode", params: [paymaster, "latest"] },
       {
         method: "eth_call",
         params: [
           { to: batch.account, data: abiSelector("nonce()") },
-          "pending",
+          "latest",
           { [batch.account]: { code: implementation } },
         ],
       },
@@ -829,12 +829,12 @@ async function paymaster_nonce_stream(): Promise<void> {
     assert.equal(nonce, 3n);
     assert.deepEqual(requests, [
       { method: "eth_chainId", params: [] },
-      { method: "eth_getCode", params: [batch.account, "pending"] },
+      { method: "eth_getCode", params: [batch.account, "latest"] },
       {
         method: "eth_call",
         params: [
           { to: batch.account, data: abiSelector("nonce()") },
-          "pending",
+          "latest",
         ],
       },
     ]);

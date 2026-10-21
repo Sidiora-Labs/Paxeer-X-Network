@@ -1071,7 +1071,7 @@ export async function discoverSponsoredNonce(
       BigInt(chain) !== config.chainId
     )
       throw new Refusal("chain_mismatch", "chainId");
-    const block = "pending";
+    const block = "latest";
     const code = await request({
       method: "eth_getCode",
       params: [target, block],

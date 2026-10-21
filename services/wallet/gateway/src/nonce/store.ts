@@ -7,8 +7,21 @@ export type PendingCountReader = (address: `0x${string}`) => Promise<number>;
 
 export interface NonceLease {
   readonly address: string;
+  /** Reserve max(stored next nonce, latest count) and advance the stored next nonce past it. */
   next(): Promise<number>;
-  markForReconcile(): Promise<void>;
+  /** Free a reserved nonce after the node definitively rejected the transaction carrying it. */
+  release(nonce: number): Promise<void>;
+  /** Refuse a caller-chosen nonce below the latest count before anything is signed or broadcast. */
+  checkClientNonce(nonce: number): Promise<void>;
+  /** Record a broadcast at a nonce: stored next becomes max(stored next, nonce + 1). */
+  advance(nonce: number): Promise<void>;
+}
+
+export class NonceBelowLatestError extends Error {
+  constructor(readonly nonce: number, readonly latest: number) {
+    super(`nonce ${nonce} is below the latest transaction count ${latest}`);
+    this.name = 'NonceBelowLatestError';
+  }
 }
 
 export interface NonceStoreOptions {
@@ -73,60 +86,66 @@ export class NonceStore {
   async allocate(address: string): Promise<number> {
     return this.withLock(address, (lease) => lease.next());
   }
-
-  async markForReconcile(address: string): Promise<void> {
-    await this.opts.pool.query(
-      `update nonce_allocations set needs_reconcile = true, updated_at = now() where address = $1`,
-      [address.toLowerCase()],
-    );
-  }
 }
 
 class Lease implements NonceLease {
   readonly address: string;
   private nextNonce: bigint;
-  private reconcile: boolean;
 
   constructor(
     private readonly client: PoolClient,
     address: string,
     row: NonceRow,
-    private readonly pendingCount: PendingCountReader,
+    private readonly latestCount: PendingCountReader,
   ) {
     this.address = address;
     this.nextNonce = BigInt(row.next_nonce);
-    this.reconcile = row.needs_reconcile;
+  }
+
+  private async latest(): Promise<number> {
+    const onChain = await this.latestCount(this.address as `0x${string}`);
+    if (!Number.isSafeInteger(onChain) || onChain < 0) {
+      throw new Error(`nonce store: chain answered an invalid transaction count ${onChain}`);
+    }
+    return onChain;
   }
 
   async next(): Promise<number> {
-    if (this.reconcile) {
-      const onChain = await this.pendingCount(this.address as `0x${string}`);
-      if (!Number.isSafeInteger(onChain) || onChain < 0) {
-        throw new Error(`nonce store: chain answered an invalid transaction count ${onChain}`);
-      }
-      this.nextNonce = BigInt(onChain);
-      this.reconcile = false;
-      await this.client.query(
-        `update nonce_allocations set reconciled_at = now() where address = $1`,
-        [this.address],
-      );
-    }
-    const allocated = this.nextNonce;
+    const onChain = await this.latest();
+    const allocated = this.nextNonce > BigInt(onChain) ? this.nextNonce : BigInt(onChain);
     this.nextNonce = allocated + 1n;
     await this.client.query(
       `update nonce_allocations
-          set next_nonce = $2, needs_reconcile = false, updated_at = now()
+          set next_nonce = $2, needs_reconcile = false, reconciled_at = now(), updated_at = now()
         where address = $1`,
       [this.address, this.nextNonce.toString()],
     );
     return Number(allocated);
   }
 
-  async markForReconcile(): Promise<void> {
-    this.reconcile = true;
+  async checkClientNonce(nonce: number): Promise<void> {
+    const onChain = await this.latest();
+    if (nonce < onChain) throw new NonceBelowLatestError(nonce, onChain);
+  }
+
+  async advance(nonce: number): Promise<void> {
+    const after = BigInt(nonce) + 1n;
+    if (after <= this.nextNonce) return;
+    this.nextNonce = after;
     await this.client.query(
-      `update nonce_allocations set needs_reconcile = true, updated_at = now() where address = $1`,
-      [this.address],
+      `update nonce_allocations set next_nonce = $2, updated_at = now() where address = $1`,
+      [this.address, this.nextNonce.toString()],
+    );
+  }
+
+  async release(nonce: number): Promise<void> {
+    if (this.nextNonce !== BigInt(nonce) + 1n) {
+      throw new Error(`nonce store: nonce ${nonce} is not the newest reservation for ${this.address}`);
+    }
+    this.nextNonce = BigInt(nonce);
+    await this.client.query(
+      `update nonce_allocations set next_nonce = $2, updated_at = now() where address = $1`,
+      [this.address, this.nextNonce.toString()],
     );
   }
 }

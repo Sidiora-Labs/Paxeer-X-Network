@@ -379,9 +379,9 @@ export function gasStation(provider: ModuleProvider, options: GasStationOptions)
     if(unwrap(sponsoredConsent(config,batch,currentTime())).batchDigest!==consent.batchDigest)throw new GasStationError({code:'refused',field:'consent_changed'});
     if(batch.nonce!==await batchNonce(batch.account))throw new GasStationError({code:'refused',field:'nonce'});
     const account=hexAddress(batch.account,'account');
-    const pending=await provider.request({method:'eth_getTransactionCount',params:[account,'pending']});
-    if(typeof pending!=='string'||!/^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/u.test(pending))throw new ModuleError('invalid_answer','eth_getTransactionCount');
-    const nonce=BigInt(pending);const authorizationFields={chainId:config.chainId,address:config.paymaster,nonce};
+    const latest=await provider.request({method:'eth_getTransactionCount',params:[account,'latest']});
+    if(typeof latest!=='string'||!/^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/u.test(latest))throw new ModuleError('invalid_answer','eth_getTransactionCount');
+    const nonce=BigInt(latest);const authorizationFields={chainId:config.chainId,address:config.paymaster,nonce};
     const authorizationDigest=unwrap(eip7702AuthorizationDigest(authorizationFields));
     const accountSignature=await sign(batch);
     await assertSession(batch.account);

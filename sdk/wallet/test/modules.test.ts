@@ -336,17 +336,17 @@ const signer: ModuleProvider & { readonly isPaxeer: true } = {
     if (argument.method === 'eth_chainId') return `0x${chainId.toString(16)}`;
     if (argument.method === 'eth_getCode') {
       const [target, block] = params as [string, string];
-      if (target !== account || block !== 'pending') throw new Error('refused eth_getCode');
+      if (target !== account || block !== 'latest') throw new Error('refused eth_getCode');
       return `0xef0100${paymaster.slice(2)}`;
     }
     if (argument.method === 'eth_call') {
       const [call, block] = params as [{ to: string; data: string }, string];
-      if (params.length !== 2 || call.to !== account || call.data !== NONCE_SELECTOR || block !== 'pending') throw new Error('refused eth_call');
+      if (params.length !== 2 || call.to !== account || call.data !== NONCE_SELECTOR || block !== 'latest') throw new Error('refused eth_call');
       return `0x${word('uint64', BATCH_NONCE.toString())}`;
     }
     if (argument.method === 'eth_getTransactionCount') {
       const [target, block] = params as [string, string];
-      if (target !== account || block !== 'pending') throw new Error('refused eth_getTransactionCount');
+      if (target !== account || block !== 'latest') throw new Error('refused eth_getTransactionCount');
       return `0x${PENDING_NONCE.toString(16)}`;
     }
     if (argument.method === 'eth_sign') {
@@ -811,9 +811,9 @@ describe('modules', () => {
       ...session,
       ...session,
       { method: 'eth_chainId', params: [] },
-      { method: 'eth_getCode', params: [account, 'pending'] },
-      { method: 'eth_call', params: [{ to: account, data: NONCE_SELECTOR }, 'pending'] },
-      { method: 'eth_getTransactionCount', params: [account, 'pending'] },
+      { method: 'eth_getCode', params: [account, 'latest'] },
+      { method: 'eth_call', params: [{ to: account, data: NONCE_SELECTOR }, 'latest'] },
+      { method: 'eth_getTransactionCount', params: [account, 'latest'] },
       ...session,
       { method: 'eth_sign', params: [account, station.digest(batch), construction] },
       ...session,
@@ -823,6 +823,7 @@ describe('modules', () => {
       ...session,
       { method: 'eth_accounts', params: [] },
     ]);
+    expect(signed.filter((entry) => entry.params.includes('pending'))).toEqual([]);
     expect(await station.batchNonce(account)).toBe(BATCH_NONCE);
 
     const reference = value(sponsoredBatchCall(config, batch, accountSignature, relayerSignature, now));

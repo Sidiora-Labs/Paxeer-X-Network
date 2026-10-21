@@ -4,7 +4,6 @@ import {
   getErc20Allowance,
   getErc20Balance,
   getNativeBalance,
-  getNonce,
   publicClient,
   isTxKnown,
   resolveGas,
@@ -18,6 +17,7 @@ import { getDepositByTx, layerxEnabled } from '../../layerx/db.js';
 import { AttestorError, AttestorReauthorizationRequired, type AgentOriginalRequest, type AgentReauthorization } from '../../attestor/client.js';
 import { CustodyAuthorityError } from '../authority.js';
 import { withDistributedWalletLock } from './nonceLock.js';
+import type { NonceLease } from '../../nonce/store.js';
 import {
   buildErrorEnvelope,
   terminalStatusFor,
@@ -448,7 +448,12 @@ interface LegTx {
   value: bigint;
 }
 
-async function submitRetained(row: ActionRow, signed: ActionSignedTransaction): Promise<void> {
+/** The leg's nonce: a replacement keeps its existing nonce, a new leg reserves one under the wallet lock. */
+export function legNonce(lease: NonceLease, opts?: { nonce?: number }): Promise<number> {
+  return opts?.nonce !== undefined ? Promise.resolve(opts.nonce) : lease.next();
+}
+
+async function submitRetained(row: ActionRow, signed: ActionSignedTransaction, lease: NonceLease): Promise<void> {
   if (keccak256(signed.raw) !== signed.hash) throw new Error('retained transaction integrity failure');
   if (!(await isTxKnown(signed.hash))) {
     try {
@@ -458,16 +463,17 @@ async function submitRetained(row: ActionRow, signed: ActionSignedTransaction): 
       if (!(await isTxKnown(signed.hash))) throw err;
     }
   }
+  await lease.advance(signed.draft.nonce);
   await releaseActionNonce(row.id, signed.draft.nonce);
 }
 
 async function recoverRetainedBroadcast(row: ActionRow, leg: ActionLeg): Promise<void> {
   if (!row.wallet_address) throw new Error('action wallet missing');
-  await withDistributedWalletLock(row.wallet_address, async () => {
+  await withDistributedWalletLock(row.wallet_address, async (lease) => {
     const current = await getAction(row.id);
     if (!current || current.terminal_at) return;
     const signed = actionLegExecution(current, leg).current;
-    if (signed) await submitRetained(current, signed);
+    if (signed) await submitRetained(current, signed, lease);
   }, undefined, row.id);
 }
 
@@ -478,13 +484,13 @@ async function broadcastLeg(
   tx: LegTx,
   opts?: { nonce?: number; feeBumpPercent?: number },
 ): Promise<{ hash: Hex; nonce: number }> {
-  return withDistributedWalletLock(wallet.address, async () => {
+  return withDistributedWalletLock(wallet.address, async (lease) => {
     const current = await getAction(row.id);
     if (!current || current.terminal_at) throw new Error('action is no longer advanceable');
     const state = actionLegExecution(current, leg);
     const expectedHash = leg === 'approval' ? row.approval_tx_hash : row.call_tx_hash;
     if (state.current && (!opts || state.current.hash !== expectedHash)) {
-      await submitRetained(current, state.current);
+      await submitRetained(current, state.current, lease);
       return { hash: state.current.hash, nonce: state.current.draft.nonce };
     }
     const principal = await findPrincipal(current.did);
@@ -504,7 +510,7 @@ async function broadcastLeg(
     }
     let draft = state.draft;
     if (!draft) {
-      const nonce = opts?.nonce ?? (await getNonce(wallet.address));
+      const nonce = await legNonce(lease, opts);
       const gas = await resolveGas({ from: wallet.address, to: tx.to, data: tx.data, value: tx.value });
       let { maxFeePerGas, maxPriorityFeePerGas } = gas;
       if (opts?.feeBumpPercent) {
@@ -546,7 +552,7 @@ async function broadcastLeg(
       throw new Error('signed transaction differs from the exact authorized draft');
     }
     const retained = await retainActionSignedTransaction(current.id, leg, { draft, raw, hash: keccak256(raw) });
-    await submitRetained(current, retained);
+    await submitRetained(current, retained, lease);
     return { hash: retained.hash, nonce: retained.draft.nonce };
   }, undefined, row.id);
 }

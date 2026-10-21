@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHash } from 'node:crypto';
-import { createWalletClient, http, type Hex } from 'viem';
+import { type Hex } from 'viem';
 import { requireAuth } from '../middleware/auth.js';
 import { ownsPrincipal } from '../middleware/principal.js';
 import { parseDid } from '../auth/did.js';
@@ -30,7 +30,8 @@ import {
   logSignature,
   type WalletRow,
 } from '../db/wallets.js';
-import { encodeErc20Transfer, getErc20Balance, getNativeBalance } from '../chainReads.js';
+import { encodeErc20Transfer, getErc20Balance, getNativeBalance, resolveGas } from '../chainReads.js';
+import { TransactionRejectedError, sharedRpcPool } from '../rpc/pool.js';
 import { query } from '../db/pool.js';
 import { CustodyAuthorityError, publishCustodyAuthority } from '../agent/authority.js';
 import { AttestorError, attestorErrorBody, attestorErrorStatus } from '../attestor/client.js';
@@ -94,25 +95,24 @@ async function sendFromWallet(
   token: string,
   request: FastifyRequest,
 ): Promise<Hex> {
-  return withWalletLock(wallet.address, async () => {
+  const outcome = await withWalletLock(wallet.address, async (lease) => {
     const account = await getMigrationAwareSigningAccountForRow(wallet, { scheme: 'supabase_jwt', token }, undefined, undefined, {
       subject: request.user!.id, route: request.url.split('?')[0]!, requestHash: hashRequest(request.body),
     });
-    const client = createWalletClient({
-      chain: hyperPaxeer,
-      transport: http(env.HYPERPAXEER_RPC_URL),
-      account: {
-        address: account.address,
-        type: 'local',
-        source: 'paxeer-embedded',
-        publicKey: '0x' as Hex,
-        signTransaction: account.signTransaction,
-        signMessage: account.signMessage,
-        signTypedData: account.signTypedData,
-      },
+    const gas = await resolveGas({ from: wallet.address, to: args.to, value: args.value, data: args.data });
+    const nonce = await lease.next();
+    const raw = await account.signTransaction({
+      type: 'eip1559', chainId: hyperPaxeer.id, nonce, to: args.to, value: args.value ?? 0n, data: args.data, ...gas,
     });
-    return client.sendTransaction({ to: args.to, value: args.value, data: args.data, chain: hyperPaxeer });
+    try {
+      return { hash: await sharedRpcPool().sendRawTransaction(raw), error: null };
+    } catch (error) {
+      if (error instanceof TransactionRejectedError) await lease.release(nonce);
+      return { hash: null, error };
+    }
   });
+  if (outcome.error !== null) throw outcome.error;
+  return outcome.hash!;
 }
 
 function validateRuleValue(subject: string, value: string): string | null {

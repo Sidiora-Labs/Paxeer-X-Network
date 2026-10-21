@@ -49,6 +49,20 @@ export class PendingReadRefusedError extends RpcResponseError {
   }
 }
 
+/**
+ * A node answered eth_sendRawTransaction with an error that leaves the
+ * transaction's nonce free: the transaction is not in its pool. An answer that
+ * the transaction or another one at that nonce is already pooled is not this.
+ */
+export class TransactionRejectedError extends RpcResponseError {
+  constructor(code: number, message: string, data: unknown) {
+    super(code, message, data);
+    this.name = 'TransactionRejectedError';
+  }
+}
+
+const NONCE_OCCUPIED = /already known|already in (?:the )?mempool|already exists|underpriced/i;
+
 class RpcTransportError extends Error {
   constructor(message: string) {
     super(message);
@@ -228,7 +242,14 @@ export class RpcPool {
   }
 
   async sendRawTransaction(signed: Hex): Promise<Hex> {
-    return this.request<Hex>('eth_sendRawTransaction', [signed]);
+    try {
+      return await this.request<Hex>('eth_sendRawTransaction', [signed]);
+    } catch (err) {
+      if (err instanceof RpcResponseError && !NONCE_OCCUPIED.test(err.message)) {
+        throw new TransactionRejectedError(err.code, err.message, err.data);
+      }
+      throw err;
+    }
   }
 
   private async post(url: string, method: string, params: unknown[]): Promise<unknown> {
