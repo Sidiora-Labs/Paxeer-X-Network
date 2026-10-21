@@ -17,6 +17,7 @@ import {
   TRACK_B_STRINGS,
 } from "@/core/perps/config";
 import { useMarketSnapshots } from "@/hooks/perps/useAnalytics";
+import { formatFundingRatePct, parseFundingRateWad } from "@/core/perps/fundingRate";
 import { FUNDING_LABEL_ONCHAIN_24H } from "./MarketSnapshotTable";
 
 interface FundingHistoryChartProps {
@@ -26,12 +27,16 @@ interface FundingHistoryChartProps {
 
 interface ChartPoint {
   date: string;
-  fundingRate: number;
+  /** The exact on-chain rate at 18 decimals; null when the snapshot has none, drawn as a gap. */
+  rate: bigint | null;
+  /** The plot coordinate only, from plotFundingRate; labels print from `rate`. */
+  fundingRate: number | null;
 }
 
-function parse18(val: string | null | undefined): number {
-  if (!val) return 0;
-  return parseFloat(val) / 1e18;
+/** The chart boundary: an exact 18-decimal rate as the y coordinate recharts draws. Never used for text. */
+function plotFundingRate(rate: bigint): number {
+  const whole = rate / 10n ** 18n;
+  return Number(whole) + Number(rate - whole * 10n ** 18n) / 1e18;
 }
 
 export function FundingHistoryChart({ marketId, isMobile }: FundingHistoryChartProps) {
@@ -64,10 +69,14 @@ export function FundingHistoryChart({ marketId, isMobile }: FundingHistoryChartP
     );
   }
 
-  const chartData: ChartPoint[] = data.map((s) => ({
-    date: ANALYTICS_AXIS_FORMATTERS.shortDate(s.blockTimestamp),
-    fundingRate: parse18(s.fundingRate24h),
-  }));
+  const chartData: ChartPoint[] = data.map((s) => {
+    const rate = parseFundingRateWad(s.fundingRate24h);
+    return {
+      date: ANALYTICS_AXIS_FORMATTERS.shortDate(s.blockTimestamp),
+      rate,
+      fundingRate: rate === null ? null : plotFundingRate(rate),
+    };
+  });
 
   return (
     <div className="rounded-card bg-surface-1 p-5 shadow-04 transition-colors ease-data duration-200">
@@ -100,8 +109,8 @@ export function FundingHistoryChart({ marketId, isMobile }: FundingHistoryChartP
                 fontSize: 12,
               }}
               labelStyle={{ color: "hsl(var(--muted-foreground))" }}
-              formatter={(value: number) => [
-                ANALYTICS_AXIS_FORMATTERS.percent(value),
+              formatter={(_value: number, _name: string, item: { payload?: ChartPoint }) => [
+                item.payload?.rate == null ? "\u2014" : formatFundingRatePct(item.payload.rate),
                 FUNDING_LABEL_ONCHAIN_24H,
               ]}
             />

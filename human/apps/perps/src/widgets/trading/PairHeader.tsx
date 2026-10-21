@@ -6,7 +6,7 @@ import { useRealtimePrices } from "@/hooks/perps/useRealtimePrices";
 import { useEnrichedMarketStats } from "@/hooks/perps/useEnrichedStats";
 import { useSidPaxOrderbook, useSidPaxTrades, useSidPaxStats } from "@/hooks/perps/useSidPaxMarketStream";
 import { marketFundingHourly } from "@/hooks/perps/useMarketsStream";
-import { FUNDING_LABEL_1H, FUNDING_LABEL_24H, formatFundingDecimalPct, fundingFigures } from "@/core/perps/fundingRate";
+import { FUNDING_LABEL_1H, FUNDING_LABEL_24H, formatSignedFundingDecimalPct, fundingDecimalSign, fundingFigures } from "@/core/perps/fundingRate";
 import { ChevronDown } from "lucide-react";
 import { PriceFlash } from "@/ui/atoms/PriceFlash";
 import { MarketWatchlist } from "./MarketSelectorPanel";
@@ -108,6 +108,7 @@ export function PairHeader({ selectedPair, onPairChange, onOpenMarketPanel }: Pa
   // The symbol socket's EMA estimate is shown only as an estimate; the venue's
   // last settled hourly rate and its ×24 projection are labelled as such.
   const estFunding   = wsStats?.funding_rate ?? null;
+  const estSign      = fundingDecimalSign(estFunding);
   const venueHourly  = ticker?.last_funding_rate_hourly
     ?? marketFundingHourly(market.symbol, "last_funding_rate_hourly", et?.last_funding_rate_hourly ?? enriched?.fundingRate?.last_funding_rate_hourly);
   const venueFunding = venueHourly === null ? null : fundingFigures(venueHourly);
@@ -213,8 +214,8 @@ export function PairHeader({ selectedPair, onPairChange, onOpenMarketPanel }: Pa
         {estFunding !== null && (
           <StatChip
             label="Est. Funding"
-            value={`${estFunding.startsWith("-") ? "" : "+"}${formatFundingDecimalPct(estFunding)}`}
-            valueClass={/^-/.test(estFunding) ? "text-red-500" : /[1-9]/.test(estFunding) ? "text-emerald-500" : ""}
+            value={formatSignedFundingDecimalPct(estFunding)}
+            valueClass={estSign === -1 ? "text-red-500" : estSign === 1 ? "text-emerald-500" : ""}
           />
         )}
 

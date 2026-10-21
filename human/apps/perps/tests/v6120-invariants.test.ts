@@ -613,7 +613,7 @@ describe("v6120Invariants", () => {
   });
 
   it("noFundingThroughFloat", () => {
-    const field = /\b(funding_8h|perp_funding_rate|last_funding_rate|last_funding_rate_hourly|funding_rate|funding8h|fundingHourly|venueHourly|estFunding)\b/;
+    const field = /\b(funding_8h|perp_funding_rate|last_funding_rate|last_funding_rate_hourly|funding_rate|funding8h|fundingHourly|venueHourly|estFunding|fundingRate24h)\b/;
     const hits: string[] = [];
     for (const file of walk("src").filter((f) => /\.(ts|tsx)$/.test(f))) {
       read(file).split("\n").forEach((line, index) => {
@@ -621,6 +621,12 @@ describe("v6120Invariants", () => {
       });
     }
     assert.deepEqual(hits, []);
+    const chart = read("src/widgets/analytics/FundingHistoryChart.tsx");
+    const boundary = /\nfunction plotFundingRate\(rate: bigint\): number \{\n[^}]*\n\}\n/.exec(chart);
+    assert.ok(boundary, "FundingHistoryChart converts to a plot number in plotFundingRate");
+    assert.doesNotMatch(chart.replace(boundary[0], "\n"), /\bNumber\(|parseFloat|\bnum\(|\/ ?1e18/);
+    assert.match(chart, /const rate = parseFundingRateWad\(s\.fundingRate24h\);/);
+    assert.match(chart, /formatFundingRatePct\(item\.payload\.rate\)/);
   });
 
   it("noEstFundingRate", () => {

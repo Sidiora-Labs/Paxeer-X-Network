@@ -18,6 +18,7 @@ const EXACT_DECIMAL = /^(-?)(\d+)(?:\.(\d{1,18}))?$/;
 
 export const FUNDING_LABEL_1H = "last settled funding (1h)";
 export const FUNDING_LABEL_24H = "last settled funding (1h) ×24 projection";
+export const FUNDING_LABEL_PREDICTED = "Pred. funding rate";
 
 /** The venue ticker fields the quoter reads. */
 export interface VenueTicker {
@@ -95,4 +96,42 @@ export function formatFundingDecimalPct(v: string | null, dp = 4): string {
   const step = 10n ** BigInt(dp);
   const body = dp > 0 ? `${scaled / step}.${(scaled % step).toString().padStart(dp, "0")}` : `${scaled}`;
   return `${m[1] && scaled > 0n ? "-" : ""}${body}%`;
+}
+
+/** The sign of an exact decimal rate string (-1, 0 or 1); null or malformed is null. */
+export function fundingDecimalSign(v: string | null): -1 | 0 | 1 | null {
+  const m = v === null ? null : PLAIN_DECIMAL.exec(v);
+  if (!m) return null;
+  if (!/[1-9]/.test(m[2] + (m[3] ?? ""))) return 0;
+  return m[1] ? -1 : 1;
+}
+
+/** formatFundingDecimalPct with the exact value's sign kept: "+0.0100%", "-0.0000%" for a tiny negative, "0.0000%" for zero. */
+export function formatSignedFundingDecimalPct(v: string | null, dp = 4): string {
+  const sign = fundingDecimalSign(v);
+  if (sign === null || v === null) return "—";
+  return `${sign < 0 ? "-" : sign > 0 ? "+" : ""}${formatFundingDecimalPct(v.replace(/^-/, ""), dp)}`;
+}
+
+/**
+ * The mobile funding row: the symbol socket's predicted rate only when its
+ * stats carry one, otherwise the venue's last settled hourly rate. The
+ * server's perp_stats body has no funding_rate today, so a connected socket
+ * must not hide the settled rate the ticker holds.
+ */
+export function fundingRowFigure(
+  socketRate: string | null | undefined,
+  venueHourly: bigint | null,
+): { label: string; text: string; sign: -1 | 0 | 1 } {
+  if (socketRate != null) {
+    const sign = fundingDecimalSign(socketRate);
+    return { label: FUNDING_LABEL_PREDICTED, text: formatSignedFundingDecimalPct(socketRate), sign: sign ?? 0 };
+  }
+  if (venueHourly === null) return { label: FUNDING_LABEL_1H, text: "\u2014", sign: 0 };
+  return { label: FUNDING_LABEL_1H, text: formatFundingRatePct(venueHourly), sign: venueHourly > 0n ? 1 : venueHourly < 0n ? -1 : 0 };
+}
+
+/** An on-chain 18-decimal integer rate string (the subgraph's fundingRate24h) as a bigint; null or malformed is null, never zero. */
+export function parseFundingRateWad(v: string | null | undefined): bigint | null {
+  return typeof v === "string" && /^-?\d+$/.test(v) ? BigInt(v) : null;
 }
