@@ -35,6 +35,15 @@ import type {
 
 export const PAXEER_CHAIN_ID = 125;
 
+// The lowest block each known chain can carry a ledger precompile log at. The merge plan that brings the ledger
+// precompile online follows the v6.12.0 plan, applied on Paxeer mainnet at 37333101, so no ledger log sits below it;
+// raise the entry to the merge plan height once that plan is applied.
+export const LEDGER_PRECOMPILE_LOG_FLOOR: Readonly<Record<number, bigint>> = Object.freeze({ [PAXEER_CHAIN_ID]: 37_333_101n });
+
+export function ledgerLogFloor(chainId: number): bigint {
+  return LEDGER_PRECOMPILE_LOG_FLOOR[chainId] ?? 0n;
+}
+
 export type TokenSupplier = () => string | null | undefined | Promise<string | null | undefined>;
 
 export interface ConfirmRequest {

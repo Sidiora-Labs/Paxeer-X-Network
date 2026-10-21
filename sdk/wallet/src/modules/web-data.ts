@@ -1,4 +1,3 @@
-import { PAXEER_CHAIN_ID } from '../provider.js';
 import {
   XWEB_KIND_API,
   XWEB_PRECOMPILE,
@@ -75,15 +74,6 @@ export const WEB_DATA_EVENTS: readonly ModuleEventSpec[] = [
 
 export const LEDGER_PRECOMPILE = '0x000000000000000000000000000000000000101a';
 export const PAYER_GRANT_BYTES = 346;
-
-// The lowest block each known chain can carry a ledger precompile log at. The merge plan that brings the ledger
-// precompile online follows the v6.12.0 plan, applied on Paxeer mainnet at 37333101, so no ledger log sits below it;
-// raise the entry to the merge plan height once that plan is applied.
-export const LEDGER_PRECOMPILE_LOG_FLOOR: Readonly<Record<number, bigint>> = Object.freeze({ [PAXEER_CHAIN_ID]: 37_333_101n });
-
-export function ledgerLogFloor(chainId: number): bigint {
-  return LEDGER_PRECOMPILE_LOG_FLOOR[chainId] ?? 0n;
-}
 
 export interface WebPayerGrant {
   readonly grantId: string;
