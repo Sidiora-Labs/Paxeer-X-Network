@@ -140,3 +140,10 @@ command = "(cd tools/hpx/registry && go build ./... && go test ./...) && make hp
 exit_code = 2
 log_path = "fleet/logs/layout-6.6.log"
 observed_and_assumption = "The registry build and tests pass from tools/hpx/registry, and make hpx-public-check fails because https://node.hyperpaxeer.com/healthz answers 502; the target reads only the live public origin and no tree path, so the move cannot cause or repair it and task 6.6 stays open until the origin answers."
+
+[finding.6.2-launchpad-self-qualification-root]
+revision = "019bfdcfd with the task 6.2 changes applied"
+command = "cd services/launchpad/security/supplychain && python3 -m unittest test_policy test_phase2"
+exit_code = 1
+log_path = "fleet/logs/layout-6.2.log"
+observed_and_assumption = "The KindleLaunch self-qualification tooling (security/supplychain test_phase2, check_phase2.py and reproduce.py candidate manifests, tools/launchpad/production bootstrap registry and qualify scripts) resolves core/, media/, security/, deploy/ and .github/workflows/ci.yml against the former launchpad root, so three test_phase2 cases now fail on the missing services/launchpad/.github/workflows/ci.yml; the deploy, Dockerfile, Railway, go.work and Makefile paths were rewritten and this harness is left for a dedicated rewrite of its candidate root."
