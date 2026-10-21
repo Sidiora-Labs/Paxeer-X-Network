@@ -20,6 +20,8 @@ This repository is the Paxeer X Network monorepo: the Paxeer X chain node (`paxd
 
 | Path | Contents |
 | --- | --- |
+| `apps/perps` | The Hyperpax perps frontend |
+| `apps/wallet`, `apps/web` | Wallet app and web app |
 | `apps/explorer` | Block explorer frontend |
 | `apps/launchpad` | Launchpad web and mobile apps and the client workspace files |
 | `services/agent` | Agent daemon, MCP server, shared Rust crates, TypeScript and Python SDKs |
@@ -31,6 +33,7 @@ This repository is the Paxeer X Network monorepo: the Paxeer X chain node (`paxd
 | `services/bridge` | Bridge deployment |
 | `sdk/platform`, `sdk/integrations` | Platform SDKs (Go, JVM, .NET, Swift) and framework integrations |
 | `sdk/launchpad` | Launchpad protocol, shared libraries and client packages |
+| `sdk/chainflow` | Chainflow client libraries for Go, Python, Rust and TypeScript |
 | `sdk/js` | JavaScript SDK snapshot with its `VENDOR.kvx` pin record |
 | `sdk/wallet` | Wallet SDK (`@paxeer/wallet`), a member of the `human/wallet` pnpm workspace |
 | `core/deps` | Pinned snapshots of the upstream libraries the node builds from, each with a `VENDOR.kvx` pin record |
@@ -46,9 +49,7 @@ This repository is the Paxeer X Network monorepo: the Paxeer X chain node (`paxd
 
 | Current path | Destination |
 | --- | --- |
-| `human/apps/perps`, `human/apps/wallet`, `human/apps/web` | `apps/perps`, `apps/wallet`, `apps/web` |
 | `human/wallet` | `services/wallet` |
-| `chainflow/` | `sdk/chainflow` |
 
 ## Trees that move under core in a later release
 

@@ -10,7 +10,7 @@ Official site: [paxeer.network](https://paxeer.network/). Documentation: [docs.p
 
 - **The chain.** `paxd` is the Paxeer X node, written in Go with BFT consensus and an EVM execution layer. Its main package is `daemon/paxd`; the state machine modules are under `modules/` and the RPC servers under `rpc/`.
 - **The LayerX kernel.** LayerX is the kernel domain: the C17 daemon `layerxd` executes and accounts for agent activity deterministically and returns a signed receipt for each activity, `layerxctl` is its operator CLI, and `programs/` holds the kernel programs runtime. It runs today as a separate daemon built from `cmd/layerxd`, and its checkpoints settle on the chain through the `layerxAnchor` precompile. Folding the kernel into the chain is specified in [`spec/layerx-merge/spec.kvx`](spec/layerx-merge/spec.kvx), which is in draft.
-- **The EVM and precompile surface.** Contracts reach the native modules through stateful precompiles under `precompiles/`, registered in `precompiles/setup.go`: bank, wasmd, json, addr, staking, governance, distribution, oracle, ibc, pointer, pointer view, p256 and solo, the fee token and web search, and the LayerX verify, custody (`0x1013`), anchor (`0x1014`), exchange (`0x1015`) and bridge (`0x1016`) precompiles and the launchpad (`0x1017`).
+- **The EVM and precompile surface.** Contracts reach the native modules through stateful precompiles under `precompiles/`. `precompiles/setup.go` registers `bank`, `wasmd`, `json`, `addr`, `staking`, `gov`, `distribution`, `oracle`, `ibc`, `pointer`, `pointerview`, `p256Verify`, `solo`, `layerxVerify` (`0x1012`), `layerxCustody` (`0x1013`), `layerxAnchor` (`0x1014`), `layerxExchange` (`0x1015`), `layerxBridge` (`0x1016`), `launchpad` (`0x1017`), `feeToken` (`0x1018`) and `xweb` (`0x1019`). The v6.12.0 set built in `node/app.go` and served once that upgrade activates adds `perps` at `0x1015` ahead of `layerxExchange`, the second-generation `launchpad` at `0x1017`, `pricefeed` at `0x1020`, and the spot set `spot_pecor`, `spot_orders`, `spot_stoporders`, `spot_quoter` and `spot_vault` at `0x1021`-`0x1025`.
 - **Off-chain services.** The agent daemon and MCP server, the interop gateway and bridge relayer, the hosted developer platform (gateway, indexer, registry, webhooks, perps data), the human control plane, the embedded wallet service, the explorer backend and the launchpad services.
 - **Applications.** The Hyperpax perps frontend, the wallet, the web app, the explorer frontend and the launchpad web and mobile apps.
 
@@ -24,15 +24,14 @@ To connect to the Paxeer X chain (chain ID 125), use one of the public JSON-RPC 
 
 | Path | Contents |
 | --- | --- |
-| `apps/` | User-facing frontends: `apps/explorer` (block explorer frontend), `apps/launchpad` (launchpad web and mobile apps) |
+| `apps/` | User-facing frontends: `apps/perps` (the Hyperpax perps frontend), `apps/wallet` (wallet app), `apps/web` (web app), `apps/explorer` (block explorer frontend), `apps/launchpad` (launchpad web and mobile apps) |
 | `services/` | Off-chain programs: `services/agent` (agent daemon, MCP server, Rust, TypeScript and Python SDKs), `services/interop` (interop gateway, bridge relayer), `services/platform` (hosted developer platform), `services/explorer` (block explorer backend), `services/launchpad` (launchpad services), `services/human` (human control plane Rust workspace), `services/bridge` (bridge deployment) |
-| `sdk/` | Client SDKs: `sdk/platform` (Go, JVM, .NET, Swift), `sdk/integrations`, `sdk/launchpad` (launchpad protocol, shared libraries and client packages), `sdk/js`; it also holds the application framework fork the node builds from |
+| `sdk/` | Client SDKs: `sdk/platform` (Go, JVM, .NET, Swift), `sdk/integrations`, `sdk/launchpad` (launchpad protocol, shared libraries and client packages), `sdk/chainflow` (Chainflow client libraries for Go, Python, Rust and TypeScript), `sdk/wallet` (wallet SDK), `sdk/js`; it also holds the application framework fork the node builds from |
 | `contracts/` | On-chain sources: the root Foundry tree, `contracts/bridge` (EVM vaults, the Solana program and test vectors) and `contracts/launchpad` |
 | `core/deps/` | Pinned snapshots of the upstream libraries the node builds from, each with a `VENDOR.kvx` pin record |
 | `tests/` | Kernel C tests, fuzz targets (`tests/fuzz`), integration tests (`tests/integration`), OCC tests (`tests/occ`), `tests/testutil`, `tests/fixtures`, Solidity and vector suites |
 | `tools/` | Developer and operator tools, including `tools/hpx`, `tools/platform` (CLI, emulator, release), `tools/launchpad`, `tools/loadtest`, `tools/paxctl`, `tools/uci` and `tools/wasm-tools` |
-| `human/` | The Hyperpax perps frontend, wallet and web apps (`human/apps`) and the embedded wallet service and SDK (`human/wallet`); they move to `apps/perps`, `apps/wallet`, `apps/web`, `services/wallet` and `sdk/wallet` in this layout release |
-| `chainflow/` | Chainflow client libraries for Go, Python, Rust and TypeScript; moves to `sdk/chainflow` in this layout release |
+| `human/` | The embedded wallet service (`human/wallet`), whose pnpm workspace also lists `sdk/wallet`; it moves to `services/wallet` in this layout release |
 | `migrations/` | SQL for kernel genesis import sections, rebuildable projections and the history index |
 | `api/` | Protobuf definitions (buf module) |
 | `deploy/`, `docker/` | Deployment descriptors (including `deploy/launchpad`) and container builds |
