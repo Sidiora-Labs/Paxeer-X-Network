@@ -2261,3 +2261,10 @@ command = "npm --prefix services/agent/sdk/typescript test"
 exit_code = 1
 log_path = "logs/agent-sdk-suite.log"
 observed_and_assumption = "The chained agent sdk suite stops at program-lifecycle.test.js line 152 with a missing expected exception, a test and sources this change does not touch, so the later gas-station test only ran on its own and passed with the latest block reads; assumed drift from an earlier program encoding change, left as written."
+
+[finding.wallet.grant-holder-view-missing]
+revision = "2c3aa80da"
+command = "corepack pnpm@11.5.2 -C apps/wallet test"
+exit_code = 0
+log_path = "logs/FX-HW-9-verify1-app.log"
+observed_and_assumption = "PayerGrantIssued indexes only the grant id and 0x101A has no per-account grant view, so the caps view still enumerates issued-grant logs chain wide and attributes them by issuing transaction (sender or sponsored recipient) before reading only those grants, bounded at 1024 windows; assumed the holder route of resolution 13.175 (indexer /v1/holders kind=grant, gateway px_listHolderRecords not yet served) replaces this scan once it is reachable from the wallet."

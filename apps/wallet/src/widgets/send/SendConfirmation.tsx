@@ -23,7 +23,7 @@ export interface SendConfirmationProps {
         mode: string;
         nonce: number | null;
         source: string;
-    } | null;
+    } | 'unavailable' | null;
 }
 
 export const SendConfirmation = ({
@@ -204,10 +204,10 @@ export const SendConfirmation = ({
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-foreground/50">{p.maximumFee}</span>
                                         <span className="text-xs text-foreground/70">
-                                            {fee ? `${fee.amountPax} PAX` : p.estimating}
+                                            {fee === 'unavailable' ? <span data-role="fee-unavailable">Unavailable</span> : fee ? `${fee.amountPax} PAX` : p.estimating}
                                         </span>
                                     </div>
-                                    {fee && (
+                                    {fee && fee !== 'unavailable' && (
                                         <>
                                             <div className="flex items-center justify-between">
                                                 <span className="text-sm text-foreground/50">{p.feeMode}</span>

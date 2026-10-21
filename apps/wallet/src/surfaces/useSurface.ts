@@ -349,6 +349,9 @@ const NO_FINALISED_CHECKPOINT: WalletCapsState = { state: 'unavailable', reason:
 const NO_GRANT_EXPIRY = ((1n << 64n) - 1n).toString();
 export const GRANT_LOG_WINDOW = 10_000n;
 export const GRANT_LOG_BATCH = 8;
+// At most 1024 windows (10.24M blocks above the floor, 128 sequential batches); a longer history is reported unavailable, never partial.
+export const GRANT_LOG_WINDOW_CEILING = 1024n;
+const HASH = /^0x[0-9a-fA-F]{64}$/u;
 
 async function view(provider: ModuleProvider, to: string, data: Hex): Promise<Hex> {
     return (await ethCall(provider, to, data)) as Hex;
@@ -368,23 +371,38 @@ export async function boundDid(provider: ModuleProvider, address: string): Promi
     return did;
 }
 
-async function issuedGrantIds(provider: ModuleProvider, fromBlock: bigint, toBlock: bigint): Promise<string[]> {
+async function issuedGrants(provider: ModuleProvider, fromBlock: bigint, toBlock: bigint): Promise<(readonly [string, string])[]> {
     const logs = await provider.request({
         method: 'eth_getLogs',
         params: [{ address: LEDGER_PRECOMPILE, topics: [PAYER_GRANT_ISSUED], fromBlock: `0x${fromBlock.toString(16)}`, toBlock: `0x${toBlock.toString(16)}` }],
     });
     if (!Array.isArray(logs)) throw new TypeError('invalid grant logs');
-    return [...new Set(logs.map((log) => {
-        if (!isLog(log)) throw new TypeError('invalid grant log');
+    return logs.map((log) => {
+        const hash: unknown = isRecord(log) ? log.transactionHash : undefined;
+        if (!isLog(log) || typeof hash !== 'string' || !HASH.test(hash)) throw new TypeError('invalid grant log');
         const [topic, grantId, ...rest] = log.topics;
         if (log.address.toLowerCase() !== LEDGER_PRECOMPILE || topic?.toLowerCase() !== PAYER_GRANT_ISSUED || grantId === undefined || rest.length !== 0) {
             throw new TypeError('invalid grant log');
         }
-        return grantId.toLowerCase();
-    }))];
+        return [grantId.toLowerCase(), hash.toLowerCase()] as const;
+    });
 }
 
-async function readGrantCaps(provider: ModuleProvider, address: string): Promise<WalletCapsState> {
+// The ledger precompile indexes PayerGrantIssued by grant id only and has no per-account grant view, so a grant is
+// attributed to the account by its issuing transaction, which the bound address sends or a sponsor sends to it.
+async function issuedBy(provider: ModuleProvider, hash: string, address: string): Promise<boolean> {
+    const tx = await provider.request({ method: 'eth_getTransactionByHash', params: [hash] });
+    if (!isRecord(tx) || typeof tx.from !== 'string' || (tx.to !== null && typeof tx.to !== 'string')) throw new TypeError('invalid grant transaction');
+    return tx.from.toLowerCase() === address || tx.to?.toLowerCase() === address;
+}
+
+async function inBatches<T, R>(items: readonly T[], read: (item: T) => Promise<R>): Promise<R[]> {
+    const out: R[] = [];
+    for (let start = 0; start < items.length; start += GRANT_LOG_BATCH) out.push(...(await Promise.all(items.slice(start, start + GRANT_LOG_BATCH).map(read))));
+    return out;
+}
+
+export async function readGrantCaps(provider: ModuleProvider, address: string): Promise<WalletCapsState> {
     const chainId = await ethQuantity(provider, 'eth_chainId');
     const head = await provider.request({ method: 'eth_getBlockByNumber', params: ['finalized', false] });
     if (head === null) return NO_FINALISED_CHECKPOINT;
@@ -401,14 +419,18 @@ async function readGrantCaps(provider: ModuleProvider, address: string): Promise
     }).toLowerCase();
     const finalised = BigInt(head.number);
     const floor = ledgerLogFloor(Number(chainId));
+    if (floor === undefined) return { state: 'unavailable', reason: `No ledger log floor is configured for chain ${Number(chainId)}.` };
+    const count = finalised < floor ? 0n : (finalised - floor) / GRANT_LOG_WINDOW + 1n;
+    if (count > GRANT_LOG_WINDOW_CEILING) return { state: 'unavailable', reason: 'The grant history is longer than this view can scan.' };
     const windows: (readonly [bigint, bigint])[] = [];
     for (let to = finalised; to >= floor; to -= GRANT_LOG_WINDOW) windows.push([to - floor >= GRANT_LOG_WINDOW ? to - GRANT_LOG_WINDOW + 1n : floor, to]);
-    const ids = new Set<string>();
-    for (let start = 0; start < windows.length; start += GRANT_LOG_BATCH) {
-        const batch = await Promise.all(windows.slice(start, start + GRANT_LOG_BATCH).map(([from, to]) => issuedGrantIds(provider, from, to)));
-        for (const found of batch) for (const id of found) ids.add(id);
-    }
-    const owned = ids.size === 0 ? [] : (await webData(provider).caps([...ids])).grants.filter((grant) => grant.from === account);
+    const issued = (await inBatches(windows, ([from, to]) => issuedGrants(provider, from, to))).flat();
+    const self = address.toLowerCase();
+    const hashes = [...new Set(issued.map(([, hash]) => hash))];
+    const sent = await inBatches(hashes, (hash) => issuedBy(provider, hash, self));
+    const mine = new Set(hashes.filter((_, index) => sent[index]));
+    const ids = [...new Set(issued.filter(([, hash]) => mine.has(hash)).map(([id]) => id))];
+    const owned = ids.length === 0 ? [] : (await webData(provider).caps(ids)).grants.filter((grant) => grant.from === account);
     const expires = owned.reduce((earliest, grant) => (grant.expiration < earliest ? grant.expiration : earliest), owned[0]?.expiration ?? 0n);
     const height = finalised.toString();
     return {

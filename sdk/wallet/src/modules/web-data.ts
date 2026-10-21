@@ -74,6 +74,7 @@ export const WEB_DATA_EVENTS: readonly ModuleEventSpec[] = [
 
 export const LEDGER_PRECOMPILE = '0x000000000000000000000000000000000000101a';
 export const PAYER_GRANT_BYTES = 346;
+export const CAPS_READ_BATCH = 8;
 
 export interface WebPayerGrant {
   readonly grantId: string;
@@ -223,7 +224,12 @@ export function webData(provider: ModuleProvider, address: string = XWEB_PRECOMP
     address: target,
     caps: async (grantIds) => {
       const ids = grantIds.map(grantIdHex);
-      const [paid, grants] = await Promise.all([fee(), Promise.all(ids.map(grant))]);
+      const batched = async (): Promise<WebPayerGrant[]> => {
+        const read: WebPayerGrant[] = [];
+        for (let start = 0; start < ids.length; start += CAPS_READ_BATCH) read.push(...(await Promise.all(ids.slice(start, start + CAPS_READ_BATCH).map(grant))));
+        return read;
+      };
+      const [paid, grants] = await Promise.all([fee(), batched()]);
       return Object.freeze({ fee: paid, grants: Object.freeze(grants) });
     },
     events: WEB_DATA_EVENTS,

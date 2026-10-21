@@ -103,6 +103,20 @@ describe('application storage registry', () => {
     expect(preferencesRepository.read().currency).toBe('EUR');
   });
 
+  it('keeps the newest hundred legacy transfer observations by block, whatever the key order', () => {
+    for (let block = 103; block >= 1; block -= 1) {
+      localStorage.setItem(`paxeer.wallet.transferObservation:125:0x${block.toString(16)}`, JSON.stringify({ blockNumber: block }));
+    }
+    localStorage.setItem('paxeer.wallet.transferObservation:125:0xpending-a', JSON.stringify({ blockNumber: null }));
+    localStorage.setItem('paxeer.wallet.transferObservation:125:0xpending-b', JSON.stringify({ truth: 'unknown' }));
+    const kept = transferObservationsRepository.read();
+    expect(Object.keys(kept)).toHaveLength(100);
+    expect(kept['125:0xpending-a']).toEqual({ blockNumber: null });
+    expect(kept['125:0xpending-b']).toEqual({ truth: 'unknown' });
+    for (let block = 1; block <= 5; block += 1) expect(kept[`125:0x${block.toString(16)}`]).toBeUndefined();
+    for (let block = 6; block <= 103; block += 1) expect(kept[`125:0x${block.toString(16)}`]).toEqual({ blockNumber: block });
+  });
+
   it('skips a corrupt legacy transfer entry with a warning and migrates the rest', () => {
     const before = getBackgroundFailures().length;
     localStorage.setItem('paxeer.wallet.transferObservation:125:0xbad', '{not json');

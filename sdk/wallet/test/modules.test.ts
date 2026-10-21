@@ -45,8 +45,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import * as walletSdk from '../src/index.js';
 import {
+  CAPS_READ_BATCH,
   FEE_TOKEN_PRECOMPILE,
   GasStationError,
+  LEDGER_PRECOMPILE_LOG_FLOOR,
   LEDGER_PRECOMPILE,
   PAYER_GRANT_BYTES,
   ModuleError,
@@ -63,6 +65,7 @@ import {
   feeTokenAmount,
   gasStation,
   launchpad,
+  ledgerLogFloor,
   toWireConstruction,
   webData,
   type ModuleProvider,
@@ -645,6 +648,36 @@ describe('modules', () => {
       chain.answers.set(key, bad);
       await expect(webData(chain).caps([recurring.grantId])).rejects.toMatchObject({ code: 'invalid_answer', field: 'getPayerGrant' });
     }
+  });
+
+  it('caps() reads payer grants in bounded batches, never all ids at once', async () => {
+    const grants = Array.from({ length: 2 * CAPS_READ_BATCH + 3 }, (_, index) => grantFixture(0x10 + index * 4, true, false, false));
+    const chain = viewChain(grants);
+    let inFlight = 0;
+    let peak = 0;
+    const counting: ModuleProvider = {
+      request: async (argument) => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        inFlight -= 1;
+        return chain.request(argument);
+      },
+    };
+    const caps = await webData(counting).caps(grants.map((grant) => grant.grantId));
+    expect(caps.grants).toEqual(grants);
+    expect(peak).toBe(CAPS_READ_BATCH + 1);
+    expect(chain.requests).toHaveLength(grants.length + 1);
+  });
+
+  it('the ledger log floor is the v6.12.0 activation height on Paxeer mainnet and absent on any other chain', () => {
+    expect(ledgerLogFloor(125)).toBe(37_333_101n);
+    expect(LEDGER_PRECOMPILE_LOG_FLOOR).toEqual({ 125: 37_333_101n });
+    expect(ledgerLogFloor(1)).toBeUndefined();
+    expect(ledgerLogFloor(229)).toBeUndefined();
+    const source = readFileSync(new URL('../src/provider.ts', import.meta.url), 'utf8');
+    const line = source.split('\n').findIndex((entry) => entry.startsWith('export const LEDGER_PRECOMPILE_LOG_FLOOR'));
+    expect(source.split('\n')[line - 1]).toMatch(/^\/\/ .*v6\.12\.0.*activation/u);
   });
 
   it('acceptance 5.40.3: the web-data module source imports nothing from kernel.js', () => {

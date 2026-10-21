@@ -774,17 +774,23 @@ function collectLegacyTransferRecords(storage: Storage, prefix: string): Transfe
     if (key?.startsWith(prefix)) keys.push(key);
   }
   if (keys.length === 0) return undefined;
-  const migrated: TransferRecords = {};
+  const parsed: [string, JsonValue][] = [];
   let skipped = 0;
-  for (const key of keys.slice(-100)) {
+  for (const key of keys) {
     const raw = storage.getItem(key);
     if (raw === null) continue;
     try {
-      migrated[stringValue(key.slice(prefix.length), 1, 160)] = parseJsonValue(JSON.parse(raw) as unknown);
+      parsed.push([stringValue(key.slice(prefix.length), 1, 160), parseJsonValue(JSON.parse(raw) as unknown)]);
     } catch {
       skipped += 1;
     }
   }
+  // Oldest first by mined block; an entry without a block number has not been seen mined and counts as newest.
+  const age = ([, value]: [string, JsonValue]): number => {
+    const block = value !== null && typeof value === 'object' && !Array.isArray(value) ? value.blockNumber : undefined;
+    return typeof block === 'number' ? block : Number.POSITIVE_INFINITY;
+  };
+  const migrated: TransferRecords = Object.fromEntries(parsed.sort((x, y) => age(x) - age(y) || 0).slice(-100));
   for (const key of keys) storage.removeItem(key);
   if (skipped > 0) {
     reportBackgroundFailure({

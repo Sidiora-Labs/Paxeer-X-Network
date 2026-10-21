@@ -38,6 +38,25 @@ import { getActiveRpcUrl, PAXEER_CONFIG } from '@/lib/constants';
 import { estimateFeeWei, resolveFeeOverrides } from '@/lib/fees';
 import { preferencesRepository } from '@/platform/storage/repositories';
 
+export interface FeePreview {
+    amountPax: string;
+    mode: string;
+    nonce: number | null;
+    source: string;
+}
+
+export async function readFeePreview(provider: ethers.Provider, address: string, tokenAddress: string | null | undefined): Promise<FeePreview> {
+    const fees = await resolveFeeOverrides(provider);
+    const nonce = preferencesRepository.read().customNonce ?? await provider.getTransactionCount(address, 'latest');
+    const feeWei = estimateFeeWei(tokenAddress ? 500_000n : 210_000n, fees);
+    return {
+        amountPax: Number(ethers.formatEther(feeWei)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }),
+        mode: fees.mode,
+        nonce,
+        source: fees.source,
+    };
+}
+
 export interface SendWidgetProps {
     onBack: () => void;
     preSelectTokenAddress?: string;
@@ -67,12 +86,7 @@ export function SendWidget({ onBack, preSelectTokenAddress, onPaxscan }: SendWid
     const [contactPickerOpen, setContactPickerOpen] = useState(false);
     const [scannerOpen, setScannerOpen] = useState(false);
     const [scanError, setScanError] = useState('');
-    const [feePreview, setFeePreview] = useState<{
-        amountPax: string;
-        mode: string;
-        nonce: number | null;
-        source: string;
-    } | null>(null);
+    const [feePreview, setFeePreview] = useState<FeePreview | 'unavailable' | null>(null);
 
     // Other wallet accounts (excluding active) for the picker
     const ownAccounts = useMemo(
@@ -98,28 +112,10 @@ export function SendWidget({ onBack, preSelectTokenAddress, onPaxscan }: SendWid
         let cancelled = false;
         const timer = window.setTimeout(async () => {
             try {
-                const provider = new ethers.JsonRpcProvider(getActiveRpcUrl());
-                const fees = await resolveFeeOverrides(provider);
-                const configuredNonce = preferencesRepository.read().customNonce;
-                const nonce = configuredNonce ?? await provider.getTransactionCount(
-                    activeAccount.address,
-                    'pending',
-                );
-                const gasLimit = selectedToken.address ? 500_000n : 210_000n;
-                const feeWei = estimateFeeWei(gasLimit, fees);
-                if (!cancelled) {
-                    setFeePreview({
-                        amountPax: Number(ethers.formatEther(feeWei)).toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 6,
-                        }),
-                        mode: fees.mode,
-                        nonce,
-                        source: fees.source,
-                    });
-                }
+                const preview = await readFeePreview(new ethers.JsonRpcProvider(getActiveRpcUrl()), activeAccount.address, selectedToken.address);
+                if (!cancelled) setFeePreview(preview);
             } catch {
-                if (!cancelled) setFeePreview(null);
+                if (!cancelled) setFeePreview('unavailable');
             }
         }, 300);
         return () => {
@@ -220,6 +216,7 @@ export function SendWidget({ onBack, preSelectTokenAddress, onPaxscan }: SendWid
             />
 
             {form.error && <p className="text-red-400 text-xs">{form.error}</p>}
+            {feePreview === 'unavailable' && <p className="text-red-400 text-xs" role="status" data-role="fee-unavailable">The network fee could not be estimated right now.</p>}
             {scanError && <p className="text-red-400 text-xs" role="alert">{scanError}</p>}
 
             <div className="py-4 pb-24 flex justify-center">

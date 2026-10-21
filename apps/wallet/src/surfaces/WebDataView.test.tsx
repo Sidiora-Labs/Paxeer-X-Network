@@ -14,7 +14,7 @@ import {
 } from '@paxeer/wallet';
 import { encodeAbiParameters, encodePacked, keccak256, parseAbiParameters, size, toHex, type Hex } from 'viem';
 import { WebDataView } from './WebDataView';
-import { GRANT_LOG_BATCH, GRANT_LOG_WINDOW, boundDid, useWebDataCaps } from './useSurface';
+import { GRANT_LOG_BATCH, GRANT_LOG_WINDOW, GRANT_LOG_WINDOW_CEILING, boundDid, readGrantCaps, useWebDataCaps } from './useSurface';
 import {
     SurfaceChain,
     click,
@@ -71,7 +71,9 @@ const DID_PUBLIC_KEY: Hex = `0x${'5d'.repeat(32)}`;
 const DID = `did:layerx:${'5d'.repeat(32)}`;
 const ACCOUNT_ID: Hex = `0x${'c3'.repeat(32)}`;
 const FOREIGN_ACCOUNT_ID: Hex = `0x${'c4'.repeat(32)}`;
-const FLOOR = ledgerLogFloor(125);
+const FLOOR = ledgerLogFloor(125)!;
+const FOREIGN_ADDRESS = `0x${'f1'.repeat(20)}`;
+const SPONSOR_ADDRESS = `0x${'5e'.repeat(20)}`;
 const HEAD = { number: toHex(FLOOR + 42n), stateRoot: `0x${'e5'.repeat(32)}` };
 const GET_LAYERX_DID = abiSelector('getLayerXDid(address)');
 const ACCOUNT_ID_SELECTOR = abiSelector('accountId(bytes32,bytes32)');
@@ -84,7 +86,10 @@ interface IssuedGrant {
     readonly drawnThisPeriod: bigint;
     readonly block: bigint;
     readonly expiration?: bigint;
+    readonly sponsored?: boolean;
 }
+
+const issuingTx = (grant: IssuedGrant): Hex => keccak256(grant.grantId);
 
 const OWNED_GRANT: IssuedGrant = { grantId: `0x${GRANT_ID}`, from: ACCOUNT_ID, drawnThisPeriod: 250n, block: FLOOR + 1n };
 const FOREIGN_GRANT: IssuedGrant = { grantId: `0x${'a2'.repeat(32)}`, from: FOREIGN_ACCOUNT_ID, drawnThisPeriod: 0n, block: FLOOR + 1n };
@@ -108,6 +113,8 @@ class GrantChain extends SurfaceChain {
     readonly logQueries: { fromBlock: string; toBlock: string }[] = [];
     readonly blockQueries: unknown[] = [];
     failLogsFrom: bigint | null = null;
+    capsChainId = 125;
+    readonly txQueries: string[] = [];
     inFlight = 0;
     peakInFlight = 0;
 
@@ -118,6 +125,16 @@ class GrantChain extends SurfaceChain {
             this.blockQueries.push(params[0]);
             if (params[0] !== 'finalized') throw new Error('only the finalised block is served');
             return this.finalised === null ? null : { ...this.finalised, hash: `0x${'b7'.repeat(32)}` };
+        }
+        if (args.method === 'eth_chainId') return toHex(this.capsChainId);
+        if (args.method === 'eth_getTransactionByHash') {
+            this.methods.push(args.method);
+            this.txQueries.push(params[0] as string);
+            const grant = this.issued.find((candidate) => issuingTx(candidate) === params[0]);
+            if (!grant) return null;
+            const own = grant.from === ACCOUNT_ID;
+            if (grant.sponsored) return { hash: params[0], from: SPONSOR_ADDRESS, to: own ? this.address : FOREIGN_ADDRESS };
+            return { hash: params[0], from: own ? this.address : FOREIGN_ADDRESS, to: LEDGER_PRECOMPILE };
         }
         if (args.method === 'eth_getLogs') {
             this.methods.push(args.method);
@@ -130,7 +147,7 @@ class GrantChain extends SurfaceChain {
             if (this.failLogsFrom !== null && BigInt(query.fromBlock) === this.failLogsFrom) throw new Error('log range unavailable');
             return this.issued
                 .filter((grant) => grant.block >= BigInt(query.fromBlock) && grant.block <= BigInt(query.toBlock))
-                .map((grant) => ({ address: LEDGER_PRECOMPILE, topics: [PAYER_GRANT_ISSUED, grant.grantId], data: '0x' }));
+                .map((grant) => ({ address: LEDGER_PRECOMPILE, topics: [PAYER_GRANT_ISSUED, grant.grantId], data: '0x', transactionHash: issuingTx(grant) }));
         }
         if (args.method === 'eth_call') {
             const call = params[0] as { to: string; data: string };
@@ -264,9 +281,10 @@ describe('WebDataView', () => {
             { to: ADDR_PRECOMPILE_ADDRESS, data: `${GET_LAYERX_DID}${grants.address.slice(2).padStart(64, '0')}` },
             { to: LEDGER_PRECOMPILE, data: `${ACCOUNT_ID_SELECTOR}${DID_PUBLIC_KEY.slice(2)}${'00'.repeat(32)}` },
             { to: XWEB_PRECOMPILE, data: abiSelector('fee()') },
-            { to: LEDGER_PRECOMPILE, data: `${GET_PAYER_GRANT}${FOREIGN_GRANT.grantId.slice(2)}` },
             { to: LEDGER_PRECOMPILE, data: `${GET_PAYER_GRANT}${OWNED_GRANT.grantId.slice(2)}` },
         ]));
+        expect(grants.calls).not.toContainEqual({ to: LEDGER_PRECOMPILE, data: `${GET_PAYER_GRANT}${FOREIGN_GRANT.grantId.slice(2)}` });
+        expect(grants.txQueries.sort()).toEqual([issuingTx(FOREIGN_GRANT), issuingTx(OWNED_GRANT)].sort());
         expect(grants.methods).not.toContain('lx_getWalletCaps');
     });
 
@@ -282,7 +300,7 @@ describe('WebDataView', () => {
         expect(text(container, '[data-role="caps-account"]')).toBe(`Account ${'c3'.repeat(32)}`);
         expect(text(container, '[data-role="caps-principal"]')).toBe(`Principal ${DID}`);
         expect(container.querySelector('[data-grant]')).toBeNull();
-        expect(grants.calls).toContainEqual({ to: LEDGER_PRECOMPILE, data: `${GET_PAYER_GRANT}${FOREIGN_GRANT.grantId.slice(2)}` });
+        expect(grants.calls.some((call) => call.data.startsWith(GET_PAYER_GRANT))).toBe(false);
         expect(grants.methods).not.toContain('lx_getWalletCaps');
     });
 
@@ -402,5 +420,44 @@ describe('WebDataView', () => {
         await until(() => container.querySelector('[data-caps-state="unavailable"]') !== null, 'caps unavailable');
         expect(container.querySelector('[data-caps-state="unavailable"] [role="status"]')?.textContent).toBe('Verified caps are currently unavailable.');
         expect(container.querySelector('[data-grant]')).toBeNull();
+    });
+    it('web_data_view_reads_a_sponsored_grant_sent_to_the_account_and_no_foreign_grant', async () => {
+        const grants = new GrantChain();
+        grants.xwebFee = chain.xwebFee;
+        const sponsoredForeign: IssuedGrant = { ...FOREIGN_GRANT, grantId: `0x${'a4'.repeat(32)}`, sponsored: true };
+        grants.issued = [FOREIGN_GRANT, sponsoredForeign, { ...OWNED_GRANT, sponsored: true }];
+        mounted = await mountSurface(grants, <GrantSurface />);
+        const { container } = mounted;
+
+        await until(() => container.querySelector('[data-caps-state="ready"]') !== null, 'caps ready');
+        expect(container.querySelectorAll('[data-grant]')).toHaveLength(1);
+        expect(container.querySelector(`[data-grant="${GRANT_ID}"]`)).not.toBeNull();
+        expect(grants.calls.filter((call) => call.data.startsWith(GET_PAYER_GRANT))).toEqual([
+            { to: LEDGER_PRECOMPILE, data: `${GET_PAYER_GRANT}${OWNED_GRANT.grantId.slice(2)}` },
+        ]);
+    });
+
+    it('web_data_view_reports_caps_unavailable_past_the_window_ceiling_without_scanning', async () => {
+        const grants = new GrantChain();
+        grants.finalised = { ...HEAD, number: toHex(FLOOR + GRANT_LOG_WINDOW_CEILING * GRANT_LOG_WINDOW) };
+        grants.issued = [OWNED_GRANT];
+        expect(await readGrantCaps(grants, grants.address)).toEqual({ state: 'unavailable', reason: 'The grant history is longer than this view can scan.' });
+        expect(grants.methods).not.toContain('eth_getLogs');
+
+        const atCeiling = new GrantChain();
+        atCeiling.xwebFee = chain.xwebFee;
+        atCeiling.finalised = { ...HEAD, number: toHex(FLOOR + GRANT_LOG_WINDOW_CEILING * GRANT_LOG_WINDOW - 1n) };
+        atCeiling.issued = [OWNED_GRANT];
+        expect((await readGrantCaps(atCeiling, atCeiling.address)).state).toBe('ready');
+        expect(atCeiling.logQueries).toHaveLength(Number(GRANT_LOG_WINDOW_CEILING));
+    });
+
+    it('web_data_view_reports_caps_unavailable_on_a_chain_without_a_configured_floor', async () => {
+        const grants = new GrantChain();
+        grants.capsChainId = 229;
+        grants.issued = [{ ...OWNED_GRANT, block: 1n }];
+        grants.finalised = { ...HEAD, number: toHex(40_000_000n) };
+        expect(await readGrantCaps(grants, grants.address)).toEqual({ state: 'unavailable', reason: 'No ledger log floor is configured for chain 229.' });
+        expect(grants.methods).not.toContain('eth_getLogs');
     });
 });
