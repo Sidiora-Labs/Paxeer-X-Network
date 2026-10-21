@@ -731,17 +731,22 @@ type outMsg struct {
 	wire    []byte
 }
 
+// put encodes one message of a block at the source order of its fact. A fact
+// of tx_index -1 (a Cosmos block event, or the block itself) sorts before
+// transaction 0 in Perps-Seq order and is stamped at the head of its block,
+// transaction 0 log 0, so source order never decreases along Perps-Seq; its
+// position in finalize_block_events stays in its payload and event id.
 func put(out *[]outMsg, policy delivery.Policy, subject, kind, id string, f decode.Fact, body []byte, at time.Time) error {
-	txIndex := "0"
+	txIndex, logIndex := "0", "0"
 	if f.TxIndex >= 0 {
-		txIndex = strconv.FormatInt(f.TxIndex, 10)
+		txIndex, logIndex = strconv.FormatInt(f.TxIndex, 10), strconv.FormatInt(f.LogIndex, 10)
 	}
 	e := delivery.Envelope{
 		EventID:       id,
 		EventType:     kind,
 		SchemaVersion: 1,
 		ChainID:       chainID,
-		SourceOrder:   delivery.SourceOrder{Height: strconv.FormatUint(f.Block, 10), TransactionIndex: txIndex, LogIndex: strconv.FormatInt(f.LogIndex, 10)},
+		SourceOrder:   delivery.SourceOrder{Height: strconv.FormatUint(f.Block, 10), TransactionIndex: txIndex, LogIndex: logIndex},
 		EmittedAt:     at.UTC(),
 		TraceID:       id,
 		PayloadHash:   delivery.Hash(body),

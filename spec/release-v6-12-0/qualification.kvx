@@ -2652,3 +2652,19 @@ exit = 0
 log = "PD-F20-verify.log"
 observed = "The /api/markets derived_fields, feeds market-record and portal home-row assertions encoded funding_8h as 8 x the FundingRateUpdated rate (0.0000999999999936, 0.0000288) and /api/markets perp_funding_rate as that 8h value, against the one-window contract."
 assumption = "Renamed to the contract: seeds settle hourly 0.0000125, funding_8h \"0.0001\" and perp_funding_rate \"0.0000125\" exact strings on REST and the feed, null on a market without FundingSettled, portal Funding 8h - because its fixture has no FundingSettled."
+
+[finding.block-event-source-order]
+revision = "54f470ac8"
+command = "GOFLAGS=-p=1 go test -count=1 -run TestIndexer/publishes_in_order ./internal/indexer/ (services/platform/perps-data, ENV-1 chain)"
+exit = 1
+log = "PD-F2-order-base.log"
+observed = "store.put stamped tx_index -1 pricefeed block events as transaction 0 log <finalize_block_events position>, so a block event at position 22, first in Perps-Seq, carried [7523 0 22] ahead of the real share Transfer at [7523 0 0]; the relay order and PD-F18 were not involved, and the f9612d656 rerun stalled on unrelated decode errors (PD-F21-order-f961.log)."
+assumption = "Block events are stamped at the head of their block, transaction 0 log 0, keeping their position in payload and event id; Perps-Seq order is unchanged."
+
+[finding.indexer-position-unresolved-start]
+revision = "e6d88122c"
+command = "GOFLAGS=-p=1 go test -count=1 -timeout 30m ./internal/indexer/... ./internal/delivery/... (services/platform/perps-data, ENV-1 chain, throwaway database)"
+exit = 1
+log = "PD-F21-verify3.log"
+observed = "indexes_venue_block and catch_up_batches time out because the indexer started near the latest venue logs retries decode PositionModified/PositionEntryPriceChanged with account unresolved for positions opened before its start height on the regenerated chain; the same stall stopped the f9612d656 rerun."
+assumption = "Pre-existing and chain-data dependent, outside the stamping fix; publishes_in_order and the new block_events_stamp_before_logs pass."

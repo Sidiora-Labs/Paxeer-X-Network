@@ -21,6 +21,7 @@ import (
 	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -28,6 +29,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	perpsabi "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/perps/abi"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/config"
@@ -696,6 +698,101 @@ func TestIndexer(t *testing.T) {
 				t.Fatalf("log at block %d (%d, %d) first published at stream seq %d, after %d", l.BlockNumber, l.TxIndex, l.Index, seq, last)
 			}
 			last = seq
+		}
+	})
+	t.Run("block_events_stamp_before_logs", func(t *testing.T) {
+		// A block whose finalize_block_events hold a pricefeed event at
+		// position 22 and whose transaction 0 emits log 0: the block event
+		// sorts first in Perps-Seq (tx_index -1), so its source order must
+		// not exceed the source order of the log behind it.
+		e := setup(t)
+		ix := e.newIndexer(t, "block-events-order", 0)
+		ctx := context.Background()
+		if err := ix.acquire(ctx); err != nil {
+			t.Fatalf("acquire: %v", err)
+		}
+		mark := perps.Events["MarkPriceUpdated"]
+		pack := func(tx, index uint, market int64) decode.Log {
+			topics := []common.Hash{mark.ID}
+			var data []any
+			for _, in := range mark.Inputs {
+				v := big.NewInt(1)
+				if in.Name == "marketId" {
+					v = big.NewInt(market)
+				}
+				if !in.Indexed {
+					data = append(data, v)
+					continue
+				}
+				hashes, err := abi.MakeTopics([]any{v})
+				if err != nil {
+					t.Fatalf("topic %s: %v", in.Name, err)
+				}
+				topics = append(topics, hashes[0][0])
+			}
+			packed, err := mark.Inputs.NonIndexed().Pack(data...)
+			if err != nil {
+				t.Fatalf("pack: %v", err)
+			}
+			from := common.HexToAddress("0x00000000000000000000000000000000000000a1")
+			return decode.Log{Log: ethtypes.Log{Address: decode.PerpsAddress, Topics: topics, Data: packed, BlockNumber: 900, BlockHash: common.HexToHash("0x900"),
+				TxHash: common.BigToHash(big.NewInt(int64(tx) + 1)), TxIndex: tx, Index: index}, ReceiptKind: decode.ReceiptTx, TxFrom: &from}
+		}
+		events := make([]abci.Event, 23)
+		for i := range events[:22] {
+			events[i] = abci.Event{Type: "coin_spent"}
+		}
+		events[22] = abci.Event{Type: decode.EventAggregateSkipped, Attributes: []abci.EventAttribute{
+			{Key: []byte("market_id"), Value: []byte("1")}, {Key: []byte("sources"), Value: []byte("0")}, {Key: []byte("required"), Value: []byte("3")}}}
+		b := &source.Block{Number: 900, Hash: common.HexToHash("0x900"), ParentHash: common.HexToHash("0x899"), Time: time.Unix(1_800_000_000, 0).UTC(),
+			Proposer: strings.Repeat("AB", 20), TxCount: 2, Logs: []decode.Log{pack(0, 0, 1), pack(1, 1, 2)}, FinalizeBlockEvents: events}
+		tx, err := e.db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatalf("begin: %v", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if _, err := tx.ExecContext(ctx, `INSERT INTO perps.blocks(number, hash, parent_hash, time, proposer, tx_count) VALUES($1, $2, $3, $4, $5, $6)`,
+			int64(b.Number), b.Hash.Bytes(), b.ParentHash.Bytes(), b.Time, b.Proposer, b.TxCount); err != nil {
+			t.Fatalf("insert block: %v", err)
+		}
+		if err := ix.write(ctx, tx, b); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("commit: %v", err)
+		}
+
+		rows, err := e.db.Query(`SELECT subject, convert_from(envelope, 'UTF8') FROM perps.delivery_outbox ORDER BY perps_seq`)
+		if err != nil {
+			t.Fatalf("read outbox: %v", err)
+		}
+		defer rows.Close()
+		var got [][3]uint64
+		var kinds []string
+		for rows.Next() {
+			var m streamMsg
+			var raw string
+			if err := rows.Scan(&m.subject, &raw); err != nil {
+				t.Fatalf("scan outbox: %v", err)
+			}
+			if chainSubject.MatchString(m.subject) {
+				continue
+			}
+			if err := json.Unmarshal([]byte(raw), &m.envelope); err != nil {
+				t.Fatalf("envelope: %v", err)
+			}
+			o := sourceOrder(t, m)
+			if len(got) > 0 && less(o, got[len(got)-1]) {
+				t.Fatalf("%s %s at %v after %v in Perps-Seq order", m.subject, m.envelope.EventType, o, got[len(got)-1])
+			}
+			got, kinds = append(got, o), append(kinds, m.envelope.EventType)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("read outbox: %v", err)
+		}
+		want := [][3]uint64{{900, 0, 0}, {900, 0, 0}, {900, 1, 1}}
+		if !slices.Equal(got, want) || !slices.Equal(kinds, []string{"index", "mark", "mark"}) {
+			t.Fatalf("market messages %v %v, want %v [index mark mark]", got, kinds, want)
 		}
 	})
 }
