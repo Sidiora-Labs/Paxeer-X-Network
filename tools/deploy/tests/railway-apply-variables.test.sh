@@ -188,6 +188,10 @@ upsert.pop("data")
 upsert["errors"] = [{"message": f'Variable "$i" got invalid value {echo}; Bearer sentinel-railway-token-2b61',
                      "extensions": {"code": "GRAPHQL_VALIDATION_FAILED"}}]
 json.dump(replay, open(f"{sys.argv[1]}/echo-replay.json", "w"))
+values = json.load(open(f"{sys.argv[1]}/values.json"))["charts"]
+short = {k: values[k] for k in ("WEBHOOK_HMAC_SECRET", "DATABASE_URL")}
+upsert["errors"] = [{"message": f'Variable "$i" got invalid value {json.dumps(short)}; Bearer sentinel-railway-token-2b61'}]
+json.dump(replay, open(f"{sys.argv[1]}/short-echo-replay.json", "w"))
 PY
 set +e
 GHCR_USERNAME=sentinel-ghcr-user-4a1f GHCR_TOKEN=sentinel-ghcr-token-8c3e python3 "$tool" proj-test production \
@@ -198,7 +202,16 @@ GHCR_USERNAME=sentinel-ghcr-user-4a1f GHCR_TOKEN=sentinel-ghcr-token-8c3e python
 	--manifest "$tmp/manifest.json" --replay "$replay" --apply --values "$tmp/values.json" --from-env \
 	--registry-credentials >"$tmp/miss.out" 2>"$tmp/miss.err"
 miss_code=$?
+GHCR_USERNAME=sentinel-ghcr-user-4a1f GHCR_TOKEN=sentinel-ghcr-token-8c3e python3 "$tool" proj-test production \
+	--manifest "$tmp/manifest.json" --replay "$tmp/short-echo-replay.json" --apply --values "$tmp/values.json" --from-env \
+	--registry-credentials >"$tmp/short.out" 2>"$tmp/short.err"
+short_code=$?
 set -e
+[ "$short_code" -eq 1 ] || fail "apply against a short invalid-input error exited $short_code, want 1"
+grep -q 'more characters)' "$tmp/short.err" && fail "short invalid-input error was cut: $(cat "$tmp/short.err")"
+for mark in '"WEBHOOK_HMAC_SECRET": "[redacted]"' '"DATABASE_URL": "[redacted]"' 'Bearer [redacted]'; do
+	grep -qF "$mark" "$tmp/short.err" || fail "short invalid-input error lacks $mark: $(cat "$tmp/short.err")"
+done
 [ "$echo_code" -eq 1 ] || fail "apply against an invalid-input error exited $echo_code, want 1"
 grep -q '^railway call failed: Railway GraphQL error: Variable "\$i" got invalid value .*\.\.\. ([0-9]* more characters)$' "$tmp/echo.err" ||
 	fail "invalid-input error not reported bounded: $(cat "$tmp/echo.err")"
@@ -206,7 +219,7 @@ grep -q '^railway call failed: Railway GraphQL error: Variable "\$i" got invalid
 [ "$miss_code" -eq 1 ] || fail "apply against a transcript without the write exited $miss_code, want 1"
 grep -q '^railway call failed: replay has no response for VariablesUpsert with variables i.environmentId, i.projectId, i.serviceId, i.skipDeploys, i.variables.' \
 	"$tmp/miss.err" || fail "replay miss does not name the variables: $(cat "$tmp/miss.err")"
-for f in echo.out echo.err miss.out miss.err; do
+for f in echo.out echo.err miss.out miss.err short.out short.err; do
 	if grep -Eq 'sentinel-(webhook-secret|db-password|ghcr-token|ghcr-user|railway-token)' "$tmp/$f"; then
 		fail "$f printed a secret value: $(cat "$tmp/$f")"
 	fi

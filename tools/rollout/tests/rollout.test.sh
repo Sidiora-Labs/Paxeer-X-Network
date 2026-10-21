@@ -318,6 +318,15 @@ for name, case in record["scenarios"].items():
             problems.append(f"printed or logged the secret {seed!r}")
     if case.get("secrets") and "[redacted]" not in evidence:
         problems.append("the evidence log does not carry the redacted error")
+    marked = case.get("marked", {})
+    if case.get("secrets") and set(marked) != set(case["secrets"]):
+        problems.append("every seeded secret needs a marked context or cut")
+    for seed, mark in marked.items():
+        if mark == "cut":
+            if not re.search(r"\.\.\. \(\d+ more characters\)", evidence):
+                problems.append(f"the error carrying {seed!r} past the limit is not cut")
+        elif mark not in evidence:
+            problems.append(f"no redaction marker {mark!r} where {seed!r} was")
     if problems:
         failures.append(f"{name}: {'; '.join(problems)}\n  stdout: {out.getvalue()!r}\n  stderr: {err.getvalue()!r}")
 server.shutdown()
