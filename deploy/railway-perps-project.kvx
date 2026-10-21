@@ -118,12 +118,24 @@ config = "services/platform/perps-data/deploy/railway/perps-gateway.json"
 public = 1
 order = 4
 
+# PERPS_TRUSTED_PROXY_CIDRS: the rate limiter and auth of the gateway and the
+# explorer read X-Forwarded-For only from a TCP peer inside these CIDRs and key
+# every other request by its peer address. Railway publishes no fixed range for
+# its public HTTP edge (public-networking docs name X-Real-IP as the client
+# header and give no proxy CIDR); the edge reaches a service over Railway's
+# internal network from RFC 6598 shared space, 100.64.0.0/10, and appends the
+# address it accepted the connection from to X-Forwarded-For; the right-most
+# hop outside the range is the client. 0.0.0.0/0 and ::/0 are never set.
+# Callers on the private network (the portal over RAILWAY_PRIVATE_DOMAIN)
+# bypass the edge and are keyed by their own private address. /healthz/* is
+# served ahead of the per-IP limiter on both services, so probes are unaffected.
 [vars.gateway]
 DATABASE_URL = "${{Postgres.DATABASE_URL}}"
 NATS_URL = "nats://perps-gateway:${{nats.NATS_GATEWAY_PASSWORD}}@${{nats.RAILWAY_PRIVATE_DOMAIN}}:4222,nats://perps-gateway:${{nats.NATS_GATEWAY_PASSWORD}}@${{nats-2.RAILWAY_PRIVATE_DOMAIN}}:4222,nats://perps-gateway:${{nats.NATS_GATEWAY_PASSWORD}}@${{nats-3.RAILWAY_PRIVATE_DOMAIN}}:4222"
 PERPS_AUTH_SECRET = "env:PERPS_AUTH_SECRET"
 PERPS_CHAIN_ID = "125"
 PERPS_RPC_URLS = "env:PERPS_RPC_URLS"
+PERPS_TRUSTED_PROXY_CIDRS = "100.64.0.0/10"
 PORT = "8080"
 
 [service.explorer]
@@ -134,10 +146,12 @@ config = "services/platform/perps-data/deploy/railway/perps-explorer.json"
 public = 1
 order = 5
 
+# PERPS_TRUSTED_PROXY_CIDRS: the Railway edge range, derived above [vars.gateway].
 [vars.explorer]
 DATABASE_URL = "${{Postgres.DATABASE_URL}}"
 PERPS_CHAIN_ID = "125"
 PERPS_EXPLORER_TX_BASE = "https://paxscan.io/tx/"
+PERPS_TRUSTED_PROXY_CIDRS = "100.64.0.0/10"
 PORT = "8080"
 
 [service.portal]

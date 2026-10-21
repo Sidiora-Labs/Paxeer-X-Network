@@ -96,6 +96,29 @@ grep -q '^  setting healthcheckPath=/healthz/live$' "$tmp/plan" || fail "indexer
 grep -q '^  setting numReplicas=2$' "$tmp/plan" || fail "gateway replicas not from its railway json"
 grep -q '^  var DATABASE_URL add \${{Postgres.DATABASE_URL}}$' "$tmp/plan" || fail "Postgres reference missing"
 grep -q '^  registry credentials user=\$GHCR_USERNAME token=\$GHCR_TOKEN$' "$tmp/plan" || fail "registry credentials not planned"
+for s in gateway explorer; do
+	sed -n "/^service [0-9]* $s image/,/^service /p" "$tmp/plan" | grep -q '^  var PERPS_TRUSTED_PROXY_CIDRS add 100.64.0.0/10$' ||
+		fail "$s trusted proxy CIDRs not planned"
+done
+
+# The per-IP-limited gateway and explorer must carry the edge range: a manifest
+# without it, or one trusting every address, is refused before any query.
+for s in gateway explorer; do
+	awk -v s="$s" '/^\[/{in_s = ($0 == "[vars." s "]")} !(in_s && /^PERPS_TRUSTED_PROXY_CIDRS = /)' \
+		"$root/deploy/railway-perps-project.kvx" >"$tmp/no-proxy.kvx"
+	grep -c '^PERPS_TRUSTED_PROXY_CIDRS = ' "$tmp/no-proxy.kvx" | grep -qx 1 || fail "test did not drop the $s trusted proxy CIDRs"
+	run --plan --digests "$tmp/digests.json" --replay "$tmp/replay.json" --start-height 34800001 --manifest "$tmp/no-proxy.kvx"
+	[ "$code" -eq 2 ] || fail "manifest without $s PERPS_TRUSTED_PROXY_CIDRS exited $code, want 2"
+	grep -q "\[vars.$s\] must set exactly .*'PERPS_TRUSTED_PROXY_CIDRS'" "$tmp/err" || fail "missing $s trusted proxy CIDRs not named"
+done
+for cidr in 0.0.0.0/0 ::/0 "100.64.0.0/10,0.0.0.0/0" not-a-cidr; do
+	sed "/^\[vars.gateway\]/,/^\[/s|^PERPS_TRUSTED_PROXY_CIDRS = .*|PERPS_TRUSTED_PROXY_CIDRS = \"$cidr\"|" \
+		"$root/deploy/railway-perps-project.kvx" >"$tmp/wide-proxy.kvx"
+	grep -qF "PERPS_TRUSTED_PROXY_CIDRS = \"$cidr\"" "$tmp/wide-proxy.kvx" || fail "test did not set $cidr"
+	run --plan --digests "$tmp/digests.json" --replay "$tmp/replay.json" --start-height 34800001 --manifest "$tmp/wide-proxy.kvx"
+	[ "$code" -eq 2 ] || fail "gateway trusting $cidr exited $code, want 2"
+	grep -q '\[vars.gateway\]: PERPS_TRUSTED_PROXY_CIDRS' "$tmp/err" || fail "gateway trusting $cidr not refused by name"
+done
 
 (unset PERPS_AUTH_SECRET; run --plan --digests "$tmp/digests.json" --replay "$tmp/replay.json"; echo "$code" >"$tmp/code")
 [ "$(cat "$tmp/code")" -eq 3 ] || fail "plan with unresolved values exited $(cat "$tmp/code"), want 3"

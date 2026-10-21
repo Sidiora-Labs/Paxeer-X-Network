@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import ipaddress
 import json
 import os
 import re
@@ -92,6 +93,13 @@ def load(path):
                 raise Malformed(f"[vars.{svc['name']}]: {k} must be a string")
             if v.startswith(("env:", "arg:")) and not re.fullmatch(r"env:[A-Z_][A-Z0-9_]*|arg:start-height", v):
                 raise Malformed(f"[vars.{svc['name']}]: bad source {v!r}")
+        if "PERPS_TRUSTED_PROXY_CIDRS" in svc["vars"]:
+            try:
+                nets = [ipaddress.ip_network(c.strip()) for c in svc["vars"]["PERPS_TRUSTED_PROXY_CIDRS"].split(",")]
+            except ValueError as e:
+                raise Malformed(f"[vars.{svc['name']}]: PERPS_TRUSTED_PROXY_CIDRS: {e}")
+            if any(n.prefixlen == 0 for n in nets):
+                raise Malformed(f"[vars.{svc['name']}]: PERPS_TRUSTED_PROXY_CIDRS must not trust every address")
         out.append(svc)
     if not out:
         raise Malformed(f"{path}: no [service.*] sections")

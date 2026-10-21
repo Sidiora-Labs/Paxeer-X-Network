@@ -5,7 +5,7 @@
     "digest": ""
   },
   "port": "PORT",
-  "variables": ["DATABASE_URL", "PERPS_CHAIN_ID", "PERPS_EXPLORER_TX_BASE", "PORT"],
+  "variables": ["DATABASE_URL", "PERPS_CHAIN_ID", "PERPS_EXPLORER_TX_BASE", "PERPS_TRUSTED_PROXY_CIDRS", "PORT"],
   "deploy": {
     "healthcheckPath": "/healthz/ready",
     "healthcheckTimeout": 300,

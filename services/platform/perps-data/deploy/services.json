@@ -83,6 +83,9 @@
         },
         "PERPS_AUTH_SECRET": {
           "source": "input"
+        },
+        "PERPS_TRUSTED_PROXY_CIDRS": {
+          "source": "input"
         }
       }
     },
@@ -117,6 +120,9 @@
           "source": "input"
         },
         "PERPS_EXPLORER_TX_BASE": {
+          "source": "input"
+        },
+        "PERPS_TRUSTED_PROXY_CIDRS": {
           "source": "input"
         }
       }
