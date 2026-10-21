@@ -1,7 +1,7 @@
 // Venue funding rate: exact parse of last_funding_rate_hourly, the ×24 projection, labels, and the removed est_funding_rate name.
 // Run via `node --test --import tsx tests/funding-rate.test.ts`.
 
-import { describe, it } from "node:test";
+import { describe, it, mock } from "node:test";
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -80,9 +80,52 @@ describe("venue funding consumers", () => {
     assert.equal(normalizeMarket({ symbol: "ETH", last_funding_rate_hourly: "-0.000000000000000001" })?.last_funding_rate_hourly, -1n);
     assert.equal(normalizeMarket({ symbol: "SOL" })?.last_funding_rate_hourly, null);
     assert.equal(normalizeMarket({ symbol: "SOL", last_funding_rate_hourly: null })?.last_funding_rate_hourly, null);
-    assert.throws(() => normalizeMarket({ symbol: "BTC", last_funding_rate_hourly: 0.0001 }), /not an exact decimal string/);
-    assert.throws(() => normalizeMarket({ symbol: "BTC", last_funding_rate_hourly: "1e-4" }), /not an exact decimal string/);
     assert.equal(parseVenueFundingHourly(undefined), null);
+    assert.throws(() => parseVenueFundingHourly("1e-4"), /not an exact decimal string/);
+  });
+
+  it("a malformed rate nulls only that market's funding and warns once per symbol and field per minute", async (t) => {
+    const { normalizeMarket } = await import("../src/hooks/perps/useMarketsStream");
+    const warn = t.mock.method(console, "warn", () => {});
+    t.mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
+    const bad = normalizeMarket({ symbol: "WARN1", price: 7, last_funding_rate_hourly: 0.0001 })!;
+    assert.equal(bad.last_funding_rate_hourly, null);
+    assert.equal(bad.price, 7);
+    assert.equal(normalizeMarket({ symbol: "WARN1", last_funding_rate_hourly: "1e-4" })?.last_funding_rate_hourly, null);
+    assert.equal(warn.mock.callCount(), 1);
+    assert.match(String(warn.mock.calls[0].arguments[0]), /WARN1 last_funding_rate_hourly/);
+    normalizeMarket({ symbol: "WARN2", last_funding_rate_hourly: "x" });
+    assert.equal(warn.mock.callCount(), 2);
+    t.mock.timers.tick(59_999);
+    normalizeMarket({ symbol: "WARN1", last_funding_rate_hourly: "x" });
+    assert.equal(warn.mock.callCount(), 2);
+    t.mock.timers.tick(1);
+    normalizeMarket({ symbol: "WARN1", last_funding_rate_hourly: "x" });
+    assert.equal(warn.mock.callCount(), 3);
+  });
+
+  it("one bad market in a markets@all frame or the /tickers map does not drop its siblings", async (t) => {
+    t.mock.method(console, "warn", () => {});
+    const { normalizeMarketsFrame } = await import("../src/hooks/perps/useMarketsStream");
+    const { tickersFromWire } = await import("../src/hooks/perps/useRealtimePrices");
+    const frame = normalizeMarketsFrame([
+      { symbol: "BTC", price: 100, last_funding_rate_hourly: "0.0001" },
+      { symbol: "ETH", price: 10, last_funding_rate_hourly: 0.0001 },
+      { symbol: "SOL", price: 1, last_funding_rate_hourly: "-0.0000125" },
+    ]);
+    assert.deepEqual(frame.map((m) => [m.symbol, m.price, m.last_funding_rate_hourly]), [
+      ["BTC", 100, 100_000_000_000_000n], ["ETH", 10, null], ["SOL", 1, -12_500_000_000_000n],
+    ]);
+    const row = (paxeerSymbol: string, last_funding_rate_hourly: string | null) => ({
+      symbol: `PERP_${paxeerSymbol}_USDC`, paxeerSymbol, mark_price: 1, index_price: 1, open_interest: 0, last_funding_rate_hourly,
+      "24h_open": 0, "24h_close": 0, "24h_high": 0, "24h_low": 0, "24h_amount": 0, "24h_volume": 0,
+    });
+    const map = tickersFromWire([row("BTC", "0.0001"), row("ETH", "1e-4"), row("SOL", null)]);
+    assert.deepEqual(Object.keys(map), ["BTC", "ETH", "SOL"]);
+    assert.equal(map.BTC.last_funding_rate_hourly, 100_000_000_000_000n);
+    assert.equal(map.ETH.last_funding_rate_hourly, null);
+    assert.equal(map.ETH.mark_price, 1);
+    assert.equal(map.SOL.last_funding_rate_hourly, null);
   });
 
   it("the realtime tickers carry the parsed hourly rate from the stream and from the /tickers wire row", async () => {
@@ -92,12 +135,24 @@ describe("venue funding consumers", () => {
     assert.equal(tickerFromSnapshot(snap).last_funding_rate_hourly, 100_000_000_000_000n);
     const wire = {
       symbol: "PERP_BTC_USDC", paxeerSymbol: "BTC", mark_price: 1, index_price: 1, open_interest: 0,
-      last_funding_rate_hourly: "-0.0000125", last_funding_rate: 0,
+      last_funding_rate_hourly: "-0.0000125",
       "24h_open": 0, "24h_close": 0, "24h_high": 0, "24h_low": 0, "24h_amount": 0, "24h_volume": 0,
     };
     assert.equal(tickerFromWire(wire).last_funding_rate_hourly, -12_500_000_000_000n);
     assert.equal(tickerFromWire({ ...wire, last_funding_rate_hourly: null }).last_funding_rate_hourly, null);
-    assert.throws(() => tickerFromWire({ ...wire, last_funding_rate_hourly: "0.1 " }), /not an exact decimal string/);
+    const warn = mock.method(console, "warn", () => {});
+    try {
+      assert.equal(tickerFromWire({ ...wire, last_funding_rate_hourly: "0.1 " }).last_funding_rate_hourly, null);
+    } finally { warn.mock.restore(); }
+    assert.equal("last_funding_rate" in tickerFromSnapshot(snap), false);
+  });
+
+  it("no funding display reads an 8h value as the hourly one or keeps a second Last Funding chip", () => {
+    const header = read("src/widgets/trading/PairHeader.tsx");
+    assert.doesNotMatch(header, /Last Funding|last_funding_rate\b|funding_8h/);
+    assert.doesNotMatch(read("src/hooks/perps/useRealtimePrices.ts"), /funding_8h|last_funding_rate:/);
+    assert.match(header, /marketFundingHourly\(market\.symbol, "last_funding_rate_hourly"/);
+    assert.doesNotMatch(header, /parseVenueFundingHourly/);
   });
 
   it("the subgraph documents request last_funding_rate_hourly and no timestamp of the removed field", () => {

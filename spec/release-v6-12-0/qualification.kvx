@@ -2636,3 +2636,11 @@ exit = 0
 log = "PD-F19-verify.log"
 observed = "pages_test.go asserted the superseded index-based change_24h ((index - open_24h) / open_24h); the ruled definition is last fill against the window's first fill, which its single-fill seed made 0."
 assumption = "The seed was extended with a 500 USD liquidation buy fill at 51000 in block 101, so the BTC row still asserts 0.02 and the trades and volume cells became 2 and 1500."
+
+[finding.perps-funding-parse-isolation-ruling]
+revision = "bf4882751"
+command = "cd human/apps/perps && NEXT_PUBLIC_PERPS_GATEWAY_URL=https://perps-gateway.invalid node --test --import tsx tests/funding-rate.test.ts tests/book-levels.test.ts tests/v6120-invariants.test.ts"
+exit = 0
+log = "FX-HP-12-verify.log"
+observed = "funding-rate.test.ts asserted that normalizeMarket throws on a malformed last_funding_rate_hourly and that tickerFromWire throws on one; both now assert null funding plus a console.warn under the ruling that one bad market must not drop its siblings in a markets@all frame or the /tickers map."
+assumption = "The strict parser's throw is still tested through parseFundingRateHourly and parseVenueFundingHourly."

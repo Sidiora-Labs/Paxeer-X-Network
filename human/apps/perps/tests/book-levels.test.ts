@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 process.env.NEXT_PUBLIC_PERPS_GATEWAY_URL ??= 'https://perps-gateway.invalid';
 
-const load = () => import('../src/hooks/spot/useSpotMarketStream');
+const load = () => import('../src/core/perps/bookLevels');
 
 test('zeroSizeLevelIgnored', async () => {
   const { normalizeLevels } = await load();
@@ -44,8 +44,25 @@ test('malformedPriceTextDropped', async () => {
 test('sidPaxStreamUsesSharedLevels', async () => {
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../src/hooks/perps/useSidPaxMarketStream.ts', import.meta.url), 'utf8');
-  assert.match(src, /import \{ normalizeLevels \} from "@\/hooks\/spot\/useSpotMarketStream";/);
+  assert.match(src, /import \{ normalizeLevels \} from "@\/core\/perps\/bookLevels";/);
   assert.doesNotMatch(src, /function normalizeLevels\b/);
   assert.match(src, /normalizeLevels\(msg\.data\.asks, "asks"\)/);
   assert.match(src, /normalizeLevels\(msg\.data\.bids, "bids"\)/);
+});
+
+test('venueBookResyncUsesSharedLevels', async () => {
+  const { parseVenueBook } = await import('../src/core/net/venueStream');
+  const book = parseVenueBook({
+    asks: [{ price: '1.0', quantity: '0' }, { price: '1.01', quantity: '5' }, { price: '1.0000000000000000001', quantity: '1' }],
+    bids: [['0.99', '0'], ['0.98', '2'], ['0.9899999999999999999', '1']],
+  }, 1);
+  assert.ok(book);
+  assert.deepEqual(book.asks.map(l => [l.priceText, l.size]), [['1.0000000000000000001', 1], ['1.01', 5]]);
+  assert.deepEqual(book.bids.map(l => [l.priceText, l.size]), [['0.9899999999999999999', 1], ['0.98', 2]]);
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../src/core/net/venueStream.ts', import.meta.url), 'utf8');
+  assert.match(src, /import \{ normalizeLevels, type SpotBookLevel \} from "@\/core\/perps\/bookLevels";/);
+  assert.doesNotMatch(src, /function parseLevels\b/);
+  const spot = readFileSync(new URL('../src/hooks/spot/useSpotMarketStream.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(spot, /function normalizeLevels\b/);
 });

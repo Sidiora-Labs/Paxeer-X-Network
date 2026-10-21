@@ -180,9 +180,7 @@ function connect(): void {
     const ts = typeof tsRaw === "number" ? tsRaw : Date.now();
 
     if (topic === "markets@all" && Array.isArray(data)) {
-      const rows = data
-        .map(normalizeMarket)
-        .filter((m): m is MarketSnapshot => m !== null);
+      const rows = normalizeMarketsFrame(data);
       state.markets = rows;
       state.marketsBySymbol = new Map(rows.map((r) => [r.symbol, r]));
       state.subsMarkets.forEach((cb) => {
@@ -297,6 +295,29 @@ export function parseVenueFundingHourly(v: unknown): bigint | null {
   return parseFundingRateHourly(v as string);
 }
 
+const FUNDING_WARN_INTERVAL_MS = 60_000;
+const fundingWarnedAt = new Map<string, number>();
+
+/**
+ * One market's venue hourly rate: a malformed value is that market's funding
+ * unavailable (null), with at most one console.warn per symbol and field per
+ * minute, so one bad row never drops the rest of a frame or ticker map.
+ */
+export function marketFundingHourly(symbol: string, field: string, v: unknown): bigint | null {
+  try {
+    return parseVenueFundingHourly(v);
+  } catch {
+    const key = `${symbol}\u0000${field}`;
+    const now = Date.now();
+    const last = fundingWarnedAt.get(key);
+    if (last === undefined || now - last >= FUNDING_WARN_INTERVAL_MS) {
+      fundingWarnedAt.set(key, now);
+      console.warn(`perps: ${symbol} ${field} is not an exact decimal string (${String(v)}); its funding is shown as unavailable`);
+    }
+    return null;
+  }
+}
+
 export function normalizeMarket(raw: unknown): MarketSnapshot | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
@@ -310,7 +331,7 @@ export function normalizeMarket(raw: unknown): MarketSnapshot | null {
     volume_24h: num(r.volume_24h),
     open_interest: num(r.open_interest),
     funding_8h: num(r.funding_8h),
-    last_funding_rate_hourly: parseVenueFundingHourly(r.last_funding_rate_hourly),
+    last_funding_rate_hourly: marketFundingHourly(symbol, "last_funding_rate_hourly", r.last_funding_rate_hourly),
     volume_7d: num(r.volume_7d),
     volume_30d: num(r.volume_30d),
     trades_count: num(r.trades_count),
@@ -323,6 +344,11 @@ export function normalizeMarket(raw: unknown): MarketSnapshot | null {
     reported_volume_24h: num(r.reported_volume_24h ?? r.volume_24h),
     reported_open_interest: num(r.reported_open_interest ?? r.open_interest),
   };
+}
+
+/** Every market of one markets@all frame; each row parses on its own, so a malformed row never drops its siblings. */
+export function normalizeMarketsFrame(data: unknown[]): MarketSnapshot[] {
+  return data.map(normalizeMarket).filter((m): m is MarketSnapshot => m !== null);
 }
 
 function normalizeTotals(raw: unknown, ts: number): MarketsTotals | null {

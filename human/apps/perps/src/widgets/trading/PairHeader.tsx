@@ -5,7 +5,7 @@ import { PERPS_MARKETS, coinLogoUrl } from "@/core/perps/config";
 import { useRealtimePrices } from "@/hooks/perps/useRealtimePrices";
 import { useEnrichedMarketStats } from "@/hooks/perps/useEnrichedStats";
 import { useSidPaxOrderbook, useSidPaxTrades, useSidPaxStats } from "@/hooks/perps/useSidPaxMarketStream";
-import { parseVenueFundingHourly } from "@/hooks/perps/useMarketsStream";
+import { marketFundingHourly } from "@/hooks/perps/useMarketsStream";
 import { FUNDING_LABEL_1H, FUNDING_LABEL_24H, fundingFigures } from "@/core/perps/fundingRate";
 import { ChevronDown } from "lucide-react";
 import { PriceFlash } from "@/ui/atoms/PriceFlash";
@@ -114,9 +114,8 @@ export function PairHeader({ selectedPair, onPairChange, onOpenMarketPanel }: Pa
   // last settled hourly rate and its ×24 projection are labelled as such.
   const estFunding   = wsStats?.funding_rate ?? null;
   const venueHourly  = ticker?.last_funding_rate_hourly
-    ?? parseVenueFundingHourly(et?.last_funding_rate_hourly ?? enriched?.fundingRate?.last_funding_rate_hourly);
+    ?? marketFundingHourly(market.symbol, "last_funding_rate_hourly", et?.last_funding_rate_hourly ?? enriched?.fundingRate?.last_funding_rate_hourly);
   const venueFunding = venueHourly === null ? null : fundingFigures(venueHourly);
-  const lastFunding  = wsStats !== null ? wsStats.last_funding_rate  : pick(ticker?.last_funding_rate, et?.last_funding_rate, enriched?.fundingRate?.last_funding_rate);
   const openInterest = wsStats !== null ? wsStats.oi_usd             : pick(ticker?.open_interest, et?.open_interest);
   // Perp-specific stats — only available when wsStats is populated
   const basisBps         = wsStats?.basis_bps          ?? null;
@@ -232,12 +231,6 @@ export function PairHeader({ selectedPair, onPairChange, onOpenMarketPanel }: Pa
             valueClass={f.rate > 0n ? "text-emerald-500" : f.rate < 0n ? "text-red-500" : ""}
           />
         ))}
-
-        <StatChip
-          label="Last Funding"
-          value={lastFunding !== 0 ? fmtPercent(lastFunding) : "\u2014"}
-          valueClass={lastFunding > 0 ? "text-emerald-500" : lastFunding < 0 ? "text-red-500" : ""}
-        />
 
         <StatChip
           label="Open Interest"

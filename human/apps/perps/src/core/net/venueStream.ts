@@ -4,13 +4,11 @@ import { fetchWithPolicy } from "@/core/net/fetch";
 import { scheduleActive, sequenceGuard, watchSocket, type CancelTask } from "@/core/net/realtime";
 import { gatewayUrls } from "@/core/network/gateway";
 import { PERPS_MARKETS } from "@/core/perps/config";
+import { normalizeLevels, type SpotBookLevel } from "@/core/perps/bookLevels";
 
 /** Gateway topic protocol of the shared `/ws` socket: one socket per origin, topics multiplexed. */
 
-export interface VenueLevel {
-  price: number;
-  size: number;
-}
+export type VenueLevel = SpotBookLevel;
 
 export interface VenueBook {
   asks: VenueLevel[];
@@ -115,24 +113,13 @@ function finite(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function parseLevels(raw: unknown, descending: boolean): VenueLevel[] {
-  if (!Array.isArray(raw)) return [];
-  const levels: VenueLevel[] = [];
-  for (const entry of raw) {
-    const price = finite(Array.isArray(entry) ? entry[0] : (entry as { price?: unknown } | null)?.price);
-    const size = finite(Array.isArray(entry) ? entry[1] : (entry as { quantity?: unknown; size?: unknown } | null)?.quantity ?? (entry as { size?: unknown } | null)?.size);
-    if (price !== null && size !== null && price > 0 && size >= 0) levels.push({ price, size });
-  }
-  return levels.sort((a, b) => (descending ? b.price - a.price : a.price - b.price));
-}
-
 export function parseVenueBook(data: unknown, ts: number): VenueBook | null {
   if (!data || typeof data !== "object") return null;
   const d = data as Record<string, unknown>;
   if (!Array.isArray(d.asks) && !Array.isArray(d.bids)) return null;
   return {
-    asks: parseLevels(d.asks, false),
-    bids: parseLevels(d.bids, true),
+    asks: normalizeLevels(d.asks, "asks"),
+    bids: normalizeLevels(d.bids, "bids"),
     markPrice: finite(d.mark_price),
     indexPrice: finite(d.index_price),
     basisBps: finite(d.basis_bps),

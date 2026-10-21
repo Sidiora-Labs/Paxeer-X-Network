@@ -5,7 +5,7 @@ import { FEED_ORIGIN } from "@/core/feeds";
 import { fetchWithPolicy } from "@/core/net/fetch";
 import { isVenueSymbol, parseVenueBook, RESYNC_DEPTH } from "@/core/net/venueStream";
 import { gatewayUrls } from "@/core/network/gateway";
-import { normalizeLevels } from "@/hooks/spot/useSpotMarketStream";
+import { normalizeLevels } from "@/core/perps/bookLevels";
 import { useEffect, useState } from "react";
 
 /* ══════════════════════════════════════════════════════════════════════
