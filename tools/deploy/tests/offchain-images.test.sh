@@ -8,16 +8,16 @@ trap 'rm -rf "$work"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # a copy of the repository pieces the script reads, with a value for every NEXT_PUBLIC_* and WEB_* arg of Dockerfile.web
-mkdir -p "$work/tools/deploy" "$work/launchpad/deploy/railway" "$work/services/platform/perps-data/deploy/nats"
+mkdir -p "$work/tools/deploy" "$work/deploy/launchpad/railway" "$work/services/platform/perps-data/deploy/nats"
 cp "$repo/tools/deploy/offchain-images.sh" "$work/tools/deploy/"
-cp "$repo"/launchpad/deploy/Dockerfile.{svc,native,web} "$work/launchpad/deploy/"
+cp "$repo"/deploy/launchpad/Dockerfile.{svc,native,web} "$work/deploy/launchpad/"
 cp "$repo/services/platform/perps-data/deploy/Dockerfile" "$work/services/platform/perps-data/deploy/"
 cp "$repo/services/platform/perps-data/deploy/nats/Dockerfile" "$work/services/platform/perps-data/deploy/nats/"
-names=$(sed -n 's/^ARG \(\(NEXT_PUBLIC\|WEB\)_[A-Z0-9_]*\).*/\1/p' "$repo/launchpad/deploy/Dockerfile.web")
+names=$(sed -n 's/^ARG \(\(NEXT_PUBLIC\|WEB\)_[A-Z0-9_]*\).*/\1/p' "$repo/deploy/launchpad/Dockerfile.web")
 [ -n "$names" ] || fail "Dockerfile.web declares no NEXT_PUBLIC_* args"
 grep -qx WEB_API_UPSTREAM <<<"$names" || fail "Dockerfile.web declares no WEB_API_UPSTREAM arg"
 jq --arg names "$names" '.web.buildArgs = ([$names | splits("\n") | {key: ., value: "https://\(. | ascii_downcase).example"}] | from_entries)' \
-	"$repo/launchpad/deploy/railway/variables.json" > "$work/launchpad/deploy/railway/variables.json"
+	"$repo/deploy/launchpad/railway/variables.json" > "$work/deploy/launchpad/railway/variables.json"
 # the perps frontend Dockerfile (until it lands, one ARG per name of the committed build args file) and the committed
 # values with the gateway origin filled in
 mkdir -p "$work/human/apps/perps/deploy"
@@ -31,7 +31,7 @@ fi
 sed 's|^NEXT_PUBLIC_PERPS_GATEWAY_URL=$|NEXT_PUBLIC_PERPS_GATEWAY_URL=https://gateway.example|' "$perps_src" > "$perps_env"
 perps_pristine=$(cat "$perps_env")
 script="$work/tools/deploy/offchain-images.sh"
-manifest="$work/launchpad/deploy/railway/variables.json"
+manifest="$work/deploy/launchpad/railway/variables.json"
 pristine=$(cat "$manifest")
 
 sha=0123456789ab
@@ -44,7 +44,7 @@ run bash "$script" --check || fail "--check must pass on a complete tree"
 m=$(run bash "$script" --matrix)
 jq -e 'length > 0 and all(.[]; keys == ["build_args","context","dockerfile","name","target"])' <<<"$m" >/dev/null || fail "matrix shape changed"
 # every launchpad image is named launchpad-<service>; no kindlelaunch- image name remains
-lp_names=$(jq -r '.[] | select(.context == "launchpad") | .name' <<<"$m")
+lp_names=$(jq -r '.[] | select(.name | startswith("launchpad-")) | .name' <<<"$m")
 [ "$lp_names" = "$(printf '%s\n' launchpad-core-api launchpad-core-indexer launchpad-core-pnl-tracker \
 	launchpad-core-ranking-algo launchpad-core-stats-workers launchpad-core-trading-charts launchpad-media-gateway \
 	launchpad-media-livestream launchpad-media-social launchpad-media-user launchpad-media-metadata launchpad-web)" ] ||
@@ -53,15 +53,15 @@ lp_names=$(jq -r '.[] | select(.context == "launchpad") | .name' <<<"$m")
 ! grep -q 'kindlelaunch-' "$repo/tools/deploy/offchain-images.sh" "$repo/deploy/rollout-launchpad.kvx" ||
 	fail "a kindlelaunch- image name remains in the image table or the rollout manifest"
 [ "$(sed -n 's/^image = "\(.*\)"$/\1/p' "$repo/deploy/rollout-launchpad.kvx" | sort -u)" = \
-	"$(jq -r '.[] | select(.context == "launchpad") | .name' <<<"$m" | sort -u)" ] ||
+	"$(jq -r '.[] | select(.name | startswith("launchpad-")) | .name' <<<"$m" | sort -u)" ] ||
 	fail "the rollout manifest images differ from the launchpad matrix rows"
 ! jq -r '.[].build_args' <<<"$m" | grep -E '^[A-Z_]+=$' || fail "matrix carries an empty build arg"
 ! jq -r '.[].build_args' <<<"$m" | grep -E '^(BUILD|RUNTIME)_IMAGE=' || fail "unset base images must be omitted"
-[ "$(args_of "$m" launchpad-core-api)" = $'SERVICE=core/api\nBIN=apid' ] || fail "api args: $(args_of "$m" launchpad-core-api)"
+[ "$(args_of "$m" launchpad-core-api)" = $'SERVICE=api\nBIN=apid' ] || fail "api args: $(args_of "$m" launchpad-core-api)"
 
 # the repository variable names reach the launchpad and perps rows
 m=$(run env REVIEWED_BUILD_IMAGE=rb@sha256:1 REVIEWED_RUNTIME_IMAGE=rr@sha256:2 PERPS_BUILD_IMAGE=pb@sha256:3 bash "$script" --matrix)
-[ "$(args_of "$m" launchpad-media-metadata)" = $'SERVICE=media/metadata\nBIN=metadatad\nBUILD_IMAGE=rb@sha256:1\nRUNTIME_IMAGE=rr@sha256:2' ] || fail "metadata args: $(args_of "$m" launchpad-media-metadata)"
+[ "$(args_of "$m" launchpad-media-metadata)" = $'SERVICE=metadata\nBIN=metadatad\nBUILD_IMAGE=rb@sha256:1\nRUNTIME_IMAGE=rr@sha256:2' ] || fail "metadata args: $(args_of "$m" launchpad-media-metadata)"
 [ "$(args_of "$m" perps-gateway)" = $'SERVICE=perps-gateway\nBUILD_IMAGE=pb@sha256:3' ] || fail "perps args: $(args_of "$m" perps-gateway)"
 
 # the web row carries every NEXT_PUBLIC_* arg with its manifest value, and the build sha as the Sentry release
@@ -96,7 +96,7 @@ grep -q "$first" <<<"$out" && grep -q "$last" <<<"$out" || fail "--check must na
 
 # the committed web values: the three same-origin origins are set, the four dead or unset-is-production names may be
 # empty, the Sentry release is the sha passed, and a backend host without a value still fails --check
-real="$repo/launchpad/deploy/railway/variables.json"
+real="$repo/deploy/launchpad/railway/variables.json"
 for o in NEXT_PUBLIC_PRIVATE_API_ORIGIN=https://sidiora.fun NEXT_PUBLIC_PRIVATE_STREAM_ORIGIN=wss://sidiora.fun \
 	NEXT_PUBLIC_STREAM_ORIGIN=wss://sidiora.fun; do
 	[ "$(jq -r --arg n "${o%%=*}" '.web.buildArgs[$n] // empty' "$real")" = "${o#*=}" ] || fail "committed manifest lacks $o"
@@ -131,10 +131,10 @@ sed -i 's|^NEXT_PUBLIC_LOG_LEVEL=.*|NEXT_PUBLIC_LOG_LEVEL=warn x|' "$perps_env"
 out=$(run bash "$script" --plan 2>/dev/null) || fail "--plan must pass with a perps value with whitespace"
 [ "$(sed -n 's/^unbuilt=//p' <<<"$out")" = '["launchpad-web","perps-web"]' ] || fail "unbuilt: $out"
 printf '%s\n' "$perps_pristine" > "$perps_env"
-mv "$work/launchpad" "$work/launchpad.away" && mv "$work/services" "$work/services.away"
+mv "$work/deploy" "$work/deploy.away" && mv "$work/services" "$work/services.away"
 sed -i 's|^NEXT_PUBLIC_PERPS_GATEWAY_URL=.*|NEXT_PUBLIC_PERPS_GATEWAY_URL=|' "$perps_env"
 if out=$(run bash "$script" --plan 2>/dev/null); then fail "--plan must exit 1 when no row passes: $out"; fi
-mv "$work/launchpad.away" "$work/launchpad" && mv "$work/services.away" "$work/services"
+mv "$work/deploy.away" "$work/deploy" && mv "$work/services.away" "$work/services"
 printf '%s\n' "$perps_pristine" > "$perps_env"
 printf '%s\n' "$pristine" > "$manifest"
 
@@ -158,7 +158,7 @@ set -e
 printf '%s\n' "$perps_pristine" > "$perps_env"
 
 # a missing Dockerfile of a required row fails --check
-rm "$work/launchpad/deploy/Dockerfile.native"
+rm "$work/deploy/launchpad/Dockerfile.native"
 if out=$(run bash "$script" --check 2>&1); then fail "--check must fail on a missing dockerfile"; fi
 grep -q 'launchpad-media-metadata' <<<"$out" || fail "--check must name the row: $out"
 

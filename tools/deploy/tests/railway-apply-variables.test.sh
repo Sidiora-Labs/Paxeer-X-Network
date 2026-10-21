@@ -15,7 +15,7 @@ fail() {
 
 # The charts service from the real manifest; every name it needs gets a sentinel
 # value from --values, except RPC_URL, which comes from the environment under --from-env.
-python3 - "$root/launchpad/deploy/railway/variables.json" "$tmp" "$replay" <<'PY'
+python3 - "$root/deploy/launchpad/railway/variables.json" "$tmp" "$replay" <<'PY'
 import json, sys
 m = json.load(open(sys.argv[1]))
 charts = m["charts"]
@@ -121,7 +121,7 @@ grep -q '^  applied registry credentials$' "$tmp/apply.out" || fail "registry cr
 grep -q "^  applied $(cat "$tmp/upsert-count") variables$" "$tmp/apply.out" || fail "apply did not upsert the changed variables"
 grep -q 'sentinel-ghcr-token' "$tmp/apply.out" && fail "apply printed the registry token"
 # The user service from the real manifest carries a signing seed: plan and apply never print it.
-python3 - "$root/launchpad/deploy/railway/variables.json" "$tmp" "$replay" <<'PY'
+python3 - "$root/deploy/launchpad/railway/variables.json" "$tmp" "$replay" <<'PY'
 import json, sys
 user = json.load(open(sys.argv[1]))["user"]
 assert "ACCOUNT_SERVICE_SIGNING_SEED" in user["secrets"], "the manifest does not list the signing seed as a secret"

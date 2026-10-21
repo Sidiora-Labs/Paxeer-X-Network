@@ -2,7 +2,7 @@
 # Off-chain service image table: one row per deployable image, pushed to ghcr.io/sidiora-labs/<name>.
 #   --matrix  print the rows as a compact JSON array (the offchain-images workflow build matrix)
 #   --check   exit non-zero when a required row's context or dockerfile is missing, or when a NEXT_PUBLIC_* or WEB_*
-#             build arg of Dockerfile.web has no value in the web entry of launchpad/deploy/railway/variables.json, or
+#             build arg of Dockerfile.web has no value in the web entry of deploy/launchpad/railway/variables.json, or
 #             when a NEXT_PUBLIC_* build arg of the perps Dockerfile without a code fallback has no value in
 #             human/apps/perps/deploy/build-args.production.env
 #   --plan    print images=<matrix of every row that passes its --check test> and unbuilt=<JSON array of the rows
@@ -23,14 +23,14 @@ px_args="BUILD_IMAGE=${PERPS_BUILD_IMAGE:-} RUNTIME_IMAGE=${PERPS_RUNTIME_IMAGE:
 
 # name|context|dockerfile|target|build args (space separated)|required
 rows=()
-# launchpad Go services: the TARGETS table of launchpad/security/supplychain/build.py, named as deploy.sh names them
+# launchpad Go services: the TARGETS table of services/launchpad/security/supplychain/build.py, named as deploy.sh names them
 for pair in core/api:apid core/indexer:indexerd core/pnl-tracker:pnld core/ranking-algo:rankingd \
 	core/stats-workers:statsd core/trading-charts:chartsd media/gateway:mediagatewayd \
 	media/livestream:livestreamd media/social:sociald media/user:userd; do
 	svc=${pair%%:*} bin=${pair#*:}
-	rows+=("launchpad-${svc//\//-}|launchpad|launchpad/deploy/Dockerfile.svc|release|SERVICE=$svc BIN=$bin $lp_args|1")
+	rows+=("launchpad-${svc//\//-}|.|deploy/launchpad/Dockerfile.svc|release|SERVICE=${svc#*/} BIN=$bin $lp_args|1")
 done
-rows+=("launchpad-media-metadata|launchpad|launchpad/deploy/Dockerfile.native|release|SERVICE=media/metadata BIN=metadatad $lp_args|1")
+rows+=("launchpad-media-metadata|.|deploy/launchpad/Dockerfile.native|release|SERVICE=metadata BIN=metadatad $lp_args|1")
 # next_public_args <row> <dockerfile> <value fn> [<may-be-empty fn>]: sets args to every NEXT_PUBLIC_* and WEB_* ARG
 # of the dockerfile with its value, missing to the names with no value and spaced to the names whose value has whitespace
 next_public_args() {
@@ -50,7 +50,7 @@ next_public_args() {
 	args=${args# }
 }
 # the web image inlines every NEXT_PUBLIC_* and WEB_* arg of Dockerfile.web from the web entry of the Railway variables manifest
-lp_vars="$root/launchpad/deploy/railway/variables.json"
+lp_vars="$root/deploy/launchpad/railway/variables.json"
 build_sha=${BUILD_SHA:-$(git -C "$root" rev-parse --short=12 HEAD 2>/dev/null || true)}
 lp_value() {
 	if [ "$1" = NEXT_PUBLIC_SENTRY_RELEASE ]; then
@@ -69,11 +69,11 @@ lp_may_be_empty() {
 	esac
 }
 web_args="" web_missing=() web_spaced=()
-if [ -f "$root/launchpad/deploy/Dockerfile.web" ] && [ -f "$lp_vars" ]; then
-	next_public_args launchpad-web launchpad/deploy/Dockerfile.web lp_value lp_may_be_empty
+if [ -f "$root/deploy/launchpad/Dockerfile.web" ] && [ -f "$lp_vars" ]; then
+	next_public_args launchpad-web deploy/launchpad/Dockerfile.web lp_value lp_may_be_empty
 	web_args=$args web_missing=("${missing[@]}") web_spaced=("${spaced[@]}")
 fi
-rows+=("launchpad-web|launchpad|launchpad/deploy/Dockerfile.web||${web_args# }|1")
+rows+=("launchpad-web|.|deploy/launchpad/Dockerfile.web||${web_args# }|1")
 # perps backend: one image per SERVICE, named as services/platform/perps-data/deploy/services.json names them
 for pair in perps-data-indexer:perps-indexer perps-gateway:perps-gateway perps-explorer:perps-explorer perps-portal:perps-portal; do
 	rows+=("${pair%%:*}|.|services/platform/perps-data/deploy/Dockerfile|runtime|SERVICE=${pair#*:} $px_args|1")
@@ -121,11 +121,11 @@ row_problem() {
 		echo "missing context $2 or dockerfile $3"
 	elif [ "$1" = launchpad-web ]; then
 		if [ ! -f "$lp_vars" ]; then
-			echo "missing launchpad/deploy/railway/variables.json"
+			echo "missing deploy/launchpad/railway/variables.json"
 		elif [ "${#web_missing[@]}" -gt 0 ]; then
-			echo "no value in launchpad/deploy/railway/variables.json web entry for ${web_missing[*]}"
+			echo "no value in deploy/launchpad/railway/variables.json web entry for ${web_missing[*]}"
 		elif [ "${#web_spaced[@]}" -gt 0 ]; then
-			echo "value with whitespace in launchpad/deploy/railway/variables.json web entry for ${web_spaced[*]}"
+			echo "value with whitespace in deploy/launchpad/railway/variables.json web entry for ${web_spaced[*]}"
 		fi
 	elif [ "$1" = perps-web ]; then
 		if [ ! -f "$perps_env" ]; then
@@ -149,7 +149,7 @@ case "$mode" in
 		fi
 	done
 	if [ "${#web_missing[@]}" -gt 0 ]; then
-		echo "launchpad-web: no value in launchpad/deploy/railway/variables.json web entry for ${web_missing[*]}" >&2
+		echo "launchpad-web: no value in deploy/launchpad/railway/variables.json web entry for ${web_missing[*]}" >&2
 		bad=1
 	fi
 	if [ "${#perps_missing[@]}" -gt 0 ]; then
@@ -161,7 +161,7 @@ case "$mode" in
 		bad=1
 	fi
 	if [ ! -f "$lp_vars" ]; then
-		echo "launchpad-web: missing launchpad/deploy/railway/variables.json" >&2
+		echo "launchpad-web: missing deploy/launchpad/railway/variables.json" >&2
 		bad=1
 	fi
 	exit "$bad"

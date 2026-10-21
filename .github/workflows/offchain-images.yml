@@ -10,6 +10,9 @@ on:
     branches: [main]
     paths:
       - launchpad/**
+      - services/launchpad/**
+      - sdk/launchpad/**
+      - deploy/launchpad/**
       - services/platform/perps-data/**
       - human/apps/perps/**
       - tools/deploy/**

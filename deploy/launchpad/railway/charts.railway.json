@@ -1,0 +1,20 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "deploy/launchpad/Dockerfile.svc",
+    "watchPatterns": [
+      "/services/launchpad/trading-charts/**",
+      "/sdk/launchpad/shared/**",
+      "/sdk/launchpad/protocol/**",
+      "/services/launchpad/security/supplychain/**",
+      "/deploy/launchpad/Dockerfile.svc"
+    ]
+  },
+  "deploy": {
+    "healthcheckPath": "/health/ready",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ON_FAILURE",
+    "numReplicas": 1
+  }
+}

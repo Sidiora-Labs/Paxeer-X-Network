@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "tools/rollout"))
 from rollout import SECRET, URL_WITH_PASSWORD, graphql_error, mask, redact  # noqa: E402
 from rollout import gql as http_transport  # noqa: E402
 
-MANIFEST = ROOT / "launchpad/deploy/railway/variables.json"
+MANIFEST = ROOT / "deploy/launchpad/railway/variables.json"
 USAGE = ("usage: railway-apply-variables.py <project-id> <environment> --plan|--apply "
          "[--values <values.json>] [--from-env] [--registry-credentials] [--replay <responses.json>] [--manifest <json>]")
 

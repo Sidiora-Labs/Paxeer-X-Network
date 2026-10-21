@@ -2,8 +2,8 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
-dockerfile="$root/launchpad/deploy/Dockerfile.web"
-script="$root/launchpad/deploy/web-build-env.sh"
+dockerfile="$root/deploy/launchpad/Dockerfile.web"
+script="$root/deploy/launchpad/web-build-env.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 

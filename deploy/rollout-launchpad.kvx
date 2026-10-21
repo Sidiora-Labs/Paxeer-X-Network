@@ -20,7 +20,7 @@ health = "/health/ready"
 order = 1
 
 # API_ROLE=sockets is a per-service variable; the manifest has no variables
-# key, so it is set from launchpad/deploy/railway/variables.json.
+# key, so it is set from deploy/launchpad/railway/variables.json.
 [service.api-sockets]
 target = "railway-image"
 image = "launchpad-core-api"
