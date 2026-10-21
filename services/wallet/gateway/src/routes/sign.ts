@@ -30,7 +30,7 @@ import {
   type ActivityApprovalWire,
   lxSigningPreimage,
 } from '../attestor/client.js';
-import { RpcPool, RpcResponseError, sharedRpcPool } from '../rpc/pool.js';
+import { NonceConflictError, RpcPool, RpcResponseError, sharedRpcPool } from '../rpc/pool.js';
 import { NonceBelowLatestError, NonceStore, broadcastReserved, sharedNonceStore } from '../nonce/store.js';
 import {
   RateLimitedError,
@@ -516,7 +516,7 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       async ({ sw, signer }) => {
         const prepared = await prepareTx(signer, tx);
         const { nonce, signed } = await nonces.withLock(sw.row.address, async (lease) => {
-          const nonce = tx.nonce ?? (await lease.peek());
+          const nonce = tx.nonce ?? (await lease.next());
           return { nonce, signed: await signer.signTransaction({ ...prepared, nonce }) };
         });
         const signatureLog: SignatureLogInput = {
@@ -594,6 +594,20 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
             return { ok: false as const, error: err as Error, nonce, signed };
           }
         });
+        if (!outcome.ok && outcome.error instanceof NonceConflictError) {
+          return {
+            status: 409,
+            body: { error: 'nonce_conflict', nonce: outcome.nonce, detail: outcome.error.message, retry: 'prepare' },
+            decision: 'broadcast_failed',
+            path: signer.path,
+            account: sw.row.address,
+            walletId: sw.row.id,
+            attestor: outcome.signed.attestor,
+            txHash: null,
+            nonce: outcome.nonce,
+            reasonCode: 'nonce_conflict',
+          };
+        }
         if (!outcome.ok) {
           req.log.error({ err: outcome.error, userId }, 'send_transaction broadcast failed');
           return {

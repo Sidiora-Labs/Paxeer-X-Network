@@ -61,7 +61,22 @@ export class TransactionRejectedError extends RpcResponseError {
   }
 }
 
-const NONCE_OCCUPIED = /already known|already in (?:the )?mempool|already exists/i;
+/**
+ * A node refused a broadcast because the sender's nonce is already used: the chain passed it
+ * (nonce too low), the same transaction is pooled (already known) or another transaction at that
+ * nonce is pooled (replacement underpriced). The nonce stays held and the caller prepares again,
+ * so nothing is ever silently replaced.
+ */
+export class NonceConflictError extends RpcResponseError {
+  constructor(code: number, message: string, data: unknown) {
+    super(code, message, data);
+    this.name = 'NonceConflictError';
+  }
+}
+
+const NONCE_OCCUPIED = /already known|already in (?:the )?mempool|already exists|nonce too low|replacement (?:transaction )?underpriced/i;
+
+export type PooledTransactions = Map<number, { hash: Hex | null; member: string }>;
 
 class RpcTransportError extends Error {
   constructor(message: string) {
@@ -247,22 +262,14 @@ export class RpcPool {
   }
 
   /**
-   * Whether a node knows the transaction, pooled or mined. The node that accepted the broadcast is
-   * asked first; when it is unreachable or unrecorded every pool member is asked and a transaction
-   * known anywhere is known. Throws when no node could answer, so a caller never reads silence as
-   * not known.
+   * Whether a node knows the transaction, pooled or mined. The node that accepted the broadcast and
+   * every pool member are asked and a transaction known anywhere is known; a not found from the
+   * accepting node alone is not final, only every answering member saying not found is. Throws when
+   * no node could answer, so a caller never reads silence as not known.
    */
   async transactionKnown(hash: Hex, member: string | null): Promise<boolean> {
-    if (member !== null) {
-      try {
-        return (await this.post(member, 'eth_getTransactionByHash', [hash])) !== null;
-      } catch (err) {
-        if (!(err instanceof RpcTransportError)) throw err;
-      }
-    }
-    const answers = await Promise.allSettled(
-      this.endpoints.map((ep) => this.post(ep.url, 'eth_getTransactionByHash', [hash])),
-    );
+    const urls = [...new Set([...(member === null ? [] : [member]), ...this.endpoints.map((ep) => ep.url)])];
+    const answers = await Promise.allSettled(urls.map((url) => this.post(url, 'eth_getTransactionByHash', [hash])));
     if (answers.some((a) => a.status === 'fulfilled' && a.value !== null)) return true;
     const failed = answers.find((a) => a.status === 'rejected' && !(a.reason instanceof RpcTransportError));
     if (failed?.status === 'rejected') throw failed.reason;
@@ -270,6 +277,46 @@ export class RpcPool {
       throw new RpcUnavailableError(`no RPC endpoint answered eth_getTransactionByHash for ${hash}`);
     }
     return false;
+  }
+
+  /**
+   * The sender's pending and queued transactions by nonce, merged from txpool_content on every pool
+   * member, each with the member that pools it. Null when every answering member refuses the method
+   * as not served; throws when no member answered at all.
+   */
+  async pooledFrom(address: `0x${string}`): Promise<PooledTransactions | null> {
+    const key = address.toLowerCase();
+    const answers = await Promise.allSettled(
+      this.endpoints.map(async (ep) => ({ member: ep.url, content: await this.post(ep.url, 'txpool_content', []) })),
+    );
+    const pooled: PooledTransactions = new Map();
+    let served = false;
+    let notServed = false;
+    for (const answer of answers) {
+      if (answer.status === 'rejected') {
+        if (answer.reason instanceof RpcResponseError) {
+          if (answer.reason.code !== -32601) throw answer.reason;
+          notServed = true;
+        }
+        continue;
+      }
+      served = true;
+      const content = answer.value.content as Record<string, Record<string, Record<string, { hash?: unknown }>>> | null;
+      for (const section of [content?.pending, content?.queued]) {
+        for (const [from, txs] of Object.entries(section ?? {})) {
+          if (from.toLowerCase() !== key) continue;
+          for (const [nonce, tx] of Object.entries(txs)) {
+            const n = Number(nonce);
+            if (!Number.isSafeInteger(n) || n < 0 || pooled.has(n)) continue;
+            const hash = typeof tx?.hash === 'string' ? tx.hash.toLowerCase() : '';
+            pooled.set(n, { hash: /^0x[0-9a-f]{64}$/.test(hash) ? (hash as Hex) : null, member: answer.value.member });
+          }
+        }
+      }
+    }
+    if (served) return pooled;
+    if (notServed) return null;
+    throw new RpcUnavailableError(`no RPC endpoint answered txpool_content for ${address}`);
   }
 
   async sendRawTransaction(signed: Hex): Promise<Hex> {
@@ -282,7 +329,8 @@ export class RpcPool {
       const { result, member } = await this.requestVia<Hex>('eth_sendRawTransaction', [signed]);
       return { hash: result, member };
     } catch (err) {
-      if (err instanceof RpcResponseError && !NONCE_OCCUPIED.test(err.message)) {
+      if (err instanceof RpcResponseError) {
+        if (NONCE_OCCUPIED.test(err.message)) throw new NonceConflictError(err.code, err.message, err.data);
         throw new TransactionRejectedError(err.code, err.message, err.data);
       }
       throw err;

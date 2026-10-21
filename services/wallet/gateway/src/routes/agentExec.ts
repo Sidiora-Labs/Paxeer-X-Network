@@ -15,7 +15,7 @@ import { evaluateAgent, type AgentTxIntent } from '../policy/agent.js';
 import { AttestorError, AttestorTokenError, AttestorReauthorizationRequired, attestorErrorBody, attestorErrorStatus } from '../attestor/client.js';
 import { resolveGas } from '../chainReads.js';
 import { NonceBelowLatestError, NonceOutstandingError, broadcastReserved, type NonceLease } from '../nonce/store.js';
-import { TransactionRejectedError, sharedRpcPool } from '../rpc/pool.js';
+import { NonceConflictError, TransactionRejectedError, sharedRpcPool } from '../rpc/pool.js';
 
 /**
  * Shared agent execution core.
@@ -78,6 +78,9 @@ export function custodyRefusal(error: unknown): ExecResult | null {
   }
   if (error instanceof NonceOutstandingError) {
     return { status: 409, body: { error: 'nonce_outstanding', nonce: error.nonce } };
+  }
+  if (error instanceof NonceConflictError) {
+    return { status: 409, body: { error: 'nonce_conflict', detail: error.message, retry: 'prepare' } };
   }
   return error instanceof AttestorError
     ? { status: attestorErrorStatus(error), body: attestorErrorBody(error) } : null;
@@ -190,14 +193,11 @@ export async function executeAgentTransaction(args: {
         });
       }
       const raw = await account.signTransaction(transaction);
-      if (!broadcast) {
-        await lease.release(transaction.nonce!);
-        return { raw, hash: null, error: null };
-      }
+      if (!broadcast) return { raw, hash: null, error: null };
       signedTx = raw;
       txHash = keccak256(raw);
       const sent = await broadcastReserved(lease, transaction.nonce!, raw, (r) => sharedRpcPool().sendRawTransactionVia(r));
-      if (sent.error instanceof TransactionRejectedError) {
+      if (sent.error instanceof TransactionRejectedError || sent.error instanceof NonceConflictError) {
         txHash = null;
         signedTx = null;
       }

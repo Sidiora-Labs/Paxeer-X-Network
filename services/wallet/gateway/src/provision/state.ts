@@ -3,8 +3,8 @@ import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs
 import { isAbsolute } from 'node:path';
 import type { Pool } from 'pg';
 import { bytesToHex, getAddress, type Hex, type LocalAccount, type TransactionSerializableEIP1559 } from 'viem';
-import { RpcPool } from '../rpc/pool.js';
-import { NonceStore } from '../nonce/store.js';
+import { NonceConflictError, RpcPool, TransactionRejectedError } from '../rpc/pool.js';
+import { NonceStore, broadcastReserved } from '../nonce/store.js';
 import {
   WalletArchivedError,
   agentWalletUserId,
@@ -158,6 +158,67 @@ async function updateRow(pool: Pool, id: string, fields: Partial<Record<keyof Pr
     id,
     ...keys.map((k) => fields[k as keyof ProvisionRow]),
   ]);
+}
+
+/**
+ * Reserve the signer's nonce, persist the signed setup transaction and broadcast it under the
+ * signer's wallet lock through the helper the send routes use, so the hash and accepting node are
+ * recorded on the nonce. A send no node accepted and no node knows frees the nonce and clears the
+ * persisted transaction so the next attempt signs again; a nonce another transaction holds stays held
+ * and is refused for a fresh prepare; a send with an unknown outcome keeps the transaction for the
+ * next attempt to rebroadcast and is thrown after persist has recorded it.
+ */
+export async function sendSetupTransaction(
+  deps: Pick<ProvisionDeps, 'nonces' | 'rpc'>,
+  from: string,
+  sign: (nonce: number) => Promise<Hex>,
+  persist: (raw: Hex | null) => Promise<void>,
+): Promise<{ raw: Hex; hash: Hex; error: unknown }> {
+  const outcome = await deps.nonces.withLock(from, async (lease) => {
+    const nonce = await lease.next();
+    const raw = await sign(nonce);
+    const hash = transactionHash(raw);
+    await persist(raw);
+    const sent = await broadcastReserved(lease, nonce, raw, (r) => deps.rpc.sendRawTransactionVia(r));
+    if (sent.error === null) return { kind: 'sent' as const, raw, hash, error: null };
+    if (!(sent.error instanceof TransactionRejectedError) && !(sent.error instanceof NonceConflictError)) {
+      return { kind: 'kept' as const, raw, hash, error: sent.error };
+    }
+    let known: boolean;
+    try {
+      known = await deps.rpc.transactionKnown(hash, null);
+    } catch {
+      await lease.track(nonce, hash, null);
+      return { kind: 'kept' as const, raw, hash, error: sent.error };
+    }
+    if (known) {
+      await lease.track(nonce, hash, null);
+      return { kind: 'sent' as const, raw, hash, error: null };
+    }
+    await persist(null);
+    return { kind: 'refused' as const, raw, hash, error: sent.error };
+  });
+  if (outcome.kind === 'refused') throw setupRefusal(outcome.error);
+  return outcome;
+}
+
+/** Rebroadcast a persisted setup transaction; one no node accepts or knows is cleared for a fresh sign. */
+async function rebroadcastSetup(deps: Pick<ProvisionDeps, 'rpc'>, raw: Hex, clear: () => Promise<void>): Promise<Hex> {
+  try {
+    return await broadcastOnce(deps.rpc, raw);
+  } catch (err) {
+    if (!(err instanceof TransactionRejectedError) && !(err instanceof NonceConflictError)) throw err;
+    if (await deps.rpc.transactionKnown(transactionHash(raw), null)) return transactionHash(raw);
+    await clear();
+    throw setupRefusal(err);
+  }
+}
+
+function setupRefusal(err: unknown): ProvisionError {
+  const detail = err instanceof Error ? err.message : String(err);
+  return err instanceof NonceConflictError
+    ? new ProvisionError('nonce_conflict', 409, `the setup transaction nonce is already used, prepare again: ${detail}`)
+    : new ProvisionError('setup_send_rejected', 502, `the node rejected the setup transaction: ${detail}`);
 }
 
 async function loadRow(pool: Pool, userId: string, kind: WalletKind): Promise<ProvisionRow> {
@@ -438,7 +499,10 @@ export async function provisionAccount(deps: ProvisionDeps, subject: ProvisionSu
       }
       const required = gas * maxFee;
       if (row.topup_raw_tx) {
-        const hash = await broadcastOnce(deps.rpc, row.topup_raw_tx);
+        const hash = await rebroadcastSetup(deps, row.topup_raw_tx as Hex, async () => {
+          await updateRow(deps.pool, row.id, { topup_raw_tx: null, topup_tx_hash: null, topup_value_wei: null });
+          Object.assign(row, { topup_raw_tx: null, topup_tx_hash: null, topup_value_wei: null });
+        });
         const receipt = await waitForReceipt(deps.rpc, hash, deps.receiptTimeoutMs, deps.receiptPollMs);
         if (receipt.status !== 'success') throw new ProvisionError('topup_reverted', 502, 'sponsor top-up transaction reverted');
       } else {
@@ -456,9 +520,7 @@ export async function provisionAccount(deps: ProvisionDeps, subject: ProvisionSu
           if (!sponsor) throw new ProvisionError('sponsor_unconfigured', 503, 'no setup sponsor key is configured');
           const value = required - balance;
           const f = await fees(deps.rpc);
-          const raw = await deps.nonces.withLock(sponsor.address, async (lease) => {
-            const nonce = await lease.next();
-            const signed = await sponsor.signTransaction({
+          const sent = await sendSetupTransaction(deps, sponsor.address, (nonce) => sponsor.signTransaction({
               type: 'eip1559',
               chainId: deps.chainId,
               nonce,
@@ -467,15 +529,16 @@ export async function provisionAccount(deps: ProvisionDeps, subject: ProvisionSu
               gas: 21_000n,
               maxFeePerGas: f.maxFeePerGas,
               maxPriorityFeePerGas: f.maxPriorityFeePerGas,
-            });
-            const hash = transactionHash(signed);
-            await updateRow(deps.pool, row.id, { topup_raw_tx: signed, topup_tx_hash: hash, topup_value_wei: value.toString() });
-            await recordAudit(deps.pool, { walletId: wallet!.id, address, event: 'topup', txHash: hash, valueWei: value, gas, maxFeeWei: maxFee });
-            return signed;
+            }), async (signed) => {
+            const fields = signed === null
+              ? { topup_raw_tx: null, topup_tx_hash: null, topup_value_wei: null }
+              : { topup_raw_tx: signed, topup_tx_hash: transactionHash(signed), topup_value_wei: value.toString() };
+            await updateRow(deps.pool, row.id, fields);
+            Object.assign(row, fields);
           });
-          row.topup_raw_tx = raw;
-          const hash = await broadcastOnce(deps.rpc, raw);
-          const receipt = await waitForReceipt(deps.rpc, hash, deps.receiptTimeoutMs, deps.receiptPollMs);
+          await recordAudit(deps.pool, { walletId: wallet!.id, address, event: 'topup', txHash: sent.hash, valueWei: value, gas, maxFeeWei: maxFee });
+          if (sent.error !== null) throw sent.error;
+          const receipt = await waitForReceipt(deps.rpc, sent.hash, deps.receiptTimeoutMs, deps.receiptPollMs);
           if (receipt.status !== 'success') throw new ProvisionError('topup_reverted', 502, 'sponsor top-up transaction reverted');
         }
       }
@@ -483,13 +546,13 @@ export async function provisionAccount(deps: ProvisionDeps, subject: ProvisionSu
       row.state = 'funded';
     }
 
+    let justSent: Hex | null = null;
     if (row.state === 'funded') {
       const f = await fees(deps.rpc);
       const maxFee = BigInt(row.bind_max_fee_wei!);
       const priority = f.maxPriorityFeePerGas < maxFee ? f.maxPriorityFeePerGas : maxFee;
       const signerWallet = wallet;
-      const raw = await deps.nonces.withLock(address, async (lease) => {
-        const nonce = await lease.next();
+      const sent = await sendSetupTransaction(deps, address, async (nonce) => {
         const tx = bindLayerX({
           chainId: deps.chainId,
           address,
@@ -502,19 +565,27 @@ export async function provisionAccount(deps: ProvisionDeps, subject: ProvisionSu
         });
         const signed = await signBindTransaction(deps, subject, signerWallet, tx);
         if (!signed) throw new ProvisionError('owner_required', 401, 'the wallet owner must authorise the binding transaction');
-        const hash = transactionHash(signed);
-        await updateRow(deps.pool, row.id, { state: 'bind_sent', bind_raw_tx: signed, bind_tx_hash: hash });
         return signed;
+      }, async (signed) => {
+        const fields = signed === null
+          ? { state: 'funded' as const, bind_raw_tx: null, bind_tx_hash: null }
+          : { state: 'bind_sent' as const, bind_raw_tx: signed, bind_tx_hash: transactionHash(signed) };
+        await updateRow(deps.pool, row.id, fields);
+        Object.assign(row, fields);
       }).catch(async (err) => {
         if (err instanceof ProvisionError && err.code === 'owner_required') return null;
         throw err;
       });
-      if (!raw) return result(row, wallet, 'owner');
-      Object.assign(row, { state: 'bind_sent', bind_raw_tx: raw, bind_tx_hash: transactionHash(raw) });
+      if (!sent) return result(row, wallet, 'owner');
+      if (sent.error !== null) throw sent.error;
+      justSent = sent.hash;
     }
 
     if (row.state === 'bind_sent') {
-      const hash = await broadcastOnce(deps.rpc, row.bind_raw_tx!);
+      const hash = justSent ?? await rebroadcastSetup(deps, row.bind_raw_tx! as Hex, async () => {
+        await updateRow(deps.pool, row.id, { state: 'funded', bind_raw_tx: null, bind_tx_hash: null });
+        Object.assign(row, { state: 'funded', bind_raw_tx: null, bind_tx_hash: null });
+      });
       const receipt = await waitForReceipt(deps.rpc, hash, deps.receiptTimeoutMs, deps.receiptPollMs);
       await recordAudit(deps.pool, {
         walletId: wallet.id,
