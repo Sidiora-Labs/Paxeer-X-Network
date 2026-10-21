@@ -4,7 +4,7 @@ import { SIDIORA_TOKEN, abiSelector, exchangeCancelOrderCall } from '@sidiora/la
 import { FEE_TOKEN_PRECOMPILE, SIDIORA_FEE_DENOM, feeToken, type IntentLeg, type ModuleTransaction } from '@paxeer/wallet';
 import { FeeChoice } from './FeeChoice';
 import { SurfaceFrame } from './Surface';
-import { SPONSORED_UNAVAILABLE, useFeeSelection, useSurfaceWallet } from './useSurface';
+import { useFeeSelection, useSurfaceWallet } from './useSurface';
 import { SurfaceChain, click, mountSurface, text, until, type Mounted } from './test/chain';
 
 let chain: SurfaceChain;
@@ -135,7 +135,7 @@ describe('FeeChoice', () => {
         expect(chain.sent[1]?.data).toBe(abiSelector('clearFeeDenom()'));
 
         await click(choice(container, 'sid_sponsored'), 'sid sponsored');
-        expect(text(container, '[data-role="fee-blocked"]')).toBe(SPONSORED_UNAVAILABLE);
+        expect(text(container, '[data-role="fee-blocked"]')).toBe('refused:safe_first_delegation');
         expect(action()).toBeNull();
     });
 });

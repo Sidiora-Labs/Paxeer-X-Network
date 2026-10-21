@@ -7,6 +7,7 @@ import { getActiveRpcUrl, PAXEER_CONFIG, RPC_CHANGED_EVENT } from '@/lib/constan
 import { motion, AnimatePresence } from 'framer-motion';
 import { SvgIcon } from '@/components/ui/SvgIcon';
 import { openExternalUrl } from '@/lib/security/navigation';
+import { putTransferRecord, transferObservationsRepository, type JsonValue } from '@/platform/storage/repositories';
 
 interface TransferSuccessProps {
   fromLabel: string;
@@ -80,7 +81,6 @@ function AnimatedCheckmark({ size = 80 }: { size?: number }) {
 }
 
 const OBSERVATION_INTERVAL_MS = 2000;
-const OBSERVATION_KEY = 'paxeer.wallet.transferObservation';
 
 const TRUTH_TITLES: Readonly<Record<TransferTruth, string>> = {
   submitted: 'Transfer Submitted',
@@ -92,13 +92,13 @@ const TRUTH_TITLES: Readonly<Record<TransferTruth, string>> = {
 };
 
 function storageKey(identity: TransferIdentity): string {
-  return `${OBSERVATION_KEY}:${identity.chainId}:${identity.hash.toLowerCase()}`;
+  return `${identity.chainId}:${identity.hash.toLowerCase()}`;
 }
 
 function recoverObservation(identity: TransferIdentity): TransferObservation {
   try {
-    const raw = window.localStorage.getItem(storageKey(identity));
-    return raw ? recoverTransferObservation(identity, JSON.parse(raw)) : submittedTransfer(identity);
+    const raw = transferObservationsRepository.read()[storageKey(identity)];
+    return raw ? recoverTransferObservation(identity, raw) : submittedTransfer(identity);
   } catch {
     return submittedTransfer(identity);
   }
@@ -144,7 +144,8 @@ export function useTransferObservation(identity: TransferIdentity): { observatio
         setObservation(next);
         setError(next.warning ?? '');
         try {
-          window.localStorage.setItem(storageKey(identity), JSON.stringify(next));
+          const stored = JSON.parse(JSON.stringify(next)) as JsonValue;
+          transferObservationsRepository.update((records) => putTransferRecord(records, storageKey(identity), stored));
         } catch {
           setError('Observation is available, but this browser could not save it for reload.');
         }

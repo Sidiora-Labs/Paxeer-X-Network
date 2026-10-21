@@ -45,13 +45,13 @@ describe('StatusLadder', () => {
         expect(rungs(mounted)).toEqual(expected);
     });
 
-    it('takes the source of the highest step for every rung it reaches', async () => {
+    it('takes the source of the step at each rung and of the highest step above it', async () => {
         const mounted = await mount(
             <StatusLadder steps={[statusLadder.fromExplorer({ rung: 'instant', block_number: 1, sealed_batch_number: null, finalized_batch_number: null, checkpoint_id: null }), statusLadder.fromJourney('done')]} />,
         );
         view = mounted;
         expect(rungs(mounted)).toEqual([
-            ['instant', 'true', 'journey'],
+            ['instant', 'true', 'explorer'],
             ['sealed', 'true', 'journey'],
             ['final', 'false', null],
         ]);

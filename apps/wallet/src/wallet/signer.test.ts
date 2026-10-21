@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ethers } from 'ethers';
+import { PAXEER_CHAIN_ID } from '@paxeer/wallet';
 import { IdentitySession } from './identity';
 import { embeddedWallet } from './session';
 import { WalletSigner, WalletSignerError } from './signer';
@@ -36,7 +37,7 @@ describe('wallet signer', () => {
         expect(response.hash).toBe(fixtureBody('default', 'POST', '/v1/wallet/send').tx_hash);
         expect(response.from).toBe(constructions.address);
         expect(gateway.requests.find((r) => r.path === '/v1/wallet/send')?.body).toEqual({
-            tx: { to: ethers.getAddress(constructions.transaction.to), value: '1000000000000000', gas: '21000' },
+            tx: { to: ethers.getAddress(constructions.transaction.to), value: '1000000000000000', gas: '21000', chainId: PAXEER_CHAIN_ID },
         });
     });
 

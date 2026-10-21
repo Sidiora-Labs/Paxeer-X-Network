@@ -1,3 +1,4 @@
+import 'next/dist/server/node-environment-baseline';
 import { describe, expect, it } from 'vitest';
 import { NextRequest } from 'next/server';
 import {

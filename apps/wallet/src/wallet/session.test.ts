@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ethers } from 'ethers';
-import { announceProvider, type TypedDataPayload } from '@paxeer/wallet';
+import { PAXEER_CHAIN_ID, announceProvider, type TypedDataPayload } from '@paxeer/wallet';
 import { IdentitySession } from './identity';
 import {
     EMBEDDED_WALLET_INFO,
@@ -65,7 +65,7 @@ describe('embedded session', () => {
         const hash = await wallet.sendTransaction(transferTransaction({ to: constructions.transaction.to, value: '0.001' }));
         expect(hash).toBe(fixtureBody('default', 'POST', '/v1/wallet/send').tx_hash);
         const sent = gateway.requests.find((r) => r.path === '/v1/wallet/send');
-        expect(sent?.body).toEqual({ tx: { to: ethers.getAddress(constructions.transaction.to), value: '1000000000000000' } });
+        expect(sent?.body).toEqual({ tx: { to: ethers.getAddress(constructions.transaction.to), value: '1000000000000000', chainId: PAXEER_CHAIN_ID } });
 
         const messageSignature = await wallet.signMessage(constructions.message);
         expect(ethers.verifyMessage(constructions.message, messageSignature)).toBe(constructions.address);
@@ -129,10 +129,11 @@ describe('transfer construction', () => {
     it('wallet_session_builds_native_and_token_transfers_and_refuses_bad_input', () => {
         const to = '0x3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c';
         const token = '0x9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b';
-        expect(transferTransaction({ to, value: '1.5' })).toEqual({ to: ethers.getAddress(to), value: 1_500_000_000_000_000_000n });
+        expect(transferTransaction({ to, value: '1.5' })).toEqual({ to: ethers.getAddress(to), value: 1_500_000_000_000_000_000n, chainId: PAXEER_CHAIN_ID });
         const erc20 = transferTransaction({ to, value: '2', tokenAddress: token, decimals: 6 });
         expect(erc20.to).toBe(ethers.getAddress(token));
         expect(erc20.value).toBe(0n);
+        expect(erc20.chainId).toBe(PAXEER_CHAIN_ID);
         const decoded = new ethers.Interface(['function transfer(address,uint256)']).decodeFunctionData('transfer', erc20.data ?? '0x');
         expect(decoded[0]).toBe(ethers.getAddress(to));
         expect(decoded[1]).toBe(2_000_000n);

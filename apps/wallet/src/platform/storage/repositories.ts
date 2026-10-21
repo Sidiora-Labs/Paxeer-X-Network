@@ -752,3 +752,79 @@ export const announcementRepository = defineStorageRepository({
   legacyKeys: ['paxeer_whats_new_seen'],
   migrateLegacy: (storage) => storage.getItem('paxeer_whats_new_seen') ?? undefined,
 });
+
+export type TransferRecords = Record<string, JsonValue>;
+
+function parseTransferRecords(input: unknown): TransferRecords {
+  const value = record(input);
+  if (Object.keys(value).length > 100) throw new TypeError('Transfer records are too many');
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      stringValue(key, 1, 160),
+      parseJsonValue(entry),
+    ]),
+  );
+}
+
+function collectLegacyTransferRecords(storage: Storage, prefix: string): TransferRecords | undefined {
+  const keys: string[] = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (key?.startsWith(prefix)) keys.push(key);
+  }
+  if (keys.length === 0) return undefined;
+  const migrated: TransferRecords = {};
+  for (const key of keys.slice(-100)) {
+    const raw = storage.getItem(key);
+    if (raw !== null) migrated[key.slice(prefix.length)] = JSON.parse(raw) as JsonValue;
+  }
+  for (const key of keys) storage.removeItem(key);
+  return migrated;
+}
+
+export function putTransferRecord(records: TransferRecords, key: string, value: JsonValue): TransferRecords {
+  const next = { ...records };
+  delete next[key];
+  next[key] = value;
+  const keys = Object.keys(next);
+  for (const stale of keys.slice(0, Math.max(0, keys.length - 100))) delete next[stale];
+  return next;
+}
+
+export const submittedTransfersRepository = defineStorageRepository<TransferRecords>({
+  id: 'submitted-transfers',
+  key: 'paxport:v1:submitted-transfers',
+  owner: 'send',
+  schema: 'Record<chainId:sender, SubmittedTransfer>',
+  version: 1,
+  area: 'local',
+  sensitivity: 'private-metadata',
+  retention: 'Until the transfer is dismissed or reset; at most 100 entries, oldest dropped first',
+  quotaBytes: 262_144,
+  migration: 'Collect, validate, and remove legacy paxeer.wallet.submittedTransfer:* entries',
+  resetOn: ['reset', 'logout', 'custody-switch', 'account-removal', 'uninstall'],
+  corruption: 'reset-and-signal',
+  prohibitedData: PROHIBITED,
+  fallback: () => ({}),
+  parse: parseTransferRecords,
+  migrateLegacy: (storage) => collectLegacyTransferRecords(storage, 'paxeer.wallet.submittedTransfer:'),
+});
+
+export const transferObservationsRepository = defineStorageRepository<TransferRecords>({
+  id: 'transfer-observations',
+  key: 'paxport:v1:transfer-observations',
+  owner: 'send',
+  schema: 'Record<chainId:hash, TransferObservation>',
+  version: 1,
+  area: 'local',
+  sensitivity: 'private-metadata',
+  retention: 'Last verified evidence per transfer; at most 100 entries, oldest dropped first',
+  quotaBytes: 524_288,
+  migration: 'Collect, validate, and remove legacy paxeer.wallet.transferObservation:* entries',
+  resetOn: ['reset', 'logout', 'custody-switch', 'account-removal', 'uninstall'],
+  corruption: 'reset-and-signal',
+  prohibitedData: PROHIBITED,
+  fallback: () => ({}),
+  parse: parseTransferRecords,
+  migrateLegacy: (storage) => collectLegacyTransferRecords(storage, 'paxeer.wallet.transferObservation:'),
+});

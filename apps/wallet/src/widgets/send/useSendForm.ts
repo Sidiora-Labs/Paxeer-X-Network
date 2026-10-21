@@ -15,6 +15,7 @@ import { PAXEER_CONFIG } from '@/lib/constants';
 import { useWalletActions, useWalletState } from '@/providers/WalletProvider';
 import { storePendingSend } from '@/lib/optimistic';
 import { saveRecentRecipient } from '@/lib/recentRecipients';
+import { putTransferRecord, submittedTransfersRepository, type JsonValue } from '@/platform/storage/repositories';
 import {
     validateEvmAddress,
     validateSpendableBalance,
@@ -68,13 +69,15 @@ const computePortion = (
     }
 };
 
-export const SUBMITTED_TRANSFER_KEY = 'paxeer.wallet.submittedTransfer';
+function submittedTransferKey(chainId: number, sender: string): string {
+    return `${chainId}:${sender.toLowerCase()}`;
+}
 
 function readSubmittedTransfer(sender: string): SubmittedTransfer | null {
     try {
-        const raw = window.localStorage.getItem(`${SUBMITTED_TRANSFER_KEY}:${PAXEER_CONFIG.chainId}:${sender.toLowerCase()}`);
+        const raw = submittedTransfersRepository.read()[submittedTransferKey(PAXEER_CONFIG.chainId, sender)];
         if (!raw) return null;
-        const value = JSON.parse(raw) as Partial<SubmittedTransfer>;
+        const value = raw as Partial<SubmittedTransfer>;
         if (typeof value.hash !== 'string' || typeof value.chainId !== 'number' ||
             typeof value.sender !== 'string' || value.sender.toLowerCase() !== sender.toLowerCase() ||
             typeof value.symbol !== 'string' || !value.symbol || typeof value.decimals !== 'number' ||
@@ -115,7 +118,10 @@ export function useSendForm(): UseSendFormResult {
 
     const clearTransfer = useCallback(() => {
         try {
-            if (sender) window.localStorage.removeItem(`${SUBMITTED_TRANSFER_KEY}:${PAXEER_CONFIG.chainId}:${sender.toLowerCase()}`);
+            if (sender) {
+                const key = submittedTransferKey(PAXEER_CONFIG.chainId, sender);
+                submittedTransfersRepository.update((records) => Object.fromEntries(Object.entries(records).filter(([entry]) => entry !== key)));
+            }
         } catch {
             // storage unavailable: the in-memory identity is still cleared
         }
@@ -180,7 +186,8 @@ export function useSendForm(): UseSendFormResult {
                     sender, recipient, amount, symbol: token.symbol, decimals: token.decimals,
                 };
                 try {
-                    window.localStorage.setItem(`${SUBMITTED_TRANSFER_KEY}:${identity.chainId}:${sender.toLowerCase()}`, JSON.stringify(identity));
+                    const stored = JSON.parse(JSON.stringify(identity)) as JsonValue;
+                    submittedTransfersRepository.update((records) => putTransferRecord(records, submittedTransferKey(identity.chainId, sender), stored));
                 } catch {
                     setError('Transfer submitted. This browser could not save its identity for reload.');
                 }
