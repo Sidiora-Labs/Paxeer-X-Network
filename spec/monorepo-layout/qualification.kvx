@@ -154,3 +154,10 @@ command = "pnpm -C apps/launchpad build:packages"
 exit_code = 0
 log_path = "fleet/logs/layout-6.3.log"
 observed_and_assumption = "The same launchpad-root self-qualification tooling recorded for 6.2 also names client/apps and client/packages against the former launchpad root (tools/launchpad/production, the services/launchpad api repoFile and social phase4 bindings, metadata and safety qualify scripts, the livestream and shared measurement lists, and the qualification and sdk test scripts whose root now points explicitly at launchpad/); plain relative imports and test paths were rewritten to apps/launchpad and sdk/launchpad/packages and the harness root is left for the same dedicated rewrite."
+
+[finding.6.5-layout-check-key-handle]
+revision = "019bfdcfd with the task 6.5 changes applied"
+command = "scripts/ci/layout-check.sh bridge"
+exit_code = 1
+log_path = "fleet/logs/layout-6.5.log"
+observed_and_assumption = "Every tracked file left bridge and no build, CI, deploy or tool file names an old bridge path; the only hits are docker/bridge-relayer/entrypoint.sh lines 61 and 62, which name the signer key handle bridge/attestor that services/interop/deploy/bridge-relayer/signer-keys.json declares, not a directory, so the handle and the check are both left as written for the wave 6 check to rule on."
