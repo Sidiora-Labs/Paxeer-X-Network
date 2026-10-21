@@ -30,8 +30,8 @@ import {
   type ActivityApprovalWire,
   lxSigningPreimage,
 } from '../attestor/client.js';
-import { RpcPool, RpcResponseError, TransactionRejectedError, sharedRpcPool } from '../rpc/pool.js';
-import { NonceBelowLatestError, NonceStore, sharedNonceStore } from '../nonce/store.js';
+import { RpcPool, RpcResponseError, sharedRpcPool } from '../rpc/pool.js';
+import { NonceBelowLatestError, NonceStore, broadcastReserved, sharedNonceStore } from '../nonce/store.js';
 import {
   RateLimitedError,
   RateLimiter,
@@ -516,7 +516,7 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       async ({ sw, signer }) => {
         const prepared = await prepareTx(signer, tx);
         const { nonce, signed } = await nonces.withLock(sw.row.address, async (lease) => {
-          const nonce = tx.nonce ?? (await lease.next());
+          const nonce = tx.nonce ?? (await lease.peek());
           return { nonce, signed: await signer.signTransaction({ ...prepared, nonce }) };
         });
         const signatureLog: SignatureLogInput = {
@@ -580,12 +580,17 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
           }
           const nonce = tx.nonce ?? (await lease.next());
           const signed = await signer.signTransaction({ ...prepared, nonce });
+          if (tx.nonce === undefined) {
+            const sent = await broadcastReserved(lease, nonce, signed.value, (raw) => rpc.sendRawTransactionVia(raw));
+            return sent.error === null
+              ? { ok: true as const, hash: sent.hash, nonce, signed }
+              : { ok: false as const, error: sent.error as Error, nonce, signed };
+          }
           try {
-            const hash = await rpc.sendRawTransaction(signed.value);
-            await lease.advance(nonce);
+            const { hash, member } = await rpc.sendRawTransactionVia(signed.value);
+            await lease.track(nonce, keccak256(signed.value), member);
             return { ok: true as const, hash, nonce, signed };
           } catch (err) {
-            if (tx.nonce === undefined && err instanceof TransactionRejectedError) await lease.release(nonce);
             return { ok: false as const, error: err as Error, nonce, signed };
           }
         });

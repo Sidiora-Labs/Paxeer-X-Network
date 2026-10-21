@@ -31,7 +31,8 @@ import {
   type WalletRow,
 } from '../db/wallets.js';
 import { encodeErc20Transfer, getErc20Balance, getNativeBalance, resolveGas } from '../chainReads.js';
-import { TransactionRejectedError, sharedRpcPool } from '../rpc/pool.js';
+import { sharedRpcPool } from '../rpc/pool.js';
+import { broadcastReserved } from '../nonce/store.js';
 import { query } from '../db/pool.js';
 import { CustodyAuthorityError, publishCustodyAuthority } from '../agent/authority.js';
 import { AttestorError, attestorErrorBody, attestorErrorStatus } from '../attestor/client.js';
@@ -104,12 +105,7 @@ async function sendFromWallet(
     const raw = await account.signTransaction({
       type: 'eip1559', chainId: hyperPaxeer.id, nonce, to: args.to, value: args.value ?? 0n, data: args.data, ...gas,
     });
-    try {
-      return { hash: await sharedRpcPool().sendRawTransaction(raw), error: null };
-    } catch (error) {
-      if (error instanceof TransactionRejectedError) await lease.release(nonce);
-      return { hash: null, error };
-    }
+    return broadcastReserved(lease, nonce, raw, (r) => sharedRpcPool().sendRawTransactionVia(r));
   });
   if (outcome.error !== null) throw outcome.error;
   return outcome.hash!;

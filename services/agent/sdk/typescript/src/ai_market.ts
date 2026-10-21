@@ -1368,7 +1368,7 @@ export class AiMarketViews {
     try {
       result = await operations.request({
         method: "eth_call",
-        params: [{ to: call.to, data: call.data }, "pending"],
+        params: [{ to: call.to, data: call.data }, "latest"],
       });
     } catch (cause) {
       throw decodeProgramsRpcRevert(cause) ?? cause;

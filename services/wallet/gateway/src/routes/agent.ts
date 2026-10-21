@@ -18,7 +18,6 @@ import {
   getErc20Balance,
   getErc20Metadata,
   getNativeBalance,
-  getNonce,
   getReceipt,
   simulate,
 } from '../chainReads.js';
@@ -41,6 +40,7 @@ import {
   type AgentTxInput,
 } from './agentExec.js';
 import { provisionAccount, ProvisionError } from '../provision/state.js';
+import { withWalletLock } from '../util/walletLock.js';
 import { provisionDepsFromEnv } from './wallet.js';
 import type { AgentTxIntent } from '../policy/agent.js';
 
@@ -196,7 +196,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
   app.get('/v1/agent/nonce', { preHandler: requireAgent }, async (req, reply) => {
     const wallet = await getAgentWallet(req.agent!.did);
     if (!wallet) return reply.code(404).send({ error: 'no_wallet', message: 'provision first' });
-    const nonce = await getNonce(wallet.address);
+    const nonce = await withWalletLock(wallet.address, (lease) => lease.peek());
     return reply.send({ address: wallet.address, nonce });
   });
 

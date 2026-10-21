@@ -810,6 +810,32 @@ try {
       await refuses("ResponseTooLarge", () =>
         decodeProgramsStateHead(`0x${"00".repeat(64 + 262_176)}`),
       );
+      const tags: unknown[] = [];
+      const head = await views.stateHead(program, {
+        request: async ({ method, params }) => {
+          assert(method === "eth_call", "state head read is not an eth_call");
+          tags.push(params?.[1]);
+          if (params?.[1] === "pending")
+            throw Object.assign(new Error("pending block is not available"), {
+              code: -32000,
+            });
+          return x(
+            hex(
+              Buffer.concat([
+                be(32n, 32),
+                be(1n, 32),
+                Buffer.from([7]),
+                Buffer.alloc(31),
+              ]),
+            ),
+          );
+        },
+      });
+      assert(hex(head) === "07", "state head read at latest changed");
+      assert(
+        tags.length === 1 && tags[0] === "latest",
+        "state head must read at latest, never pending",
+      );
     },
   );
 

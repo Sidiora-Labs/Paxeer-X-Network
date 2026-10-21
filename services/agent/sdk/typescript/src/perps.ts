@@ -404,16 +404,16 @@ export class TradingWriter {
     if (typeof raw !== "string") {
       throw new TradingPayloadError("non_canonical", "raw transaction");
     }
-    const pendingNonce = await transport.request({
+    const latestNonce = await transport.request({
       method: "eth_getTransactionCount",
-      params: [derived.evmAddress, "pending"],
+      params: [derived.evmAddress, "latest"],
     });
     if (
-      typeof pendingNonce !== "string" ||
-      !/^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/u.test(pendingNonce) ||
-      BigInt(pendingNonce) !== fees.evmNonce
+      typeof latestNonce !== "string" ||
+      !/^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/u.test(latestNonce) ||
+      BigInt(latestNonce) !== fees.evmNonce
     ) {
-      throw new TradingPayloadError("non_canonical", "pending nonce");
+      throw new TradingPayloadError("non_canonical", "latest nonce");
     }
     const expected = `0x${tradingHex(keccak_256(tradingBytes(raw)))}`;
     const hash = await transport.request(request);

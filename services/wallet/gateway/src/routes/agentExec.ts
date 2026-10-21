@@ -14,7 +14,7 @@ import { bindCustodyBudgetReservation, getPolicy, listRules, releaseBudget, rele
 import { evaluateAgent, type AgentTxIntent } from '../policy/agent.js';
 import { AttestorError, AttestorTokenError, AttestorReauthorizationRequired, attestorErrorBody, attestorErrorStatus } from '../attestor/client.js';
 import { resolveGas } from '../chainReads.js';
-import type { NonceLease } from '../nonce/store.js';
+import { NonceBelowLatestError, NonceOutstandingError, broadcastReserved, type NonceLease } from '../nonce/store.js';
 import { TransactionRejectedError, sharedRpcPool } from '../rpc/pool.js';
 
 /**
@@ -73,6 +73,12 @@ export function custodyRefusal(error: unknown): ExecResult | null {
       authorization_endpoint: '/v1/agent/signing-authorizations',
       authorization_id_header: 'x-agent-attestor-authorization-id' } };
   }
+  if (error instanceof NonceBelowLatestError) {
+    return { status: 409, body: { error: 'nonce_below_latest', nonce: error.nonce, latest: error.latest } };
+  }
+  if (error instanceof NonceOutstandingError) {
+    return { status: 409, body: { error: 'nonce_outstanding', nonce: error.nonce } };
+  }
   return error instanceof AttestorError
     ? { status: attestorErrorStatus(error), body: attestorErrorBody(error) } : null;
 }
@@ -103,7 +109,13 @@ async function transactionForRequest(ctx: AgentCtx, wallet: WalletRow, tx: Agent
   if (chainId !== wallet.chain_id || chainId !== env.HYPERPAXEER_CHAIN_ID) {
     throw new AttestorTokenError('agent_authorization_mismatch', 'transaction chain differs from the wallet');
   }
-  const expectedNonce = tx.nonce ?? await lease.next();
+  let expectedNonce: number;
+  if (tx.nonce !== undefined) {
+    await lease.reserveClientNonce(tx.nonce);
+    expectedNonce = tx.nonce;
+  } else {
+    expectedNonce = await lease.next();
+  }
   const approved = ctx.custody?.reauthorization;
   if (approved) {
     let offered: ReturnType<typeof parseTransaction>;
@@ -178,19 +190,18 @@ export async function executeAgentTransaction(args: {
         });
       }
       const raw = await account.signTransaction(transaction);
-      if (!broadcast) return { raw, hash: null, error: null };
+      if (!broadcast) {
+        await lease.release(transaction.nonce!);
+        return { raw, hash: null, error: null };
+      }
       signedTx = raw;
       txHash = keccak256(raw);
-      try {
-        return { raw, hash: await sharedRpcPool().sendRawTransaction(raw), error: null };
-      } catch (error) {
-        if (error instanceof TransactionRejectedError) {
-          if (tx.nonce === undefined) await lease.release(transaction.nonce!);
-          txHash = null;
-          signedTx = null;
-        }
-        return { raw, hash: null, error };
+      const sent = await broadcastReserved(lease, transaction.nonce!, raw, (r) => sharedRpcPool().sendRawTransactionVia(r));
+      if (sent.error instanceof TransactionRejectedError) {
+        txHash = null;
+        signedTx = null;
       }
+      return { raw, ...sent };
     });
     if (signed.error !== null) throw signed.error;
     txHash = signed.hash;

@@ -1,9 +1,12 @@
 import { defineChain } from 'viem';
 import { env } from './env.js';
 
+/** Spans several hundred blocks at the chain's sub-second block time; exists to outlast propagation lag. */
+export const BROADCAST_GRACE_MS = 60_000;
+
 /**
  * HyperPaxeer EVM chain definition for viem.
- * Chain ID 125, ~2s block times, native token PAX.
+ * Chain ID 125, sub-second (~167 ms) block times, native token PAX.
  */
 export const hyperPaxeer = defineChain({
   id: env.HYPERPAXEER_CHAIN_ID,

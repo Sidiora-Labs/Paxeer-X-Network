@@ -16,6 +16,7 @@ async function main(): Promise<void> {
     pool,
     chainId: 125,
     pendingCount: (a) => rpc.getTransactionCount(a, 'latest'),
+    transactionKnown: (h, m) => rpc.transactionKnown(h, m),
   });
   await new Promise<void>((resolve) => {
     process.once('message', () => resolve());

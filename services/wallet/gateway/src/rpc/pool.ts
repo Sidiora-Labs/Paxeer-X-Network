@@ -61,7 +61,7 @@ export class TransactionRejectedError extends RpcResponseError {
   }
 }
 
-const NONCE_OCCUPIED = /already known|already in (?:the )?mempool|already exists|underpriced/i;
+const NONCE_OCCUPIED = /already known|already in (?:the )?mempool|already exists/i;
 
 class RpcTransportError extends Error {
   constructor(message: string) {
@@ -182,6 +182,11 @@ export class RpcPool {
   }
 
   async request<T = unknown>(method: string, params: unknown[] = []): Promise<T> {
+    return (await this.requestVia<T>(method, params)).result;
+  }
+
+  /** request(), also naming the pool member that answered. */
+  async requestVia<T = unknown>(method: string, params: unknown[] = []): Promise<{ result: T; member: string }> {
     const order = this.candidates();
     if (order.length === 0) {
       throw new RpcUnavailableError('no healthy RPC endpoint: every endpoint is down or lagging');
@@ -191,7 +196,7 @@ export class RpcPool {
       try {
         const result = (await this.post(ep.url, method, params)) as T;
         if (ep.state === 'unknown') ep.state = 'healthy';
-        return result;
+        return { result, member: ep.url };
       } catch (err) {
         if (err instanceof RpcResponseError) throw err;
         ep.state = 'down';
@@ -241,9 +246,41 @@ export class RpcPool {
     };
   }
 
+  /**
+   * Whether a node knows the transaction, pooled or mined. The node that accepted the broadcast is
+   * asked first; when it is unreachable or unrecorded every pool member is asked and a transaction
+   * known anywhere is known. Throws when no node could answer, so a caller never reads silence as
+   * not known.
+   */
+  async transactionKnown(hash: Hex, member: string | null): Promise<boolean> {
+    if (member !== null) {
+      try {
+        return (await this.post(member, 'eth_getTransactionByHash', [hash])) !== null;
+      } catch (err) {
+        if (!(err instanceof RpcTransportError)) throw err;
+      }
+    }
+    const answers = await Promise.allSettled(
+      this.endpoints.map((ep) => this.post(ep.url, 'eth_getTransactionByHash', [hash])),
+    );
+    if (answers.some((a) => a.status === 'fulfilled' && a.value !== null)) return true;
+    const failed = answers.find((a) => a.status === 'rejected' && !(a.reason instanceof RpcTransportError));
+    if (failed?.status === 'rejected') throw failed.reason;
+    if (answers.every((a) => a.status === 'rejected')) {
+      throw new RpcUnavailableError(`no RPC endpoint answered eth_getTransactionByHash for ${hash}`);
+    }
+    return false;
+  }
+
   async sendRawTransaction(signed: Hex): Promise<Hex> {
+    return (await this.sendRawTransactionVia(signed)).hash;
+  }
+
+  /** sendRawTransaction(), also naming the pool member that accepted the transaction. */
+  async sendRawTransactionVia(signed: Hex): Promise<{ hash: Hex; member: string }> {
     try {
-      return await this.request<Hex>('eth_sendRawTransaction', [signed]);
+      const { result, member } = await this.requestVia<Hex>('eth_sendRawTransaction', [signed]);
+      return { hash: result, member };
     } catch (err) {
       if (err instanceof RpcResponseError && !NONCE_OCCUPIED.test(err.message)) {
         throw new TransactionRejectedError(err.code, err.message, err.data);

@@ -17,7 +17,7 @@ import { getDepositByTx, layerxEnabled } from '../../layerx/db.js';
 import { AttestorError, AttestorReauthorizationRequired, type AgentOriginalRequest, type AgentReauthorization } from '../../attestor/client.js';
 import { CustodyAuthorityError } from '../authority.js';
 import { withDistributedWalletLock } from './nonceLock.js';
-import type { NonceLease } from '../../nonce/store.js';
+import { broadcastReserved, type NonceLease } from '../../nonce/store.js';
 import {
   buildErrorEnvelope,
   terminalStatusFor,
@@ -453,28 +453,35 @@ export function legNonce(lease: NonceLease, opts?: { nonce?: number }): Promise<
   return opts?.nonce !== undefined ? Promise.resolve(opts.nonce) : lease.next();
 }
 
-async function submitRetained(row: ActionRow, signed: ActionSignedTransaction, lease: NonceLease): Promise<void> {
+/**
+ * Broadcast a retained leg at its nonce. A failed send is returned, not thrown, so the wallet lock
+ * commits the nonce store's record of the broadcast and the next allocation reconciles it.
+ */
+async function submitRetained(row: ActionRow, signed: ActionSignedTransaction, lease: NonceLease): Promise<unknown> {
   if (keccak256(signed.raw) !== signed.hash) throw new Error('retained transaction integrity failure');
-  if (!(await isTxKnown(signed.hash))) {
-    try {
-      const hash = await publicClient().sendRawTransaction({ serializedTransaction: signed.raw });
+  if (await isTxKnown(signed.hash)) {
+    await lease.track(signed.draft.nonce, signed.hash, null);
+  } else {
+    const sent = await broadcastReserved(lease, signed.draft.nonce, signed.raw, async (raw) => {
+      const hash = await publicClient().sendRawTransaction({ serializedTransaction: raw });
       if (hash.toLowerCase() !== signed.hash.toLowerCase()) throw new Error('RPC transaction hash differs from retained bytes');
-    } catch (err) {
-      if (!(await isTxKnown(signed.hash))) throw err;
-    }
+      return { hash, member: env.HYPERPAXEER_RPC_URL };
+    });
+    if (sent.error !== null && !(await isTxKnown(signed.hash))) return sent.error;
   }
-  await lease.advance(signed.draft.nonce);
   await releaseActionNonce(row.id, signed.draft.nonce);
+  return null;
 }
 
 async function recoverRetainedBroadcast(row: ActionRow, leg: ActionLeg): Promise<void> {
   if (!row.wallet_address) throw new Error('action wallet missing');
-  await withDistributedWalletLock(row.wallet_address, async (lease) => {
+  const failure = await withDistributedWalletLock(row.wallet_address, async (lease) => {
     const current = await getAction(row.id);
-    if (!current || current.terminal_at) return;
+    if (!current || current.terminal_at) return null;
     const signed = actionLegExecution(current, leg).current;
-    if (signed) await submitRetained(current, signed, lease);
+    return signed ? submitRetained(current, signed, lease) : null;
   }, undefined, row.id);
+  if (failure !== null) throw failure;
 }
 
 async function broadcastLeg(
@@ -484,14 +491,14 @@ async function broadcastLeg(
   tx: LegTx,
   opts?: { nonce?: number; feeBumpPercent?: number },
 ): Promise<{ hash: Hex; nonce: number }> {
-  return withDistributedWalletLock(wallet.address, async (lease) => {
+  const sent = await withDistributedWalletLock(wallet.address, async (lease) => {
     const current = await getAction(row.id);
     if (!current || current.terminal_at) throw new Error('action is no longer advanceable');
     const state = actionLegExecution(current, leg);
     const expectedHash = leg === 'approval' ? row.approval_tx_hash : row.call_tx_hash;
     if (state.current && (!opts || state.current.hash !== expectedHash)) {
-      await submitRetained(current, state.current, lease);
-      return { hash: state.current.hash, nonce: state.current.draft.nonce };
+      const error = await submitRetained(current, state.current, lease);
+      return { hash: state.current.hash, nonce: state.current.draft.nonce, error };
     }
     const principal = await findPrincipal(current.did);
     if (!principal || principal.is_frozen) throw new Error('agent principal is unavailable');
@@ -552,9 +559,11 @@ async function broadcastLeg(
       throw new Error('signed transaction differs from the exact authorized draft');
     }
     const retained = await retainActionSignedTransaction(current.id, leg, { draft, raw, hash: keccak256(raw) });
-    await submitRetained(current, retained, lease);
-    return { hash: retained.hash, nonce: retained.draft.nonce };
+    const error = await submitRetained(current, retained, lease);
+    return { hash: retained.hash, nonce: retained.draft.nonce, error };
   }, undefined, row.id);
+  if (sent.error !== null) throw sent.error;
+  return { hash: sent.hash, nonce: sent.nonce };
 }
 
 /** Deterministic replacement of a wedged leg at its EXISTING nonce. */

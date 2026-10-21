@@ -113,6 +113,12 @@ class AddrChain implements Eip1193Requester {
         return `0x${hex(keccak_256(Buffer.from(transaction.data.slice(2), "hex")))}`;
       }
       case "eth_getTransactionCount":
+        if (params?.[1] === "pending") {
+          throw Object.assign(new Error("pending block is not available"), {
+            code: -32000,
+          });
+        }
+        assert.equal(params?.[1], "latest");
         return `0x${this.evmNonce.toString(16)}`;
       case "eth_sendRawTransaction": {
         assert.equal(typeof first, "string");

@@ -559,7 +559,8 @@ describe('signing routes', () => {
     const { RpcPool } = await import('../src/rpc/pool.js');
     const { NonceStore } = await import('../src/nonce/store.js');
     rpc = new RpcPool({ urls: [rpcUrl], chainId: 125, lagThresholdBlocks: 20, timeoutMs: 5_000, healthIntervalMs: 60_000 });
-    nonces = new NonceStore({ pool: getPool(), chainId: 125, pendingCount: (a) => rpc.getTransactionCount(a, 'latest') });
+    nonces = new NonceStore({ pool: getPool(), chainId: 125, pendingCount: (a) => rpc.getTransactionCount(a, 'latest'),
+      transactionKnown: (h, m) => rpc.transactionKnown(h, m) });
     client = newClient();
   });
 
