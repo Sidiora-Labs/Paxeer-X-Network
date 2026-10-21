@@ -313,8 +313,8 @@ func TestPortalPages(t *testing.T) {
 		row = row[:strings.Index(row, "</tr>")]
 		// price and mark 51000, change (51000 - 50000) / 50000 = 0.02 from
 		// the first to the last fill, volume 1000 + 500 = 1500, open interest
-		// 0, funding 8h 1e9 x 28800 / 1e18, two fills.
-		contains(t, "BTC row", row, "<td>51000</td><td>51000</td><td>0.02</td><td>1500</td><td>0</td><td>0.0000288</td><td>2</td>")
+		// 0, funding 8h - (no FundingSettled), two fills.
+		contains(t, "BTC row", row, "<td>51000</td><td>51000</td><td>0.02</td><td>1500</td><td>0</td><td>-</td><td>2</td>")
 		contains(t, "markets", markets, `<a href="/markets/eth">ETH</a>`)
 		contains(t, "totals", section(body, "totals"),
 			"<tr><th>Trades</th><td>2</td></tr>", "<tr><th>Volume 24h (USD)</th><td>1500</td></tr>",

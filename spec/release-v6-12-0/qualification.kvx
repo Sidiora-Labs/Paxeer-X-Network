@@ -2644,3 +2644,11 @@ exit = 0
 log = "FX-HP-12-verify.log"
 observed = "funding-rate.test.ts asserted that normalizeMarket throws on a malformed last_funding_rate_hourly and that tickerFromWire throws on one; both now assert null funding plus a console.warn under the ruling that one bad market must not drop its siblings in a markets@all frame or the /tickers map."
 assumption = "The strict parser's throw is still tested through parseFundingRateHourly and parseVenueFundingHourly."
+
+[finding.funding-window-contract]
+revision = "bf4882751"
+command = "GOFLAGS=-p=1 go test -count=1 -timeout 30m ./internal/rest/... ./internal/feeds/... ./internal/portal/... (services/platform/perps-data, throwaway database)"
+exit = 0
+log = "PD-F20-verify.log"
+observed = "The /api/markets derived_fields, feeds market-record and portal home-row assertions encoded funding_8h as 8 x the FundingRateUpdated rate (0.0000999999999936, 0.0000288) and /api/markets perp_funding_rate as that 8h value, against the one-window contract."
+assumption = "Renamed to the contract: seeds settle hourly 0.0000125, funding_8h \"0.0001\" and perp_funding_rate \"0.0000125\" exact strings on REST and the feed, null on a market without FundingSettled, portal Funding 8h - because its fixture has no FundingSettled."

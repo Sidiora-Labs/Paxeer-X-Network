@@ -416,7 +416,7 @@ Symbol routes are mounted at `/api/<symbol>/` with <symbol> in lower case, for t
 | route | response |
 | --- | --- |
 | GET /price | symbol, price (latest index_price), timestamp, open, high, low (24 hours of fills) |
-| GET /stats | symbol, volume_24h, open_interest, last_funding_rate_hourly, last_funding_rate; last_funding_rate_hourly is a decimal string, the hourly rate of the latest FundingSettled, exact, null before the first FundingSettled |
+| GET /stats | symbol, volume_24h, open_interest, last_funding_rate_hourly, last_funding_rate; last_funding_rate_hourly is a decimal string, the hourly rate of the latest FundingSettled, exact, null before the first FundingSettled; last_funding_rate is the same settled hourly rate as a JSON number (funding_rate / 10^18), null before the first FundingSettled |
 | GET /perp_stats | the /stats fields plus mark_price, index_price, basis_bps, long_short_ratio, liq_volume_24h |
 | GET /trades/<SYMBOL>?limit=N | symbol, count, trades[id, side, price, size, trade_time] newest first, from spot swaps and executed spot orders of the token (PAX and SID only; other symbols answer an empty list) |
 | GET /perp_trades/<SYMBOL>?limit=N | symbol, count, trades[id, side, price, contracts, notional, liquidation, trade_time] from perps.fills, side the taker side, liquidation true when the fill shares a log group with a Liquidation |
@@ -457,8 +457,10 @@ The fixed routes /api/markets/health, /api/markets/open-interest, /api/markets/t
 The record has 23 fields: symbol, symbol_full, price, change_24h, volume_24h, open_interest, funding_8h, last_funding_rate_hourly, volume_7d, volume_30d, trades_count, last_updated and the eleven perp_ fields of the application data protocol (perp_mark_price, perp_index_price, perp_basis_bps, perp_next_funding_ms and the others listed there).
 
 - change_24h = (last_price − open_24h) / open_24h of perps.market_stats_rolling: last_price the price of the market's latest fill, open_24h the price of its first fill in the 24 hours before the latest fill-touching block, null when open_24h is null or 0.
-- funding_8h = 8 × the hourly rate of the latest FundingRateUpdated.
-- last_funding_rate_hourly = the hourly rate of the latest FundingSettled as an exact decimal string (as in the ticker of section 24), null before the first FundingSettled.
+- Funding fields, identical on GET /api/markets, GET /api/markets/<symbol>, markets@all and <SYMBOL>@market, all three exact decimal strings read from the same latest FundingSettled row (records.LastFundingRateHourlySQL and records.Funding8hSQL), all three null before the first FundingSettled (never "0"); the FundingRateUpdated rate plays no part:
+  - last_funding_rate_hourly = the settled hourly rate, funding_rate / 10^18 (as in the ticker of section 24).
+  - perp_funding_rate = last_funding_rate_hourly, the same hourly value; it carries no 8 hour value.
+  - funding_8h = 8 × last_funding_rate_hourly, computed as funding_rate × 8 / 10^18 in exact numeric arithmetic (hourly 0.0000125 gives "0.0001"), never through a float or a per-second rate.
 - perp_next_funding_ms = the next whole UTC hour in milliseconds.
 - perp_basis_bps = (mark − index) / index × 10000, three decimals.
 

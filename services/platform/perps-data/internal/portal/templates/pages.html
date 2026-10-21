@@ -32,7 +32,7 @@
 {{if .Markets}}<table>
 <thead><tr><th>Market</th><th>Name</th><th>Price</th><th>Mark price</th><th>Change 24h</th><th>Volume 24h (USD)</th><th>Open interest (USD)</th><th>Funding 8h</th><th>Trades</th></tr></thead>
 <tbody>
-{{range .Markets}}<tr><td><a href="/markets/{{lower .Symbol}}">{{.Symbol}}</a></td><td>{{.SymbolFull}}</td><td>{{optnum .Price}}</td><td>{{optnum .PerpMarkPrice}}</td><td>{{optnum .Change24h}}</td><td>{{num .Volume24h}}</td><td>{{num .OpenInterest}}</td><td>{{optnum .Funding8h}}</td><td>{{.TradesCount}}</td></tr>
+{{range .Markets}}<tr><td><a href="/markets/{{lower .Symbol}}">{{.Symbol}}</a></td><td>{{.SymbolFull}}</td><td>{{optnum .Price}}</td><td>{{optnum .PerpMarkPrice}}</td><td>{{optnum .Change24h}}</td><td>{{num .Volume24h}}</td><td>{{num .OpenInterest}}</td><td>{{with .Funding8h}}{{.}}{{else}}-{{end}}</td><td>{{.TradesCount}}</td></tr>
 {{end}}</tbody>
 </table>{{else}}<p class="empty">No markets are listed.</p>{{end}}
 </section>
@@ -55,7 +55,7 @@
 <tr><th>Open interest (USD)</th><td>{{num .OpenInterest}}</td></tr>
 <tr><th>Long/short ratio</th><td>{{optnum .PerpLongShortRatio}}</td></tr>
 <tr><th>Last settled funding 1h</th><td>{{with .LastFundingRateHourly}}{{.}}{{else}}-{{end}}</td></tr>
-<tr><th>Funding rate 8h</th><td>{{optnum .Funding8h}}</td></tr>
+<tr><th>Funding rate 8h</th><td>{{with .Funding8h}}{{.}}{{else}}-{{end}}</td></tr>
 <tr><th>Next funding</th><td>{{ms .PerpNextFundingMs}}</td></tr>
 <tr><th>Trades</th><td>{{.TradesCount}}</td></tr>
 </table>{{end}}

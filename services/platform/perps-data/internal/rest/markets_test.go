@@ -96,7 +96,7 @@ func TestMarketsREST(t *testing.T) {
 		insert(t, db, row{table: "funding_settlements", kind: "settled", block: 101, logIndex: 1, at: now.Add(-2 * time.Hour), emitter: perpsAddr, account: perpsAddr,
 			args: []string{"market_id", "funding_rate", "long_payment", "short_payment"}, values: []any{0, "9000000000000", e18(t, "-1"), e18(t, "1")}})
 		insert(t, db, row{table: "funding_settlements", kind: "settled", block: 103, logIndex: 1, at: now.Add(-30 * time.Minute), emitter: perpsAddr, account: perpsAddr,
-			args: []string{"market_id", "funding_rate", "long_payment", "short_payment"}, values: []any{0, "12345678901234", e18(t, "-1.5"), e18(t, "1.5")}})
+			args: []string{"market_id", "funding_rate", "long_payment", "short_payment"}, values: []any{0, "12500000000000", e18(t, "-1.5"), e18(t, "1.5")}})
 		rollingStats(t, db, 0, "100", "700", "3000", 4, "600000", "400000", "80000")
 		rollingStats(t, db, 1, "300", "900", "5000", 6, "50", "0", "2000")
 		if _, err := db.Exec(`UPDATE perps.market_stats_rolling SET last_price = $1 WHERE market_id = 0`, e18(t, "62500")); err != nil {
@@ -251,13 +251,14 @@ func TestMarketsREST(t *testing.T) {
 		// change_24h compares the last fill (62500) with the window's first
 		// fill (80000), not the index price (77173).
 		wantNumber(t, rec, "change_24h", -0.21875)
-		// last_funding_rate_hourly is the latest FundingSettled (block 103),
-		// exact, not the FundingRateUpdated estimate.
-		if got := field[string](t, rec, "last_funding_rate_hourly"); got != "0.000012345678901234" {
-			t.Fatalf("last_funding_rate_hourly %q, want 0.000012345678901234", got)
+		// last_funding_rate_hourly and perp_funding_rate are the hourly rate
+		// of the latest FundingSettled (block 103), exact, not the
+		// FundingRateUpdated estimate; funding_8h is 8 x 0.0000125 exactly.
+		for name, want := range map[string]string{"last_funding_rate_hourly": "0.0000125", "perp_funding_rate": "0.0000125", "funding_8h": "0.0001"} {
+			if got := field[string](t, rec, name); got != want {
+				t.Fatalf("%s %q, want %q", name, got, want)
+			}
 		}
-		wantNumber(t, rec, "funding_8h", 0.0000999999999936)
-		wantNumber(t, rec, "perp_funding_rate", 0.0000999999999936)
 		if got, want := field[int64](t, rec, "perp_next_funding_ms"), now.Truncate(time.Hour).Add(time.Hour).UnixMilli(); got != want {
 			t.Fatalf("perp_next_funding_ms %d, want %d", got, want)
 		}

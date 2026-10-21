@@ -39,6 +39,9 @@ const (
 	// perps.funding_settlements row: the settled hourly rate as an exact
 	// decimal string.
 	LastFundingRateHourlySQL = "trim_scale(funding_rate * 0.000000000000000001)::text"
+	// Funding8hSQL is the funding_8h column of the same row: eight times the
+	// settled hourly rate, exact decimal arithmetic on the 18-decimal integer.
+	Funding8hSQL = "trim_scale(funding_rate * 0.000000000000000008)::text"
 
 	Window24h = 24 * time.Hour
 	ISOMillis = "2006-01-02T15:04:05.000Z"
@@ -62,8 +65,10 @@ func NewSymbol(db *sql.DB) (*Symbol, error) {
 
 // MarketRecord is one record of the markets table (Hyperpax:data_api.md:424-461,
 // contracts/data-services.md section 11): twelve market fields and the eleven
-// perp_ fields. Prices and notionals are USD, rates are per-hour ratios except
-// funding_8h, and times are epoch milliseconds.
+// perp_ fields. Prices and notionals are USD and times are epoch milliseconds.
+// The funding fields are exact decimal strings of the latest FundingSettled,
+// null before the first one: last_funding_rate_hourly and perp_funding_rate
+// are the settled hourly rate, funding_8h is eight times it.
 type MarketRecord struct {
 	Symbol                string   `json:"symbol"`
 	SymbolFull            string   `json:"symbol_full"`
@@ -71,7 +76,7 @@ type MarketRecord struct {
 	Change24h             *float64 `json:"change_24h"`
 	Volume24h             float64  `json:"volume_24h"`
 	OpenInterest          float64  `json:"open_interest"`
-	Funding8h             *float64 `json:"funding_8h"`
+	Funding8h             *string  `json:"funding_8h"`
 	LastFundingRateHourly *string  `json:"last_funding_rate_hourly"`
 	Volume7d              float64  `json:"volume_7d"`
 	Volume30d             float64  `json:"volume_30d"`
@@ -81,7 +86,7 @@ type MarketRecord struct {
 	PerpMarkPrice          *float64 `json:"perp_mark_price"`
 	PerpIndexPrice         *float64 `json:"perp_index_price"`
 	PerpBasisBps           *float64 `json:"perp_basis_bps"`
-	PerpFundingRate        *float64 `json:"perp_funding_rate"`
+	PerpFundingRate        *string  `json:"perp_funding_rate"`
 	PerpNextFundingMs      int64    `json:"perp_next_funding_ms"`
 	PerpLongShortRatio     *float64 `json:"perp_long_short_ratio"`
 	PerpLiqVolume24h       float64  `json:"perp_liq_volume_24h"`

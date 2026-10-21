@@ -121,13 +121,12 @@ func (m *Markets) serveHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // marketRecordsSQL builds the records of perps.markets ($4 null) or of the
-// market whose symbol is $4: windows, open interest and the 24 hour change of
+// market whose symbol is $3: windows, open interest and the 24 hour change of
 // the last fill price against the first fill of the window from
 // perps.market_stats_rolling, mark, index and basis from the latest
-// MarkPriceUpdated, the 8 hour funding rate from the latest
-// FundingRateUpdated, the last settled hourly rate of the latest
-// FundingSettled as an exact decimal string, the 24 hour contract and liquidation volumes from the
-// fills since $3, and the open interest in contracts from the open positions.
+// MarkPriceUpdated, the settled hourly rate and eight times it of the latest
+// FundingSettled as exact decimal strings, the 24 hour contract and liquidation volumes from the
+// fills since $2, and the open interest in contracts from the open positions.
 const marketRecordsSQL = `SELECT m.symbol, m.name,
 	(s.last_price - s.open_24h) / NULLIF(s.open_24h, 0),
 	COALESCE(s.volume_24h, 0) / $1::numeric, COALESCE(s.volume_7d, 0) / $1::numeric, COALESCE(s.volume_30d, 0) / $1::numeric,
@@ -135,21 +134,20 @@ const marketRecordsSQL = `SELECT m.symbol, m.name,
 	COALESCE(s.open_interest_long, 0) / $1::numeric, COALESCE(s.open_interest_short, 0) / $1::numeric,
 	mp.mark_price / $1::numeric, mp.index_price / $1::numeric,
 	round((mp.mark_price - mp.index_price) * 10000 / NULLIF(mp.index_price, 0), 3), mp.block_time,
-	fs.hourly, fr.new_rate_per_second * $2::numeric * 8 / $1::numeric,
+	fs.hourly, fs.eight,
 	COALESCE(w.volume, 0) / $1::numeric, COALESCE(w.contracts, 0), COALESCE(w.liq_volume, 0) / $1::numeric,
 	` + feeds.OIContractsSQL + `
 FROM perps.markets m
 LEFT JOIN perps.market_stats_rolling s ON s.market_id = m.market_id
 LEFT JOIN LATERAL (SELECT mark_price, index_price, block_time FROM perps.mark_prices WHERE market_id = m.market_id
 	ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1) mp ON true
-LEFT JOIN LATERAL (SELECT new_rate_per_second FROM perps.funding_rates WHERE market_id = m.market_id
-	ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1) fr ON true
-LEFT JOIN LATERAL (SELECT ` + records.LastFundingRateHourlySQL + ` AS hourly FROM perps.funding_settlements WHERE market_id = m.market_id
+LEFT JOIN LATERAL (SELECT ` + records.LastFundingRateHourlySQL + ` AS hourly, ` + records.Funding8hSQL + ` AS eight
+	FROM perps.funding_settlements WHERE market_id = m.market_id
 	ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1) fs ON true
 CROSS JOIN LATERAL (SELECT sum(f.size_usd) AS volume, sum(f.size_usd / NULLIF(f.price, 0)) AS contracts,
 	sum(f.size_usd) FILTER (WHERE ` + liquidationFill + `) AS liq_volume
-	FROM perps.fills f WHERE f.market_id = m.market_id AND f.block_time >= $3) w
-WHERE $4::text IS NULL OR upper(m.symbol) = $4
+	FROM perps.fills f WHERE f.market_id = m.market_id AND f.block_time >= $2) w
+WHERE $3::text IS NULL OR upper(m.symbol) = $3
 ORDER BY m.market_id`
 
 // Records returns one record per row of perps.markets in market id order.
@@ -170,7 +168,7 @@ func (m *Markets) Record(ctx context.Context, symbol string) (MarketRecord, bool
 
 func (m *Markets) records(ctx context.Context, symbol *string) ([]MarketRecord, error) {
 	now := m.now()
-	rows, err := m.db.QueryContext(ctx, marketRecordsSQL, usdScale, secondsPerHour, now.Add(-window24h), symbol)
+	rows, err := m.db.QueryContext(ctx, marketRecordsSQL, usdScale, now.Add(-window24h), symbol)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +194,7 @@ func (m *Markets) records(ctx context.Context, symbol *string) ([]MarketRecord, 
 			dst **float64
 		}{
 			{change, &rec.Change24h}, {mark, &rec.PerpMarkPrice}, {index, &rec.PerpIndexPrice},
-			{basis, &rec.PerpBasisBps}, {eight, &rec.Funding8h},
+			{basis, &rec.PerpBasisBps},
 			{oiContracts, &rec.PerpOIContracts},
 		}
 		for _, v := range nullable {
@@ -218,11 +216,10 @@ func (m *Markets) records(ctx context.Context, symbol *string) ([]MarketRecord, 
 				return nil, err
 			}
 		}
-		if hourly.Valid {
-			rec.LastFundingRateHourly = &hourly.String
+		if hourly.Valid && eight.Valid {
+			rec.LastFundingRateHourly, rec.PerpFundingRate, rec.Funding8h = &hourly.String, &hourly.String, &eight.String
 		}
 		rec.Price = rec.PerpIndexPrice
-		rec.PerpFundingRate = rec.Funding8h
 		rec.OpenInterest = long + short
 		rec.PerpOIUSD = rec.OpenInterest
 		if short != 0 {
