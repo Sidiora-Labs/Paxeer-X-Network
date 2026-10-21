@@ -4,7 +4,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createInterface } from "node:readline/promises";
 import { ReadStream, WriteStream, isatty } from "node:tty";
-import { PaxeerWallet } from "../../../../human/wallet/sdk/dist/index.js";
+import { PaxeerWallet } from "../../../../sdk/wallet/dist/index.js";
 
 const required = (env, name) => {
   const value = env[name];

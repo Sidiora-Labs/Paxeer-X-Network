@@ -77,7 +77,7 @@ type AbiInput = { name: string; type: string; indexed?: boolean };
 type AbiEntry = { type: string; name?: string; inputs?: AbiInput[] };
 type EventVector = { event: string; fields: Record<string, string | boolean> };
 
-const root = new URL('../../../../', import.meta.url);
+const root = new URL('../../../', import.meta.url);
 const calls = JSON.parse(readFileSync(new URL('./fixtures/modules/calls.json', import.meta.url), 'utf8')) as Json;
 const eventVectors = JSON.parse(readFileSync(new URL('./fixtures/modules/events.json', import.meta.url), 'utf8')) as Record<
   string,

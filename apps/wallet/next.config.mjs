@@ -3,10 +3,10 @@ import { fileURLToPath } from 'node:url';
 import { withSentryConfig } from '@sentry/nextjs';
 
 const appDir = path.dirname(fileURLToPath(import.meta.url));
-const walletSdk = path.resolve(appDir, '../../human/wallet/sdk/src/index.ts');
+const walletSdk = path.resolve(appDir, '../../sdk/wallet/src/index.ts');
 const layerxSdk = path.resolve(appDir, '../../services/agent/sdk/typescript/src/index.ts');
 const layerxSdkBrowser = path.resolve(appDir, '../../services/agent/sdk/typescript/src/browser.ts');
-const walletSdkDir = path.resolve(appDir, '../../human/wallet/sdk');
+const walletSdkDir = path.resolve(appDir, '../../sdk/wallet');
 const layerxSdkDir = path.resolve(appDir, '../../services/agent/sdk/typescript');
 
 /** @type {import('next').NextConfig} */

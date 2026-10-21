@@ -1,6 +1,6 @@
 # Paxeer X wallet app
 
-The Next.js wallet web app (`@paxeer/wallet-app`) of Paxeer X Network, installable as a PWA. It uses the wallet SDK in [`../../human/wallet/sdk`](../../human/wallet/sdk/README.md) (`@paxeer/wallet`) for embedded and injected wallets, and adds the unified account views under `/account` and the network surfaces under `/surfaces` (exchange, bridge, launchpad, fees, web data).
+The Next.js wallet web app (`@paxeer/wallet-app`) of Paxeer X Network, installable as a PWA. It uses the wallet SDK in [`../../sdk/wallet`](../../sdk/wallet/README.md) (`@paxeer/wallet`) for embedded and injected wallets, and adds the unified account views under `/account` and the network surfaces under `/surfaces` (exchange, bridge, launchpad, fees, web data).
 
 ## Scripts
 

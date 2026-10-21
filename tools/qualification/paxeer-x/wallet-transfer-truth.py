@@ -14,7 +14,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[3]
 APP = ROOT / 'apps/wallet'
-SDK_DIST = ROOT / 'human/wallet/sdk/dist/index.js'
+SDK_DIST = ROOT / 'sdk/wallet/dist/index.js'
 CHAIN_ID = 125
 TESTS = 6
 

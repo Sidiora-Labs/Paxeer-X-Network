@@ -316,7 +316,7 @@ platform-build-connected-middleware:
 	npm run build --workspace @sidiora/layerx-agent-middleware
 	npm run build --workspace @sidiora/layerx-agent-integrations
 	npm run build --workspace @sidiora/layerx-middleware-conformance
-	cd human/wallet/sdk && ./node_modules/.bin/tsc --project tsconfig.json
+	cd sdk/wallet && ./node_modules/.bin/tsc --project tsconfig.json
 
 platform-test-connected-middleware:
 	tools/paxeer-x/gates/104.16.2.sh

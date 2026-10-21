@@ -27,7 +27,7 @@
         "./src/*"
       ],
       "@paxeer/wallet": [
-        "../../human/wallet/sdk/src/index.ts"
+        "../../sdk/wallet/src/index.ts"
       ],
       "@sidiora/layerx-sdk/browser": [
         "../../services/agent/sdk/typescript/src/browser.ts"

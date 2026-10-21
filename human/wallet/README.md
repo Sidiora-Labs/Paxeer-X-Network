@@ -7,7 +7,7 @@ One pnpm workspace holding the Paxeer X wallet's TypeScript packages.
 | Path | Package | Contents |
 | --- | --- | --- |
 | `gateway/` | `@paxeer/api` | HTTP wallet gateway: the `/v1/wallet`, `/v1/agent` and `/v1/agents` routes, database migrations under `gateway/migrations`, test suites under `gateway/test`, a load test script under `gateway/loadtest` |
-| `sdk/` | `@paxeer/wallet` | Browser and React SDK for the wallet gateway, test suites under `sdk/test` |
+| `../../sdk/wallet` | `@paxeer/wallet` | Browser and React SDK for the wallet gateway, test suites under `test` |
 | `demo/` | `@paxeer/demo` | Web reference app built on the SDK |
 | `deploy/env` | | Every environment variable name the wallet services read, one per line with its purpose, grouped by service; no values |
 | `tsconfig.base.json` | | Compiler options shared by every package |
@@ -29,7 +29,7 @@ Requires pnpm and the runtime version named in the `engines` field of `package.j
 ```sh
 cd human/wallet
 pnpm install
-pnpm -r --filter ./gateway --filter ./sdk build
+pnpm -r --filter ./gateway --filter ../../sdk/wallet build
 pnpm -r test
 ```
 

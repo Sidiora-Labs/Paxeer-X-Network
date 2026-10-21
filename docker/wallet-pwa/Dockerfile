@@ -9,8 +9,9 @@ RUN corepack enable \
     && corepack prepare pnpm@12.6.0 --activate
 COPY services/agent/sdk/typescript /src/services/agent/sdk/typescript
 COPY human/wallet /src/human/wallet
-RUN pnpm install --frozen-lockfile --filter ./sdk... \
-    && pnpm --filter ./sdk... run build
+COPY sdk/wallet /src/sdk/wallet
+RUN pnpm install --frozen-lockfile --filter ../../sdk/wallet... \
+    && pnpm --filter ../../sdk/wallet... run build
 
 FROM node:22-alpine AS builder
 WORKDIR /src/apps/wallet

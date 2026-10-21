@@ -1,6 +1,6 @@
 # `@paxeer/demo`
 
-Next.js reference app for the wallet SDK (`@paxeer/wallet`, the workspace package in `../sdk`). It signs a user in with Supabase, provisions the embedded wallet and sends transactions through the wallet gateway.
+Next.js reference app for the wallet SDK (`@paxeer/wallet`, the workspace package in `../../../sdk/wallet`). It signs a user in with Supabase, provisions the embedded wallet and sends transactions through the wallet gateway.
 
 ## Run
 
@@ -8,7 +8,7 @@ From `human/wallet`:
 
 ```sh
 pnpm install
-pnpm -r --filter ./sdk build
+pnpm -r --filter ../../sdk/wallet build
 pnpm --filter @paxeer/demo dev      # http://localhost:3000
 ```
 

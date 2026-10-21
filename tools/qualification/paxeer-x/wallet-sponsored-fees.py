@@ -13,7 +13,7 @@ NODE = Path('/root/lx-toolchains/node24/bin/node')
 PNPM = Path('/root/lx-toolchains/node24/private-pnpm/corepack/v1/pnpm/9.15.9/bin/pnpm.cjs')
 SOURCES = [
     'apps/wallet/src/surfaces/useSurface.ts', 'apps/wallet/src/surfaces/FeeChoice.tsx',
-    'human/wallet/sdk/src/modules/gas-station.ts', 'human/wallet/sdk/src/provider.ts',
+    'sdk/wallet/src/modules/gas-station.ts', 'sdk/wallet/src/provider.ts',
     'human/wallet/gateway/src/routes/sign.ts', 'tools/qualification/paxeer-x/wallet-sponsored-fees.py',
     *[f'apps/wallet/src/surfaces/{name}View.tsx' for name in ('Bridge', 'Exchange', 'Launchpad', 'WebData')],
 ]
@@ -55,7 +55,7 @@ def evidence_dir():
 
 def artifacts():
     paths = []
-    for directory in ('human/wallet/sdk/dist', 'human/wallet/gateway/dist', 'apps/wallet/.next/server', 'apps/wallet/.next/static'):
+    for directory in ('sdk/wallet/dist', 'human/wallet/gateway/dist', 'apps/wallet/.next/server', 'apps/wallet/.next/static'):
         tree = ROOT / directory
         require(tree.is_dir(), 'missing genuine build artifact tree: ' + directory)
         paths.extend(p for p in tree.rglob('*') if p.is_file() and p.suffix in ('.js', '.mjs', '.json'))
@@ -70,7 +70,7 @@ def build():
     env = os.environ.copy()
     env['PATH'] = str(NODE.parent) + ':' + env.get('PATH', '')
     env['NEXT_TELEMETRY_DISABLED'] = '1'
-    targets = [('sdk', 'human/wallet/sdk', ['exec', 'tsc', '-p', 'tsconfig.json']),
+    targets = [('sdk', 'sdk/wallet', ['exec', 'tsc', '-p', 'tsconfig.json']),
                ('gateway', 'human/wallet/gateway', ['run', 'build']),
                ('wallet', 'apps/wallet', ['run', 'build'])]
     generated = [ROOT / p for p in ('apps/wallet/next-env.d.ts', 'apps/wallet/tsconfig.json',

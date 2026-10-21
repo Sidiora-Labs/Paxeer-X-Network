@@ -11,6 +11,7 @@ services/human/ @Sidiora-Labs/core
 apps/perps/ @Sidiora-Labs/core
 apps/wallet/ @Sidiora-Labs/core
 apps/web/ @Sidiora-Labs/core
+sdk/wallet/ @Sidiora-Labs/core
 contracts/ @Sidiora-Labs/core
 /admin/ @Sidiora-Labs/core
 /api/ @Sidiora-Labs/core

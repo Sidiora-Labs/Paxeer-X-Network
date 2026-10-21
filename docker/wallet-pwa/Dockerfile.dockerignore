@@ -2,6 +2,7 @@
 !services/agent/sdk/typescript
 !apps/wallet
 !human/wallet
+!sdk/wallet
 **/.git
 **/.github
 **/.cursor

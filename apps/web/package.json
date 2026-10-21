@@ -30,7 +30,7 @@
     "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "@paxeer/wallet": "file:../../human/wallet/sdk",
+    "@paxeer/wallet": "file:../../sdk/wallet",
     "viem": "2.56.9"
   },
   "devDependencies": {

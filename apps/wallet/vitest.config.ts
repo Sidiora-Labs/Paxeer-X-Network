@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import path from 'node:path';
 
-const walletSdk = path.resolve(__dirname, '../../human/wallet/sdk/src/index.ts');
+const walletSdk = path.resolve(__dirname, '../../sdk/wallet/src/index.ts');
 const layerxSdk = path.resolve(__dirname, '../../services/agent/sdk/typescript/src/index.ts');
 const layerxSdkBrowser = path.resolve(__dirname, '../../services/agent/sdk/typescript/src/browser.ts');
 

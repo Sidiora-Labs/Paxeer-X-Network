@@ -55,7 +55,7 @@ Every route admits both custody modes, `embedded` and `injected`, and requires a
 
 ## Wallet and identity
 
-`src/wallet` connects the app to the wallet SDK (`@paxeer/wallet`, linked from `human/wallet/sdk`):
+`src/wallet` connects the app to the wallet SDK (`@paxeer/wallet`, linked from `sdk/wallet`):
 
 - `session.ts` builds the embedded wallet and discovers injected EIP-6963 wallets.
 - `identity.ts` runs Supabase sign-in through `IdentitySession`; providers are `google`, `discord`, `github`, `apple` and `twitter`.

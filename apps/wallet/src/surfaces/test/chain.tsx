@@ -140,7 +140,7 @@ export interface EventVector {
     readonly fields: Record<string, string | boolean>;
 }
 
-const SDK_FIXTURES = path.resolve(__dirname, '../../../../../human/wallet/sdk/test/fixtures/modules');
+const SDK_FIXTURES = path.resolve(__dirname, '../../../../../sdk/wallet/test/fixtures/modules');
 
 export function eventVectors(section: string): EventVector[] {
     const all = JSON.parse(readFileSync(path.join(SDK_FIXTURES, 'events.json'), 'utf8')) as Record<string, EventVector[]>;

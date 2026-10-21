@@ -70,7 +70,7 @@ def main():
     manifest = json.loads(protected(manifest_path).read_text())
     expected = set()
     for relative in ('human/wallet/gateway/src', 'human/wallet/gateway/dist', 'human/wallet/gateway/migrations',
-                     'human/wallet/sdk/src', 'human/wallet/sdk/dist',
+                     'sdk/wallet/src', 'sdk/wallet/dist',
                      'services/agent/sdk/typescript/src', 'services/agent/sdk/typescript/dist',
                      'services/interop/crates/layerx-gas-station/src'):
         expected.update(str(path.relative_to(ROOT)) for path in (ROOT / relative).rglob('*') if path.is_file())
@@ -78,7 +78,7 @@ def main():
     expected.update(('human/wallet/attestor/go.mod', 'human/wallet/attestor/go.sum',
                      'apps/wallet/src/account/DepositFlow.tsx',
                      'human/wallet/gateway/test/e2e/wallet-signing-adapters.production.ts',
-                     'human/wallet/gateway/package.json', 'human/wallet/sdk/package.json',
+                     'human/wallet/gateway/package.json', 'sdk/wallet/package.json',
                      'services/agent/sdk/typescript/package.json', 'services/interop/crates/layerx-gas-station/Cargo.toml'))
     require(expected and set(manifest) == expected, 'complete current source and prebuilt artifact manifest required')
     for relative, digest in manifest.items():
@@ -242,7 +242,7 @@ def main():
     ready()
     runtime = dict(config['cases'])
     runtime.update(gateway_url=gateway_url, rpc_url=proxy_url, real_rpc_url=upstream,
-                   control_url=proxy_url, sdk_entry=str(ROOT / 'human/wallet/sdk/dist/index.js'),
+                   control_url=proxy_url, sdk_entry=str(ROOT / 'sdk/wallet/dist/index.js'),
                    evidence_dir=str(STATE), fixture_dir=str(copied), database_url=gateway_env['DATABASE_URL'])
     runtime_path = STATE / 'runtime.json'
     runtime_path.write_text(json.dumps(runtime)); runtime_path.chmod(0o600)

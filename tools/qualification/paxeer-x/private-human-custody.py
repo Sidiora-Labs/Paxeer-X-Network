@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[3]
 NODE = Path('/root/lx-toolchains/node24/bin/node')
 NPM = Path('/root/lx-toolchains/node24/bin/npm')
 WEB = ROOT / 'apps/web'
-SDK = ROOT / 'human/wallet/sdk'
+SDK = ROOT / 'sdk/wallet'
 EVIDENCE = Path(os.environ.get('PRIVATE_HUMAN_CUSTODY_EVIDENCE_ROOT',
     '/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1412'))
 MANIFEST = EVIDENCE / 'build-manifest.json'
@@ -92,11 +92,11 @@ def upstream_sdk_manifest():
     manifest = json.loads(path.read_text())
     require(isinstance(manifest.get('sources'), dict) and isinstance(manifest.get('artifacts'), dict),
             'actual SDK source/artifact build identity required')
-    for relative in ('human/wallet/sdk/src/provider.ts', 'human/wallet/sdk/src/modules/gas-station.ts'):
+    for relative in ('sdk/wallet/src/provider.ts', 'sdk/wallet/src/modules/gas-station.ts'):
         require(manifest['sources'].get(relative) == digest(ROOT / relative), 'upstream SDK source changed: ' + relative)
     actual = hashes(sorted(path for path in (SDK / 'dist').rglob('*') if path.is_file()))
     expected = {relative: value for relative, value in manifest['artifacts'].items()
-                if relative.startswith('human/wallet/sdk/dist/')}
+                if relative.startswith('sdk/wallet/dist/')}
     require(actual and actual == expected and (SDK / 'dist/index.d.ts').is_file(),
             'complete genuine prebuilt SDK artifact identity required')
     return {'manifest': str(path), 'manifest_sha256': hashlib.sha256(path.read_bytes()).hexdigest()}

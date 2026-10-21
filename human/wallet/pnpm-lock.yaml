@@ -12,11 +12,42 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
+  ../../sdk/wallet:
+    dependencies:
+      '@noble/curves':
+        specifier: ^1.9.1
+        version: 1.9.1
+      '@noble/hashes':
+        specifier: ^1.8.0
+        version: 1.8.0
+      '@sidiora/layerx-sdk':
+        specifier: link:../../services/agent/sdk/typescript
+        version: link:../../services/agent/sdk/typescript
+      '@supabase/supabase-js':
+        specifier: ^2.45.4
+        version: 2.117.2
+      viem:
+        specifier: ^2.56.9
+        version: 2.56.9(typescript@5.9.3)(zod@3.25.76)
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.11
+        version: 18.3.31
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@22.20.4)(lightningcss@1.32.0)
+
   demo:
     dependencies:
       '@paxeer/wallet':
         specifier: workspace:*
-        version: link:../sdk
+        version: link:../../../sdk/wallet
       '@radix-ui/react-dialog':
         specifier: ^1.1.6
         version: 1.1.23(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -103,37 +134,6 @@ importers:
       vitest:
         specifier: ^2.1.2
         version: 2.1.9(@types/node@22.20.4)(lightningcss@1.32.0)
-
-  sdk:
-    dependencies:
-      '@noble/curves':
-        specifier: ^1.9.1
-        version: 1.9.1
-      '@noble/hashes':
-        specifier: ^1.8.0
-        version: 1.8.0
-      '@sidiora/layerx-sdk':
-        specifier: link:../../../services/agent/sdk/typescript
-        version: link:../../../services/agent/sdk/typescript
-      '@supabase/supabase-js':
-        specifier: ^2.45.4
-        version: 2.117.2
-      viem:
-        specifier: ^2.56.9
-        version: 2.56.9(typescript@5.9.3)(zod@3.25.76)
-    devDependencies:
-      '@types/react':
-        specifier: ^18.3.11
-        version: 18.3.31
-      react:
-        specifier: ^18.3.1
-        version: 18.3.1
-      typescript:
-        specifier: ^5.6.3
-        version: 5.9.3
-      vitest:
-        specifier: ^3.2.7
-        version: 3.2.7(@types/node@22.20.4)(lightningcss@1.32.0)
 
 packages:
 

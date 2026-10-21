@@ -6,9 +6,9 @@ use layerx_platform_gateway::{unified_service_catalogue, unified_service_route};
 const WALLET: &str = include_str!("../../../../../human/wallet/gateway/src/routes/wallet.ts");
 const SIGN: &str = include_str!("../../../../../human/wallet/gateway/src/routes/sign.ts");
 const OWNER: &str = include_str!("../../../../../human/wallet/gateway/src/index.ts");
-const SDK_PROVIDER: &str = include_str!("../../../../../human/wallet/sdk/src/provider.ts");
-const SDK_LX: &str = include_str!("../../../../../human/wallet/sdk/src/index.ts");
-const SDK_GAS: &str = include_str!("../../../../../human/wallet/sdk/src/modules/gas-station.ts");
+const SDK_PROVIDER: &str = include_str!("../../../../../sdk/wallet/src/provider.ts");
+const SDK_LX: &str = include_str!("../../../../../sdk/wallet/src/index.ts");
+const SDK_GAS: &str = include_str!("../../../../../sdk/wallet/src/modules/gas-station.ts");
 const ARCHIVE: &str = include_str!("../../../../../services/platform/relay_archive/runtime.py");
 
 fn operation(method: &str, target: &str, source: &str) {

@@ -168,3 +168,10 @@ command = "pnpm -C apps/perps -r typecheck && pnpm -C apps/wallet typecheck && p
 exit_code = 2
 log_path = "fleet/logs/layout-5.1.log"
 observed_and_assumption = "The perps typecheck passes, the wallet typecheck fails with the same four errors (GasQuoteRequest did, useSurface caps types, EdDSA ExtendedPoint in the wallet sdk) that human/apps/wallet shows at b19017179 before the move, and pnpm 12 reinstalls the npm-locked web app on its own before the script and copies the file: wallet sdk without its untracked dist, so @paxeer/wallet does not resolve; both are left for the wallet sdk and web dependency owners and task 5.1 stays pending."
+
+[finding.5.2-wallet-demo-typecheck]
+revision = "546a90fce with the task 5.2 move applied"
+command = "pnpm -C human/wallet -r typecheck"
+exit_code = 1
+log_path = "fleet/logs/layout-5.2.log"
+observed_and_assumption = "The gateway and sdk/wallet typechecks pass and the demo fails only with seven TS2786 Dialog JSX errors because a fresh install links the SDK's @types/react 18.3.31 devDependency beside the demo's 19.3.0, the same package graph the lockfile held before the move, which only rewrote importer paths; left for the wallet demo owner and task 5.2 stays pending."

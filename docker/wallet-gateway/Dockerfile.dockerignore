@@ -12,8 +12,9 @@
 !human/wallet/gateway/src/**
 !human/wallet/gateway/migrations/
 !human/wallet/gateway/migrations/*.sql
-!human/wallet/sdk/
-!human/wallet/sdk/package.json
+!sdk/
+!sdk/wallet/
+!sdk/wallet/package.json
 !human/wallet/demo/
 !human/wallet/demo/package.json
 !docker/

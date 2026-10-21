@@ -15,6 +15,7 @@ on:
       - services/platform/**
       - services/interop/**
       - human/wallet/**
+      - sdk/wallet/**
       - apps/explorer/**
       - services/explorer/**
   workflow_dispatch:

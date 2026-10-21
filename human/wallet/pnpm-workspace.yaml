@@ -1,6 +1,6 @@
 packages:
   - "gateway"
-  - "sdk"
+  - "../../sdk/wallet"
   - "demo"
 allowBuilds:
   esbuild: true

@@ -31,6 +31,7 @@ area:human:
           - apps/perps/**
           - apps/wallet/**
           - apps/web/**
+          - sdk/wallet/**
 
 area:contracts:
   - changed-files:

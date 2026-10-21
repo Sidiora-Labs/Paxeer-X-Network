@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 NODE = Path('/root/lx-toolchains/node24/bin/node')
 PNPM = Path('/root/lx-toolchains/node24/private-pnpm/corepack/v1/pnpm/9.15.9/bin/pnpm.cjs')
 EVIDENCE = Path(os.environ.get('WALLET_CUSTODY_RECOVERY_EVIDENCE_ROOT', '/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.11-evidence'))
-SOURCES = ['human/wallet/sdk/src/provider.ts', 'human/wallet/gateway/src/routes/sign.ts',
+SOURCES = ['sdk/wallet/src/provider.ts', 'human/wallet/gateway/src/routes/sign.ts',
            'human/wallet/gateway/src/custody/authorization.ts',
            'human/wallet/gateway/src/agent/actions/orchestrator.ts',
            'human/wallet/gateway/migrations/013_wallet_custody_authorizations.sql',
@@ -31,16 +31,16 @@ def digest(path):
 
 def sources():
     paths = set(SOURCES)
-    for tree in ('human/wallet/sdk/src', 'human/wallet/gateway/src'):
+    for tree in ('sdk/wallet/src', 'human/wallet/gateway/src'):
         paths.update(str(p.relative_to(ROOT)) for p in (ROOT / tree).rglob('*.ts'))
-    for package in ('human/wallet/sdk', 'human/wallet/gateway'):
+    for package in ('sdk/wallet', 'human/wallet/gateway'):
         paths.update(package + '/' + f for f in ('package.json', 'tsconfig.json'))
     return {p: digest(ROOT / p) for p in sorted(paths)}
 
 
 def artifacts():
     result = {}
-    for tree in ('human/wallet/sdk/dist', 'human/wallet/gateway/dist'):
+    for tree in ('sdk/wallet/dist', 'human/wallet/gateway/dist'):
         paths = list((ROOT / tree).rglob('*.js'))
         require(paths, 'actual compiled SDK and gateway artifacts required')
         result.update({str(p.relative_to(ROOT)): digest(p) for p in paths})
@@ -72,7 +72,7 @@ import {createRequire} from 'node:module';
 import {pathToFileURL} from 'node:url';
 const root=process.cwd(), require=createRequire(root+'/human/wallet/gateway/package.json');
 const {Pool}=require('pg');
-const {PaxeerProvider,decodeCustodyAuthorization}=await import(pathToFileURL(root+'/human/wallet/sdk/dist/provider.js'));
+const {PaxeerProvider,decodeCustodyAuthorization}=await import(pathToFileURL(root+'/sdk/wallet/dist/provider.js'));
 const store=await import(pathToFileURL(root+'/human/wallet/gateway/dist/custody/authorization.js'));
 const fixture=JSON.parse(fs.readFileSync(process.env.WALLET_CUSTODY_AUTHORIZATION_FIXTURE,'utf8'));
 const runtime=fixture.runtime;

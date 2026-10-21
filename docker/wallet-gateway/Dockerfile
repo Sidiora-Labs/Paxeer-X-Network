@@ -2,10 +2,10 @@ FROM node:22-bookworm-slim AS build
 ENV COREPACK_HOME=/corepack
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable && corepack prepare pnpm@12.6.0 --activate
-WORKDIR /app
+WORKDIR /app/human/wallet
 COPY human/wallet/package.json human/wallet/pnpm-lock.yaml human/wallet/pnpm-workspace.yaml human/wallet/tsconfig.base.json ./
 COPY human/wallet/gateway/package.json human/wallet/gateway/tsconfig.json ./gateway/
-COPY human/wallet/sdk/package.json ./sdk/
+COPY sdk/wallet/package.json /app/sdk/wallet/
 COPY human/wallet/demo/package.json ./demo/
 RUN pnpm install --frozen-lockfile --filter ./gateway...
 COPY human/wallet/gateway/src ./gateway/src
@@ -27,11 +27,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends gosu \
     && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 WORKDIR /app
-COPY --from=build --chown=node:node /app/node_modules ./node_modules
-COPY --from=build --chown=node:node /app/gateway/node_modules ./gateway/node_modules
-COPY --from=build --chown=node:node /app/gateway/package.json ./gateway/package.json
-COPY --from=build --chown=node:node /app/gateway/dist ./gateway/dist
-COPY --from=build --chown=node:node /app/gateway/migrations ./gateway/migrations
+COPY --from=build --chown=node:node /app/human/wallet/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/human/wallet/gateway/node_modules ./gateway/node_modules
+COPY --from=build --chown=node:node /app/human/wallet/gateway/package.json ./gateway/package.json
+COPY --from=build --chown=node:node /app/human/wallet/gateway/dist ./gateway/dist
+COPY --from=build --chown=node:node /app/human/wallet/gateway/migrations ./gateway/migrations
 COPY --chmod=0555 docker/wallet-gateway/entrypoint.sh /usr/local/bin/wallet-entrypoint
 COPY --chmod=0555 docker/common/env-files.sh /usr/local/bin/layerx-env-files
 COPY docker/wallet-gateway/files.tsv /etc/layerx/files.tsv

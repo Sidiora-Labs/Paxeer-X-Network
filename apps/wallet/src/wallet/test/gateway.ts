@@ -5,7 +5,7 @@ import path from 'node:path';
 import { ethers } from 'ethers';
 import type { WalletConfig } from '../config';
 
-export const FIXTURE_DIR = `${path.resolve(__dirname, '../../../../../human/wallet/sdk/test/fixtures/gateway')}/`;
+export const FIXTURE_DIR = `${path.resolve(__dirname, '../../../../../sdk/wallet/test/fixtures/gateway')}/`;
 export const ACCESS_TOKEN = 'synthetic-access-token';
 export const EMAIL = 'holder@example.test';
 export const EMAIL_CODE = '424242';

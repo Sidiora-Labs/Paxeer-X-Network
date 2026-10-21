@@ -24,7 +24,7 @@ type Plan = {
     signing_requirements: { leg_index: number; action_key: string; authority: string }[];
 };
 
-const SDK_ENDPOINT_DIR = path.resolve(__dirname, '../../../../../human/wallet/sdk/test/fixtures/endpoint');
+const SDK_ENDPOINT_DIR = path.resolve(__dirname, '../../../../../sdk/wallet/test/fixtures/endpoint');
 const GOLDEN_DIR = path.resolve(__dirname, '../../../../../services/human/schema/human-api/golden');
 const LOCAL_DIR = path.resolve(__dirname, 'fixtures');
 

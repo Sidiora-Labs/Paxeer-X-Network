@@ -24,7 +24,7 @@ fn required<T, E: Debug>(result: Result<T, E>, label: &str) -> T {
 }
 
 fn sdk_source_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../human/wallet/sdk/src")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../sdk/wallet/src")
 }
 
 fn golden_root() -> PathBuf {

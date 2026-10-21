@@ -30,7 +30,7 @@ function secret(name: string): string {
 }
 const ownerToken = secret(runtime.owner_token_file);
 const foreignToken = secret(runtime.foreign_owner_token_file);
-const sdk = await import(pathToFileURL(runtime.sdk_entry).href) as typeof import('../../../sdk/src/index.js');
+const sdk = await import(pathToFileURL(runtime.sdk_entry).href) as typeof import('../../../../../sdk/wallet/src/index.js');
 const cases: string[] = [];
 const pool = new Pool({ connectionString: runtime.database_url });
 const submissionStore = {

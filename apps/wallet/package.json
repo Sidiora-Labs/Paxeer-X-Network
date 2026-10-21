@@ -23,7 +23,7 @@
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
     "@number-flow/react": "^0.6.0",
-    "@paxeer/wallet": "link:../../human/wallet/sdk",
+    "@paxeer/wallet": "link:../../sdk/wallet",
     "@react-three/drei": "^9.122.0",
     "@react-three/fiber": "^8.17.10",
     "@scure/bip32": "2.4.0",
