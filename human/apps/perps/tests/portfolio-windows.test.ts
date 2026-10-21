@@ -11,15 +11,32 @@ const NOW = new Date(Date.UTC(2026, 9, 21, 23, 59));
 
 test('windowsAreCalendarDaysOnUtcBoundaries', async () => {
   const grid = await import('../src/widgets/portfolio/PortfolioPerformanceGrid');
-  assert.equal(grid.windowStartKey('7D', NOW), '2026-10-14');
-  assert.equal(grid.windowStartKey('7D', new Date(Date.UTC(2026, 9, 22, 0, 0))), '2026-10-15');
-  assert.equal(grid.windowStartKey('30D', NOW), '2026-09-21');
-  assert.equal(grid.windowStartKey('90D', NOW), '2026-07-23');
+  assert.equal(grid.windowStartKey('7D', NOW), '2026-10-15');
+  assert.equal(grid.windowStartKey('7D', new Date(Date.UTC(2026, 9, 22, 0, 0))), '2026-10-16');
+  assert.equal(grid.windowStartKey('30D', NOW), '2026-09-22');
+  assert.equal(grid.windowStartKey('90D', NOW), '2026-07-24');
   const rows = [day('2026-06-01'), day('2026-09-20'), day('2026-09-21'), day('2026-10-13'), day('2026-10-14T00:00:00Z'), day('2026-10-21')];
-  assert.deepEqual(grid.sliceByRange(rows, '7D', NOW).map(r => r.date), ['2026-10-14T00:00:00Z', '2026-10-21']);
-  assert.deepEqual(grid.sliceByRange(rows, '30D', NOW).map(r => r.date), ['2026-09-21', '2026-10-13', '2026-10-14T00:00:00Z', '2026-10-21']);
+  assert.deepEqual(grid.sliceByRange(rows, '7D', NOW).map(r => r.date), ['2026-10-21']);
+  assert.deepEqual(grid.sliceByRange(rows, '30D', NOW).map(r => r.date), ['2026-10-13', '2026-10-14T00:00:00Z', '2026-10-21']);
   assert.equal(grid.sliceByRange(rows, '90D', NOW).length, 5);
   assert.equal(grid.sliceByRange(rows, 'ALL', NOW).length, 6);
+});
+
+// Boundary: an N-day window is the last N calendar UTC days including today.
+// Clock fixed at 2026-10-21T23:59Z, so 7D is 2026-10-15..2026-10-21 (seven
+// day keys) and 2026-10-14 is outside; one minute later, at 2026-10-22T00:00Z,
+// today rolls over and 7D becomes 2026-10-16..2026-10-22.
+test('sevenDayWindowIsSevenUtcDaysIncludingToday', async () => {
+  const grid = await import('../src/widgets/portfolio/PortfolioPerformanceGrid');
+  const keys = Array.from({ length: 14 }, (_, i) => new Date(Date.UTC(2026, 9, 9 + i)).toISOString().slice(0, 10));
+  assert.equal(keys[0], '2026-10-09');
+  assert.equal(keys[13], '2026-10-22');
+  const rows = keys.map(k => day(k));
+  const week = grid.sliceByRange(rows.slice(0, 13), '7D', NOW).map(r => r.date);
+  assert.deepEqual(week, ['2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21']);
+  const rolled = grid.sliceByRange(rows, '7D', new Date(Date.UTC(2026, 9, 22, 0, 0))).map(r => r.date);
+  assert.deepEqual(rolled, ['2026-10-16', '2026-10-17', '2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22']);
+  assert.equal(grid.windowTotals(grid.sliceByRange(rows.slice(0, 13), '7D', NOW))!.trades, 7);
 });
 
 test('emptyWindowIsNoDataNotZero', async () => {

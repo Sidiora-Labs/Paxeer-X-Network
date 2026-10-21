@@ -13,7 +13,11 @@ import {
 import { Switch } from "@/ui/atoms/switch";
 import { toast } from "@/ui/atoms/use-toast";
 import { usePerpsWallet } from "@/hooks/perps/usePerpsWallet";
-import { useSpotOrderbook, useSpotStats } from "@/hooks/spot/useSpotMarketStream";
+import {
+  useSpotOrderbook,
+  useSpotStats,
+  type SpotOrderbook,
+} from "@/hooks/spot/useSpotMarketStream";
 import { useSpotPortfolio } from "@/hooks/spot/useSpotPortfolio";
 import { dStrToToken } from "@/core/spot/api";
 import { erc20Abi } from "@/core/perps/config";
@@ -66,7 +70,7 @@ import {
 
    Size entry:
      · BASE     — input is in `market.symbol` (e.g. SID, ETH)
-     · USD      — input is in stablecoin USD (uses live mid)
+     · USD      — input is in stablecoin USD (market: best ask / bid)
      · % of Max — 25 / 50 / 75 / 100 of available balance for the side
 
    Submit dispatches to the PECOR engine via `useSpotOrders`:
@@ -113,6 +117,67 @@ export function spotOrderUnits(p: {
   const quoteUnits = parseTokenAmount(toPlainDecimal(p.amount), p.quoteDecimals);
   if (priceUnits <= 0n) return { baseUnits: 0n, quoteUnits };
   return { baseUnits: (quoteUnits * baseScale * PRICE_SCALE) / (priceUnits * quoteScale), quoteUnits };
+}
+
+function isPositivePrice(value: string): boolean {
+  const text = value.trim();
+  if (text === "") return false;
+  try {
+    return parsePrice(toPlainDecimal(text)) > 0n;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The decimal price string an order converts its size at: a market buy at
+ * the best ask and a market sell at the best bid, exactly as the book sent
+ * them; a limit or stop-limit at its own limit price. Without such a price
+ * `price` is "" and `reason` says why, and the form refuses to submit
+ * rather than convert at a guess.
+ */
+export function spotConversionPrice(p: {
+  orderType: SpotOrderType;
+  side: "BUY" | "SELL";
+  limitPrice: string;
+  book: Pick<SpotOrderbook, "bids" | "asks"> | null;
+}): { price: string; reason: string | null } {
+  if (p.orderType !== "market") {
+    return isPositivePrice(p.limitPrice)
+      ? { price: p.limitPrice.trim(), reason: null }
+      : { price: "", reason: "Enter a limit price" };
+  }
+  const level = p.side === "BUY" ? p.book?.asks[0] : p.book?.bids[0];
+  if (level && isPositivePrice(level.priceText)) return { price: level.priceText, reason: null };
+  return {
+    price: "",
+    reason: p.side === "BUY" ? "No asks in the book to price this buy" : "No bids in the book to price this sell",
+  };
+}
+
+/**
+ * Whether selling `baseUnits` (at `baseDecimals`) exceeds a holding of
+ * `raw` integer units at `decimals`, compared in bigint with the holding
+ * floored to the base decimals. An unknown or unreadable holding holds
+ * nothing.
+ */
+export function spotSellExceedsBalance(
+  baseUnits: bigint,
+  holding: { raw: string; decimals: number } | null,
+  baseDecimals: number,
+): boolean {
+  if (!holding) return baseUnits > 0n;
+  let raw: bigint;
+  try {
+    raw = BigInt(holding.raw);
+  } catch {
+    return baseUnits > 0n;
+  }
+  const held =
+    holding.decimals >= baseDecimals
+      ? raw / 10n ** BigInt(holding.decimals - baseDecimals)
+      : raw * 10n ** BigInt(baseDecimals - holding.decimals);
+  return baseUnits > held;
 }
 
 const ORDER_TYPE_LABELS: Record<SpotOrderType, string> = {
@@ -298,15 +363,13 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
     };
   }, [isNativeBase, address, portfolio.holdings]);
 
-  const baseBalance = useMemo(() => {
+  const baseHolding = useMemo((): { raw: string; decimals: number } | null => {
     if (isNativeBase) {
       return paxPointerBalance === null
-        ? 0
-        : Number(formatUnits(paxPointerBalance, market.baseDecimals));
+        ? null
+        : { raw: paxPointerBalance.toString(), decimals: market.baseDecimals };
     }
-    if (!portfolio.holdings) return 0;
-    const lcBase = market.baseToken.toLowerCase();
-    // Match by symbol primarily; fall back to a substring on the token address
+    if (!portfolio.holdings) return null;
     const row = portfolio.holdings.erc20.find((e) => {
       if (e.symbol && e.symbol.toUpperCase() === market.baseToken.toUpperCase())
         return true;
@@ -319,11 +382,11 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
           : typeof row.decimals === "string"
             ? parseInt(row.decimals, 10)
             : market.baseDecimals;
-      return dStrToToken(row.balance, dec);
+      return { raw: row.balance, decimals: dec };
     }
-    void lcBase;
-    return 0;
+    return null;
   }, [portfolio.holdings, market, isNativeBase, paxPointerBalance]);
+  const baseBalance = baseHolding ? dStrToToken(baseHolding.raw, baseHolding.decimals) : 0;
 
   const quoteBalance = useMemo(() => {
     if (!portfolio.holdings) return 0;
@@ -346,32 +409,26 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
   const limitNum = parseFloat(limitPrice) || 0;
   const stopNum = parseFloat(stopPrice) || 0;
 
-  // Convert input to canonical (base, quote) pair given size mode + ref price.
-  const { baseAmount, quoteAmount } = useMemo(() => {
-    if (amountNum <= 0) return { baseAmount: 0, quoteAmount: 0 };
-    const priceForConversion =
-      orderType === "limit"
-        ? limitNum > 0
-          ? limitNum
-          : refPrice
-        : refPrice;
-    if (priceForConversion <= 0) {
-      // No price reference — treat input literally.
-      return sizeMode === "BASE"
-        ? { baseAmount: amountNum, quoteAmount: 0 }
-        : { baseAmount: 0, quoteAmount: amountNum };
+  // Exact (base, quote) units at the order's own conversion price; floats
+  // only for display.
+  const decimalsStable = quoteDecimals(SPOT_STABLECOINS);
+  const conversion = spotConversionPrice({ orderType, side, limitPrice, book: orderbook });
+  const orderUnits = useMemo(() => {
+    if (amountNum <= 0) return null;
+    try {
+      return spotOrderUnits({
+        sizeMode,
+        amount,
+        price: conversion.price,
+        baseDecimals: market.baseDecimals,
+        quoteDecimals: decimalsStable,
+      });
+    } catch {
+      return null;
     }
-    if (sizeMode === "BASE") {
-      return {
-        baseAmount: amountNum,
-        quoteAmount: amountNum * priceForConversion,
-      };
-    }
-    return {
-      baseAmount: amountNum / priceForConversion,
-      quoteAmount: amountNum,
-    };
-  }, [amountNum, sizeMode, orderType, limitNum, refPrice]);
+  }, [amountNum, sizeMode, amount, conversion.price, market.baseDecimals, decimalsStable]);
+  const baseAmount = orderUnits ? Number(formatUnits(orderUnits.baseUnits, market.baseDecimals)) : 0;
+  const quoteAmount = orderUnits ? Number(formatUnits(orderUnits.quoteUnits, decimalsStable)) : 0;
 
   // ── Slippage / min received (market orders) ──
   const slippageBps = Math.round(slippagePct * 100);
@@ -391,7 +448,9 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
 
   // ── Validation ──
   const insufficientBalance =
-    side === "BUY" ? quoteAmount > quoteBalance + 1e-9 : baseAmount > baseBalance + 1e-9;
+    side === "BUY"
+      ? quoteAmount > quoteBalance + 1e-9
+      : orderUnits !== null && spotSellExceedsBalance(orderUnits.baseUnits, baseHolding, market.baseDecimals);
   const limitInvalid =
     (orderType === "limit" || orderType === "stop-limit") && limitNum <= 0;
   const stopInvalid = orderType === "stop-limit" && stopNum <= 0;
@@ -406,6 +465,7 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
     !isConnected ||
     !isCorrectChain ||
     amountInvalid ||
+    conversion.reason !== null ||
     limitInvalid ||
     stopInvalid ||
     insufficientBalance ||
@@ -477,11 +537,9 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
     setSubmitSuccess(null);
 
     const decimalsBase = market.baseDecimals;
-    const decimalsStable = quoteDecimals(SPOT_STABLECOINS);
     const rail = spotOrderRail(orderType, tif, postOnly);
     const atLimit = orderType === "limit";
-    const conversionPrice =
-      orderType === "limit" && limitNum > 0 ? limitPrice : refPrice > 0 ? String(refPrice) : "";
+    const conversionPrice = conversion.price;
 
     try {
       const { baseUnits, quoteUnits } = spotOrderUnits({
@@ -953,7 +1011,7 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
           label="Est. Price"
           value={
             orderType === "market"
-              ? refPrice > 0 ? `$${refPrice.toLocaleString("en-US", { maximumFractionDigits: 4 })}` : "—"
+              ? conversion.price ? `$${Number(conversion.price).toLocaleString("en-US", { maximumFractionDigits: 4 })}` : "—"
               : limitNum > 0 ? `$${limitNum.toLocaleString("en-US", { maximumFractionDigits: 4 })}` : "—"
           }
         />
@@ -997,6 +1055,14 @@ export function SpotOrderForm({ market, compact = false }: SpotOrderFormProps) {
             className="w-full py-3 rounded-[var(--radius-md)] text-sm font-semibold text-white bg-amber-500 transition-all hover:brightness-110"
           >
             Switch to Paxeer
+          </button>
+        ) : conversion.reason !== null && amountNum > 0 ? (
+          <button
+            type="button"
+            disabled
+            className="w-full py-3 rounded-[var(--radius-md)] text-sm font-semibold text-white bg-muted/40 cursor-not-allowed"
+          >
+            {conversion.reason}
           </button>
         ) : insufficientBalance && amountNum > 0 ? (
           <button

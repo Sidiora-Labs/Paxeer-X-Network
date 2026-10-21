@@ -382,13 +382,13 @@ function compactTick(v: number): string {
 const RANGE_DAYS: Record<Exclude<PerformanceRange, "ALL">, number> = { "7D": 7, "30D": 30, "90D": 90 };
 const DAY_MS = 86_400_000;
 
-/** UTC day key (YYYY-MM-DD) N days before `now`, the gateway's day boundary. */
+/** First UTC day key (YYYY-MM-DD) of the last N calendar UTC days including today, the gateway's day boundary. */
 export function windowStartKey(range: Exclude<PerformanceRange, "ALL">, now: Date = new Date()): string {
   const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return new Date(todayUtc - RANGE_DAYS[range] * DAY_MS).toISOString().slice(0, 10);
+  return new Date(todayUtc - (RANGE_DAYS[range] - 1) * DAY_MS).toISOString().slice(0, 10);
 }
 
-/** Rows whose UTC day is on or after today minus N days; ALL keeps every row. */
+/** Rows on the last N calendar UTC days including today; ALL keeps every row. */
 export function sliceByRange(dailyPnl: DailyPnl[], range: PerformanceRange, now: Date = new Date()): DailyPnl[] {
   if (!dailyPnl || dailyPnl.length === 0) return [];
   const sorted = [...dailyPnl].sort((a, b) => a.date.localeCompare(b.date));

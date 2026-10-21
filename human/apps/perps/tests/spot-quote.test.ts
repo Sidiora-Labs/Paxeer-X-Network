@@ -56,3 +56,75 @@ test('plainDecimalRewritesScientificNotation', async () => {
   assert.equal(parseWei('-5e-3'), 0n);
   assert.equal(parseWei('1.5e18'), 1_500_000_000_000_000_000n);
 });
+
+const level = (priceText: string) => ({ price: Number(priceText), priceText, size: 1 });
+const book = { bids: [level('0.9')], asks: [level('1.1')] };
+
+test('marketConvertsAtTheSideBestPriceNotTheMid', async () => {
+  const { spotConversionPrice, spotOrderUnits } = await import('../src/widgets/spot/SpotOrderForm');
+  const buy = spotConversionPrice({ orderType: 'market', side: 'BUY', limitPrice: '', book });
+  assert.deepEqual(buy, { price: '1.1', reason: null });
+  // 11 USD at the 1.1 ask buys 10 base; the 1.0 mid would have said 11.
+  const bought = spotOrderUnits({ sizeMode: 'USD', amount: '11', price: buy.price, baseDecimals: 18, quoteDecimals: 6 });
+  assert.equal(bought.baseUnits, 10_000_000_000_000_000_000n);
+  const sell = spotConversionPrice({ orderType: 'market', side: 'SELL', limitPrice: '7', book });
+  assert.deepEqual(sell, { price: '0.9', reason: null });
+  // 10 base at the 0.9 bid is 9 USD; the 1.0 mid would have said 10.
+  const sold = spotOrderUnits({ sizeMode: 'BASE', amount: '10', price: sell.price, baseDecimals: 18, quoteDecimals: 6 });
+  assert.equal(sold.quoteUnits, 9_000_000n);
+});
+
+test('marketUsesTheBookPriceTextExactly', async () => {
+  const { spotConversionPrice, spotOrderUnits } = await import('../src/widgets/spot/SpotOrderForm');
+  const exact = { bids: [level('0.123456789123456789')], asks: [level('0.2')] };
+  const sell = spotConversionPrice({ orderType: 'market', side: 'SELL', limitPrice: '', book: exact });
+  assert.equal(sell.price, '0.123456789123456789');
+  const units = spotOrderUnits({ sizeMode: 'BASE', amount: '1', price: sell.price, baseDecimals: 18, quoteDecimals: 18 });
+  assert.equal(units.quoteUnits, 123_456_789_123_456_789n);
+  const viaFloat = spotOrderUnits({ sizeMode: 'BASE', amount: '1', price: String(exact.bids[0].price), baseDecimals: 18, quoteDecimals: 18 });
+  assert.equal(viaFloat.quoteUnits, 123_456_789_123_456_780n);
+});
+
+test('emptyBookDisablesMarketWithAReason', async () => {
+  const { spotConversionPrice } = await import('../src/widgets/spot/SpotOrderForm');
+  const noAsks = spotConversionPrice({ orderType: 'market', side: 'BUY', limitPrice: '', book: { bids: [level('1')], asks: [] } });
+  assert.equal(noAsks.price, '');
+  assert.match(noAsks.reason ?? '', /No asks/);
+  const noBook = spotConversionPrice({ orderType: 'market', side: 'SELL', limitPrice: '', book: null });
+  assert.equal(noBook.price, '');
+  assert.match(noBook.reason ?? '', /No bids/);
+  const zeroBid = spotConversionPrice({ orderType: 'market', side: 'SELL', limitPrice: '', book: { bids: [level('0')], asks: [] } });
+  assert.notEqual(zeroBid.reason, null);
+});
+
+test('stopLimitConvertsAtItsOwnLimitPrice', async () => {
+  const { spotConversionPrice, spotOrderUnits } = await import('../src/widgets/spot/SpotOrderForm');
+  const far = { bids: [level('3')], asks: [level('4')] };
+  const buy = spotConversionPrice({ orderType: 'stop-limit', side: 'BUY', limitPrice: ' 2.5 ', book: far });
+  assert.deepEqual(buy, { price: '2.5', reason: null });
+  // 10 USD at the 2.5 limit is 4 base (the 4 ask would say 2.5, the 3.5 mid 2.857...).
+  assert.equal(spotOrderUnits({ sizeMode: 'USD', amount: '10', price: buy.price, baseDecimals: 18, quoteDecimals: 6 }).baseUnits, 4_000_000_000_000_000_000n);
+  const sell = spotConversionPrice({ orderType: 'stop-limit', side: 'SELL', limitPrice: '2.5', book: far });
+  assert.equal(spotOrderUnits({ sizeMode: 'BASE', amount: '2', price: sell.price, baseDecimals: 18, quoteDecimals: 6 }).quoteUnits, 5_000_000n);
+  const blank = spotConversionPrice({ orderType: 'stop-limit', side: 'BUY', limitPrice: '', book: far });
+  assert.deepEqual(blank, { price: '', reason: 'Enter a limit price' });
+});
+
+test('sellBalanceCheckIsBigint', async () => {
+  const { spotSellExceedsBalance, spotOrderUnits } = await import('../src/widgets/spot/SpotOrderForm');
+  const sell = (amount: string, baseDecimals: number) =>
+    spotOrderUnits({ sizeMode: 'BASE', amount, price: '', baseDecimals, quoteDecimals: 6 }).baseUnits;
+  const held = { raw: '1000000000000000001', decimals: 18 };
+  assert.equal(spotSellExceedsBalance(sell('1.000000000000000002', 18), held, 18), true);
+  assert.equal(1.000000000000000002 > 1.000000000000000001 + 1e-9, false);
+  assert.equal(spotSellExceedsBalance(sell('1.000000000000000001', 18), held, 18), false);
+  // Holding at 6 decimals, market at 18: 1.5 held is 1_500_000_000_000_000_000 base units.
+  assert.equal(spotSellExceedsBalance(sell('1.5', 18), { raw: '1500000', decimals: 6 }, 18), false);
+  assert.equal(spotSellExceedsBalance(sell('1.500000000000000001', 18), { raw: '1500000', decimals: 6 }, 18), true);
+  // Holding at 18 decimals, market at 6: floored to 1_999_999 units.
+  assert.equal(spotSellExceedsBalance(sell('2', 6), { raw: '1999999999999999999', decimals: 18 }, 6), true);
+  assert.equal(spotSellExceedsBalance(sell('1.999999', 6), { raw: '1999999999999999999', decimals: 18 }, 6), false);
+  assert.equal(spotSellExceedsBalance(1n, null, 18), true);
+  assert.equal(spotSellExceedsBalance(0n, null, 18), false);
+  assert.equal(spotSellExceedsBalance(1n, { raw: 'abc', decimals: 18 }, 18), true);
+});

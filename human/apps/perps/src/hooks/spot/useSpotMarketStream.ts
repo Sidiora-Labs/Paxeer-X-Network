@@ -42,6 +42,8 @@ export function hasSpotMarketStream(symbol: string | undefined | null): boolean 
 // ── Public types ──────────────────────────────────────────────────────
 export interface SpotBookLevel {
   price: number;
+  /** The level's price exactly as the wire sent it, for exact bigint conversion. */
+  priceText: string;
   size: number;
 }
 
@@ -265,9 +267,8 @@ function normalizeLevels(raw: unknown): SpotBookLevel[] {
   if (!Array.isArray(raw)) return [];
   const out: SpotBookLevel[] = [];
   for (const r of raw) {
-    const price = Array.isArray(r)
-      ? Number(r[0])
-      : Number((r as Record<string, unknown>)?.price);
+    const rawPrice = Array.isArray(r) ? r[0] : (r as Record<string, unknown>)?.price;
+    const price = Number(rawPrice);
     const size = Array.isArray(r)
       ? Number(r[1])
       : Number(
@@ -275,7 +276,7 @@ function normalizeLevels(raw: unknown): SpotBookLevel[] {
             (r as Record<string, unknown>)?.quantity,
         );
     if (Number.isFinite(price) && Number.isFinite(size)) {
-      out.push({ price, size });
+      out.push({ price, priceText: String(rawPrice).trim(), size });
     }
   }
   return out;

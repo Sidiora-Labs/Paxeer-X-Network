@@ -2596,3 +2596,11 @@ exit = 1
 log = "UPG-F1-keeper-test.log"
 observed = "TestFixturesAreConsistent and TestPoolTokenBalancesMatchGolden fail only because golden.json still records 272 holders of pool token 0x471368EF4E11c6f8647e6743031Dfc346cB8A99c while holders.json lists the 285 that sum to totalSupply; every other selected test passes."
 assumption = "golden.json is re-recorded with the 285-holder list; both tests stay unchanged."
+
+[finding.perps-portfolio-window-days-ruling]
+revision = "47a104042"
+command = "node --test --import tsx tests/spot-quote.test.ts tests/portfolio-windows.test.ts tests/v6120-invariants.test.ts (human/apps/perps)"
+exit = 0
+log = "FX-HP-7-verify.log"
+observed = "Ruled: windowStartKey now starts N-1 days before today so 7D/30D/90D cover N UTC days including today; windowsAreCalendarDaysOnUtcBoundaries pins rewritten at a 2026-10-21T23:59Z clock: 7D start 2026-10-14 -> 2026-10-15, 7D next-day start 2026-10-15 -> 2026-10-16, 30D start 2026-09-21 -> 2026-09-22, 90D start 2026-07-23 -> 2026-07-24, 7D slice [2026-10-14T00:00:00Z, 2026-10-21] -> [2026-10-21], 30D slice drops 2026-09-21, because the old pins asserted the extra-day bug."
+assumption = "The 90D slice length (5) and every other assertion are unchanged."
