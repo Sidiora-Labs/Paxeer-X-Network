@@ -46,8 +46,8 @@ reviews:
     - "!**/go.sum"
     - "!**/Cargo.lock"
     - "!**/mix.lock"
-    - "!explorer/backend/deps/**"
-    - "!explorer/frontend/public/**"
+    - "!services/explorer/backend/deps/**"
+    - "!apps/explorer/public/**"
     - "!CHANGELOG.md"
   path_instructions:
     - path: "**"
@@ -83,12 +83,12 @@ reviews:
       instructions: >-
         Solidity. Check access control, reentrancy, unchecked external calls,
         integer handling, upgrade safety and event coverage.
-    - path: "explorer/backend/**/*.{ex,exs}"
+    - path: "services/explorer/backend/**/*.{ex,exs}"
       instructions: >-
         Elixir Blockscout fork. Keep upstream style; check Ecto query safety,
         N+1 queries, migrations that lock hot tables, and JSON API shapes
         matching the frontend types.
-    - path: "explorer/frontend/**/*.{ts,tsx}"
+    - path: "apps/explorer/**/*.{ts,tsx}"
       instructions: >-
         Next.js Blockscout fork with Chakra v3. Check that API types match the
         backend JSON, that feature flags gate Paxeer X surfaces, and that no

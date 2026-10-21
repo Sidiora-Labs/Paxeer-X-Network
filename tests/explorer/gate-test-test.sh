@@ -89,8 +89,8 @@ refute_file() {
 repository=$work_dir/repository
 log_dir=$work_dir/logs
 stub_bin=$work_dir/bin
-mkdir -p "$repository/scripts/explorer" "$repository/explorer/deploy/tools" \
-    "$repository/explorer/frontend" "$stub_bin"
+mkdir -p "$repository/scripts/explorer" "$repository/services/explorer/deploy/tools" \
+    "$repository/apps/explorer" "$stub_bin"
 
 cp "$gate_script" "$repository/scripts/explorer/gate-test.sh"
 chmod +x "$repository/scripts/explorer/gate-test.sh"
@@ -105,11 +105,11 @@ for suite in \
     apps/explorer/test/explorer/chain/paxeer_x/status_test.exs \
     apps/indexer/test/indexer/transform/paxeer_x_logs_test.exs \
     apps/explorer/test/explorer/chain/block_test.exs; do
-    mkdir -p "$repository/explorer/backend/$(dirname "$suite")"
-    printf 'defmodule Throwaway do\nend\n' >"$repository/explorer/backend/$suite"
+    mkdir -p "$repository/services/explorer/backend/$(dirname "$suite")"
+    printf 'defmodule Throwaway do\nend\n' >"$repository/services/explorer/backend/$suite"
 done
 
-cat >"$repository/explorer/deploy/tools/mix-in-builder.sh" <<'RUNNER'
+cat >"$repository/services/explorer/deploy/tools/mix-in-builder.sh" <<'RUNNER'
 #!/bin/sh
 set -eu
 printf 'mix %s\n' "$*" >>"$GATE_TEST_RECORD"
@@ -119,7 +119,7 @@ if [ -n "${GATE_TEST_FAIL_ON:-}" ]; then
     esac
 fi
 RUNNER
-chmod +x "$repository/explorer/deploy/tools/mix-in-builder.sh"
+chmod +x "$repository/services/explorer/deploy/tools/mix-in-builder.sh"
 
 cat >"$stub_bin/yarn" <<'YARN'
 #!/bin/sh
@@ -129,7 +129,7 @@ YARN
 chmod +x "$stub_bin/yarn"
 
 printf '{\n  "scripts": {\n    "lint:tsc": "tsc",\n    "test:vitest": "vitest"\n  }\n}\n' \
-    >"$repository/explorer/frontend/package.json"
+    >"$repository/apps/explorer/package.json"
 
 PATH=$stub_bin:$PATH
 export PATH

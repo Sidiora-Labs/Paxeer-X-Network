@@ -5,7 +5,8 @@ on:
     branches:
       - main
     paths:
-      - 'explorer/**'
+      - 'apps/explorer/**'
+      - 'services/explorer/**'
       - 'docker/explorer-*/**'
       - '.github/workflows/explorer-images.yml'
   workflow_dispatch:
@@ -28,7 +29,7 @@ jobs:
       matrix:
         include:
           - image: paxeer-x-explorer-backend
-            context: explorer/backend
+            context: services/explorer/backend
             dockerfile: docker/explorer-backend/Dockerfile
             build_args: |
               RELEASE_VERSION=10.2.6

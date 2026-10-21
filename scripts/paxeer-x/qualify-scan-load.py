@@ -9,7 +9,7 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
-FRONTEND = ROOT / 'explorer/frontend'
+FRONTEND = ROOT / 'apps/explorer'
 FILTERS = [
     'lib/api', 'ui/pages', 'ui/shared/pagination', 'ui/shared/nft',
     'ui/address/utils', 'ui/address/details/AddressQrCode', 'ui/address/AddressCoinBalance',

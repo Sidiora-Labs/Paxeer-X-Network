@@ -54,12 +54,12 @@ ramps|docker/ramps/Dockerfile|services/platform/ramps/Dockerfile|.
 hpx-registry|docker/hpx-registry/Dockerfile|tools/hpx/registry/Dockerfile|.
 flyci-controller|docker/flyci-controller/Dockerfile|tools/flyci/controller/Dockerfile|.
 flyci-runner|docker/flyci-runner/Dockerfile|tools/flyci/runner/Dockerfile|.
-explorer-frontend|docker/explorer-frontend/Dockerfile|explorer/frontend/Dockerfile|.
-explorer-sig-provider|docker/explorer-sig-provider/Dockerfile|explorer/services/sig-provider/Dockerfile|.
-explorer-smart-contract-verifier|docker/explorer-smart-contract-verifier/Dockerfile|explorer/services/smart-contract-verifier/Dockerfile|.
-explorer-backend|docker/explorer-backend/Dockerfile|explorer/backend/docker/Dockerfile|explorer/backend
-explorer-backend|docker/explorer-backend/oldUI.Dockerfile|explorer/backend/docker/oldUI.Dockerfile|explorer/backend
-explorer-elixir-builder|docker/explorer-elixir-builder/Dockerfile|explorer/deploy/tools/Dockerfile.elixir-builder|.
+explorer-frontend|docker/explorer-frontend/Dockerfile|apps/explorer/Dockerfile|.
+explorer-sig-provider|docker/explorer-sig-provider/Dockerfile|services/explorer/services/sig-provider/Dockerfile|.
+explorer-smart-contract-verifier|docker/explorer-smart-contract-verifier/Dockerfile|services/explorer/services/smart-contract-verifier/Dockerfile|.
+explorer-backend|docker/explorer-backend/Dockerfile|services/explorer/backend/docker/Dockerfile|services/explorer/backend
+explorer-backend|docker/explorer-backend/oldUI.Dockerfile|services/explorer/backend/docker/oldUI.Dockerfile|services/explorer/backend
+explorer-elixir-builder|docker/explorer-elixir-builder/Dockerfile|services/explorer/deploy/tools/Dockerfile.elixir-builder|.
 localnode|docker/localnode/Dockerfile|docker/localnode/Dockerfile|.
 rpcnode|docker/rpcnode/Dockerfile|docker/rpcnode/Dockerfile|.
 bridge-relayer|docker/bridge-relayer/Dockerfile|docker/bridge-relayer/Dockerfile|.
@@ -76,9 +76,9 @@ layerx|docker/layerx/Dockerfile.dockerignore|Dockerfile.dockerignore
 wallet-pwa|docker/wallet-pwa/Dockerfile.dockerignore|human/apps/wallet/.dockerignore
 web|docker/web/Dockerfile.dockerignore|human/apps/web/Dockerfile.dockerignore
 platform-node|docker/platform-node/Dockerfile.dockerignore|services/platform/hosted/node/Dockerfile.dockerignore
-explorer-frontend|docker/explorer-frontend/Dockerfile.dockerignore|explorer/frontend/.dockerignore
-explorer-sig-provider|docker/explorer-sig-provider/Dockerfile.dockerignore|explorer/services/sig-provider/.dockerignore
-explorer-smart-contract-verifier|docker/explorer-smart-contract-verifier/Dockerfile.dockerignore|explorer/services/smart-contract-verifier/.dockerignore
+explorer-frontend|docker/explorer-frontend/Dockerfile.dockerignore|apps/explorer/.dockerignore
+explorer-sig-provider|docker/explorer-sig-provider/Dockerfile.dockerignore|services/explorer/services/sig-provider/.dockerignore
+explorer-smart-contract-verifier|docker/explorer-smart-contract-verifier/Dockerfile.dockerignore|services/explorer/services/smart-contract-verifier/.dockerignore
 '
 
 # other stale wordings of a moved file or of a sub-directory build context: service|fixed string
@@ -97,7 +97,7 @@ consensus/networks/local/localnode/Dockerfile
 consensus/spec/ivy-proofs/Dockerfile
 consensus/test/docker/Dockerfile
 consensus/test/e2e/docker/Dockerfile
-explorer/backend/.devcontainer/Dockerfile
+services/explorer/backend/.devcontainer/Dockerfile
 services/platform/hosted/human/Dockerfile
 services/platform/hosted/human/Dockerfile.dockerignore
 sdk/contrib/devtools/dockerfile
@@ -116,7 +116,7 @@ wasm/contrib/prototools-docker/Dockerfile
 REFERENCE_EXEMPT=(
     ':(exclude)spec'
     ':(exclude)CHANGELOG.md'
-    ':(exclude)explorer/backend/CHANGELOG.md'
+    ':(exclude)services/explorer/backend/CHANGELOG.md'
     ':(exclude)GOTCHA.kvx'
     ':(exclude)tools/containers/check.sh'
 )
@@ -124,7 +124,7 @@ REFERENCE_EXEMPT=(
 ROOT_TOKEN_EXEMPT=(
     ':(exclude)*.md'
     ':(exclude).devcontainer'
-    ':(exclude)explorer/backend'
+    ':(exclude)services/explorer/backend'
     ':(exclude)consensus'
     ':(exclude)sdk/contrib'
     ':(exclude)storage'

@@ -71,7 +71,7 @@ REASONS = {
 CONTAINER_RUNTIME = re.compile(
     r"(?:^|[;&|(`])\s*(?:sudo\s+)?(?:docker|podman)\s"
     r"|scripts/explorer/lint-backend\.sh"
-    r"|explorer/deploy/tools/mix-in-builder\.sh",
+    r"|services/explorer/deploy/tools/mix-in-builder\.sh",
     re.MULTILINE,
 )
 MATRIX_REFERENCE = re.compile(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}")

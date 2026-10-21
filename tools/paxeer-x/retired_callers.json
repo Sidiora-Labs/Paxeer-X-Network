@@ -596,8 +596,8 @@
         "paxeer-x/receipts"
       ],
       "deleted_trees": [
-        "explorer/backend/apps/indexer/lib/indexer/fetcher/paxeer_x_kernel_receipts.ex",
-        "explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsTable.tsx"
+        "services/explorer/backend/apps/indexer/lib/indexer/fetcher/paxeer_x_kernel_receipts.ex",
+        "apps/explorer/ui/paxeerX/anchors/PaxeerXAnchorsTable.tsx"
       ],
       "replacement": "native block and transaction pages show the data; the unified account folds into the native address page"
     },

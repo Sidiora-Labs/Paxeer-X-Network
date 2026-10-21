@@ -1,7 +1,7 @@
 FROM ghcr.io/blockscout/services-base:latest AS chef
 
 FROM chef AS plan
-COPY explorer/services/sig-provider .
+COPY services/explorer/services/sig-provider .
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS cache
@@ -10,7 +10,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 
 FROM chef AS build
 
-COPY explorer/services/sig-provider .
+COPY services/explorer/services/sig-provider .
 COPY --from=cache /app/target target
 COPY --from=cache $CARGO_HOME $CARGO_HOME
 RUN cargo build --release

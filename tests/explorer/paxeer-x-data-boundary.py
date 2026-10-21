@@ -16,7 +16,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2] / "tools"
 BUILD = Path(os.environ.get("LAYERX_BUILD_DIR", ROOT / "build")).resolve()
-BACKEND = ROOT / "explorer/backend"
+BACKEND = ROOT / "services/explorer/backend"
 TOOLCHAIN_IMAGE = "task23-1-toolchain:local"
 POSTGRES_IMAGE = "postgres:15-alpine"
 PG_CONTAINER = "task22-1-postgres"
@@ -97,8 +97,8 @@ def prerequisites():
         if not os.environ.get(name) or not Path(os.environ[name]).exists():
             missing.append(name + " (dedicated genuine kernel/relay fixture)")
     for name in ("deps", "_build"):
-        if not (KERNEL_ROOT / "explorer/backend" / name).is_dir():
-            missing.append("prebuilt explorer/backend/" + name)
+        if not (KERNEL_ROOT / "services/explorer/backend" / name).is_dir():
+            missing.append("prebuilt services/explorer/backend/" + name)
     if shutil.which("docker"):
         for image in (TOOLCHAIN_IMAGE, POSTGRES_IMAGE):
             if subprocess.run(["docker", "image", "inspect", image], stdout=subprocess.DEVNULL,
@@ -301,7 +301,7 @@ class KernelReceipts:
 
     def migrate(self, env):
         script = "mix ecto.migrate --no-compile"
-        output = self.docker("run", "--rm", "--network", "host", "-v", f"{KERNEL_ROOT}:/app", "-v", f"{KERNEL_BUILD}:/kernel-build:ro", "-w", "/app/explorer/backend",
+        output = self.docker("run", "--rm", "--network", "host", "-v", f"{KERNEL_ROOT}:/app", "-v", f"{KERNEL_BUILD}:/kernel-build:ro", "-w", "/app/services/explorer/backend",
                              *self.env_args(env), TOOLCHAIN_IMAGE, "sh", "-c", script)
         (self.log_dir / "task22-1-migrate.log").write_text(output)
         for table in ("lx_receipts", "lx_kernel_receipt_cursors"):
@@ -320,7 +320,7 @@ class KernelReceipts:
         self.stop_api()
         self.api_starts += 1
         self.docker("run", "-d", "--name", API_CONTAINER, "--network", "host", "-v", f"{KERNEL_ROOT}:/app", "-v", f"{KERNEL_BUILD}:/kernel-build:ro",
-                    "-w", "/app/explorer/backend", *self.env_args(env), TOOLCHAIN_IMAGE,
+                    "-w", "/app/services/explorer/backend", *self.env_args(env), TOOLCHAIN_IMAGE,
                     "sh", "-c", "mix phx.server --no-compile")
         self.relay.until(lambda: self.api_ready(), "explorer API start", 900)
 
@@ -1382,7 +1382,7 @@ def unified_pagination():
     IO.puts("EXPIRED_CURSOR=" <> token)
     '''
     signed = subprocess.run(["mix","run","--no-compile","--no-deps-check","--no-start","-e",signer],
-                            cwd=pagination_root/"explorer/backend", env={**os.environ,"PAXEER_X_GATE_SECRET_KEY_BASE":secret,
+                            cwd=pagination_root/"services/explorer/backend", env={**os.environ,"PAXEER_X_GATE_SECRET_KEY_BASE":secret,
                             "PAXEER_X_GATE_CURSOR":first["page_cursor"]},capture_output=True,text=True,timeout=30)
     if signed.returncode:
         raise RuntimeError("real Phoenix cursor expiry setup failed")
@@ -1444,7 +1444,7 @@ def unified_pagination():
       } finally { await browser.close(); }
     })().catch(error => { console.error(error.message); process.exit(1); });
     '''
-    result = subprocess.run(["node","-e",browser],cwd=pagination_root/"explorer/frontend",text=True,
+    result = subprocess.run(["node","-e",browser],cwd=pagination_root/"apps/explorer",text=True,
                             input=json.dumps({"frontend":frontend,"account":account,"cursor":first["page_cursor"],"pages":pages}),timeout=180)
     assert result.returncode == 0, "real browser pagination gate failed"
     sql(f"UPDATE blocks SET consensus=false WHERE hash={bytea(block_hashes[119])};")
@@ -1498,7 +1498,7 @@ def receipt_refresh():
         require(hashlib.sha256(executable.read_bytes()).hexdigest() == producer["sha256"],
                 "actual proof producer revision changed")
     node = os.environ.get("LAYERX_RECEIPT_REFRESH_NODE", "/root/lx-toolchains/node24/bin/node")
-    frontend_root = KERNEL_ROOT / "explorer/frontend"
+    frontend_root = KERNEL_ROOT / "apps/explorer"
     missing = []
     if not Path(node).is_file():
         missing.append("pinned Node executable")

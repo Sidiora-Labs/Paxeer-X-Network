@@ -938,7 +938,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.1]
 title = "Split explorer: frontend to apps/explorer, backend, services and deploy to services/explorer"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 6

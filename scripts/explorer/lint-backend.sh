@@ -3,8 +3,8 @@
 # lint-backend.sh
 #
 # The explorer backend lint gate: formatting and static analysis over the
-# Elixir umbrella under explorer/backend. Both checks run through
-# explorer/deploy/tools/mix-in-builder.sh, so the continuous-integration job
+# Elixir umbrella under services/explorer/backend. Both checks run through
+# services/explorer/deploy/tools/mix-in-builder.sh, so the continuous-integration job
 # and a developer run the same mix invocations against the same pinned
 # toolchain.
 #
@@ -23,7 +23,7 @@ set -eu
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 repo_root=$(CDPATH='' cd -- "$script_dir/../.." && pwd -P)
-runner=$repo_root/explorer/deploy/tools/mix-in-builder.sh
+runner=$repo_root/services/explorer/deploy/tools/mix-in-builder.sh
 log_dir=${EXPLORER_LINT_LOG_DIR:-$repo_root/.logs/explorer-lint}
 
 first_status=0
@@ -71,7 +71,7 @@ run_check() {
   log "mix $* failed with exit code $status, log $check_log"
   if [ "$first_status" -eq 0 ]; then
     first_status=$status
-    first_command="explorer/deploy/tools/mix-in-builder.sh $*"
+    first_command="services/explorer/deploy/tools/mix-in-builder.sh $*"
     first_log=$check_log
   fi
   return 0

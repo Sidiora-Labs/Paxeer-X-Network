@@ -34,7 +34,7 @@ def read_json(path):
 try:
     os.umask(0o077)
     root = Path.cwd().resolve()
-    frontend = root / 'explorer/frontend'
+    frontend = root / 'apps/explorer'
     raw = os.environ.get('PAXEER_X_EVIDENCE_DIR')
     require(bool(raw), 'PAXEER_X_EVIDENCE_DIR is required')
     evidence = Path(raw)

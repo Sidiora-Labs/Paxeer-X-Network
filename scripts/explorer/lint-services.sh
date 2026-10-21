@@ -27,7 +27,7 @@ if ! command -v protoc-gen-openapiv2 >/dev/null 2>&1; then
 fi
 
 for service in smart-contract-verifier sig-provider; do
-    cd "$root/explorer/services/$service"
+    cd "$root/services/explorer/services/$service"
     cargo fmt --all --check
     cargo clippy --all-targets --locked -- -D warnings
 done

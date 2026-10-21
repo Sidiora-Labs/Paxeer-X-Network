@@ -4,10 +4,10 @@
 #
 # The explorer test gate, the path the workflow contract names as the test
 # gate. It runs the backend Paxeer X suites through
-# explorer/deploy/tools/mix-in-builder.sh, one invocation per umbrella
+# services/explorer/deploy/tools/mix-in-builder.sh, one invocation per umbrella
 # application so that each of them gets a database sidecar and a virtual
 # machine of its own, and then the frontend type check and the frontend vitest
-# suite from explorer/frontend. Run it from anywhere:
+# suite from apps/explorer. Run it from anywhere:
 #
 #   scripts/explorer/gate-test.sh
 #   scripts/explorer/gate-test.sh --check
@@ -33,10 +33,10 @@ readonly KILLED_STATUS=137
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 repo_root=$(CDPATH='' cd -- "$script_dir/../.." && pwd -P)
-runner=$repo_root/explorer/deploy/tools/mix-in-builder.sh
+runner=$repo_root/services/explorer/deploy/tools/mix-in-builder.sh
 dockerfile=$repo_root/docker/explorer-elixir-builder/Dockerfile
-backend_dir=$repo_root/explorer/backend
-frontend_dir=$repo_root/explorer/frontend
+backend_dir=$repo_root/services/explorer/backend
+frontend_dir=$repo_root/apps/explorer
 log_dir=${EXPLORER_GATE_LOG_DIR:-$repo_root/build/explorer-gates}
 budget=${EXPLORER_GATE_BUDGET_SECONDS:-$DEFAULT_BUDGET_SECONDS}
 

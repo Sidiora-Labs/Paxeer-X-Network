@@ -3,10 +3,10 @@
 # test-ratio.sh
 #
 # The explorer test-ratio gate. For a git range it lists the files the range
-# changes under explorer/, classifies each one as a source file, a test file or
-# neither, and fails when the range carries fewer test files than source files
-# or when a changed source file is left without a changed test that references
-# it.
+# changes under apps/explorer/ and services/explorer/, classifies each one as a
+# source file, a test file or neither, and fails when the range carries fewer
+# test files than source files or when a changed source file is left without a
+# changed test that references it.
 #
 # Run from anywhere inside the repository:
 #
@@ -37,8 +37,8 @@ Usage: scripts/explorer/test-ratio.sh BASE..HEAD
        scripts/explorer/test-ratio.sh BASE...HEAD
        scripts/explorer/test-ratio.sh BASE HEAD
 
-Counts the source files and the test files the range changes under explorer/
-and fails when the test files are fewer than the source files or when a changed
+Counts the source files and the test files the range changes under apps/explorer/
+and services/explorer/ and fails when the test files are fewer than the source files or when a changed
 source file has no changed test that references it. BASE...HEAD measures from
 the merge base of the two revisions, which is the range the pull request job
 passes.
@@ -328,7 +328,7 @@ references() {
     return 1
 }
 
-git diff --name-only --diff-filter=ACMR "$base_rev" "$head_rev" -- explorer >"$work_dir/changed"
+git diff --name-only --diff-filter=ACMR "$base_rev" "$head_rev" -- apps/explorer services/explorer >"$work_dir/changed"
 
 while IFS= read -r changed_path; do
     [ -n "$changed_path" ] || continue
@@ -397,7 +397,7 @@ if [ "$counted_tests" -lt "$source_count" ]; then
 fi
 
 if [ "$failed" -ne 0 ]; then
-    log "every changed source file under explorer/ needs a changed test that references it"
+    log "every changed source file under apps/explorer/ or services/explorer/ needs a changed test that references it"
     exit 1
 fi
 

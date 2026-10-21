@@ -91,8 +91,8 @@ git config commit.gpgsign false
 git config user.email "test-ratio@paxeer.invalid"
 git config user.name "Test Ratio"
 
-mkdir -p explorer
-cat >explorer/README.md <<'EOF'
+mkdir -p apps/explorer services/explorer
+cat >services/explorer/README.md <<'EOF'
 # Explorer
 
 The throwaway repository the test-ratio test measures ranges in.
@@ -103,16 +103,16 @@ base_rev=$(commit_all "Add the explorer directory")
 # A satisfied ratio: an Elixir module with its mirror test and a frontend
 # component with the co-located test that imports it.
 # ---------------------------------------------------------------------------
-mkdir -p explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x
-cat >explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/identity.ex <<'EOF'
+mkdir -p services/explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x
+cat >services/explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/identity.ex <<'EOF'
 defmodule Explorer.Chain.PaxeerX.Identity do
   @moduledoc "Resolves a kernel identity to the address bound to it."
 
   def resolve(term) when is_binary(term), do: {:ok, term}
 end
 EOF
-mkdir -p explorer/backend/apps/explorer/test/explorer/chain/paxeer_x
-cat >explorer/backend/apps/explorer/test/explorer/chain/paxeer_x/identity_test.exs <<'EOF'
+mkdir -p services/explorer/backend/apps/explorer/test/explorer/chain/paxeer_x
+cat >services/explorer/backend/apps/explorer/test/explorer/chain/paxeer_x/identity_test.exs <<'EOF'
 defmodule Explorer.Chain.PaxeerX.IdentityTest do
   use ExUnit.Case, async: true
 
@@ -123,13 +123,13 @@ defmodule Explorer.Chain.PaxeerX.IdentityTest do
   end
 end
 EOF
-mkdir -p explorer/frontend/ui/paxeerX/receipts
-cat >explorer/frontend/ui/paxeerX/receipts/ReceiptDetails.tsx <<'EOF'
+mkdir -p apps/explorer/ui/paxeerX/receipts
+cat >apps/explorer/ui/paxeerX/receipts/ReceiptDetails.tsx <<'EOF'
 export default function ReceiptDetails() {
   return null;
 }
 EOF
-cat >explorer/frontend/ui/paxeerX/receipts/ReceiptDetails.spec.tsx <<'EOF'
+cat >apps/explorer/ui/paxeerX/receipts/ReceiptDetails.spec.tsx <<'EOF'
 import ReceiptDetails from './ReceiptDetails';
 
 it('renders the receipt fields', () => {
@@ -152,21 +152,21 @@ assert_says "the test ratio holds"
 # ---------------------------------------------------------------------------
 # An unsatisfied ratio: two modules, one test.
 # ---------------------------------------------------------------------------
-cat >explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/anchor.ex <<'EOF'
+cat >services/explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/anchor.ex <<'EOF'
 defmodule Explorer.Chain.PaxeerX.Anchor do
   @moduledoc "An anchor the kernel wrote to the chain."
 
   def settled?(anchor), do: anchor != nil
 end
 EOF
-cat >explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/capability.ex <<'EOF'
+cat >services/explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/capability.ex <<'EOF'
 defmodule Explorer.Chain.PaxeerX.Capability do
   @moduledoc "A capability an account holds."
 
   def active?(capability), do: capability != nil
 end
 EOF
-cat >explorer/backend/apps/explorer/test/explorer/chain/paxeer_x/anchor_test.exs <<'EOF'
+cat >services/explorer/backend/apps/explorer/test/explorer/chain/paxeer_x/anchor_test.exs <<'EOF'
 defmodule Explorer.Chain.PaxeerX.AnchorTest do
   use ExUnit.Case, async: true
 
@@ -182,20 +182,20 @@ unsatisfied_rev=$(commit_all "Add two modules with one test between them")
 run_case "an unsatisfied ratio" 1 "$satisfied_rev..$unsatisfied_rev"
 assert_says "source files changed: 2"
 assert_says "test files changed: 1 (1 referencing a changed source file)"
-assert_says "no changed test references explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/capability.ex"
-refute_says "no changed test references explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/anchor.ex"
+assert_says "no changed test references services/explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/capability.ex"
+refute_says "no changed test references services/explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/anchor.ex"
 assert_says "FAILED: 1 referencing test file(s) for 2 changed source file(s)"
 
 # ---------------------------------------------------------------------------
 # A test that references nothing the range changed.
 # ---------------------------------------------------------------------------
-mkdir -p explorer/frontend/lib/paxeerX
-cat >explorer/frontend/lib/paxeerX/formatRung.ts <<'EOF'
+mkdir -p apps/explorer/lib/paxeerX
+cat >apps/explorer/lib/paxeerX/formatRung.ts <<'EOF'
 export function formatRung(rung: number): string {
   return `rung ${ rung }`;
 }
 EOF
-cat >explorer/frontend/lib/paxeerX/unrelated.spec.ts <<'EOF'
+cat >apps/explorer/lib/paxeerX/unrelated.spec.ts <<'EOF'
 import { shortenHash } from 'toolkit/utils/shortenHash';
 
 it('shortens a hash', () => {
@@ -206,34 +206,34 @@ unreferencing_rev=$(commit_all "Add a helper and a test that measures something 
 
 run_case "a test that references nothing changed" 1 "$unsatisfied_rev..$unreferencing_rev"
 assert_says "test files changed: 1 (0 referencing a changed source file)"
-assert_says "no changed test references explorer/frontend/lib/paxeerX/formatRung.ts"
-assert_says "explorer/frontend/lib/paxeerX/unrelated.spec.ts references no changed source file"
+assert_says "no changed test references apps/explorer/lib/paxeerX/formatRung.ts"
+assert_says "apps/explorer/lib/paxeerX/unrelated.spec.ts references no changed source file"
 
 # ---------------------------------------------------------------------------
 # Shell, configuration and documentation carry no test requirement.
 # ---------------------------------------------------------------------------
-mkdir -p explorer/deploy/tools explorer/deploy/railway explorer/frontend/configs/envs explorer/frontend/public/static/paxeer-x
-cat >explorer/deploy/tools/report.sh <<'EOF'
+mkdir -p services/explorer/deploy/tools services/explorer/deploy/railway apps/explorer/configs/envs apps/explorer/public/static/paxeer-x
+cat >services/explorer/deploy/tools/report.sh <<'EOF'
 #!/bin/sh
 set -eu
 printf 'the explorer deployment definitions\n'
 EOF
-chmod +x explorer/deploy/tools/report.sh
-cat >explorer/deploy/railway/backend.json <<'EOF'
+chmod +x services/explorer/deploy/tools/report.sh
+cat >services/explorer/deploy/railway/backend.json <<'EOF'
 { "build": { "builder": "DOCKERFILE" } }
 EOF
-cat >explorer/deploy/compose.yml <<'EOF'
+cat >services/explorer/deploy/compose.yml <<'EOF'
 services:
   backend:
     image: explorer-backend
 EOF
-cat >explorer/frontend/configs/envs/paxeer-x.env <<'EOF'
+cat >apps/explorer/configs/envs/paxeer-x.env <<'EOF'
 NEXT_PUBLIC_NETWORK_NAME=Paxeer X Network
 EOF
-cat >explorer/frontend/public/static/paxeer-x/logo.svg <<'EOF'
+cat >apps/explorer/public/static/paxeer-x/logo.svg <<'EOF'
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"></svg>
 EOF
-cat >>explorer/README.md <<'EOF'
+cat >>services/explorer/README.md <<'EOF'
 
 The deployment definitions live under `deploy/`.
 EOF
@@ -254,13 +254,13 @@ assert_says "the range changes no explorer source file"
 # Rust: a module under src/ is a source file, a file under tests/ is a test,
 # and a module carrying its own #[cfg(test)] block is a test.
 # ---------------------------------------------------------------------------
-mkdir -p explorer/services/sig-provider/src explorer/services/sig-provider/tests
-cat >explorer/services/sig-provider/src/rung.rs <<'EOF'
+mkdir -p services/explorer/services/sig-provider/src services/explorer/services/sig-provider/tests
+cat >services/explorer/services/sig-provider/src/rung.rs <<'EOF'
 pub fn settlement_rung(height: u64) -> u64 {
     height / 64
 }
 EOF
-cat >explorer/services/sig-provider/tests/settlement.rs <<'EOF'
+cat >services/explorer/services/sig-provider/tests/settlement.rs <<'EOF'
 use sig_provider::rung::settlement_rung;
 
 #[test]
@@ -274,8 +274,8 @@ run_case "a Rust module with a test under tests/" 0 "$documentation_rev..$rust_r
 assert_says "source files changed: 1"
 assert_says "test files changed: 1 (1 referencing a changed source file)"
 
-mkdir -p explorer/services/smart-contract-verifier/src
-cat >explorer/services/smart-contract-verifier/src/payload.rs <<'EOF'
+mkdir -p services/explorer/services/smart-contract-verifier/src
+cat >services/explorer/services/smart-contract-verifier/src/payload.rs <<'EOF'
 pub fn payload_hash(bytes: &[u8]) -> usize {
     bytes.len()
 }

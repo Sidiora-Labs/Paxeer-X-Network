@@ -1,7 +1,7 @@
 *
-!explorer/services/smart-contract-verifier
-explorer/services/smart-contract-verifier/target
-explorer/services/smart-contract-verifier/*-compilers
-explorer/services/smart-contract-verifier/README.md
-explorer/services/smart-contract-verifier/tests
-explorer/services/smart-contract-verifier/config.toml
+!services/explorer/services/smart-contract-verifier
+services/explorer/services/smart-contract-verifier/target
+services/explorer/services/smart-contract-verifier/*-compilers
+services/explorer/services/smart-contract-verifier/README.md
+services/explorer/services/smart-contract-verifier/tests
+services/explorer/services/smart-contract-verifier/config.toml

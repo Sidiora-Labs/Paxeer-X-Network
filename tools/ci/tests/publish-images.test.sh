@@ -45,7 +45,7 @@ on = doc.get("on", doc.get(True))
 push = on["push"]
 assert "main" in push["branches"], "push to main is not a trigger"
 assert push["tags"], "tag trigger dropped"
-for path in ("docker/**", "services/platform/**", "services/interop/**", "human/wallet/**", "explorer/**"):
+for path in ("docker/**", "services/platform/**", "services/interop/**", "human/wallet/**", "apps/explorer/**", "services/explorer/**"):
     assert path in push["paths"], f"missing push path {path}"
 assert "workflow_dispatch" in on, "dispatch trigger dropped"
 jobs = doc["jobs"]

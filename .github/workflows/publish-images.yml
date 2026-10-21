@@ -15,7 +15,8 @@ on:
       - services/platform/**
       - services/interop/**
       - human/wallet/**
-      - explorer/**
+      - apps/explorer/**
+      - services/explorer/**
   workflow_dispatch:
     inputs:
       release_candidate:

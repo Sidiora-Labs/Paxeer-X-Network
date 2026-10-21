@@ -1,7 +1,7 @@
 FROM ghcr.io/blockscout/services-base:latest AS chef
 
 FROM chef AS plan
-COPY explorer/services/smart-contract-verifier .
+COPY services/explorer/services/smart-contract-verifier .
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS cache
@@ -10,7 +10,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 
 FROM chef AS build
 
-COPY explorer/services/smart-contract-verifier .
+COPY services/explorer/services/smart-contract-verifier .
 COPY --from=cache /app/target target
 COPY --from=cache $CARGO_HOME $CARGO_HOME
 RUN cargo build --release
