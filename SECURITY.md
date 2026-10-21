@@ -1,38 +1,48 @@
 # Security Policy
 
-Paxeer X Network handles authorization, accounting, custody commitments, and emergency exit evidence. Treat any defect that can affect value conservation, authority, finality, data availability, replay determinism, withdrawal uniqueness, upgrade safety, or private key handling as a security issue.
-
-## Supported branches
-
-The supported branch is `main`. Fixes land there. Availability of source or a passing test suite is not a deployment recommendation.
+Paxeer X Network handles authorization, accounting, custody, bridging and settlement of real value. Treat any defect that can affect value conservation, authority, finality, replay determinism, withdrawal uniqueness, upgrade safety or private key handling as a security issue.
 
 ## Report privately
 
-Do not open a public issue, discussion, or pull request for a suspected vulnerability. Use GitHub's private vulnerability reporting flow from the repository Security tab. Include:
+Do not open a public issue, discussion or pull request for a suspected vulnerability. Report it through GitHub private vulnerability reporting: open the repository's Security tab and choose "Report a vulnerability", or go directly to <https://github.com/Sidiora-Labs/Paxeer-X-Network/security/advisories/new>. Only the maintainers see the report.
 
-- the affected commit or source revision and component
+Include:
+
+- the affected commit and component
 - prerequisites and an end-to-end reproduction
-- the violated invariant and plausible impact
-- whether exploitation requires sequencer, guarantor, governance, or custody privileges
-- any proposed mitigation, test vector, or proof obligation
+- the violated invariant and the plausible impact
+- the privileges exploitation needs, such as a validator, governance, attestor or operator key
+- any proposed fix or test case
 
-Do not probe public infrastructure, validators, custody deployments, user data, or third-party systems. Use only systems and assets you own or have explicit written authorization to test. Do not move funds, publish exploit details, or retain secrets obtained during research.
+Test only against systems and assets you own or have written permission to test. Do not probe public endpoints, validators, bridges or user data, do not move funds, and do not keep secrets you obtain during research.
 
-## Coordinated disclosure
+## Handling and disclosure
 
-The maintainers will validate scope and coordinate remediation and disclosure through the private report. Public discussion happens only after a fix is available or the maintainers agree the report is out of scope.
+The maintainers confirm receipt in the advisory, assess scope and severity, and work on the fix in a private advisory fork when one is needed. The fix lands on `main`, and when it changes the chain node it ships in a release as described in [RELEASE.md](RELEASE.md). The advisory is published once the fix is available, crediting the reporter unless they ask otherwise. A report found to be out of scope is closed with the reason given in the advisory. Please keep details private until the advisory is published.
 
-## Bounty
+There is no bug bounty.
 
-There is no bounty.
+## Supported versions
+
+The supported line is `main` and the current release named in `tools/release/version.json`. Fixes land on `main` and ship in the next chain node release.
 
 ## Scope
 
-The protocol's complete assumptions and exclusions are normative in the [threat model](spec/layerx-protocol/docs/threat-model.md). In particular:
+In scope is the code in this repository, including:
 
-- guarantor threshold signatures are economic attestations, not validity proofs
-- the sequencer is a liveness and short-horizon ordering trust role
-- emergency exit depends on the last finalized checkpoint and Paxeer contract availability
-- local, sanitizer, fuzz, replay, and proof results do not replace independent contract review or a controlled deployment process
+- the Paxeer X chain node and its modules, precompiles, RPC and storage (`node/`, `modules/`, `precompiles/`, `rpc/`, `consensus/`, `storage/`, `engine/` and the other root Go packages)
+- the LayerX kernel, its programs and `layerxctl` (`src/`, `include/`, `cmd/`, `programs/`)
+- the vendored dependency trees the node builds from (`core/deps/`)
+- the Solidity contracts (`contracts/`, `contracts/bridge/`, `contracts/launchpad/`)
+- off-chain services, SDKs and applications (`services/`, `sdk/`, `apps/`)
 
-Conduct reports that are not product vulnerabilities follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) and use the same private reporting path to the maintainers.
+The root directories of the chain node and the kernel move under `core/` in a later release.
+
+Out of scope:
+
+- defects that need a compromised validator, governance or operator key, unless the code fails to enforce a limit it claims to enforce
+- denial of service by sheer traffic volume against hosted endpoints
+- findings from automated scanners without a demonstrated impact
+- defects in an upstream project that do not affect how this repository uses it; report those upstream
+
+A conduct concern that is not a vulnerability follows [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

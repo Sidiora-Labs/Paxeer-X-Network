@@ -1,22 +1,13 @@
 # Contributors
 
-Paxeer X Network recognises contributors to this repository: patches, review, documentation, tests and operations all count.
+Paxeer X Network recognises everyone who contributes to this repository: code, review, documentation and tests all count.
 
-Recognition is not the same as maintainer status. Governance is described in [GOVERNANCE.md](GOVERNANCE.md).
+The record of contributors is the git history. List the authors of commits on `main` with:
 
-People who have commits on `main`, excluding bots:
+```sh
+git shortlog -sn --no-merges main
+```
 
-- Andrew
-- dev-paxeer
-- jg-sidioralabs
-- PaxLabs Inc
-- paxeer-dev
-- paxlabs-inc
-- Sidiora Development Team
-
-## How names are added
-
-1. Contribute under Apache 2.0 with Developer Certificate of Origin sign-off (`git commit -s`). See [CONTRIBUTING.md](CONTRIBUTING.md).
-2. After the change lands on `main`, the commit author is a contributor. This list holds the people from `git shortlog -sn --no-merges origin/main`, excluding bots.
+Recognition is not maintainer status. Maintainers and decision making are described in [GOVERNANCE.md](GOVERNANCE.md). How to contribute, including Developer Certificate of Origin sign-off, is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Do not open a public issue to claim credit for a security report. Follow [SECURITY.md](SECURITY.md).

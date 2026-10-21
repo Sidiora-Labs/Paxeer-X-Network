@@ -3,6 +3,44 @@ Copyright 2026 Sidiora Labs
 
 This product includes software developed at Sidiora Labs.
 
+Vendored source trees
+
+The directories below are plain snapshots of upstream repositories on GitHub.
+Each carries a VENDOR.kvx pin record naming the repository, ref and full
+commit, and keeps the license files shipped with that snapshot.
+
+core/deps/geth: Paxeer-Network/pax-geth at d91114406b30c83e4dce2e4d966901d26f87ec1e,
+  a fork of ethereum/go-ethereum. Copyright The go-ethereum Authors. Library
+  code under the GNU Lesser General Public License v3.0 (COPYING.LESSER),
+  command code under the GNU General Public License v3.0 (COPYING).
+core/deps/cosmwasm: Paxeer-Network/pax-cosmwasm at a91fa4cd4cffd561df214dd28bd345e7ef5de7bc,
+  a fork of CosmWasm/cosmwasm. Copyright 2019 Jehan Tremback,
+  Copyright 2019-2021 Confio OÜ, Copyright 2019-2020 Simon Warta,
+  Copyright 2021-2025 Confio GmbH. Apache License 2.0 (LICENSE, NOTICE).
+core/deps/db-backend: Paxeer-Network/pax-db-backend at 152aa183093d2358b4e362f55887bfc95dc8a0c4,
+  a fork of tendermint/tm-db. Copyright 2016 All in Bits, Inc.
+  Apache License 2.0 (LICENSE).
+core/deps/log: Paxeer-Network/paxlog at 5eeb5730858bbfa0dd4dfa0f41638f66dd0faa3e.
+  Apache License 2.0 (LICENSE.md).
+core/deps/tm-db: Paxeer-Network/pax-tm-db at beba0f87dffd8fa8ff89ad84d79fe0022e616f53.
+  The pinned snapshot ships no license file.
+core/deps/utils: Paxeer-Network/pax-utils at 8cb50156467e5cb376575838c1f17ce24645edec.
+  The pinned snapshot ships no license file.
+sdk/js: Paxeer-Network/pax-js at 5d299156ba6108605626d347f1f5d91d50a1531d.
+  MIT License, as declared in package.json.
+tools/loadtest: Paxeer-Network/pax-load at c3b0feb1d27841087049d03b0f4d4614183d8f5d.
+  Apache License 2.0 (LICENSE.md).
+tools/paxctl: Paxeer-Network/paxctl at 70e06f96687a810a71803b3bca6c80582313ea34,
+  derived from sei-protocol/seictl. Apache License 2.0 (LICENSE.md).
+tools/uci: Paxeer-Network/pax-uci at eb65d6d3f967c661f6af91cfac599fd355445f71,
+  derived from sei-protocol/uci. Apache License 2.0 (LICENSE).
+tools/wasm-tools: Paxeer-Network/pax-wasm-tools at 22a56f143c1193bb27ce0a2ebd7054a72b509528,
+  a fork of bytecodealliance/wasm-tools, a Bytecode Alliance project.
+  Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+  (LICENSE-Apache-2.0_WITH_LLVM-exception, LICENSE-APACHE, LICENSE-MIT).
+
+Third-party components
+
 unicode-ident: Copyright © 1991-2023 Unicode, Inc. (Unicode License V3)
 icu_collections 2.3.0, icu_locale_core 2.3.0, icu_normalizer 2.3.0, icu_normalizer_data 2.3.0, icu_properties 2.3.0, icu_properties_data 2.3.0, icu_provider 2.3.1, litemap 0.8.3, potential_utf 0.1.6, tinystr 0.8.4, writeable 0.6.4, zerovec 0.11.8, zerovec-derive 0.11.6, zerotrie 0.2.5: Copyright © 2020-2024 Unicode, Inc. (Unicode License V3)
 regex-syntax 0.8.11 Unicode tables: Copyright Unicode, Inc.

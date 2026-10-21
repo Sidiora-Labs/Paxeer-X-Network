@@ -1,16 +1,22 @@
 # Support
 
-Paxeer X Network provides a public gateway API and faucet without an SLA. See [docs/wiki/Home.md](docs/wiki/Home.md), [docs/wiki/HostedGateway.md](docs/wiki/HostedGateway.md), and [docs/wiki/HostedFaucet.md](docs/wiki/HostedFaucet.md). This repository does not provide a production SLA, a custody service, or permission to deploy the contracts with real assets.
-
 ## Where to ask
 
-- GitHub Discussions, when enabled on this repository, for design questions that do not disclose security-sensitive information.
-- GitHub issues for reproducible build failures, protocol conformance questions, and non-sensitive defects. Use the bug report template under `.github/ISSUE_TEMPLATE/`.
-- The wiki starting at [docs/wiki/Home.md](docs/wiki/Home.md), including [docs/wiki/Quickstart.md](docs/wiki/Quickstart.md).
-- [docs/QUALIFICATION.md](docs/QUALIFICATION.md) and [docs/MONOREPO.md](docs/MONOREPO.md) for build and evidence questions.
+- Documentation: <https://docs.paxeer.app>. The in-repository wiki starts at [docs/wiki/Home.md](docs/wiki/Home.md).
+- Questions and design discussion: GitHub Discussions at <https://github.com/Sidiora-Labs/Paxeer-X-Network/discussions>.
+- Reproducible defects, build failures and feature requests: GitHub issues at <https://github.com/Sidiora-Labs/Paxeer-X-Network/issues>, using the bug, feature or question form.
+- Build, test and repository layout questions: [docs/QUALIFICATION.md](docs/QUALIFICATION.md) and [docs/MONOREPO.md](docs/MONOREPO.md).
 
-Include the operating system, compiler or Foundry version, exact command, complete error output, and the smallest input that reproduces the problem.
+The official site is <https://paxeer.network>. These are the only support channels this repository maintains.
 
-Report suspected vulnerabilities only through the private process in [SECURITY.md](SECURITY.md).
+## Writing a useful report
 
-Requests involving deployment, validators, custody, migrations, or real-value canaries require explicit authorization and a separately reviewed runbook. They are not implied by source access or by maintainer participation in an issue.
+Include the commit you built, the operating system, the toolchain versions (Go, C compiler, Rust, Foundry or Node as relevant), the exact command, the complete error output and the smallest input that reproduces the problem.
+
+## Security
+
+Never report a suspected vulnerability in an issue or discussion. Follow [SECURITY.md](SECURITY.md).
+
+## What support does not cover
+
+Support is best effort and comes with no service level agreement. Answers in issues and discussions are not authorization to deploy contracts, run validators or handle real assets.

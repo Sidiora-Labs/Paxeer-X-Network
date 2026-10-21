@@ -1,38 +1,31 @@
 # Governance
 
-Paxeer X Network is maintained by the Sidiora Labs core team. This document describes how decisions are made, how maintainers are added, and how protocol changes move through the specification.
+Paxeer X Network is developed by Sidiora Labs. The Sidiora Labs core team (`@Sidiora-Labs/core`) owns every path in [.github/CODEOWNERS](.github/CODEOWNERS) and maintains the repository.
 
 ## Maintainers
 
-Maintainers are the Sidiora Labs core team. They:
+The core team:
 
-- merge pull requests to `main`
-- cut releases and tags (`vX.Y.Z` for LayerX, `paxeer-network/vX.Y.Z` for Paxeer)
-- operate private security intake described in [SECURITY.md](SECURITY.md)
-- enforce [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- decides what is built, by writing and accepting specifications under [`spec/`](spec/)
+- reviews and merges changes to `main`
+- cuts releases as described in [RELEASE.md](RELEASE.md)
+- handles private security reports as described in [SECURITY.md](SECURITY.md)
+- enforces [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
-Maintainer status is not implied by a merged contribution.
+A merged contribution does not make its author a maintainer. The core team adds and removes maintainers.
 
-## Decisions
+## How decisions are made
 
-Routine changes merge after review against [CONTRIBUTING.md](CONTRIBUTING.md). Protocol, consensus, custody, or trust-boundary changes need an explicit requirement and task in `spec/` before implementation, and they need review from at least one maintainer who did not author the change.
+Planned work is written down before it is built. Each feature is a specification under `spec/<feature>/spec.kvx` with requirements, acceptance criteria and a task list ordered in dependency waves; [spec/workflow.kvx](spec/workflow.kvx) defines how tasks are claimed, qualified and closed and names the active feature. A design decision is recorded in the specification, and a change that contradicts an accepted requirement changes the specification first.
 
-If maintainers disagree, the Sidiora Labs core team resolves the dispute. The recorded outcome is the merged specification and code, not a side channel.
+Reproducible defects are fixed directly against the issue that reports them.
 
-## Adding maintainers
+The record of a decision is the merged specification and code on `main`.
 
-The Sidiora Labs core team adds maintainers by consensus of the existing maintainers. Candidates have a record of review and implementation on this repository, follow the contribution rules, and accept the security and conduct responsibilities above. Removal follows the same process.
+## Releases and chain upgrades
 
-## Spec-first change process
+A release of the chain node is a version in `tools/release/version.json` and a matching `paxeer-network/vX.Y.Z` tag; [RELEASE.md](RELEASE.md) gives the procedure. A release that changes chain state carries a named upgrade plan, and the network adopts it through an on-chain governance proposal.
 
-1. Edit the relevant KVX source under [`spec/`](spec/).
-2. Regenerate derived Markdown and IDE rule files from that source.
-3. Implement against the stated acceptance criteria with real code paths and tests.
-4. Run the gates named by the task and by [docs/QUALIFICATION.md](docs/QUALIFICATION.md).
-5. Open a pull request that cites the requirement and the commands that actually ran.
+## Security fixes
 
-Generated files are not an independent source of truth. LayerX and Paxeer keep separate release identities; co-location in this monorepo does not grant one subsystem authority over the other. See [docs/MONOREPO.md](docs/MONOREPO.md).
-
-## Security exceptions
-
-Suspected vulnerabilities skip the public spec-and-PR path. They follow [SECURITY.md](SECURITY.md): private report, coordinated remediation, then a public change once disclosure is agreed. A security fix may land on `main` before the matching specification text is regenerated, but the specification must be updated in the same disclosure window so the published behavior and the KVX source do not diverge.
+Suspected vulnerabilities do not go through public issues or pull requests. They follow [SECURITY.md](SECURITY.md): private report, private fix, then publication once the fix is available.

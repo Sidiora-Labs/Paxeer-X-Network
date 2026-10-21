@@ -1,8 +1,14 @@
 cff-version: 1.2.0
 message: If you use Paxeer X Network, please cite it using these metadata.
+type: software
 title: Paxeer X Network
+abstract: >-
+  Paxeer X Network is one network with two execution domains: the Paxeer X
+  chain node (paxd) and the LayerX kernel (layerxd), a deterministic execution
+  and accounting domain for autonomous agents.
 authors:
   - name: Sidiora Labs
-repository-code: https://github.com/Sidiora-Labs/Paxeer-X-Network
+version: v6.12.0
 license: Apache-2.0
-type: software
+repository-code: https://github.com/Sidiora-Labs/Paxeer-X-Network
+url: https://paxeer.network
