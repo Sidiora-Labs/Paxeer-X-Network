@@ -97,7 +97,7 @@ def reproduce(config, source_root, output_root):
     service, binary = config['service'], config['binary']
     validate(service, binary, config['builder'], config['runtime'])
     pinned_image(config['buildkit_image'])
-    validate_context((root / '.dockerignore').read_text())
+    validate_context((root / 'deploy/launchpad/Dockerfile.svc.dockerignore').read_text())
     require(config['platform'] in ('linux/amd64', 'linux/arm64'), 'unsupported build platform')
     require(config['target'] in ('release', 'confinement'), 'unreviewed Docker target')
     inputs = source_manifest(root, config['source_paths'])
@@ -109,7 +109,7 @@ def reproduce(config, source_root, output_root):
     output.mkdir(parents=True)
     context = output / 'source'
     context.mkdir()
-    require({'.dockerignore', 'deploy/Dockerfile.svc', 'security/supplychain/confinement.py'} <= set(inputs['files']), 'incomplete reproducible source context')
+    require({'deploy/launchpad/Dockerfile.svc.dockerignore', 'deploy/launchpad/Dockerfile.svc', 'services/launchpad/security/supplychain/confinement.py'} <= set(inputs['files']), 'incomplete reproducible source context')
     for relative in inputs['files']:
         destination = context / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -125,7 +125,7 @@ def reproduce(config, source_root, output_root):
         try:
             require(time.monotonic() < deadline, 'clean build pair time budget exhausted')
             buildx.run(['create', '--name', worker, '--driver', 'docker-container', '--driver-opt', 'image=' + config['buildkit_image']], timeout=60)
-            buildx.run(['build', '--builder', worker, '--no-cache', '--pull', '--provenance=false', '--sbom=false', '--platform', config['platform'], '--target', config['target'], '--build-arg', 'SERVICE=' + service, '--build-arg', 'BIN=' + binary, '--build-arg', 'BUILD_IMAGE=' + config['builder'], '--build-arg', 'RUNTIME_IMAGE=' + config['runtime'], '--build-arg', 'SOURCE_DATE_EPOCH=0', '--output', 'type=oci,compression=gzip,force-compression=true,dest=' + str(archive), '--metadata-file', str(directory / 'build-metadata.json'), '-f', str(context / 'deploy/Dockerfile.svc'), str(context)], timeout=min(config['worker_timeout_seconds'], max(1, int(deadline - time.monotonic()))))
+            buildx.run(['build', '--builder', worker, '--no-cache', '--pull', '--provenance=false', '--sbom=false', '--platform', config['platform'], '--target', config['target'], '--build-arg', 'SERVICE=' + service, '--build-arg', 'BIN=' + binary, '--build-arg', 'BUILD_IMAGE=' + config['builder'], '--build-arg', 'RUNTIME_IMAGE=' + config['runtime'], '--build-arg', 'SOURCE_DATE_EPOCH=0', '--output', 'type=oci,compression=gzip,force-compression=true,dest=' + str(archive), '--metadata-file', str(directory / 'build-metadata.json'), '-f', str(context / 'deploy/launchpad/Dockerfile.svc'), str(context)], timeout=min(config['worker_timeout_seconds'], max(1, int(deadline - time.monotonic()))))
             require(source_manifest(root, config['source_paths']) == inputs, 'build inputs changed during execution')
             result = read_oci(archive, directory / 'layout')
             require(result['os'] + '/' + result['architecture'] == config['platform'], 'build platform mismatch')

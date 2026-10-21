@@ -49,6 +49,7 @@ IGNORED_DIRS = {
     '.pytest_cache', 'coverage', 'evidence', 'playwright-report', 'test-results', 'dist',
 }
 IGNORED_FILES = {'coverage.out', '.coverage', '.DS_Store', 'tsconfig.tsbuildinfo'}
+LAUNCHPAD_HOMES = ('launchpad', 'apps/launchpad', 'services/launchpad', 'sdk/launchpad', 'contracts/launchpad', 'deploy/launchpad', 'tools/launchpad')
 
 
 class QualificationError(ValueError):
@@ -107,23 +108,28 @@ def ignored_source_directory(relative):
 
 def snapshot(root):
     files = {}
-    for directory, dirs, names in os.walk(root, followlinks=False):
-        for name in dirs:
-            path = Path(directory) / name
-            if path.is_symlink() and not ignored_source_directory(path.relative_to(root)):
-                files[path.relative_to(root).as_posix()] = 'symlink:' + os.readlink(path)
-        dirs[:] = sorted(name for name in dirs if not ignored_source_directory((Path(directory) / name).relative_to(root)) and not (Path(directory) / name).is_symlink())
-        for name in sorted(names):
-            if name in IGNORED_FILES or name.endswith(('.pyc', '.prof', '.test', '.tsbuildinfo')) or name == '.env' or name.startswith('.env.'):
-                continue
-            path = Path(directory) / name
-            relative = path.relative_to(root).as_posix()
-            if ignored_source_directory(relative):
-                continue
-            if path.is_symlink():
-                files[relative] = 'symlink:' + os.readlink(path)
-            elif path.is_file():
-                files[relative] = file_hash(path)
+    for home in LAUNCHPAD_HOMES:
+        base = Path(root) / home
+        if base.is_symlink():
+            files[home] = 'symlink:' + os.readlink(base)
+            continue
+        for directory, dirs, names in os.walk(base, followlinks=False):
+            for name in dirs:
+                path = Path(directory) / name
+                if path.is_symlink() and not ignored_source_directory(path.relative_to(base)):
+                    files[path.relative_to(root).as_posix()] = 'symlink:' + os.readlink(path)
+            dirs[:] = sorted(name for name in dirs if not ignored_source_directory((Path(directory) / name).relative_to(base)) and not (Path(directory) / name).is_symlink())
+            for name in sorted(names):
+                if name in IGNORED_FILES or name.endswith(('.pyc', '.prof', '.test', '.tsbuildinfo')) or name == '.env' or name.startswith('.env.'):
+                    continue
+                path = Path(directory) / name
+                if ignored_source_directory(path.relative_to(base)):
+                    continue
+                relative = path.relative_to(root).as_posix()
+                if path.is_symlink():
+                    files[relative] = 'symlink:' + os.readlink(path)
+                elif path.is_file():
+                    files[relative] = file_hash(path)
     return {'sha256': canonical_hash(files), 'files': files}
 
 

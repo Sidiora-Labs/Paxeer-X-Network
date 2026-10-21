@@ -131,7 +131,7 @@ def prepare(config, root, output):
     expected = config['controller']['expected']
     require(builds['source'] == expected['source'] and builds['binary_sha256'] == config['controller']['approved_binary_sha256'], 'paired build source mismatch')
     now = int(time.time())
-    sbom = generate(config['sbom'], expected['image'], pathlib.Path(root) / 'client', output / 'sbom')
+    sbom = generate(config['sbom'], expected['image'], pathlib.Path(root) / 'launchpad/client', output / 'sbom')
     documents = []
     for artifact in sbom['artifacts']:
         document, _ = read_document(artifact['path'], artifact['sha256'])
@@ -333,7 +333,7 @@ RELEASE_REQUIREMENTS = {
 def candidate_snapshot(root):
     import importlib.util
     root = pathlib.Path(root).resolve()
-    path = root / 'tools' / 'production' / 'qualify.py'
+    path = root / 'tools' / 'launchpad' / 'production' / 'qualify.py'
     require(path.is_file() and not path.is_symlink(), 'current-source authority is absent')
     definition = importlib.util.spec_from_file_location('supplychain_current_source_authority', path)
     module = importlib.util.module_from_spec(definition)
@@ -373,11 +373,11 @@ def validate_release_measurement(config, root):
         require(expected['materials'].get(image) == image.rsplit('@sha256:', 1)[-1], 'provenance omits reviewed build image material')
     require(expected['materials'].get(build['buildx']['path']) == build['buildx']['sha256'], 'provenance omits reviewed buildx executable')
     require(build['service'] == expected['service'] and build['binary'] == expected['binary'] and build['platform'] == 'linux/' + expected['architecture'], 'release target authority mismatch')
-    required = {'.dockerignore', '.github/workflows/ci.yml', '.github/workflows/release.yml', 'deploy/Dockerfile.svc'}
-    required.update(path.relative_to(root).as_posix() for path in (pathlib.Path(root) / 'security' / 'supplychain').glob('*.py'))
-    required.add('security/supplychain/phase2.schema.json')
+    required = {'deploy/launchpad/Dockerfile.svc.dockerignore', 'launchpad/.github/workflows/ci.yml', 'launchpad/.github/workflows/release.yml', 'deploy/launchpad/Dockerfile.svc'}
+    required.update(path.relative_to(root).as_posix() for path in (pathlib.Path(root) / 'services' / 'launchpad' / 'security' / 'supplychain').glob('*.py'))
+    required.add('services/launchpad/security/supplychain/phase2.schema.json')
     require(required <= set(build['source_paths']), 'release source inputs omit owned supply-chain implementation')
-    require(digest((pathlib.Path(root) / '.github/workflows/ci.yml').read_bytes()) == expected['workflow'], 'release workflow revision is not current')
+    require(digest((pathlib.Path(root) / 'launchpad/.github/workflows/ci.yml').read_bytes()) == expected['workflow'], 'release workflow revision is not current')
     require(phase2['failed_pipeline']['approved_base_commit'] == expected['commit'], 'failed pipeline is not based on approved candidate commit')
     require(phase2['confinement']['approved_binary_sha256'] == phase2['controller']['approved_binary_sha256'], 'runtime/build binary authority mismatch')
     require(phase2['confinement']['image'] == config['approved_confinement_image'], 'confinement image authority mismatch')

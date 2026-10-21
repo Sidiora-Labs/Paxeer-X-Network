@@ -28,8 +28,8 @@ class SourceAndExecution(unittest.TestCase):
                 verified_executable(copied, expected)
 
     def test_current_owned_source_manifest_detects_changes(self):
-        root = pathlib.Path(__file__).resolve().parents[2]
-        actual = source_manifest(root, ['security/supplychain/policy.py', 'security/supplychain/controller.py'])
+        root = pathlib.Path(__file__).resolve().parents[4]
+        actual = source_manifest(root, ['services/launchpad/security/supplychain/policy.py', 'services/launchpad/security/supplychain/controller.py'])
         self.assertEqual(len(actual['files']), 2)
         with tempfile.TemporaryDirectory() as temporary:
             target = pathlib.Path(temporary)
@@ -37,18 +37,18 @@ class SourceAndExecution(unittest.TestCase):
                 (target / name).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(root / name, target / name)
             self.assertEqual(source_manifest(target, list(actual['files'])), actual)
-            with (target / 'security/supplychain/controller.py').open('ab') as source:
+            with (target / 'services/launchpad/security/supplychain/controller.py').open('ab') as source:
                 source.write(b'\n')
             self.assertNotEqual(source_manifest(target, list(actual['files']))['sha256'], actual['sha256'])
 
     def test_source_manifest_rejects_escape_symlink_duplicate(self):
-        root = pathlib.Path(__file__).resolve().parents[2]
-        for names in (['../policy.py'], ['/etc/passwd'], ['security/supplychain/policy.py'] * 2):
+        root = pathlib.Path(__file__).resolve().parents[4]
+        for names in (['../policy.py'], ['/etc/passwd'], ['services/launchpad/security/supplychain/policy.py'] * 2):
             with self.subTest(names=names), self.assertRaises(Rejected):
                 source_manifest(root, names)
         with tempfile.TemporaryDirectory() as temporary:
             path = pathlib.Path(temporary)
-            (path / 'linked.py').symlink_to(root / 'security/supplychain/policy.py')
+            (path / 'linked.py').symlink_to(root / 'services/launchpad/security/supplychain/policy.py')
             with self.assertRaises(Rejected):
                 source_manifest(path, ['linked.py'])
 
@@ -268,9 +268,9 @@ class ProvenanceInputAdversaries(unittest.TestCase):
     def test_provenance_material_rotation_and_duplicate_are_rejected(self):
         import copy
         from provenance import make_statement, validate_statement
-        root = pathlib.Path(__file__).resolve().parents[2]
-        source = source_manifest(root, ['security/supplychain/controller.py', 'security/supplychain/policy.py'])
-        workflow = digest((root / '.github/workflows/ci.yml').read_bytes())
+        root = pathlib.Path(__file__).resolve().parents[4]
+        source = source_manifest(root, ['services/launchpad/security/supplychain/controller.py', 'services/launchpad/security/supplychain/policy.py'])
+        workflow = digest((root / 'launchpad/.github/workflows/ci.yml').read_bytes())
         binary = digest(pathlib.Path(sys.executable).resolve().read_bytes())
         expected = {'source': source['sha256'], 'workflow': workflow, 'repository': 'owner/repository', 'ref': 'refs/heads/main', 'service': 'indexer', 'binary': 'indexerd', 'architecture': 'amd64', 'builder': 'reviewed-builder', 'run_id': '123', 'sbom': digest(b'approved inventory bytes'), 'image': 'registry.example/app@sha256:' + binary, 'materials': source['files']}
         build = {**expected, 'binary_sha256': binary}
@@ -370,7 +370,7 @@ class ReleaseMeasurementMath(unittest.TestCase):
 
     def test_real_phase4_worker_capture_retains_process_metrics_and_raw_hashes(self):
         from check_phase2 import candidate_snapshot, measured_release_stage
-        root = pathlib.Path(__file__).resolve().parents[2]
+        root = pathlib.Path(__file__).resolve().parents[4]
         executable = pathlib.Path(sys.executable).resolve()
         pin = {'path': str(executable), 'sha256': digest(executable.read_bytes())}
         config = {'schema_version': 4, 'candidate_sha256': candidate_snapshot(root)['sha256'], 'python': pin, 'phase2': {'tamper_tool': pin}, 'measurement': {'stage_timeouts_seconds': {'tool_tamper': 30}, 'stage_budgets': {'tool_tamper': {'wall_ms_max': 30000, 'controller_cpu_ms_max': 30000, 'single_process_peak_rss_bytes_max': 536870912, 'artifact_bytes_max': 10485760}}}}
@@ -394,7 +394,7 @@ class ReleaseMeasurementMath(unittest.TestCase):
     def test_current_candidate_binding_rejects_absent_authority_before_provider_calls(self):
         import os
         from check_phase2 import candidate_snapshot, validate_release_measurement
-        root = pathlib.Path(__file__).resolve().parents[2]
+        root = pathlib.Path(__file__).resolve().parents[4]
         config = {'schema_version': 4, 'candidate_sha256': candidate_snapshot(root)['sha256']}
         previous = os.environ.pop('QUALIFICATION_CANDIDATE_SHA256', None)
         try:
@@ -411,7 +411,7 @@ class ReleaseMeasurementMath(unittest.TestCase):
 
     def test_missing_real_provider_marks_every_unexecuted_requirement_blocked(self):
         from check_phase2 import release_capacity, RELEASE_REQUIREMENTS, RELEASE_STAGES
-        root = pathlib.Path(__file__).resolve().parents[2]
+        root = pathlib.Path(__file__).resolve().parents[4]
         with tempfile.TemporaryDirectory() as temporary:
             output = pathlib.Path(temporary) / 'report'
             with self.assertRaisesRegex(Rejected, 'unsupported release measurement authority'):
@@ -429,7 +429,7 @@ class ReleaseControllerMeasurementBinding(unittest.TestCase):
     def test_real_blocked_release_measurement_cannot_authorize_publication(self):
         from check_phase2 import release_capacity
         from controller import verify_release_measurement
-        root = pathlib.Path(__file__).resolve().parents[2]
+        root = pathlib.Path(__file__).resolve().parents[4]
         with tempfile.TemporaryDirectory() as temporary:
             output = pathlib.Path(temporary) / 'measurement'
             authority = digest(b'rejected unsupported authority')
