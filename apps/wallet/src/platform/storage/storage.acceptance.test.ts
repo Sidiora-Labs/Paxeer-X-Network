@@ -12,6 +12,7 @@ import {
   custodyChoiceRepository,
   pendingSendRepository,
   preferencesRepository,
+  transferObservationsRepository,
 } from './repositories';
 
 beforeEach(() => {
@@ -100,5 +101,20 @@ describe('application storage registry', () => {
     expect(custodyChoiceRepository.read()).toBeNull();
     expect(pendingSendRepository.read()).toBeNull();
     expect(preferencesRepository.read().currency).toBe('EUR');
+  });
+
+  it('skips a corrupt legacy transfer entry with a warning and migrates the rest', () => {
+    const before = getBackgroundFailures().length;
+    localStorage.setItem('paxeer.wallet.transferObservation:125:0xbad', '{not json');
+    localStorage.setItem('paxeer.wallet.transferObservation:125:0xgood', JSON.stringify({ status: 'confirmed' }));
+    expect(transferObservationsRepository.read()).toEqual({ '125:0xgood': { status: 'confirmed' } });
+    const failures = getBackgroundFailures();
+    expect(failures.length).toBe(before + 1);
+    expect(failures[0]).toMatchObject({ domain: 'storage', code: 'STORAGE_LEGACY_ENTRY_SKIPPED' });
+    expect(failures.some((failure) => failure.code === 'STORAGE_MIGRATION_FAILED')).toBe(false);
+    expect(localStorage.getItem('paxeer.wallet.transferObservation:125:0xbad')).toBeNull();
+    expect(localStorage.getItem('paxeer.wallet.transferObservation:125:0xgood')).toBeNull();
+    expect(transferObservationsRepository.read()).toEqual({ '125:0xgood': { status: 'confirmed' } });
+    expect(getBackgroundFailures().length).toBe(before + 1);
   });
 });

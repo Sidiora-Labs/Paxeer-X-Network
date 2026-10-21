@@ -9,6 +9,7 @@ import {
     ethCall,
     ethQuantity,
     LEDGER_PRECOMPILE,
+    ledgerLogFloor,
     type WalletCapsState,
     type WalletGrantCap,
     type WebPayerGrant,
@@ -347,9 +348,7 @@ const REFUSED_CAPS: WalletCapsState = { state: 'refused', reason: 'The account o
 const NO_FINALISED_CHECKPOINT: WalletCapsState = { state: 'unavailable', reason: 'No finalised checkpoint is available yet.' };
 const NO_GRANT_EXPIRY = ((1n << 64n) - 1n).toString();
 export const GRANT_LOG_WINDOW = 10_000n;
-// ponytail: accounts carry no first-seen block, so grant logs are read back from the finalised head in GRANT_LOG_WINDOW
-// blocks down to GRANT_LOG_LOOKBACK below it; older grants are not shown. Read grant ids from an indexer to lift the floor.
-export const GRANT_LOG_LOOKBACK = 1_000_000n;
+export const GRANT_LOG_BATCH = 8;
 
 async function view(provider: ModuleProvider, to: string, data: Hex): Promise<Hex> {
     return (await ethCall(provider, to, data)) as Hex;
@@ -401,13 +400,15 @@ async function readGrantCaps(provider: ModuleProvider, address: string): Promise
         data: await view(provider, LEDGER_PRECOMPILE, encodeFunctionData({ abi: GRANT_LOOKUP_ABI, functionName: 'accountId', args: [didPublicKey, ZERO_WORD] })),
     }).toLowerCase();
     const finalised = BigInt(head.number);
-    const floor = finalised > GRANT_LOG_LOOKBACK ? finalised - GRANT_LOG_LOOKBACK : 0n;
-    let owned: readonly WebPayerGrant[] = [];
-    for (let to = finalised; owned.length === 0 && to >= floor; to -= GRANT_LOG_WINDOW) {
-        const from = to - floor >= GRANT_LOG_WINDOW ? to - GRANT_LOG_WINDOW + 1n : floor;
-        const ids = await issuedGrantIds(provider, from, to);
-        if (ids.length > 0) owned = (await webData(provider).caps(ids)).grants.filter((grant) => grant.from === account);
+    const floor = ledgerLogFloor(Number(chainId));
+    const windows: (readonly [bigint, bigint])[] = [];
+    for (let to = finalised; to >= floor; to -= GRANT_LOG_WINDOW) windows.push([to - floor >= GRANT_LOG_WINDOW ? to - GRANT_LOG_WINDOW + 1n : floor, to]);
+    const ids = new Set<string>();
+    for (let start = 0; start < windows.length; start += GRANT_LOG_BATCH) {
+        const batch = await Promise.all(windows.slice(start, start + GRANT_LOG_BATCH).map(([from, to]) => issuedGrantIds(provider, from, to)));
+        for (const found of batch) for (const id of found) ids.add(id);
     }
+    const owned = ids.size === 0 ? [] : (await webData(provider).caps([...ids])).grants.filter((grant) => grant.from === account);
     const expires = owned.reduce((earliest, grant) => (grant.expiration < earliest ? grant.expiration : earliest), owned[0]?.expiration ?? 0n);
     const height = finalised.toString();
     return {

@@ -7,13 +7,14 @@ import {
     PAYER_GRANT_BYTES,
     WEB_DATA_EVENTS,
     WEB_DATA_KIND_SEARCH,
+    ledgerLogFloor,
     webData,
     type WalletCapsSnapshot,
     type WalletCapsState,
 } from '@paxeer/wallet';
 import { encodeAbiParameters, encodePacked, keccak256, parseAbiParameters, size, toHex, type Hex } from 'viem';
 import { WebDataView } from './WebDataView';
-import { GRANT_LOG_LOOKBACK, GRANT_LOG_WINDOW, boundDid, useWebDataCaps } from './useSurface';
+import { GRANT_LOG_BATCH, GRANT_LOG_WINDOW, boundDid, useWebDataCaps } from './useSurface';
 import {
     SurfaceChain,
     click,
@@ -70,7 +71,8 @@ const DID_PUBLIC_KEY: Hex = `0x${'5d'.repeat(32)}`;
 const DID = `did:layerx:${'5d'.repeat(32)}`;
 const ACCOUNT_ID: Hex = `0x${'c3'.repeat(32)}`;
 const FOREIGN_ACCOUNT_ID: Hex = `0x${'c4'.repeat(32)}`;
-const HEAD = { number: '0x2a', stateRoot: `0x${'e5'.repeat(32)}` };
+const FLOOR = ledgerLogFloor(125);
+const HEAD = { number: toHex(FLOOR + 42n), stateRoot: `0x${'e5'.repeat(32)}` };
 const GET_LAYERX_DID = abiSelector('getLayerXDid(address)');
 const ACCOUNT_ID_SELECTOR = abiSelector('accountId(bytes32,bytes32)');
 const GET_PAYER_GRANT = abiSelector('getPayerGrant(bytes32)');
@@ -81,15 +83,16 @@ interface IssuedGrant {
     readonly from: Hex;
     readonly drawnThisPeriod: bigint;
     readonly block: bigint;
+    readonly expiration?: bigint;
 }
 
-const OWNED_GRANT: IssuedGrant = { grantId: `0x${GRANT_ID}`, from: ACCOUNT_ID, drawnThisPeriod: 250n, block: 1n };
-const FOREIGN_GRANT: IssuedGrant = { grantId: `0x${'a2'.repeat(32)}`, from: FOREIGN_ACCOUNT_ID, drawnThisPeriod: 0n, block: 1n };
+const OWNED_GRANT: IssuedGrant = { grantId: `0x${GRANT_ID}`, from: ACCOUNT_ID, drawnThisPeriod: 250n, block: FLOOR + 1n };
+const FOREIGN_GRANT: IssuedGrant = { grantId: `0x${'a2'.repeat(32)}`, from: FOREIGN_ACCOUNT_ID, drawnThisPeriod: 0n, block: FLOOR + 1n };
 
 function payerGrantAnswer(grant: IssuedGrant): Hex {
     const wire = encodePacked(
         ['bytes32', 'bytes32', 'bytes32', 'bytes32', 'uint128', 'uint128', 'bool', 'uint64', 'uint64', 'bytes32', 'bool', 'bytes32', 'uint64', 'bytes32', 'bytes'],
-        [grant.grantId, grant.from, `0x${'f6'.repeat(32)}`, `0x${'d4'.repeat(32)}`, 1000n, 50000n, true, 86400n, 1_900_000_000n,
+        [grant.grantId, grant.from, `0x${'f6'.repeat(32)}`, `0x${'d4'.repeat(32)}`, 1000n, 50000n, true, 86400n, grant.expiration ?? 1_900_000_000n,
             `0x${'77'.repeat(32)}`, false, `0x${'00'.repeat(32)}`, 0n, DID_PUBLIC_KEY, `0x${'99'.repeat(64)}`],
     );
     if (size(wire) !== PAYER_GRANT_BYTES) throw new Error(`payer grant wire is ${size(wire)} bytes`);
@@ -104,6 +107,9 @@ class GrantChain extends SurfaceChain {
     issued: readonly IssuedGrant[] = [];
     readonly logQueries: { fromBlock: string; toBlock: string }[] = [];
     readonly blockQueries: unknown[] = [];
+    failLogsFrom: bigint | null = null;
+    inFlight = 0;
+    peakInFlight = 0;
 
     override async request(args: { method: string; params?: readonly unknown[] | object }): Promise<unknown> {
         const params = Array.isArray(args.params) ? (args.params as readonly unknown[]) : [];
@@ -117,6 +123,11 @@ class GrantChain extends SurfaceChain {
             this.methods.push(args.method);
             const query = params[0] as { fromBlock: string; toBlock: string };
             this.logQueries.push(query);
+            this.inFlight += 1;
+            this.peakInFlight = Math.max(this.peakInFlight, this.inFlight);
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            this.inFlight -= 1;
+            if (this.failLogsFrom !== null && BigInt(query.fromBlock) === this.failLogsFrom) throw new Error('log range unavailable');
             return this.issued
                 .filter((grant) => grant.block >= BigInt(query.fromBlock) && grant.block <= BigInt(query.toBlock))
                 .map((grant) => ({ address: LEDGER_PRECOMPILE, topics: [PAYER_GRANT_ISSUED, grant.grantId], data: '0x' }));
@@ -232,9 +243,9 @@ describe('WebDataView', () => {
         const { container } = mounted;
 
         await until(() => container.querySelector('[data-caps-state="ready"]') !== null, 'caps ready');
-        expect(text(container, '[data-role="caps-observation"]')).toBe('checkpoint_finalised · sequence 42 · batch 42');
+        expect(text(container, '[data-role="caps-observation"]')).toBe(`checkpoint_finalised · sequence ${FLOOR + 42n} · batch ${FLOOR + 42n}`);
         expect(text(container, '[data-role="caps-account"]')).toBe(`Account ${'c3'.repeat(32)}`);
-        expect(text(container, '[data-role="caps-height"]')).toBe('Observed at height 42');
+        expect(text(container, '[data-role="caps-height"]')).toBe(`Observed at height ${FLOOR + 42n}`);
         expect(text(container, '[data-role="caps-principal"]')).toBe(`Principal ${DID}`);
         expect(text(container, '[data-role="caps-expiry"]')).toBe('Earliest grant expiry 1900000000');
         expect(container.querySelector('[data-budget]')).toBeNull();
@@ -248,7 +259,7 @@ describe('WebDataView', () => {
         expect(grant?.textContent).toContain('Open');
 
         expect(grants.blockQueries).not.toContain('latest');
-        expect(grants.logQueries[0]).toEqual({ address: LEDGER_PRECOMPILE, topics: [PAYER_GRANT_ISSUED], fromBlock: '0x0', toBlock: HEAD.number });
+        expect(grants.logQueries[0]).toEqual({ address: LEDGER_PRECOMPILE, topics: [PAYER_GRANT_ISSUED], fromBlock: toHex(FLOOR), toBlock: HEAD.number });
         expect(grants.calls).toEqual(expect.arrayContaining([
             { to: ADDR_PRECOMPILE_ADDRESS, data: `${GET_LAYERX_DID}${grants.address.slice(2).padStart(64, '0')}` },
             { to: LEDGER_PRECOMPILE, data: `${ACCOUNT_ID_SELECTOR}${DID_PUBLIC_KEY.slice(2)}${'00'.repeat(32)}` },
@@ -314,34 +325,82 @@ describe('WebDataView', () => {
     it('web_data_view_reads_grant_logs_back_from_the_finalised_head_in_bounded_windows', async () => {
         const grants = new GrantChain();
         grants.xwebFee = chain.xwebFee;
-        grants.finalised = { ...HEAD, number: toHex(2n * GRANT_LOG_WINDOW + 5n) };
-        grants.issued = [{ ...OWNED_GRANT, block: 3n }, { ...FOREIGN_GRANT, block: 2n * GRANT_LOG_WINDOW }];
+        grants.finalised = { ...HEAD, number: toHex(FLOOR + 2n * GRANT_LOG_WINDOW + 5n) };
+        grants.issued = [{ ...OWNED_GRANT, block: FLOOR + 3n }, { ...FOREIGN_GRANT, block: FLOOR + 2n * GRANT_LOG_WINDOW }];
         mounted = await mountSurface(grants, <GrantSurface />);
         const { container } = mounted;
 
         await until(() => container.querySelector('[data-caps-state="ready"]') !== null, 'caps ready');
         expect(container.querySelectorAll('[data-grant]')).toHaveLength(1);
-        expect(text(container, '[data-role="caps-height"]')).toBe(`Observed at height ${2n * GRANT_LOG_WINDOW + 5n}`);
+        expect(text(container, '[data-role="caps-height"]')).toBe(`Observed at height ${FLOOR + 2n * GRANT_LOG_WINDOW + 5n}`);
         expect(grants.logQueries.slice(0, 3).map(({ fromBlock, toBlock }) => [BigInt(fromBlock), BigInt(toBlock)])).toEqual([
-            [GRANT_LOG_WINDOW + 6n, 2n * GRANT_LOG_WINDOW + 5n],
-            [6n, GRANT_LOG_WINDOW + 5n],
-            [0n, 5n],
+            [FLOOR + GRANT_LOG_WINDOW + 6n, FLOOR + 2n * GRANT_LOG_WINDOW + 5n],
+            [FLOOR + 6n, FLOOR + GRANT_LOG_WINDOW + 5n],
+            [FLOOR, FLOOR + 5n],
         ]);
     });
 
-    it('web_data_view_stops_reading_grant_logs_at_the_lookback_floor', async () => {
+    it('web_data_view_keeps_every_grant_and_the_earliest_expiry_across_all_windows', async () => {
         const grants = new GrantChain();
         grants.xwebFee = chain.xwebFee;
-        const head = GRANT_LOG_LOOKBACK + 7n;
+        const head = FLOOR + 30n * GRANT_LOG_WINDOW;
+        const older: IssuedGrant = { ...OWNED_GRANT, grantId: `0x${'a3'.repeat(32)}`, block: FLOOR + 2n, expiration: 1_850_000_000n };
         grants.finalised = { ...HEAD, number: toHex(head) };
-        grants.issued = [{ ...OWNED_GRANT, block: 6n }];
+        grants.issued = [{ ...OWNED_GRANT, block: head - 5n }, older];
+        mounted = await mountSurface(grants, <GrantSurface />);
+        const { container } = mounted;
+
+        await until(() => container.querySelector('[data-caps-state="ready"]') !== null, 'caps ready');
+        expect(container.querySelectorAll('[data-grant]')).toHaveLength(2);
+        expect(container.querySelector(`[data-grant="${'a3'.repeat(32)}"]`)).not.toBeNull();
+        expect(text(container, '[data-role="caps-expiry"]')).toBe('Earliest grant expiry 1850000000');
+    });
+
+    it('web_data_view_scans_every_window_down_to_the_ledger_floor_and_never_below_it', async () => {
+        const grants = new GrantChain();
+        grants.xwebFee = chain.xwebFee;
+        const head = FLOOR + 25n * GRANT_LOG_WINDOW + 7n;
+        grants.finalised = { ...HEAD, number: toHex(head) };
+        grants.issued = [{ ...OWNED_GRANT, block: FLOOR - 1n }];
         mounted = await mountSurface(grants, <GrantSurface />);
         const { container } = mounted;
 
         await until(() => container.querySelector('[data-caps-state="empty"]') !== null, 'caps empty');
-        const windows = grants.logQueries.slice(0, Number(GRANT_LOG_LOOKBACK / GRANT_LOG_WINDOW) + 1).map(({ fromBlock, toBlock }) => [BigInt(fromBlock), BigInt(toBlock)]);
-        expect(windows.every(([from, to]) => from >= 7n && to - from < GRANT_LOG_WINDOW)).toBe(true);
-        expect(windows[windows.length - 1]).toEqual([7n, 7n]);
+        const windows = grants.logQueries.map(({ fromBlock, toBlock }) => [BigInt(fromBlock), BigInt(toBlock)] as const).sort((x, y) => (x[0] < y[0] ? 1 : -1));
+        expect(windows).toHaveLength(26);
+        expect(windows[0]![1]).toBe(head);
+        expect(windows[windows.length - 1]![0]).toBe(FLOOR);
+        windows.forEach(([from, to], index) => {
+            expect(to - from).toBeLessThan(GRANT_LOG_WINDOW);
+            if (index > 0) expect(windows[index - 1]![0]).toBe(to + 1n);
+        });
+        expect(container.querySelector('[data-grant]')).toBeNull();
+    });
+
+    it('web_data_view_reads_grant_windows_in_bounded_parallel_batches', async () => {
+        const grants = new GrantChain();
+        grants.xwebFee = chain.xwebFee;
+        grants.finalised = { ...HEAD, number: toHex(FLOOR + 20n * GRANT_LOG_WINDOW) };
+        grants.issued = [OWNED_GRANT];
+        mounted = await mountSurface(grants, <GrantSurface />);
+        const { container } = mounted;
+
+        await until(() => container.querySelector('[data-caps-state="ready"]') !== null, 'caps ready');
+        expect(grants.logQueries).toHaveLength(21);
+        expect(grants.peakInFlight).toBe(GRANT_LOG_BATCH);
+    });
+
+    it('web_data_view_reports_caps_unavailable_when_any_grant_window_fails', async () => {
+        const grants = new GrantChain();
+        grants.xwebFee = chain.xwebFee;
+        grants.finalised = { ...HEAD, number: toHex(FLOOR + 12n * GRANT_LOG_WINDOW) };
+        grants.issued = [{ ...OWNED_GRANT, block: FLOOR + 12n * GRANT_LOG_WINDOW }];
+        grants.failLogsFrom = FLOOR;
+        mounted = await mountSurface(grants, <GrantSurface />);
+        const { container } = mounted;
+
+        await until(() => container.querySelector('[data-caps-state="unavailable"]') !== null, 'caps unavailable');
+        expect(container.querySelector('[data-caps-state="unavailable"] [role="status"]')?.textContent).toBe('Verified caps are currently unavailable.');
         expect(container.querySelector('[data-grant]')).toBeNull();
     });
 });

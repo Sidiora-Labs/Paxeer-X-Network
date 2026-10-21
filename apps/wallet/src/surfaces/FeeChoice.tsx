@@ -35,6 +35,14 @@ function quantity(value: unknown, field: string): bigint {
     return BigInt(value);
 }
 
+const REASON_COPY: Readonly<Record<string, string>> = {
+    'refused:safe_first_delegation': 'SID sponsored fees need the embedded wallet. Sign in with the embedded wallet or pay gas in PAX.',
+};
+
+export function reasonText(reason: string): string {
+    return REASON_COPY[reason] ?? reason;
+}
+
 export function pathText(entry: FeeChoiceEntry): string {
     switch (entry.path.kind) {
         case 'native_gas':
@@ -159,8 +167,8 @@ export function FeeChoice({ provider, address, transaction, selection, sidRate, 
                 </Button>
             )}
             {blocked && (
-                <p data-role="fee-blocked" className="text-xs text-pax-muted">
-                    {blocked}
+                <p data-role="fee-blocked" data-reason={blocked} className="text-xs text-pax-muted">
+                    {reasonText(blocked)}
                 </p>
             )}
             {choice==='sid_sponsored'&&(
@@ -169,7 +177,7 @@ export function FeeChoice({ provider, address, transaction, selection, sidRate, 
                         <input aria-label="Maximum SID" inputMode="decimal" value={maximumSid} onChange={event=>{selection.cancel();setMaximumSid(event.target.value);}} disabled={['signing','submitted','recovering','unknown'].includes(selection.sponsored.phase)} />
                     </label>
                     <p data-role="sponsored-phase">{selection.sponsored.phase}</p>
-                    {selection.sponsored.reason&&<p role="alert" data-role="sponsored-reason">{selection.sponsored.reason}</p>}
+                    {selection.sponsored.reason&&<p role="alert" data-role="sponsored-reason" data-reason={selection.sponsored.reason}>{reasonText(selection.sponsored.reason)}</p>}
                     {selection.sponsored.batch&&(
                         <div data-role="sponsored-construction">
                             <p data-role="sponsored-sid">SID payment: {helper.denominate('sid_sponsored',selection.sponsored.batch.quote.tokenAmount).display}</p>

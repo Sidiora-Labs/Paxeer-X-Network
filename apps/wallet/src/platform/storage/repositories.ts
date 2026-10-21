@@ -1,3 +1,4 @@
+import { reportBackgroundFailure } from '@/platform/status/background-failures';
 import { defineStorageRepository } from './registry';
 import { migrateLocale, type Locale } from '@/lib/locale';
 
@@ -774,11 +775,26 @@ function collectLegacyTransferRecords(storage: Storage, prefix: string): Transfe
   }
   if (keys.length === 0) return undefined;
   const migrated: TransferRecords = {};
+  let skipped = 0;
   for (const key of keys.slice(-100)) {
     const raw = storage.getItem(key);
-    if (raw !== null) migrated[key.slice(prefix.length)] = JSON.parse(raw) as JsonValue;
+    if (raw === null) continue;
+    try {
+      migrated[stringValue(key.slice(prefix.length), 1, 160)] = parseJsonValue(JSON.parse(raw) as unknown);
+    } catch {
+      skipped += 1;
+    }
   }
   for (const key of keys) storage.removeItem(key);
+  if (skipped > 0) {
+    reportBackgroundFailure({
+      domain: 'storage',
+      kind: 'corrupt',
+      code: 'STORAGE_LEGACY_ENTRY_SKIPPED',
+      message: `${skipped} saved transfer ${skipped === 1 ? 'record' : 'records'} could not be read and ${skipped === 1 ? 'was' : 'were'} skipped.`,
+      retryable: false,
+    });
+  }
   return migrated;
 }
 

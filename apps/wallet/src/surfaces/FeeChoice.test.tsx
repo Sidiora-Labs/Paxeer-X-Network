@@ -135,7 +135,9 @@ describe('FeeChoice', () => {
         expect(chain.sent[1]?.data).toBe(abiSelector('clearFeeDenom()'));
 
         await click(choice(container, 'sid_sponsored'), 'sid sponsored');
-        expect(text(container, '[data-role="fee-blocked"]')).toBe('refused:safe_first_delegation');
+        expect(text(container, '[data-role="fee-blocked"]')).toBe('SID sponsored fees need the embedded wallet. Sign in with the embedded wallet or pay gas in PAX.');
+        expect(text(container, '[data-role="fee-blocked"]')).not.toContain('refused:');
+        expect(container.querySelector('[data-role="fee-blocked"]')?.getAttribute('data-reason')).toBe('refused:safe_first_delegation');
         expect(action()).toBeNull();
     });
 });
