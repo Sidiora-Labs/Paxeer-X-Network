@@ -338,11 +338,11 @@ export const ENRICHED_MARKET_STATS_QUERY = /* GraphQL */ `
         totalVolume latestPrice latestFundingRate
       }
       ticker {
-        symbol paxeerSymbol mark_price index_price est_funding_rate last_funding_rate
+        symbol paxeerSymbol mark_price index_price last_funding_rate_hourly last_funding_rate
         next_funding_time open_interest h24_open h24_close h24_high h24_low h24_amount h24_volume
       }
       fundingRate {
-        symbol paxeerSymbol est_funding_rate est_funding_rate_timestamp
+        symbol paxeerSymbol last_funding_rate_hourly
         last_funding_rate last_funding_rate_timestamp next_funding_time sum_unitary_funding
       }
       openInterest {
@@ -361,7 +361,7 @@ export const ENRICHED_MARKET_STATS_QUERY = /* GraphQL */ `
 export const ORDERLY_TICKERS_QUERY = /* GraphQL */ `
   query GetOrderlyTickers {
     orderlyTickers {
-      symbol paxeerSymbol mark_price index_price sum_unitary_funding est_funding_rate
+      symbol paxeerSymbol mark_price index_price sum_unitary_funding last_funding_rate_hourly
       last_funding_rate next_funding_time open_interest
       h24_open h24_close h24_high h24_low h24_amount h24_volume
     }
@@ -371,7 +371,7 @@ export const ORDERLY_TICKERS_QUERY = /* GraphQL */ `
 export const ORDERLY_FUNDING_RATES_QUERY = /* GraphQL */ `
   query GetOrderlyFundingRates {
     orderlyFundingRates {
-      symbol paxeerSymbol est_funding_rate est_funding_rate_timestamp
+      symbol paxeerSymbol last_funding_rate_hourly
       last_funding_rate last_funding_rate_timestamp next_funding_time sum_unitary_funding
     }
   }

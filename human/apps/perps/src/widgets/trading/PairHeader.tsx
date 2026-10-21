@@ -5,6 +5,8 @@ import { PERPS_MARKETS, coinLogoUrl } from "@/core/perps/config";
 import { useRealtimePrices } from "@/hooks/perps/useRealtimePrices";
 import { useEnrichedMarketStats } from "@/hooks/perps/useEnrichedStats";
 import { useSidPaxOrderbook, useSidPaxTrades, useSidPaxStats } from "@/hooks/perps/useSidPaxMarketStream";
+import { parseVenueFundingHourly } from "@/hooks/perps/useMarketsStream";
+import { FUNDING_LABEL_1H, FUNDING_LABEL_24H, fundingFigures } from "@/core/perps/fundingRate";
 import { ChevronDown } from "lucide-react";
 import { PriceFlash } from "@/ui/atoms/PriceFlash";
 import { MarketWatchlist } from "./MarketSelectorPanel";
@@ -108,7 +110,12 @@ export function PairHeader({ selectedPair, onPairChange, onOpenMarketPanel }: Pa
   const open24h = pick(ticker?.["24h_open"], et?.h24_open);
   const close24h = pick(ticker?.["24h_close"], et?.h24_close) || markPrice;
   const volume24h    = wsStats !== null ? wsStats.volume_24h_usd   : pick(ticker?.["24h_volume"], et?.h24_volume);
-  const estFunding   = wsStats !== null ? wsStats.funding_rate      : pick(ticker?.est_funding_rate, et?.est_funding_rate, enriched?.fundingRate?.est_funding_rate);
+  // The symbol socket's EMA estimate is shown only as an estimate; the venue's
+  // last settled hourly rate and its ×24 projection are labelled as such.
+  const estFunding   = wsStats?.funding_rate ?? null;
+  const venueHourly  = ticker?.last_funding_rate_hourly
+    ?? parseVenueFundingHourly(et?.last_funding_rate_hourly ?? enriched?.fundingRate?.last_funding_rate_hourly);
+  const venueFunding = venueHourly === null ? null : fundingFigures(venueHourly);
   const lastFunding  = wsStats !== null ? wsStats.last_funding_rate  : pick(ticker?.last_funding_rate, et?.last_funding_rate, enriched?.fundingRate?.last_funding_rate);
   const openInterest = wsStats !== null ? wsStats.oi_usd             : pick(ticker?.open_interest, et?.open_interest);
   // Perp-specific stats — only available when wsStats is populated
@@ -209,11 +216,22 @@ export function PairHeader({ selectedPair, onPairChange, onOpenMarketPanel }: Pa
           value={volume24h > 0 ? fmtCompact(volume24h) : "\u2014"}
         />
 
-        <StatChip
-          label="Est. Funding"
-          value={estFunding !== 0 ? fmtPercent(estFunding) : "\u2014"}
-          valueClass={estFunding > 0 ? "text-emerald-500" : estFunding < 0 ? "text-red-500" : ""}
-        />
+        {estFunding !== null && (
+          <StatChip
+            label="Est. Funding"
+            value={fmtPercent(estFunding)}
+            valueClass={estFunding > 0 ? "text-emerald-500" : estFunding < 0 ? "text-red-500" : ""}
+          />
+        )}
+
+        {(venueFunding ?? [FUNDING_LABEL_1H, FUNDING_LABEL_24H].map((label) => ({ label, rate: 0n, text: "\u2014" }))).map((f) => (
+          <StatChip
+            key={f.label}
+            label={f.label}
+            value={f.text}
+            valueClass={f.rate > 0n ? "text-emerald-500" : f.rate < 0n ? "text-red-500" : ""}
+          />
+        ))}
 
         <StatChip
           label="Last Funding"

@@ -17,6 +17,7 @@ import {
   TRACK_B_STRINGS,
 } from "@/core/perps/config";
 import { useMarketSnapshots } from "@/hooks/perps/useAnalytics";
+import { FUNDING_LABEL_ONCHAIN_24H } from "./MarketSnapshotTable";
 
 interface FundingHistoryChartProps {
   marketId: number | undefined;
@@ -101,14 +102,14 @@ export function FundingHistoryChart({ marketId, isMobile }: FundingHistoryChartP
               labelStyle={{ color: "hsl(var(--muted-foreground))" }}
               formatter={(value: number) => [
                 ANALYTICS_AXIS_FORMATTERS.percent(value),
-                "Funding Rate (24h)",
+                FUNDING_LABEL_ONCHAIN_24H,
               ]}
             />
             <Legend />
             <Line
               type="monotone"
               dataKey="fundingRate"
-              name="Funding Rate (24h)"
+              name={FUNDING_LABEL_ONCHAIN_24H}
               stroke={ANALYTICS_CHART_COLORS.funding}
               strokeWidth={2}
               dot={false}

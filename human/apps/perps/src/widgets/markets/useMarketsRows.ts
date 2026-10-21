@@ -68,7 +68,7 @@ export function useMarketsRows(): { rows: MarketRow[]; bySymbol: Map<string, Mar
         volume24h: snap?.volume_24h ?? 0,
         openInterest: snap?.open_interest ?? 0,
         funding8h: snap?.funding_8h ?? 0,
-        fundingEst: snap?.est_funding_rate ?? 0,
+        fundingHourly: snap?.last_funding_rate_hourly ?? null,
         category: getMarketCategory(m.marketId),
         isNew: NEW_MARKET_IDS.has(m.marketId),
         hasLiveData: Boolean(snap),

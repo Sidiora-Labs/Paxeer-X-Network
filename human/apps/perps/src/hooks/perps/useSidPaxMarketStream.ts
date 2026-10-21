@@ -127,8 +127,6 @@ export interface SidPaxStats {
   // ── Backward-compat aliases (used by PairHeader / MobileTradingLayout) ──
   /** @deprecated Use `volume_24h_usd`. */
   volume_24h: number;
-  /** @deprecated Use `funding_rate`. */
-  est_funding_rate: number;
   /** @deprecated Use `oi_usd`. */
   open_interest: number;
 }
@@ -340,7 +338,6 @@ function connect(symbol: string, s: SymbolStream) {
         volume_24h_usd:       volumeUsd,
         // backward-compat aliases
         volume_24h:    volumeUsd,
-        est_funding_rate: fundingRate,
         open_interest: oiUsd,
       };
       s.subsStats.forEach((cb) => cb(s.statsData));

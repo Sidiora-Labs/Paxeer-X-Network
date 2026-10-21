@@ -3,6 +3,7 @@ import { sequenceGuard, isPageActive, scheduleActive, watchSocket, notifyStreamR
 
 import { FEED_ORIGIN } from "@/core/feeds";
 import { useEffect, useState } from "react";
+import { parseFundingRateHourly } from "@/core/perps/fundingRate";
 
 /* ══════════════════════════════════════════════════════════════════════
    Dedicated markets aggregate stream (`/ws/markets`).
@@ -41,8 +42,8 @@ export interface MarketSnapshot {
   open_interest: number;
   /** Realised 8h funding — a ratio (e.g. 0.0001 = 0.01%). */
   funding_8h: number;
-  /** Estimated next funding rate — ratio. */
-  est_funding_rate: number;
+  /** Last settled hourly funding rate at 18 decimals (1e18 = 1.0); null before the first settlement. */
+  last_funding_rate_hourly: bigint | null;
   volume_7d: number;
   volume_30d: number;
   trades_count: number;
@@ -286,7 +287,17 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function normalizeMarket(raw: unknown): MarketSnapshot | null {
+/**
+ * The venue's `last_funding_rate_hourly` at 18 decimals. Absent (null or
+ * missing) is null, never zero; anything present that is not an exact
+ * decimal string throws.
+ */
+export function parseVenueFundingHourly(v: unknown): bigint | null {
+  if (v === null || v === undefined) return null;
+  return parseFundingRateHourly(v as string);
+}
+
+export function normalizeMarket(raw: unknown): MarketSnapshot | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   const symbol = typeof r.symbol === "string" ? r.symbol : null;
@@ -299,7 +310,7 @@ function normalizeMarket(raw: unknown): MarketSnapshot | null {
     volume_24h: num(r.volume_24h),
     open_interest: num(r.open_interest),
     funding_8h: num(r.funding_8h),
-    est_funding_rate: num(r.est_funding_rate),
+    last_funding_rate_hourly: parseVenueFundingHourly(r.last_funding_rate_hourly),
     volume_7d: num(r.volume_7d),
     volume_30d: num(r.volume_30d),
     trades_count: num(r.trades_count),

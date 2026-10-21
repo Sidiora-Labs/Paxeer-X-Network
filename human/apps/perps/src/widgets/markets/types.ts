@@ -18,8 +18,8 @@ export interface MarketRow extends PerpsMarket {
   openInterest: number;
   /** Realised 8h funding ratio (0.0001 = 0.01%). */
   funding8h: number;
-  /** Estimated next funding ratio. */
-  fundingEst: number;
+  /** Last settled hourly funding rate at 18 decimals; null before the first settlement or the feed. */
+  fundingHourly: bigint | null;
   /** Canonical category (crypto / stocks / indices / commodities). */
   category: string;
   /** True if this market is flagged as a "new listing" on the product. */

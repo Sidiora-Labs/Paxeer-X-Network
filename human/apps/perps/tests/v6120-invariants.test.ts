@@ -612,6 +612,12 @@ describe("v6120Invariants", () => {
     assert.deepEqual(hits, []);
   });
 
+  it("noEstFundingRate", () => {
+    const hits = walk("src").filter((file) => /est_funding_rate/.test(read(file)));
+    assert.deepEqual(hits, []);
+    assert.ok(walk("src").some((file) => file.endsWith(".graphql")));
+  });
+
   it("noLegacyTokenEntries", () => {
     const hits: string[] = [];
     for (const file of sources(SCAN_ROOTS)) {

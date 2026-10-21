@@ -154,7 +154,8 @@ export interface OrderlyTicker {
   mark_price: number | null;
   index_price: number | null;
   sum_unitary_funding: number | null;
-  est_funding_rate: number | null;
+  /** Last settled hourly funding rate, an exact decimal string (parse with fundingRate.ts). */
+  last_funding_rate_hourly: string | null;
   last_funding_rate: number | null;
   next_funding_time: number | null;
   open_interest: number | null;
@@ -199,8 +200,8 @@ export interface OrderlyOpenInterest {
 export interface OrderlyFundingRate {
   symbol: string;
   paxeerSymbol: string;
-  est_funding_rate: number | null;
-  est_funding_rate_timestamp: number | null;
+  /** Last settled hourly funding rate, an exact decimal string (parse with fundingRate.ts). */
+  last_funding_rate_hourly: string | null;
   last_funding_rate: number | null;
   last_funding_rate_timestamp: number | null;
   next_funding_time: number | null;

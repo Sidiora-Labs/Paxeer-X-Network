@@ -12,6 +12,7 @@ import {
   useSidPaxTrades,
   useSidPaxStats,
 } from "@/hooks/perps/useSidPaxMarketStream";
+import { FUNDING_LABEL_1H, formatFundingRatePct } from "@/core/perps/fundingRate";
 
 type MobileMarketView = "chart" | "trades" | "data";
 
@@ -33,7 +34,11 @@ function FundingRateRow({ symbol }: { symbol: string }) {
   const { tickers } = useRealtimePrices();
   const wsStats = useSidPaxStats(symbol);
   const ticker = tickers[symbol];
-  const estFunding = wsStats !== null ? wsStats.funding_rate : (ticker?.est_funding_rate ?? 0);
+  // The symbol socket's EMA estimate when present, else the venue's last settled hourly rate, each under its own label.
+  const venueHourly = ticker?.last_funding_rate_hourly ?? null;
+  const funding = wsStats !== null
+    ? { label: "Pred. funding rate", text: `${(wsStats.funding_rate * 100).toFixed(4)}%`, positive: wsStats.funding_rate >= 0 }
+    : { label: FUNDING_LABEL_1H, text: venueHourly === null ? "\u2014" : formatFundingRatePct(venueHourly), positive: venueHourly === null || venueHourly >= 0n };
   // Use server-provided next_funding_ms when available; otherwise count to next 8h mark.
   const serverNextMs = wsStats?.next_funding_ms ?? 0;
 
@@ -79,9 +84,9 @@ function FundingRateRow({ symbol }: { symbol: string }) {
   return (
     <div className="flex items-center justify-between px-3 py-1.5 bg-background">
       <span className="text-[10px] text-muted-foreground">
-        Pred. funding rate{" "}
-        <span className={cn("font-mono font-semibold tabular-nums", estFunding >= 0 ? "text-emerald-500" : "text-red-500")}>
-          {estFunding !== 0 ? `${(estFunding * 100).toFixed(4)}%` : "0.0000%"}
+        {funding.label}{" "}
+        <span className={cn("font-mono font-semibold tabular-nums", funding.positive ? "text-emerald-500" : "text-red-500")}>
+          {funding.text}
         </span>{" "}
         <span className="text-muted-foreground">{countdown}</span>
       </span>

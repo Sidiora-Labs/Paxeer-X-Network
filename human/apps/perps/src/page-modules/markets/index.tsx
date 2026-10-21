@@ -19,6 +19,7 @@ import {
 } from "@/widgets/markets";
 import { SPOT_MARKETS, spotCoinLogoUrl } from "@/core/spot/config";
 import { useSpotStats } from "@/hooks/spot/useSpotMarketStream";
+import { FUNDING_LABEL_1H, formatFundingRatePct } from "@/core/perps/fundingRate";
 
 /* ══════════════════════════════════════════════════════════════════════
    /markets page — live, widget-composed layout.
@@ -331,13 +332,13 @@ function FundingTabPanel({
         <span>Market</span>
         <span className="text-right">Last</span>
         <span className="text-right">8h funding</span>
-        <span className="text-right">Est. next</span>
+        <span className="text-right">{FUNDING_LABEL_1H}</span>
         <span className="text-right">24h vol</span>
       </div>
       <div className="divide-y divide-white/[0.04]">
         {sorted.map((row) => {
           const fp = row.funding8h >= 0;
-          const ep = row.fundingEst >= 0;
+          const ep = row.fundingHourly === null || row.fundingHourly >= 0n;
           return (
             <button
               key={row.marketId}
@@ -359,7 +360,7 @@ function FundingTabPanel({
                 {(row.funding8h * 100).toFixed(4)}%
               </span>
               <span className={`text-xs font-mono tabular-nums text-right ${ep ? "text-emerald-400" : "text-red-400"}`}>
-                {(row.fundingEst * 100).toFixed(4)}%
+                {row.fundingHourly === null ? "—" : formatFundingRatePct(row.fundingHourly)}
               </span>
               <span className="text-xs font-mono tabular-nums text-muted-foreground text-right">
                 {row.volume24h > 0 ? `$${(row.volume24h / 1e6).toFixed(2)}M` : "—"}

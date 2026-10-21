@@ -8,6 +8,9 @@ import {
 } from "@/core/perps/config";
 import { useMarketSnapshots } from "@/hooks/perps/useAnalytics";
 
+/** The subgraph snapshot's on-chain 24h funding figure, never the venue rate. */
+export const FUNDING_LABEL_ONCHAIN_24H = "funding paid (24h, on-chain)";
+
 interface MarketSnapshotTableProps {
   marketId: number | undefined;
 }
@@ -80,7 +83,7 @@ export function MarketSnapshotTable({ marketId }: MarketSnapshotTableProps) {
               <th className="text-right px-4 py-2.5 font-mono text-xs-label uppercase tracking-label">Long OI</th>
               <th className="text-right px-4 py-2.5 font-mono text-xs-label uppercase tracking-label">Short OI</th>
               <th className="text-right px-4 py-2.5 font-mono text-xs-label uppercase tracking-label">24h Volume</th>
-              <th className="text-right px-4 py-2.5 font-mono text-xs-label uppercase tracking-label">Funding (24h)</th>
+              <th className="text-right px-4 py-2.5 font-mono text-xs-label uppercase tracking-label">{FUNDING_LABEL_ONCHAIN_24H}</th>
             </tr>
           </thead>
           <tbody>

@@ -70,3 +70,73 @@ describe("quoter funding source", () => {
     for (const line of src.split("\n").filter((l) => /funding/i.test(l))) assert.doesNotMatch(line, /Number\(|toBigInt18/, line);
   });
 });
+
+describe("venue funding consumers", () => {
+  const read = (file: string) => readFileSync(ROOT + file, "utf8");
+
+  it("the markets stream parses last_funding_rate_hourly exactly and keeps an absent rate null", async () => {
+    const { normalizeMarket, parseVenueFundingHourly } = await import("../src/hooks/perps/useMarketsStream");
+    assert.equal(normalizeMarket({ symbol: "BTC", last_funding_rate_hourly: "0.0000125" })?.last_funding_rate_hourly, 12_500_000_000_000n);
+    assert.equal(normalizeMarket({ symbol: "ETH", last_funding_rate_hourly: "-0.000000000000000001" })?.last_funding_rate_hourly, -1n);
+    assert.equal(normalizeMarket({ symbol: "SOL" })?.last_funding_rate_hourly, null);
+    assert.equal(normalizeMarket({ symbol: "SOL", last_funding_rate_hourly: null })?.last_funding_rate_hourly, null);
+    assert.throws(() => normalizeMarket({ symbol: "BTC", last_funding_rate_hourly: 0.0001 }), /not an exact decimal string/);
+    assert.throws(() => normalizeMarket({ symbol: "BTC", last_funding_rate_hourly: "1e-4" }), /not an exact decimal string/);
+    assert.equal(parseVenueFundingHourly(undefined), null);
+  });
+
+  it("the realtime tickers carry the parsed hourly rate from the stream and from the /tickers wire row", async () => {
+    const { normalizeMarket } = await import("../src/hooks/perps/useMarketsStream");
+    const { tickerFromSnapshot, tickerFromWire } = await import("../src/hooks/perps/useRealtimePrices");
+    const snap = normalizeMarket({ symbol: "BTC", price: 100, last_funding_rate_hourly: "0.0001" })!;
+    assert.equal(tickerFromSnapshot(snap).last_funding_rate_hourly, 100_000_000_000_000n);
+    const wire = {
+      symbol: "PERP_BTC_USDC", paxeerSymbol: "BTC", mark_price: 1, index_price: 1, open_interest: 0,
+      last_funding_rate_hourly: "-0.0000125", last_funding_rate: 0,
+      "24h_open": 0, "24h_close": 0, "24h_high": 0, "24h_low": 0, "24h_amount": 0, "24h_volume": 0,
+    };
+    assert.equal(tickerFromWire(wire).last_funding_rate_hourly, -12_500_000_000_000n);
+    assert.equal(tickerFromWire({ ...wire, last_funding_rate_hourly: null }).last_funding_rate_hourly, null);
+    assert.throws(() => tickerFromWire({ ...wire, last_funding_rate_hourly: "0.1 " }), /not an exact decimal string/);
+  });
+
+  it("the subgraph documents request last_funding_rate_hourly and no timestamp of the removed field", () => {
+    const src = read("src/hooks/perps/useSubgraph.ts");
+    assert.equal(src.match(/\blast_funding_rate_hourly\b/g)?.length, 4);
+    const schema = read("src/core/perps/perpetual.graphql");
+    assert.equal(schema.match(/^\s*last_funding_rate_hourly: String$/gm)?.length, 2);
+    const types = read("src/types/perps.ts");
+    assert.equal(types.match(/^\s*last_funding_rate_hourly: string \| null;$/gm)?.length, 2);
+  });
+
+  it("the symbol socket stats keep no estimated-rate alias", () => {
+    assert.doesNotMatch(read("src/hooks/perps/useSidPaxMarketStream.ts"), /est_funding|estFunding/);
+  });
+
+  it("the trading header, mobile row and funding tab render the venue rate under the fundingRate.ts labels, with no Number()", () => {
+    const header = read("src/widgets/trading/PairHeader.tsx");
+    assert.match(header, /fundingFigures\(venueHourly\)/);
+    assert.match(header, /\[FUNDING_LABEL_1H, FUNDING_LABEL_24H\]/);
+    assert.match(read("src/widgets/trading/MobileTradingLayout.tsx"), /label: FUNDING_LABEL_1H, text: venueHourly === null \? "\\u2014" : formatFundingRatePct\(venueHourly\)/);
+    const tab = read("src/page-modules/markets/index.tsx");
+    assert.match(tab, /\{FUNDING_LABEL_1H\}/);
+    assert.match(tab, /formatFundingRatePct\(row\.fundingHourly\)/);
+    for (const file of ["src/widgets/trading/PairHeader.tsx", "src/widgets/trading/MobileTradingLayout.tsx", "src/widgets/markets/useMarketsRows.ts", "src/hooks/perps/useMarketsStream.ts", "src/hooks/perps/useRealtimePrices.ts"]) {
+      for (const line of read(file).split("\n").filter((l) => /funding_rate_hourly|venueHourly|fundingHourly/.test(l))) {
+        assert.doesNotMatch(line, /Number\(|parseFloat|toBigInt18/, `${file}: ${line}`);
+      }
+    }
+  });
+
+  it("the two 24h views label the subgraph figure as on-chain funding paid, never as the venue rate", () => {
+    const table = read("src/widgets/analytics/MarketSnapshotTable.tsx");
+    const chart = read("src/widgets/analytics/FundingHistoryChart.tsx");
+    assert.match(table, /export const FUNDING_LABEL_ONCHAIN_24H = "funding paid \(24h, on-chain\)";/);
+    assert.match(table, /<th [^>]*>\{FUNDING_LABEL_ONCHAIN_24H\}<\/th>/);
+    assert.equal(chart.match(/FUNDING_LABEL_ONCHAIN_24H/g)?.length, 3);
+    for (const src of [table, chart]) {
+      assert.doesNotMatch(src, /Funding( Rate)? \(24h\)/);
+      assert.doesNotMatch(src, /FUNDING_LABEL_1H|FUNDING_LABEL_24H|last_funding_rate_hourly/);
+    }
+  });
+});
