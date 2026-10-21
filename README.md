@@ -2,120 +2,47 @@
 
 <h1 align="center">Paxeer X Network</h1>
 
-<h1 align="center">
-  
-English · [Español](docs/readme/README.es.md) · [日本語](docs/readme/README.ja.md) · [Русский](docs/readme/README.ru.md) · [简体中文](docs/readme/README.zh-CN.md) · [Português](docs/readme/README.pt-BR.md) · [Deutsch](docs/readme/README.de.md) · [Français](docs/readme/README.fr.md)
-  
-</h1>
-<p align="center">
-  <!-- ═══ Network Identity ═══ -->
-  <img src="https://img.shields.io/badge/Paxeer%20X-Network-6C3BFF?style=for-the-badge" alt="Paxeer X Network" />
-  <img src="https://img.shields.io/badge/Chain%20ID-125%20(0x7D)-1F6FEB?style=for-the-badge&logo=chainlink&logoColor=white" alt="Chain ID 125" />
-  <img src="https://img.shields.io/badge/EVM-Compatible-3C3C3D?style=for-the-badge&logo=ethereum&logoColor=white" alt="EVM Compatible" />
-  <img src="https://img.shields.io/badge/LayerX-Kernel%20(C17)-FF6B00?style=for-the-badge&logo=databricks&logoColor=white" alt="LayerX kernel" />
-  <img src="https://img.shields.io/badge/Solidity-Smart%20Contracts-363636?style=for-the-badge&logo=solidity&logoColor=white" alt="Solidity" />
-</p>
+Paxeer X Network is one network with two execution domains: the Paxeer X chain (`paxd`, Go, EVM chain ID 125) and the LayerX kernel (`layerxd`, C17), the deterministic execution and accounting domain for autonomous agents. This repository is its monorepo: the chain node, the LayerX kernel, the on-chain contracts, the off-chain services, the client SDKs and the user-facing applications.
 
-<p align="center">
-  <!-- ═══ Language Stack ═══ -->
-  <img src="https://img.shields.io/badge/C-00599C?style=for-the-badge&logo=c&logoColor=white" alt="C" />
-  <img src="https://img.shields.io/badge/Rust-CE422B?style=for-the-badge&logo=rust&logoColor=white" alt="Rust" />
-  <img src="https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go" />
-  <img src="https://img.shields.io/badge/WebAssembly-654FF0?style=for-the-badge&logo=webassembly&logoColor=white" alt="WebAssembly" />
-  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
-</p>
+Official site: [paxeer.network](https://paxeer.network/). Documentation: [docs.paxeer.app](https://docs.paxeer.app/). Source: [Sidiora-Labs/Paxeer-X-Network](https://github.com/Sidiora-Labs/Paxeer-X-Network).
 
-<p align="center">
-  <!-- ═══ Repo Health ═══ -->
-  <img src="https://img.shields.io/github/actions/workflow/status/Sidiora-Labs/Paxeer-X-Network/ci.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI" />
-  <img src="https://img.shields.io/github/license/Sidiora-Labs/Paxeer-X-Network?style=for-the-badge" alt="License" />
-  <img src="https://img.shields.io/github/last-commit/Sidiora-Labs/Paxeer-X-Network?style=for-the-badge&logo=git&logoColor=white" alt="Last Commit" />
-  <img src="https://img.shields.io/github/stars/Sidiora-Labs/Paxeer-X-Network?style=for-the-badge&logo=github" alt="Stars" />
-</p>
+## What is in the network
 
-## What Paxeer X Network is
-Paxeer X Network is one network with two execution domains: the Paxeer X chain (`paxd`, Go, EVM chain ID 125) and the LayerX kernel (`layerxd`, C17), the deterministic execution and accounting domain for autonomous agents. Official site: [paxeer.network](https://paxeer.network/). Documentation: [docs.paxeer.app](https://docs.paxeer.app/).
-
-The Paxeer X chain runs EVM execution on Tendermint consensus and carries the `layerxcustody`, `layerxexchange`, `layerxbridge` and `launchpad` modules, which contracts reach through the precompiles at `0x1013`, `0x1015`, `0x1016` and `0x1017`. The LayerX kernel executes and accounts for agent activity deterministically and returns a signed receipt for each activity; its checkpoints settle on the chain through the `layerxAnchor` precompile at `0x1014`.
-
-This repository is the Sidiora Labs monorepo for Paxeer X Network: the Paxeer X chain and the LayerX kernel in one repository. Co-location keeps the kernel, the chain, contracts, and developer surfaces auditable in one place. Each subsystem keeps its own build, release, deployment, and trust boundary. The governing specification is [`spec/paxeer-x/spec.kvx`](spec/paxeer-x/spec.kvx), rendered as [`spec/paxeer-x/design.md`](spec/paxeer-x/design.md); release notes are in [`CHANGELOG.md`](CHANGELOG.md).
+- **The chain.** `paxd` is the Paxeer X node, written in Go with BFT consensus and an EVM execution layer. Its main package is `daemon/paxd`; the state machine modules are under `modules/` and the RPC servers under `rpc/`.
+- **The LayerX kernel.** LayerX is the kernel domain: the C17 daemon `layerxd` executes and accounts for agent activity deterministically and returns a signed receipt for each activity, `layerxctl` is its operator CLI, and `programs/` holds the kernel programs runtime. It runs today as a separate daemon built from `cmd/layerxd`, and its checkpoints settle on the chain through the `layerxAnchor` precompile. Folding the kernel into the chain is specified in [`spec/layerx-merge/spec.kvx`](spec/layerx-merge/spec.kvx), which is in draft.
+- **The EVM and precompile surface.** Contracts reach the native modules through stateful precompiles under `precompiles/`, registered in `precompiles/setup.go`: bank, wasmd, json, addr, staking, governance, distribution, oracle, ibc, pointer, pointer view, p256 and solo, the fee token and web search, and the LayerX verify, custody (`0x1013`), anchor (`0x1014`), exchange (`0x1015`) and bridge (`0x1016`) precompiles and the launchpad (`0x1017`).
+- **Off-chain services.** The agent daemon and MCP server, the interop gateway and bridge relayer, the hosted developer platform (gateway, indexer, registry, webhooks, perps data), the human control plane, the embedded wallet service, the explorer backend and the launchpad services.
+- **Applications.** The Hyperpax perps frontend, the wallet, the web app, the explorer frontend and the launchpad web and mobile apps.
 
 ## Try the network
 
 The limited beta has not opened yet. The gateway API becomes available when it does. This is a mainnet beta on real value, so there is no faucet for general use; approved developers receive test allocations from the team.
 
-To connect to the Paxeer X chain (chain ID 125), use one of the public JSON-RPC names listed in
-[`docs/site/docs/reference/public-rpc.md`](docs/site/docs/reference/public-rpc.md).
-The public endpoint checklist is
-[`docs/wiki/Getting-Started-Beta.md`](docs/wiki/Getting-Started-Beta.md).
-The wallet, funding, and payments path is
-[`docs/wiki/PaymentsQuickstart.md`](docs/wiki/PaymentsQuickstart.md). Assets:
-[`docs/wiki/Assets.md`](docs/wiki/Assets.md). RPC methods:
-[`docs/wiki/PublicRpc.md`](docs/wiki/PublicRpc.md). Commitment levels:
-[`docs/wiki/CommitmentLevels.md`](docs/wiki/CommitmentLevels.md). Public
-payment API: [`docs/wiki/PublicAPI.md`](docs/wiki/PublicAPI.md).
-
-Kernel developers start at the hosted documentation at [docs.paxeer.app](https://docs.paxeer.app/); the local cluster walkthrough is [`docs/wiki/Quickstart.md`](docs/wiki/Quickstart.md).
-
-## Build from source
-
-The Paxeer X chain node is Go 1.25.6 (`go.mod`). The LayerX kernel is C17 (`-std=c17` in the root `Makefile`). Agent, human, and platform workspaces use Rust 1.91.1 (`rust-toolchain.toml`). The kernel settlement contracts in `contracts/` use Solidity 0.8.27 (`foundry.toml`). Replay qualification needs GCC 13, Clang 18, Docker, an amd64 musl runner, and an AArch64 cross-compiler plus QEMU; see [`docs/QUALIFICATION.md`](docs/QUALIFICATION.md).
-
-LayerX kernel targets:
-
-```sh
-make build
-make test
-make test-contracts
-make ci
-```
-
-Paxeer X chain targets (`paxd`, defined in `chain.mk`), without changing directories:
-
-```sh
-make paxeer-build
-make paxeer-lint
-make paxeer-test
-make paxeer-ci
-```
-
-`make ci` runs `public-audit`, kernel tests, a two-build archive comparison, consensus symbol checks, and sanitizer suites. `make monorepo-ci` is a separate cross-subsystem gate. A local pass is not authorization to deploy contracts, move custody, or handle real assets.
+To connect to the Paxeer X chain (chain ID 125), use one of the public JSON-RPC names listed in [`docs/site/docs/reference/public-rpc.md`](docs/site/docs/reference/public-rpc.md). The public endpoint checklist is [`docs/wiki/Getting-Started-Beta.md`](docs/wiki/Getting-Started-Beta.md), and the wallet, funding and payments path is [`docs/wiki/PaymentsQuickstart.md`](docs/wiki/PaymentsQuickstart.md). Further reference: [assets](docs/wiki/Assets.md), [RPC methods](docs/wiki/PublicRpc.md), [commitment levels](docs/wiki/CommitmentLevels.md), [public payment API](docs/wiki/PublicAPI.md). The local kernel cluster walkthrough is [`docs/wiki/Quickstart.md`](docs/wiki/Quickstart.md); the wiki index is [`docs/wiki/Home.md`](docs/wiki/Home.md).
 
 ## Repository layout
 
-| Path | Purpose |
+| Path | Contents |
 | --- | --- |
-| `src/`, `include/` | C17 LayerX kernel runtime, state machine, storage, sequencing, replay, and settlement integration |
-| `cmd/` | Kernel daemons and tools (`layerxd`, `layerxctl`, `layerx-guarantor`, genesis, verify) |
-| `agent/` | Rust agent interface, SDK, daemon, MCP server, encoding, cryptography, and proof verification |
-| `human/` | Human control plane, typed intent compiler, KMS, explorer index, and the web and wallet applications |
-| `services/platform/` | Developer platform, hosted services, middleware, SDKs, emulator, CLI, and release tooling |
-| `programs/` | Programs runtime, registry, interpreter, sandbox, market, and program SDKs for the LayerX kernel |
-| `interop/` | Agent-commerce and cross-network interoperability surfaces, including the bridge relayer |
-| `contracts/` | Solidity contracts on the Paxeer X chain for custody, checkpoints, guarantor bonding, claims, disputes, and exits |
-| `bridge/` | Bridge vault contracts and deployment runbook for EVM chains and Solana |
-| `explorer/` | Block explorer, a Blockscout fork kept apart from the rest of the monorepo |
-| `go.mod`, `chain.mk`, `daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, `docker/` | Paxeer X chain node (`paxd`), EVM/RPC compatibility, storage engines, modules, precompiles, and subsystem-local builds |
-| `spec/` | Normative KVX specification, generated design, requirements, and task graph |
-| `tests/`, `tests/fuzz/` | Native, contract, replay, invariant, fault, and fuzz suites |
-| `migrations/` | SQL for kernel genesis import sections, rebuildable projections, and the history index |
-| `docs/` | Wiki, documentation site sources, monorepo notes, and qualification documentation |
+| `apps/` | User-facing frontends: `apps/explorer` (block explorer frontend), `apps/launchpad` (launchpad web and mobile apps) |
+| `services/` | Off-chain programs: `services/agent` (agent daemon, MCP server, Rust, TypeScript and Python SDKs), `services/interop` (interop gateway, bridge relayer), `services/platform` (hosted developer platform), `services/explorer` (block explorer backend), `services/launchpad` (launchpad services), `services/human` (human control plane Rust workspace), `services/bridge` (bridge deployment) |
+| `sdk/` | Client SDKs: `sdk/platform` (Go, JVM, .NET, Swift), `sdk/integrations`, `sdk/launchpad` (launchpad protocol, shared libraries and client packages), `sdk/js`; it also holds the application framework fork the node builds from |
+| `contracts/` | On-chain sources: the root Foundry tree, `contracts/bridge` (EVM vaults, the Solana program and test vectors) and `contracts/launchpad` |
+| `core/deps/` | Pinned snapshots of the upstream libraries the node builds from, each with a `VENDOR.kvx` pin record |
+| `tests/` | Kernel C tests, fuzz targets (`tests/fuzz`), integration tests (`tests/integration`), OCC tests (`tests/occ`), `tests/testutil`, `tests/fixtures`, Solidity and vector suites |
+| `tools/` | Developer and operator tools, including `tools/hpx`, `tools/platform` (CLI, emulator, release), `tools/launchpad`, `tools/loadtest`, `tools/paxctl`, `tools/uci` and `tools/wasm-tools` |
+| `human/` | The Hyperpax perps frontend, wallet and web apps (`human/apps`) and the embedded wallet service and SDK (`human/wallet`); they move to `apps/perps`, `apps/wallet`, `apps/web`, `services/wallet` and `sdk/wallet` in this layout release |
+| `chainflow/` | Chainflow client libraries for Go, Python, Rust and TypeScript; moves to `sdk/chainflow` in this layout release |
+| `migrations/` | SQL for kernel genesis import sections, rebuildable projections and the history index |
+| `api/` | Protobuf definitions (buf module) |
+| `deploy/`, `docker/` | Deployment descriptors (including `deploy/launchpad`) and container builds |
+| `docs/` | Wiki, documentation site sources, translations and qualification notes |
+| `spec/` | Feature specifications and the kvx workflow |
+| `scripts/` | CI, qualification, release and workspace scripts |
 
-## Documentation
+The chain and kernel trees stay at the root in this release and move under `core/` in a later one: `src`, `include`, `cmd` and `migrations` (the kernel), `modules`, `precompiles`, `engine`, `consensus`, `node`, `rpc`, `storage`, `wasm`, `wasm-runtime`, `daemon`, `admin`, `custodyproof`, `layerxproof`, `utils`, `interchain`, the framework fork in `sdk`, and `programs` (whose guest SDK moves to `sdk/programs`). [`docs/MONOREPO.md`](docs/MONOREPO.md) describes the layout and the destinations of the trees that move; the target layout is specified in [`spec/monorepo-layout/spec.kvx`](spec/monorepo-layout/spec.kvx).
 
-- Hosted documentation: [docs.paxeer.app](https://docs.paxeer.app/)
-- Wiki index: [`docs/wiki/Home.md`](docs/wiki/Home.md)
-- Getting started: [`docs/wiki/Getting-Started-Beta.md`](docs/wiki/Getting-Started-Beta.md)
-- Payments developer path: [`docs/wiki/PaymentsQuickstart.md`](docs/wiki/PaymentsQuickstart.md)
-- Public JSON-RPC: [`docs/wiki/PublicRpc.md`](docs/wiki/PublicRpc.md)
-- Assets and tokens: [`docs/wiki/Assets.md`](docs/wiki/Assets.md)
-- Commitment levels: [`docs/wiki/CommitmentLevels.md`](docs/wiki/CommitmentLevels.md)
-- Monorepo layout and release tags: [`docs/MONOREPO.md`](docs/MONOREPO.md)
-- Qualification gates: [`docs/QUALIFICATION.md`](docs/QUALIFICATION.md)
-- Specification: [`spec/paxeer-x/spec.kvx`](spec/paxeer-x/spec.kvx)
-- Release notes: [`CHANGELOG.md`](CHANGELOG.md)
-
-## SDKs and integrations
+## SDKs
 
 | Language | Path |
 | --- | --- |
@@ -127,184 +54,69 @@ make paxeer-ci
 | .NET | `sdk/platform/dotnet` |
 | Swift | `sdk/platform/swift` |
 
-`layerx-agentd` is `services/agent/crates/layerx-agentd`. The MCP server is `services/agent/crates/layerx-mcp`. The developer CLI in `tools/platform/cli` installs those transports with `layerx install mcp` and `layerx install a2a`.
+The agent daemon is `services/agent/crates/layerx-agentd` and the MCP server is `services/agent/crates/layerx-mcp`. The developer CLI in `tools/platform/cli` installs those transports with `layerx install mcp` and `layerx install a2a`.
 
-## Architecture
+## Build
 
-Paxeer X Network is one network with two execution domains: the Paxeer X chain node (`paxd`, Go) and the LayerX kernel (`layerxd`, C17), joined by EVM precompiles on one side and hosted platform services on the other. Rounded boxes are running services, cylinders are durable stores, hexagons are contracts and EVM precompiles (labelled with their address), and plain boxes are modules inside a state machine. Arrows follow the direction data moves: solid arrows submit or write, dotted arrows carry reads, events and proofs.
+Toolchains: Go 1.25.6 (`go.mod`), a C17 compiler for the kernel (root `Makefile`), Rust 1.91.1 (`rust-toolchain.toml`), Solidity 0.8.27 with Foundry (`foundry.toml`), and Node.js for the npm workspaces in `package.json`. Replay qualification also needs GCC 13, Clang 18, Docker, an amd64 musl runner, and an AArch64 cross-compiler with QEMU; see [`docs/QUALIFICATION.md`](docs/QUALIFICATION.md).
 
-```mermaid
-flowchart TB
-  subgraph users ["Users and agents"]
-    direction TB
-    human(["Human"])
-    agent(["Autonomous agent"])
-    web("Human web app")
-    hsvc("layerx-human-service")
-    intents("layerx-intents<br/>typed intent compiler")
-    kms("layerx-human-kms")
-    mcp("layerx-mcp")
-    sdk("layerx-sdk<br/>Rust · TypeScript · Python")
-    agentd("layerx-agentd")
-  end
+The node, from the repository root:
 
-  subgraph platform ["Platform services"]
-    direction TB
-    gateway("layerx-gateway<br/>eth_* relay · px_* · px_getCapabilities")
-    indexer("layerx-indexer<br/>LayerX and Paxeer ingesters")
-    idxdb[("SQLite history")]
-    relay("relay/archive node")
-  end
-
-  subgraph lx ["LayerX kernel · C17"]
-    direction TB
-    layerxd("layerxd<br/>LNI server · sequencer")
-    kernel["Activity kernel<br/>module dispatch"]
-    perps["perps · 6"]
-    spot["spot · 10"]
-    gov["governance · 7"]
-    kbridge["bridge · 8"]
-    ledger["402LXP ledger<br/>sole balance writer"]
-    alog[("Activity log")]
-    guarantor("layerx-guarantor")
-  end
-
-  subgraph px ["Paxeer X node · paxd"]
-    direction TB
-    evm("EVM JSON-RPC<br/>pax-geth")
-    cons("Tendermint consensus")
-    occ("OCC parallel executor")
-    pAnchor{{"layerxAnchor<br/>0x1014"}}
-    pCustody{{"layerxCustody<br/>0x1013"}}
-    pExch{{"layerxExchange<br/>0x1015"}}
-    pBridge{{"layerxBridge<br/>0x1016"}}
-    pLaunch{{"launchpad<br/>0x1017"}}
-    mCustody["layerxcustody module"]
-    mExch["layerxexchange module"]
-    mBridge["layerxbridge module"]
-    mLaunch["launchpad module"]
-    paxdb[("PaxDB state store")]
-  end
-
-  subgraph eth ["Bridge to Ethereum"]
-    direction TB
-    relayer("layerx-bridge-relayer")
-    vault{{"PaxeerXVault"}}
-  end
-
-  human --> web
-  web -->|"HTTPS"| hsvc
-  hsvc -->|"typed intent"| intents
-  hsvc -->|"custody signing"| kms
-  intents -->|"compiled Activity"| agentd
-  agent --> mcp
-  agent --> sdk
-  mcp -->|"tool calls"| agentd
-  sdk -->|"daemon socket"| agentd
-  agentd -->|"LNI frames"| layerxd
-
-  layerxd --> kernel
-  kernel --> perps & spot & gov & kbridge
-  kernel -->|"transfer sets"| ledger
-  ledger -->|"signed receipt"| alog
-  alog -->|"sealed batch"| guarantor
-  guarantor -->|"submitCheckpoint"| pAnchor
-
-  layerxd -.->|"batch sync"| relay
-  relay -.->|"history batches"| indexer
-  evm -.->|"blocks · logs · tx_search"| indexer
-  indexer --> idxdb
-  indexer -.->|"px_getHistory"| gateway
-  layerxd -.->|"lx_* reads"| gateway
-  gateway -->|"eth_* relay"| evm
-  gateway -.->|"eth_call · eth_getLogs"| web
-  gateway -.->|"px_* reads"| hsvc
-
-  evm -->|"txs"| cons
-  cons -->|"ordered blocks"| occ
-  occ --> pAnchor & pCustody & pExch & pBridge & pLaunch
-  pCustody --> mCustody
-  pExch -->|"pending intent"| mExch
-  pExch -->|"margin deposit"| mCustody
-  pBridge --> mBridge
-  pLaunch --> mLaunch
-  occ -->|"state commits"| paxdb
-
-  pExch -.->|"intent logs decoded"| intents
-  mCustody -.->|"custody credit proof"| kbridge
-
-  vault -.->|"Deposit event"| relayer
-  relayer -->|"bridgeIn"| pBridge
-  pBridge -.->|"BridgeOut event"| relayer
-  relayer -->|"release"| vault
-
-  classDef actor fill:#e4dcf2,stroke:#7a68ad,color:#2a2340
-  classDef svc fill:#d8e5f3,stroke:#4d77a8,color:#1b2a3c
-  classDef store fill:#e1ecd4,stroke:#6a8c48,color:#23321a
-  classDef contract fill:#f3e2cc,stroke:#ad7a3e,color:#3b2913
-  classDef module fill:#e6e8eb,stroke:#6b7480,color:#22272e
-
-  class human,agent actor
-  class web,hsvc,intents,kms,mcp,sdk,agentd,gateway,indexer,relay,layerxd,guarantor,evm,cons,occ,relayer svc
-  class idxdb,alog,paxdb store
-  class pAnchor,pCustody,pExch,pBridge,pLaunch,vault contract
-  class kernel,perps,spot,gov,kbridge,ledger,mCustody,mExch,mBridge,mLaunch module
+```sh
+make paxeer-build      # build/paxd through chain.mk
+make paxd-build        # also builds the kernel library and programs runtime the node links, and stamps the release version
+make -f chain.mk build # the chain.mk target directly
 ```
 
-The bridge to Ethereum in detail: each relayer instance holds one attestor key behind a remote signer, journals every observed event and signed transaction before broadcast, and meets a signature threshold above one by exchanging signatures with other instances.
+The LayerX kernel and its tools:
 
-```mermaid
-flowchart LR
-  subgraph ethb ["Ethereum"]
-    bVault{{"PaxeerXVault"}}
-  end
-
-  subgraph relb ["Relayer instance"]
-    direction TB
-    bRelayer("layerx-bridge-relayer")
-    bSigner("Remote signer<br/>one attestor key")
-    bJournal[("Append-only journal")]
-    bCosign[("Cosign directory")]
-  end
-
-  subgraph pxb ["Paxeer X node"]
-    direction TB
-    bPrec{{"layerxBridge<br/>0x1016"}}
-    bModule["layerxbridge module<br/>attestors · caps · nullifiers"]
-    bTf["tokenfactory<br/>bridged denoms"]
-  end
-
-  bVault -.->|"Deposit event"| bRelayer
-  bRelayer -->|"digest to sign"| bSigner
-  bRelayer -->|"events · signed txs"| bJournal
-  bRelayer -->|"threshold signatures"| bCosign
-  bRelayer -->|"bridgeIn + signatures"| bPrec
-  bPrec --> bModule
-  bModule -->|"mint · burn"| bTf
-  bPrec -.->|"BridgeOut event"| bRelayer
-  bRelayer -->|"release + signatures"| bVault
-
-  classDef svc fill:#d8e5f3,stroke:#4d77a8,color:#1b2a3c
-  classDef store fill:#e1ecd4,stroke:#6a8c48,color:#23321a
-  classDef contract fill:#f3e2cc,stroke:#ad7a3e,color:#3b2913
-  classDef module fill:#e6e8eb,stroke:#6b7480,color:#22272e
-
-  class bRelayer,bSigner svc
-  class bJournal,bCosign store
-  class bVault,bPrec contract
-  class bModule,bTf module
+```sh
+make build
+make layerxd
+make layerxctl
 ```
 
-## Contributing
+The services and workspaces:
 
-Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request. Protocol changes start in `spec/`. Do not disclose a suspected vulnerability in a public issue; follow [`SECURITY.md`](SECURITY.md).
+```sh
+make agent-build
+make interop-build
+make platform-build
+make human-build
+make programs-build
+make workspace-build   # every workspace above plus the node and the root Foundry tree
+```
 
-## Security
+## Test
 
-Report vulnerabilities through GitHub private reporting, as described in [`SECURITY.md`](SECURITY.md).
+```sh
+make test                  # kernel test suite
+scripts/ci/run-tests.sh    # the kernel suite at -O0 and -O2
+make test-contracts
+make paxeer-test           # node Go tests through chain.mk
+make paxeer-lint           # node lint
+make agent-test interop-test platform-test human-test programs-test
+make bridge-test-evm bridge-test-solana
+make ci                    # public audit, kernel tests, reproducible build, consensus symbol scan, sanitizers
+make paxeer-ci             # node lint and tests
+make monorepo-ci           # every workspace: build, test and lint
+```
+
+`make public-audit` runs `scripts/ci/public-repo-audit.sh`, which every change must pass. `scripts/ci/layout-check.sh` and `scripts/ci/vendor-verify.sh` check the layout and the vendored snapshots. A local pass is not authorization to deploy contracts, move custody, or handle real assets.
+
+## Specifications
+
+Work is planned and tracked in kvx specifications under [`spec/`](spec/): each feature has a `spec.kvx` with its requirements, acceptance criteria and a dependency-ordered task list. The workflow itself is defined in [`spec/workflow.kvx`](spec/workflow.kvx); `spec/specgen` runs `tools/specgen`, which generates the agent instruction files such as `CLAUDE.md` and `AGENTS.md` from it.
+
+## Project
+
+- [CONTRIBUTING.md](CONTRIBUTING.md): how to propose and land changes
+- [SECURITY.md](SECURITY.md): report vulnerabilities privately, never in a public issue
+- [SUPPORT.md](SUPPORT.md): where to ask for help
+- [GOVERNANCE.md](GOVERNANCE.md): how decisions are made
+- [CHANGELOG.md](CHANGELOG.md): release notes
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
 ## License
 
-Licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
-
-Paxeer X Network is developed by Sidiora Labs. Source: [github.com/Sidiora-Labs/Paxeer-X-Network](https://github.com/Sidiora-Labs/Paxeer-X-Network).
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Paxeer X Network is developed by Sidiora Labs.
