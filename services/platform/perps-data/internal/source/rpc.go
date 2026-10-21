@@ -568,6 +568,10 @@ type jsonRPCResponse struct {
 // the revert data.
 const revertCode = 3
 
+// methodNotFoundCode is the JSON-RPC error code of a method the node does not
+// serve.
+const methodNotFoundCode = -32601
+
 // request sends a JSON-RPC request to the healthy nodes in rank order until
 // one answers, and returns the answer and the slot of the node. With need
 // above zero only a node that holds block need is asked: one whose last seen
@@ -772,25 +776,34 @@ func (s *RPC) doRequest(ctx context.Context, timeout time.Duration, url string, 
 	if err := json.Unmarshal(data, &out); err != nil {
 		return nil, fmt.Errorf("source: json-rpc decode: %w", err)
 	}
-	if out.Error != nil {
-		if sizeRefusal(out.Error.Message) {
-			return nil, fmt.Errorf("%w: %s", ErrResponseSize, out.Error.Message)
-		}
-		if prunedRefusal(out.Error.Message) {
-			return nil, fmt.Errorf("%w: %s", decode.ErrStatePruned, out.Error.Message)
-		}
-		if out.Error.Code == revertCode {
-			var data string
-			if err := json.Unmarshal(out.Error.Data, &data); err != nil {
-				return nil, fmt.Errorf("source: json-rpc revert without hex data: %s", out.Error.Message)
-			}
-			raw, err := hexutil.Decode(data)
-			if err != nil {
-				return nil, fmt.Errorf("source: json-rpc revert data: %w", err)
+	if e := out.Error; e != nil {
+		// The node's error shapes (recorded by TestRPCRevertShapes): a revert
+		// with data is code 3, message "execution reverted" and data the
+		// 0x-hex revert data; a revert without data is code -32000, message
+		// "execution reverted" and no data; an unknown method is code -32601,
+		// "the method ... does not exist/is not available". A code 3 is a
+		// revert whatever its message, so it is classified before the message
+		// matchers, and a -32601 is never a pruned height.
+		if e.Code == revertCode || (len(e.Data) == 0 && e.Message == "execution reverted") {
+			var raw []byte
+			if len(e.Data) > 0 && string(e.Data) != "null" {
+				var data string
+				if err := json.Unmarshal(e.Data, &data); err != nil {
+					return nil, fmt.Errorf("source: json-rpc revert without hex data: %s", e.Message)
+				}
+				if raw, err = hexutil.Decode(data); err != nil {
+					return nil, fmt.Errorf("source: json-rpc revert data: %w", err)
+				}
 			}
 			return nil, &decode.RevertError{Data: raw}
 		}
-		return nil, fmt.Errorf("source: json-rpc error %d: %s", out.Error.Code, out.Error.Message)
+		if sizeRefusal(e.Message) {
+			return nil, fmt.Errorf("%w: %s", ErrResponseSize, e.Message)
+		}
+		if e.Code != methodNotFoundCode && prunedRefusal(e.Message) {
+			return nil, fmt.Errorf("%w: %s", decode.ErrStatePruned, e.Message)
+		}
+		return nil, fmt.Errorf("source: json-rpc error %d: %s", e.Code, e.Message)
 	}
 	return out.Result, nil
 }
