@@ -124,8 +124,9 @@ func (m *Markets) serveHealth(w http.ResponseWriter, r *http.Request) {
 // market whose symbol is $4: windows, open interest and the 24 hour change of
 // the last fill price against the first fill of the window from
 // perps.market_stats_rolling, mark, index and basis from the latest
-// MarkPriceUpdated, the hourly and 8 hour funding rates from the latest
-// FundingRateUpdated, the 24 hour contract and liquidation volumes from the
+// MarkPriceUpdated, the 8 hour funding rate from the latest
+// FundingRateUpdated, the last settled hourly rate of the latest
+// FundingSettled as an exact decimal string, the 24 hour contract and liquidation volumes from the
 // fills since $3, and the open interest in contracts from the open positions.
 const marketRecordsSQL = `SELECT m.symbol, m.name,
 	(s.last_price - s.open_24h) / NULLIF(s.open_24h, 0),
@@ -134,7 +135,7 @@ const marketRecordsSQL = `SELECT m.symbol, m.name,
 	COALESCE(s.open_interest_long, 0) / $1::numeric, COALESCE(s.open_interest_short, 0) / $1::numeric,
 	mp.mark_price / $1::numeric, mp.index_price / $1::numeric,
 	round((mp.mark_price - mp.index_price) * 10000 / NULLIF(mp.index_price, 0), 3), mp.block_time,
-	fr.new_rate_per_second * $2::numeric / $1::numeric, fr.new_rate_per_second * $2::numeric * 8 / $1::numeric,
+	fs.hourly, fr.new_rate_per_second * $2::numeric * 8 / $1::numeric,
 	COALESCE(w.volume, 0) / $1::numeric, COALESCE(w.contracts, 0), COALESCE(w.liq_volume, 0) / $1::numeric,
 	` + feeds.OIContractsSQL + `
 FROM perps.markets m
@@ -143,6 +144,8 @@ LEFT JOIN LATERAL (SELECT mark_price, index_price, block_time FROM perps.mark_pr
 	ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1) mp ON true
 LEFT JOIN LATERAL (SELECT new_rate_per_second FROM perps.funding_rates WHERE market_id = m.market_id
 	ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1) fr ON true
+LEFT JOIN LATERAL (SELECT ` + records.LastFundingRateHourlySQL + ` AS hourly FROM perps.funding_settlements WHERE market_id = m.market_id
+	ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1) fs ON true
 CROSS JOIN LATERAL (SELECT sum(f.size_usd) AS volume, sum(f.size_usd / NULLIF(f.price, 0)) AS contracts,
 	sum(f.size_usd) FILTER (WHERE ` + liquidationFill + `) AS liq_volume
 	FROM perps.fills f WHERE f.market_id = m.market_id AND f.block_time >= $3) w
@@ -193,7 +196,7 @@ func (m *Markets) records(ctx context.Context, symbol *string) ([]MarketRecord, 
 			dst **float64
 		}{
 			{change, &rec.Change24h}, {mark, &rec.PerpMarkPrice}, {index, &rec.PerpIndexPrice},
-			{basis, &rec.PerpBasisBps}, {hourly, &rec.EstFundingRate}, {eight, &rec.Funding8h},
+			{basis, &rec.PerpBasisBps}, {eight, &rec.Funding8h},
 			{oiContracts, &rec.PerpOIContracts},
 		}
 		for _, v := range nullable {
@@ -214,6 +217,9 @@ func (m *Markets) records(ctx context.Context, symbol *string) ([]MarketRecord, 
 			if *v.dst, err = records.DecimalOrZero(v.raw); err != nil {
 				return nil, err
 			}
+		}
+		if hourly.Valid {
+			rec.LastFundingRateHourly = &hourly.String
 		}
 		rec.Price = rec.PerpIndexPrice
 		rec.PerpFundingRate = rec.Funding8h

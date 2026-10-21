@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/feeds"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/records"
 )
 
 type Venue struct {
@@ -210,7 +211,7 @@ type venueTickerEntry struct {
 const venueTickersSQL = `SELECT m.symbol,
     (mp.mark_price / $1::numeric)::text, (mp.index_price / $1::numeric)::text,
     ((oi.long_oi + oi.short_oi) / $1::numeric)::text,
-    trim_scale(fs.funding_rate * 0.000000000000000001)::text,
+    fs.hourly,
     (fs.funding_rate / $1::numeric)::text,
     (s.open_24h / $1::numeric)::text, (s.last_price / $1::numeric)::text,
     (s.high_24h / $1::numeric)::text, (s.low_24h / $1::numeric)::text,
@@ -218,7 +219,7 @@ const venueTickersSQL = `SELECT m.symbol,
 FROM perps.markets m
 LEFT JOIN LATERAL (SELECT mark_price, index_price FROM perps.mark_prices WHERE market_id = m.market_id
     ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1) mp ON true
-LEFT JOIN LATERAL (SELECT funding_rate FROM perps.funding_settlements WHERE market_id = m.market_id
+LEFT JOIN LATERAL (SELECT funding_rate, ` + records.LastFundingRateHourlySQL + ` AS hourly FROM perps.funding_settlements WHERE market_id = m.market_id
     ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1) fs ON true
 LEFT JOIN LATERAL (SELECT long_oi, short_oi FROM perps.open_interest WHERE market_id = m.market_id
     ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1) oi ON true

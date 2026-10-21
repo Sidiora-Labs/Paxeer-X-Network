@@ -54,7 +54,7 @@
 <tr><th>Liquidation volume 24h (USD)</th><td>{{num .PerpLiqVolume24h}}</td></tr>
 <tr><th>Open interest (USD)</th><td>{{num .OpenInterest}}</td></tr>
 <tr><th>Long/short ratio</th><td>{{optnum .PerpLongShortRatio}}</td></tr>
-<tr><th>Funding rate 1h</th><td>{{optnum .EstFundingRate}}</td></tr>
+<tr><th>Last settled funding 1h</th><td>{{with .LastFundingRateHourly}}{{.}}{{else}}-{{end}}</td></tr>
 <tr><th>Funding rate 8h</th><td>{{optnum .Funding8h}}</td></tr>
 <tr><th>Next funding</th><td>{{ms .PerpNextFundingMs}}</td></tr>
 <tr><th>Trades</th><td>{{.TradesCount}}</td></tr>

@@ -1092,11 +1092,14 @@ const OIContractsSQL = `(SELECT COALESCE(sum(p.size_usd / p.entry_price), 0) FRO
 
 // rollingSQL reads the rolling market statistics, the 24-hour change of the
 // last fill price, the time of the block that last updated them, the 24-hour
-// fill volume in contracts and the open interest in contracts.
+// fill volume in contracts, the open interest in contracts and the 8 hour
+// funding rate of the latest FundingRateUpdated.
 const rollingSQL = `SELECT m.symbol, m.name, s.volume_7d / $1::numeric, s.volume_30d / $1::numeric, s.trades_count,
 	(s.last_price - s.open_24h) / NULLIF(s.open_24h, 0), b.time,
 	(SELECT COALESCE(sum(f.size_usd / NULLIF(f.price, 0)), 0) FROM perps.fills f
-		WHERE f.market_id = m.market_id AND f.block_time >= $2), ` + OIContractsSQL + `
+		WHERE f.market_id = m.market_id AND f.block_time >= $2), ` + OIContractsSQL + `,
+	(SELECT new_rate_per_second * 28800 / $1::numeric FROM perps.funding_rates WHERE market_id = m.market_id
+		ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1)
 	FROM perps.markets m
 	LEFT JOIN perps.market_stats_rolling s ON s.market_id = m.market_id
 	LEFT JOIN perps.blocks b ON b.number = s.updated_block
@@ -1104,7 +1107,8 @@ const rollingSQL = `SELECT m.symbol, m.name, s.volume_7d / $1::numeric, s.volume
 
 // records builds the market records of syms in market id order: the
 // /perp_stats fields of the symbol routes, the rolling statistics and the
-// next whole UTC funding hour. funding_8h is 8 times the hourly rate of the
+// next whole UTC funding hour. last_funding_rate_hourly is the last settled
+// hourly rate of the /perp_stats body; funding_8h is 8 times the hourly rate of the
 // latest FundingRateUpdated.
 func (p *Providers) records(ctx context.Context, syms []string) ([]records.MarketRecord, error) {
 	now := time.Now()
@@ -1118,12 +1122,12 @@ func (p *Providers) records(ctx context.Context, syms []string) ([]records.Marke
 		var (
 			r                                records.MarketRecord
 			vol7, vol30, change, volContract sql.NullString
-			oiContracts                      sql.NullString
+			oiContracts, funding8h           sql.NullString
 			trades                           sql.NullInt64
 			updated                          sql.NullTime
 		)
 		if err := rows.Scan(&r.Symbol, &r.SymbolFull, &vol7, &vol30, &trades, &change, &updated, &volContract,
-			&oiContracts); err != nil {
+			&oiContracts, &funding8h); err != nil {
 			return nil, err
 		}
 		if !slices.Contains(syms, r.Symbol) {
@@ -1133,6 +1137,9 @@ func (p *Providers) records(ctx context.Context, syms []string) ([]records.Marke
 			return nil, err
 		}
 		if r.PerpOIContracts, err = optFloat(oiContracts); err != nil {
+			return nil, err
+		}
+		if r.Funding8h, err = optFloat(funding8h); err != nil {
 			return nil, err
 		}
 		for _, f := range []struct {
@@ -1170,11 +1177,7 @@ func (p *Providers) records(ctx context.Context, syms []string) ([]records.Marke
 		if err != nil {
 			return nil, err
 		}
-		r.Price, r.Volume24h, r.OpenInterest, r.EstFundingRate = s.IndexPrice, s.Volume24h, s.OpenInterest, s.EstFundingRate
-		if s.EstFundingRate != nil {
-			f8 := 8 * *s.EstFundingRate
-			r.Funding8h = &f8
-		}
+		r.Price, r.Volume24h, r.OpenInterest, r.LastFundingRateHourly = s.IndexPrice, s.Volume24h, s.OpenInterest, s.LastFundingRateHourly
 		r.PerpMarkPrice, r.PerpIndexPrice, r.PerpBasisBps = s.MarkPrice, s.IndexPrice, s.BasisBps
 		r.PerpFundingRate, r.PerpLongShortRatio, r.PerpLiqVolume24h = s.LastFundingRate, s.LongShortRatio, s.LiqVolume24h
 		r.PerpOIUSD, r.PerpVolume24hUSD = s.OpenInterest, s.Volume24h

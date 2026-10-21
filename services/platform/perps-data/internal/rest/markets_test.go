@@ -1,17 +1,21 @@
 package rest
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
 )
 
 var recordFields = []string{
-	"symbol", "symbol_full", "price", "change_24h", "volume_24h", "open_interest", "funding_8h", "est_funding_rate",
+	"symbol", "symbol_full", "price", "change_24h", "volume_24h", "open_interest", "funding_8h", "last_funding_rate_hourly",
 	"volume_7d", "volume_30d", "trades_count", "last_updated",
 	"perp_mark_price", "perp_index_price", "perp_basis_bps", "perp_funding_rate", "perp_next_funding_ms",
 	"perp_long_short_ratio", "perp_liq_volume_24h", "perp_oi_contracts", "perp_oi_usd",
@@ -89,6 +93,10 @@ func TestMarketsREST(t *testing.T) {
 			args: []string{"market_id", "new_rate_per_second", "funding_rate24h"}, values: []any{0, "1000000000", e18(t, "0.0001")}})
 		insert(t, db, row{table: "funding_rates", kind: "rate", block: 103, at: now.Add(-30 * time.Minute), emitter: perpsAddr, account: perpsAddr,
 			args: []string{"market_id", "new_rate_per_second", "funding_rate24h"}, values: []any{0, "3472222222", e18(t, "0.0003")}})
+		insert(t, db, row{table: "funding_settlements", kind: "settled", block: 101, logIndex: 1, at: now.Add(-2 * time.Hour), emitter: perpsAddr, account: perpsAddr,
+			args: []string{"market_id", "funding_rate", "long_payment", "short_payment"}, values: []any{0, "9000000000000", e18(t, "-1"), e18(t, "1")}})
+		insert(t, db, row{table: "funding_settlements", kind: "settled", block: 103, logIndex: 1, at: now.Add(-30 * time.Minute), emitter: perpsAddr, account: perpsAddr,
+			args: []string{"market_id", "funding_rate", "long_payment", "short_payment"}, values: []any{0, "12345678901234", e18(t, "-1.5"), e18(t, "1.5")}})
 		rollingStats(t, db, 0, "100", "700", "3000", 4, "600000", "400000", "80000")
 		rollingStats(t, db, 1, "300", "900", "5000", 6, "50", "0", "2000")
 		if _, err := db.Exec(`UPDATE perps.market_stats_rolling SET last_price = $1 WHERE market_id = 0`, e18(t, "62500")); err != nil {
@@ -141,7 +149,7 @@ func TestMarketsREST(t *testing.T) {
 		if got := field[int64](t, eth, "trades_count"); got != 6 {
 			t.Fatalf("ETH trades_count %d", got)
 		}
-		for _, name := range []string{"price", "change_24h", "funding_8h", "est_funding_rate", "last_updated", "perp_mark_price",
+		for _, name := range []string{"price", "change_24h", "funding_8h", "last_funding_rate_hourly", "last_updated", "perp_mark_price",
 			"perp_index_price", "perp_basis_bps", "perp_funding_rate", "perp_long_short_ratio"} {
 			wantNull(t, eth, name)
 		}
@@ -243,7 +251,11 @@ func TestMarketsREST(t *testing.T) {
 		// change_24h compares the last fill (62500) with the window's first
 		// fill (80000), not the index price (77173).
 		wantNumber(t, rec, "change_24h", -0.21875)
-		wantNumber(t, rec, "est_funding_rate", 0.0000124999999992)
+		// last_funding_rate_hourly is the latest FundingSettled (block 103),
+		// exact, not the FundingRateUpdated estimate.
+		if got := field[string](t, rec, "last_funding_rate_hourly"); got != "0.000012345678901234" {
+			t.Fatalf("last_funding_rate_hourly %q, want 0.000012345678901234", got)
+		}
 		wantNumber(t, rec, "funding_8h", 0.0000999999999936)
 		wantNumber(t, rec, "perp_funding_rate", 0.0000999999999936)
 		if got, want := field[int64](t, rec, "perp_next_funding_ms"), now.Truncate(time.Hour).Add(time.Hour).UnixMilli(); got != want {
@@ -294,7 +306,7 @@ func TestMarketsREST(t *testing.T) {
 		if got := field[string](t, rec, "symbol"); got != "ETH" {
 			t.Fatalf("symbol %q, want ETH", got)
 		}
-		wantKeys(t, serveOK(t, gateway, "/api/btc/stats"), "symbol", "volume_24h", "open_interest", "est_funding_rate", "last_funding_rate")
+		wantKeys(t, serveOK(t, gateway, "/api/btc/stats"), "symbol", "volume_24h", "open_interest", "last_funding_rate_hourly", "last_funding_rate")
 		for pattern, path := range map[string]string{
 			"GET /api/markets/health":      "/api/markets/health",
 			"GET /api/markets/{symbol}":    "/api/markets/btc",
@@ -305,4 +317,37 @@ func TestMarketsREST(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestNoEstimatedFundingEmitter fails while any file of the service source
+// tree, testdata excepted, still names the removed estimated funding field.
+func TestNoEstimatedFundingEmitter(t *testing.T) {
+	needle := []byte("est_" + "funding_rate")
+	root := filepath.Join("..", "..")
+	var found []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == "testdata" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(body, needle) {
+			found = append(found, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 0 {
+		t.Fatalf("%s still named in %v", needle, found)
+	}
 }

@@ -574,7 +574,7 @@ func TestFeeds(t *testing.T) {
 		if len(frames) != 1 {
 			t.Fatalf("stats frames %d", len(frames))
 		}
-		wantJSON(t, frames[0].Data, `{"symbol":"PAX","volume_24h":10,"open_interest":0,"est_funding_rate":null,"last_funding_rate":null}`)
+		wantJSON(t, frames[0].Data, `{"symbol":"PAX","volume_24h":10,"open_interest":0,"last_funding_rate_hourly":null,"last_funding_rate":null}`)
 		if p.Served("BTC@stats") {
 			t.Fatal("BTC@stats served")
 		}
@@ -587,6 +587,12 @@ func TestFeeds(t *testing.T) {
 		fill(t, db, 0, 5, 0, 1, 2, true, "100", "250")
 		insert(t, db, fact{table: "open_interest", kind: "oi", block: 5, logIndex: 1, emitter: perpsAddr, account: perpsAddr,
 			args: []string{"market_id", "long_oi", "short_oi", "delta_usd", "is_increase"}, values: []any{0, e18(t, "300"), e18(t, "100"), "0", true}})
+		// funding_8h is 8 hours of the FundingRateUpdated rate, 1e9 x 28800 /
+		// 1e18; last_funding_rate_hourly is the FundingSettled rate, exact.
+		insert(t, db, fact{table: "funding_rates", kind: "rate", block: 5, logIndex: 2, emitter: perpsAddr, account: perpsAddr,
+			args: []string{"market_id", "new_rate_per_second", "funding_rate24h"}, values: []any{0, "1000000000", "0"}})
+		insert(t, db, fact{table: "funding_settlements", kind: "settled", block: 5, logIndex: 3, emitter: perpsAddr, account: perpsAddr,
+			args: []string{"market_id", "funding_rate", "long_payment", "short_payment"}, values: []any{0, "12345678901234", "0", "0"}})
 		exec(t, db, `INSERT INTO perps.market_stats_rolling (market_id, volume_24h, volume_7d, volume_30d, trades_count, open_interest_long,
 			open_interest_short, last_price, open_24h, updated_block) VALUES (0, $1, $2, $3, 7, 0, 0, $4, $5, 5)`,
 			e18(t, "250"), e18(t, "700"), e18(t, "900"), e18(t, "110"), e18(t, "100"))
@@ -614,9 +620,9 @@ func TestFeeds(t *testing.T) {
 		next := float64(time.Now().UTC().Truncate(time.Hour).Add(time.Hour).UnixMilli())
 		want := map[string]any{
 			"symbol": "BTC", "symbol_full": "Bitcoin", "price": 100.0, "change_24h": 0.1, "volume_24h": 250.0, "open_interest": 400.0,
-			"funding_8h": nil, "est_funding_rate": nil, "volume_7d": 700.0, "volume_30d": 900.0, "trades_count": 7.0,
+			"funding_8h": 0.0000288, "last_funding_rate_hourly": "0.000012345678901234", "volume_7d": 700.0, "volume_30d": 900.0, "trades_count": 7.0,
 			"last_updated": float64(time.Unix(1_700_000_005, 0).UnixMilli()), "perp_mark_price": 100.5, "perp_index_price": 100.0,
-			"perp_basis_bps": 50.0, "perp_funding_rate": nil, "perp_next_funding_ms": next, "perp_long_short_ratio": 3.0,
+			"perp_basis_bps": 50.0, "perp_funding_rate": 0.000012345678901234, "perp_next_funding_ms": next, "perp_long_short_ratio": 3.0,
 			"perp_liq_volume_24h": 0.0, "perp_oi_contracts": 5.0, "perp_oi_usd": 400.0, "perp_volume_24h_contracts": 2.5,
 			"perp_volume_24h_usd": 250.0,
 		}

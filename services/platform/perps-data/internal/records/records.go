@@ -35,6 +35,10 @@ const (
 	SpotScale = "1000000"
 	// SecondsPerHour turns a per-second funding rate into the hourly rate.
 	SecondsPerHour = 3600
+	// LastFundingRateHourlySQL is the last_funding_rate_hourly column of a
+	// perps.funding_settlements row: the settled hourly rate as an exact
+	// decimal string.
+	LastFundingRateHourlySQL = "trim_scale(funding_rate * 0.000000000000000001)::text"
 
 	Window24h = 24 * time.Hour
 	ISOMillis = "2006-01-02T15:04:05.000Z"
@@ -61,18 +65,18 @@ func NewSymbol(db *sql.DB) (*Symbol, error) {
 // perp_ fields. Prices and notionals are USD, rates are per-hour ratios except
 // funding_8h, and times are epoch milliseconds.
 type MarketRecord struct {
-	Symbol         string   `json:"symbol"`
-	SymbolFull     string   `json:"symbol_full"`
-	Price          *float64 `json:"price"`
-	Change24h      *float64 `json:"change_24h"`
-	Volume24h      float64  `json:"volume_24h"`
-	OpenInterest   float64  `json:"open_interest"`
-	Funding8h      *float64 `json:"funding_8h"`
-	EstFundingRate *float64 `json:"est_funding_rate"`
-	Volume7d       float64  `json:"volume_7d"`
-	Volume30d      float64  `json:"volume_30d"`
-	TradesCount    int64    `json:"trades_count"`
-	LastUpdated    *int64   `json:"last_updated"`
+	Symbol                string   `json:"symbol"`
+	SymbolFull            string   `json:"symbol_full"`
+	Price                 *float64 `json:"price"`
+	Change24h             *float64 `json:"change_24h"`
+	Volume24h             float64  `json:"volume_24h"`
+	OpenInterest          float64  `json:"open_interest"`
+	Funding8h             *float64 `json:"funding_8h"`
+	LastFundingRateHourly *string  `json:"last_funding_rate_hourly"`
+	Volume7d              float64  `json:"volume_7d"`
+	Volume30d             float64  `json:"volume_30d"`
+	TradesCount           int64    `json:"trades_count"`
+	LastUpdated           *int64   `json:"last_updated"`
 
 	PerpMarkPrice          *float64 `json:"perp_mark_price"`
 	PerpIndexPrice         *float64 `json:"perp_index_price"`
@@ -107,11 +111,11 @@ type Price struct {
 }
 
 type Stats struct {
-	Symbol          string   `json:"symbol"`
-	Volume24h       float64  `json:"volume_24h"`
-	OpenInterest    float64  `json:"open_interest"`
-	EstFundingRate  *float64 `json:"est_funding_rate"`
-	LastFundingRate *float64 `json:"last_funding_rate"`
+	Symbol                string   `json:"symbol"`
+	Volume24h             float64  `json:"volume_24h"`
+	OpenInterest          float64  `json:"open_interest"`
+	LastFundingRateHourly *string  `json:"last_funding_rate_hourly"`
+	LastFundingRate       *float64 `json:"last_funding_rate"`
 }
 
 type PerpStats struct {
@@ -200,10 +204,10 @@ const marketStateSQL = `SELECT
 		ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1),
 	(SELECT short_oi / $2::numeric FROM perps.open_interest WHERE market_id = $1
 		ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1),
-	(SELECT new_rate_per_second * $3::numeric / $2::numeric FROM perps.funding_rates WHERE market_id = $1
-		ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1),
-	(SELECT funding_rate / $2::numeric FROM perps.funding_settlements WHERE market_id = $1
-		ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1)`
+	fs.hourly, fs.funding_rate / $2::numeric
+	FROM (SELECT 1) one LEFT JOIN LATERAL (SELECT funding_rate, ` + LastFundingRateHourlySQL + ` AS hourly
+		FROM perps.funding_settlements WHERE market_id = $1
+		ORDER BY block DESC, tx_index DESC, log_index DESC, sub DESC LIMIT 1) fs ON true`
 
 type latestMark struct {
 	mark, index, basis *float64
@@ -271,7 +275,7 @@ func (s *Symbol) fillWindow(ctx context.Context, market int64) (fillWindow, erro
 
 type marketState struct {
 	longOI, shortOI *float64
-	estRate         *float64
+	lastHourly      *string
 	lastRate        *float64
 }
 
@@ -280,11 +284,18 @@ func (s *Symbol) marketState(ctx context.Context, market int64) (marketState, er
 		raw [4]sql.NullString
 		out marketState
 	)
-	if err := s.db.QueryRowContext(ctx, marketStateSQL, market, USDScale, SecondsPerHour).Scan(&raw[0], &raw[1], &raw[2], &raw[3]); err != nil {
+	if err := s.db.QueryRowContext(ctx, marketStateSQL, market, USDScale).Scan(&raw[0], &raw[1], &raw[2], &raw[3]); err != nil {
 		return out, err
 	}
-	dst := [4]**float64{&out.longOI, &out.shortOI, &out.estRate, &out.lastRate}
+	if raw[2].Valid {
+		hourly := raw[2].String
+		out.lastHourly = &hourly
+	}
+	dst := [4]**float64{&out.longOI, &out.shortOI, nil, &out.lastRate}
 	for i := range raw {
+		if dst[i] == nil {
+			continue
+		}
 		parsed, err := Decimal(raw[i])
 		if err != nil {
 			return out, err
@@ -326,11 +337,11 @@ func statsFrom(symbol string, window fillWindow, state marketState) Stats {
 		oi += *state.shortOI
 	}
 	return Stats{
-		Symbol:          symbol,
-		Volume24h:       window.volume,
-		OpenInterest:    oi,
-		EstFundingRate:  state.estRate,
-		LastFundingRate: state.lastRate,
+		Symbol:                symbol,
+		Volume24h:             window.volume,
+		OpenInterest:          oi,
+		LastFundingRateHourly: state.lastHourly,
+		LastFundingRate:       state.lastRate,
 	}
 }
 

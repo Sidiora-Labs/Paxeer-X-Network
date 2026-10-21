@@ -416,7 +416,7 @@ Symbol routes are mounted at `/api/<symbol>/` with <symbol> in lower case, for t
 | route | response |
 | --- | --- |
 | GET /price | symbol, price (latest index_price), timestamp, open, high, low (24 hours of fills) |
-| GET /stats | symbol, volume_24h, open_interest, est_funding_rate, last_funding_rate |
+| GET /stats | symbol, volume_24h, open_interest, last_funding_rate_hourly, last_funding_rate; last_funding_rate_hourly is a decimal string, the hourly rate of the latest FundingSettled, exact, null before the first FundingSettled |
 | GET /perp_stats | the /stats fields plus mark_price, index_price, basis_bps, long_short_ratio, liq_volume_24h |
 | GET /trades/<SYMBOL>?limit=N | symbol, count, trades[id, side, price, size, trade_time] newest first, from spot swaps and executed spot orders of the token (PAX and SID only; other symbols answer an empty list) |
 | GET /perp_trades/<SYMBOL>?limit=N | symbol, count, trades[id, side, price, contracts, notional, liquidation, trade_time] from perps.fills, side the taker side, liquidation true when the fill shares a log group with a Liquidation |
@@ -454,9 +454,10 @@ limit is clamped to [1, 1000] with default 100. Prices and sizes are scaled from
 
 The fixed routes /api/markets/health, /api/markets/open-interest, /api/markets/tickers and /api/markets/ticker/<SYMBOL> (section 24) take precedence over /api/markets/<symbol>.
 
-The record has 23 fields: symbol, symbol_full, price, change_24h, volume_24h, open_interest, funding_8h, est_funding_rate, volume_7d, volume_30d, trades_count, last_updated and the eleven perp_ fields of the application data protocol (perp_mark_price, perp_index_price, perp_basis_bps, perp_next_funding_ms and the others listed there).
+The record has 23 fields: symbol, symbol_full, price, change_24h, volume_24h, open_interest, funding_8h, last_funding_rate_hourly, volume_7d, volume_30d, trades_count, last_updated and the eleven perp_ fields of the application data protocol (perp_mark_price, perp_index_price, perp_basis_bps, perp_next_funding_ms and the others listed there).
 
 - funding_8h = 8 × the hourly rate of the latest FundingRateUpdated.
+- last_funding_rate_hourly = the hourly rate of the latest FundingSettled as an exact decimal string (as in the ticker of section 24), null before the first FundingSettled.
 - perp_next_funding_ms = the next whole UTC hour in milliseconds.
 - perp_basis_bps = (mark − index) / index × 10000, three decimals.
 

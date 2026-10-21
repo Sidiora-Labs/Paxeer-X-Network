@@ -2612,3 +2612,19 @@ exit = 0
 log = "PD-F15-verify-r2.log"
 observed = "The venue ticker and tickers and GraphQL orderlyTickers and orderlyFundingRates assertions naming est_funding_rate (and est_funding_rate_timestamp) were renamed to last_funding_rate_hourly, now the exact settled-rate string, and the tickers database-failure case breaks funding_settlements, the table that field now reads, instead of funding_rates."
 assumption = "The frontend operations copy in internal/graphql/testdata mirrors useSubgraph.ts, which the frontend lane moves to last_funding_rate_hourly; the records-based /api/markets and /api/<symbol>/stats est_funding_rate are a separate shape left unchanged."
+
+[finding.perps-records-funding-field-rename]
+revision = "8ff0563c9"
+command = "GOFLAGS=-p=1 go test -count=1 -timeout 30m ./internal/rest/... ./internal/feeds/... (services/platform/perps-data, one throwaway database per package)"
+exit = 0
+log = "PD-F17-verify.log"
+observed = "The /api/markets record, /api/<symbol>/stats and perp_stats key lists and the feeds stats and market-record assertions naming est_funding_rate were renamed to last_funding_rate_hourly, now asserted as the exact FundingSettled string with seeded settlements, and the portal market page row expectation Funding rate 1h 0.0000036 became Last settled funding 1h - because the portal fixture has no FundingSettled."
+assumption = "funding_8h keeps 8 x the FundingRateUpdated rate."
+
+[finding.portal-change24h-pre-existing]
+revision = "8ff0563c9"
+command = "GOFLAGS=-p=1 go test -count=1 ./internal/portal/ -run 'TestPortalPages/page_home' (services/platform/perps-data, throwaway database)"
+exit = 1
+log = "PD-F17-portal-base.log"
+observed = "pages_test.go:312 expects the BTC home row change_24h 0.02 but the page renders 0 on the unchanged base revision, so the failure predates the funding rename."
+assumption = "The change_24h fixture or query is reconciled by its owner; the assertion stays unchanged."

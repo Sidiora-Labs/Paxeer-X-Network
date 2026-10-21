@@ -344,16 +344,18 @@ func TestSymbolREST(t *testing.T) {
 		if cc := rec.Header().Get("Cache-Control"); cc != "max-age=1" {
 			t.Fatalf("Cache-Control %q", cc)
 		}
-		wantKeys(t, body, "symbol", "volume_24h", "open_interest", "est_funding_rate", "last_funding_rate")
+		wantKeys(t, body, "symbol", "volume_24h", "open_interest", "last_funding_rate_hourly", "last_funding_rate")
 		wantNumber(t, body, "volume_24h", 3500)
 		wantNumber(t, body, "open_interest", 1000000)
-		wantNumber(t, body, "est_funding_rate", 0.0000124999999992)
+		if got := field[string](t, body, "last_funding_rate_hourly"); got != "0.0000125" {
+			t.Fatalf("last_funding_rate_hourly %q, want 0.0000125", got)
+		}
 		wantNumber(t, body, "last_funding_rate", 0.0000125)
 
 		body = getOK(t, s, "/api/eth/stats")
 		wantNumber(t, body, "volume_24h", 0)
 		wantNumber(t, body, "open_interest", 0)
-		wantNull(t, body, "est_funding_rate")
+		wantNull(t, body, "last_funding_rate_hourly")
 		wantNull(t, body, "last_funding_rate")
 	})
 
@@ -363,7 +365,7 @@ func TestSymbolREST(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status %d", rec.Code)
 		}
-		wantKeys(t, body, "symbol", "volume_24h", "open_interest", "est_funding_rate", "last_funding_rate",
+		wantKeys(t, body, "symbol", "volume_24h", "open_interest", "last_funding_rate_hourly", "last_funding_rate",
 			"mark_price", "index_price", "basis_bps", "long_short_ratio", "liq_volume_24h")
 		wantNumber(t, body, "volume_24h", 3500)
 		wantNumber(t, body, "open_interest", 1000000)

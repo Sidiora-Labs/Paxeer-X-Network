@@ -328,7 +328,7 @@ func TestPortalPages(t *testing.T) {
 		body := page(t, portal.URL+"/markets/btc")
 		contains(t, "record", section(body, "record"), "<tr><th>Symbol</th><td>BTC</td></tr>",
 			"<tr><th>Mark price</th><td>51000</td></tr>", "<tr><th>Index price</th><td>51000</td></tr>",
-			"<tr><th>Volume 24h (USD)</th><td>1000</td></tr>", "<tr><th>Funding rate 1h</th><td>0.0000036</td></tr>",
+			"<tr><th>Volume 24h (USD)</th><td>1000</td></tr>", "<tr><th>Last settled funding 1h</th><td>-</td></tr>",
 			"<tr><th>Trades</th><td>1</td></tr>")
 		fill := fmt.Sprintf("<tr><td>100-3</td><td>BUY</td><td>50000</td><td>0.02</td><td>1000</td><td>no</td><td>%s</td></tr>",
 			b100.UTC().Format(time.RFC3339))
