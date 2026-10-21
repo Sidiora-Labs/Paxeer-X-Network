@@ -2668,3 +2668,11 @@ exit = 1
 log = "PD-F21-verify3.log"
 observed = "indexes_venue_block and catch_up_batches time out because the indexer started near the latest venue logs retries decode PositionModified/PositionEntryPriceChanged with account unresolved for positions opened before its start height on the regenerated chain; the same stall stopped the f9612d656 rerun."
 assumption = "Pre-existing and chain-data dependent, outside the stamping fix; publishes_in_order and the new block_events_stamp_before_logs pass."
+
+[finding.spot-feed-credential-rejected]
+revision = "5f2eac7f4"
+command = "GOFLAGS=-p=1 go test -count=1 -timeout 30m ./internal/store/... ./internal/decode/... ./internal/indexer/... ./migrations/... (services/platform/perps-data, ENV-1 chain, throwaway database per package)"
+exit = 1
+log = "PD-F23-verify.log"
+observed = "TestSpotDecoders failed at its websocket handshake because the configured feed origin rejected the test credential with 401, while store, indexer (indexes_venue_block and catch_up_batches included) and migrations passed."
+assumption = "Environment credential problem outside the projection-seed change, which does not touch the spot feed path."

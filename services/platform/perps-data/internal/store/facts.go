@@ -498,7 +498,8 @@ type txAction struct {
 func ptr(s string) *string { return &s }
 
 // WriteFacts writes the rows of one block into the fact tables, raw_logs,
-// protocol_events and tx_actions and enqueues one outbox message per fact row,
+// protocol_events and tx_actions, its projection seeds into
+// projection_seeds, and enqueues one outbox message per fact row,
 // one chain.block message and one chain.tx message per tx_actions row, in tx.
 // A stored key is left as it is; the rows it inserted are returned in order.
 // It writes no perps.blocks row, no projection and no cursor.
@@ -565,6 +566,9 @@ func WriteFacts(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Resul
 	}
 	ok, err := insertFacts(ctx, tx, batch)
 	if err != nil {
+		return nil, err
+	}
+	if err := writeSeeds(ctx, tx, block, rows.Seeds); err != nil {
 		return nil, err
 	}
 	var inserted []decode.Row
@@ -1077,7 +1081,9 @@ func enqueue(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Result, 
 	return enqueueAll(ctx, tx, msgs)
 }
 
-// rebuildTables are the projections Project and Snapshotter write.
+// rebuildTables are the projections Project and Snapshotter write;
+// perps.projection_seeds is stored with the facts and kept, so a rebuilt
+// order or position that predates the indexed blocks comes from its seed.
 var rebuildTables = []string{
 	"positions_current", "orders", "spot_orders", "account_margin", "user_stats", "user_pnl_daily",
 	"market_stats_rolling", "spot_token_seen", "keeper_cycles", "market_snapshots", "protocol_snapshots",

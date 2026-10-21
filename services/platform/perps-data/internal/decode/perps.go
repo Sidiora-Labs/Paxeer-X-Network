@@ -3,7 +3,6 @@ package decode
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"math/big"
@@ -44,35 +43,42 @@ func registerPerps(r *Registry) error {
 	if err != nil {
 		return fmt.Errorf("decode: perps ABI: %w", err)
 	}
-	if r.orderOwner, err = newOwnerGetter(a, "order", orderUserQuery, "getOrder", "PerpsUnknownOrder"); err != nil {
+	if r.orderOwner, err = newStateGetter(a, "order", orderUserQuery, orderStoredQuery, "PerpsUnknownOrder", "getOrderDetails"); err != nil {
 		return err
 	}
-	if r.positionOwner, err = newOwnerGetter(a, "position", positionUserQuery, "getPosition", "PerpsUnknownPosition"); err != nil {
+	if r.positionOwner, err = newStateGetter(a, "position", positionUserQuery, positionStoredQuery, "PerpsUnknownPosition", "getPosition", "getPositionDetails"); err != nil {
 		return err
 	}
 	return r.register(PerpsAddress, r.opts.PerpsModule, a, perpsEvents)
 }
 
-// ownerGetter reads the account of an order or position: its stored rows
-// through query, else the first output of method on 0x1015, whose revert
-// with unknown reports an id the precompile does not know.
-type ownerGetter struct {
+// stateGetter reads an order or position: its account from its stored rows
+// through query, whether a projection row or a projection seed of it is
+// stored through stored, else its state through methods on 0x1015 in order,
+// whose revert with unknown reports an id the precompile does not know.
+type stateGetter struct {
 	what    string
 	query   string
-	method  abi.Method
+	stored  string
+	methods []abi.Method
 	unknown []byte
 }
 
-func newOwnerGetter(a abi.ABI, what, query, method, unknown string) (ownerGetter, error) {
-	m, ok := a.Methods[method]
-	if !ok || len(m.Inputs) != 1 || len(m.Outputs) == 0 || m.Outputs[0].Type.T != abi.AddressTy {
-		return ownerGetter{}, fmt.Errorf("decode: perps ABI declares no %s(uint256) returning the account first", method)
+func newStateGetter(a abi.ABI, what, query, stored, unknown string, methods ...string) (stateGetter, error) {
+	g := stateGetter{what: what, query: query, stored: stored}
+	for _, name := range methods {
+		m, ok := a.Methods[name]
+		if !ok || len(m.Inputs) != 1 || len(m.Outputs) == 0 {
+			return stateGetter{}, fmt.Errorf("decode: perps ABI declares no %s(uint256)", name)
+		}
+		g.methods = append(g.methods, m)
 	}
 	e, ok := a.Errors[unknown]
 	if !ok {
-		return ownerGetter{}, fmt.Errorf("decode: perps ABI declares no error %s", unknown)
+		return stateGetter{}, fmt.Errorf("decode: perps ABI declares no error %s", unknown)
 	}
-	return ownerGetter{what: what, query: query, method: m, unknown: e.ID[:4]}, nil
+	g.unknown = e.ID[:4]
+	return g, nil
 }
 
 // batch carries the account sources of one Decode call: the order and
@@ -92,25 +98,36 @@ type batch struct {
 	unknownLogs int
 	enumUnknown int
 	lookups     []AccountLookup
+	projected   map[string]bool
+	seeds       []Seed
 }
 
 // Every stored row of an order or position carries its account, the placed
 // or opened user or the account an id-only row resolved, so the earliest row
-// answers.
+// answers, else the projection seed read from state.
 const (
-	orderUserQuery    = `SELECT account FROM perps.order_events WHERE order_id = $1 ORDER BY block, tx_index, log_index, sub LIMIT 1`
-	positionUserQuery = `SELECT account FROM perps.position_events WHERE position_id = $1 ORDER BY block, tx_index, log_index, sub LIMIT 1`
+	orderUserQuery = `SELECT COALESCE((SELECT account FROM perps.order_events WHERE order_id = $1 ORDER BY block, tx_index, log_index, sub LIMIT 1),
+    (SELECT account FROM perps.projection_seeds WHERE kind = 'order' AND id = $1))`
+	positionUserQuery = `SELECT COALESCE((SELECT account FROM perps.position_events WHERE position_id = $1 ORDER BY block, tx_index, log_index, sub LIMIT 1),
+    (SELECT account FROM perps.projection_seeds WHERE kind = 'position' AND id = $1))`
+	orderStoredQuery    = `SELECT EXISTS (SELECT 1 FROM perps.orders WHERE order_id = $1) OR EXISTS (SELECT 1 FROM perps.projection_seeds WHERE kind = 'order' AND id = $1)`
+	positionStoredQuery = `SELECT EXISTS (SELECT 1 FROM perps.positions_current WHERE position_id = $1) OR EXISTS (SELECT 1 FROM perps.projection_seeds WHERE kind = 'position' AND id = $1)`
 )
 
+// orderUser and positionUser resolve the account of an id-only event after
+// seeding its projection, so an id the precompile does not know is an
+// account_lookup raw row.
 func (b *batch) orderUser(r *reader, f Fact, orderID string) common.Address {
+	b.seed(r, f, b.orders, b.reg.orderOwner, orderID, FailureAccountLookup)
 	return b.user(r, b.orders, b.reg.orderOwner, orderID, f.Block)
 }
 
 func (b *batch) positionUser(r *reader, f Fact, positionID string) common.Address {
+	b.seed(r, f, b.positions, b.reg.positionOwner, positionID, FailureAccountLookup)
 	return b.user(r, b.positions, b.reg.positionOwner, positionID, f.Block)
 }
 
-func (b *batch) user(r *reader, seen map[string]common.Address, g ownerGetter, id string, height uint64) common.Address {
+func (b *batch) user(r *reader, seen map[string]common.Address, g stateGetter, id string, height uint64) common.Address {
 	if r.err != nil {
 		return common.Address{}
 	}
@@ -121,6 +138,7 @@ func (b *batch) user(r *reader, seen map[string]common.Address, g ownerGetter, i
 		var raw []byte
 		err := b.q.QueryRowContext(b.ctx, g.query, id).Scan(&raw)
 		switch {
+		case err == nil && raw == nil:
 		case err == nil && len(raw) == common.AddressLength:
 			u := common.BytesToAddress(raw)
 			seen[id] = u
@@ -128,7 +146,7 @@ func (b *batch) user(r *reader, seen map[string]common.Address, g ownerGetter, i
 		case err == nil:
 			r.fail(fmt.Errorf("stored %s %s user has %d bytes", g.what, id, len(raw)))
 			return common.Address{}
-		case !errors.Is(err, sql.ErrNoRows):
+		case err != nil:
 			r.fail(fmt.Errorf("read %s %s user: %w", g.what, id, err))
 			return common.Address{}
 		}
@@ -137,55 +155,101 @@ func (b *batch) user(r *reader, seen map[string]common.Address, g ownerGetter, i
 		r.fail(fmt.Errorf("%w: %s %s", ErrAccountUnresolved, g.what, id))
 		return common.Address{}
 	}
-	return b.lookupOwner(r, seen, g, id, height)
+	return b.lookupState(r, seen, g, id, height, FailureAccountLookup)
 }
 
-// lookupOwner reads the account of an order or position no stored row
-// carries through g at the height before the event's block, where an id that
-// predates every stored row still exists although the event's own block may
-// execute or close it, and at the latest height when every node pruned that
-// height. An id the precompile does not know is an account_lookup failure.
-func (b *batch) lookupOwner(r *reader, seen map[string]common.Address, g ownerGetter, id string, height uint64) common.Address {
+// lookupState reads an order or position no stored row carries through g at
+// the height before the event's block, where an id that predates every
+// stored row still exists although the event's own block may execute or
+// close it, and at the latest height when every node pruned that height. It
+// records the account and the projection seed of what it read; an id the
+// precompile does not know turns the log into a raw row of class.
+func (b *batch) lookupState(r *reader, seen map[string]common.Address, g stateGetter, id string, height uint64, class string) common.Address {
 	n, ok := new(big.Int).SetString(id, 10)
 	if !ok || n.Sign() < 0 || n.BitLen() > 256 {
-		r.fail(fmt.Errorf("%s: %s id %q", g.method.Name, g.what, id))
+		r.fail(fmt.Errorf("%s: %s id %q", g.methods[0].Name, g.what, id))
 		return common.Address{}
 	}
 	at := height
 	if at > 0 {
 		at--
 	}
-	data := append(append([]byte(nil), g.method.ID...), common.LeftPadBytes(n.Bytes(), 32)...)
 	state := b.reg.opts.State
 	path := LookupAtHeight
-	out, err := state.CallAt(b.ctx, PerpsAddress, data, at)
-	if errors.Is(err, ErrStatePruned) {
-		path = LookupLatest
-		out, err = state.Call(b.ctx, PerpsAddress, data)
+	outputs := make([][]any, len(g.methods))
+	for i, m := range g.methods {
+		data := append(append([]byte(nil), m.ID...), common.LeftPadBytes(n.Bytes(), 32)...)
+		var (
+			out []byte
+			err error
+		)
+		if path == LookupAtHeight {
+			out, err = state.CallAt(b.ctx, PerpsAddress, data, at)
+			if errors.Is(err, ErrStatePruned) {
+				path = LookupLatest
+			}
+		}
+		if path == LookupLatest {
+			out, err = state.Call(b.ctx, PerpsAddress, data)
+		}
+		var revert *RevertError
+		if errors.As(err, &revert) && bytes.Equal(revert.Data, g.unknown) {
+			b.lookups = append(b.lookups, AccountLookup{What: g.what, ID: id, Height: at, Path: path, Missing: true})
+			r.fail(&lookupFailure{class, fmt.Sprintf("%s(%s) at %s %d: unknown %s", m.Name, id, path, at, g.what)})
+			return common.Address{}
+		}
+		if err != nil {
+			r.fail(fmt.Errorf("%s(%s) at %s %d: %w", m.Name, id, path, at, err))
+			return common.Address{}
+		}
+		if outputs[i], err = m.Outputs.Unpack(out); err != nil {
+			r.fail(fmt.Errorf("%s(%s) at %s %d: %w", m.Name, id, path, at, err))
+			return common.Address{}
+		}
 	}
-	var revert *RevertError
-	if errors.As(err, &revert) && bytes.Equal(revert.Data, g.unknown) {
-		b.lookups = append(b.lookups, AccountLookup{What: g.what, ID: id, Height: at, Path: path, Missing: true})
-		r.fail(&lookupFailure{FailureAccountLookup, fmt.Sprintf("%s(%s) at %s %d: unknown %s", g.method.Name, id, path, at, g.what)})
-		return common.Address{}
-	}
+	seed, err := newSeed(g, outputs)
 	if err != nil {
-		r.fail(fmt.Errorf("%s(%s) at %s %d: %w", g.method.Name, id, path, at, err))
+		r.fail(fmt.Errorf("%s %s at %s %d: %w", g.what, id, path, at, err))
 		return common.Address{}
 	}
-	values, err := g.method.Outputs.Unpack(out)
-	if err != nil {
-		r.fail(fmt.Errorf("%s(%s) at %s %d: %w", g.method.Name, id, path, at, err))
-		return common.Address{}
+	seed.Kind, seed.ID, seed.Block, seed.Height, seed.Path = g.what, id, height, at, path
+	b.lookups = append(b.lookups, AccountLookup{What: g.what, ID: id, Height: at, Path: path, Account: seed.Account})
+	b.seeds = append(b.seeds, seed)
+	b.projected[g.what+" "+id] = true
+	seen[id] = seed.Account
+	return seed.Account
+}
+
+// seed makes sure the store can project the order or position id of the
+// event f: an id placed or opened in this batch, seeded in it or with a
+// stored projection row or seed needs nothing; any other id predates the
+// indexed blocks and is read through lookupState, whose unknown id turns the
+// log into a raw row of class. Without stored facts or State it does nothing,
+// and the store reports the missing projection row.
+func (b *batch) seed(r *reader, f Fact, seen map[string]common.Address, g stateGetter, id, class string) {
+	if r.err != nil || b.q == nil || b.reg.opts.State == nil || id == "0" || b.projected[g.what+" "+id] {
+		return
 	}
-	u, ok := values[0].(common.Address)
-	if !ok || u == (common.Address{}) {
-		r.fail(fmt.Errorf("%s(%s) at %s %d returned no account", g.method.Name, id, path, at))
-		return common.Address{}
+	var stored bool
+	if err := b.q.QueryRowContext(b.ctx, g.stored, id).Scan(&stored); err != nil {
+		r.fail(fmt.Errorf("read %s %s projection: %w", g.what, id, err))
+		return
 	}
-	b.lookups = append(b.lookups, AccountLookup{What: g.what, ID: id, Height: at, Path: path, Account: u})
-	seen[id] = u
-	return u
+	if stored {
+		b.projected[g.what+" "+id] = true
+		return
+	}
+	b.lookupState(r, seen, g, id, f.Block, class)
+}
+
+// seedOrder and seedPosition seed the order or position of an event that
+// carries its account, whose unknown id is a projection_lookup raw row.
+func (b *batch) seedOrder(r *reader, f Fact, id string) {
+	b.seed(r, f, b.orders, b.reg.orderOwner, id, FailureProjectionLookup)
+}
+
+func (b *batch) seedPosition(r *reader, f Fact, id string) {
+	b.seed(r, f, b.positions, b.reg.positionOwner, id, FailureProjectionLookup)
 }
 
 func (b *batch) tradeType(v uint8) uint8 {
@@ -236,6 +300,7 @@ var perpsEvents = []eventDecoder{
 		f.Account = r.addr("user")
 		if r.err == nil {
 			b.orders[id] = f.Account
+			b.projected["order "+id] = true
 		}
 		return []Row{OrderPlacedRow{f, id, f.Account, r.u256("marketId"), r.u8("orderType"), r.flag("isLong"), r.u256("triggerPrice"), r.u256("sizeUsd")}}
 	}},
@@ -245,15 +310,19 @@ var perpsEvents = []eventDecoder{
 		f.Account = b.orderUser(r, f, id)
 		return []Row{OrderOptionsRow{f, id, r.u8("timeInForce"), r.flag("reduceOnly"), r.u256("limitPrice"), r.u256("acceptablePrice"), r.u64("deadline"), r.b16("cloid")}}
 	}},
-	{"OrderCancelled", func(_ *batch, f Fact, r *reader) []Row {
+	{"OrderCancelled", func(b *batch, f Fact, r *reader) []Row {
 		f.Kind = "cancelled"
 		f.Account = r.addr("user")
-		return []Row{OrderCancelledRow{f, r.u256("orderId"), f.Account}}
+		id := r.u256("orderId")
+		b.seedOrder(r, f, id)
+		return []Row{OrderCancelledRow{f, id, f.Account}}
 	}},
-	{"OrderExpired", func(_ *batch, f Fact, r *reader) []Row {
+	{"OrderExpired", func(b *batch, f Fact, r *reader) []Row {
 		f.Kind = "expired"
 		f.Account = r.addr("user")
-		return []Row{OrderExpiredRow{f, r.u256("orderId"), f.Account, r.u256("marketId")}}
+		id := r.u256("orderId")
+		b.seedOrder(r, f, id)
+		return []Row{OrderExpiredRow{f, id, f.Account, r.u256("marketId")}}
 	}},
 	{"OrderTriggered", func(b *batch, f Fact, r *reader) []Row {
 		f.Kind = "triggered"
@@ -267,10 +336,13 @@ var perpsEvents = []eventDecoder{
 		f.Account = b.orderUser(r, f, id)
 		return []Row{OrderExecutedRow{f, id, r.u256("positionId"), r.u256("executionPrice")}}
 	}},
-	{"Fill", func(_ *batch, f Fact, r *reader) []Row {
+	{"Fill", func(b *batch, f Fact, r *reader) []Row {
 		f.Kind = "fill"
 		f.Account = r.addr("taker")
-		return []Row{FillRow{f, r.u256("marketId"), r.u256("makerOrderId"), r.u256("takerOrderId"), r.addr("maker"), f.Account,
+		maker, taker := r.u256("makerOrderId"), r.u256("takerOrderId")
+		b.seedOrder(r, f, maker)
+		b.seedOrder(r, f, taker)
+		return []Row{FillRow{f, r.u256("marketId"), maker, taker, r.addr("maker"), f.Account,
 			r.flag("takerIsLong"), r.u256("price"), r.u256("sizeUsd"), r.i256("makerFeeUsd"), r.u256("takerFeeUsd")}}
 	}},
 	{"PositionOpened", func(b *batch, f Fact, r *reader) []Row {
@@ -279,6 +351,7 @@ var perpsEvents = []eventDecoder{
 		f.Account = r.addr("user")
 		if r.err == nil {
 			b.positions[id] = f.Account
+			b.projected["position "+id] = true
 		}
 		return []Row{PositionOpenedRow{f, id, f.Account, r.u256("marketId"), r.flag("isLong"), r.u256("sizeUsd"), r.u256("leverage"),
 			r.u256("entryPrice"), r.addr("collateralToken"), r.u256("collateralAmount")}}
@@ -295,10 +368,12 @@ var perpsEvents = []eventDecoder{
 		f.Account = b.positionUser(r, f, id)
 		return []Row{PositionEntryPriceChangedRow{f, id, r.u256("oldEntryPrice"), r.u256("newEntryPrice")}}
 	}},
-	{"PositionClosed", func(_ *batch, f Fact, r *reader) []Row {
+	{"PositionClosed", func(b *batch, f Fact, r *reader) []Row {
 		f.Kind = "closed"
 		f.Account = r.addr("user")
-		return []Row{PositionClosedRow{f, r.u256("positionId"), f.Account, r.u256("marketId"), r.u256("closedSizeUsd"), r.u256("exitPrice"),
+		id := r.u256("positionId")
+		b.seedPosition(r, f, id)
+		return []Row{PositionClosedRow{f, id, f.Account, r.u256("marketId"), r.u256("closedSizeUsd"), r.u256("exitPrice"),
 			r.i256("realizedPnl"), r.flag("isFullClose")}}
 	}},
 	{"PositionTpSlSet", func(b *batch, f Fact, r *reader) []Row {
@@ -331,20 +406,24 @@ var perpsEvents = []eventDecoder{
 		f.Kind = "settled"
 		return []Row{FundingSettledRow{f, r.u256("marketId"), r.i256("fundingRate"), r.i256("longPayment"), r.i256("shortPayment")}}
 	}},
-	{"PositionFundingApplied", func(_ *batch, f Fact, r *reader) []Row {
+	{"PositionFundingApplied", func(b *batch, f Fact, r *reader) []Row {
 		f.Kind = "applied"
 		f.Account = r.addr("user")
-		return []Row{PositionFundingAppliedRow{f, r.u256("positionId"), f.Account, r.u256("marketId"), r.i256("fundingPaymentUsd"),
+		id := r.u256("positionId")
+		b.seedPosition(r, f, id)
+		return []Row{PositionFundingAppliedRow{f, id, f.Account, r.u256("marketId"), r.i256("fundingPaymentUsd"),
 			r.u256("newCollateralUsd"), r.u256("newCollateralAmount")}}
 	}},
 	{"OpenInterestChanged", func(_ *batch, f Fact, r *reader) []Row {
 		f.Kind = "oi"
 		return []Row{OpenInterestChangedRow{f, r.u256("marketId"), r.u256("longOI"), r.u256("shortOI"), r.u256("deltaUsd"), r.flag("isIncrease")}}
 	}},
-	{"Liquidation", func(_ *batch, f Fact, r *reader) []Row {
+	{"Liquidation", func(b *batch, f Fact, r *reader) []Row {
 		f.Kind = "liquidated"
 		f.Account = r.addr("user")
-		return []Row{LiquidationRow{f, r.u256("positionId"), f.Account, r.u256("marketId"), r.u256("liquidationPrice"), r.u256("penalty"), r.addr("keeper")}}
+		id := r.u256("positionId")
+		b.seedPosition(r, f, id)
+		return []Row{LiquidationRow{f, id, f.Account, r.u256("marketId"), r.u256("liquidationPrice"), r.u256("penalty"), r.addr("keeper")}}
 	}},
 	{"BackstopLiquidation", func(_ *batch, f Fact, r *reader) []Row {
 		f.Kind = "backstop"

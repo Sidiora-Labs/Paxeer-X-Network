@@ -26,17 +26,57 @@ type stateCall struct {
 	latest bool
 }
 
-// recordedState is a decode.StateReader over the perps getters getPosition and
-// getOrder of the leaf ABI: an id in owners answers its packed outputs with
-// the owner first, any other id reverts with the getter's unknown error, or
-// with revert when set. pruned refuses every CallAt with ErrStatePruned.
+// recordedState is a decode.StateReader over the perps getters
+// getOrderDetails, getPosition and getPositionDetails of the leaf ABI: an id
+// in orders or positions answers its record packed through the ABI, any other
+// id reverts with the getter's unknown error, or with revert when set.
+// pruned refuses every CallAt with ErrStatePruned.
 type recordedState struct {
-	t      *testing.T
-	abi    abi.ABI
-	owners map[string]common.Address
-	pruned bool
-	revert []byte
-	calls  []stateCall
+	t         *testing.T
+	abi       abi.ABI
+	orders    map[string]orderRecord
+	positions map[string]positionRecord
+	pruned    bool
+	revert    []byte
+	calls     []stateCall
+}
+
+// orderRecord is the getOrderDetails tuple of the leaf ABI.
+type orderRecord struct {
+	OrderId         *big.Int
+	User            common.Address
+	MarketId        *big.Int
+	IsLong          bool
+	OrderType       uint8
+	TimeInForce     uint8
+	Status          uint8
+	ReduceOnly      bool
+	LimitPrice      *big.Int
+	TriggerPrice    *big.Int
+	AcceptablePrice *big.Int
+	SizeUsd         *big.Int
+	SizeBase        *big.Int
+	FilledBase      *big.Int
+	Leverage        *big.Int
+	Deadline        uint64
+	Cloid           [16]byte
+	Sequence        uint64
+}
+
+// positionRecord holds the getPosition outputs and the getPositionDetails
+// tuple of one position.
+type positionRecord struct {
+	User             common.Address
+	MarketId         *big.Int
+	IsLong           bool
+	SizeUsd          *big.Int
+	CollateralUsd    *big.Int
+	CollateralToken  common.Address
+	CollateralAmount *big.Int
+	EntryPrice       *big.Int
+	Leverage         *big.Int
+	TakeProfitPrice  *big.Int
+	StopLossPrice    *big.Int
 }
 
 func newRecordedState(t *testing.T) *recordedState {
@@ -45,7 +85,7 @@ func newRecordedState(t *testing.T) *recordedState {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &recordedState{t: t, abi: a, owners: map[string]common.Address{}}
+	return &recordedState{t: t, abi: a, orders: map[string]orderRecord{}, positions: map[string]positionRecord{}}
 }
 
 func (s *recordedState) callData(method string, id int64) []byte {
@@ -57,8 +97,18 @@ func (s *recordedState) callData(method string, id int64) []byte {
 	return data
 }
 
-func (s *recordedState) own(method string, id int64, owner common.Address) {
-	s.owners[string(s.callData(method, id))] = owner
+// ownOrder and ownPosition record an open order or position of owner with
+// one unit of every amount.
+func (s *recordedState) ownOrder(id int64, owner common.Address) {
+	one := big.NewInt(1)
+	s.orders[big.NewInt(id).String()] = orderRecord{OrderId: big.NewInt(id), User: owner, MarketId: one, LimitPrice: one, TriggerPrice: new(big.Int),
+		AcceptablePrice: new(big.Int), SizeUsd: one, SizeBase: one, FilledBase: new(big.Int), Leverage: one, Status: 1}
+}
+
+func (s *recordedState) ownPosition(id int64, owner common.Address) {
+	one := big.NewInt(1)
+	s.positions[big.NewInt(id).String()] = positionRecord{User: owner, MarketId: one, SizeUsd: one, CollateralUsd: one, CollateralAmount: one,
+		EntryPrice: one, Leverage: one, TakeProfitPrice: new(big.Int), StopLossPrice: new(big.Int)}
 }
 
 func (s *recordedState) CallAt(_ context.Context, to common.Address, data []byte, height uint64) ([]byte, error) {
@@ -79,40 +129,52 @@ func (s *recordedState) answer(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	unknown := map[string]string{"getPosition": "PerpsUnknownPosition", "getOrder": "PerpsUnknownOrder"}[m.Name]
-	if unknown == "" {
+	args, err := m.Inputs.Unpack(data[4:])
+	if err != nil {
+		return nil, err
+	}
+	id := args[0].(*big.Int)
+	o, isOrder := s.orders[id.String()]
+	p, isPosition := s.positions[id.String()]
+	unknown := "PerpsUnknownPosition"
+	switch m.Name {
+	case "getOrderDetails":
+		unknown = "PerpsUnknownOrder"
+		if isOrder {
+			return m.Outputs.Pack(o)
+		}
+	case "getPosition":
+		if isPosition {
+			return m.Outputs.Pack(p.User, p.MarketId, p.IsLong, p.SizeUsd, p.CollateralUsd, p.CollateralToken, p.CollateralAmount, p.EntryPrice,
+				new(big.Int), true)
+		}
+	case "getPositionDetails":
+		if isPosition {
+			return m.Outputs.Pack(struct {
+				PositionId       *big.Int
+				User             common.Address
+				MarketId         *big.Int
+				IsLong           bool
+				SizeBase         *big.Int
+				SizeUsdAtMark    *big.Int
+				EntryPrice       *big.Int
+				Leverage         *big.Int
+				UnrealizedPnlUsd *big.Int
+				FundingOwedUsd   *big.Int
+				LiquidationPrice *big.Int
+				TakeProfitPrice  *big.Int
+				StopLossPrice    *big.Int
+				OpenedAt         *big.Int
+			}{id, p.User, p.MarketId, p.IsLong, new(big.Int), p.SizeUsd, p.EntryPrice, p.Leverage, new(big.Int), new(big.Int), new(big.Int),
+				p.TakeProfitPrice, p.StopLossPrice, new(big.Int)})
+		}
+	default:
 		return nil, fmt.Errorf("recorded state answers no %s", m.Name)
 	}
-	owner, ok := s.owners[string(data)]
-	if !ok {
-		if s.revert != nil {
-			return nil, &decode.RevertError{Data: s.revert}
-		}
-		return nil, &decode.RevertError{Data: s.abi.Errors[unknown].ID.Bytes()[:4]}
+	if s.revert != nil {
+		return nil, &decode.RevertError{Data: s.revert}
 	}
-	values := make([]any, len(m.Outputs))
-	values[0] = owner
-	for i, out := range m.Outputs[1:] {
-		values[i+1] = zeroOf(s.t, out.Type)
-	}
-	return m.Outputs.Pack(values...)
-}
-
-func zeroOf(t *testing.T, typ abi.Type) any {
-	t.Helper()
-	switch typ.T {
-	case abi.AddressTy:
-		return common.Address{}
-	case abi.BoolTy:
-		return false
-	case abi.UintTy, abi.IntTy:
-		if typ.Size == 8 {
-			return uint8(0)
-		}
-		return new(big.Int)
-	}
-	t.Fatalf("no zero value of %s", typ)
-	return nil
+	return nil, &decode.RevertError{Data: s.abi.Errors[unknown].ID.Bytes()[:4]}
 }
 
 // lookupDB empties schema perps of PERPS_DATA_TEST_DATABASE_URL, applies the
@@ -167,8 +229,8 @@ func TestPerpsAccountLookup(t *testing.T) {
 	t.Run("unstored_ids_resolve_at_the_height_before_and_persist", func(t *testing.T) {
 		tx := lookupDB(t)
 		state := newRecordedState(t)
-		state.own("getPosition", 900001, xAlice)
-		state.own("getOrder", 900002, xBob)
+		state.ownPosition(900001, xAlice)
+		state.ownOrder(900002, xBob)
 		r := registry(t, state)
 		res, err := r.Decode(ctx, tx, []decode.Log{
 			perpsLog(t, "PositionModified", 0, n(900001), n(10), n(5), n(5)),
@@ -183,10 +245,11 @@ func TestPerpsAccountLookup(t *testing.T) {
 		}
 		wantCalls := []stateCall{
 			{decode.PerpsAddress, state.callData("getPosition", 900001), xBlock - 1, false},
-			{decode.PerpsAddress, state.callData("getOrder", 900002), xBlock - 1, false},
+			{decode.PerpsAddress, state.callData("getPositionDetails", 900001), xBlock - 1, false},
+			{decode.PerpsAddress, state.callData("getOrderDetails", 900002), xBlock - 1, false},
 		}
 		if !reflect.DeepEqual(state.calls, wantCalls) {
-			t.Fatalf("calls %+v, want one getter call per id at the height before the block", state.calls)
+			t.Fatalf("calls %+v, want the getters of each id once at the height before the block", state.calls)
 		}
 		wantLookups := []decode.AccountLookup{
 			{What: "position", ID: "900001", Height: xBlock - 1, Path: decode.LookupAtHeight, Account: xAlice},
@@ -210,7 +273,7 @@ func TestPerpsAccountLookup(t *testing.T) {
 		if got := accounts(next); !reflect.DeepEqual(got, []common.Address{xAlice, xBob}) {
 			t.Fatalf("accounts %v, want the accounts of the stored rows", got)
 		}
-		if len(state.calls) != 2 || len(next.Lookups) != 0 {
+		if len(state.calls) != len(wantCalls) || len(next.Lookups) != 0 {
 			t.Fatalf("calls %d lookups %+v, the stored rows must answer without a call", len(state.calls), next.Lookups)
 		}
 	})
@@ -219,7 +282,7 @@ func TestPerpsAccountLookup(t *testing.T) {
 		tx := lookupDB(t)
 		state := newRecordedState(t)
 		state.pruned = true
-		state.own("getPosition", 900003, xCarol)
+		state.ownPosition(900003, xCarol)
 		res, err := registry(t, state).Decode(ctx, tx, []decode.Log{perpsLog(t, "PositionModified", 0, n(900003), n(10), n(5), n(5))})
 		if err != nil {
 			t.Fatal(err)
@@ -228,7 +291,9 @@ func TestPerpsAccountLookup(t *testing.T) {
 			t.Fatalf("accounts %v, want carol from the latest state", got)
 		}
 		data := state.callData("getPosition", 900003)
-		if want := []stateCall{{decode.PerpsAddress, data, xBlock - 1, false}, {decode.PerpsAddress, data, 0, true}}; !reflect.DeepEqual(state.calls, want) {
+		want := []stateCall{{decode.PerpsAddress, data, xBlock - 1, false}, {decode.PerpsAddress, data, 0, true},
+			{decode.PerpsAddress, state.callData("getPositionDetails", 900003), 0, true}}
+		if !reflect.DeepEqual(state.calls, want) {
 			t.Fatalf("calls %+v, want %+v", state.calls, want)
 		}
 		if want := []decode.AccountLookup{{What: "position", ID: "900003", Height: xBlock - 1, Path: decode.LookupLatest, Account: xCarol}}; !reflect.DeepEqual(res.Lookups, want) {

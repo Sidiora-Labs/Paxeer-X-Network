@@ -426,9 +426,10 @@ func (ix *Indexer) write(ctx context.Context, tx *sql.Tx, b *source.Block) error
 	return nil
 }
 
-// logLookups logs each order or position whose account was read through the
-// node once: the height and path that resolved it, or that the precompile
-// does not know it and its events are account_lookup raw logs.
+// logLookups logs each order or position read through the node once: the
+// height and path that resolved its account and projection seed, or that the
+// precompile does not know it and its events are account_lookup or
+// projection_lookup raw logs.
 func (ix *Indexer) logLookups(lookups []decode.AccountLookup) {
 	for _, l := range lookups {
 		k := l.What + " " + l.ID
@@ -438,10 +439,10 @@ func (ix *Indexer) logLookups(lookups []decode.AccountLookup) {
 		ix.lookedUp[k] = true
 		attrs := []any{slog.String(l.What, l.ID), slog.Uint64("height", l.Height), slog.String("path", l.Path)}
 		if l.Missing {
-			ix.logger.Warn("perps indexer account lookup: unknown to the perps precompile, events written as raw logs", attrs...)
+			ix.logger.Warn("perps indexer state lookup: unknown to the perps precompile, events written as raw logs", attrs...)
 			continue
 		}
-		ix.logger.Info("perps indexer account lookup resolved through the node", append(attrs, slog.String("account", l.Account.Hex()))...)
+		ix.logger.Info("perps indexer state lookup resolved through the node, projection seeded", append(attrs, slog.String("account", l.Account.Hex()))...)
 	}
 }
 

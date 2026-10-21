@@ -64,6 +64,10 @@ const (
 	// FailureAccountLookup is an id-only perps event whose order or
 	// position the perps precompile does not know.
 	FailureAccountLookup = "account_lookup"
+	// FailureProjectionLookup is a perps event carrying its account whose
+	// order or position no projection row or seed holds and the perps
+	// precompile does not know.
+	FailureProjectionLookup = "projection_lookup"
 )
 
 var (
@@ -191,6 +195,7 @@ type Result struct {
 	Decoded []Decoded
 	Raw     []RawLogRow
 	Lookups []AccountLookup
+	Seeds   []Seed
 }
 
 // Paths of an AccountLookup: the state after the block before the event, or
@@ -203,7 +208,7 @@ const (
 // AccountLookup records one order or position account read through State:
 // What is order or position, Height the height asked, Path the state that
 // answered, and Missing an id that state does not know, whose event became an
-// account_lookup raw row.
+// account_lookup or projection_lookup raw row.
 type AccountLookup struct {
 	What    string
 	ID      string
@@ -232,8 +237,8 @@ type entry struct {
 // pointers resolved through State, and safe for concurrent Decode calls.
 type Registry struct {
 	entries       map[key]entry
-	orderOwner    ownerGetter
-	positionOwner ownerGetter
+	orderOwner    stateGetter
+	positionOwner stateGetter
 	modules       map[common.Address]common.Address
 	share         map[common.Hash]entry
 	fees          map[common.Hash]entry
@@ -336,14 +341,14 @@ func (r *Registry) Decode(ctx context.Context, q Querier, logs []Log) (*Result, 
 	}
 	r.unknownLogs.Add(float64(b.unknownLogs))
 	r.enumUnknown.Add(float64(b.enumUnknown))
-	res.Lookups = b.lookups
+	res.Lookups, res.Seeds = b.lookups, b.seeds
 	return res, nil
 }
 
 func (r *Registry) newBatch(ctx context.Context, q Querier) *batch {
 	return &batch{
 		ctx: ctx, q: q, reg: r,
-		orders: map[string]common.Address{}, positions: map[string]common.Address{},
+		orders: map[string]common.Address{}, positions: map[string]common.Address{}, projected: map[string]bool{},
 		spotOrders: map[spotOrderKey]spotOrder{}, created: map[common.Address]common.Address{},
 	}
 }

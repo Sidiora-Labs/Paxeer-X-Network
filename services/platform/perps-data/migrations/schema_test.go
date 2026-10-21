@@ -17,6 +17,7 @@ const (
 	factPK        = "PRIMARY KEY (block, tx_index, log_index, sub)"
 	factsFile     = "0001_facts.sql"
 	projectsFile  = "0002_projections.sql"
+	seedsFile     = "0011_projection_seeds.sql"
 	usdlByteaText = `'\x85fcd13735f4309833a503ee804ea32395851479'::bytea`
 )
 
@@ -110,7 +111,7 @@ var factTables = []factTable{
 		[]string{"(share_token, block)", "(token, block)"}},
 	{"usdl_transfers", []string{"in", "out"}, []string{"from_account:a", "to_account:a", "value:u", "venue:a"}, []string{"(venue, block)"}},
 	{"raw_logs", nil,
-		[]string{"topics:raw:bytea[] NOT NULL CHECK (cardinality(topics) <= 4)", "data:raw:bytea NOT NULL", "decoded:raw:boolean NOT NULL", "failure_class:raw:text NOT NULL CHECK (failure_class IN ('unknown_topic', 'abi_decode', 'order_lookup', 'share_lookup', 'account_lookup'))"},
+		[]string{"topics:raw:bytea[] NOT NULL CHECK (cardinality(topics) <= 4)", "data:raw:bytea NOT NULL", "decoded:raw:boolean NOT NULL", "failure_class:raw:text NOT NULL CHECK (failure_class IN ('unknown_topic', 'abi_decode', 'order_lookup', 'share_lookup', 'account_lookup', 'projection_lookup'))"},
 		[]string{"(decoded, block)", "(failure_class, block)"}},
 	{"protocol_events", nil,
 		[]string{"event_name:raw:text NOT NULL", "market_id:u", "args:raw:jsonb NOT NULL"},
@@ -187,6 +188,7 @@ var (
 	revoke         = regexp.MustCompile(`^REVOKE ALL ON perps\.\w+ FROM PUBLIC$`)
 	insertValues   = regexp.MustCompile(`(?s)^INSERT INTO perps\.(\w+) \(([\w, ]+)\) VALUES\n(.*)$`)
 	dropNotNull    = regexp.MustCompile(`^ALTER TABLE perps\.(\w+) ALTER COLUMN (\w+) DROP NOT NULL$`)
+	addColumn      = regexp.MustCompile(`^ALTER TABLE perps\.(\w+) ADD COLUMN (\w+) (.+)$`)
 	replaceCheck   = regexp.MustCompile(`^ALTER TABLE perps\.(\w+) DROP CONSTRAINT (\w+), ADD CONSTRAINT (\w+) (CHECK \((\w+) IN \(.*\)\))$`)
 	dollarTag      = regexp.MustCompile(`^\$(?:[A-Za-z_]\w*)?\$`)
 	createSchema   = "CREATE SCHEMA IF NOT EXISTS perps"
@@ -333,6 +335,12 @@ func loadSchema(t *testing.T) *schema {
 				}
 				continue
 			}
+			if m := addColumn.FindStringSubmatch(stmt); m != nil {
+				if err := s.addColumn(m[1], m[2], m[3]); err != nil {
+					t.Fatalf("%s: %v", file, err)
+				}
+				continue
+			}
 			if m := replaceCheck.FindStringSubmatch(stmt); m != nil {
 				if err := s.replaceCheck(m[1], m[2], m[3], m[4], m[5]); err != nil {
 					t.Fatalf("%s: %v", file, err)
@@ -391,6 +399,20 @@ func (s *schema) dropNotNull(tableName, colName string) error {
 		return fmt.Errorf("perps.%s.%s = %q drops a NOT NULL it does not carry", tableName, colName, def)
 	}
 	tb.columns[i].def = before + after
+	return nil
+}
+
+// addColumn applies ALTER TABLE ... ADD COLUMN to a table an earlier
+// statement created, which must not carry the column yet.
+func (s *schema) addColumn(tableName, colName, def string) error {
+	tb, ok := s.tables[tableName]
+	if !ok {
+		return fmt.Errorf("alter perps.%s, which no earlier statement creates", tableName)
+	}
+	if _, dup := tb.column(colName); dup {
+		return fmt.Errorf("alter perps.%s adds column %q it already has", tableName, colName)
+	}
+	tb.columns = append(tb.columns, column{name: colName, def: def})
 	return nil
 }
 
@@ -675,9 +697,9 @@ func TestSchemaFiles(t *testing.T) {
 			keys    []string
 			indexes []string
 		}{
-			{"positions_current", []string{"position_id", "account", "market_id", "is_long", "size_usd", "collateral_usd", "collateral_amount", "collateral_token", "entry_price", "leverage", "realized_pnl", "status", "opened_block", "closed_block", "take_profit_price", "stop_loss_price"},
+			{"positions_current", []string{"position_id", "account", "market_id", "is_long", "size_usd", "collateral_usd", "collateral_amount", "collateral_token", "entry_price", "leverage", "realized_pnl", "status", "opened_block", "closed_block", "take_profit_price", "stop_loss_price", "projected_from", "projected_height"},
 				[]string{"PRIMARY KEY (position_id)"}, []string{"(account, status)", "(market_id, status)"}},
-			{"orders", []string{"order_id", "account", "market_id", "order_type", "is_long", "trigger_price", "size_usd", "limit_price", "acceptable_price", "time_in_force", "reduce_only", "deadline", "cloid", "remaining_size_usd", "status", "position_id", "execution_price", "placed_block", "closed_block"},
+			{"orders", []string{"order_id", "account", "market_id", "order_type", "is_long", "trigger_price", "size_usd", "limit_price", "acceptable_price", "time_in_force", "reduce_only", "deadline", "cloid", "remaining_size_usd", "status", "position_id", "execution_price", "placed_block", "closed_block", "projected_from", "projected_height"},
 				[]string{"PRIMARY KEY (order_id)"}, []string{"(account, status)", "(market_id, status)"}},
 			{"spot_orders", []string{"order_id", "account", "kind", "order_type", "side", "token", "stablecoin", "amount", "target_price", "stop_price", "limit_price", "trigger_price", "expires_at", "status", "execution_price", "placed_block", "closed_block"},
 				[]string{"PRIMARY KEY (kind, order_id)"}, []string{"(account, status)", "(token, status)"}},
@@ -732,6 +754,49 @@ func TestSchemaFiles(t *testing.T) {
 		}
 		if c, _ := s.tables["orders"].column("status"); c.def != "text NOT NULL CHECK (status IN ('active', 'triggered', 'filled', 'cancelled', 'expired'))" {
 			t.Errorf("perps.orders.status = %q", c.def)
+		}
+		for _, c := range []struct{ table, column, def string }{
+			{"orders", "placed_block", "bigint CHECK (placed_block >= 0)"},
+			{"positions_current", "opened_block", "bigint CHECK (opened_block >= 0)"},
+			{"positions_current", "realized_pnl", "perps.int256"},
+			{"orders", "projected_from", "text CHECK (projected_from IN ('state'))"},
+			{"positions_current", "projected_from", "text CHECK (projected_from IN ('state'))"},
+			{"orders", "projected_height", "bigint CHECK (projected_height >= 0)"},
+			{"positions_current", "projected_height", "bigint CHECK (projected_height >= 0)"},
+		} {
+			if got, _ := s.tables[c.table].column(c.column); got.def != c.def {
+				t.Errorf("perps.%s.%s = %q, want %q", c.table, c.column, got.def, c.def)
+			}
+		}
+		seeds, ok := s.tables["projection_seeds"]
+		switch {
+		case !ok:
+			t.Errorf("perps.projection_seeds missing")
+		case seeds.file != seedsFile:
+			t.Errorf("perps.projection_seeds is created in %s, want %s", seeds.file, seedsFile)
+		default:
+			wantSeeds := []string{"kind", "id", "block", "height", "path", "account", "market_id", "is_long", "size_usd", "order_type", "time_in_force",
+				"order_status", "reduce_only", "limit_price", "trigger_price", "acceptable_price", "size_base", "filled_base", "remaining_size_usd", "status",
+				"deadline", "cloid", "collateral_usd", "collateral_amount", "collateral_token", "entry_price", "leverage", "take_profit_price", "stop_loss_price"}
+			if got := seeds.columnNames(); !slices.Equal(got, wantSeeds) {
+				t.Errorf("perps.projection_seeds columns\n got %v\nwant %v", got, wantSeeds)
+			}
+			if !slices.Equal(seeds.constraints, []string{"PRIMARY KEY (kind, id)"}) {
+				t.Errorf("perps.projection_seeds keys %v", seeds.constraints)
+			}
+			if got := s.indexSet("projection_seeds"); !slices.Equal(got, []string{"(block)"}) {
+				t.Errorf("perps.projection_seeds indexes %v", got)
+			}
+			for _, c := range []struct{ column, def string }{
+				{"kind", "text NOT NULL CHECK (kind IN ('order', 'position'))"},
+				{"path", "text NOT NULL CHECK (path IN ('at_height', 'latest'))"},
+				{"account", "bytea NOT NULL CHECK (octet_length(account) = 20)"},
+				{"status", "text CHECK (status IN ('active', 'triggered', 'filled', 'cancelled', 'expired'))"},
+			} {
+				if got, _ := seeds.column(c.column); got.def != c.def {
+					t.Errorf("perps.projection_seeds.%s = %q, want %q", c.column, got.def, c.def)
+				}
+			}
 		}
 		if c, _ := s.tables["leaderboard"].column("win_rate"); c.def != "numeric(9,4) NOT NULL CHECK (win_rate >= 0 AND win_rate <= 100)" {
 			t.Errorf("perps.leaderboard.win_rate = %q", c.def)

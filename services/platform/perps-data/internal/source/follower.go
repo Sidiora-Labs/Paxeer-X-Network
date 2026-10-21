@@ -60,13 +60,14 @@ func SyntheticHash(tag string, height uint64) common.Hash {
 	return crypto.Keccak256Hash(buf)
 }
 
-// factTables hold one row per decoded log, keyed by block.
+// factTables hold one row per decoded log, keyed by block, and the projection
+// seeds read for the events of a block.
 var factTables = []string{
 	"vaults", "collateral_events", "order_events", "fills", "position_events", "trade_settlements", "fees",
 	"mark_prices", "funding_rates", "funding_settlements", "funding_payments", "open_interest", "liquidations",
 	"backstop_liquidations", "insurance_events", "adl_events", "feed_keys", "index_prices", "spot_swaps",
 	"spot_fee_events", "spot_order_events", "spot_vault_events", "spot_token_registry", "spot_admin",
-	"spot_share_transfers", "usdl_transfers", "raw_logs", "protocol_events", "tx_actions",
+	"spot_share_transfers", "usdl_transfers", "raw_logs", "protocol_events", "tx_actions", "projection_seeds",
 }
 
 // marketFactTables are the fact tables with a market_id column.

@@ -16,7 +16,8 @@ import (
 )
 
 // ErrNotProjected reports a fact row naming an order, position or spot order
-// that has no projection row, or a fact row that is not stored.
+// that has no projection row and no stored projection seed, or a fact row
+// that is not stored.
 var ErrNotProjected = errors.New("store: projection row missing")
 
 // USDL is the collateral token of the perps venue (contracts/perps.md
@@ -183,18 +184,53 @@ type keeperCycle struct {
 	liquidations int
 }
 
-// exec1 runs a statement that must change exactly one projection row.
+// exec1 runs a statement that must change exactly one projection row. When
+// it changes none, the row of the stored projection seed of what is inserted
+// and the statement runs once more.
 func exec1(ctx context.Context, tx *sql.Tx, what, query string, args ...any) error {
-	res, err := tx.ExecContext(ctx, query, args...)
-	if err != nil {
-		return fmt.Errorf("project %s: %w", what, err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("project %s: %w", what, err)
-	}
-	if n != 1 {
+	for seeded := false; ; seeded = true {
+		res, err := tx.ExecContext(ctx, query, args...)
+		if err != nil {
+			return fmt.Errorf("project %s: %w", what, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("project %s: %w", what, err)
+		}
+		if n == 1 {
+			return nil
+		}
+		if n == 0 && !seeded {
+			ok, err := projectSeed(ctx, tx, what)
+			if err != nil {
+				return err
+			}
+			if ok {
+				continue
+			}
+		}
 		return fmt.Errorf("%w: %s", ErrNotProjected, what)
+	}
+}
+
+// scan1 reads one column of the projection row of what, inserting the row of
+// its stored projection seed when it has none.
+func scan1(ctx context.Context, tx *sql.Tx, what, query, id string, dest any) error {
+	err := tx.QueryRowContext(ctx, query, id).Scan(dest)
+	if errors.Is(err, sql.ErrNoRows) {
+		ok, serr := projectSeed(ctx, tx, what)
+		if serr != nil {
+			return serr
+		}
+		if ok {
+			err = tx.QueryRowContext(ctx, query, id).Scan(dest)
+		}
+	}
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return fmt.Errorf("%w: %s", ErrNotProjected, what)
+	case err != nil:
+		return fmt.Errorf("project %s: %w", what, err)
 	}
 	return nil
 }
@@ -260,11 +296,8 @@ func projectPosition(ctx context.Context, tx *sql.Tx, row decode.Row) error {
 		return exec1(ctx, tx, "position "+r.PositionID, positionFundingSQL, r.PositionID, r.NewCollateralUSD, r.NewCollateralAmount)
 	case decode.ADLExecutedRow:
 		var size string
-		switch err := tx.QueryRowContext(ctx, positionSizeSQL, r.PositionID).Scan(&size); {
-		case errors.Is(err, sql.ErrNoRows):
-			return fmt.Errorf("%w: position %s", ErrNotProjected, r.PositionID)
-		case err != nil:
-			return fmt.Errorf("project position %s: %w", r.PositionID, err)
+		if err := scan1(ctx, tx, "position "+r.PositionID, positionSizeSQL, r.PositionID, &size); err != nil {
+			return err
 		}
 		reduced, err := bigint.Sub(size, r.DeleveragedSizeUSD)
 		if err != nil {
@@ -339,11 +372,8 @@ func projectOrder(ctx context.Context, tx *sql.Tx, row decode.Row) error {
 
 func fillOrder(ctx context.Context, tx *sql.Tx, orderID, size string, block int64) error {
 	var remaining string
-	switch err := tx.QueryRowContext(ctx, orderRemainingSQL, orderID).Scan(&remaining); {
-	case errors.Is(err, sql.ErrNoRows):
-		return fmt.Errorf("%w: order %s", ErrNotProjected, orderID)
-	case err != nil:
-		return fmt.Errorf("project order %s: %w", orderID, err)
+	if err := scan1(ctx, tx, "order "+orderID, orderRemainingSQL, orderID, &remaining); err != nil {
+		return err
 	}
 	left, err := bigint.Sub(remaining, size)
 	if err != nil {
