@@ -14,10 +14,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/pnl"
@@ -44,16 +46,26 @@ type SpotUsers struct {
 // spotBoardTTL is how long one fold of every account serves the leaderboards.
 const spotBoardTTL = 30 * time.Second
 
+// spotBoardFoldTimeout bounds one fold of every account. The fold runs on
+// its own context, never on the context of the request that found the
+// board stale.
+const spotBoardFoldTimeout = 20 * time.Second
+
 // spotBoard is the last fold of every account's legs, ranked for each
-// leaderboard and cut to maxLimit. It is rebuilt at most once per
-// spotBoardTTL however many requests arrive; requests that find it stale
-// wait for the one rebuild in flight.
+// leaderboard and cut to maxLimit, with the time it ran and the number of
+// accounts it left out. It is rebuilt at most once per spotBoardTTL however
+// many requests arrive: requests that find it stale share the one rebuild in
+// flight and each waits on its own context, and the rebuild answers every
+// waiter with the same board or the same error.
 // ponytail: one in-process full fold per TTL; move to a store projection
 // when folding every leg takes a sizeable share of the TTL.
 type spotBoard struct {
-	mu    sync.Mutex
-	at    time.Time
-	ranks map[string][]spotRankJSON
+	mu      sync.Mutex
+	at      time.Time
+	ranks   map[string][]spotRankJSON
+	omitted int
+	flight  singleflight.Group
+	folds   atomic.Int64
 }
 
 // NewSpotUsers returns the spot user routes reading db and node.
@@ -347,19 +359,19 @@ type spotTrader struct {
 // fold folds the legs of user, or of every account when user is nil, through
 // pnl.Fold. For one user a leg the fold refuses answers 422 with the refusal.
 // Folding every account, an account whose legs cannot be folded (a sell of
-// tokens it received by transfer) is logged and left out; it never fails the
-// fold of the others.
-func (s *SpotUsers) fold(ctx context.Context, user *common.Address) (map[common.Address]*spotTrader, error) {
+// tokens it received by transfer) is logged once with the reason and left
+// out; it never fails the fold of the others. omitted counts those accounts.
+func (s *SpotUsers) fold(ctx context.Context, user *common.Address) (traders map[common.Address]*spotTrader, omitted int, err error) {
 	var arg any
 	if user != nil {
 		arg = user.Bytes()
 	}
 	rows, err := s.db.QueryContext(ctx, spotLegsSQL, arg)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
-	traders := map[common.Address]*spotTrader{}
+	traders = map[common.Address]*spotTrader{}
 	refused := map[common.Address]bool{}
 	for rows.Next() {
 		var (
@@ -371,7 +383,7 @@ func (s *SpotUsers) fold(ctx context.Context, user *common.Address) (map[common.
 			logIndex           int
 		)
 		if err := rows.Scan(&account, &token, &buy, &usdl, &tok, &tx, &at, &block, &logIndex); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		a := common.BytesToAddress(account)
 		if refused[a] {
@@ -384,14 +396,17 @@ func (s *SpotUsers) fold(ctx context.Context, user *common.Address) (map[common.
 		}
 		if err := tr.apply(common.BytesToAddress(token), buy, usdl, tok, common.BytesToHash(tx), at, block, logIndex); err != nil {
 			if user != nil {
-				return nil, err
+				return nil, 0, err
 			}
 			slog.Warn("spot fold: account left out", "account", spotHex(a), "block", block, "log_index", logIndex, "reason", err.Error())
 			refused[a] = true
 			delete(traders, a)
 		}
 	}
-	return traders, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return traders, len(refused), nil
 }
 
 func (tr *spotTrader) apply(token common.Address, buy bool, usdl, tok string, tx common.Hash, at time.Time, block int64, logIndex int) error {
@@ -613,7 +628,7 @@ type spotPositionsBody struct {
 // positions answers the fold of every token the user traded beside its node
 // balance at the latest height; externalQtyDelta is node minus derived.
 func (s *SpotUsers) positions(ctx context.Context, user common.Address, _ map[string][]string) (any, error) {
-	traders, err := s.fold(ctx, &user)
+	traders, _, err := s.fold(ctx, &user)
 	if err != nil {
 		return nil, err
 	}
@@ -1009,7 +1024,7 @@ func (s *SpotUsers) closedLegs(ctx context.Context, user common.Address, q map[s
 			return nil, &spotError{http.StatusBadRequest, "invalid afterId"}
 		}
 	}
-	traders, err := s.fold(ctx, &user)
+	traders, _, err := s.fold(ctx, &user)
 	if err != nil {
 		return nil, err
 	}
@@ -1100,7 +1115,7 @@ type spotPnlBody struct {
 // position has a mark, the unrealized and total profit at the latest index
 // prices (pnl.TotalPnl).
 func (s *SpotUsers) pnlSummary(ctx context.Context, user common.Address, _ map[string][]string) (any, error) {
-	traders, err := s.fold(ctx, &user)
+	traders, _, err := s.fold(ctx, &user)
 	if err != nil {
 		return nil, err
 	}
@@ -1198,7 +1213,7 @@ func (s *SpotUsers) identity(ctx context.Context, user common.Address, _ map[str
 		v := strconv.FormatInt(first.Int64, 10)
 		body.Paxscan.FirstSeenBlock = &v
 	}
-	traders, err := s.fold(ctx, &user)
+	traders, _, err := s.fold(ctx, &user)
 	if err != nil {
 		return nil, err
 	}
@@ -1223,9 +1238,14 @@ type spotRankJSON struct {
 	Value   string `json:"value"`
 }
 
+// spotLeaderboardBody carries the time of the fold it was ranked from and
+// the number of accounts that fold left out, so a board missing accounts
+// says so.
 type spotLeaderboardBody struct {
-	Kind  string         `json:"kind"`
-	Items []spotRankJSON `json:"items"`
+	Kind            string         `json:"kind"`
+	AsOf            string         `json:"as_of"`
+	OmittedAccounts int            `json:"omitted_accounts"`
+	Items           []spotRankJSON `json:"items"`
 }
 
 // leaderboard ranks every spot trader by realized profit (pnl), stable volume
@@ -1248,26 +1268,71 @@ func (s *SpotUsers) leaderboard(w http.ResponseWriter, r *http.Request) {
 
 func (s *SpotUsers) rank(ctx context.Context, kind string, limit int) (spotLeaderboardBody, error) {
 	body := spotLeaderboardBody{Kind: kind, Items: []spotRankJSON{}}
-	s.board.mu.Lock()
-	defer s.board.mu.Unlock()
-	if s.board.ranks == nil || time.Since(s.board.at) >= spotBoardTTL {
-		ranks, err := s.rankAll(ctx)
-		if err != nil {
-			return body, err
+	board, ok := s.freshBoard()
+	if !ok {
+		select {
+		case <-ctx.Done():
+			return body, ctx.Err()
+		case res := <-s.board.flight.DoChan("board", s.rebuildBoard):
+			if res.Err != nil {
+				return body, res.Err
+			}
+			board = res.Val.(spotBoardView)
 		}
-		s.board.ranks, s.board.at = ranks, time.Now()
 	}
-	items := s.board.ranks[kind]
+	items := board.ranks[kind]
+	body.AsOf, body.OmittedAccounts = spotISO(board.at), board.omitted
 	body.Items = append(body.Items, items[:min(len(items), limit)]...)
 	return body, nil
 }
 
-// rankAll folds the legs of every account once and ranks the traders for
-// each leaderboard, highest first, ties by address.
-func (s *SpotUsers) rankAll(ctx context.Context) (map[string][]spotRankJSON, error) {
-	traders, err := s.fold(ctx, nil)
+// spotBoardView is one fold of the board as the requests read it.
+type spotBoardView struct {
+	at      time.Time
+	ranks   map[string][]spotRankJSON
+	omitted int
+}
+
+// freshBoard answers the board when it was folded within spotBoardTTL.
+func (s *SpotUsers) freshBoard() (spotBoardView, bool) {
+	s.board.mu.Lock()
+	defer s.board.mu.Unlock()
+	view := spotBoardView{at: s.board.at, ranks: s.board.ranks, omitted: s.board.omitted}
+	return view, view.ranks != nil && time.Since(view.at) < spotBoardTTL
+}
+
+// rebuildBoard is the one rebuild in flight: it folds every account on a
+// context of its own bounded by spotBoardFoldTimeout, so a waiter that goes
+// away never cancels it, and stores the board for the next spotBoardTTL. A
+// board a rebuild that just finished left fresh is answered as is.
+func (s *SpotUsers) rebuildBoard() (any, error) {
+	if view, ok := s.freshBoard(); ok {
+		return view, nil
+	}
+	s.board.folds.Add(1)
+	ctx, cancel := context.WithTimeout(context.Background(), spotBoardFoldTimeout)
+	defer cancel()
+	ranks, omitted, err := s.rankAll(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if omitted > 0 {
+		slog.Warn("spot leaderboard: accounts left out of the fold", "omitted_accounts", omitted)
+	}
+	view := spotBoardView{at: time.Now(), ranks: ranks, omitted: omitted}
+	s.board.mu.Lock()
+	s.board.at, s.board.ranks, s.board.omitted = view.at, view.ranks, view.omitted
+	s.board.mu.Unlock()
+	return view, nil
+}
+
+// rankAll folds the legs of every account once and ranks the traders for
+// each leaderboard, highest first, ties by address; omitted counts the
+// accounts the fold left out.
+func (s *SpotUsers) rankAll(ctx context.Context) (map[string][]spotRankJSON, int, error) {
+	traders, omitted, err := s.fold(ctx, nil)
+	if err != nil {
+		return nil, 0, err
 	}
 	type entry struct {
 		account common.Address
@@ -1283,7 +1348,7 @@ func (s *SpotUsers) rankAll(ctx context.Context) (map[string][]spotRankJSON, err
 			case "pnl":
 				realized, err := tr.realized()
 				if err != nil {
-					return nil, err
+					return nil, 0, err
 				}
 				e.value, e.text = new(big.Rat).SetInt(realized), realized.String()
 			case "volume":
@@ -1310,7 +1375,7 @@ func (s *SpotUsers) rankAll(ctx context.Context) (map[string][]spotRankJSON, err
 		}
 		ranks[kind] = items
 	}
-	return ranks, nil
+	return ranks, omitted, nil
 }
 
 // SpotStreamItem is one data frame of the spot user socket: the stream, the
@@ -1410,7 +1475,7 @@ func (s *SpotUsers) StreamItems(ctx context.Context, env delivery.Envelope) ([]S
 	if items, err = appendSpotItem(items, "pnl", user, summary); err != nil {
 		return nil, err
 	}
-	traders, err := s.fold(ctx, &user)
+	traders, _, err := s.fold(ctx, &user)
 	if err != nil {
 		return nil, err
 	}

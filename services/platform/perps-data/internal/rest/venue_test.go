@@ -249,13 +249,17 @@ func TestVenueREST(t *testing.T) {
 			if err := json.Unmarshal(venueData(t, mux, path), &entry); err != nil {
 				t.Fatal(err)
 			}
-			wantKeys(t, entry, "symbol", "index_price", "mark_price", "est_funding_rate", "last_funding_rate", "open_interest", "volume_24h")
+			wantKeys(t, entry, "symbol", "index_price", "mark_price", "last_funding_rate_hourly", "last_funding_rate", "open_interest", "volume_24h")
 			if field[string](t, entry, "symbol") != "BTC" {
 				t.Fatalf("symbol: %s", entry["symbol"])
 			}
+			// The last settled hourly rate, exact, as a decimal string.
+			if got := field[string](t, entry, "last_funding_rate_hourly"); got != "0.00005" {
+				t.Fatalf("last_funding_rate_hourly: %s", entry["last_funding_rate_hourly"])
+			}
 			for name, want := range map[string]float64{"index_price": 77173, "mark_price": 77182.4,
-				"est_funding_rate": -0.000036, "last_funding_rate": 0.00005,
-				"open_interest": 2000.75, "volume_24h": 2500} {
+				"last_funding_rate": 0.00005,
+				"open_interest":     2000.75, "volume_24h": 2500} {
 				wantNumber(t, entry, name, want)
 			}
 		}
@@ -278,7 +282,7 @@ func TestVenueREST(t *testing.T) {
 		}
 		seen := map[string]bool{}
 		for i, entry := range entries {
-			wantKeys(t, entry, "symbol", "paxeerSymbol", "mark_price", "index_price", "open_interest", "est_funding_rate",
+			wantKeys(t, entry, "symbol", "paxeerSymbol", "mark_price", "index_price", "open_interest", "last_funding_rate_hourly",
 				"last_funding_rate", "24h_open", "24h_close", "24h_high", "24h_low", "24h_amount", "24h_volume")
 			symbol := field[string](t, entry, "paxeerSymbol")
 			id, ok := marketIDs[symbol]
@@ -293,12 +297,15 @@ func TestVenueREST(t *testing.T) {
 			// OpenInterestChanged, FundingRateUpdated, FundingSettled or
 			// rolling 24 hour prices outside BTC. Volumes count fills.
 			want := map[string]float64{"mark_price": 50.5, "index_price": 50, "24h_amount": 0, "24h_volume": 0}
-			null := []string{"open_interest", "est_funding_rate", "last_funding_rate", "24h_open", "24h_close", "24h_high", "24h_low"}
+			null := []string{"open_interest", "last_funding_rate_hourly", "last_funding_rate", "24h_open", "24h_close", "24h_high", "24h_low"}
 			if symbol == "BTC" {
 				want = map[string]float64{"mark_price": 77182.4, "index_price": 77173, "open_interest": 2000.75,
-					"est_funding_rate": -0.000036, "last_funding_rate": 0.00005, "24h_open": 100,
+					"last_funding_rate": 0.00005, "24h_open": 100,
 					"24h_close": 125, "24h_high": 125, "24h_low": 100, "24h_amount": 22, "24h_volume": 2500}
 				null = nil
+				if got := field[string](t, entry, "last_funding_rate_hourly"); got != "0.00005" {
+					t.Fatalf("last_funding_rate_hourly: %s", entry["last_funding_rate_hourly"])
+				}
 			} else if symbol == "ETH" {
 				want["open_interest"], want["24h_amount"] = 500, 100
 				null = null[1:]
@@ -347,7 +354,7 @@ func TestVenueREST(t *testing.T) {
 		mux := venueMux(t, db)
 		for _, tc := range []struct{ table, route string }{
 			{"orders", "/orderbook/BTC"}, {"open_interest", "/open-interest"},
-			{"mark_prices", "/ticker/BTC"}, {"funding_rates", "/tickers"},
+			{"mark_prices", "/ticker/BTC"}, {"funding_settlements", "/tickers"},
 		} {
 			t.Run(tc.table, func(t *testing.T) {
 				accountExec(t, db, fmt.Sprintf("ALTER TABLE perps.%s RENAME TO venue_unavailable", tc.table))

@@ -416,7 +416,7 @@ type OrderlyTicker {
   mark_price: Float
   index_price: Float
   sum_unitary_funding: Float
-  est_funding_rate: Float
+  last_funding_rate_hourly: String
   last_funding_rate: Float
   next_funding_time: Float
   open_interest: Float
@@ -461,8 +461,7 @@ type OrderlyOpenInterest {
 type OrderlyFundingRate {
   symbol: String!
   paxeerSymbol: String!
-  est_funding_rate: Float
-  est_funding_rate_timestamp: Float
+  last_funding_rate_hourly: String
   last_funding_rate: Float
   last_funding_rate_timestamp: Float
   next_funding_time: Float

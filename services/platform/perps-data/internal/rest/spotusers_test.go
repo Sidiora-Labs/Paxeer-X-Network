@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/decode"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/delivery"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/records"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/store"
 )
 
@@ -156,6 +158,19 @@ func spotRefused(t *testing.T, mux http.Handler, path string, status int, msg st
 	wantKeys(t, body, "error")
 	if got := field[string](t, body, "error"); got != msg {
 		t.Fatalf("%s: error %q, want %q", path, got, msg)
+	}
+}
+
+// spotBoardAsOf checks that as_of is the ISO millisecond time of a fold that
+// ran within the last minute.
+func spotBoardAsOf(t *testing.T, asOf string) {
+	t.Helper()
+	at, err := time.Parse(records.ISOMillis, asOf)
+	if err != nil {
+		t.Fatalf("as_of %q: %v", asOf, err)
+	}
+	if age := time.Since(at); age < -time.Second || age > time.Minute {
+		t.Fatalf("as_of %s is %s old", asOf, age)
 	}
 }
 
@@ -497,15 +512,16 @@ func TestSpotUsersREST(t *testing.T) {
 			seedTraders(t)
 			var body spotLeaderboardBody
 			fields := spotGet(t, dbOnly, "/v1/leaderboards/"+c.kind, http.StatusOK, &body)
-			wantKeys(t, fields, "kind", "items")
-			want := spotLeaderboardBody{Kind: c.kind}
+			wantKeys(t, fields, "kind", "as_of", "omitted_accounts", "items")
+			spotBoardAsOf(t, body.AsOf)
+			want := spotLeaderboardBody{Kind: c.kind, AsOf: body.AsOf}
 			for rank, i := range c.order {
 				want.Items = append(want.Items, spotRankJSON{Rank: rank + 1, Address: spotHexOf(traders[i]), Value: c.values[rank]})
 			}
 			spotEqual(t, c.kind, body, want)
 			body = spotLeaderboardBody{}
 			spotGet(t, dbOnly, "/v1/leaderboards/"+c.kind+"?limit=1", http.StatusOK, &body)
-			spotEqual(t, c.kind+" limit 1", body, spotLeaderboardBody{Kind: c.kind, Items: want.Items[:1]})
+			spotEqual(t, c.kind+" limit 1", body, spotLeaderboardBody{Kind: c.kind, AsOf: want.AsOf, Items: want.Items[:1]})
 		})
 	}
 
@@ -524,6 +540,9 @@ func TestSpotUsersREST(t *testing.T) {
 		}}
 		var body spotLeaderboardBody
 		spotGet(t, mux, "/v1/leaderboards/pnl", http.StatusOK, &body)
+		// The board says it left one account out.
+		spotBoardAsOf(t, body.AsOf)
+		want.AsOf, want.OmittedAccounts = body.AsOf, 1
 		spotEqual(t, "pnl with an unfoldable account", body, want)
 		spotRefused(t, mux, "/v1/users/"+spotHexOf(oversold)+"/pnl/summary", http.StatusUnprocessableEntity,
 			"pnl: oversell attribution anomaly; reconcile unknown inventory")
@@ -539,12 +558,95 @@ func TestSpotUsersREST(t *testing.T) {
 		users.board.at = users.board.at.Add(-spotBoardTTL)
 		body = spotLeaderboardBody{}
 		spotGet(t, mux, "/v1/leaderboards/pnl", http.StatusOK, &body)
-		rebuilt := spotLeaderboardBody{Kind: "pnl", Items: []spotRankJSON{{Rank: 1, Address: spotHexOf(late), Value: e6(t, "100")}}}
+		spotBoardAsOf(t, body.AsOf)
+		if body.AsOf < want.AsOf {
+			t.Fatalf("rebuilt as_of %s before %s", body.AsOf, want.AsOf)
+		}
+		rebuilt := spotLeaderboardBody{Kind: "pnl", AsOf: body.AsOf, OmittedAccounts: 1,
+			Items: []spotRankJSON{{Rank: 1, Address: spotHexOf(late), Value: e6(t, "100")}}}
 		for _, it := range want.Items {
 			it.Rank++
 			rebuilt.Items = append(rebuilt.Items, it)
 		}
 		spotEqual(t, "pnl past the TTL", body, rebuilt)
+	})
+
+	t.Run("leaderboard_one_fold_for_concurrent_callers", func(t *testing.T) {
+		seedTraders(t)
+		users := &SpotUsers{db: db}
+		// Hold the fold on a table lock so the callers overlap it.
+		lock, err := db.BeginTx(context.Background(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer lock.Rollback()
+		if _, err := lock.Exec(`LOCK TABLE perps.spot_swaps IN ACCESS EXCLUSIVE MODE`); err != nil {
+			t.Fatal(err)
+		}
+		type result struct {
+			body spotLeaderboardBody
+			err  error
+		}
+		call := func(ctx context.Context) chan result {
+			done := make(chan result, 1)
+			go func() {
+				body, err := users.rank(ctx, "pnl", maxLimit)
+				done <- result{body, err}
+			}()
+			return done
+		}
+		// The first caller starts the fold, then goes away.
+		ctx, cancel := context.WithCancel(context.Background())
+		first := call(ctx)
+		for deadline := time.Now().Add(10 * time.Second); users.board.folds.Load() == 0; time.Sleep(time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatal("the fold never started")
+			}
+		}
+		cancel()
+		select {
+		case r := <-first:
+			if !errors.Is(r.err, context.Canceled) {
+				t.Fatalf("cancelled caller: %v", r.err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the cancelled caller is still waiting")
+		}
+		// The others wait on the same fold, which the cancellation left running.
+		waiters := []chan result{call(context.Background()), call(context.Background())}
+		select {
+		case <-waiters[0]:
+			t.Fatal("a waiter returned while the fold was held")
+		case <-waiters[1]:
+			t.Fatal("a waiter returned while the fold was held")
+		case <-time.After(200 * time.Millisecond):
+		}
+		if err := lock.Rollback(); err != nil {
+			t.Fatal(err)
+		}
+		var got []spotLeaderboardBody
+		for _, w := range waiters {
+			select {
+			case r := <-w:
+				if r.err != nil {
+					t.Fatalf("waiter: %v", r.err)
+				}
+				got = append(got, r.body)
+			case <-time.After(30 * time.Second):
+				t.Fatal("a waiter never got the fold")
+			}
+		}
+		spotBoardAsOf(t, got[0].AsOf)
+		want := spotLeaderboardBody{Kind: "pnl", AsOf: got[0].AsOf, Items: []spotRankJSON{
+			{Rank: 1, Address: spotHexOf(traders[0]), Value: e6(t, "20")},
+			{Rank: 2, Address: spotHexOf(traders[1]), Value: e6(t, "2")},
+			{Rank: 3, Address: spotHexOf(traders[2]), Value: e6(t, "-15")},
+		}}
+		spotEqual(t, "first waiter", got[0], want)
+		spotEqual(t, "second waiter", got[1], want)
+		if n := users.board.folds.Load(); n != 1 {
+			t.Fatalf("%d folds, want 1", n)
+		}
 	})
 
 	t.Run("unknown_kind_404", func(t *testing.T) {

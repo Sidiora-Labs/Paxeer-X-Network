@@ -2604,3 +2604,11 @@ exit = 0
 log = "FX-HP-7-verify.log"
 observed = "Ruled: windowStartKey now starts N-1 days before today so 7D/30D/90D cover N UTC days including today; windowsAreCalendarDaysOnUtcBoundaries pins rewritten at a 2026-10-21T23:59Z clock: 7D start 2026-10-14 -> 2026-10-15, 7D next-day start 2026-10-15 -> 2026-10-16, 30D start 2026-09-21 -> 2026-09-22, 90D start 2026-07-23 -> 2026-07-24, 7D slice [2026-10-14T00:00:00Z, 2026-10-21] -> [2026-10-21], 30D slice drops 2026-09-21, because the old pins asserted the extra-day bug."
 assumption = "The 90D slice length (5) and every other assertion are unchanged."
+
+[finding.perps-venue-funding-field-rename]
+revision = "2da692750"
+command = "GOFLAGS=-p=1 go test -count=1 -timeout 30m ./internal/rest/... ./internal/graphql/... (services/platform/perps-data, one throwaway database per package)"
+exit = 0
+log = "PD-F15-verify-r2.log"
+observed = "The venue ticker and tickers and GraphQL orderlyTickers and orderlyFundingRates assertions naming est_funding_rate (and est_funding_rate_timestamp) were renamed to last_funding_rate_hourly, now the exact settled-rate string, and the tickers database-failure case breaks funding_settlements, the table that field now reads, instead of funding_rates."
+assumption = "The frontend operations copy in internal/graphql/testdata mirrors useSubgraph.ts, which the frontend lane moves to last_funding_rate_hourly; the records-based /api/markets and /api/<symbol>/stats est_funding_rate are a separate shape left unchanged."

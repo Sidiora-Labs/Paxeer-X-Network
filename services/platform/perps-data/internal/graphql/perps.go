@@ -505,21 +505,21 @@ type GlobalStats struct {
 }
 
 type OrderlyTicker struct {
-	Symbol            string
-	PaxeerSymbol      string
-	MarkPrice         *float64
-	IndexPrice        *float64
-	SumUnitaryFunding *float64
-	EstFundingRate    *float64
-	LastFundingRate   *float64
-	NextFundingTime   *float64
-	OpenInterest      *float64
-	H24Open           *float64
-	H24Close          *float64
-	H24High           *float64
-	H24Low            *float64
-	H24Amount         *float64
-	H24Volume         *float64
+	Symbol                string
+	PaxeerSymbol          string
+	MarkPrice             *float64
+	IndexPrice            *float64
+	SumUnitaryFunding     *float64
+	LastFundingRateHourly *string
+	LastFundingRate       *float64
+	NextFundingTime       *float64
+	OpenInterest          *float64
+	H24Open               *float64
+	H24Close              *float64
+	H24High               *float64
+	H24Low                *float64
+	H24Amount             *float64
+	H24Volume             *float64
 }
 
 type OrderlyVolumeStats struct {
@@ -555,8 +555,7 @@ type OrderlyOpenInterest struct {
 type OrderlyFundingRate struct {
 	Symbol                   string
 	PaxeerSymbol             string
-	EstFundingRate           *float64
-	EstFundingRateTimestamp  *float64
+	LastFundingRateHourly    *string
 	LastFundingRate          *float64
 	LastFundingRateTimestamp *float64
 	NextFundingTime          *float64
@@ -1634,12 +1633,12 @@ func latestSQL(table, columns string) string {
 }
 
 // OrderlyTickers answers every market in the Orderly ticker shape, in USD:
-// the latest mark and index price, the hourly funding rate of the latest
-// rate per second, the latest settled funding rate, the open interest of
+// the latest mark and index price, the hourly rate of the latest
+// FundingSettled exactly as a decimal string and as a float, the open interest of
 // market_stats_rolling and the 24 hour window of fills.
 func (r *Resolver) OrderlyTickers(ctx context.Context) ([]*OrderlyTicker, error) {
 	return collect(ctx, r.DB, "orderlyTickers", `SELECT `+orderlySymbolSQL+`, mp.mark_price / 1e18, mp.index_price / 1e18, NULL::float8,
-    `+latestSQL("funding_rates", "new_rate_per_second")+` * 3600 / 1e18, `+latestSQL("funding_settlements", "funding_rate")+` / 1e18,
+    trim_scale(`+latestSQL("funding_settlements", "funding_rate")+` * 0.000000000000000001)::text, `+latestSQL("funding_settlements", "funding_rate")+` / 1e18,
     NULL::float8, (s.open_interest_long + s.open_interest_short) / 1e18, h.open / 1e18, h.close / 1e18, h.high / 1e18,
     h.low / 1e18, h.amount / 1e18, h.volume
 FROM perps.markets m
@@ -1652,27 +1651,27 @@ LEFT JOIN LATERAL (SELECT (array_agg(price ORDER BY block, tx_index, log_index, 
     FROM perps.fills WHERE market_id = m.market_id AND block_time >= $1) h ON true
 ORDER BY m.market_id`, []any{time.Now().Add(-24 * time.Hour).UTC()},
 		func(t *OrderlyTicker) []any {
-			return []any{&t.Symbol, &t.PaxeerSymbol, &t.MarkPrice, &t.IndexPrice, &t.SumUnitaryFunding, &t.EstFundingRate,
+			return []any{&t.Symbol, &t.PaxeerSymbol, &t.MarkPrice, &t.IndexPrice, &t.SumUnitaryFunding, &t.LastFundingRateHourly,
 				&t.LastFundingRate, &t.NextFundingTime, &t.OpenInterest, &t.H24Open, &t.H24Close, &t.H24High, &t.H24Low,
 				&t.H24Amount, &t.H24Volume}
 		})
 }
 
 // OrderlyFundingRates answers every market with a funding rate: the hourly
-// rate of its latest rate per second and the latest settled rate, with their
-// times in milliseconds.
+// rate of its latest FundingSettled exactly as a decimal string and as a
+// float, with its time in milliseconds.
 func (r *Resolver) OrderlyFundingRates(ctx context.Context) ([]*OrderlyFundingRate, error) {
-	return collect(ctx, r.DB, "orderlyFundingRates", `SELECT `+orderlySymbolSQL+`, fr.new_rate_per_second * 3600 / 1e18,
-    floor(extract(epoch FROM fr.block_time) * 1000), fs.funding_rate / 1e18, floor(extract(epoch FROM fs.block_time) * 1000),
+	return collect(ctx, r.DB, "orderlyFundingRates", `SELECT `+orderlySymbolSQL+`, trim_scale(fs.funding_rate * 0.000000000000000001)::text,
+    fs.funding_rate / 1e18, floor(extract(epoch FROM fs.block_time) * 1000),
     NULL::float8, NULL::float8
 FROM perps.markets m
-JOIN LATERAL (SELECT x.new_rate_per_second, x.block_time FROM perps.funding_rates x WHERE x.market_id = m.market_id
+JOIN LATERAL (SELECT 1 FROM perps.funding_rates x WHERE x.market_id = m.market_id
     ORDER BY x.block DESC, x.tx_index DESC, x.log_index DESC, x.sub DESC LIMIT 1) fr ON true
 LEFT JOIN LATERAL (SELECT x.funding_rate, x.block_time FROM perps.funding_settlements x WHERE x.market_id = m.market_id
     ORDER BY x.block DESC, x.tx_index DESC, x.log_index DESC, x.sub DESC LIMIT 1) fs ON true
 ORDER BY m.market_id`, nil,
 		func(f *OrderlyFundingRate) []any {
-			return []any{&f.Symbol, &f.PaxeerSymbol, &f.EstFundingRate, &f.EstFundingRateTimestamp, &f.LastFundingRate,
+			return []any{&f.Symbol, &f.PaxeerSymbol, &f.LastFundingRateHourly, &f.LastFundingRate,
 				&f.LastFundingRateTimestamp, &f.NextFundingTime, &f.SumUnitaryFunding}
 		})
 }

@@ -260,7 +260,7 @@ EnsureStream creates the stream when absent and refuses start when the live conf
 | perps.<chain>.chain.<kind> | block, tx, rewind | block row, tx_actions row, {"from": <height>} |
 | perps.<chain>.spot.<token>.<kind> | swap, order, vault | the typed row of the spot fact table |
 
-<chain> is PERPS_CHAIN_ID; <market> is the decimal marketId; <account> and <token> are lower-case 0x hex. stream.Subject builds every subject and refuses a kind outside the table. Every message is a delivery envelope with headers Nats-Msg-Id (the event id), Perps-Seq, Perps-Block and Perps-Kind.
+<chain> is PERPS_CHAIN_ID; <market> is the decimal marketId; <account> and <token> are lower-case 0x hex. stream.Subject builds every subject and refuses a kind outside the table. Every message is a delivery envelope with headers Nats-Msg-Id (the event id), Perps-Seq, Perps-Block and Perps-Kind. The control message on perps.<chain>.control carries Nats-Msg-Id `control-<seq>-<event id hash>`: the decimal seq of its outbox row and the first 32 hex characters of the sha256 of that row's event id.
 
 ## 4. Sequence semantics
 
@@ -517,8 +517,8 @@ The schema is the application schema (Hyperpax:src/core/perps/perpetual.graphql)
 | protocolSnapshots | ProtocolSnapshotRecord | perps.protocol_snapshots: tvlUsd from usdl_transfers (Σ in − Σ out), insuranceTotalUsd = the latest InsuranceDraw new_balance plus later contributions |
 | enrichedGlobalStats | EnrichedGlobalStats | perps.market_stats_rolling (sum over markets) |
 | enrichedMarketStats | EnrichedMarketStats | perps.market_stats_rolling |
-| orderlyTickers | OrderlyTicker | perps.market_stats_rolling; the h24 fields from fills of 24 hours |
-| orderlyFundingRates | OrderlyFundingRate | perps.funding_rates (latest row per market) |
+| orderlyTickers | OrderlyTicker | perps.market_stats_rolling; the h24 fields from fills of 24 hours; last_funding_rate_hourly (String, exact decimal) from the latest perps.funding_settlements row |
+| orderlyFundingRates | OrderlyFundingRate | markets with a perps.funding_rates row; last_funding_rate_hourly (String, exact decimal) and last_funding_rate from the latest perps.funding_settlements row |
 | orderlyPriceChanges | OrderlyPriceChange | perps.mark_prices history: change over 5m, 30m, 1h, 4h, 24h, 3d, 7d and 30d of index_price |
 | orderlyOpenInterests | OrderlyOpenInterest | perps.open_interest (latest row per market) |
 | spotMarket | SpotMarket | perps.spot_token_registry, non-stablecoin tokens (PAX, SID): marketId the token address, baseToken the token, quoteToken USDL, mode 0, modeName pecor, status active or paused (latest Paused, Unpaused or TokenPauseUpdated), created* from the TokenRegistered row, lastModeChange* null |
@@ -755,8 +755,8 @@ Served by the gateway; fixed route names take precedence over the `/api/<symbol>
 | --- | --- |
 | GET /api/orderbook/<SYMBOL>?depth=N | {success: true, data: {asks: [{price, quantity}], bids: [{price, quantity}]}} from the perpetual book of section 10; asks ascending, bids descending; depth default 20, clamped to [1, 100] |
 | GET /api/open-interest and /api/markets/open-interest | {success: true, data: [{paxeerSymbol, long_oi, short_oi}]}, one entry per market from the latest OpenInterestChanged |
-| GET /api/ticker/<SYMBOL> and /api/markets/ticker/<SYMBOL> | {success: true, data: {symbol, index_price, mark_price, est_funding_rate, last_funding_rate, open_interest, volume_24h}} from MarkPriceUpdated, FundingRateUpdated and market_stats_rolling |
-| GET /api/markets/tickers | {success: true, data: [TickerEntry]} one entry per market with the fields of Hyperpax:src/hooks/perps/useRealtimePrices.ts:6-20: symbol (PERP_<SYMBOL>_USDC), paxeerSymbol, mark_price, index_price, open_interest, est_funding_rate, last_funding_rate, 24h_open, 24h_close, 24h_high, 24h_low, 24h_amount, 24h_volume |
+| GET /api/ticker/<SYMBOL> and /api/markets/ticker/<SYMBOL> | {success: true, data: {symbol, index_price, mark_price, last_funding_rate_hourly, last_funding_rate, open_interest, volume_24h}} from MarkPriceUpdated, FundingSettled and market_stats_rolling; last_funding_rate_hourly is a decimal string, the hourly rate of the latest FundingSettled, exact and never truncated (it is the last settled rate, not an estimate), null before the first FundingSettled |
+| GET /api/markets/tickers | {success: true, data: [TickerEntry]} one entry per market with the fields of Hyperpax:src/hooks/perps/useRealtimePrices.ts:6-20: symbol (PERP_<SYMBOL>_USDC), paxeerSymbol, mark_price, index_price, open_interest, last_funding_rate_hourly (as in the ticker), last_funding_rate, 24h_open, 24h_close, 24h_high, 24h_low, 24h_amount, 24h_volume |
 
 /api/open-interest and /api/ticker/<SYMBOL>, with their /api/markets aliases, have no application consumer (contracts/application.md, Data surfaces rule 3) and are served for API clients. An unknown symbol answers 404 `{success: false, error: "Unknown symbol: <SYMBOL>"}`. A database failure answers 503 `{success: false}`, on which the application reads the chain directly.
 
@@ -774,7 +774,7 @@ The routes are served at the gateway origin with the paths exactly as the spot c
 | GET /v1/users/<address>/closed-legs | limit, afterId | {address, count, limit, items: [{id, token, qty, entryPrice, exitPrice, pnl, pnlUsd, pnlPct, holdingSeconds, openedAt, closedAt, closeTxHash, fullyClosed, symbol, name, decimals}], nextCursor: {afterId} or null} |
 | GET /v1/users/<address>/pnl/summary and /pnl | none | {address, realizedUsd, unrealizedUsd, totalUsd, tradeCount, closedLegCount} |
 | GET /v1/users/<address>/identity | none | {address, paxscan: {firstSeenBlock, txCount}, trading24h: {trades, volumeUsd}, latestSnapshot: {realizedUsd, at}} |
-| GET /v1/leaderboards/<kind> | kind pnl, volume or win-rate | {kind, items: [{rank, address, value}]}; an unknown kind answers 404 |
+| GET /v1/leaderboards/<kind> | kind pnl, volume or win-rate | {kind, as_of, omitted_accounts, items: [{rank, address, value}]}; as_of is the ISO millisecond time of the fold of every account the board was ranked from (one fold serves 30 s), omitted_accounts the number of accounts that fold left out because their legs cannot be folded (each logged with the reason); an unknown kind answers 404 |
 
 ### Spot user socket
 

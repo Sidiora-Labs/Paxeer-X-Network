@@ -666,17 +666,17 @@ func TestPerpsResolvers(t *testing.T) {
 	})
 
 	t.Run("orderlyTickers", func(t *testing.T) {
-		list := mustList(t, s, `{ orderlyTickers { symbol paxeerSymbol mark_price index_price sum_unitary_funding est_funding_rate last_funding_rate
+		list := mustList(t, s, `{ orderlyTickers { symbol paxeerSymbol mark_price index_price sum_unitary_funding last_funding_rate_hourly last_funding_rate
     next_funding_time open_interest h24_open h24_close h24_high h24_low h24_amount h24_volume } }`, "orderlyTickers")
 		if len(list) != 18 {
 			t.Fatalf("orderlyTickers answered %d rows, want 18", len(list))
 		}
 		want := []map[string]any{
 			{"symbol": "PERP_ETH_USDC", "paxeerSymbol": "ETH", "mark_price": 51000.0, "index_price": 51000.0, "sum_unitary_funding": nil,
-				"est_funding_rate": 0.0000036, "last_funding_rate": 0.001, "next_funding_time": nil, "open_interest": 0.0, "h24_open": 50000.0,
+				"last_funding_rate_hourly": "0.001", "last_funding_rate": 0.001, "next_funding_time": nil, "open_interest": 0.0, "h24_open": 50000.0,
 				"h24_close": 50000.0, "h24_high": 50000.0, "h24_low": 50000.0, "h24_amount": 1000.0, "h24_volume": 0.02},
 			{"symbol": "PERP_SOL_USDC", "paxeerSymbol": "SOL", "mark_price": nil, "index_price": nil, "sum_unitary_funding": nil,
-				"est_funding_rate": nil, "last_funding_rate": nil, "next_funding_time": nil, "open_interest": 0.0, "h24_open": nil,
+				"last_funding_rate_hourly": nil, "last_funding_rate": nil, "next_funding_time": nil, "open_interest": 0.0, "h24_open": nil,
 				"h24_close": nil, "h24_high": nil, "h24_low": nil, "h24_amount": nil, "h24_volume": nil},
 		}
 		for i, w := range want {
@@ -690,8 +690,8 @@ func TestPerpsResolvers(t *testing.T) {
 	})
 
 	t.Run("orderlyFundingRates", func(t *testing.T) {
-		check(t, s, `{ orderlyFundingRates { symbol paxeerSymbol est_funding_rate est_funding_rate_timestamp last_funding_rate last_funding_rate_timestamp next_funding_time sum_unitary_funding } }`,
-			fmt.Sprintf(`{"orderlyFundingRates":[{"symbol":"PERP_ETH_USDC","paxeerSymbol":"ETH","est_funding_rate":0.0000036,"est_funding_rate_timestamp":%[1]d,
+		check(t, s, `{ orderlyFundingRates { symbol paxeerSymbol last_funding_rate_hourly last_funding_rate last_funding_rate_timestamp next_funding_time sum_unitary_funding } }`,
+			fmt.Sprintf(`{"orderlyFundingRates":[{"symbol":"PERP_ETH_USDC","paxeerSymbol":"ETH","last_funding_rate_hourly":"0.001",
 "last_funding_rate":0.001,"last_funding_rate_timestamp":%[1]d,"next_funding_time":null,"sum_unitary_funding":null}]}`, b100.UnixMilli()))
 	})
 
