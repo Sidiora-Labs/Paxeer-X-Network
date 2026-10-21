@@ -759,7 +759,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.6]
 title = "Move the human Rust workspace to services/human"
-status = "pending"
+status = "done"
 mode = "BUILD"
 phase = "A"
 wave = 4

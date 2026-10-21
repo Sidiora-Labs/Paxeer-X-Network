@@ -43,6 +43,22 @@ export async function sidioraStationMetadata(): Promise<Readonly<{ chainId: stri
   return { chainId: config.chainId.toString(), sponsor: config.sponsor.toLowerCase(), paymaster: config.paymaster.toLowerCase() };
 }
 
+export type AccountDidOutcome =
+  | Readonly<{ ok: true; did: string }>
+  | Readonly<{ ok: false; failure: PrecompileSendOutcome }>;
+
+export async function sidioraAccountDid(account: string): Promise<AccountDidOutcome> {
+  const { pxResolveAccount } = await import("./gateway.ts");
+  try {
+    const resolved = await pxResolveAccount(account);
+    return resolved.bound && resolved.layerxDid !== null
+      ? { ok: true, did: resolved.layerxDid }
+      : { ok: false, failure: { outcome: "rejected" } };
+  } catch {
+    return { ok: false, failure: { outcome: "unavailable" } };
+  }
+}
+
 export async function requestSidioraGasQuote(request: GasQuoteRequest, chainId: bigint): Promise<GasQuoteOutcome> {
   const config = stationConfiguration();
   if (config === undefined) return { ok: false, failure: { outcome: "unavailable" } };

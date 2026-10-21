@@ -1,5 +1,5 @@
 import { gasStation, GasStationError, ModuleError, type GasSubmissionStore, type SponsoredSubmissionEvidence } from "@paxeer/wallet";
-import { sidioraStationMetadata } from "./gas-station.ts";
+import { sidioraAccountDid, sidioraStationMetadata } from "./gas-station.ts";
 import { windowWalletProvider } from "../journeys/custody/handoff.ts";
 import { copyEntry } from "../../copy/runtime.ts";
 import { parseFeeAmount } from "../auth/native-fee-budget.ts";
@@ -72,7 +72,9 @@ export async function sendWalletPrecompileCall(from: string, build: () => Precom
         from, to: call.to, data: call.data, value: `0x${call.value.toString(16)}`,
       }] }));
       const price = rpcQuantity(await wallet.request({ method: "eth_gasPrice" }));
-      const quoted = await requestSidioraGasQuote({ account: from, nonce, calls: [call], maxTokenAmount: preference.maximum, gasCost: gas * price }, chainId);
+      const identity = await sidioraAccountDid(from);
+      if (!identity.ok) return identity.failure;
+      const quoted = await requestSidioraGasQuote({ account: from, did: identity.did, nonce, calls: [call], maxTokenAmount: preference.maximum, gasCost: gas * price }, chainId);
       if (!quoted.ok) return quoted.failure;
       const review = sidioraQuotePresentation(quoted.value);
       if (review === undefined) return { outcome: "rejected" };

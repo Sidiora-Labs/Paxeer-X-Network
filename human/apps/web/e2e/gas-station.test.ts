@@ -114,7 +114,7 @@ test("absent station configuration returns the wallet unavailable shape without 
   try {
     const quoted = quoteFixture();
     const outcome = await sdk.requestSidioraGasQuote({
-      account: quoted.batch.account, nonce: quoted.batch.nonce, calls: quoted.batch.calls,
+      account: quoted.batch.account, did: `did:layerx:${"55".repeat(32)}`, nonce: quoted.batch.nonce, calls: quoted.batch.calls,
       maxTokenAmount: quoted.batch.quote.maxTokenAmount, gasCost: quoted.batch.quote.gasCost,
     }, quoted.batch.chainId);
     assert.deepEqual(outcome, { ok: false, failure: { outcome: "unavailable" } });
