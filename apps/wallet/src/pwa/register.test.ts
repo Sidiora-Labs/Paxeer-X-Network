@@ -100,9 +100,9 @@ describe('registerServiceWorker', () => {
         await expect(registerServiceWorker(undefined, { onUpdateReady: () => undefined, reload: () => undefined })).resolves.toBeNull();
     });
 
-    it('registers the built worker at the root scope bypassing the HTTP cache', async () => {
+    it('registers the built worker at the /wallet/ scope bypassing the HTTP cache', async () => {
         const { container } = await setup(false);
-        expect(container.registrations).toEqual([{ url: '/sw.js', options: { scope: '/', updateViaCache: 'none' } }]);
+        expect(container.registrations).toEqual([{ url: '/wallet/sw.js', options: { scope: '/wallet/', updateViaCache: 'none' } }]);
     });
 
     it('does not offer a reload for the first install of an uncontrolled page', async () => {

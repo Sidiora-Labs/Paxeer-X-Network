@@ -130,7 +130,8 @@ describe('OfflineFallback', () => {
         const markup = renderToStaticMarkup(<OfflineFallback />);
         expect(markup).toContain('You are offline');
         expect(markup).toContain(`href="${SHELL_URL}"`);
-        expect(markup).toContain('/icons/app/icon-192.png');
-        expect(OFFLINE_URL).toBe('/offline');
+        expect(SHELL_URL).toBe('/wallet/');
+        expect(markup).toContain('src="/wallet/icons/app/icon-192.png"');
+        expect(OFFLINE_URL).toBe('/wallet/offline/');
     });
 });

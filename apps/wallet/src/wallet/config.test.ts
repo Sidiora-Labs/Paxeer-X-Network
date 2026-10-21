@@ -20,7 +20,7 @@ describe('wallet config', () => {
             authRedirectUrl: null,
             chainId: PAXEER_CHAIN_ID,
         });
-        expect(authRedirectUrl(config, 'http://127.0.0.1:3000/')).toBe('http://127.0.0.1:3000/auth/callback');
+        expect(authRedirectUrl(config, 'http://127.0.0.1:3000/')).toBe('http://127.0.0.1:3000/wallet/auth/callback/');
         const redirected = readWalletConfig({ ...env, NEXT_PUBLIC_AUTH_REDIRECT_URL: 'http://127.0.0.1:3000/done' });
         expect(authRedirectUrl(redirected, 'http://127.0.0.1:3000')).toBe('http://127.0.0.1:3000/done');
     });

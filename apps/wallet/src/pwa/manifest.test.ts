@@ -6,6 +6,12 @@ import { APPLE_TOUCH_ICON, FAVICON_ICON, ICON_FILES, MANIFEST_URL, buildManifest
 
 const APP = path.resolve(__dirname, '..', '..');
 const PUBLIC = path.join(APP, 'public');
+const BASE = '/wallet/';
+
+function publicFile(url: string): string {
+    expect(url.startsWith(BASE), url).toBe(true);
+    return path.join(PUBLIC, url.slice(BASE.length));
+}
 
 function pngSize(file: string): { width: number; height: number } {
     const bytes = readFileSync(file);
@@ -15,7 +21,7 @@ function pngSize(file: string): { width: number; height: number } {
 }
 
 describe('web app manifest', () => {
-    const committed = readFileSync(path.join(PUBLIC, MANIFEST_URL.slice(1)), 'utf8');
+    const committed = readFileSync(publicFile(MANIFEST_URL), 'utf8');
     const manifest = JSON.parse(committed) as ReturnType<typeof buildManifest>;
 
     it('is the committed output of buildManifest', () => {
@@ -26,9 +32,10 @@ describe('web app manifest', () => {
     it('carries every field an installable application needs', () => {
         expect(manifest.name).toBe('Paxeer Wallet');
         expect(manifest.short_name).toBe('Paxeer');
-        expect(manifest.id).toBe('/');
-        expect(manifest.start_url).toBe('/');
-        expect(manifest.scope).toBe('/');
+        expect(MANIFEST_URL).toBe('/wallet/manifest.json');
+        expect(manifest.id).toBe('/wallet/');
+        expect(manifest.start_url).toBe('/wallet/');
+        expect(manifest.scope).toBe('/wallet/');
         expect(manifest.display).toBe('standalone');
         expect(manifest.prefer_related_applications).toBe(false);
         expect(manifest.description.length).toBeGreaterThan(0);
@@ -49,7 +56,7 @@ describe('web app manifest', () => {
         }
         for (const icon of manifest.icons) {
             expect(icon.type).toBe('image/png');
-            expect(icon.src.startsWith('/icons/app/')).toBe(true);
+            expect(icon.src.startsWith('/wallet/icons/app/')).toBe(true);
         }
     });
 
@@ -62,15 +69,15 @@ describe('icon files', () => {
     it('exist under public at the size each one declares', () => {
         expect(ICON_FILES.length).toBe(6);
         for (const icon of ICON_FILES) {
-            const file = path.join(PUBLIC, icon.src.slice(1));
+            const file = publicFile(icon.src);
             expect(existsSync(file), icon.src).toBe(true);
             expect(pngSize(file), icon.src).toEqual({ width: icon.size, height: icon.size });
         }
     });
 
     it('include the apple touch icon and favicon the layout links', () => {
-        expect(APPLE_TOUCH_ICON.sizes).toBe('180x180');
-        expect(FAVICON_ICON.sizes).toBe('32x32');
+        expect(APPLE_TOUCH_ICON).toEqual({ src: '/wallet/icons/app/apple-touch-icon-180.png', sizes: '180x180' });
+        expect(FAVICON_ICON).toEqual({ src: '/wallet/icons/app/favicon-32.png', sizes: '32x32' });
         const layout = readFileSync(path.join(APP, 'src', 'app', 'layout.tsx'), 'utf8');
         expect(layout).toContain('manifest: MANIFEST_URL');
         expect(layout).toContain('rel="apple-touch-icon" sizes={APPLE_TOUCH_ICON.sizes} href={APPLE_TOUCH_ICON.src}');

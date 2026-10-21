@@ -20,12 +20,16 @@ describe('browser security policy', () => {
       safeMediaPath(
         'https://raw.githubusercontent.com/Paxeer-Network/brand/main/icon.png',
       ),
-    ).toMatch(/^\/api\/media\?url=/);
-    expect(safeMediaPath('https://evil.example/payload.svg')).toBe(
-      '/default_icon.webp',
+    ).toBe(
+      '/wallet/api/media?url=https%3A%2F%2Fraw.githubusercontent.com%2FPaxeer-Network%2Fbrand%2Fmain%2Ficon.png',
     );
-    expect(safeMediaPath('javascript:alert(1)')).toBe('/default_icon.webp');
-    expect(safeMediaPath('/pns.svg')).toBe('/pns.svg');
+    expect(safeMediaPath('https://evil.example/payload.svg')).toBe(
+      '/wallet/default_icon.webp',
+    );
+    expect(safeMediaPath('javascript:alert(1)')).toBe('/wallet/default_icon.webp');
+    expect(safeMediaPath(null)).toBe('/wallet/default_icon.webp');
+    expect(safeMediaPath('/pns.svg')).toBe('/wallet/pns.svg');
+    expect(safeMediaPath('/wallet/pns.svg')).toBe('/wallet/pns.svg');
     expect(isAllowedMediaContentType('image/png; charset=binary')).toBe(true);
     expect(isAllowedMediaContentType('image/svg+xml')).toBe(false);
     expect(isAllowedMediaContentType('text/html')).toBe(false);

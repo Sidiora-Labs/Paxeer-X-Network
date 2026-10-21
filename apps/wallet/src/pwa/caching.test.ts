@@ -19,7 +19,7 @@ const ENV = {
     NEXT_PUBLIC_PAXEER_WALLET_API: 'http://127.0.0.1:3098/',
     NEXT_PUBLIC_PAXEER_RPC_URL: 'http://127.0.0.1:3097/rpc',
     NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:3096',
-    NEXT_PUBLIC_PAXEER_ATTESTOR_URL: `${APP}/attestor/`,
+    NEXT_PUBLIC_PAXEER_ATTESTOR_URL: `${APP}/wallet/attestor/`,
     NEXT_PUBLIC_UNRELATED: 'http://127.0.0.1:3095',
 };
 
@@ -39,7 +39,7 @@ describe('network-only configuration', () => {
             'http://127.0.0.1:3096',
             'http://127.0.0.1:3097/rpc',
             'http://127.0.0.1:3098',
-            `${APP}/attestor`,
+            `${APP}/wallet/attestor`,
         ]);
     });
 
@@ -62,12 +62,12 @@ describe('caching rule per origin', () => {
         expect(strategyFor(get('http://127.0.0.1:3098/icons/app/icon-192.png'), scope)).toBe('network-only');
         expect(strategyFor(get('http://127.0.0.1:3097/rpc'), scope)).toBe('network-only');
         expect(strategyFor(get('http://127.0.0.1:3096/auth/v1/token'), scope)).toBe('network-only');
-        expect(strategyFor(get(`${APP}/attestor/health`), scope)).toBe('network-only');
-        expect(strategyFor(get(`${APP}/attestor/logo.png`), scope)).toBe('network-only');
+        expect(strategyFor(get(`${APP}/wallet/attestor/health`), scope)).toBe('network-only');
+        expect(strategyFor(get(`${APP}/wallet/attestor/logo.png`), scope)).toBe('network-only');
     });
 
     it('matches a configured base by path segment, not by string prefix', () => {
-        expect(strategyFor(get(`${APP}/attestor-guide.png`), scope)).toBe('cache-first');
+        expect(strategyFor(get(`${APP}/wallet/attestor-guide.png`), scope)).toBe('cache-first');
         expect(strategyFor(get('http://127.0.0.1:3097/rpc2/logo.png'), scope)).toBe('network-only');
     });
 
@@ -77,43 +77,57 @@ describe('caching rule per origin', () => {
     });
 
     it('sends same-origin API, auth, data, worker and non-GET requests to the network', () => {
-        expect(strategyFor(get(`${APP}/api/health`), scope)).toBe('network-only');
-        expect(strategyFor(get(`${APP}/auth/callback`, 'navigate'), scope)).toBe('network-only');
-        expect(strategyFor(get(`${APP}/_next/data/build/index.json`), scope)).toBe('network-only');
-        expect(strategyFor(get(`${APP}/sw.js`), scope)).toBe('network-only');
-        expect(strategyFor({ url: `${APP}/_next/static/chunk.js`, method: 'POST', mode: 'cors' }, scope)).toBe(
+        expect(strategyFor(get(`${APP}/wallet/api/health`), scope)).toBe('network-only');
+        expect(strategyFor(get(`${APP}/wallet/auth/callback/`, 'navigate'), scope)).toBe('network-only');
+        expect(strategyFor(get(`${APP}/wallet/_next/data/build/index.json`), scope)).toBe('network-only');
+        expect(strategyFor(get(`${APP}/wallet/sw.js`), scope)).toBe('network-only');
+        expect(strategyFor({ url: `${APP}/wallet/_next/static/chunk.js`, method: 'POST', mode: 'cors' }, scope)).toBe(
             'network-only',
         );
-        expect(strategyFor(get(`${APP}/report?format=csv`), scope)).toBe('network-only');
+        expect(strategyFor(get(`${APP}/wallet/report?format=csv`), scope)).toBe('network-only');
         expect(strategyFor(get(`${APP}/wallet/state`), scope)).toBe('network-only');
     });
 
+    it('leaves same-origin paths outside the /wallet/ mount to the network', () => {
+        expect(strategyFor(get(`${APP}/`, 'navigate'), scope)).toBe('network-only');
+        expect(strategyFor(get(`${APP}/wallet`, 'navigate'), scope)).toBe('network-only');
+        expect(strategyFor(get(`${APP}/_next/static/chunks/main.js`), scope)).toBe('network-only');
+        expect(strategyFor(get(`${APP}/icons/app/icon-512.png`), scope)).toBe('network-only');
+        expect(strategyFor(get(`${APP}/manifest.json`), scope)).toBe('network-only');
+    });
+
     it('serves same-origin navigations through the offline-aware handler', () => {
-        expect(strategyFor(get(`${APP}/`, 'navigate'), scope)).toBe('navigation');
-        expect(strategyFor(get(`${APP}/?screen=send`, 'navigate'), scope)).toBe('navigation');
+        expect(strategyFor(get(`${APP}/wallet/`, 'navigate'), scope)).toBe('navigation');
+        expect(strategyFor(get(`${APP}/wallet/?screen=send`, 'navigate'), scope)).toBe('navigation');
     });
 
     it('serves the shell and static assets cache-first', () => {
-        expect(strategyFor(get(`${APP}/_next/static/chunks/main.js?dpl=abc`), scope)).toBe('cache-first');
-        expect(strategyFor(get(`${APP}/icons/app/icon-512.png`), scope)).toBe('cache-first');
-        expect(strategyFor(get(`${APP}/manifest.json`), scope)).toBe('cache-first');
-        expect(strategyFor(get(`${APP}/pns.svg`), scope)).toBe('cache-first');
+        expect(strategyFor(get(`${APP}/wallet/_next/static/chunks/main.js?dpl=abc`), scope)).toBe('cache-first');
+        expect(strategyFor(get(`${APP}/wallet/icons/app/icon-512.png`), scope)).toBe('cache-first');
+        expect(strategyFor(get(`${APP}/wallet/manifest.json`), scope)).toBe('cache-first');
+        expect(strategyFor(get(`${APP}/wallet/pns.svg`), scope)).toBe('cache-first');
     });
 });
 
 describe('cache names and precache list', () => {
     it('versions every cache and purges only stale caches of this app', () => {
         const current = cacheNames('0123456789abcdef');
-        expect(current).toEqual({ shell: 'paxeer-shell-0123456789abcdef', static: 'paxeer-static-0123456789abcdef' });
+        expect(current).toEqual({
+            shell: 'paxeer-wallet-shell-0123456789abcdef',
+            static: 'paxeer-wallet-static-0123456789abcdef',
+        });
         expect(
             staleCaches(
-                ['paxeer-shell-old', 'paxeer-static-old', current.shell, current.static, 'another-app-cache'],
+                ['paxeer-wallet-shell-old', 'paxeer-wallet-static-old', current.shell, current.static, 'another-app-cache'],
                 current,
             ),
-        ).toEqual(['paxeer-shell-old', 'paxeer-static-old']);
+        ).toEqual(['paxeer-wallet-shell-old', 'paxeer-wallet-static-old']);
     });
 
     it('precaches the shell, the offline page, the manifest and every icon', () => {
+        expect(SHELL_URL).toBe('/wallet/');
+        expect(OFFLINE_URL).toBe('/wallet/offline/');
+        expect(PRECACHE_URLS.every((url) => url.startsWith('/wallet/'))).toBe(true);
         expect(PRECACHE_URLS).toContain(SHELL_URL);
         expect(PRECACHE_URLS).toContain(OFFLINE_URL);
         expect(PRECACHE_URLS).toContain(MANIFEST_URL);

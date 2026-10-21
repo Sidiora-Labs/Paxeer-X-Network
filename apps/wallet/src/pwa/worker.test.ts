@@ -31,7 +31,7 @@ function load(): LoadedWorker {
     const listeners = new Map<string, Listener>();
     const skipWaitingCalls: number[] = [];
     const scope = {
-        location: new URL(`${ORIGIN}/sw.js`),
+        location: new URL(`${ORIGIN}/wallet/sw.js`),
         addEventListener(type: string, listener: Listener) {
             listeners.set(type, listener);
         },
@@ -70,8 +70,8 @@ describe('built service worker', () => {
     it('is written with a content version and the manifest beside it', () => {
         expect(result.version).toMatch(/^[0-9a-f]{16}$/);
         expect(result.cacheNames).toEqual({
-            shell: `paxeer-shell-${result.version}`,
-            static: `paxeer-static-${result.version}`,
+            shell: `paxeer-wallet-shell-${result.version}`,
+            static: `paxeer-wallet-static-${result.version}`,
         });
         expect(source).toContain(result.version);
         expect(readFileSync(result.manifestPath, 'utf8')).toBe(serializeManifest());
@@ -120,15 +120,17 @@ describe('built service worker', () => {
         expect(dispatchFetch(worker, `${ORIGIN}/rpc/logo.png`)).toBe(false);
         expect(dispatchFetch(worker, 'http://127.0.0.1:3096/auth/v1/user')).toBe(false);
         expect(dispatchFetch(worker, `${ORIGIN}/attestor/health`)).toBe(false);
-        expect(dispatchFetch(worker, `${ORIGIN}/api/health`)).toBe(false);
-        expect(dispatchFetch(worker, `${ORIGIN}/_next/static/chunk.js`, 'POST')).toBe(false);
+        expect(dispatchFetch(worker, `${ORIGIN}/wallet/api/health`)).toBe(false);
+        expect(dispatchFetch(worker, `${ORIGIN}/wallet/_next/static/chunk.js`, 'POST')).toBe(false);
     });
 
     it('answers navigations and static assets of its own origin', () => {
         const worker = load();
-        expect(dispatchFetch(worker, `${ORIGIN}/`, 'GET', 'navigate')).toBe(true);
-        expect(dispatchFetch(worker, `${ORIGIN}/_next/static/chunks/main.js`)).toBe(true);
-        expect(dispatchFetch(worker, `${ORIGIN}/icons/app/icon-192.png`)).toBe(true);
+        expect(dispatchFetch(worker, `${ORIGIN}/wallet/`, 'GET', 'navigate')).toBe(true);
+        expect(dispatchFetch(worker, `${ORIGIN}/wallet/_next/static/chunks/main.js`)).toBe(true);
+        expect(dispatchFetch(worker, `${ORIGIN}/wallet/icons/app/icon-192.png`)).toBe(true);
+        expect(dispatchFetch(worker, `${ORIGIN}/`, 'GET', 'navigate')).toBe(false);
+        expect(dispatchFetch(worker, `${ORIGIN}/_next/static/chunks/main.js`)).toBe(false);
     });
 
     it('activates a waiting version only when the client asks for it', () => {

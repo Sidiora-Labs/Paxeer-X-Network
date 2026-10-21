@@ -2220,16 +2220,16 @@ exit_code = 2
 log_path = "logs/0.160-verify-1.log"
 observed_and_assumption = "build exit 2: the per-package opt-level s profile yields a 538102-byte guest, 13918 bytes above the 524184 deploy bound, and the new Makefile size guard refuses it before the tests run (opt-level z gives 569603). The 493853-byte figure in do_1 predates later ai-market growth. Decision.94 adds a binaryen wasm-opt -Oz post-pass (448162 bytes measured on this guest); held in_progress for the rerun."
 
-[finding.wallet-app.base-path]
-revision = "c94950b19"
-command = "corepack pnpm@11.5.2 -C apps/wallet typecheck && corepack pnpm@11.5.2 -C apps/wallet test"
-exit_code = 1
-log_path = "logs/wallet-app-verify-1.log"
-observed_and_assumption = "Twelve wallet app tests (pwa caching x4, worker x2, register, policy, manifest, InstallPrompt OfflineFallback, wallet config authRedirectUrl, browser-security safeMediaPath) still assert root-scoped paths while next.config.mjs mounts the app at basePath /wallet with sw scope /wallet/ and paxeer-wallet-* cache names; no spec task decides the /wallet mount, so code and tests are left as written pending a ruling on the mounted path."
-
 [finding.wallet-app.deposit-flow]
-revision = "c94950b19"
+revision = "f2f873a2e"
+command = "eth_getTransactionCount pending and eth_estimateGas of the DepositFlow custody call against the public mainnet RPC"
+exit_code = 1
+log_path = "logs/wallet-app-deposit-rpc.log"
+observed_and_assumption = "The public RPC answers eth_getTransactionCount with tag pending, which paxeer_prepareCustody sends, with -32000 pending served by sequencer and reverts the test's depositToken estimate with asset is not mapped, so no real recording lets the prepare, review and approve flow of paxeer-x task 13.4 reach review; DepositFlow.test.tsx stays as written until a sequencer route serves pending reads and the test runs against a mapped pointer and bound account."
+
+[finding.wallet-app.visual-system-timeout]
+revision = "f2f873a2e"
 command = "corepack pnpm@11.5.2 -C apps/wallet test"
 exit_code = 1
-log_path = "logs/wallet-app-verify-1.log"
-observed_and_assumption = "DepositFlow.test.tsx drives the one-click deposit superseded by the prepare, review and approve custody flow of paxeer-x task 13.4 (req 149 ac_5); paxeer_prepareCustody needs eth_getTransactionCount, eth_estimateGas, eth_maxPriorityFeePerGas and eth_getBlockByNumber fixtures absent from sdk/wallet/test/fixtures/gateway, so the test refuses with method not found; the rewrite needs new shared sdk fixtures and a deadline-tolerant custody assertion and is left for a task owning those fixtures."
+log_path = "logs/wallet-app-verify-2.log"
+observed_and_assumption = "visual-system.acceptance.test.ts timed out at the 5000 ms default while scanning production components in one full run and passed in the previous full run with no change to the files it reads; assumed load-dependent timing, left as written."

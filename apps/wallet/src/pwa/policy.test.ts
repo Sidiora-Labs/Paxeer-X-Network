@@ -1,8 +1,10 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import type { NextConfig } from 'next';
 import { describe, expect, it } from 'vitest';
 import { buildContentSecurityPolicy } from '@/lib/security/csp';
 import { OFFLINE_URL } from './caching';
+import nextConfig from '../../next.config.mjs';
 
 const APP = path.resolve(__dirname, '..', '..');
 const THIRD_PARTY = /progressier/i;
@@ -45,7 +47,18 @@ describe('self-hosted application policy', () => {
     it('builds the worker before the application and serves an offline page', () => {
         const manifest = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
         expect(manifest.scripts.build.startsWith('node scripts/build-pwa.mjs && ')).toBe(true);
-        expect(existsSync(path.join(APP, 'src', 'app', OFFLINE_URL.slice(1), 'page.tsx'))).toBe(true);
+        expect(OFFLINE_URL).toBe('/wallet/offline/');
+        expect(existsSync(path.join(APP, 'src', 'app', 'offline', 'page.tsx'))).toBe(true);
         expect(read('.gitignore').split('\n')).toContain('/public/sw.js');
+    });
+
+    it('mounts the application, its assets and the worker scope at /wallet', async () => {
+        const config = nextConfig as NextConfig;
+        expect(config.basePath).toBe('/wallet');
+        expect(config.assetPrefix).toBeUndefined();
+        expect(config.trailingSlash).toBe(true);
+        const headers = await config.headers?.();
+        const worker = headers?.find((rule) => rule.source === '/sw.js');
+        expect(worker?.headers).toContainEqual({ key: 'Service-Worker-Allowed', value: '/wallet/' });
     });
 });
