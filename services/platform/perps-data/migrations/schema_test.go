@@ -110,7 +110,7 @@ var factTables = []factTable{
 		[]string{"(share_token, block)", "(token, block)"}},
 	{"usdl_transfers", []string{"in", "out"}, []string{"from_account:a", "to_account:a", "value:u", "venue:a"}, []string{"(venue, block)"}},
 	{"raw_logs", nil,
-		[]string{"topics:raw:bytea[] NOT NULL CHECK (cardinality(topics) <= 4)", "data:raw:bytea NOT NULL", "decoded:raw:boolean NOT NULL", "failure_class:raw:text NOT NULL CHECK (failure_class IN ('unknown_topic', 'abi_decode', 'order_lookup', 'share_lookup'))"},
+		[]string{"topics:raw:bytea[] NOT NULL CHECK (cardinality(topics) <= 4)", "data:raw:bytea NOT NULL", "decoded:raw:boolean NOT NULL", "failure_class:raw:text NOT NULL CHECK (failure_class IN ('unknown_topic', 'abi_decode', 'order_lookup', 'share_lookup', 'account_lookup'))"},
 		[]string{"(decoded, block)", "(failure_class, block)"}},
 	{"protocol_events", nil,
 		[]string{"event_name:raw:text NOT NULL", "market_id:u", "args:raw:jsonb NOT NULL"},
@@ -187,6 +187,7 @@ var (
 	revoke         = regexp.MustCompile(`^REVOKE ALL ON perps\.\w+ FROM PUBLIC$`)
 	insertValues   = regexp.MustCompile(`(?s)^INSERT INTO perps\.(\w+) \(([\w, ]+)\) VALUES\n(.*)$`)
 	dropNotNull    = regexp.MustCompile(`^ALTER TABLE perps\.(\w+) ALTER COLUMN (\w+) DROP NOT NULL$`)
+	replaceCheck   = regexp.MustCompile(`^ALTER TABLE perps\.(\w+) DROP CONSTRAINT (\w+), ADD CONSTRAINT (\w+) (CHECK \((\w+) IN \(.*\)\))$`)
 	dollarTag      = regexp.MustCompile(`^\$(?:[A-Za-z_]\w*)?\$`)
 	createSchema   = "CREATE SCHEMA IF NOT EXISTS perps"
 )
@@ -332,6 +333,12 @@ func loadSchema(t *testing.T) *schema {
 				}
 				continue
 			}
+			if m := replaceCheck.FindStringSubmatch(stmt); m != nil {
+				if err := s.replaceCheck(m[1], m[2], m[3], m[4], m[5]); err != nil {
+					t.Fatalf("%s: %v", file, err)
+				}
+				continue
+			}
 			t.Fatalf("%s: unrecognised statement %q", file, stmt)
 		}
 	}
@@ -384,6 +391,30 @@ func (s *schema) dropNotNull(tableName, colName string) error {
 		return fmt.Errorf("perps.%s.%s = %q drops a NOT NULL it does not carry", tableName, colName, def)
 	}
 	tb.columns[i].def = before + after
+	return nil
+}
+
+// replaceCheck applies ALTER TABLE ... DROP CONSTRAINT <table>_<column>_check,
+// ADD CONSTRAINT <table>_<column>_check CHECK (<column> IN (...)) to the
+// column definition an earlier statement created with an IN check.
+func (s *schema) replaceCheck(tableName, dropped, added, check, colName string) error {
+	tb, ok := s.tables[tableName]
+	if !ok {
+		return fmt.Errorf("alter perps.%s, which no earlier statement creates", tableName)
+	}
+	if name := tableName + "_" + colName + "_check"; dropped != name || added != name {
+		return fmt.Errorf("alter perps.%s replaces constraint %s with %s, want %s", tableName, dropped, added, name)
+	}
+	i := slices.IndexFunc(tb.columns, func(c column) bool { return c.name == colName })
+	if i < 0 {
+		return fmt.Errorf("alter perps.%s names unknown column %q", tableName, colName)
+	}
+	def := tb.columns[i].def
+	before, _, ok := strings.Cut(def, " CHECK ("+colName+" IN (")
+	if !ok {
+		return fmt.Errorf("perps.%s.%s = %q carries no IN check to replace", tableName, colName, def)
+	}
+	tb.columns[i].def = before + " " + check
 	return nil
 }
 

@@ -1,11 +1,14 @@
 package decode
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"math/big"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 
 	perpsabi "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/perps/abi"
@@ -41,13 +44,42 @@ func registerPerps(r *Registry) error {
 	if err != nil {
 		return fmt.Errorf("decode: perps ABI: %w", err)
 	}
+	if r.orderOwner, err = newOwnerGetter(a, "order", orderUserQuery, "getOrder", "PerpsUnknownOrder"); err != nil {
+		return err
+	}
+	if r.positionOwner, err = newOwnerGetter(a, "position", positionUserQuery, "getPosition", "PerpsUnknownPosition"); err != nil {
+		return err
+	}
 	return r.register(PerpsAddress, r.opts.PerpsModule, a, perpsEvents)
 }
 
-// batch carries the account sources of one Decode call: the placed and opened
-// rows decoded so far, then the stored rows read through q; the spot orders
-// and share pointers resolved so far; and the token of the share pointer
-// whose log is being decoded.
+// ownerGetter reads the account of an order or position: its stored rows
+// through query, else the first output of method on 0x1015, whose revert
+// with unknown reports an id the precompile does not know.
+type ownerGetter struct {
+	what    string
+	query   string
+	method  abi.Method
+	unknown []byte
+}
+
+func newOwnerGetter(a abi.ABI, what, query, method, unknown string) (ownerGetter, error) {
+	m, ok := a.Methods[method]
+	if !ok || len(m.Inputs) != 1 || len(m.Outputs) == 0 || m.Outputs[0].Type.T != abi.AddressTy {
+		return ownerGetter{}, fmt.Errorf("decode: perps ABI declares no %s(uint256) returning the account first", method)
+	}
+	e, ok := a.Errors[unknown]
+	if !ok {
+		return ownerGetter{}, fmt.Errorf("decode: perps ABI declares no error %s", unknown)
+	}
+	return ownerGetter{what: what, query: query, method: m, unknown: e.ID[:4]}, nil
+}
+
+// batch carries the account sources of one Decode call: the order and
+// position accounts decoded or looked up so far, then the stored rows read
+// through q, then the perps getters read through State; the spot orders and
+// share pointers resolved so far; the token of the share pointer whose log
+// is being decoded; and the account lookups made through State.
 type batch struct {
 	ctx         context.Context
 	q           Querier
@@ -59,46 +91,99 @@ type batch struct {
 	shareToken  common.Address
 	unknownLogs int
 	enumUnknown int
+	lookups     []AccountLookup
 }
 
+// Every stored row of an order or position carries its account, the placed
+// or opened user or the account an id-only row resolved, so the earliest row
+// answers.
 const (
-	orderUserQuery    = `SELECT "user" FROM perps.order_events WHERE kind = 'placed' AND order_id = $1 ORDER BY block, tx_index, log_index LIMIT 1`
-	positionUserQuery = `SELECT "user" FROM perps.position_events WHERE kind = 'opened' AND position_id = $1 ORDER BY block, tx_index, log_index LIMIT 1`
+	orderUserQuery    = `SELECT account FROM perps.order_events WHERE order_id = $1 ORDER BY block, tx_index, log_index, sub LIMIT 1`
+	positionUserQuery = `SELECT account FROM perps.position_events WHERE position_id = $1 ORDER BY block, tx_index, log_index, sub LIMIT 1`
 )
 
-func (b *batch) orderUser(r *reader, orderID string) common.Address {
-	return b.user(r, b.orders, orderUserQuery, "order", orderID)
+func (b *batch) orderUser(r *reader, f Fact, orderID string) common.Address {
+	return b.user(r, b.orders, b.reg.orderOwner, orderID, f.Block)
 }
 
-func (b *batch) positionUser(r *reader, positionID string) common.Address {
-	return b.user(r, b.positions, positionUserQuery, "position", positionID)
+func (b *batch) positionUser(r *reader, f Fact, positionID string) common.Address {
+	return b.user(r, b.positions, b.reg.positionOwner, positionID, f.Block)
 }
 
-func (b *batch) user(r *reader, seen map[string]common.Address, query, what, id string) common.Address {
+func (b *batch) user(r *reader, seen map[string]common.Address, g ownerGetter, id string, height uint64) common.Address {
 	if r.err != nil {
 		return common.Address{}
 	}
 	if u, ok := seen[id]; ok {
 		return u
 	}
-	if b.q == nil {
-		r.fail(fmt.Errorf("%w: %s %s", ErrAccountUnresolved, what, id))
+	if b.q != nil {
+		var raw []byte
+		err := b.q.QueryRowContext(b.ctx, g.query, id).Scan(&raw)
+		switch {
+		case err == nil && len(raw) == common.AddressLength:
+			u := common.BytesToAddress(raw)
+			seen[id] = u
+			return u
+		case err == nil:
+			r.fail(fmt.Errorf("stored %s %s user has %d bytes", g.what, id, len(raw)))
+			return common.Address{}
+		case !errors.Is(err, sql.ErrNoRows):
+			r.fail(fmt.Errorf("read %s %s user: %w", g.what, id, err))
+			return common.Address{}
+		}
+	}
+	if b.reg.opts.State == nil {
+		r.fail(fmt.Errorf("%w: %s %s", ErrAccountUnresolved, g.what, id))
 		return common.Address{}
 	}
-	var raw []byte
-	err := b.q.QueryRowContext(b.ctx, query, id).Scan(&raw)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		r.fail(fmt.Errorf("%w: %s %s", ErrAccountUnresolved, what, id))
-		return common.Address{}
-	case err != nil:
-		r.fail(fmt.Errorf("read %s %s user: %w", what, id, err))
-		return common.Address{}
-	case len(raw) != common.AddressLength:
-		r.fail(fmt.Errorf("stored %s %s user has %d bytes", what, id, len(raw)))
+	return b.lookupOwner(r, seen, g, id, height)
+}
+
+// lookupOwner reads the account of an order or position no stored row
+// carries through g at the height before the event's block, where an id that
+// predates every stored row still exists although the event's own block may
+// execute or close it, and at the latest height when every node pruned that
+// height. An id the precompile does not know is an account_lookup failure.
+func (b *batch) lookupOwner(r *reader, seen map[string]common.Address, g ownerGetter, id string, height uint64) common.Address {
+	n, ok := new(big.Int).SetString(id, 10)
+	if !ok || n.Sign() < 0 || n.BitLen() > 256 {
+		r.fail(fmt.Errorf("%s: %s id %q", g.method.Name, g.what, id))
 		return common.Address{}
 	}
-	u := common.BytesToAddress(raw)
+	at := height
+	if at > 0 {
+		at--
+	}
+	data := append(append([]byte(nil), g.method.ID...), common.LeftPadBytes(n.Bytes(), 32)...)
+	state := b.reg.opts.State
+	path := LookupAtHeight
+	out, err := state.CallAt(b.ctx, PerpsAddress, data, at)
+	if errors.Is(err, ErrStatePruned) {
+		path = LookupLatest
+		out, err = state.Call(b.ctx, PerpsAddress, data)
+	}
+	var revert *RevertError
+	if errors.As(err, &revert) && bytes.Equal(revert.Data, g.unknown) {
+		b.lookups = append(b.lookups, AccountLookup{What: g.what, ID: id, Height: at, Path: path, Missing: true})
+		r.fail(&lookupFailure{FailureAccountLookup, fmt.Sprintf("%s(%s) at %s %d: unknown %s", g.method.Name, id, path, at, g.what)})
+		return common.Address{}
+	}
+	if err != nil {
+		r.fail(fmt.Errorf("%s(%s) at %s %d: %w", g.method.Name, id, path, at, err))
+		return common.Address{}
+	}
+	values, err := g.method.Outputs.Unpack(out)
+	if err != nil {
+		r.fail(fmt.Errorf("%s(%s) at %s %d: %w", g.method.Name, id, path, at, err))
+		return common.Address{}
+	}
+	u, ok := values[0].(common.Address)
+	if !ok || u == (common.Address{}) {
+		r.fail(fmt.Errorf("%s(%s) at %s %d returned no account", g.method.Name, id, path, at))
+		return common.Address{}
+	}
+	b.lookups = append(b.lookups, AccountLookup{What: g.what, ID: id, Height: at, Path: path, Account: u})
 	seen[id] = u
 	return u
 }
@@ -157,7 +242,7 @@ var perpsEvents = []eventDecoder{
 	{"OrderOptions", func(b *batch, f Fact, r *reader) []Row {
 		f.Kind = "options"
 		id := r.u256("orderId")
-		f.Account = b.orderUser(r, id)
+		f.Account = b.orderUser(r, f, id)
 		return []Row{OrderOptionsRow{f, id, r.u8("timeInForce"), r.flag("reduceOnly"), r.u256("limitPrice"), r.u256("acceptablePrice"), r.u64("deadline"), r.b16("cloid")}}
 	}},
 	{"OrderCancelled", func(_ *batch, f Fact, r *reader) []Row {
@@ -173,13 +258,13 @@ var perpsEvents = []eventDecoder{
 	{"OrderTriggered", func(b *batch, f Fact, r *reader) []Row {
 		f.Kind = "triggered"
 		id := r.u256("orderId")
-		f.Account = b.orderUser(r, id)
+		f.Account = b.orderUser(r, f, id)
 		return []Row{OrderTriggeredRow{f, id, r.u256("marketId"), r.u256("markPrice")}}
 	}},
 	{"OrderExecuted", func(b *batch, f Fact, r *reader) []Row {
 		f.Kind = "executed"
 		id := r.u256("orderId")
-		f.Account = b.orderUser(r, id)
+		f.Account = b.orderUser(r, f, id)
 		return []Row{OrderExecutedRow{f, id, r.u256("positionId"), r.u256("executionPrice")}}
 	}},
 	{"Fill", func(_ *batch, f Fact, r *reader) []Row {
@@ -201,13 +286,13 @@ var perpsEvents = []eventDecoder{
 	{"PositionModified", func(b *batch, f Fact, r *reader) []Row {
 		f.Kind = "modified"
 		id := r.u256("positionId")
-		f.Account = b.positionUser(r, id)
+		f.Account = b.positionUser(r, f, id)
 		return []Row{PositionModifiedRow{f, id, r.u256("newSizeUsd"), r.u256("newCollateralUsd"), r.u256("newCollateralAmount")}}
 	}},
 	{"PositionEntryPriceChanged", func(b *batch, f Fact, r *reader) []Row {
 		f.Kind = "entry_price_changed"
 		id := r.u256("positionId")
-		f.Account = b.positionUser(r, id)
+		f.Account = b.positionUser(r, f, id)
 		return []Row{PositionEntryPriceChangedRow{f, id, r.u256("oldEntryPrice"), r.u256("newEntryPrice")}}
 	}},
 	{"PositionClosed", func(_ *batch, f Fact, r *reader) []Row {
@@ -219,7 +304,7 @@ var perpsEvents = []eventDecoder{
 	{"PositionTpSlSet", func(b *batch, f Fact, r *reader) []Row {
 		f.Kind = "tpsl_set"
 		id := r.u256("positionId")
-		f.Account = b.positionUser(r, id)
+		f.Account = b.positionUser(r, f, id)
 		return []Row{PositionTpSlSetRow{f, id, r.u256("takeProfitPrice"), r.u256("stopLossPrice")}}
 	}},
 	{"TradeSettled", func(b *batch, f Fact, r *reader) []Row {
@@ -281,7 +366,7 @@ var perpsEvents = []eventDecoder{
 	{"ADLExecuted", func(b *batch, f Fact, r *reader) []Row {
 		f.Kind = "adl"
 		id := r.u256("positionId")
-		f.Account = b.positionUser(r, id)
+		f.Account = b.positionUser(r, f, id)
 		return []Row{ADLExecutedRow{f, id, r.u256("deleveragedSizeUsd")}}
 	}},
 	{"ADLMatched", func(_ *batch, f Fact, r *reader) []Row {

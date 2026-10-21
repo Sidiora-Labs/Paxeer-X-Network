@@ -1,0 +1,1 @@
+ALTER TABLE perps.raw_logs DROP CONSTRAINT raw_logs_failure_class_check, ADD CONSTRAINT raw_logs_failure_class_check CHECK (failure_class IN ('unknown_topic', 'abi_decode', 'order_lookup', 'share_lookup', 'account_lookup'));

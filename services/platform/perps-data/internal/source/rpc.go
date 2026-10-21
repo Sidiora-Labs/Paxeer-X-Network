@@ -26,6 +26,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/services/platform/perps-data/internal/decode"
@@ -544,14 +545,20 @@ type jsonRPCRequest struct {
 type jsonRPCResponse struct {
 	Result json.RawMessage `json:"result"`
 	Error  *struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
+		Code    int             `json:"code"`
+		Message string          `json:"message"`
+		Data    json.RawMessage `json:"data"`
 	} `json:"error"`
 }
 
+// revertCode is the JSON-RPC error code of a reverted eth_call, whose data is
+// the revert data.
+const revertCode = 3
+
 // callWithFallback sends a JSON-RPC request to the healthy nodes in rank
-// order until one answers. A size refusal is the request's fault, not the
-// node's, and returns at once without a failure mark.
+// order until one answers. A size refusal is the request's fault and a
+// revert is the state's answer, not the node's health: both return at once
+// without a failure mark.
 func (s *RPC) callWithFallback(ctx context.Context, timeout time.Duration, method string, params ...any) (json.RawMessage, error) {
 	order := s.rankedIndices()
 	if len(order) == 0 {
@@ -576,7 +583,8 @@ func (s *RPC) callWithFallback(ctx context.Context, timeout time.Duration, metho
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if errors.Is(err, ErrResponseSize) {
+		var revert *decode.RevertError
+		if errors.Is(err, ErrResponseSize) || errors.As(err, &revert) {
 			return nil, err
 		}
 		lastErr = err
@@ -629,6 +637,17 @@ func (s *RPC) doRequest(ctx context.Context, timeout time.Duration, url string, 
 		}
 		if prunedRefusal(out.Error.Message) {
 			return nil, fmt.Errorf("%w: %s", decode.ErrStatePruned, out.Error.Message)
+		}
+		if out.Error.Code == revertCode {
+			var data string
+			if err := json.Unmarshal(out.Error.Data, &data); err != nil {
+				return nil, fmt.Errorf("source: json-rpc revert without hex data: %s", out.Error.Message)
+			}
+			raw, err := hexutil.Decode(data)
+			if err != nil {
+				return nil, fmt.Errorf("source: json-rpc revert data: %w", err)
+			}
+			return nil, &decode.RevertError{Data: raw}
 		}
 		return nil, fmt.Errorf("source: json-rpc error %d: %s", out.Error.Code, out.Error.Message)
 	}

@@ -132,6 +132,7 @@ func (r *Registry) DecodeBlock(ctx context.Context, q Querier, in BlockInput) (*
 	}
 	r.unknownLogs.Add(float64(b.unknownLogs))
 	r.enumUnknown.Add(float64(b.enumUnknown))
+	res.Lookups = b.lookups
 	return res, nil
 }
 

@@ -61,11 +61,14 @@ const (
 	FailureABIDecode    = "abi_decode"
 	FailureOrderLookup  = "order_lookup"
 	FailureShareLookup  = "share_lookup"
+	// FailureAccountLookup is an id-only perps event whose order or
+	// position the perps precompile does not know.
+	FailureAccountLookup = "account_lookup"
 )
 
 var (
-	// ErrAccountUnresolved reports an id-only event whose placed or opened row
-	// is neither earlier in the batch nor stored.
+	// ErrAccountUnresolved reports an id-only event whose order or position
+	// is neither earlier in the batch nor stored, without a StateReader.
 	ErrAccountUnresolved = errors.New("decode: account unresolved")
 	// ErrForeignEmitter reports a log of an address outside the address set.
 	ErrForeignEmitter = errors.New("decode: emitter outside the address set")
@@ -80,9 +83,17 @@ var (
 	ErrInvalidBlockEvent = errors.New("decode: invalid block event")
 )
 
+// RevertError is an eth_call the node answered with a revert; Data is the
+// revert data, such as the selector of a custom error.
+type RevertError struct {
+	Data []byte
+}
+
+func (e *RevertError) Error() string { return "decode: call reverted 0x" + hex.EncodeToString(e.Data) }
+
 // StateReader runs eth_call: CallAt at a height, Call at the latest height.
 // CallAt returns an error wrapping ErrStatePruned when every node has pruned
-// the height.
+// the height; a reverted call returns a *RevertError.
 type StateReader interface {
 	CallAt(ctx context.Context, to common.Address, data []byte, height uint64) ([]byte, error)
 	Call(ctx context.Context, to common.Address, data []byte) ([]byte, error)
@@ -90,7 +101,8 @@ type StateReader interface {
 
 // Options configures a Registry. The module addresses are the module EVM
 // addresses of contracts/address-table.md, module accounts; State resolves
-// the spot order tokens and the share pointers.
+// the spot order tokens, the share pointers and the accounts of perps orders
+// and positions that predate every stored row.
 type Options struct {
 	PerpsModule     common.Address
 	SpotModule      common.Address
@@ -178,6 +190,27 @@ type Decoded struct {
 type Result struct {
 	Decoded []Decoded
 	Raw     []RawLogRow
+	Lookups []AccountLookup
+}
+
+// Paths of an AccountLookup: the state after the block before the event, or
+// the latest state when every node pruned that height.
+const (
+	LookupAtHeight = "at_height"
+	LookupLatest   = "latest"
+)
+
+// AccountLookup records one order or position account read through State:
+// What is order or position, Height the height asked, Path the state that
+// answered, and Missing an id that state does not know, whose event became an
+// account_lookup raw row.
+type AccountLookup struct {
+	What    string
+	ID      string
+	Height  uint64
+	Path    string
+	Missing bool
+	Account common.Address
 }
 
 // Querier reads stored facts; *sql.DB and *sql.Tx satisfy it.
@@ -198,13 +231,15 @@ type entry struct {
 // Registry is immutable after construction, apart from the cache of share
 // pointers resolved through State, and safe for concurrent Decode calls.
 type Registry struct {
-	entries     map[key]entry
-	modules     map[common.Address]common.Address
-	share       map[common.Hash]entry
-	fees        map[common.Hash]entry
-	opts        Options
-	unknownLogs prometheus.Counter
-	enumUnknown prometheus.Counter
+	entries       map[key]entry
+	orderOwner    ownerGetter
+	positionOwner ownerGetter
+	modules       map[common.Address]common.Address
+	share         map[common.Hash]entry
+	fees          map[common.Hash]entry
+	opts          Options
+	unknownLogs   prometheus.Counter
+	enumUnknown   prometheus.Counter
 
 	mu       sync.Mutex
 	pointers map[common.Address]common.Address
@@ -285,12 +320,14 @@ func (r *Registry) register(address, module common.Address, a abi.ABI, decoders 
 	return nil
 }
 
-// Decode deduplicates one fetch and decodes it in order. Fact rows of id-only events take the account of the earlier placed
-// or opened row of the batch, else the stored row read through q. A log of a
-// venue address without a decoder, with non-canonical data, of an unknown
-// spot order or of an unresolved share pointer becomes a raw row; an invalid
-// batch, a foreign emitter, an unresolved account or a read failure is an
-// error.
+// Decode deduplicates one fetch and decodes it in order. Fact rows of id-only
+// events take the account of an earlier row of the batch, else of a stored
+// row of the order or position read through q, else of the getter of the
+// perps precompile read through State. A log of a venue address without a
+// decoder, with non-canonical data, of an unknown spot order, of an unknown
+// perps order or position or of an unresolved share pointer becomes a raw
+// row; an invalid batch, a foreign emitter, an unresolved account or a read
+// failure is an error.
 func (r *Registry) Decode(ctx context.Context, q Querier, logs []Log) (*Result, error) {
 	res := &Result{}
 	b := r.newBatch(ctx, q)
@@ -299,6 +336,7 @@ func (r *Registry) Decode(ctx context.Context, q Querier, logs []Log) (*Result, 
 	}
 	r.unknownLogs.Add(float64(b.unknownLogs))
 	r.enumUnknown.Add(float64(b.enumUnknown))
+	res.Lookups = b.lookups
 	return res, nil
 }
 

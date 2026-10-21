@@ -107,6 +107,9 @@ type Indexer struct {
 	// written holds the rows by table of each block written in the current
 	// step, in block order; the follower commits them in that order.
 	written []map[string]int
+	// lookedUp holds the orders and positions whose account lookup through
+	// the node is logged, so each is logged once.
+	lookedUp map[string]bool
 
 	held   atomic.Bool
 	head   atomic.Uint64
@@ -147,6 +150,7 @@ func New(ctx context.Context, d Deps) (*Indexer, error) {
 		holder:    d.Holder,
 		start:     uint64(d.StartHeight),
 		logger:    logger,
+		lookedUp:  map[string]bool{},
 		headHeight: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "perps_indexer_head_height",
 			Help: "Latest node head height seen by the follower.",
@@ -408,6 +412,7 @@ func (ix *Indexer) write(ctx context.Context, tx *sql.Tx, b *source.Block) error
 	if err := store.WriteBlock(ctx, tx, header, rows); err != nil {
 		return err
 	}
+	ix.logLookups(rows.Lookups)
 	counts := map[string]int{}
 	for _, d := range rows.Decoded {
 		for _, r := range d.Rows {
@@ -419,6 +424,25 @@ func (ix *Indexer) write(ctx context.Context, tx *sql.Tx, b *source.Block) error
 	}
 	ix.written = append(ix.written, counts)
 	return nil
+}
+
+// logLookups logs each order or position whose account was read through the
+// node once: the height and path that resolved it, or that the precompile
+// does not know it and its events are account_lookup raw logs.
+func (ix *Indexer) logLookups(lookups []decode.AccountLookup) {
+	for _, l := range lookups {
+		k := l.What + " " + l.ID
+		if ix.lookedUp[k] {
+			continue
+		}
+		ix.lookedUp[k] = true
+		attrs := []any{slog.String(l.What, l.ID), slog.Uint64("height", l.Height), slog.String("path", l.Path)}
+		if l.Missing {
+			ix.logger.Warn("perps indexer account lookup: unknown to the perps precompile, events written as raw logs", attrs...)
+			continue
+		}
+		ix.logger.Info("perps indexer account lookup resolved through the node", append(attrs, slog.String("account", l.Account.Hex()))...)
+	}
 }
 
 // rebuild is the follower's rewind rebuild: under the lease fence it
