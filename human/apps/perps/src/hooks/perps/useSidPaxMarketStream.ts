@@ -5,6 +5,7 @@ import { FEED_ORIGIN } from "@/core/feeds";
 import { fetchWithPolicy } from "@/core/net/fetch";
 import { isVenueSymbol, parseVenueBook, RESYNC_DEPTH } from "@/core/net/venueStream";
 import { gatewayUrls } from "@/core/network/gateway";
+import { normalizeLevels } from "@/hooks/spot/useSpotMarketStream";
 import { useEffect, useState } from "react";
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -289,8 +290,8 @@ function connect(symbol: string, s: SymbolStream) {
 
     // Order-book frame
     if (msg.topic === orderbookTopic && msg.data) {
-      const asks = normalizeLevels(msg.data.asks).sort((a, b) => a.price - b.price);
-      const bids = normalizeLevels(msg.data.bids).sort((a, b) => b.price - a.price);
+      const asks = normalizeLevels(msg.data.asks, "asks");
+      const bids = normalizeLevels(msg.data.bids, "bids");
       const ts = typeof msg.ts === "number" ? msg.ts : Date.now();
       s.orderbook = { asks, bids, ts };
       s.subsOrderbook.forEach((cb) => cb(s.orderbook));
@@ -427,23 +428,6 @@ function releaseIfIdle(symbol: string, s: SymbolStream) {
     s.ws?.close(1000, "no-subscribers"); s.ws = null;
     streams.delete(symbol.toUpperCase());
   }, 15000);
-}
-
-function normalizeLevels(raw: unknown): SidPaxBookLevel[] {
-  if (!Array.isArray(raw)) return [];
-  const out: SidPaxBookLevel[] = [];
-  for (const r of raw) {
-    const price = Array.isArray(r)
-      ? Number(r[0])
-      : Number((r as any)?.price);
-    const size = Array.isArray(r)
-      ? Number(r[1])
-      : Number((r as any)?.size ?? (r as any)?.quantity);
-    if (Number.isFinite(price) && Number.isFinite(size)) {
-      out.push({ price, size });
-    }
-  }
-  return out;
 }
 
 function normalizeTrade(t: any): SidPaxTrade {
