@@ -65,9 +65,12 @@ type Cap struct {
 }
 
 type Rules struct {
-	ChainID           *uint64             `json:"chain_id,omitempty"`
-	Kinds             []string            `json:"kinds,omitempty"`
-	Caps              map[string]Cap      `json:"caps,omitempty"`
+	ChainID *uint64        `json:"chain_id,omitempty"`
+	Kinds   []string       `json:"kinds,omitempty"`
+	Caps    map[string]Cap `json:"caps,omitempty"`
+	// FeeCaps bound only the sponsored-fee leg of a sponsored batch; an
+	// asset listed here and not in Caps is refused everywhere else.
+	FeeCaps           map[string]Cap      `json:"fee_caps,omitempty"`
 	RatePerMinute     *uint32             `json:"rate_per_minute,omitempty"`
 	DestinationsAllow []string            `json:"destinations_allow,omitempty"`
 	DestinationsDeny  []string            `json:"destinations_deny,omitempty"`
@@ -145,14 +148,10 @@ func merge(defaults, override Rules) Rules {
 		out.TrustedSpenders = override.TrustedSpenders
 	}
 	if override.Caps != nil {
-		caps := make(map[string]Cap, len(defaults.Caps)+len(override.Caps))
-		for asset, c := range defaults.Caps {
-			caps[strings.ToLower(asset)] = c
-		}
-		for asset, c := range override.Caps {
-			caps[strings.ToLower(asset)] = c
-		}
-		out.Caps = caps
+		out.Caps = mergeCaps(defaults.Caps, override.Caps)
+	}
+	if override.FeeCaps != nil {
+		out.FeeCaps = mergeCaps(defaults.FeeCaps, override.FeeCaps)
 	}
 	if override.Selectors != nil {
 		selectors := make(map[string][]string, len(defaults.Selectors)+len(override.Selectors))
@@ -167,6 +166,17 @@ func merge(defaults, override Rules) Rules {
 	return out
 }
 
+func mergeCaps(defaults, override map[string]Cap) map[string]Cap {
+	caps := make(map[string]Cap, len(defaults)+len(override))
+	for asset, c := range defaults {
+		caps[strings.ToLower(asset)] = c
+	}
+	for asset, c := range override {
+		caps[strings.ToLower(asset)] = c
+	}
+	return caps
+}
+
 type compiledCap struct {
 	perTransaction *big.Int
 	daily          *big.Int
@@ -176,6 +186,7 @@ type compiled struct {
 	chainID   *big.Int
 	kinds     map[string]bool
 	caps      map[string]compiledCap
+	feeCaps   map[string]compiledCap
 	rate      uint32
 	allow     map[common.Address]bool
 	deny      map[common.Address]bool
@@ -243,29 +254,19 @@ func compile(r Rules) (*compiled, error) {
 	c := &compiled{
 		chainID:   new(big.Int).SetUint64(*r.ChainID),
 		kinds:     make(map[string]bool, len(r.Kinds)),
-		caps:      make(map[string]compiledCap, len(r.Caps)),
 		rate:      *r.RatePerMinute,
 		selectors: make(map[common.Address]map[[4]byte]bool, len(r.Selectors)),
 	}
 	for _, kind := range r.Kinds {
 		c.kinds[kind] = true
 	}
-	for asset, raw := range r.Caps {
-		key, err := parseAsset(asset)
-		if err != nil {
-			return nil, err
-		}
-		perTransaction, err := parseAmount(raw.PerTransaction)
-		if err != nil {
-			return nil, fmt.Errorf("cap %s per_transaction: %w", asset, err)
-		}
-		daily, err := parseAmount(raw.Daily)
-		if err != nil {
-			return nil, fmt.Errorf("cap %s daily: %w", asset, err)
-		}
-		c.caps[key] = compiledCap{perTransaction: perTransaction, daily: daily}
-	}
 	var err error
+	if c.caps, err = compileCaps("cap", r.Caps); err != nil {
+		return nil, err
+	}
+	if c.feeCaps, err = compileCaps("fee cap", r.FeeCaps); err != nil {
+		return nil, err
+	}
 	if c.allow, err = parseAddresses(r.DestinationsAllow); err != nil {
 		return nil, err
 	}
@@ -295,6 +296,26 @@ func compile(r Rules) (*compiled, error) {
 	return c, nil
 }
 
+func compileCaps(label string, caps map[string]Cap) (map[string]compiledCap, error) {
+	out := make(map[string]compiledCap, len(caps))
+	for asset, raw := range caps {
+		key, err := parseAsset(asset)
+		if err != nil {
+			return nil, err
+		}
+		perTransaction, err := parseAmount(raw.PerTransaction)
+		if err != nil {
+			return nil, fmt.Errorf("%s %s per_transaction: %w", label, asset, err)
+		}
+		daily, err := parseAmount(raw.Daily)
+		if err != nil {
+			return nil, fmt.Errorf("%s %s daily: %w", label, asset, err)
+		}
+		out[key] = compiledCap{perTransaction: perTransaction, daily: daily}
+	}
+	return out, nil
+}
+
 type Request struct {
 	Kind string
 	View any
@@ -320,6 +341,9 @@ type Spend struct {
 	// Spender is set when the spend is an allowance granted by an approve
 	// or permit rather than a transfer out of the account.
 	Spender *common.Address
+	// Fee marks the sponsored-fee payment a sponsored batch pays the gas
+	// station; only such a spend is bounded by the fee caps.
+	Fee bool
 }
 
 type Inspection struct {
@@ -461,8 +485,14 @@ func (p *Policy) Evaluate(account string, req Request, ledger Ledger) Decision {
 	if err := ledger.RecordRequest(accountKey, now); err != nil {
 		return denied(CodeLedgerError, "%v", err)
 	}
-	capped := inspection.Spends[:0:0]
+	capped, fees := inspection.Spends[:0:0], inspection.Spends[:0:0]
 	for _, spend := range inspection.Spends {
+		if spend.Fee {
+			if _, ok := effective.feeCaps[spend.Asset]; ok {
+				fees = append(fees, spend)
+				continue
+			}
+		}
 		if spend.Spender != nil && effective.trusted[*spend.Spender] {
 			if spend.Amount != nil && spend.Amount.Cmp(maxUint256) == 0 {
 				return denied(CodeUnlimitedApproval, "unlimited approval of %s to %s is refused", spend.Asset, spend.Spender.Hex())
@@ -473,35 +503,53 @@ func (p *Policy) Evaluate(account string, req Request, ledger Ledger) Decision {
 		}
 		capped = append(capped, spend)
 	}
-	totals, order, err := sumSpends(capped)
-	if err != nil {
-		return denied(CodeMissingField, "%v", err)
-	}
-	for _, asset := range order {
-		amount := totals[asset]
-		limit, ok := effective.caps[asset]
-		if !ok || (limit.perTransaction == nil && limit.daily == nil) {
-			return denied(CodeNoCap, "no cap is configured for asset %s", asset)
+	pending := map[string]*big.Int{}
+	var spends []Spend
+	for _, group := range []struct {
+		spends []Spend
+		caps   map[string]compiledCap
+		label  string
+	}{{capped, effective.caps, "cap"}, {fees, effective.feeCaps, "sponsored-fee cap"}} {
+		totals, order, err := sumSpends(group.spends)
+		if err != nil {
+			return denied(CodeMissingField, "%v", err)
 		}
-		if limit.perTransaction != nil && amount.Cmp(limit.perTransaction) > 0 {
-			return denied(CodeValueCap, "amount %s of %s exceeds the per-transaction cap %s", amount, asset, limit.perTransaction)
-		}
-		if limit.daily != nil {
-			spent, err := ledger.Spent(accountKey, asset, now.Add(-SpendWindow))
-			if err != nil {
-				return denied(CodeLedgerError, "%v", err)
+		for _, asset := range order {
+			amount := totals[asset]
+			limit, ok := group.caps[asset]
+			if !ok || (limit.perTransaction == nil && limit.daily == nil) {
+				return denied(CodeNoCap, "no cap is configured for asset %s", asset)
 			}
-			if new(big.Int).Add(spent, amount).Cmp(limit.daily) > 0 {
-				return denied(CodeDailyCap, "amount %s of %s with %s spent in 24 hours exceeds the daily cap %s", amount, asset, spent, limit.daily)
+			if limit.perTransaction != nil && amount.Cmp(limit.perTransaction) > 0 {
+				return denied(CodeValueCap, "amount %s of %s exceeds the per-transaction %s %s", amount, asset, group.label, limit.perTransaction)
 			}
+			if limit.daily != nil {
+				spent, err := ledger.Spent(accountKey, asset, now.Add(-SpendWindow))
+				if err != nil {
+					return denied(CodeLedgerError, "%v", err)
+				}
+				if earlier, ok := pending[asset]; ok {
+					spent = new(big.Int).Add(spent, earlier)
+				}
+				if new(big.Int).Add(spent, amount).Cmp(limit.daily) > 0 {
+					return denied(CodeDailyCap, "amount %s of %s with %s spent in 24 hours exceeds the daily %s %s", amount, asset, spent, group.label, limit.daily)
+				}
+			}
+			if earlier, ok := pending[asset]; ok {
+				earlier.Add(earlier, amount)
+			} else {
+				pending[asset] = new(big.Int).Set(amount)
+			}
+			spends = append(spends, Spend{Asset: asset, Amount: new(big.Int).Set(amount)})
 		}
 	}
-	spends := make([]Spend, 0, len(order))
-	for _, asset := range order {
-		if err := ledger.RecordSpend(accountKey, asset, totals[asset], now); err != nil {
+	for _, spend := range spends {
+		if err := ledger.RecordSpend(accountKey, spend.Asset, spend.Amount, now); err != nil {
 			return denied(CodeLedgerError, "%v", err)
 		}
-		spends = append(spends, Spend{Asset: asset, Amount: new(big.Int).Set(totals[asset])})
+	}
+	if spends == nil {
+		spends = []Spend{}
 	}
 	return Decision{Allowed: true, Code: CodeAllowed, Reason: "request satisfies the account policy", Spends: spends}
 }
@@ -602,6 +650,10 @@ func inspectCall(to common.Address, value *big.Int, data []byte) (Inspection, er
 		out.Spends = append(out.Spends, spend)
 	case call.Destination == "layerxcustody" && call.Method == "depositToken":
 		err = token("pointer", "amount")
+	case call.Destination == "perps" && call.Method == "deposit":
+		err = token("token", "amount")
+	case call.Destination == "perps" && call.Method == "openPosition":
+		err = token("collateralToken", "collateralAmount")
 	case call.Destination == "layerxbridge" && call.Method == "bridgeOut":
 		if err = token("asset", "amount"); err == nil {
 			err = recipient("recipient")
@@ -755,7 +807,7 @@ func inspectSponsoredBatch(ctx Context, view any) (Inspection, error) {
 		out.Destinations = append(out.Destinations, inspection.Destinations...)
 		out.Spends = append(out.Spends, inspection.Spends...)
 	}
-	out.Spends = append(out.Spends, Spend{Asset: TokenAsset(claim.Batch.Quote.Token), Amount: claim.Batch.Quote.TokenAmount})
+	out.Spends = append(out.Spends, Spend{Asset: TokenAsset(claim.Batch.Quote.Token), Amount: claim.Batch.Quote.TokenAmount, Fee: true})
 	return out, nil
 }
 
