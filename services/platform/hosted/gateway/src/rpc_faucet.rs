@@ -11,6 +11,7 @@ const CLAIM_PATH: &str = "/v1/faucet/service-claims";
 const IDEMPOTENCY_DOMAIN: &[u8] = b"layerx-faucet-claim-v1";
 const CLAIMS_PER_MINUTE: u32 = 30;
 const STARTER_IDEMPOTENCY_SCOPE: &str = "starter-credit";
+const MAX_FAUCET_AMOUNT: u64 = (1 << 53) - 1;
 
 static FAUCET_WINDOW: Mutex<(u64, u32)> = Mutex::new((0, 0));
 
@@ -207,6 +208,12 @@ fn grant_result(
     }
 }
 
+fn faucet_representable(amount: &str) -> bool {
+    amount
+        .parse::<u64>()
+        .is_ok_and(|value| value <= MAX_FAUCET_AMOUNT && value.to_string() == amount)
+}
+
 fn identity_call(config: &Config, path: &str, body: &Value) -> Result<super::UpstreamResponse, ()> {
     let token = config.registration_token.as_ref().ok_or(())?;
     let (identity, _) = config
@@ -297,6 +304,14 @@ fn request_funds(
             )
         }
     };
+    if !faucet_representable(&grant.amount) {
+        return refusal(
+            id,
+            -32603,
+            "Starter credit amount mismatch",
+            "starter_credit_amount_unrepresentable",
+        );
+    }
     let key = idempotency(sub, &grant.grant_id, STARTER_IDEMPOTENCY_SCOPE);
     let body = claim_request(sub, &did, &public_key);
     let mut funded = match super::upstream_json(
@@ -614,6 +629,24 @@ mod tests {
             .unwrap_or_else(|| panic!("{status}"));
             assert_eq!(refused["error"]["code"], code, "{status}");
             assert_eq!(refused["error"]["data"], upstream);
+        }
+    }
+
+    #[test]
+    fn only_a_grant_the_faucet_can_fund_exactly_is_sent_to_the_faucet() {
+        for amount in ["1", "1000000", "9007199254740991"] {
+            assert!(faucet_representable(amount), "{amount}");
+        }
+        for amount in [
+            "10000000000000000000",
+            "9007199254740992",
+            "18446744073709551616",
+            "01000000",
+            "",
+            "-1",
+            "+1",
+        ] {
+            assert!(!faucet_representable(amount), "{amount}");
         }
     }
 

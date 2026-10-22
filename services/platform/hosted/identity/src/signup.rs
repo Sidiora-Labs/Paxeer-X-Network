@@ -3,7 +3,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const STARTER_CREDIT_AMOUNT: &str = "10000000000000000000";
+pub const STARTER_CREDIT_AMOUNT: &str = "1000000";
 pub const STARTER_CREDIT_ASSET: &str = "PAX";
 const HOUR: u64 = 3_600;
 const DAY: u64 = 86_400;
