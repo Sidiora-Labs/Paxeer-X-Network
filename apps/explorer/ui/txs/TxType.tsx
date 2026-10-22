@@ -11,6 +11,7 @@ export interface Props extends BadgeProps {
 }
 
 const TYPES_ORDER: Array<TransactionType> = [
+  'price_update',
   'blob_transaction',
   'rootstock_remasc',
   'rootstock_bridge',
@@ -51,6 +52,10 @@ const TxType = ({ types, isLoading, ...rest }: Props) => {
     case 'coin_transfer':
       label = 'Coin transfer';
       colorPalette = 'orange';
+      break;
+    case 'price_update':
+      label = 'Price update';
+      colorPalette = 'green';
       break;
     case 'rootstock_remasc':
       label = 'REMASC';

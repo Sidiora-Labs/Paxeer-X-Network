@@ -30,6 +30,7 @@ import TxSubHeading, { TxApiEntry } from 'ui/tx/TxSubHeading';
 import TxTokenTransfer from 'ui/tx/TxTokenTransfer';
 import TxUserOps from 'ui/tx/TxUserOps';
 import useTxQuery from 'ui/tx/useTxQuery';
+import { isPriceUpdate } from 'ui/txs/TxPriceUpdate';
 
 const txInterpretation = config.features.txInterpretation;
 const rollupFeature = config.features.rollup;
@@ -52,6 +53,14 @@ const TransactionPageContent = () => {
   });
 
   const { data, isPlaceholderData, isError, error, errorUpdateCount } = txQuery;
+
+  const redirectToPriceUpdate = Boolean(data && !isPlaceholderData && isPriceUpdate(data));
+
+  React.useEffect(() => {
+    if (redirectToPriceUpdate) {
+      router.replace({ pathname: '/feed/update/[hash]', query: { hash } });
+    }
+  }, [ redirectToPriceUpdate, hash, router ]);
 
   const showDegradedView = publicClient && ((isError && error.status !== 422) || isPlaceholderData) && errorUpdateCount > 0;
 
@@ -125,6 +134,10 @@ const TransactionPageContent = () => {
     if (isCustomAppError(error)) {
       throwOnResourceLoadError({ resource: 'general:tx', error, isError: true });
     }
+  }
+
+  if (redirectToPriceUpdate) {
+    return null;
   }
 
   return (

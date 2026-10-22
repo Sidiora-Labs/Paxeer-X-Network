@@ -145,4 +145,12 @@ describe('BlockDetails', () => {
     expect(labelsOf(expander)).toEqual([ 'Parent hash', 'Nonce' ]);
     expect(expander.querySelector('[data-content]')?.textContent).toContain(blockMock.base.nonce);
   });
+
+  it('counts the price updates of the block into its transactions sentence', async() => {
+    fetchMock.mockResponse(JSON.stringify({ ...blockMock.base, price_update_count: 1 }), responseInit);
+
+    await renderDetails();
+
+    expect(valuesOf(card())[2].textContent).toBe('6 txns including 1 price update in this block');
+  });
 });

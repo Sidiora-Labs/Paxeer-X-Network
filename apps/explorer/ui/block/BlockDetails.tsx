@@ -118,11 +118,17 @@ const BlockDetails = ({ query }: Props) => {
   })();
 
   const txsNum = (() => {
+    const priceUpdateCount = data.price_update_count ?? 0;
+    const txsCount = data.transactions_count + priceUpdateCount;
     const blockTxsNum = (
       <Link href={ route({ pathname: '/block/[height_or_hash]', query: { height_or_hash: heightOrHash, tab: 'txs' } }, multichainContext) }>
-        { data.transactions_count } txn{ data.transactions_count === 1 ? '' : 's' }
+        { txsCount } txn{ txsCount === 1 ? '' : 's' }
       </Link>
     );
+
+    const blockPriceUpdatesNum = priceUpdateCount > 0 ? (
+      <span data-block-price-updates> including { priceUpdateCount } price update{ priceUpdateCount === 1 ? '' : 's' }</span>
+    ) : null;
 
     const blockBlobTxsNum = (config.features.dataAvailability.isEnabled && data.blob_transactions_count) ? (
       <>
@@ -136,6 +142,7 @@ const BlockDetails = ({ query }: Props) => {
     return (
       <>
         { blockTxsNum }
+        { blockPriceUpdatesNum }
         { blockBlobTxsNum }
         <span> in this block</span>
       </>

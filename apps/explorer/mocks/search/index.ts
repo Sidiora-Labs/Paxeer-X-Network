@@ -10,9 +10,11 @@ import type {
   SearchResultDomain,
   SearchResultMetadataTag,
   SearchResultTacOperation,
+  SearchResultPriceUpdate,
 } from 'types/api/search';
 
 import * as tacOperationMock from 'mocks/operations/tac';
+import * as feedMock from 'mocks/paxeerX/feed';
 
 export const token1: SearchResultToken = {
   address_hash: '0x377c5F2B300B25a534d4639177873b7fEAA56d4B',
@@ -202,6 +204,13 @@ export const metatag3: SearchResultMetadataTag = {
 export const tacOperation1: SearchResultTacOperation = {
   type: 'tac_operation',
   tac_operation: tacOperationMock.tacOperation,
+};
+
+export const priceUpdate1: SearchResultPriceUpdate = {
+  type: 'price_update',
+  hash: feedMock.priceUpdate.hash,
+  block_number: feedMock.priceUpdate.block_number,
+  timestamp: feedMock.priceUpdate.timestamp,
 };
 
 export const baseResponse: SearchResult = {

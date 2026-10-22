@@ -17,6 +17,7 @@ export const SEARCH_RESULT_TYPES = {
   blob: 'blob',
   metadata_tag: 'metadata_tag',
   tac_operation: 'tac_operation',
+  price_update: 'price_update',
 } as const;
 
 export type SearchResultType = typeof SEARCH_RESULT_TYPES[keyof typeof SEARCH_RESULT_TYPES];
@@ -137,6 +138,13 @@ export interface SearchResultUserOp {
   url?: string; // not used by the frontend, we build the url ourselves
 }
 
+export interface SearchResultPriceUpdate {
+  type: 'price_update';
+  hash: string;
+  block_number: number;
+  timestamp: string;
+}
+
 export type SearchResultItem =
   SearchResultToken |
   SearchResultAddressOrContract |
@@ -148,7 +156,8 @@ export type SearchResultItem =
   SearchResultDomain |
   SearchResultCluster |
   SearchResultMetadataTag |
-  SearchResultTacOperation;
+  SearchResultTacOperation |
+  SearchResultPriceUpdate;
 
 export interface SearchResult {
   items: Array<SearchResultItem>;

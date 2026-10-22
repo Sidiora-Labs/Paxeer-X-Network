@@ -111,7 +111,8 @@ export function getItemCategory(item: QuickSearchResultItem | SearchResultAppIte
     case 'label': {
       return 'public_tag';
     }
-    case 'transaction': {
+    case 'transaction':
+    case 'price_update': {
       return 'transaction';
     }
     case 'app': {

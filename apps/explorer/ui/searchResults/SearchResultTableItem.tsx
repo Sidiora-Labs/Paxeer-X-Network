@@ -12,6 +12,7 @@ import dayjs from 'lib/date/dayjs';
 import highlightText from 'lib/highlightText';
 import * as mixpanel from 'lib/mixpanel/index';
 import { saveToRecentKeywords } from 'lib/recentSearchKeywords';
+import { Badge } from 'toolkit/chakra/badge';
 import { useColorMode } from 'toolkit/chakra/color-mode';
 import { Image } from 'toolkit/chakra/image';
 import { Link } from 'toolkit/chakra/link';
@@ -298,6 +299,35 @@ const SearchResultTableItem = ({ data, searchTerm, isLoading, addressFormat }: P
                 </Skeleton>
               </TableCell>
             ) }
+          </>
+        );
+      }
+
+      case 'price_update': {
+        return (
+          <>
+            <TableCell colSpan={ 2 } fontSize="sm">
+              <TxEntity.Container>
+                <TxEntity.Icon/>
+                <TxEntity.Link
+                  isLoading={ isLoading }
+                  hash={ data.hash }
+                  href={ route({ pathname: '/feed/update/[hash]', query: { hash: data.hash } }) }
+                  onClick={ handleLinkClick }
+                >
+                  <TxEntity.Content
+                    asProp="mark"
+                    hash={ data.hash }
+                    textStyle="sm"
+                    fontWeight={ 700 }
+                  />
+                </TxEntity.Link>
+                <Badge colorPalette="green" ml={ 2 } flexShrink={ 0 }>Price update</Badge>
+              </TxEntity.Container>
+            </TableCell>
+            <TableCell fontSize="sm" verticalAlign="middle" isNumeric>
+              <Time timestamp={ data.timestamp } color="text.secondary" format="lll_s"/>
+            </TableCell>
           </>
         );
       }

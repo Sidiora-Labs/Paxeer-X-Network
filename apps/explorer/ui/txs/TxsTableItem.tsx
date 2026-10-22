@@ -22,6 +22,7 @@ import NativeCoinValue from 'ui/shared/value/NativeCoinValue';
 import TxAdditionalInfo from 'ui/txs/TxAdditionalInfo';
 
 import TxAdditionalInfoContent from './TxAdditionalInfoContent';
+import { isPriceUpdate, PriceUpdateFromTo, priceUpdateHref, priceUpdateMethod } from './TxPriceUpdate';
 import TxTranslationType from './TxTranslationType';
 import TxType from './TxType';
 
@@ -56,17 +57,20 @@ const TxsTableItem = ({
 
   const protocolTag = tx.to?.hash !== currentAddress && tx.to?.metadata?.tags?.find(tag => tag.tagType === 'protocol');
 
-  const method = tx.method ?? (tx.raw_input && tx.raw_input.length >= SELECTOR_LENGTH ? tx.raw_input.slice(0, SELECTOR_LENGTH) : undefined);
+  const priceUpdate = isPriceUpdate(tx);
+
+  const evmMethod = tx.method ?? (tx.raw_input && tx.raw_input.length >= SELECTOR_LENGTH ? tx.raw_input.slice(0, SELECTOR_LENGTH) : undefined);
+  const method = priceUpdate ? priceUpdateMethod(tx) : evmMethod;
 
   return (
     <TableRow key={ tx.hash } animation={ animation }>
       <TableCell textAlign="center" px={ 2 }>
-        { isMobile ?
-          <TxAdditionalInfo tx={ tx } isMobile isLoading={ isLoading }/> : (
-            <ScanPreviewButton label="Transaction preview" isLoading={ isLoading }>
-              <TxAdditionalInfoContent tx={ tx }/>
-            </ScanPreviewButton>
-          ) }
+        { !priceUpdate && isMobile && <TxAdditionalInfo tx={ tx } isMobile isLoading={ isLoading }/> }
+        { !priceUpdate && !isMobile && (
+          <ScanPreviewButton label="Transaction preview" isLoading={ isLoading }>
+            <TxAdditionalInfoContent tx={ tx }/>
+          </ScanPreviewButton>
+        ) }
       </TableCell>
       { chainData && (
         <TableCell>
@@ -87,6 +91,7 @@ const TxsTableItem = ({
           ) }
           <TxEntity
             hash={ tx.hash }
+            href={ priceUpdate ? priceUpdateHref(tx.hash) : undefined }
             isLoading={ isLoading }
             fontWeight="medium"
             noIcon
@@ -143,38 +148,46 @@ const TxsTableItem = ({
         />
       </TableCell>
       <TableCell>
-        <AddressFromTo
-          from={ tx.from }
-          to={ dataTo }
-          current={ currentAddress }
-          isLoading={ isLoading }
-          mt="2px"
-          mode="long"
-        />
+        { priceUpdate ? (
+          <PriceUpdateFromTo tx={ tx } current={ currentAddress } isLoading={ isLoading } mt="2px"/>
+        ) : (
+          <AddressFromTo
+            from={ tx.from }
+            to={ dataTo }
+            current={ currentAddress }
+            isLoading={ isLoading }
+            mt="2px"
+            mode="long"
+          />
+        ) }
       </TableCell>
       { !config.UI.views.tx.hiddenFields?.value && (
         <TableCell isNumeric>
-          <NativeCoinValue
-            amount={ tx.value }
-            noSymbol
-            loading={ isLoading }
-            exchangeRate={ tx.exchange_rate }
-            historicalExchangeRate={ tx.historic_exchange_rate }
-            layout="vertical"
-            rowGap={ 3 }
-          />
+          { priceUpdate ? '-' : (
+            <NativeCoinValue
+              amount={ tx.value }
+              noSymbol
+              loading={ isLoading }
+              exchangeRate={ tx.exchange_rate }
+              historicalExchangeRate={ tx.historic_exchange_rate }
+              layout="vertical"
+              rowGap={ 3 }
+            />
+          ) }
         </TableCell>
       ) }
       { !config.UI.views.tx.hiddenFields?.tx_fee && (
         <TableCell isNumeric maxW="220px" pr={ 5 }>
-          <TxFee
-            tx={ tx }
-            accuracy={ 8 }
-            loading={ isLoading }
-            noSymbol={ !(tx.celo || tx.stability_fee) }
-            layout="vertical"
-            rowGap={ 3 }
-          />
+          { priceUpdate ? '-' : (
+            <TxFee
+              tx={ tx }
+              accuracy={ 8 }
+              loading={ isLoading }
+              noSymbol={ !(tx.celo || tx.stability_fee) }
+              layout="vertical"
+              rowGap={ 3 }
+            />
+          ) }
         </TableCell>
       ) }
     </TableRow>

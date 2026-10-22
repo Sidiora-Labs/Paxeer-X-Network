@@ -8,6 +8,7 @@ import * as addressMock from 'mocks/address/address';
 import { publicTag, privateTag, watchlistName } from 'mocks/address/tag';
 import * as interopMock from 'mocks/interop/interop';
 import { protocolTag } from 'mocks/metadata/address';
+import * as feedMock from 'mocks/paxeerX/feed';
 import * as tokenTransferMock from 'mocks/tokens/tokenTransfer';
 import * as decodedInputDataMock from 'mocks/txs/decodedInputData';
 
@@ -496,3 +497,6 @@ export const rpcTxReceipt: RpcTransactionReceipt = {
   transactionIndex: '0x2',
   type: '0x2',
 };
+
+// A price update reaches the transaction lists as the price feed item, without the EVM-only fields.
+export const priceUpdate = feedMock.priceUpdate as unknown as Transaction;

@@ -12,6 +12,7 @@ import dayjs from 'lib/date/dayjs';
 import highlightText from 'lib/highlightText';
 import * as mixpanel from 'lib/mixpanel/index';
 import { saveToRecentKeywords } from 'lib/recentSearchKeywords';
+import { Badge } from 'toolkit/chakra/badge';
 import { useColorMode } from 'toolkit/chakra/color-mode';
 import { Image } from 'toolkit/chakra/image';
 import { Link } from 'toolkit/chakra/link';
@@ -199,6 +200,28 @@ const SearchResultListItem = ({ data, searchTerm, isLoading, addressFormat }: Pr
         );
       }
 
+      case 'price_update': {
+        return (
+          <TxEntity.Container>
+            <TxEntity.Icon/>
+            <TxEntity.Link
+              isLoading={ isLoading }
+              hash={ data.hash }
+              href={ route({ pathname: '/feed/update/[hash]', query: { hash: data.hash } }) }
+              onClick={ handleLinkClick }
+            >
+              <TxEntity.Content
+                asProp="mark"
+                hash={ data.hash }
+                textStyle="sm"
+                fontWeight={ 700 }
+              />
+            </TxEntity.Link>
+            <Badge colorPalette="green" ml={ 2 } flexShrink={ 0 }>Price update</Badge>
+          </TxEntity.Container>
+        );
+      }
+
       case 'transaction': {
         return (
           <TxEntity.Container>
@@ -371,7 +394,8 @@ const SearchResultListItem = ({ data, searchTerm, isLoading, addressFormat }: Pr
           </>
         );
       }
-      case 'transaction': {
+      case 'transaction':
+      case 'price_update': {
         return (
           <Time timestamp={ data.timestamp } color="text.secondary" format="lll_s"/>
         );

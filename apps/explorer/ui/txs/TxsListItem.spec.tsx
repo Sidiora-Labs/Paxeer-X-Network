@@ -61,4 +61,20 @@ describe('TxsListItem', () => {
     expect(container.querySelector('a[href^="/block/"]')?.getAttribute('href')).toBe(`/block/${ txMock.base.block_number }`);
     expect(container.querySelectorAll('a[href^="/address/"]')).toHaveLength(2);
   });
+
+  it('shows a price update with its badge, market count, feeder and the price feed in place of a recipient', () => {
+    const { container } = renderItem(txMock.priceUpdate);
+
+    const text = container.textContent ?? '';
+
+    expect(text).toContain('Price update');
+    expect(container.querySelector('[data-scan-method]')?.getAttribute('data-scan-method')).toBe('Price update · 2 markets');
+    expect(container.querySelector('a[href^="/feed/update/"]')?.getAttribute('href')).toBe(`/feed/update/${ txMock.priceUpdate.hash }`);
+    expect(container.querySelector('a[href^="/tx/"]')).toBeNull();
+    expect(Array.from(container.querySelectorAll('a[href^="/address/"]')).map((link) => link.getAttribute('href')))
+      .toEqual([ `/address/${ txMock.priceUpdate.from.hash }` ]);
+    expect(container.querySelector('[data-price-update-to] a[href="/feed"]')?.textContent).toBe('Price feed');
+    expect(text.indexOf('Value-')).toBeGreaterThan(-1);
+    expect(text.indexOf('Fee-')).toBeGreaterThan(-1);
+  });
 });

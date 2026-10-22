@@ -58,6 +58,7 @@ export interface Block {
   burnt_blob_fees?: string;
   excess_blob_gas?: string;
   blob_transactions_count?: number;
+  price_update_count?: number;
   // ZKSYNC FIELDS
   zksync?: Omit<ZkSyncBatchesItem, 'number' | 'transactions_count' | 'timestamp'> & {
     batch_number: number | null;

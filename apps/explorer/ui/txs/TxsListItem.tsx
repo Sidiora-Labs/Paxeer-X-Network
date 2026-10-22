@@ -24,6 +24,7 @@ import NativeCoinValue from 'ui/shared/value/NativeCoinValue';
 import TxAdditionalInfo from 'ui/txs/TxAdditionalInfo';
 import TxType from 'ui/txs/TxType';
 
+import { isPriceUpdate, PriceUpdateFromTo, priceUpdateHref, priceUpdateMethod } from './TxPriceUpdate';
 import TxTranslationType from './TxTranslationType';
 
 const SELECTOR_LENGTH = 10;
@@ -55,7 +56,10 @@ const TxsListItem = ({
 
   const protocolTag = tx.to?.hash !== currentAddress && tx.to?.metadata?.tags?.find(tag => tag.tagType === 'protocol');
 
-  const method = tx.method ?? (tx.raw_input && tx.raw_input.length >= SELECTOR_LENGTH ? tx.raw_input.slice(0, SELECTOR_LENGTH) : undefined);
+  const priceUpdate = isPriceUpdate(tx);
+
+  const evmMethod = tx.method ?? (tx.raw_input && tx.raw_input.length >= SELECTOR_LENGTH ? tx.raw_input.slice(0, SELECTOR_LENGTH) : undefined);
+  const method = priceUpdate ? priceUpdateMethod(tx) : evmMethod;
 
   return (
     <ListItemMobile display="block" width="100%" animation={ animation } key={ tx.hash }>
@@ -74,12 +78,13 @@ const TxsListItem = ({
           <TxWatchListTags tx={ tx } isLoading={ isLoading }/>
           { protocolTag && <EntityTag data={ protocolTag } isLoading={ isLoading } noColors/> }
         </HStack>
-        <TxAdditionalInfo tx={ tx } isMobile isLoading={ isLoading }/>
+        { !priceUpdate && <TxAdditionalInfo tx={ tx } isMobile isLoading={ isLoading }/> }
       </Flex>
       <Flex justifyContent="space-between" lineHeight="24px" mt={ 3 } alignItems="center">
         <TxEntity
           isLoading={ isLoading }
           hash={ tx.hash }
+          href={ priceUpdate ? priceUpdateHref(tx.hash) : undefined }
           truncation="constant_long"
           fontWeight="700"
           icon={ !tx.is_pending_update && tx.transaction_types.includes('blob_transaction') ? { name: 'blob' } : undefined }
@@ -111,24 +116,30 @@ const TxsListItem = ({
           />
         </Flex>
       ) }
-      <AddressFromTo
-        from={ tx.from }
-        to={ dataTo }
-        current={ currentAddress }
-        isLoading={ isLoading }
-        mt={ 6 }
-        fontWeight="500"
-      />
+      { priceUpdate ? (
+        <PriceUpdateFromTo tx={ tx } current={ currentAddress } isLoading={ isLoading } mt={ 6 } fontWeight="500"/>
+      ) : (
+        <AddressFromTo
+          from={ tx.from }
+          to={ dataTo }
+          current={ currentAddress }
+          isLoading={ isLoading }
+          mt={ 6 }
+          fontWeight="500"
+        />
+      ) }
       { !config.UI.views.tx.hiddenFields?.value && (
         <Flex mt={ 2 } columnGap={ 2 }>
           <Skeleton loading={ isLoading } display="inline-block" whiteSpace="pre">Value</Skeleton>
-          <NativeCoinValue
-            amount={ tx.value }
-            exchangeRate={ tx.exchange_rate }
-            historicalExchangeRate={ tx.historic_exchange_rate }
-            loading={ isLoading }
-            color="text.secondary"
-          />
+          { priceUpdate ? <Skeleton loading={ isLoading } color="text.secondary">-</Skeleton> : (
+            <NativeCoinValue
+              amount={ tx.value }
+              exchangeRate={ tx.exchange_rate }
+              historicalExchangeRate={ tx.historic_exchange_rate }
+              loading={ isLoading }
+              color="text.secondary"
+            />
+          ) }
         </Flex>
       ) }
       { !config.UI.views.tx.hiddenFields?.tx_fee && (
@@ -136,7 +147,9 @@ const TxsListItem = ({
           { (tx.stability_fee !== undefined || tx.fee.value !== null) && (
             <>
               <Skeleton loading={ isLoading } display="inline-block" whiteSpace="pre">Fee</Skeleton>
-              <TxFee tx={ tx } loading={ isLoading } color="text.secondary"/>
+              { priceUpdate ?
+                <Skeleton loading={ isLoading } color="text.secondary">-</Skeleton> :
+                <TxFee tx={ tx } loading={ isLoading } color="text.secondary"/> }
             </>
           ) }
         </Flex>

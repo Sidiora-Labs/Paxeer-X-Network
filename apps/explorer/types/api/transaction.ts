@@ -5,6 +5,7 @@ import type { DecodedInput } from './decodedInput';
 import type { Fee } from './fee';
 import type { ChainInfo, MessageStatus } from './interop';
 import type { OptimisticL2WithdrawalClaimInfo, OptimisticL2WithdrawalStatus } from './optimisticL2';
+import type { PriceUpdateSummary } from './paxeerXFeed';
 import type { ScrollL2BlockStatus } from './scrollL2';
 import type { TokenInfo } from './token';
 import type { TokenTransfer } from './tokenTransfer';
@@ -116,6 +117,8 @@ export type Transaction = {
   op_interop_messages?: Array<InteropTransactionInfo>;
   // FHE operations
   fhe_operations_count?: number;
+  // Paxeer X price feed submission
+  price_update?: PriceUpdateSummary;
 };
 
 type ArbitrumTransactionData = {
@@ -191,7 +194,8 @@ export type TransactionType = 'rootstock_remasc' |
 'contract_call' |
 'token_creation' |
 'coin_transfer' |
-'blob_transaction';
+'blob_transaction' |
+'price_update';
 
 export type TxsResponse = TransactionsResponseValidated | TransactionsResponsePending | BlockTransactionsResponse;
 
