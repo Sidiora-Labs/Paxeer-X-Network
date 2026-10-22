@@ -10,16 +10,16 @@ import {
   type AbiReadField,
   type AbiReadRecord,
 } from "./abi-read.ts";
-import { ethBlockNumber, ethCall, ethGetLogs, type GatewayLog } from "./gateway.ts";
+import { GatewayRpcError, ethBlockNumber, ethCall, ethGetLogs, type GatewayLog } from "./gateway.ts";
 import {
   BRIDGE_EVENTS,
-  EXCHANGE_EVENTS,
   LAUNCHPAD_PRECOMPILE,
   LAYERX_BRIDGE_PRECOMPILE,
-  LAYERX_EXCHANGE_PRECOMPILE,
+  PERPS_PRECOMPILE,
+  PrecompileAbiError,
   abiEventTopic,
+  abiSelector,
   decodeBridgeEvent,
-  decodeExchangeEvent,
   encodeAbiCall,
   precompileEventSignature,
   type DecodedPrecompileEvent,
@@ -29,7 +29,6 @@ import {
 export const PRECOMPILE_LOG_WINDOW = 50_000n;
 
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
-const ZERO32 = `0x${"00".repeat(32)}`;
 
 async function view(to: string, data: string, outputs: readonly AbiReadField[]): Promise<AbiReadRecord> {
   return decodeAbiResult(await ethCall({ to, data }), outputs);
@@ -353,140 +352,250 @@ export async function bridgeActivity(recipient: string): Promise<readonly Observ
   ]);
 }
 
-/* Exchange */
+/* Perps (0x1015) */
 
-const INTENT_FIELDS: readonly AbiReadField[] = [
-  { name: "intentId", type: "bytes32" },
-  { name: "kind", type: "uint8" },
-  { name: "status", type: "uint8" },
-  { name: "owner", type: "address" },
-  { name: "nonce", type: "uint64" },
-  { name: "height", type: "uint64" },
-  { name: "account", type: "bytes32" },
-  { name: "assetId", type: "bytes32" },
-  { name: "denom", type: "string" },
-  { name: "amount", type: "uint256" },
-  { name: "depositId", type: "bytes32" },
-  { name: "marketId", type: "bytes32" },
-  { name: "side", type: "uint8" },
-  { name: "price", type: "uint256" },
-  { name: "quantity", type: "uint256" },
-  { name: "timeInForce", type: "uint8" },
-  { name: "orderId", type: "bytes32" },
-  { name: "positionId", type: "bytes32" },
+/** The USDL collateral the perps module lists by default (modules/perps/types/params.go DefaultCollateralToken). */
+export const PERPS_COLLATERAL_TOKEN = "0x85fcd13735f4309833a503ee804ea32395851479";
+/** USDL carries 6 decimals: the perps keeper prices one USDL unit at 1e12 of its 18-decimal USD. */
+export const PERPS_COLLATERAL_DECIMALS = 6;
+/** USD sizes and prices of the perps precompile are 18-decimal fixed point. */
+export const PERPS_USD_DECIMALS = 18;
+/** The bound on totalMarkets() a market listing accepts. */
+export const PERPS_MAX_MARKETS = 1024n;
+
+/** The parameterless custom errors of precompiles/perps/abi/abi.json, the revert data of every keeper refusal. */
+export const PERPS_ERRORS = [
+  "PerpsCloseSizeExceedsPosition", "PerpsCrossMarginOnly", "PerpsDeadlineExpired", "PerpsDelegatecall",
+  "PerpsDuplicateCloid", "PerpsFokNotFilled", "PerpsInsufficientCollateral", "PerpsInsufficientMargin",
+  "PerpsInvalidGenesis", "PerpsInvalidOrderType", "PerpsInvalidParams", "PerpsInvalidTimeInForce",
+  "PerpsInvalidTriggerPrice", "PerpsLeverageTooHigh", "PerpsLiquidationCooldown", "PerpsLotSize",
+  "PerpsMarketDisabled", "PerpsMaxOrderValue", "PerpsMinOrderValue", "PerpsNoAccount", "PerpsNoLiquidity",
+  "PerpsNotLiquidatable", "PerpsNotOrderHolder", "PerpsNotPositionHolder", "PerpsOpenInterestCap", "PerpsOverflow",
+  "PerpsPaused", "PerpsPostOnlyWouldCross", "PerpsPriceStale", "PerpsReduceOnlyViolation", "PerpsSelfTransfer",
+  "PerpsSlippageExceeded", "PerpsStaticCall", "PerpsTickSize", "PerpsTokenTransferFailed", "PerpsTooManyOpenOrders",
+  "PerpsTriggerNotReached", "PerpsUnauthorized", "PerpsUnknownMarket", "PerpsUnknownOrder", "PerpsUnknownPosition",
+  "PerpsUnsupportedCollateral", "PerpsZeroAddress", "PerpsZeroAmount",
+] as const;
+
+const PERPS_ERROR_BY_SELECTOR: ReadonlyMap<string, string> = new Map(
+  PERPS_ERRORS.map((name) => [abiSelector(`${name}()`), name]),
+);
+const ERROR_STRING = "0x08c379a0";
+
+/** The reason a perps precompile revert carries: its custom error name or its Error(string) text. */
+export function perpsRevertReason(data: string | undefined): string | undefined {
+  if (data === undefined) {
+    return undefined;
+  }
+  const lowered = data.toLowerCase();
+  const named = PERPS_ERROR_BY_SELECTOR.get(lowered);
+  if (named !== undefined) {
+    return named;
+  }
+  if (lowered.startsWith(ERROR_STRING)) {
+    try {
+      return readText(decodeAbiResult(`0x${lowered.slice(ERROR_STRING.length)}`, [{ name: "reason", type: "string" }]).reason, "reason");
+    } catch (error) {
+      if (error instanceof PrecompileAbiError) {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+  return undefined;
+}
+
+/** A perps revert rethrown with the precompile's reason as its message. */
+function perpsRevert(error: unknown): unknown {
+  if (!(error instanceof GatewayRpcError)) {
+    return error;
+  }
+  const reason = perpsRevertReason(error.data);
+  return reason === undefined ? error : new GatewayRpcError(error.code, `The perps precompile refused: ${reason}`, error.data);
+}
+
+async function perpsView(data: string, outputs: readonly AbiReadField[]): Promise<AbiReadRecord> {
+  try {
+    return decodeAbiResult(await ethCall({ to: PERPS_PRECOMPILE, data }), outputs);
+  } catch (error) {
+    throw perpsRevert(error);
+  }
+}
+
+/** Runs `data` against 0x1015 as `from` at the latest height; the precompile's revert reason, or undefined when it would succeed. */
+export async function perpsPreflight(from: string, data: string): Promise<string | undefined> {
+  try {
+    await ethCall({ from, to: PERPS_PRECOMPILE, data });
+    return undefined;
+  } catch (error) {
+    const refused = perpsRevert(error);
+    if (refused instanceof GatewayRpcError) {
+      return refused.message;
+    }
+    throw refused;
+  }
+}
+
+export interface PerpsMarket {
+  readonly marketId: bigint;
+  readonly name: string;
+  readonly symbol: string;
+  readonly maxLeverage: bigint;
+  readonly maintenanceMarginBps: bigint;
+  readonly maxOpenInterest: bigint;
+  readonly enabled: boolean;
+}
+
+const MARKET_FIELDS: readonly AbiReadField[] = [
+  { name: "name", type: "string" },
+  { name: "symbol", type: "string" },
+  { name: "maxLeverage", type: "uint256" },
+  { name: "maintenanceMarginBps", type: "uint256" },
+  { name: "maxOpenInterest", type: "uint256" },
+  { name: "enabled", type: "bool" },
 ];
 
-export type ExchangeIntentKind = "deposit" | "withdraw" | "place" | "cancel" | "settle" | "unknown";
-
-export interface ExchangeIntent {
-  readonly intentId: string;
-  readonly kind: ExchangeIntentKind;
-  readonly pending: boolean;
-  readonly marketId: string;
-  readonly side: bigint;
-  readonly price: bigint;
-  readonly quantity: bigint;
-  readonly timeInForce: bigint;
-  readonly orderId: string | null;
-  readonly positionId: string | null;
-  readonly amount: bigint;
-  readonly assetId: string;
-}
-
-const INTENT_KINDS: readonly ExchangeIntentKind[] = ["unknown", "deposit", "withdraw", "place", "cancel", "settle"];
-
-export async function exchangeIntent(intentId: string): Promise<ExchangeIntent> {
-  const result = await view(LAYERX_EXCHANGE_PRECOMPILE, encodeAbiCall("getIntent", ["bytes32"], [intentId]), [
-    { name: "intent", type: { tuple: INTENT_FIELDS } },
-  ]);
-  const intent = readRecord(result.intent, "intent");
-  const orderId = readText(intent.orderId, "orderId");
-  const positionId = readText(intent.positionId, "positionId");
-  return {
-    intentId,
-    kind: INTENT_KINDS[Number(readUint(intent.kind, "kind"))] ?? "unknown",
-    pending: readUint(intent.status, "status") === 1n,
-    marketId: readText(intent.marketId, "marketId"),
-    side: readUint(intent.side, "side"),
-    price: readUint(intent.price, "price"),
-    quantity: readUint(intent.quantity, "quantity"),
-    timeInForce: readUint(intent.timeInForce, "timeInForce"),
-    orderId: orderId === ZERO32 ? null : orderId,
-    positionId: positionId === ZERO32 ? null : positionId,
-    amount: readUint(intent.amount, "amount"),
-    assetId: readText(intent.assetId, "assetId"),
-  };
-}
-
-export interface ExchangeOrder {
-  readonly intentId: string;
-  readonly marketId: string;
-  readonly side: bigint;
-  readonly price: bigint;
-  readonly quantity: bigint;
-  readonly timeInForce: bigint;
-  readonly orderId: string | null;
-  readonly pending: boolean;
-  readonly transactionHash: string;
-}
-
-export interface ExchangePosition {
-  readonly positionId: string;
-  readonly settlementPending: boolean;
-  readonly transactionHash: string;
-}
-
-export interface ExchangeState {
-  readonly events: readonly ObservedEvent[];
-  readonly openOrders: readonly ExchangeOrder[];
-  readonly positions: readonly ExchangePosition[];
-}
-
-function text(event: DecodedPrecompileEvent, field: string): string {
-  const value = event.fields[field];
-  return typeof value === "string" ? value : "";
-}
-
-function amount(event: DecodedPrecompileEvent, field: string): bigint {
-  const value = event.fields[field];
-  return typeof value === "bigint" ? value : 0n;
-}
-
-/** Every LayerXExchange event `owner` emitted in the scan window, with the orders and positions it names. */
-export async function exchangeState(owner: string): Promise<ExchangeState> {
-  const logs = await recentLogs(LAYERX_EXCHANGE_PRECOMPILE, [null, null, null, addressTopic(owner)]);
-  const events = newestFirst(logs.map((log) => observed(log, decodeExchangeEvent))).filter((entry) =>
-    EXCHANGE_EVENTS.some((spec) => spec.name === entry.event.event),
-  );
-  const cancelled = new Set(
-    events.filter((entry) => entry.event.event === "OrderCancelRequested").map((entry) => text(entry.event, "orderId")),
-  );
-  const placed = events.filter((entry) => entry.event.event === "OrderPlaced");
-  const settlements = events.filter((entry) => entry.event.event === "SettlementRequested");
-  const intents = await Promise.all(placed.map((entry) => exchangeIntent(text(entry.event, "intentId"))));
-  const openOrders = placed
-    .map((entry, index): ExchangeOrder => {
-      const intent = intents[index];
+/** Every listed market: ids 0 to totalMarkets() - 1, each read with getMarket(id). */
+export async function perpsMarkets(): Promise<readonly PerpsMarket[]> {
+  const count = readUint((await perpsView(encodeAbiCall("totalMarkets", [], []), [{ name: "count", type: "uint256" }])).count, "count");
+  if (count > PERPS_MAX_MARKETS) {
+    throw new PrecompileAbiError("invalid_value", `totalMarkets ${count.toString()} above ${PERPS_MAX_MARKETS.toString()}`);
+  }
+  return Promise.all(
+    Array.from({ length: Number(count) }, async (_, index): Promise<PerpsMarket> => {
+      const marketId = BigInt(index);
+      const market = await perpsView(encodeAbiCall("getMarket", ["uint256"], [marketId]), MARKET_FIELDS);
       return {
-        intentId: text(entry.event, "intentId"),
-        marketId: text(entry.event, "marketId"),
-        side: amount(entry.event, "side"),
-        price: amount(entry.event, "price"),
-        quantity: amount(entry.event, "quantity"),
-        timeInForce: amount(entry.event, "timeInForce"),
-        orderId: intent?.orderId ?? null,
-        pending: intent?.pending ?? false,
-        transactionHash: entry.transactionHash,
+        marketId,
+        name: readText(market.name, "name"),
+        symbol: readText(market.symbol, "symbol"),
+        maxLeverage: readUint(market.maxLeverage, "maxLeverage"),
+        maintenanceMarginBps: readUint(market.maintenanceMarginBps, "maintenanceMarginBps"),
+        maxOpenInterest: readUint(market.maxOpenInterest, "maxOpenInterest"),
+        enabled: readFlag(market.enabled, "enabled"),
       };
-    })
-    .filter((order) => order.orderId === null || !cancelled.has(order.orderId));
-  const settlementIntents = await Promise.all(
-    settlements.map((entry) => exchangeIntent(text(entry.event, "intentId"))),
+    }),
   );
-  const positions = settlements.map((entry, index): ExchangePosition => ({
-    positionId: text(entry.event, "positionId"),
-    settlementPending: settlementIntents[index]?.pending ?? false,
-    transactionHash: entry.transactionHash,
-  }));
-  return { events, openOrders, positions };
+}
+
+export interface PerpsPosition {
+  readonly positionId: bigint;
+  readonly marketId: bigint;
+  readonly isLong: boolean;
+  readonly sizeUsd: bigint;
+  readonly collateralUsd: bigint;
+  readonly collateralAmount: bigint;
+  readonly entryPrice: bigint;
+}
+
+export interface PerpsOrder {
+  readonly orderId: bigint;
+  readonly marketId: bigint;
+  readonly isLong: boolean;
+  readonly orderType: bigint;
+  readonly triggerPrice: bigint;
+  readonly limitPrice: bigint;
+  readonly sizeUsd: bigint;
+  readonly collateralAmount: bigint;
+}
+
+export interface PerpsAccount {
+  readonly idle: bigint;
+  readonly locked: bigint;
+  readonly positions: readonly PerpsPosition[];
+  readonly orders: readonly PerpsOrder[];
+}
+
+const POSITION_FIELDS: readonly AbiReadField[] = [
+  { name: "user", type: "address" },
+  { name: "marketId", type: "uint256" },
+  { name: "isLong", type: "bool" },
+  { name: "sizeUsd", type: "uint256" },
+  { name: "collateralUsd", type: "uint256" },
+  { name: "collateralToken", type: "address" },
+  { name: "collateralAmount", type: "uint256" },
+  { name: "entryPrice", type: "uint256" },
+  { name: "timestamp", type: "uint256" },
+  { name: "active", type: "bool" },
+];
+
+const ORDER_FIELDS: readonly AbiReadField[] = [
+  { name: "user", type: "address" },
+  { name: "marketId", type: "uint256" },
+  { name: "isLong", type: "bool" },
+  { name: "orderType", type: "uint8" },
+  { name: "triggerPrice", type: "uint256" },
+  { name: "limitPrice", type: "uint256" },
+  { name: "sizeUsd", type: "uint256" },
+  { name: "leverage", type: "uint256" },
+  { name: "collateralToken", type: "address" },
+  { name: "collateralAmount", type: "uint256" },
+  { name: "active", type: "bool" },
+];
+
+const SUMMARY_FIELDS: readonly AbiReadField[] = [
+  { name: "summary", type: { tuple: [
+    { name: "idle", type: "uint256" },
+    { name: "totalLocked", type: "uint256" },
+    { name: "positionCount", type: "uint256" },
+  ] } },
+];
+
+async function perpsIds(method: "getUserPositionIds" | "getUserOrderIds", owner: string): Promise<readonly bigint[]> {
+  const result = await perpsView(encodeAbiCall(method, ["address"], [owner]), [{ name: "ids", type: { array: "uint256" } }]);
+  return readList(result.ids, "ids").map((id) => readUint(id, "id"));
+}
+
+/** The USDL cross account, open positions and active orders `owner` holds on the perps precompile. */
+export async function perpsAccount(owner: string): Promise<PerpsAccount> {
+  if (!EVM_ADDRESS.test(owner)) {
+    throw new RangeError("an EVM address is required");
+  }
+  const [summaryResult, positionIds, orderIds] = await Promise.all([
+    perpsView(encodeAbiCall("getAccountSummary", ["address", "address"], [owner, PERPS_COLLATERAL_TOKEN]), SUMMARY_FIELDS),
+    perpsIds("getUserPositionIds", owner),
+    perpsIds("getUserOrderIds", owner),
+  ]);
+  const summary = readRecord(summaryResult.summary, "summary");
+  const [positions, orders] = await Promise.all([
+    Promise.all(
+      positionIds.map(async (positionId) => {
+        const position = await perpsView(encodeAbiCall("getPosition", ["uint256"], [positionId]), POSITION_FIELDS);
+        return readFlag(position.active, "active")
+          ? [{
+              positionId,
+              marketId: readUint(position.marketId, "marketId"),
+              isLong: readFlag(position.isLong, "isLong"),
+              sizeUsd: readUint(position.sizeUsd, "sizeUsd"),
+              collateralUsd: readUint(position.collateralUsd, "collateralUsd"),
+              collateralAmount: readUint(position.collateralAmount, "collateralAmount"),
+              entryPrice: readUint(position.entryPrice, "entryPrice"),
+            }]
+          : [];
+      }),
+    ),
+    Promise.all(
+      orderIds.map(async (orderId) => {
+        const order = await perpsView(encodeAbiCall("getOrder", ["uint256"], [orderId]), ORDER_FIELDS);
+        return readFlag(order.active, "active")
+          ? [{
+              orderId,
+              marketId: readUint(order.marketId, "marketId"),
+              isLong: readFlag(order.isLong, "isLong"),
+              orderType: readUint(order.orderType, "orderType"),
+              triggerPrice: readUint(order.triggerPrice, "triggerPrice"),
+              limitPrice: readUint(order.limitPrice, "limitPrice"),
+              sizeUsd: readUint(order.sizeUsd, "sizeUsd"),
+              collateralAmount: readUint(order.collateralAmount, "collateralAmount"),
+            }]
+          : [];
+      }),
+    ),
+  ]);
+  return {
+    idle: readUint(summary.idle, "idle"),
+    locked: readUint(summary.totalLocked, "totalLocked"),
+    positions: positions.flat(),
+    orders: orders.flat(),
+  };
 }

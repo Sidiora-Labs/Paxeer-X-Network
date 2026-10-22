@@ -1,15 +1,8 @@
 export {
-  EXCHANGE_EVENTS,
-  LAYERX_EXCHANGE_PRECOMPILE,
   PrecompileAbiError,
   abiEventTopic,
-  decodeExchangeEvent,
+  abiSelector,
   encodeAbiCall,
-  exchangeCancelOrderCall,
-  exchangeDepositMarginCall,
-  exchangePlaceOrderCall,
-  exchangeRequestSettlementCall,
-  exchangeWithdrawMarginCall,
   precompileEventSignature,
   precompileTransactionRequest,
   sendPrecompileCall,
@@ -18,6 +11,15 @@ export {
   type PrecompileEventSpec,
   type PrecompileLog,
 } from "../../../../services/agent/sdk/typescript/src/exchange.ts";
+export {
+  PERPS_PRECOMPILE,
+  perpsCancelOrderCall,
+  perpsClosePositionCall,
+  perpsDepositCall,
+  perpsOpenPositionCall,
+  perpsWithdrawCall,
+  type PerpsOpenPosition,
+} from "../../../../services/agent/sdk/typescript/src/perps.ts";
 export {
   BRIDGE_EVENTS,
   LAYERX_BRIDGE_PRECOMPILE,

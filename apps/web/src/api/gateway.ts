@@ -27,11 +27,13 @@ export class GatewayUnavailableError extends Error {
 
 export class GatewayRpcError extends Error {
   readonly code: number;
+  readonly data: string | undefined;
 
-  constructor(code: number, message: string) {
+  constructor(code: number, message: string, data?: string) {
     super(message);
     this.name = "GatewayRpcError";
     this.code = code;
+    this.data = data;
   }
 }
 
@@ -99,7 +101,11 @@ async function rpc(method: string, params: readonly unknown[]): Promise<unknown>
     if (!isObject(failure) || typeof failure.code !== "number" || typeof failure.message !== "string") {
       throw new GatewayUnavailableError(`${method} answered a malformed error`);
     }
-    throw new GatewayRpcError(failure.code, failure.message);
+    throw new GatewayRpcError(
+      failure.code,
+      failure.message,
+      typeof failure.data === "string" && DATA.test(failure.data) ? failure.data : undefined,
+    );
   }
   if (!("result" in document)) {
     throw new GatewayUnavailableError(`${method} answered no result`);
@@ -107,8 +113,9 @@ async function rpc(method: string, params: readonly unknown[]): Promise<unknown>
   return document.result;
 }
 
-export async function ethCall(call: Readonly<{ to: string; data: string }>): Promise<string> {
-  const result = await rpc("eth_call", [{ to: call.to, data: call.data }, "latest"]);
+export async function ethCall(call: Readonly<{ to: string; data: string; from?: string }>): Promise<string> {
+  const request = call.from === undefined ? { to: call.to, data: call.data } : { from: call.from, to: call.to, data: call.data };
+  const result = await rpc("eth_call", [request, "latest"]);
   if (typeof result !== "string" || !DATA.test(result)) {
     throw new GatewayUnavailableError("eth_call answered malformed data");
   }
