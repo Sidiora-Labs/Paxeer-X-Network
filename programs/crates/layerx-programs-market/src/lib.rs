@@ -1063,7 +1063,8 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
             absent(CLAIM_PREFIX, lease.id, &mut claim_bytes)?;
             let mut identity = [0; ID_BYTES];
             absent(CLAIM_ID_PREFIX, commitment.id, &mut identity)?;
-            let (claim, _) = settle::commit_usage(offer, &lease, commitment, caller, height)?;
+            let (claim, _) =
+                settle::commit_direct_usage(offer, &lease, commitment, caller, height)?;
             let written = settle::encode_claim(&claim, &mut claim_bytes)?;
             write_state(CLAIM_PREFIX, lease.id, &claim_bytes[..written])?;
             write_state(CLAIM_ID_PREFIX, claim.id, &lease.id)?;

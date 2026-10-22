@@ -1,6 +1,6 @@
 use layerx_program_sdk::{AccountId, Amount, Field, ProgramError, Reason};
 
-use crate::{ComputeLease, LeaseStatus, Offer};
+use crate::{ComputeLease, LeaseStatus, Offer, VerificationModel};
 
 #[cfg(target_arch = "wasm32")]
 use layerx_program_sdk::{
@@ -377,6 +377,27 @@ pub fn commit_usage(
     ))
 }
 
+/// Commits usage outside the sandbox billing path. A fraud-provable lease is refused here: its
+/// claim must go through the sandbox profile and billing rows that a challenge reads, or the
+/// claim could never be challenged.
+///
+/// # Errors
+/// Returns an error for a fraud-provable offer or lease, or for anything `commit_usage` refuses.
+pub fn commit_direct_usage(
+    offer: Offer<'_>,
+    lease: &ComputeLease<'_>,
+    commitment: ProviderCommitment,
+    principal: AccountId,
+    height: u64,
+) -> Result<(UsageClaim, ChallengeWindow), ProgramError> {
+    if lease.verification == VerificationModel::FraudProvable
+        || offer.verification == VerificationModel::FraudProvable
+    {
+        return Err(malformed());
+    }
+    commit_usage(offer, lease, commitment, principal, height)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ChallengeRequest<'a> {
     pub challenge_id: [u8; 32],
@@ -641,9 +662,7 @@ fn malformed() -> ProgramError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        expire, open, register, OpenLease, RegisterOffer, SettlementRecord, VerificationModel,
-    };
+    use crate::{expire, open, register, OpenLease, RegisterOffer, SettlementRecord};
 
     fn account(byte: u8) -> AccountId {
         AccountId::new([byte; 32]).unwrap_or_else(|error| panic!("settlement fixture: {error}"))
@@ -708,6 +727,34 @@ mod tests {
             challenger_stake: Amount::from_integer(25u64),
             challenge_window_batches: 10,
         }
+    }
+
+    #[test]
+    fn direct_usage_is_refused_for_fraud_provable_leases() {
+        let (offer, lease) = fixture();
+        assert_eq!(
+            commit_direct_usage(offer, &lease, commitment(), account(1), 20),
+            Err(malformed())
+        );
+        let bonded_lease = ComputeLease {
+            verification: VerificationModel::Bonded,
+            ..lease
+        };
+        assert_eq!(
+            commit_direct_usage(offer, &bonded_lease, commitment(), account(1), 20),
+            Err(malformed())
+        );
+        let bonded_offer = Offer {
+            verification: VerificationModel::Bonded,
+            ..offer
+        };
+        assert_eq!(
+            commit_direct_usage(bonded_offer, &bonded_lease, commitment(), account(1), 20),
+            commit_usage(bonded_offer, &bonded_lease, commitment(), account(1), 20)
+        );
+        assert!(
+            commit_direct_usage(bonded_offer, &bonded_lease, commitment(), account(1), 20).is_ok()
+        );
     }
 
     #[test]
