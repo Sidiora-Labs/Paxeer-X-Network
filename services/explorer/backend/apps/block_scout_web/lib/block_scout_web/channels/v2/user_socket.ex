@@ -13,6 +13,7 @@ defmodule BlockScoutWeb.V2.UserSocket do
   channel("tokens:*", BlockScoutWeb.V2.TokenChannel)
   channel("token_instances:*", BlockScoutWeb.TokenInstanceChannel)
   channel("zkevm_batches:*", BlockScoutWeb.V2.PolygonZkevmConfirmedBatchChannel)
+  channel("paxeer_x_feed:*", BlockScoutWeb.V2.PaxeerXFeedChannel)
 
   case @chain_type do
     :arbitrum -> channel("arbitrum:*", BlockScoutWeb.ArbitrumChannel)

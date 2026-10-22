@@ -14,6 +14,9 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdates do
   `@max_attempts` failed scans the height is recorded as failed with its last error.
   Either record is logged once.
 
+  Once a block's submissions are committed, from either path, the height is published as a
+  realtime `:paxeer_x_price_updates` chain event so the web notifier streams them.
+
   The market list is read from the price-feed precompile with `getMarketCount()` and
   `getMarket(uint256)` over the indexer's JSON-RPC when it is older than the refresh
   interval or a submission names a market it does not hold, and only for a block that
@@ -29,6 +32,7 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdates do
 
   alias EthereumJSONRPC.Contract
   alias Explorer.Chain.Block
+  alias Explorer.Chain.Events.Publisher
   alias Explorer.Chain.PaxeerX.PriceFeed
   alias Explorer.PaxeerX.CosmosRest
   alias Explorer.Repo
@@ -188,8 +192,12 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdates do
             state = maybe_refresh_markets(updates, state)
 
             case PriceFeed.replace_block_updates(block, updates) do
-              {:ok, _count} -> {:ok, state}
-              {:error, _} = error -> {error, state}
+              {:ok, count} ->
+                if count > 0, do: Publisher.broadcast(%{paxeer_x_price_updates: [number]}, :realtime)
+                {:ok, state}
+
+              {:error, _} = error ->
+                {error, state}
             end
 
           {:error, _} = error ->

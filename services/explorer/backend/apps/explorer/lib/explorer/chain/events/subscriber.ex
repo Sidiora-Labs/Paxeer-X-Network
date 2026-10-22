@@ -9,7 +9,7 @@ defmodule Explorer.Chain.Events.Subscriber do
     last_block_number token_transfers transactions contract_verification_result
     token_total_supply changed_bytecode fetched_bytecode fetched_token_instance_metadata not_fetched_token_instance_metadata
     smart_contract_was_verified zkevm_confirmed_batches eth_bytecode_db_lookup_started
-    smart_contract_was_not_verified)a
+    smart_contract_was_not_verified paxeer_x_price_updates)a
 
   case @chain_type do
     :arbitrum ->

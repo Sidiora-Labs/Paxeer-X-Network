@@ -100,7 +100,11 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.FeedView do
     }
   end
 
-  defp prepare_observation_update(%PriceObservation{update: %PriceUpdate{} = update} = observation) do
+  @doc """
+  Renders one observation, with its submission preloaded, as a market history item.
+  """
+  @spec prepare_observation_update(PriceObservation.t()) :: map()
+  def prepare_observation_update(%PriceObservation{update: %PriceUpdate{} = update} = observation) do
     %{
       "update_hash" => to_string(observation.update_hash),
       "block_number" => observation.block_number,

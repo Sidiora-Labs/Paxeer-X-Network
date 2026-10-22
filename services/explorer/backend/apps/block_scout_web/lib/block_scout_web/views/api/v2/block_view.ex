@@ -30,7 +30,9 @@ defmodule BlockScoutWeb.API.V2.BlockView do
 
   def render("block.json", %{block: block, socket: _socket}) do
     # single_block? set to true in order to prevent heavy fetching of reward type
-    prepare_block(block, nil, false)
+    block
+    |> prepare_block(nil, false)
+    |> Map.put("price_update_count", PriceFeed.block_update_count(block.hash))
   end
 
   def render("block_countdown.json", %{

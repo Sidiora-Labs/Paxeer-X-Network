@@ -16,6 +16,7 @@ defmodule BlockScoutWeb.Notifier do
     AddressView,
     BlockView,
     PolygonZkevmView,
+    PaxeerX.FeedView,
     SmartContractView,
     TransactionView
   }
@@ -35,9 +36,11 @@ defmodule BlockScoutWeb.Notifier do
     Address,
     Address.CoinBalance,
     Address.Reputation,
+    Block,
     BlockNumberHelper,
     DenormalizationHelper,
     InternalTransaction,
+    PaxeerX.PriceFeed,
     Token,
     Token.Instance,
     Transaction
@@ -188,6 +191,13 @@ defmodule BlockScoutWeb.Notifier do
     |> Enum.each(fn block ->
       broadcast_latest_block?(block, last_broadcasted_block_number)
     end)
+  end
+
+  def handle_event({:chain_event, :paxeer_x_price_updates, :realtime, block_numbers}) do
+    case block_numbers |> PriceFeed.updates_in_blocks() |> Enum.reverse() do
+      [] -> :ok
+      updates -> broadcast_price_updates(updates)
+    end
   end
 
   def handle_event({:chain_event, :zkevm_confirmed_batches, :realtime, batches}) do
@@ -631,12 +641,7 @@ defmodule BlockScoutWeb.Notifier do
   end
 
   defp broadcast_block(block) do
-    preloaded_block =
-      Repo.preload(block, [
-        [miner: [:names, :smart_contract, proxy_implementations_association()]],
-        :transactions,
-        :rewards
-      ])
+    preloaded_block = preload_block(block)
 
     average_block_time = AverageBlockTime.average_block_time()
 
@@ -651,7 +656,22 @@ defmodule BlockScoutWeb.Notifier do
       average_block_time: average_block_time
     })
 
-    block_params_v2 = %{
+    block_params_v2 = block_params_v2(preloaded_block, average_block_time)
+
+    Endpoint.broadcast("blocks:new_block", "new_block", block_params_v2)
+    Endpoint.broadcast("blocks:#{to_string(block.miner_hash)}", "new_block", block_params_v2)
+  end
+
+  defp preload_block(block) do
+    Repo.preload(block, [
+      [miner: [:names, :smart_contract, proxy_implementations_association()]],
+      :transactions,
+      :rewards
+    ])
+  end
+
+  defp block_params_v2(preloaded_block, average_block_time) do
+    %{
       average_block_time: to_string(Duration.to_milliseconds(average_block_time)),
       block:
         BlockView.render("block.json", %{
@@ -659,9 +679,47 @@ defmodule BlockScoutWeb.Notifier do
           socket: nil
         })
     }
+  end
 
-    Endpoint.broadcast("blocks:new_block", "new_block", block_params_v2)
-    Endpoint.broadcast("blocks:#{to_string(block.miner_hash)}", "new_block", block_params_v2)
+  # Each submission goes out oldest first as the feed item and as one market history item
+  # per observed market, the transaction lists get the count the EVM path sends, and each
+  # block carrying them is sent again on `blocks:new_block` with its price update count.
+  defp broadcast_price_updates(updates) do
+    symbols = PriceFeed.market_symbols()
+    block_height = Chain.block_height(@api_true)
+
+    Enum.each(updates, fn update ->
+      Endpoint.broadcast(
+        "paxeer_x_feed:new_update",
+        "new_update",
+        FeedView.prepare_update(update, symbols, block_height)
+      )
+
+      Enum.each(update.observations, fn observation ->
+        Endpoint.broadcast(
+          "paxeer_x_feed:market:#{observation.market_id}",
+          "new_update",
+          FeedView.prepare_observation_update(%{observation | update: update})
+        )
+      end)
+    end)
+
+    Endpoint.broadcast("transactions:new_transaction", "transaction", %{transaction: length(updates)})
+
+    average_block_time = AverageBlockTime.average_block_time()
+
+    updates
+    |> Enum.map(& &1.block_hash)
+    |> Enum.uniq()
+    |> Enum.each(fn block_hash ->
+      case Repo.get_by(Block, hash: block_hash, consensus: true) do
+        nil ->
+          :ok
+
+        block ->
+          Endpoint.broadcast("blocks:new_block", "new_block", block_params_v2(preload_block(block), average_block_time))
+      end
+    end)
   end
 
   defp broadcast_rewards(rewards) do

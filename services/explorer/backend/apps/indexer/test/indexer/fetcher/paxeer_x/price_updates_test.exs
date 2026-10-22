@@ -4,6 +4,7 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdatesTest do
   import Mox
 
   alias Explorer.Chain.Block
+  alias Explorer.Chain.Events.Subscriber
   alias Explorer.Chain.PaxeerX.{PriceFeed, PriceFeedScannedBlock, PriceMarket, PriceUpdate}
   alias Indexer.Fetcher.PaxeerX.PriceUpdates
 
@@ -60,6 +61,22 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdatesTest do
       assert length(markets) == 18
       assert %PriceMarket{market_id: 0, symbol: "BTC", chainflow_symbol: "BTC"} = hd(markets)
       assert %PriceMarket{market_id: 17, symbol: "BNB"} = List.last(markets)
+    end
+
+    test "publishes the height once its submissions are committed", %{rest: rest, rpc: rpc, state: state} do
+      insert(:block, number: 10)
+      insert(:block, number: 11)
+      serve(rest, "/cosmos/tx/v1beta1/txs/block/10", 200, "block_txs.json")
+      serve(rest, "/cosmos/tx/v1beta1/txs/block/11", 400, "block_txs_empty.json")
+      serve(rpc, "/block_results", 200, "block_results.json")
+      expect_markets()
+      Subscriber.to(:paxeer_x_price_updates, :realtime)
+
+      assert {:ok, _state} = PriceUpdates.run([10, 11], state)
+
+      assert_receive {:chain_event, :paxeer_x_price_updates, :realtime, [10]}
+      assert [%PriceUpdate{}] = PriceFeed.block_updates(10)
+      refute_receive {:chain_event, :paxeer_x_price_updates, :realtime, _}
     end
 
     test "marks a block without transactions scanned without asking for block results", %{rest: rest, state: state} do

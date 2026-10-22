@@ -49,6 +49,7 @@ defmodule BlockScoutWeb.RealtimeEventHandlers.Main do
     Subscriber.to(:fetched_token_instance_metadata, :on_demand)
     Subscriber.to(:not_fetched_token_instance_metadata, :on_demand)
     Subscriber.to(:zkevm_confirmed_batches, :realtime)
+    Subscriber.to(:paxeer_x_price_updates, :realtime)
     # Does not come from the indexer
     Subscriber.to(:exchange_rate)
     Subscriber.to(:transaction_stats)
