@@ -47,11 +47,11 @@ export class HttpClient {
 
   async recentTrades(poolAddress: string, options: { signal?: AbortSignal } = {}): Promise<RecentTrades> {
     if (!/^0x[0-9a-fA-F]{40}$/.test(poolAddress)) throw new TypeError('Invalid pool address');
-    const body = await this.get(`/bff/token/${poolAddress}/trades`, options);
-    if (!isRecord(body) || typeof body.pool !== 'string' || !(body.trades === null || (Array.isArray(body.trades) && body.trades.every(isTrade)))) {
+    const body = await this.get(`/stats/${poolAddress}/transactions`, options);
+    if (!isRecord(body) || !Array.isArray(body.transactions) || !body.transactions.every(isTrade)) {
       throw new TypeError('Invalid recent trades response');
     }
-    return body as unknown as RecentTrades;
+    return { pool: poolAddress, trades: body.transactions };
   }
 }
 
