@@ -4,8 +4,10 @@ defmodule BlockScoutWeb.V2.PaxeerXFeedChannelTest do
   import Phoenix.ChannelTest, only: [socket: 3, subscribe_and_join: 2]
 
   alias BlockScoutWeb.Notifier
+  alias BlockScoutWeb.RealtimeEventHandlers.Main
   alias BlockScoutWeb.V2.UserSocket
   alias Explorer.Chain.Cache.Counters.AverageBlockTime
+  alias Explorer.Chain.Events.Publisher
   alias Explorer.Chain.PaxeerX.PriceFeed
   alias Phoenix.Socket.Broadcast
 
@@ -76,6 +78,23 @@ defmodule BlockScoutWeb.V2.PaxeerXFeedChannelTest do
       assert json_response(get(conn, "/api/v2/blocks/20"), 200)["price_update_count"] == 2
 
       refute_receive %Broadcast{topic: "paxeer_x_feed:new_update"}
+    end
+
+    test "the event published for a stored submission reaches the socket through the realtime subscriber",
+         %{conn: conn} do
+      block = insert(:block, number: 30)
+      [hash] = store(block, [submission(0, [observation(2, 9)])])
+      subscriber = Process.whereis(Main)
+      @endpoint.subscribe("paxeer_x_feed:new_update")
+      @endpoint.subscribe("blocks:new_block")
+
+      Publisher.broadcast(%{paxeer_x_price_updates: [30]}, :realtime)
+
+      assert_receive %Broadcast{topic: "paxeer_x_feed:new_update", event: "new_update", payload: payload}, 5_000
+      assert json(payload) == json_response(get(conn, "/api/v2/paxeer-x/feed/updates/#{hash}"), 200)
+      assert [%{"symbol" => "SOL-USD"}] = payload["price_update"]["observations"]
+      assert_receive %Broadcast{topic: "blocks:new_block", payload: %{block: %{"price_update_count" => 1}}}, 5_000
+      assert Process.whereis(Main) == subscriber
     end
 
     test "a block without updates broadcasts nothing" do

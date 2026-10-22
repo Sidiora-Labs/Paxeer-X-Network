@@ -685,7 +685,7 @@ defmodule BlockScoutWeb.Notifier do
   # per observed market, the transaction lists get the count the EVM path sends, and each
   # block carrying them is sent again on `blocks:new_block` with its price update count.
   defp broadcast_price_updates(updates) do
-    symbols = PriceFeed.market_symbols()
+    symbols = PriceFeed.update_market_symbols(updates)
     block_height = Chain.block_height(@api_true)
 
     Enum.each(updates, fn update ->
