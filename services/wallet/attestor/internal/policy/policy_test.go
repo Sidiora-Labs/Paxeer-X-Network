@@ -444,3 +444,71 @@ func TestShippedPolicyAllowsWalletLaunchpadWrites(t *testing.T) {
 	}
 	expect(t, h.policy.Evaluate(testAccount, h.tx(t, launchpad, big.NewInt(0), unlisted), h.ledger), CodeSelectorNotAllowed)
 }
+
+func TestShippedPolicyAllowsLaunchpadApproveThenBuy(t *testing.T) {
+	doc, err := LoadFile(filepath.Join("..", "..", "..", "deploy", "attestor-policy.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	launchpadABI, err := evm.PrecompileABI("launchpad")
+	if err != nil {
+		t.Fatal(err)
+	}
+	erc20, err := evm.PrecompileABI("erc20")
+	if err != nil {
+		t.Fatal(err)
+	}
+	launchpad, _ := evm.PrecompileAddress("launchpad")
+	feetoken, _ := evm.PrecompileAddress("feetoken")
+	usdl := common.HexToAddress("0x85FcD13735F4309833A503EE804ea32395851479")
+	amount := big.NewInt(25_000_000)
+	h := newHarness(t)
+	h.policy = New(doc)
+
+	approve, err := erc20.Pack("approve", launchpad, amount)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision := h.policy.Evaluate(testAccount, h.tx(t, usdl, big.NewInt(0), approve), h.ledger)
+	expect(t, decision, CodeAllowed)
+	if len(decision.Spends) != 1 || decision.Spends[0].Asset != TokenAsset(usdl) || decision.Spends[0].Amount.Cmp(amount) != 0 {
+		t.Fatalf("approve spends %+v, want %s of USDL", decision.Spends, amount)
+	}
+	buy, err := launchpadABI.Pack("buy", common.HexToAddress(friend), amount, big.NewInt(1), big.NewInt(1_900_000_000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, h.policy.Evaluate(testAccount, h.tx(t, launchpad, big.NewInt(0), buy), h.ledger), CodeAllowed)
+
+	unlistedSpender, err := erc20.Pack("approve", feetoken, amount)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, h.policy.Evaluate(testAccount, h.tx(t, usdl, big.NewInt(0), unlistedSpender), h.ledger), CodeSelectorNotAllowed)
+
+	launchToken := common.HexToAddress("0x4444444444444444444444444444444444444444")
+	h.now = h.now.Add(RateWindow)
+	approveToken := func(spender common.Address, value *big.Int) Decision {
+		data, err := erc20.Pack("approve", spender, value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h.policy.Evaluate(testAccount, h.tx(t, launchToken, big.NewInt(0), data), h.ledger)
+	}
+	expect(t, approveToken(launchpad, big.NewInt(7_000_000_000_000_000)), CodeAllowed)
+	expect(t, approveToken(launchpad, maxUint256), CodeUnlimitedApproval)
+	expect(t, approveToken(common.HexToAddress(friend), big.NewInt(7_000_000_000_000_000)), CodeNoCap)
+	expect(t, h.policy.Evaluate(testAccount, h.tx(t, usdl, big.NewInt(0), func() []byte {
+		data, err := erc20.Pack("approve", launchpad, big.NewInt(1_000_000_001))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}()), h.ledger), CodeValueCap)
+
+	unlisted, err := launchpadABI.Pack("claimAirdrop0", common.HexToAddress(friend), common.HexToAddress(sidiora))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, h.policy.Evaluate(testAccount, h.tx(t, launchpad, big.NewInt(0), unlisted), h.ledger), CodeSelectorNotAllowed)
+}

@@ -47,6 +47,7 @@ const (
 	CodeNoCap              = "no_cap"
 	CodeValueCap           = "value_cap"
 	CodeDailyCap           = "daily_cap"
+	CodeUnlimitedApproval  = "unlimited_approval"
 	CodeLedgerError        = "ledger_error"
 )
 
@@ -70,6 +71,7 @@ type Rules struct {
 	DestinationsAllow []string            `json:"destinations_allow,omitempty"`
 	DestinationsDeny  []string            `json:"destinations_deny,omitempty"`
 	Selectors         map[string][]string `json:"selectors,omitempty"`
+	TrustedSpenders   []string            `json:"trusted_spenders,omitempty"`
 }
 
 type Document struct {
@@ -132,6 +134,9 @@ func merge(defaults, override Rules) Rules {
 	if override.DestinationsDeny != nil {
 		out.DestinationsDeny = override.DestinationsDeny
 	}
+	if override.TrustedSpenders != nil {
+		out.TrustedSpenders = override.TrustedSpenders
+	}
 	if override.Caps != nil {
 		caps := make(map[string]Cap, len(defaults.Caps)+len(override.Caps))
 		for asset, c := range defaults.Caps {
@@ -168,6 +173,7 @@ type compiled struct {
 	allow     map[common.Address]bool
 	deny      map[common.Address]bool
 	selectors map[common.Address]map[[4]byte]bool
+	trusted   map[common.Address]bool
 }
 
 type missingField string
@@ -258,6 +264,9 @@ func compile(r Rules) (*compiled, error) {
 	if c.deny, err = parseAddresses(r.DestinationsDeny); err != nil {
 		return nil, err
 	}
+	if c.trusted, err = parseAddresses(r.TrustedSpenders); err != nil {
+		return nil, err
+	}
 	for destination, list := range r.Selectors {
 		if !common.IsHexAddress(destination) {
 			return nil, fmt.Errorf("selector destination %q is not an address", destination)
@@ -289,11 +298,17 @@ type Destination struct {
 	Address    common.Address
 	Selector   []byte
 	Precompile bool
+	// Counterparty marks a spender or recipient named in the call's
+	// arguments rather than the address the call is sent to.
+	Counterparty bool
 }
 
 type Spend struct {
 	Asset  string
 	Amount *big.Int
+	// Spender is set when the spend is an allowance granted by an approve
+	// or permit rather than a transfer out of the account.
+	Spender *common.Address
 }
 
 type Inspection struct {
@@ -428,7 +443,19 @@ func (p *Policy) Evaluate(account string, req Request, ledger Ledger) Decision {
 	if err := ledger.RecordRequest(accountKey, now); err != nil {
 		return denied(CodeLedgerError, "%v", err)
 	}
-	totals, order, err := sumSpends(inspection.Spends)
+	capped := inspection.Spends[:0:0]
+	for _, spend := range inspection.Spends {
+		if spend.Spender != nil && effective.trusted[*spend.Spender] {
+			if spend.Amount != nil && spend.Amount.Cmp(maxUint256) == 0 {
+				return denied(CodeUnlimitedApproval, "unlimited approval of %s to %s is refused", spend.Asset, spend.Spender.Hex())
+			}
+			if _, ok := effective.caps[spend.Asset]; !ok {
+				continue
+			}
+		}
+		capped = append(capped, spend)
+	}
+	totals, order, err := sumSpends(capped)
 	if err != nil {
 		return denied(CodeMissingField, "%v", err)
 	}
@@ -475,6 +502,9 @@ func checkDestination(effective *compiled, destination Destination) (Decision, b
 	}
 	if !listed {
 		return denied(CodeSelectorNotAllowed, "precompile %s has no allowed methods", address.Hex()), false
+	}
+	if destination.Counterparty {
+		return Decision{}, true
 	}
 	if len(destination.Selector) != 4 || !allowed[[4]byte(destination.Selector)] {
 		return denied(CodeSelectorNotAllowed, "method 0x%x is not allowed on %s", destination.Selector, address.Hex()), false
@@ -532,7 +562,7 @@ func inspectCall(to common.Address, value *big.Int, data []byte) (Inspection, er
 		if !ok {
 			return refuse(CodeDecodeError, "%s.%s argument %s is malformed", call.Destination, call.Method, arg)
 		}
-		out.Destinations = append(out.Destinations, Destination{Address: address, Precompile: evm.IsPrecompile(address)})
+		out.Destinations = append(out.Destinations, Destination{Address: address, Precompile: evm.IsPrecompile(address), Counterparty: true})
 		return nil
 	}
 	switch {
@@ -541,13 +571,17 @@ func inspectCall(to common.Address, value *big.Int, data []byte) (Inspection, er
 		if !ok {
 			return Inspection{}, refuse(CodeDecodeError, "erc20.%s value is malformed", call.Method)
 		}
-		out.Spends = append(out.Spends, Spend{Asset: TokenAsset(to), Amount: amount})
+		spend := Spend{Asset: TokenAsset(to), Amount: amount}
 		switch call.Method {
 		case "transfer", "transferFrom":
 			err = recipient("to")
 		case "approve":
-			err = recipient("spender")
+			if err = recipient("spender"); err == nil {
+				spender := out.Destinations[len(out.Destinations)-1].Address
+				spend.Spender = &spender
+			}
 		}
+		out.Spends = append(out.Spends, spend)
 	case call.Destination == "layerxcustody" && call.Method == "depositToken",
 		call.Destination == "layerxexchange" && call.Method == "depositMarginToken":
 		err = token("pointer", "amount")
@@ -618,8 +652,9 @@ func inspectTypedData(ctx Context, view any) (Inspection, error) {
 		if err != nil {
 			return Inspection{}, err
 		}
+		spend.Spender = &spender
 		out.Spends = append(out.Spends, spend)
-		out.Destinations = append(out.Destinations, Destination{Address: spender, Precompile: evm.IsPrecompile(spender)})
+		out.Destinations = append(out.Destinations, Destination{Address: spender, Precompile: evm.IsPrecompile(spender), Counterparty: true})
 	}
 	return out, nil
 }
