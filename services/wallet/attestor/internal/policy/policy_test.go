@@ -409,6 +409,14 @@ func TestShippedPolicyAllowsWalletSDKWrites(t *testing.T) {
 	if fee, ok := effective.feeCaps[sid]; !ok || len(effective.feeCaps) != 1 || fee.perTransaction.Cmp(big.NewInt(5_000_000)) != 0 || fee.daily.Cmp(big.NewInt(50_000_000)) != 0 {
 		t.Fatalf("shipped fee caps %+v, want only SID at 5 per transaction and 50 daily", effective.feeCaps)
 	}
+	if effective.sponsors == nil || len(effective.sponsors) != 0 {
+		t.Fatalf("shipped fee sponsors %v, want an empty list until the gas station address is filled in", effective.sponsors)
+	}
+	perps, _ := evm.PrecompileAddress("perps")
+	launchpadSpender, _ := evm.PrecompileAddress("launchpad")
+	if len(effective.trusted) != 2 || !effective.trusted[perps] || !effective.trusted[launchpadSpender] {
+		t.Fatalf("shipped trusted spenders %v, want exactly perps and launchpad", effective.trusted)
+	}
 	for _, row := range []struct {
 		precompile string
 		writes     []string
@@ -523,14 +531,31 @@ func TestShippedPolicyAllowsPerpsApproveThenDeposit(t *testing.T) {
 	}
 	decision := h.policy.Evaluate(testAccount, h.tx(t, usdl, big.NewInt(0), approve), h.ledger)
 	expect(t, decision, CodeAllowed)
-	if len(decision.Spends) != 1 || decision.Spends[0].Asset != TokenAsset(usdl) || decision.Spends[0].Amount.Cmp(amount) != 0 {
-		t.Fatalf("approve spends %+v, want %s of USDL", decision.Spends, amount)
+	if len(decision.Spends) != 0 {
+		t.Fatalf("exact USDL approve to perps counted %+v; the pull is counted at the deposit", decision.Spends)
 	}
+	unlimited, err := erc20.Pack("approve", perps, maxUint256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, h.policy.Evaluate(testAccount, h.tx(t, usdl, big.NewInt(0), unlimited), h.ledger), CodeUnlimitedApproval)
 	deposit, err := perpsABI.Pack("deposit", usdl, amount)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect(t, h.policy.Evaluate(testAccount, h.tx(t, perps, big.NewInt(0), deposit), h.ledger), CodeAllowed)
+	decision = h.policy.Evaluate(testAccount, h.tx(t, perps, big.NewInt(0), deposit), h.ledger)
+	expect(t, decision, CodeAllowed)
+	if len(decision.Spends) != 1 || decision.Spends[0].Asset != TokenAsset(usdl) || decision.Spends[0].Amount.Cmp(amount) != 0 {
+		t.Fatalf("deposit spends %+v, want %s of USDL", decision.Spends, amount)
+	}
+	spent, err := h.ledger.Spent(strings.ToLower(testAccount), TokenAsset(usdl), h.now.Add(-SpendWindow))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spent.Cmp(amount) != 0 {
+		t.Fatalf("approve then deposit counted %s of USDL, want %s once", spent, amount)
+	}
+	h.now = h.now.Add(RateWindow)
 	open, err := perpsABI.Pack("openPosition", big.NewInt(3), usdl, amount, new(big.Int).Mul(big.NewInt(5), big.NewInt(1e18)), true)
 	if err != nil {
 		t.Fatal(err)
@@ -635,7 +660,11 @@ func TestShippedPolicySponsoredFeeAndPaymasterDelegation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect(t, h.policy.Evaluate(testAccount, Request{Kind: KindSponsoredBatch, View: &evm.SponsoredBatchClaim{Batch: batch, ClaimedDigest: digest}}, h.ledger), CodeAllowed)
+	claim := Request{Kind: KindSponsoredBatch, View: &evm.SponsoredBatchClaim{Batch: batch, ClaimedDigest: digest}}
+	expect(t, h.policy.Evaluate(testAccount, claim, h.ledger), CodeNoCap)
+	doc.Defaults.FeeSponsors = []string{batch.Quote.Sponsor.Hex()}
+	h.policy = New(doc)
+	expect(t, h.policy.Evaluate(testAccount, claim, h.ledger), CodeAllowed)
 	expect(t, h.policy.Evaluate(testAccount, authorization(paymaster), h.ledger), CodeDelegateNotAllowed)
 	expect(t, h.policy.Evaluate(testAccount, Request{Kind: "eth_sign_digest", View: []byte{1}}, h.ledger), CodeUnknownKind)
 
@@ -703,11 +732,32 @@ func TestShippedPolicySIDCapIsSponsoredFeeOnly(t *testing.T) {
 		return Request{Kind: KindSponsoredBatch, View: &evm.SponsoredBatchClaim{Batch: batch, ClaimedDigest: digest}}
 	}
 	h.now = h.now.Add(RateWindow)
+	expect(t, h.policy.Evaluate(testAccount, sponsored(4_000_000), h.ledger), CodeNoCap)
+	station := sponsoredBatch().Quote.Sponsor
+	doc.Defaults.FeeSponsors = []string{station.Hex()}
+	h.policy = New(doc)
 	fee := h.policy.Evaluate(testAccount, sponsored(4_000_000), h.ledger)
 	expect(t, fee, CodeAllowed)
-	if len(fee.Spends) != 1 || fee.Spends[0].Asset != TokenAsset(token) || fee.Spends[0].Amount.Cmp(big.NewInt(4_000_000)) != 0 {
+	if len(fee.Spends) != 1 || fee.Spends[0].Asset != FeeAsset(TokenAsset(token)) || fee.Spends[0].Amount.Cmp(big.NewInt(4_000_000)) != 0 {
 		t.Fatalf("sponsored fee spends %+v", fee.Spends)
 	}
+	for _, sponsor := range []common.Address{common.HexToAddress(friend), common.HexToAddress(testAccount)} {
+		batch := sponsoredBatch()
+		batch.Quote.Sponsor = sponsor
+		digest, err := evm.SponsoredBatchDigest(batch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expect(t, h.policy.Evaluate(testAccount, Request{Kind: KindSponsoredBatch, View: &evm.SponsoredBatchClaim{Batch: batch, ClaimedDigest: digest}}, h.ledger), CodeNoCap)
+	}
+	spoofed := sponsoredBatch()
+	spoofed.Quote.Sponsor = common.HexToAddress(friend)
+	stationDigest, err := evm.SponsoredBatchDigest(sponsoredBatch())
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, h.policy.Evaluate(testAccount, Request{Kind: KindSponsoredBatch, View: &evm.SponsoredBatchClaim{Batch: spoofed, ClaimedDigest: stationDigest}}, h.ledger), CodeDigestMismatch)
+	h.now = h.now.Add(RateWindow)
 	expect(t, h.policy.Evaluate(testAccount, sponsored(5_000_001), h.ledger), CodeValueCap)
 	transfer, err := erc20.Pack("transfer", common.HexToAddress(friend), big.NewInt(1))
 	if err != nil {
@@ -719,6 +769,69 @@ func TestShippedPolicySIDCapIsSponsoredFeeOnly(t *testing.T) {
 	}
 	expect(t, h.policy.Evaluate(testAccount, sponsored(5_000_000), h.ledger), CodeDailyCap)
 	expect(t, h.policy.Evaluate(testAccount, sponsored(1_000_000), h.ledger), CodeAllowed)
+
+	doc.Defaults.DestinationsDeny = []string{station.Hex()}
+	h.policy = New(doc)
+	h.now = h.now.Add(SpendWindow)
+	expect(t, h.policy.Evaluate(testAccount, sponsored(1_000_000), h.ledger), CodeDestinationDenied)
+}
+
+func TestFeeAndCapLedgersAreSeparate(t *testing.T) {
+	h := newHarness(t)
+	doc, err := Parse(testDocument(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	station := sponsoredBatch().Quote.Sponsor
+	doc.Defaults.FeeCaps = map[string]Cap{sidiora: {PerTransaction: "1000000", Daily: "2000000"}}
+	doc.Defaults.FeeSponsors = []string{station.Hex()}
+	h.policy = New(doc)
+	erc20, err := evm.PrecompileABI("erc20")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := common.HexToAddress(sidiora)
+	sid := TokenAsset(token)
+	transfer := func(amount int64) Decision {
+		h.now = h.now.Add(RateWindow)
+		data, err := erc20.Pack("transfer", common.HexToAddress(friend), big.NewInt(amount))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h.policy.Evaluate(testAccount, h.tx(t, token, big.NewInt(0), data), h.ledger)
+	}
+	fee := func(amount int64) Decision {
+		h.now = h.now.Add(RateWindow)
+		batch := sponsoredBatch()
+		batch.Quote.TokenAmount = big.NewInt(amount)
+		batch.Quote.MaxTokenAmount = big.NewInt(amount)
+		digest, err := evm.SponsoredBatchDigest(batch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h.policy.Evaluate(testAccount, Request{Kind: KindSponsoredBatch, View: &evm.SponsoredBatchClaim{Batch: batch, ClaimedDigest: digest}}, h.ledger)
+	}
+	spent := func(key string) *big.Int {
+		total, err := h.ledger.Spent(strings.ToLower(testAccount), key, h.now.Add(-SpendWindow))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return total
+	}
+
+	expect(t, fee(1_000_000), CodeAllowed)
+	expect(t, fee(1_000_000), CodeAllowed)
+	expect(t, fee(1), CodeDailyCap)
+	expect(t, transfer(5_000_000), CodeAllowed)
+	expect(t, transfer(3_000_000), CodeAllowed)
+	expect(t, transfer(1), CodeDailyCap)
+	expect(t, fee(1), CodeDailyCap)
+	if got := spent(FeeAsset(sid)); got.Cmp(big.NewInt(2_000_000)) != 0 {
+		t.Fatalf("fee ledger holds %s, want 2000000", got)
+	}
+	if got := spent(sid); got.Cmp(big.NewInt(8_000_000)) != 0 {
+		t.Fatalf("cap ledger holds %s, want 8000000", got)
+	}
 }
 
 func TestShippedPolicyCountsPerpsPulls(t *testing.T) {

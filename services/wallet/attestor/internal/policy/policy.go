@@ -70,7 +70,10 @@ type Rules struct {
 	Caps    map[string]Cap `json:"caps,omitempty"`
 	// FeeCaps bound only the sponsored-fee leg of a sponsored batch; an
 	// asset listed here and not in Caps is refused everywhere else.
-	FeeCaps           map[string]Cap      `json:"fee_caps,omitempty"`
+	FeeCaps map[string]Cap `json:"fee_caps,omitempty"`
+	// FeeSponsors are the gas stations whose quote fee counts against the fee
+	// caps; a fee paid to any other sponsor is an ordinary token spend.
+	FeeSponsors       []string            `json:"fee_sponsors,omitempty"`
 	RatePerMinute     *uint32             `json:"rate_per_minute,omitempty"`
 	DestinationsAllow []string            `json:"destinations_allow,omitempty"`
 	DestinationsDeny  []string            `json:"destinations_deny,omitempty"`
@@ -147,6 +150,9 @@ func merge(defaults, override Rules) Rules {
 	if override.TrustedSpenders != nil {
 		out.TrustedSpenders = override.TrustedSpenders
 	}
+	if override.FeeSponsors != nil {
+		out.FeeSponsors = override.FeeSponsors
+	}
 	if override.Caps != nil {
 		out.Caps = mergeCaps(defaults.Caps, override.Caps)
 	}
@@ -193,6 +199,7 @@ type compiled struct {
 	selectors map[common.Address]map[[4]byte]bool
 	trusted   map[common.Address]bool
 	delegates map[common.Address]bool
+	sponsors  map[common.Address]bool
 }
 
 type missingField string
@@ -279,6 +286,9 @@ func compile(r Rules) (*compiled, error) {
 	if c.delegates, err = parseAddresses(r.AuthorizationDelegates); err != nil {
 		return nil, err
 	}
+	if c.sponsors, err = parseAddresses(r.FeeSponsors); err != nil {
+		return nil, err
+	}
 	for destination, list := range r.Selectors {
 		if !common.IsHexAddress(destination) {
 			return nil, fmt.Errorf("selector destination %q is not an address", destination)
@@ -341,9 +351,20 @@ type Spend struct {
 	// Spender is set when the spend is an allowance granted by an approve
 	// or permit rather than a transfer out of the account.
 	Spender *common.Address
-	// Fee marks the sponsored-fee payment a sponsored batch pays the gas
-	// station; only such a spend is bounded by the fee caps.
-	Fee bool
+	// Fee marks the sponsored-fee payment a sponsored batch pays Sponsor;
+	// only such a spend to a listed fee sponsor is bounded by the fee caps.
+	Fee     bool
+	Sponsor common.Address
+}
+
+// FeeAsset is the ledger key of sponsored-fee spends of asset, kept apart
+// from the asset's own key so the fee caps and the caps do not share a budget.
+func FeeAsset(asset string) string { return "fee:" + asset }
+
+// pullCounted are the spenders whose token pulls inspectCall counts at the
+// pull, so an exact approve to one of them is not counted a second time.
+var pullCounted = map[common.Address]bool{
+	common.HexToAddress("0x0000000000000000000000000000000000001015"): true,
 }
 
 type Inspection struct {
@@ -487,7 +508,7 @@ func (p *Policy) Evaluate(account string, req Request, ledger Ledger) Decision {
 	}
 	capped, fees := inspection.Spends[:0:0], inspection.Spends[:0:0]
 	for _, spend := range inspection.Spends {
-		if spend.Fee {
+		if spend.Fee && effective.sponsors[spend.Sponsor] {
 			if _, ok := effective.feeCaps[spend.Asset]; ok {
 				fees = append(fees, spend)
 				continue
@@ -497,7 +518,7 @@ func (p *Policy) Evaluate(account string, req Request, ledger Ledger) Decision {
 			if spend.Amount != nil && spend.Amount.Cmp(maxUint256) == 0 {
 				return denied(CodeUnlimitedApproval, "unlimited approval of %s to %s is refused", spend.Asset, spend.Spender.Hex())
 			}
-			if _, ok := effective.caps[spend.Asset]; !ok {
+			if _, ok := effective.caps[spend.Asset]; !ok || pullCounted[*spend.Spender] {
 				continue
 			}
 		}
@@ -509,7 +530,8 @@ func (p *Policy) Evaluate(account string, req Request, ledger Ledger) Decision {
 		spends []Spend
 		caps   map[string]compiledCap
 		label  string
-	}{{capped, effective.caps, "cap"}, {fees, effective.feeCaps, "sponsored-fee cap"}} {
+		key    func(string) string
+	}{{capped, effective.caps, "cap", func(asset string) string { return asset }}, {fees, effective.feeCaps, "sponsored-fee cap", FeeAsset}} {
 		totals, order, err := sumSpends(group.spends)
 		if err != nil {
 			return denied(CodeMissingField, "%v", err)
@@ -523,24 +545,25 @@ func (p *Policy) Evaluate(account string, req Request, ledger Ledger) Decision {
 			if limit.perTransaction != nil && amount.Cmp(limit.perTransaction) > 0 {
 				return denied(CodeValueCap, "amount %s of %s exceeds the per-transaction %s %s", amount, asset, group.label, limit.perTransaction)
 			}
+			key := group.key(asset)
 			if limit.daily != nil {
-				spent, err := ledger.Spent(accountKey, asset, now.Add(-SpendWindow))
+				spent, err := ledger.Spent(accountKey, key, now.Add(-SpendWindow))
 				if err != nil {
 					return denied(CodeLedgerError, "%v", err)
 				}
-				if earlier, ok := pending[asset]; ok {
+				if earlier, ok := pending[key]; ok {
 					spent = new(big.Int).Add(spent, earlier)
 				}
 				if new(big.Int).Add(spent, amount).Cmp(limit.daily) > 0 {
 					return denied(CodeDailyCap, "amount %s of %s with %s spent in 24 hours exceeds the daily %s %s", amount, asset, spent, group.label, limit.daily)
 				}
 			}
-			if earlier, ok := pending[asset]; ok {
+			if earlier, ok := pending[key]; ok {
 				earlier.Add(earlier, amount)
 			} else {
-				pending[asset] = new(big.Int).Set(amount)
+				pending[key] = new(big.Int).Set(amount)
 			}
-			spends = append(spends, Spend{Asset: asset, Amount: new(big.Int).Set(amount)})
+			spends = append(spends, Spend{Asset: key, Amount: new(big.Int).Set(amount)})
 		}
 	}
 	for _, spend := range spends {
@@ -807,7 +830,9 @@ func inspectSponsoredBatch(ctx Context, view any) (Inspection, error) {
 		out.Destinations = append(out.Destinations, inspection.Destinations...)
 		out.Spends = append(out.Spends, inspection.Spends...)
 	}
-	out.Spends = append(out.Spends, Spend{Asset: TokenAsset(claim.Batch.Quote.Token), Amount: claim.Batch.Quote.TokenAmount, Fee: true})
+	quote := claim.Batch.Quote
+	out.Destinations = append(out.Destinations, Destination{Address: quote.Sponsor, Precompile: evm.IsPrecompile(quote.Sponsor), Counterparty: true})
+	out.Spends = append(out.Spends, Spend{Asset: TokenAsset(quote.Token), Amount: quote.TokenAmount, Fee: true, Sponsor: quote.Sponsor})
 	return out, nil
 }
 
