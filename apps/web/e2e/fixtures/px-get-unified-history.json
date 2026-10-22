@@ -3,7 +3,11 @@
   "jsonrpc": "2.0",
   "result": {
     "account": {
-      "evm_address": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      "bound": true,
+      "evm_address": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "layerx_account": "83d594bd43c513bef84f77c2e0509612b22f61cf14ff17a3bf017ce46b0560fe",
+      "layerx_did": "did:layerx:6355691c178a8ff91007a7478afb955ef7352c63e7b25703984cf78b26e21a56",
+      "pax_address": "pax1amhwamhwamhwamhwamhwamhwamhwamhw3rt4xd"
     },
     "accounts": [
       {

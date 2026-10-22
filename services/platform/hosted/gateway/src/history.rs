@@ -507,6 +507,30 @@ fn registry(config: &Config) -> Vec<Value> {
 }
 
 fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> Value {
+    let source = config.indexer.as_ref().map(|indexer| Source {
+        indexer,
+        client: Some(&config.client),
+    });
+    served(
+        &mut |request| super::paxeer::node(config, request),
+        source.as_ref(),
+        &|| registry(config),
+        method,
+        id,
+        params,
+    )
+}
+
+/// One history answer: the account resolved on Paxeer through `node`, its
+/// page read from `source`, and the envelope around it.
+fn served(
+    node: &mut super::paxeer::Node<'_>,
+    source: Option<&Source<'_>>,
+    registry: &dyn Fn() -> Vec<Value>,
+    method: &str,
+    id: &Value,
+    params: Option<&Value>,
+) -> Value {
     let (account, query) = match self::params(params) {
         Ok(selected) => selected,
         Err(code) => return super::rpc::error(id, code, "Invalid params"),
@@ -515,19 +539,19 @@ fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> 
         "px_getHistory" => {
             let key = match paxeer_key(&account) {
                 Some(key) => key,
-                None => match super::paxeer::history_account(config, id, &account) {
+                None => match super::paxeer::history_account(node, id, &account) {
                     Ok((_, key)) => key,
                     Err(refused) => return refused,
                 },
             };
             (json!(key.clone()), vec![("paxeer", key)])
         }
-        _ => match super::paxeer::history_account(config, id, &account) {
+        _ => match super::paxeer::history_account(node, id, &account) {
             Ok((document, key)) => (document, vec![("paxeer", key)]),
             Err(refused) => return refused,
         },
     };
-    let Some(indexer) = &config.indexer else {
+    let Some(source) = source else {
         return refusal(
             id,
             -32001,
@@ -543,12 +567,8 @@ fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> 
             json!({"code": "public_read_rate_limit"}),
         );
     }
-    let source = Source {
-        indexer,
-        client: Some(&config.client),
-    };
     let unified = method == "px_getUnifiedHistory";
-    let result = match history(&source, &|| registry(config), &accounts, &query, unified) {
+    let result = match history(source, registry, &accounts, &query, unified) {
         Ok(result) => result,
         Err(Failure::Refused(body)) => return refusal(id, -32602, "Invalid params", body),
         Err(Failure::Unavailable(code)) => {
@@ -566,7 +586,7 @@ fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> 
             )
         }
     };
-    let chain_height = match super::paxeer::block_number(config) {
+    let chain_height = match super::paxeer::block_number(node) {
         Ok(height) => height,
         Err(code) => return refusal(id, -32001, "History unavailable", json!({"code": code})),
     };
@@ -722,7 +742,7 @@ fn answer_holders(config: &Config, id: &Value, params: Option<&Value>) -> Value 
             return refusal(id, -32001, "History unavailable", json!({"code": code}))
         }
     };
-    match super::paxeer::block_number(config) {
+    match super::paxeer::block_number(&mut |request| super::paxeer::node(config, request)) {
         Ok(height) => result["chainHeight"] = json!(height),
         Err(code) => return refusal(id, -32001, "History unavailable", json!({"code": code})),
     }
@@ -829,6 +849,8 @@ mod tests {
     const ALICE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const BOB: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     const EVE: &str = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+    /// Eve's address in bech32 under the `pax` prefix.
+    const PAX_EVE: &str = "pax1amhwamhwamhwamhwamhwamhwamhwamhw3rt4xd";
     const FRANK: &str = "0xffffffffffffffffffffffffffffffffffffffff";
     const POINTER: &str = "0xcccccccccccccccccccccccccccccccccccccccc";
     const TICKET: &str = "denom:factory/pax1issuer/ticket";
@@ -1721,39 +1743,147 @@ mod tests {
         assert_eq!(resolved, direct);
     }
 
-    /// The `px_getUnifiedHistory` answer the web client test consumes,
-    /// recorded from this read over the loopback indexer store; set
-    /// `RECORD_UNIFIED_HISTORY_FIXTURE` to record it again.
-    #[test]
-    fn unified_history_single_account_tags_side_and_matches_the_web_fixture() {
-        let indexer = indexer();
-        let accounts = [("paxeer", EVE.to_owned())];
-        let page = history(
-            &Source {
-                indexer: &indexer,
+    /// The `addr` binding of Eve: the DID of a fixed Ed25519 key and its
+    /// canonical main account.
+    fn binding() -> ([u8; 32], [u8; 32]) {
+        let did = ed25519_dalek::SigningKey::from_bytes(&[0x45; 32])
+            .verifying_key()
+            .to_bytes();
+        let name = format!("agent:did:layerx:{}:main", crate::hex(&did));
+        let account = layerx_types::account::AccountId::parse(&name)
+            .unwrap_or_else(|error| panic!("{error:?}"));
+        let main = layerx_wire::hash::account_id_for_protocol(&account, 3)
+            .unwrap_or_else(|error| panic!("{error:?}"));
+        (did, main)
+    }
+
+    /// The Paxeer chain the gateway resolves Eve on: `addr` `0x1004` answers
+    /// `getUnifiedAccount(eve)` and `getEvmAddrByLayerX(did)` with Eve's
+    /// [`binding`] and `pax1` address in the precompile's ABI layout, at head
+    /// height 12.
+    fn chain(request: &Value) -> Result<Value, &'static str> {
+        let eve = [0xee_u8; 20];
+        let (did, main) = binding();
+        let mut padded = [0_u8; 32];
+        padded[12..].copy_from_slice(&eve);
+        let pax = PAX_EVE.as_bytes();
+        let mut length = [0_u8; 32];
+        length[31] = u8::try_from(pax.len()).unwrap_or_else(|error| panic!("{error}"));
+        let mut text = pax.to_vec();
+        text.resize(64, 0);
+        let mut offset = [0_u8; 32];
+        offset[31] = 0x80;
+        let unified = [&padded[..], &offset, &did, &main, &length, &text].concat();
+        let calldata = |data: Vec<u8>| format!("0x{}", crate::hex(&data));
+        let result = match request["method"].as_str() {
+            Some("eth_blockNumber") => json!("0xc"),
+            Some("eth_call") => {
+                assert_eq!(
+                    request["params"][0]["to"],
+                    json!(evm::address_hex(&evm::ADDR_PRECOMPILE))
+                );
+                let data = request["params"][0]["data"].as_str().unwrap_or_default();
+                let answer = if data
+                    == calldata(evm::calldata_address(
+                        evm::SELECTOR_GET_UNIFIED_ACCOUNT,
+                        &eve,
+                    )) {
+                    unified
+                } else if data
+                    == calldata(evm::calldata_word(
+                        evm::SELECTOR_GET_EVM_ADDR_BY_LAYERX,
+                        &did,
+                    ))
+                {
+                    padded.to_vec()
+                } else {
+                    panic!("unexpected addr call {request}")
+                };
+                json!(calldata(answer))
+            }
+            other => panic!("unexpected Paxeer method {other:?}"),
+        };
+        Ok(json!({"jsonrpc": "2.0", "id": request["id"], "result": result}))
+    }
+
+    /// One history answer as the gateway serves it, resolving on [`chain`]
+    /// and reading the loopback indexer store.
+    fn answered(indexer: &Indexer, method: &str, params: &Value) -> Value {
+        served(
+            &mut chain,
+            Some(&Source {
+                indexer,
                 client: None,
-            },
+            }),
             &registry,
-            &accounts,
-            &query(None, 100, None),
-            true,
+            method,
+            &json!(1),
+            Some(params),
         )
-        .unwrap_or_else(|failure| panic!("{failure:?}"));
-        assert_eq!(ids(&page), vec![3, 6, 9, 11]);
-        for item in items(&page) {
+    }
+
+    #[test]
+    fn answer_tags_every_unified_history_row_with_side_and_no_plain_history_row() {
+        let indexer = indexer();
+        let params = json!([EVE, null, 100, null]);
+        let unified = answered(&indexer, "px_getUnifiedHistory", &params);
+        let plain = answered(&indexer, "px_getHistory", &params);
+        assert!(unified.get("error").is_none(), "{unified}");
+        assert!(plain.get("error").is_none(), "{plain}");
+        assert_eq!(ids(&unified["result"]), vec![3, 6, 9, 11], "{unified}");
+        assert_eq!(ids(&plain["result"]), vec![3, 6, 9, 11], "{plain}");
+        for item in items(&unified["result"]) {
             assert_eq!(item["side"], json!("paxeer"), "{item}");
         }
-        let untagged = read(&indexer, &accounts, &query(None, 100, None));
-        assert!(items(&untagged)
+        for (plain, unified) in items(&plain["result"])
             .iter()
-            .all(|item| item.get("side").is_none()));
-        let freshness = raw(&indexer, "/readyz", "");
-        assert!(readiness_status(&freshness).is_some(), "{freshness}");
-        let answer = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "result": envelope(page, 12, freshness, json!({"evm_address": EVE}), Some(&accounts)),
-        });
+            .zip(items(&unified["result"]))
+        {
+            assert!(plain.get("side").is_none(), "{plain}");
+            let mut untagged = unified.clone();
+            if let Some(row) = untagged.as_object_mut() {
+                row.remove("side");
+            }
+            assert_eq!(*plain, untagged);
+        }
+        assert_eq!(
+            unified["result"]["accounts"],
+            json!([{"side": "paxeer", "account": EVE}])
+        );
+        assert!(plain["result"].get("accounts").is_none(), "{plain}");
+    }
+
+    /// The `px_getUnifiedHistory` answer the web client test consumes,
+    /// recorded from the gateway's own answer over the loopback indexer store
+    /// with Eve resolved on [`chain`]; set
+    /// `RECORD_UNIFIED_HISTORY_FIXTURE` to record it again. The whole answer
+    /// is compared unchanged: the only wall-clock fields of `freshness` are
+    /// the per-source `last_success_at` and `freshness_secs`, and this
+    /// indexer judges readiness on no ingestion source, so it has none.
+    #[test]
+    fn unified_history_answer_matches_the_web_fixture() {
+        let indexer = indexer();
+        let answer = answered(
+            &indexer,
+            "px_getUnifiedHistory",
+            &json!([EVE, null, 25, null]),
+        );
+        assert!(answer.get("error").is_none(), "{answer}");
+        assert_eq!(ids(&answer["result"]), vec![3, 6, 9, 11], "{answer}");
+        let (did, main) = binding();
+        assert_eq!(
+            answer["result"]["account"],
+            json!({
+                "evm_address": EVE,
+                "pax_address": PAX_EVE,
+                "layerx_did": format!("did:layerx:{}", crate::hex(&did)),
+                "layerx_account": crate::hex(&main),
+                "bound": true
+            })
+        );
+        assert_eq!(answer["result"]["chainHeight"], json!(12));
+        assert!(readiness_status(&answer["result"]["freshness"]).is_some());
+        assert_eq!(answer["result"]["freshness"]["sources"], json!([]));
         let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../../../apps/web/e2e/fixtures/px-get-unified-history.json");
         if std::env::var_os("RECORD_UNIFIED_HISTORY_FIXTURE").is_some() {
@@ -1761,14 +1891,10 @@ mod tests {
                 serde_json::to_string_pretty(&answer).unwrap_or_else(|error| panic!("{error}"));
             std::fs::write(&fixture, text + "\n").unwrap_or_else(|error| panic!("{error}"));
         }
-        let mut recorded: Value = serde_json::from_str(
+        let recorded: Value = serde_json::from_str(
             &std::fs::read_to_string(&fixture).unwrap_or_else(|error| panic!("{error}")),
         )
         .unwrap_or_else(|error| panic!("{error}"));
-        assert!(readiness_status(&recorded["result"]["freshness"]).is_some());
-        let mut answer = answer;
-        recorded["result"]["freshness"] = Value::Null;
-        answer["result"]["freshness"] = Value::Null;
         assert_eq!(recorded, answer);
     }
 

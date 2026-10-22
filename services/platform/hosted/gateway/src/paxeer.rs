@@ -73,6 +73,9 @@ pub(super) fn unavailable(id: &Value, code: &str) -> Value {
     refusal
 }
 
+/// One Paxeer JSON-RPC exchange: [`node`] over the configured endpoints.
+pub(super) type Node<'a> = dyn FnMut(&Value) -> Result<Value, &'static str> + 'a;
+
 /// Sends one JSON-RPC request to the Paxeer nodes in their configured order
 /// and returns the answer document of the first one that answers 200 without
 /// a transport failure, unchanged. Every skipped node is reported on stderr.
@@ -191,14 +194,14 @@ pub(super) fn relay(config: &Config, id: &Value, method: &str, params: Option<&V
 }
 
 /// One `eth_call` against a native precompile, returning its raw answer bytes.
-fn call(config: &Config, to: &[u8; 20], data: &[u8]) -> Result<Vec<u8>, &'static str> {
+fn call(node: &mut Node<'_>, to: &[u8; 20], data: &[u8]) -> Result<Vec<u8>, &'static str> {
     let request = json!({
         "jsonrpc": "2.0",
         "id": "px-call",
         "method": "eth_call",
         "params": [{"to": evm::address_hex(to), "data": format!("0x{}", super::hex(data))}, "latest"]
     });
-    let answer = node(config, &request)?;
+    let answer = node(&request)?;
     let Some(result) = answer.get("result").and_then(Value::as_str) else {
         return Err("paxeer_call_refused");
     };
@@ -206,9 +209,9 @@ fn call(config: &Config, to: &[u8; 20], data: &[u8]) -> Result<Vec<u8>, &'static
         .map_err(|_| "invalid_paxeer_response")
 }
 
-fn quantity(config: &Config, method: &str, params: &Value) -> Result<String, &'static str> {
+fn quantity(node: &mut Node<'_>, method: &str, params: &Value) -> Result<String, &'static str> {
     let request = json!({"jsonrpc":"2.0","id":"px-read","method":method,"params":params});
-    let answer = node(config, &request)?;
+    let answer = node(&request)?;
     answer
         .get("result")
         .and_then(Value::as_str)
@@ -218,8 +221,8 @@ fn quantity(config: &Config, method: &str, params: &Value) -> Result<String, &'s
 }
 
 /// The Paxeer head height as `eth_blockNumber` answers it.
-pub(super) fn block_number(config: &Config) -> Result<u64, &'static str> {
-    let block = quantity(config, "eth_blockNumber", &json!([]))?;
+pub(super) fn block_number(node: &mut Node<'_>) -> Result<u64, &'static str> {
+    let block = quantity(node, "eth_blockNumber", &json!([]))?;
     u64::from_str_radix(&block[2..], 16).map_err(|_| "invalid_paxeer_response")
 }
 
@@ -308,23 +311,21 @@ pub(super) fn bound_address(answer: &[u8]) -> Result<[u8; 20], &'static str> {
     Ok(bound)
 }
 
-fn resolve(config: &Config, selector: &Selector) -> Result<Resolution, &'static str> {
+fn resolve(node: &mut Node<'_>, selector: &Selector) -> Result<Resolution, &'static str> {
     let address = match selector {
         Selector::Evm(address) => *address,
         Selector::NativeAccount(account) => {
             let _native_account = account;
             return Err("native_account_reverse_resolution_unsupported");
         }
-        Selector::Did(key) => {
-            bound_address(&call(
-                config,
-                &evm::ADDR_PRECOMPILE,
-                &evm::calldata_word(evm::SELECTOR_GET_EVM_ADDR_BY_LAYERX, key),
-            )?)?
-        }
+        Selector::Did(key) => bound_address(&call(
+            node,
+            &evm::ADDR_PRECOMPILE,
+            &evm::calldata_word(evm::SELECTOR_GET_EVM_ADDR_BY_LAYERX, key),
+        )?)?,
     };
     let answer = call(
-        config,
+        node,
         &evm::ADDR_PRECOMPILE,
         &evm::calldata_address(evm::SELECTOR_GET_UNIFIED_ACCOUNT, &address),
     )?;
@@ -333,7 +334,7 @@ fn resolve(config: &Config, selector: &Selector) -> Result<Resolution, &'static 
     validate_resolution(selector, &address, &unified)?;
     if bound {
         let reverse = call(
-            config,
+            node,
             &evm::ADDR_PRECOMPILE,
             &evm::calldata_word(
                 evm::SELECTOR_GET_EVM_ADDR_BY_LAYERX,
@@ -396,7 +397,7 @@ fn resolved(config: &Config, id: &Value, params: Option<&Value>) -> Result<Resol
             },
         )
     })?;
-    resolve(config, &selector).map_err(|code| unavailable(id, code))
+    resolve(&mut |request| node(config, request), &selector).map_err(|code| unavailable(id, code))
 }
 
 /// The selector of a history read: an `0x` EVM address or an explicit
@@ -410,9 +411,12 @@ pub(super) fn history_selector(account: &str) -> Result<Selector, i32> {
 }
 
 /// The refusal of a history read whose resolution failed: a DID with no
-/// binding is invalid params, anything else is the Paxeer read failure.
+/// binding is invalid params, no configured Paxeer endpoint is its own
+/// refusal, anything else is the Paxeer read failure.
 pub(super) fn history_refusal(id: &Value, code: &'static str) -> Value {
-    if code == UNBOUND_DID {
+    if code == "paxeer_rpc_not_configured" {
+        unconfigured(id)
+    } else if code == UNBOUND_DID {
         let mut refusal = super::rpc::error(id, -32602, "Invalid params");
         refusal["error"]["data"] = json!({"code": code});
         refusal
@@ -425,16 +429,13 @@ pub(super) fn history_refusal(id: &Value, code: &'static str) -> Value {
 /// resolution document naming both halves. A DID resolves through addr
 /// `0x1004` alone; the kernel is never asked.
 pub(super) fn history_account(
-    config: &Config,
+    node: &mut Node<'_>,
     id: &Value,
     account: &str,
 ) -> Result<(Value, String), Value> {
     let selector =
         history_selector(account).map_err(|code| super::rpc::error(id, code, "Invalid params"))?;
-    if config.paxeer.is_none() {
-        return Err(unconfigured(id));
-    }
-    let resolution = resolve(config, &selector).map_err(|code| history_refusal(id, code))?;
+    let resolution = resolve(node, &selector).map_err(|code| history_refusal(id, code))?;
     let address = resolution
         .evm
         .ok_or_else(|| unavailable(id, "invalid_paxeer_response"))?;
@@ -499,7 +500,7 @@ fn get_account(config: &Config, id: &Value, params: Option<&Value>) -> Value {
         Some(address) => {
             let address = evm::address_hex(&address);
             let balance = match quantity(
-                config,
+                &mut |request| node(config, request),
                 "eth_getBalance",
                 &json!([address.clone(), "latest"]),
             ) {
@@ -507,7 +508,7 @@ fn get_account(config: &Config, id: &Value, params: Option<&Value>) -> Value {
                 Err(code) => return unavailable(id, code),
             };
             let nonce = match quantity(
-                config,
+                &mut |request| node(config, request),
                 "eth_getTransactionCount",
                 &json!([address.clone(), "latest"]),
             ) {
@@ -572,7 +573,7 @@ fn custody_asset(config: &Config, asset_id: &str) -> Value {
         return Value::Null;
     };
     let Ok(answer) = call(
-        config,
+        &mut |request| node(config, request),
         &evm::CUSTODY_PRECOMPILE,
         &evm::calldata_word(evm::SELECTOR_GET_ASSET, &id),
     ) else {
@@ -668,7 +669,7 @@ fn get_balances(config: &Config, id: &Value, params: Option<&Value>) -> Value {
         let paxeer = match (resolution.evm, denom.as_deref()) {
             (Some(address), Some(denom)) if !denom.is_empty() => {
                 match call(
-                    config,
+                    &mut |request| node(config, request),
                     &evm::BANK_PRECOMPILE,
                     &evm::calldata_address_string(evm::SELECTOR_BANK_BALANCE, &address, denom),
                 )
@@ -712,7 +713,7 @@ fn get_balances(config: &Config, id: &Value, params: Option<&Value>) -> Value {
 
 fn anchor_head(config: &Config) -> Value {
     let Ok(answer) = call(
-        config,
+        &mut |request| node(config, request),
         &evm::ANCHOR_PRECOMPILE,
         &evm::calldata_empty(evm::SELECTOR_LATEST_FINALIZED),
     ) else {
@@ -723,7 +724,7 @@ fn anchor_head(config: &Config) -> Value {
     };
     let status = if exists {
         call(
-            config,
+            &mut |request| node(config, request),
             &evm::ANCHOR_PRECOMPILE,
             &evm::calldata_u64(evm::SELECTOR_STATUS_OF, batch),
         )
@@ -747,11 +748,19 @@ fn get_network(config: &Config, id: &Value, params: Option<&Value>) -> Value {
     if !no_params(params) {
         return super::rpc::error(id, -32602, "Invalid params");
     }
-    let chain_id = match quantity(config, "eth_chainId", &json!([])) {
+    let chain_id = match quantity(
+        &mut |request| node(config, request),
+        "eth_chainId",
+        &json!([]),
+    ) {
         Ok(chain_id) => chain_id,
         Err(code) => return unavailable(id, code),
     };
-    let block = match quantity(config, "eth_blockNumber", &json!([])) {
+    let block = match quantity(
+        &mut |request| node(config, request),
+        "eth_blockNumber",
+        &json!([]),
+    ) {
         Ok(block) => block,
         Err(code) => return unavailable(id, code),
     };
@@ -817,7 +826,13 @@ pub(super) fn status(config: &Config) -> &'static str {
     if config.paxeer.is_none() {
         return "not_configured";
     }
-    if quantity(config, "eth_chainId", &json!([])).is_ok() {
+    if quantity(
+        &mut |request| node(config, request),
+        "eth_chainId",
+        &json!([]),
+    )
+    .is_ok()
+    {
         "available"
     } else {
         "unavailable"

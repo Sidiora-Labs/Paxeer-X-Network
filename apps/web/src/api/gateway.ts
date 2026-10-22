@@ -10,7 +10,8 @@ const DID = /^did:layerx:[0-9a-f]{64}$/u;
 const DECIMAL = /^(0|[1-9][0-9]*)$/u;
 const CURSOR = /^[0-9a-f]{32}$/u;
 const KIND = /^[a-z0-9_]{1,64}$/u;
-const ROW_ID = /^(explorer:)?[1-9][0-9]*$/u;
+const ROW_ID = /^(?:explorer:)?([0-9]+)$/u;
+const U64_MAX = 18_446_744_073_709_551_615n;
 const QUANTITY = /^0x[0-9a-fA-F]{1,64}$/u;
 const DATA = /^0x(?:[0-9a-fA-F]{2})*$/u;
 const HASH = /^0x[0-9a-fA-F]{64}$/u;
@@ -310,7 +311,8 @@ function decimalOf(value: unknown): bigint {
 }
 
 function rowIdOf(value: unknown): string {
-  if (typeof value !== "string" || !ROW_ID.test(value)) {
+  const digits = typeof value === "string" ? ROW_ID.exec(value)?.[1] : undefined;
+  if (typeof value !== "string" || digits === undefined || BigInt(digits) > U64_MAX) {
     throw new GatewayUnavailableError("history answered a malformed row id");
   }
   return value;

@@ -33,9 +33,10 @@ const gateway = await import("../src/api/gateway.ts");
 
 const POSITION = "00000000000000070000000100000002";
 
-// Recorded from the gateway's px_getUnifiedHistory read over the loopback
-// indexer store (history::tests in the gateway); the gateway test fails when
-// this file stops matching what the gateway answers.
+// The gateway's whole px_getUnifiedHistory answer, recorded over the loopback
+// indexer store with the account resolved on Paxeer (history::tests in the
+// gateway); the gateway test fails when this file stops matching what the
+// gateway answers.
 const recorded = JSON.parse(
   readFileSync(new URL("./fixtures/px-get-unified-history.json", import.meta.url), "utf8"),
 ) as {
@@ -99,7 +100,6 @@ test("px_getHistory pages by the position cursor and keeps positions and heights
     }),
     async (calls) => {
       const page = await gateway.paxeerHistory(ADDRESS.toUpperCase().replace("0X", "0x"), { cursor: POSITION });
-      assert.ok(page.items.every((item) => item.side === null));
       assert.deepEqual(calls, [
         {
           method: "px_getHistory",
@@ -158,6 +158,45 @@ test("px_getUnifiedHistory reads the recorded gateway answer with side on every 
       );
     },
   );
+});
+
+test("px_getHistory reports no side even for rows that carry one", async () => {
+  assert.ok(recorded.result.items.every((item) => item.side === "paxeer"));
+  await serving(
+    () => recorded.result,
+    async () => {
+      const page = await gateway.paxeerHistory(ADDRESS);
+      assert.deepEqual(
+        page.items.map((item) => item.side),
+        [null, null, null, null],
+      );
+    },
+  );
+});
+
+test("history takes every row id the gateway passes through", async () => {
+  const ids = ["0", "007", "explorer:0", "explorer:18446744073709551615"];
+  await serving(
+    () => ({
+      ...recorded.result,
+      items: recorded.result.items.map((item, index) => ({ ...item, id: ids[index] })),
+    }),
+    async () => {
+      const page = await gateway.unifiedHistory(ADDRESS);
+      assert.deepEqual(
+        page.items.map((item) => item.id),
+        ids,
+      );
+    },
+  );
+  for (const id of ["18446744073709551616", "explorer:", "", "1a", "-1", "explorer:explorer:1"]) {
+    await serving(
+      () => ({ ...recorded.result, items: [{ ...recorded.result.items[0], id }] }),
+      async () => {
+        await assert.rejects(() => gateway.unifiedHistory(ADDRESS), gateway.GatewayUnavailableError, id);
+      },
+    );
+  }
 });
 
 test("history refuses a non-position cursor, a missing position and a bare native key", async () => {
