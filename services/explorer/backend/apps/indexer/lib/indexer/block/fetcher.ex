@@ -29,6 +29,7 @@ defmodule Indexer.Block.Fetcher do
   alias Indexer.Fetcher.CoinBalance.Catchup, as: CoinBalanceCatchup
   alias Indexer.Fetcher.CoinBalance.Realtime, as: CoinBalanceRealtime
   alias Indexer.Fetcher.Filecoin.AddressInfo, as: FilecoinAddressInfo
+  alias Indexer.Fetcher.PaxeerX.PriceUpdates, as: PaxeerXPriceUpdates
   alias Indexer.Fetcher.PolygonZkevm.BridgeL1Tokens, as: PolygonZkevmBridgeL1Tokens
   alias Indexer.Fetcher.TokenBalance.Current, as: TokenBalanceCurrent
   alias Indexer.Fetcher.TokenBalance.Historical, as: TokenBalanceHistorical
@@ -308,6 +309,8 @@ defmodule Indexer.Block.Fetcher do
       end)
 
       async_match_arbitrum_messages_to_l2(arbitrum_transactions_for_further_handling)
+
+      PaxeerXPriceUpdates.async_fetch(Map.get(inserted, :blocks, []), callback_module == Indexer.Block.Realtime.Fetcher)
 
       if chain_type() == :zilliqa do
         inserted_logs = Map.get(inserted, :logs, [])

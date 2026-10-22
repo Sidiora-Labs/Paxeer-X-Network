@@ -64,6 +64,17 @@ defmodule Explorer.Chain.PaxeerX.Identity do
   def parse(_input), do: :error
 
   @doc """
+  The 20 account bytes a `pax` bech32 string encodes, the same bytes its EVM address spells.
+  """
+  @spec pax_address_bytes(String.t()) :: {:ok, <<_::160>>} | :error
+  def pax_address_bytes(input) when is_binary(input) do
+    case bech32_decode(input) do
+      {:ok, @pax_hrp, <<_::binary-size(20)>> = bytes} -> {:ok, bytes}
+      _ -> :error
+    end
+  end
+
+  @doc """
   The DID of a 32-byte kernel key, lower case hexadecimal without the `0x` prefix.
   """
   @spec did(String.t()) :: String.t()

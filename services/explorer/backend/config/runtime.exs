@@ -1908,6 +1908,44 @@ config :indexer, Indexer.Fetcher.RootstockData,
 
 config :indexer, Indexer.Fetcher.Beacon, beacon_rpc: System.get_env("INDEXER_BEACON_RPC_URL") || "http://localhost:5052"
 
+paxeer_x_price_feed_enabled? = ConfigHelper.parse_bool_env_var("PAXEER_X_PRICE_FEED_ENABLED")
+
+paxeer_x_url_list = fn env_var ->
+  urls =
+    env_var
+    |> System.get_env("")
+    |> String.split(",", trim: true)
+    |> Enum.map(&(&1 |> String.trim() |> String.trim_trailing("/")))
+    |> Enum.reject(&(&1 == ""))
+
+  if paxeer_x_price_feed_enabled? and
+       (urls == [] or
+          Enum.any?(urls, &(URI.parse(&1).scheme not in ["http", "https"] or URI.parse(&1).host in [nil, ""]))) do
+    raise ArgumentError, "PAXEER_X_PRICE_FEED_ENABLED=true requires #{env_var} to be a comma list of http(s) URLs"
+  end
+
+  urls
+end
+
+paxeer_x_price_feed_start_block = ConfigHelper.parse_integer_or_nil_env_var("PAXEER_X_PRICE_FEED_START_BLOCK")
+
+if paxeer_x_price_feed_enabled? and
+     not (is_integer(paxeer_x_price_feed_start_block) and paxeer_x_price_feed_start_block >= 0) do
+  raise ArgumentError, "PAXEER_X_PRICE_FEED_ENABLED=true requires PAXEER_X_PRICE_FEED_START_BLOCK"
+end
+
+config :indexer, Indexer.Fetcher.PaxeerX.PriceUpdates.Supervisor, disabled?: not paxeer_x_price_feed_enabled?
+
+config :indexer, Indexer.Fetcher.PaxeerX.PriceUpdates,
+  cosmos_rest_urls: paxeer_x_url_list.("PAXEER_X_COSMOS_REST_URLS"),
+  cometbft_rpc_urls: paxeer_x_url_list.("PAXEER_X_COMETBFT_RPC_URLS"),
+  start_block: paxeer_x_price_feed_start_block,
+  concurrency: ConfigHelper.parse_integer_env_var("PAXEER_X_PRICE_FEED_CONCURRENCY", 4),
+  markets_refresh_seconds: ConfigHelper.parse_integer_env_var("PAXEER_X_PRICE_FEED_MARKETS_REFRESH_SECONDS", 300),
+  precompile:
+    System.get_env("PAXEER_X_PRICE_FEED_PRECOMPILE", "0x0000000000000000000000000000000000001020")
+    |> String.downcase()
+
 config :indexer, Indexer.Fetcher.Beacon.Blob.Supervisor,
   disabled?:
     ConfigHelper.chain_type() != :ethereum ||

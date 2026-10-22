@@ -62,4 +62,17 @@ defmodule Explorer.Chain.PaxeerX.IdentityTest do
       assert Identity.key(nil) == nil
     end
   end
+
+  describe "pax_address_bytes/1" do
+    test "returns the 20 bytes the EVM address spells" do
+      assert Identity.pax_address_bytes(@pax_address) ==
+               {:ok, Base.decode16!("7be8076f4ea4a4ad08075c2508e481d6c946d12b", case: :lower)}
+    end
+
+    test "refuses another human readable part, a broken checksum and an EVM address" do
+      assert Identity.pax_address_bytes("cosmos1005qwm6w5jj26zq8tsjs3eyp6my5d5fthrlqk3") == :error
+      assert Identity.pax_address_bytes(String.replace_suffix(@pax_address, "k3", "k4")) == :error
+      assert Identity.pax_address_bytes(@evm_address) == :error
+    end
+  end
 end

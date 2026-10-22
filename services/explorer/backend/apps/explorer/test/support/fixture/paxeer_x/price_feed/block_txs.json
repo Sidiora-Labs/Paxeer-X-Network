@@ -1,0 +1,259 @@
+{
+  "txs": [
+    {
+      "body": {
+        "messages": [
+          {
+            "@type": "/paxprotocol.paxchain.pricefeed.MsgSubmitPrices",
+            "feeder": "pax1h9lpwllxuuqakt8ctsd6zvrk3qtxxxxvyfs9jc",
+            "observations": [
+              {
+                "market_id": "0",
+                "sequence": "63784",
+                "index_price": "82830900000000000000000",
+                "mark_price": "82830900000000000000000",
+                "source_timestamp_ms": "1792636042680"
+              },
+              {
+                "market_id": "1",
+                "sequence": "63674",
+                "index_price": "2438450000000000000000",
+                "mark_price": "2438450000000000000000",
+                "source_timestamp_ms": "1792636042679"
+              },
+              {
+                "market_id": "2",
+                "sequence": "63573",
+                "index_price": "105283000000000000000",
+                "mark_price": "105283000000000000000",
+                "source_timestamp_ms": "1792636042670"
+              },
+              {
+                "market_id": "3",
+                "sequence": "63519",
+                "index_price": "9360000000000000000",
+                "mark_price": "9360000000000000000",
+                "source_timestamp_ms": "1792636042669"
+              },
+              {
+                "market_id": "4",
+                "sequence": "63433",
+                "index_price": "12310999999999998000",
+                "mark_price": "12310999999999998000",
+                "source_timestamp_ms": "1792636042672"
+              },
+              {
+                "market_id": "5",
+                "sequence": "63317",
+                "index_price": "372250000000000000000",
+                "mark_price": "372250000000000000000",
+                "source_timestamp_ms": "1792636042686"
+              },
+              {
+                "market_id": "6",
+                "sequence": "63172",
+                "index_price": "218870000000000000000",
+                "mark_price": "218870000000000000000",
+                "source_timestamp_ms": "1792636042683"
+              },
+              {
+                "market_id": "7",
+                "sequence": "63191",
+                "index_price": "29519999999999996000000",
+                "mark_price": "29519999999999996000000",
+                "source_timestamp_ms": "1792636042685"
+              },
+              {
+                "market_id": "8",
+                "sequence": "63148",
+                "index_price": "4117700000000000000000",
+                "mark_price": "4117700000000000000000",
+                "source_timestamp_ms": "1792636042684"
+              },
+              {
+                "market_id": "9",
+                "sequence": "63158",
+                "index_price": "7717510000000000000000",
+                "mark_price": "7717510000000000000000",
+                "source_timestamp_ms": "1792636042687"
+              },
+              {
+                "market_id": "10",
+                "sequence": "63138",
+                "index_price": "332500000000000000000",
+                "mark_price": "332500000000000000000",
+                "source_timestamp_ms": "1792636042686"
+              },
+              {
+                "market_id": "11",
+                "sequence": "63110",
+                "index_price": "13494614888301472000",
+                "mark_price": "13494614888301472000",
+                "source_timestamp_ms": "1792636042683"
+              },
+              {
+                "market_id": "12",
+                "sequence": "63104",
+                "index_price": "4586443146439285000",
+                "mark_price": "4586443146439285000",
+                "source_timestamp_ms": "1792636042687"
+              },
+              {
+                "market_id": "13",
+                "sequence": "63099",
+                "index_price": "79392000000000000000",
+                "mark_price": "79392000000000000000",
+                "source_timestamp_ms": "1792636042671"
+              },
+              {
+                "market_id": "14",
+                "sequence": "63069",
+                "index_price": "1343200000000000000",
+                "mark_price": "1343200000000000000",
+                "source_timestamp_ms": "1792636042671"
+              },
+              {
+                "market_id": "15",
+                "sequence": "63121",
+                "index_price": "711900000000000000",
+                "mark_price": "711900000000000000",
+                "source_timestamp_ms": "1792636042672"
+              },
+              {
+                "market_id": "16",
+                "sequence": "63106",
+                "index_price": "1791000000000000400",
+                "mark_price": "1791000000000000400",
+                "source_timestamp_ms": "1792636042685"
+              },
+              {
+                "market_id": "17",
+                "sequence": "63100",
+                "index_price": "740540000000000000000",
+                "mark_price": "740540000000000000000",
+                "source_timestamp_ms": "1792636042673"
+              }
+            ]
+          }
+        ],
+        "memo": "",
+        "timeout_height": "0",
+        "extension_options": [
+        ],
+        "non_critical_extension_options": [
+        ]
+      },
+      "auth_info": {
+        "signer_infos": [
+          {
+            "public_key": {
+              "@type": "/cosmos.crypto.secp256k1.PubKey",
+              "key": "AzSHQV6ttXKV9MVxDGcHPOwnxV9MQE207uD9BTypwrve"
+            },
+            "mode_info": {
+              "single": {
+                "mode": "SIGN_MODE_DIRECT"
+              }
+            },
+            "sequence": "62852"
+          }
+        ],
+        "fee": {
+          "amount": [
+          ],
+          "gas_limit": "200000",
+          "payer": "",
+          "granter": "",
+          "gas_estimate": "0"
+        }
+      },
+      "signatures": [
+        "KoQb8NIP7AkR+3TLSPAa4DPaeM+6TCGJkJshjSfiW/cXone5hTAG4zDkW+6dXAZEefgJFKODR4z5xEAqN+Bu1w=="
+      ]
+    }
+  ],
+  "block_id": {
+    "hash": "7z8+keu80JOY50ztbzrmnoUw46i44HcqVBCUH4khew8=",
+    "part_set_header": {
+      "total": 1,
+      "hash": "bLhfuWG53CCql1VTJFh0mXE9riXkFb2i0NB2rIPpegQ="
+    }
+  },
+  "block": {
+    "header": {
+      "version": {
+        "block": "11",
+        "app": "0"
+      },
+      "chain_id": "hyperpax_125-1",
+      "height": "37715713",
+      "time": "2026-10-22T02:27:24.287094938Z",
+      "last_block_id": {
+        "hash": "l5Oag4ETRMkE+gXIhF8lvFq6jZPsGPTJOZgDDS9hvyU=",
+        "part_set_header": {
+          "total": 1,
+          "hash": "wBdYgrYNj9kBTd+zrFVr6qq2HhdGBBTi9WBoI0zr8r8="
+        }
+      },
+      "last_commit_hash": "bkW/4uogr/t61rHi+7f0Kd2TJmxk0pd1+zU98R3VDMU=",
+      "data_hash": "IumFOMFCI1cglJGDk3W9LQq9jyj8UUFqzQt421UCdQA=",
+      "validators_hash": "23mkjxIRKefumxOftXyRVoJKKH8MZ3Q8anvoS19aczs=",
+      "next_validators_hash": "23mkjxIRKefumxOftXyRVoJKKH8MZ3Q8anvoS19aczs=",
+      "consensus_hash": "G/JVbKXV1+/7VA80yw/8d6MgLjInVVevvSGYgqnkKs8=",
+      "app_hash": "nwQqANQSNwrGCRI5FfLfCZh3YvkKlA9x7ePq46YeEJY=",
+      "last_results_hash": "0+bWsbWfuQa9gyBhLX+oR320EzMR9Q353RjHNwan+Ns=",
+      "evidence_hash": "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
+      "proposer_address": "s61ag1tBiVipFC2Ggb+0uB0s8nA="
+    },
+    "data": {
+      "txs": [
+        "Cp0JCpoJCi8vcGF4cHJvdG9jb2wucGF4Y2hhaW4ucHJpY2VmZWVkLk1zZ1N1Ym1pdFByaWNlcxLmCAoqcGF4MWg5bHB3bGx4dXVxYWt0OGN0c2Q2enZyazNxdHh4eHh2eWZzOWpjEj0QqPIDGhc4MjgzMDkwMDAwMDAwMDAwMDAwMDAwMCIXODI4MzA5MDAwMDAwMDAwMDAwMDAwMDAouPu8i5Y0Ej0IARC68QMaFjI0Mzg0NTAwMDAwMDAwMDAwMDAwMDAiFjI0Mzg0NTAwMDAwMDAwMDAwMDAwMDAot/u8i5Y0EjsIAhDV8AMaFTEwNTI4MzAwMDAwMDAwMDAwMDAwMCIVMTA1MjgzMDAwMDAwMDAwMDAwMDAwKK77vIuWNBI3CAMQn/ADGhM5MzYwMDAwMDAwMDAwMDAwMDAwIhM5MzYwMDAwMDAwMDAwMDAwMDAwKK37vIuWNBI5CAQQye8DGhQxMjMxMDk5OTk5OTk5OTk5ODAwMCIUMTIzMTA5OTk5OTk5OTk5OTgwMDAosPu8i5Y0EjsIBRDV7gMaFTM3MjI1MDAwMDAwMDAwMDAwMDAwMCIVMzcyMjUwMDAwMDAwMDAwMDAwMDAwKL77vIuWNBI7CAYQxO0DGhUyMTg4NzAwMDAwMDAwMDAwMDAwMDAiFTIxODg3MDAwMDAwMDAwMDAwMDAwMCi7+7yLljQSPwgHENftAxoXMjk1MTk5OTk5OTk5OTk5OTYwMDAwMDAiFzI5NTE5OTk5OTk5OTk5OTk2MDAwMDAwKL37vIuWNBI9CAgQrO0DGhY0MTE3NzAwMDAwMDAwMDAwMDAwMDAwIhY0MTE3NzAwMDAwMDAwMDAwMDAwMDAwKLz7vIuWNBI9CAkQtu0DGhY3NzE3NTEwMDAwMDAwMDAwMDAwMDAwIhY3NzE3NTEwMDAwMDAwMDAwMDAwMDAwKL/7vIuWNBI7CAoQou0DGhUzMzI1MDAwMDAwMDAwMDAwMDAwMDAiFTMzMjUwMDAwMDAwMDAwMDAwMDAwMCi++7yLljQSOQgLEIbtAxoUMTM0OTQ2MTQ4ODgzMDE0NzIwMDAiFDEzNDk0NjE0ODg4MzAxNDcyMDAwKLv7vIuWNBI3CAwQgO0DGhM0NTg2NDQzMTQ2NDM5Mjg1MDAwIhM0NTg2NDQzMTQ2NDM5Mjg1MDAwKL/7vIuWNBI5CA0Q++wDGhQ3OTM5MjAwMDAwMDAwMDAwMDAwMCIUNzkzOTIwMDAwMDAwMDAwMDAwMDAor/u8i5Y0EjcIDhDd7AMaEzEzNDMyMDAwMDAwMDAwMDAwMDAiEzEzNDMyMDAwMDAwMDAwMDAwMDAor/u8i5Y0EjUIDxCR7QMaEjcxMTkwMDAwMDAwMDAwMDAwMCISNzExOTAwMDAwMDAwMDAwMDAwKLD7vIuWNBI3CBAQgu0DGhMxNzkxMDAwMDAwMDAwMDAwNDAwIhMxNzkxMDAwMDAwMDAwMDAwNDAwKL37vIuWNBI7CBEQ/OwDGhU3NDA1NDAwMDAwMDAwMDAwMDAwMDAiFTc0MDU0MDAwMDAwMDAwMDAwMDAwMCix+7yLljQSWgpSCkYKHy9jb3Ntb3MuY3J5cHRvLnNlY3AyNTZrMS5QdWJLZXkSIwohAzSHQV6ttXKV9MVxDGcHPOwnxV9MQE207uD9BTypwrveEgQKAggBGITrAxIEEMCaDBpAKoQb8NIP7AkR+3TLSPAa4DPaeM+6TCGJkJshjSfiW/cXone5hTAG4zDkW+6dXAZEefgJFKODR4z5xEAqN+Bu1w=="
+      ]
+    },
+    "evidence": {
+      "evidence": [
+      ]
+    },
+    "last_commit": {
+      "height": "37715712",
+      "round": 0,
+      "block_id": {
+        "hash": "l5Oag4ETRMkE+gXIhF8lvFq6jZPsGPTJOZgDDS9hvyU=",
+        "part_set_header": {
+          "total": 1,
+          "hash": "wBdYgrYNj9kBTd+zrFVr6qq2HhdGBBTi9WBoI0zr8r8="
+        }
+      },
+      "signatures": [
+        {
+          "block_id_flag": "BLOCK_ID_FLAG_COMMIT",
+          "validator_address": "LTmKar7Zp0xW/dilIf9ybLvez6U=",
+          "timestamp": "2026-10-22T02:27:24.227750267Z",
+          "signature": "CdaVMWSVo5qIAqtPe3Cdc+EzOXNho4EYoTJGjTftsdHrGdZEhZcbbinP29plYtSc+x8lXAAZ5b3JjCAMbrGzDg=="
+        },
+        {
+          "block_id_flag": "BLOCK_ID_FLAG_COMMIT",
+          "validator_address": "iMpq0HzIubDAmxBFwTL1yTpiim4=",
+          "timestamp": "2026-10-22T02:27:24.229226105Z",
+          "signature": "QAq6bGlBM4byOdqTutbaFKRtG9QMlafRGzPM1uZwPf0arY3So5oD6UrRY0wZwrADWRhZq5AsIutOip+VEJfoDA=="
+        },
+        {
+          "block_id_flag": "BLOCK_ID_FLAG_COMMIT",
+          "validator_address": "s61ag1tBiVipFC2Ggb+0uB0s8nA=",
+          "timestamp": "2026-10-22T02:27:24.226155965Z",
+          "signature": "q8cDk5bAjBgkgLe3LUaZGibV4iTIiK38S2cQs22v4x+cznvkZs+06ZwmzdjYbPbPptLbxqH9fGrRNGBYAhh2Bg=="
+        },
+        {
+          "block_id_flag": "BLOCK_ID_FLAG_COMMIT",
+          "validator_address": "vaBUMQ03/Z3MyEoGfeVil7Ddado=",
+          "timestamp": "2026-10-22T02:27:24.209264597Z",
+          "signature": "XSscuenVYV5/Z3r2vQ8IyKBDrp32xaxxI8qzNDpGrgOASNSqmXyIwkpRihyefjMQQ5zSrBu4lantr2jDhMtLBA=="
+        }
+      ]
+    }
+  },
+  "pagination": {
+    "next_key": null,
+    "total": "1"
+  }
+}

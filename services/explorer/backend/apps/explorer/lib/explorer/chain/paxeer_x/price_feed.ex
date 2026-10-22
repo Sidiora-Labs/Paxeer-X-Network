@@ -1,0 +1,257 @@
+defmodule Explorer.Chain.PaxeerX.PriceFeed do
+  @moduledoc """
+  Reads and writes native price-feed submissions.
+
+  Reads return only submissions of consensus blocks, newest first by
+  `(block_number, index)`, with their observations preloaded in market order. Paging is
+  keyset paging on `Explorer.PagingOptions`: `key` is the `{block_number, index}` of the
+  last item already shown, or `nil` for the first page.
+
+  Writes replace a whole block at a time: `replace_block_updates/2` deletes the updates
+  stored for the block's height, inserts the ones just read and marks the height scanned
+  in one transaction, so rescanning a refetched block leaves no stale row behind.
+  """
+
+  import Ecto.Query
+
+  alias Explorer.Chain.{Block, Hash}
+  alias Explorer.Chain.PaxeerX.{PriceFeedScannedBlock, PriceMarket, PriceObservation, PriceUpdate}
+  alias Explorer.{PagingOptions, Repo}
+
+  @default_page_size 50
+
+  @type filters :: [feeder: Hash.Address.t() | nil, market_id: non_neg_integer() | nil]
+
+  @doc """
+  A page of submissions, optionally only those of one feeder or carrying one market.
+  """
+  @spec list_updates(PagingOptions.t(), filters()) :: [PriceUpdate.t()]
+  def list_updates(%PagingOptions{} = paging_options, filters \\ []) do
+    consensus_updates_query()
+    |> filter_feeder(filters[:feeder])
+    |> filter_market(filters[:market_id])
+    |> page_updates(paging_options)
+    |> limit(^page_size(paging_options))
+    |> preload_observations()
+    |> Repo.all()
+  end
+
+  @doc """
+  The submission with the given hash, or `nil`.
+  """
+  @spec update_by_hash(Hash.Full.t() | String.t()) :: PriceUpdate.t() | nil
+  def update_by_hash(hash) do
+    case Hash.Full.cast(hash) do
+      {:ok, hash} ->
+        consensus_updates_query()
+        |> where([update], update.hash == ^hash)
+        |> preload_observations()
+        |> Repo.one()
+
+      :error ->
+        nil
+    end
+  end
+
+  @doc """
+  Every known market in id order with its latest consensus observation and that
+  observation's submission preloaded, or `nil` when the market has none.
+  """
+  @spec latest_per_market() :: [{PriceMarket.t(), PriceObservation.t() | nil}]
+  def latest_per_market do
+    latest =
+      from(observation in PriceObservation,
+        inner_join: update in assoc(observation, :update),
+        inner_join: block in Block,
+        on: block.hash == update.block_hash and block.consensus == true,
+        distinct: observation.market_id,
+        order_by: [asc: observation.market_id, desc: observation.block_number, desc: update.index],
+        preload: [update: update]
+      )
+      |> Repo.all()
+      |> Map.new(&{&1.market_id, &1})
+
+    PriceMarket
+    |> order_by(asc: :market_id)
+    |> Repo.all()
+    |> Enum.map(&{&1, Map.get(latest, &1.market_id)})
+  end
+
+  @doc """
+  A page of one market's observations, newest first, each with its submission preloaded.
+  """
+  @spec market_updates(non_neg_integer(), PagingOptions.t()) :: [PriceObservation.t()]
+  def market_updates(market_id, %PagingOptions{} = paging_options) when is_integer(market_id) do
+    from(observation in PriceObservation,
+      inner_join: update in assoc(observation, :update),
+      as: :update,
+      inner_join: block in Block,
+      on: block.hash == update.block_hash and block.consensus == true,
+      where: observation.market_id == ^market_id,
+      order_by: [desc: observation.block_number, desc: update.index],
+      preload: [update: update]
+    )
+    |> page_updates(paging_options)
+    |> limit(^page_size(paging_options))
+    |> Repo.all()
+  end
+
+  @doc """
+  The submissions of the given heights, newest first.
+  """
+  @spec updates_in_blocks([non_neg_integer()]) :: [PriceUpdate.t()]
+  def updates_in_blocks(block_numbers) when is_list(block_numbers) do
+    consensus_updates_query()
+    |> where([update], update.block_number in ^block_numbers)
+    |> preload_observations()
+    |> Repo.all()
+  end
+
+  @doc """
+  The submissions of one height in transaction order, newest first.
+  """
+  @spec block_updates(non_neg_integer()) :: [PriceUpdate.t()]
+  def block_updates(block_number) when is_integer(block_number), do: updates_in_blocks([block_number])
+
+  @doc """
+  Stores the submissions read for one consensus block and marks its height scanned.
+
+  `updates` are the maps `Explorer.PaxeerX.CosmosRest.block_price_updates/3` returns.
+  """
+  @spec replace_block_updates(Block.t(), [map()]) :: {:ok, non_neg_integer()} | {:error, term()}
+  def replace_block_updates(%Block{number: number, hash: block_hash, timestamp: timestamp}, updates) do
+    now = DateTime.utc_now()
+
+    updates = Enum.map(updates, &cast_hashes/1)
+
+    update_rows =
+      Enum.map(updates, fn update ->
+        update
+        |> Map.take(~w(hash index feeder_hash feeder_bech32 status gas_used gas_wanted)a)
+        |> Map.merge(%{
+          block_number: number,
+          block_hash: block_hash,
+          observation_count: length(update.observations),
+          timestamp: timestamp,
+          inserted_at: now,
+          updated_at: now
+        })
+      end)
+
+    observation_rows =
+      Enum.flat_map(updates, fn update ->
+        Enum.map(update.observations, &Map.merge(&1, %{update_hash: update.hash, block_number: number}))
+      end)
+
+    Repo.transaction(fn ->
+      Repo.delete_all(from(update in PriceUpdate, where: update.block_number == ^number))
+      {count, _} = Repo.insert_all(PriceUpdate, update_rows)
+      Repo.insert_all(PriceObservation, observation_rows)
+
+      Repo.insert_all(PriceFeedScannedBlock, [%{block_number: number}],
+        on_conflict: :nothing,
+        conflict_target: :block_number
+      )
+
+      count
+    end)
+  end
+
+  @doc """
+  Inserts or refreshes market rows from `%{market_id, symbol, chainflow_symbol}` maps.
+  """
+  @spec upsert_markets([map()]) :: non_neg_integer()
+  def upsert_markets(markets) do
+    now = DateTime.utc_now()
+    rows = Enum.map(markets, &Map.put(Map.take(&1, ~w(market_id symbol chainflow_symbol)a), :refreshed_at, now))
+
+    {count, _} =
+      Repo.insert_all(PriceMarket, rows,
+        on_conflict: {:replace, [:symbol, :chainflow_symbol, :refreshed_at]},
+        conflict_target: :market_id
+      )
+
+    count
+  end
+
+  @doc """
+  When the market list was last refreshed, or `nil` before the first refresh.
+  """
+  @spec markets_refreshed_at() :: DateTime.t() | nil
+  def markets_refreshed_at, do: Repo.one(from(market in PriceMarket, select: max(market.refreshed_at)))
+
+  @doc """
+  The market ids among `market_ids` that have no market row.
+  """
+  @spec unknown_market_ids([non_neg_integer()]) :: [non_neg_integer()]
+  def unknown_market_ids(market_ids) do
+    known = Repo.all(from(market in PriceMarket, where: market.market_id in ^market_ids, select: market.market_id))
+    Enum.uniq(market_ids) -- known
+  end
+
+  @doc """
+  Reduces over the consensus block heights at or above `start_block` that have not been
+  scanned yet, lowest first.
+  """
+  @spec stream_unscanned_block_numbers(acc, (non_neg_integer(), acc -> acc), non_neg_integer()) :: {:ok, acc}
+        when acc: term()
+  def stream_unscanned_block_numbers(initial, reducer, start_block) when is_function(reducer, 2) do
+    from(block in Block,
+      left_join: scanned in PriceFeedScannedBlock,
+      on: scanned.block_number == block.number,
+      where: block.consensus == true and block.number >= ^start_block and is_nil(scanned.block_number),
+      order_by: [asc: block.number],
+      select: block.number
+    )
+    |> Repo.stream_reduce(initial, reducer)
+  end
+
+  defp cast_hashes(%{hash: hash, feeder_hash: feeder_hash} = update) do
+    {:ok, hash} = Hash.Full.cast(hash)
+    {:ok, feeder_hash} = Hash.Address.cast(feeder_hash)
+    %{update | hash: hash, feeder_hash: feeder_hash}
+  end
+
+  defp consensus_updates_query do
+    from(update in PriceUpdate,
+      as: :update,
+      inner_join: block in Block,
+      on: block.hash == update.block_hash and block.consensus == true,
+      order_by: [desc: update.block_number, desc: update.index]
+    )
+  end
+
+  defp filter_feeder(query, nil), do: query
+  defp filter_feeder(query, feeder), do: where(query, [update], update.feeder_hash == ^feeder)
+
+  defp filter_market(query, nil), do: query
+
+  defp filter_market(query, market_id) do
+    where(
+      query,
+      [update],
+      exists(
+        from(observation in PriceObservation,
+          where: observation.update_hash == parent_as(:update).hash and observation.market_id == ^market_id
+        )
+      )
+    )
+  end
+
+  defp page_updates(query, %PagingOptions{key: {block_number, index}}) do
+    where(
+      query,
+      [update: update],
+      update.block_number < ^block_number or (update.block_number == ^block_number and update.index < ^index)
+    )
+  end
+
+  defp page_updates(query, _paging_options), do: query
+
+  defp page_size(%PagingOptions{page_size: page_size}) when is_integer(page_size) and page_size > 0, do: page_size
+  defp page_size(_paging_options), do: @default_page_size
+
+  defp preload_observations(query) do
+    preload(query, observations: ^from(observation in PriceObservation, order_by: observation.market_id))
+  end
+end

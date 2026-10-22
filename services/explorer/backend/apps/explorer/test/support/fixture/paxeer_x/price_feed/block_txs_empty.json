@@ -1,0 +1,6 @@
+{
+  "code": 3,
+  "message": "out of range: cannot paginate 0 txs with offset 0 and limit 100: invalid request: invalid request",
+  "details": [
+  ]
+}

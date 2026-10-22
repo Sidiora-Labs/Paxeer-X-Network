@@ -153,6 +153,19 @@ the shape of the explorer:
 | accounts and media | `ACCOUNT_ENABLED`, `NFT_MEDIA_HANDLER_ENABLED` |
 | runtime | `DISABLE_FILE_LOGGING`, `HEART_BEAT_TIMEOUT`, `TXS_STATS_DAYS_TO_COMPILE_AT_INIT`, `COIN_BALANCE_HISTORY_DAYS` |
 
+Price feed — off by default; once `PAXEER_X_PRICE_FEED_ENABLED` is `true` the
+first three below must be set or the release refuses to boot:
+
+| Name | What it selects |
+| --- | --- |
+| `PAXEER_X_PRICE_FEED_ENABLED` | scan blocks for native price-feed submissions, `false` by default |
+| `PAXEER_X_COSMOS_REST_URLS` | comma list of node Cosmos REST base URLs, read for `txs/block` |
+| `PAXEER_X_COMETBFT_RPC_URLS` | comma list of node CometBFT RPC base URLs, read for `block_results` |
+| `PAXEER_X_PRICE_FEED_START_BLOCK` | first height scanned, no default |
+| `PAXEER_X_PRICE_FEED_CONCURRENCY` | blocks scanned in parallel, `4` by default |
+| `PAXEER_X_PRICE_FEED_MARKETS_REFRESH_SECONDS` | age after which the market list is read again, `300` by default |
+| `PAXEER_X_PRICE_FEED_PRECOMPILE` | price-feed precompile address, `0x0000000000000000000000000000000000001020` by default |
+
 Without `API_RATE_LIMIT_HAMMER_REDIS_URL` the rate limiter falls back to an
 in-process ETS table, which is correct for a single replica and wrong for
 several; add Redis before scaling the backend out.
