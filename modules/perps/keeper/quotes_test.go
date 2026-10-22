@@ -202,7 +202,7 @@ func TestQuotesCloseEqualsExecution(t *testing.T) {
 				require.Equal(t, "61000000000000000000000", quote.ExitPrice.String())
 				order, err := f.keeper.PartialClose(f.ctx, f.account, id, size)
 				require.NoError(t, err)
-				events, err := f.keeper.quotePlace(f.ctx, order)
+				events, err := f.keeper.quotePlace(f.ctx, order, uint256.Int{})
 				require.NoError(t, err)
 				require.Equal(t, "499590000000000000000", quotesEventSum(t, events, types.EventTradeSettled, f.account, 4).String())
 				require.Equal(t, quote.ClosedPnl, quotesEventSum(t, events, types.EventTradeSettled, f.account, 6))
@@ -218,7 +218,7 @@ func TestQuotesCloseEqualsExecution(t *testing.T) {
 				require.Equal(t, "-16500000000000000", quote.FundingOwed.String())
 				order, err := f.keeper.ClosePosition(f.ctx, f.account, id)
 				require.NoError(t, err)
-				events, err := f.keeper.quotePlace(f.ctx, order)
+				events, err := f.keeper.quotePlace(f.ctx, order, order.SizeBase)
 				require.NoError(t, err)
 				require.Equal(t, quote.UnrealizedPnl, quotesEventSum(t, events, types.EventTradeSettled, f.account, 6))
 				require.Equal(t, quote.FundingOwed, quotesEventSum(t, events, types.EventTradeSettled, f.account, 8))
@@ -230,6 +230,35 @@ func TestQuotesCloseEqualsExecution(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A whole-position close at a mark off the tick places the exact position
+// size: 0.01650 BTC at 61,000e18+1 is 1,006.5 USD rounded down, which converts
+// back below 0.01650 and to 0.01649 at the lot, one lot short of the position.
+func TestQuotesCloseWholePositionAtUnalignedMark(t *testing.T) {
+	f := newQuotesFixture(t)
+	f.rest(t, "60000000000000000000000", false)
+	f.rest(t, "60100000000000000000000", false)
+	f.open(t, true)
+	state, err := f.keeper.quoteState(f.ctx, 0)
+	require.NoError(t, err)
+	state.MarkPrice = quotesNumber(t, "61000000000000000000001")
+	f.ctx.KVStore(f.perpsKey).Set(types.MarketStateKey(0), state.Marshal())
+	f.rest(t, "61000000000000000000000", true)
+	f.rest(t, "61000000000000000000000", true)
+	id := f.positionID(t)
+
+	quote, err := f.keeper.QuoteClose(f.ctx, id)
+	require.NoError(t, err)
+	order, err := f.keeper.ClosePosition(f.ctx, f.account, id)
+	require.NoError(t, err)
+	require.Equal(t, "16500000000000000", order.SizeBase.Dec())
+	events, err := f.keeper.quotePlace(f.ctx, order, order.SizeBase)
+	require.NoError(t, err)
+	require.Equal(t, "1006500000000000000000", quotesEventSum(t, events, types.EventTradeSettled, f.account, 4).String())
+	require.Equal(t, quote.UnrealizedPnl, quotesEventSum(t, events, types.EventTradeSettled, f.account, 6))
+	require.Nil(t, f.ctx.KVStore(f.perpsKey).Get(types.PositionKey(id)))
+	require.Nil(t, f.ctx.KVStore(f.perpsKey).Get(types.AccountMarketPositionKey(f.account, 0)))
 }
 
 func (f quotesFixture) hash(t *testing.T) []byte {

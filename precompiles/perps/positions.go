@@ -162,7 +162,7 @@ func handleClosePosition(p PrecompileExecutor, ctx sdk.Context, method *abi.Meth
 	if err != nil {
 		return nil, err
 	}
-	if err := p.placeClose(ctx, evm, caller, closing, uint256.Int{}, 0); err != nil {
+	if err := p.placeClose(ctx, evm, caller, closing, true, uint256.Int{}, 0); err != nil {
 		return nil, err
 	}
 	return method.Outputs.Pack()
@@ -188,7 +188,7 @@ func handlePartialClose(p PrecompileExecutor, ctx sdk.Context, method *abi.Metho
 	if err != nil {
 		return nil, err
 	}
-	if err := p.placeClose(ctx, evm, caller, closing, uint256.Int{}, 0); err != nil {
+	if err := p.placeClose(ctx, evm, caller, closing, false, uint256.Int{}, 0); err != nil {
 		return nil, err
 	}
 	return method.Outputs.Pack()
@@ -227,7 +227,7 @@ func handleClosePositionWithParams(p PrecompileExecutor, ctx sdk.Context, method
 	if err != nil {
 		return nil, err
 	}
-	if err := p.placeClose(ctx, evm, caller, closing, acceptablePrice, deadline); err != nil {
+	if err := p.placeClose(ctx, evm, caller, closing, closeSizeUsd.IsZero(), acceptablePrice, deadline); err != nil {
 		return nil, err
 	}
 	return method.Outputs.Pack()
@@ -375,15 +375,22 @@ func (p PrecompileExecutor) compatibilitySize(ctx sdk.Context, caller common.Add
 }
 
 // placeClose places the reduce-only closing order the keeper built, with the
-// caller's slippage bound (0 for the default) and deadline (0 for none).
+// caller's slippage bound (0 for the default) and deadline (0 for none). A
+// whole-position close is sized in base, the exact position size; a partial
+// close keeps its USD sizing at mark.
 func (p PrecompileExecutor) placeClose(ctx sdk.Context, evm *vm.EVM, caller common.Address, closing types.Order,
-	acceptablePrice uint256.Int, deadline uint64) error {
+	whole bool, acceptablePrice uint256.Int, deadline uint64) error {
+	var sizeBase uint256.Int
+	if whole {
+		sizeBase = closing.SizeBase
+	}
 	result, err := p.keeper.PlaceOrder(ctx, caller, perpskeeper.OrderParams{
 		MarketID:        closing.MarketID,
 		IsLong:          closing.IsLong,
 		OrderType:       uint8(closing.Type),
 		TimeInForce:     uint8(closing.TimeInForce),
 		SizeUsd:         closing.SizeUsd,
+		SizeBase:        sizeBase,
 		Leverage:        closing.Leverage,
 		AcceptablePrice: acceptablePrice,
 		ReduceOnly:      true,

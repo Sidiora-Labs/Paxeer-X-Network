@@ -483,6 +483,34 @@ func TestPositionsClosePositionRealisesPnl(t *testing.T) {
 	e.requireRevert("PerpsUnknownPosition", positionsTraderA, "closePosition", id)
 }
 
+// A whole-position close at a mark off the tick sells the exact position
+// size: 0.01650 BTC at 60,000e18+1 is 990 USD rounded down, which converts back
+// to 0.01649 at the lot and would leave one lot open.
+func TestPositionsWholeCloseAtUnalignedMarkLeavesNoBase(t *testing.T) {
+	for _, method := range []string{"closePosition", "closePositionWithParams"} {
+		t.Run(method, func(t *testing.T) {
+			e := newPositionsEnv(t, 100_000_000)
+			id := e.open()
+			e.cancelAsk()
+			e.rest(e.ctx(), positionsBidderC, true, 61_000)
+			e.setMark(new(big.Int).Add(positionsE18(60_000), big.NewInt(1)))
+
+			if method == "closePosition" {
+				e.mustCall(positionsTraderA, method, id)
+			} else {
+				e.mustCall(positionsTraderA, method, id, big.NewInt(0), big.NewInt(0), uint64(0))
+			}
+
+			_, held := e.position(positionsTraderA)
+			require.False(t, held)
+			_, fields := e.perpsLogs("PositionClosed")
+			require.Len(t, fields, 1)
+			require.Equal(t, new(big.Int).Div(positionsE18(10_065), big.NewInt(10)), fields[0]["closedSizeUsd"])
+			require.Equal(t, true, fields[0]["isFullClose"])
+		})
+	}
+}
+
 func TestPositionsPartialCloseRoundsToLot(t *testing.T) {
 	e := newPositionsEnv(t, 100_000_000)
 	id := e.open()

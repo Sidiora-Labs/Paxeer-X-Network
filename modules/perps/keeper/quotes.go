@@ -77,7 +77,7 @@ func (k Keeper) QuoteOpen(ctx sdk.Context, account common.Address, marketID uint
 	if err != nil {
 		return OpenPositionQuote{}, err
 	}
-	events, err := k.quotePlace(cache, order)
+	events, err := k.quotePlace(cache, order, uint256.Int{})
 	if err != nil {
 		return OpenPositionQuote{}, err
 	}
@@ -232,7 +232,7 @@ func (k Keeper) QuoteClose(ctx sdk.Context, positionID uint256.Int) (ClosePositi
 	if err != nil {
 		return ClosePositionQuote{}, err
 	}
-	events, err := k.quotePlace(cache, order)
+	events, err := k.quotePlace(cache, order, order.SizeBase)
 	if err != nil {
 		return ClosePositionQuote{}, err
 	}
@@ -249,7 +249,7 @@ func (k Keeper) QuotePartialClose(ctx sdk.Context, positionID, closeSizeUsd uint
 	if err != nil {
 		return PartialCloseQuote{}, err
 	}
-	events, err := k.quotePlace(cache, order)
+	events, err := k.quotePlace(cache, order, uint256.Int{})
 	if err != nil {
 		return PartialCloseQuote{}, err
 	}
@@ -311,9 +311,11 @@ func (k Keeper) OracleTWAP(ctx sdk.Context, marketID uint64) (*big.Int, error) {
 	return new(big.Int).Quo(state.OracleSum.ToBig(), new(big.Int).SetUint64(state.PremiumCount)), nil
 }
 
-func (k Keeper) quotePlace(ctx sdk.Context, order types.Order) ([]types.EventRecord, error) {
+// quotePlace places order as the quotes simulate it; a non-zero sizeBase
+// sizes it in base, as the whole-position close is placed.
+func (k Keeper) quotePlace(ctx sdk.Context, order types.Order, sizeBase uint256.Int) ([]types.EventRecord, error) {
 	placed, err := k.PlaceOrder(ctx, order.Account, OrderParams{MarketID: order.MarketID, IsLong: order.IsLong,
-		OrderType: uint8(order.Type), TimeInForce: uint8(order.TimeInForce), SizeUsd: order.SizeUsd,
+		OrderType: uint8(order.Type), TimeInForce: uint8(order.TimeInForce), SizeUsd: order.SizeUsd, SizeBase: sizeBase,
 		Leverage: order.Leverage, ReduceOnly: order.ReduceOnly})
 	if err != nil {
 		return nil, err

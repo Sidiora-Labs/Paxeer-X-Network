@@ -17,13 +17,17 @@ var fixedPointOne = uint256.NewInt(1_000_000_000_000_000_000)
 // OrderParams are the fields of the OrderParams tuple of contracts/perps.md
 // section 2 that the keeper reads; the collateral leg runs in the precompile.
 // Prices, sizeUsd and leverage are 18-decimal fixed point, Deadline is Unix
-// seconds of block time (0 for none) and a zero Cloid means none.
+// seconds of block time (0 for none) and a zero Cloid means none. A non-zero
+// SizeBase sizes the order in base instead of SizeUsd: the whole-position
+// close places the exact position size, which a conversion through USD at
+// mark can round below.
 type OrderParams struct {
 	MarketID        uint64
 	IsLong          bool
 	OrderType       uint8
 	TimeInForce     uint8
 	SizeUsd         uint256.Int
+	SizeBase        uint256.Int
 	Leverage        uint256.Int
 	LimitPrice      uint256.Int
 	TriggerPrice    uint256.Int
@@ -109,7 +113,7 @@ func (k *Keeper) PlaceOrder(ctx sdk.Context, account common.Address, p OrderPara
 	if err != nil {
 		return PlaceResult{}, err
 	}
-	if err := sizeOrder(market, p.SizeUsd, sizingPrice, &order); err != nil {
+	if err := sizeOrder(market, p.SizeUsd, p.SizeBase, sizingPrice, &order); err != nil {
 		return PlaceResult{}, err
 	}
 	if err := checkOrderValue(params, market, order); err != nil {
@@ -274,15 +278,19 @@ func checkTick(price, tick uint256.Int, name string) error {
 	return nil
 }
 
-// sizeOrder converts sizeUsd to base at the sizing price, rounds it down to
-// the lot and stores the base size and the order notional, base x price /
-// 1e18 rounded down.
-func sizeOrder(market types.Market, sizeUsd, price uint256.Int, order *types.Order) error {
-	base, overflow := new(uint256.Int).MulOverflow(&sizeUsd, fixedPointOne)
-	if overflow {
-		return fmt.Errorf("%w: size %s USD at %s", types.ErrOverflow, sizeUsd.Dec(), price.Dec())
+// sizeOrder converts sizeUsd to base at the sizing price, or takes sizeBase
+// when it is non-zero, rounds it down to the lot and stores the base size and
+// the order notional, base x price / 1e18 rounded down.
+func sizeOrder(market types.Market, sizeUsd, sizeBase, price uint256.Int, order *types.Order) error {
+	base := new(uint256.Int).Set(&sizeBase)
+	if base.IsZero() {
+		var overflow bool
+		base, overflow = new(uint256.Int).MulOverflow(&sizeUsd, fixedPointOne)
+		if overflow {
+			return fmt.Errorf("%w: size %s USD at %s", types.ErrOverflow, sizeUsd.Dec(), price.Dec())
+		}
+		base.Div(base, &price)
 	}
-	base.Div(base, &price)
 	lot := decimalStep(market.SzDecimals)
 	var residue uint256.Int
 	base.Sub(base, residue.Mod(base, &lot))
