@@ -379,53 +379,72 @@ func TestLoadFile(t *testing.T) {
 	}
 }
 
-func TestShippedPolicyAllowsWalletLaunchpadWrites(t *testing.T) {
+func TestShippedPolicyAllowsWalletSDKWrites(t *testing.T) {
 	doc, err := LoadFile(filepath.Join("..", "..", "..", "deploy", "attestor-policy.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	effective, err := compile(doc.Defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		precompile string
+		writes     []string
+		unlisted   string
+	}{
+		{"launchpad", []string{
+			"buy(address,uint256,uint256,uint256)",
+			"sell(address,uint256,uint256,uint256)",
+			"createMarket(string,string,uint8,address)",
+			"setFeeStrategy(uint256,uint8)",
+			"claimFees(uint256)",
+			"claimAirdrop(uint256)",
+			"executeAirdrop(uint256)",
+			"executeBurn(uint256)",
+			"executeLpRewards(uint256)",
+		}, "claimAirdrop(address,address)"},
+		{"layerxbridge", []string{
+			"bridgeIn(uint64,address,bytes32,uint64,bytes32,address,uint256,bytes[])",
+			"bridgeOut(uint64,address,uint256,address)",
+		}, "getCap(uint64,address)"},
+		{"feetoken", []string{"setFeeDenom(string)", "clearFeeDenom()"}, "getFeeDenom(address)"},
+		{"xweb", []string{"request(uint8,bytes,uint64)", "refund(uint64)"}, "fulfilProgram(bytes)"},
+	} {
+		contract, err := evm.PrecompileABI(row.precompile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		address, _ := evm.PrecompileAddress(row.precompile)
+		selector := func(sig string) []byte {
+			method, err := contract.MethodById(crypto.Keccak256([]byte(sig))[:4])
+			if err != nil || method.Sig != sig {
+				t.Fatalf("%s abi has no %s: %v", row.precompile, sig, err)
+			}
+			return method.ID
+		}
+		want := map[[4]byte]bool{}
+		for _, sig := range row.writes {
+			id := selector(sig)
+			want[[4]byte(id)] = true
+			if decision, ok := checkDestination(effective, Destination{Address: address, Selector: id, Precompile: true}); !ok {
+				t.Fatalf("%s %s refused: %+v", row.precompile, sig, decision)
+			}
+		}
+		if len(effective.selectors[address]) != len(want) {
+			t.Fatalf("shipped %s selectors %v, want exactly the wallet writes %v", row.precompile, effective.selectors[address], want)
+		}
+		decision, ok := checkDestination(effective, Destination{Address: address, Selector: selector(row.unlisted), Precompile: true})
+		if ok || decision.Code != CodeSelectorNotAllowed {
+			t.Fatalf("%s %s decision %+v, want %s", row.precompile, row.unlisted, decision, CodeSelectorNotAllowed)
+		}
+	}
+
 	contract, err := evm.PrecompileABI("launchpad")
 	if err != nil {
 		t.Fatal(err)
 	}
 	launchpad, _ := evm.PrecompileAddress("launchpad")
-	want := map[string]bool{}
-	for _, sig := range []string{
-		"buy(address,uint256,uint256,uint256)",
-		"sell(address,uint256,uint256,uint256)",
-		"createMarket(string,string,uint8,address)",
-		"setFeeStrategy(uint256,uint8)",
-		"claimFees(uint256)",
-		"claimAirdrop(uint256)",
-		"executeAirdrop(uint256)",
-		"executeBurn(uint256)",
-		"executeLpRewards(uint256)",
-	} {
-		method, err := contract.MethodById(crypto.Keccak256([]byte(sig))[:4])
-		if err != nil || method.Sig != sig {
-			t.Fatalf("launchpad abi has no %s: %v", sig, err)
-		}
-		want["0x"+common.Bytes2Hex(method.ID)] = true
-	}
-	var shipped []string
-	for destination, list := range doc.Defaults.Selectors {
-		if common.HexToAddress(destination) == launchpad {
-			shipped = list
-		}
-	}
-	got := map[string]bool{}
-	for _, selector := range shipped {
-		got[strings.ToLower(selector)] = true
-	}
-	if len(got) != len(shipped) || len(got) != len(want) {
-		t.Fatalf("shipped launchpad selectors %v, want the wallet writes %v", shipped, want)
-	}
-	for selector := range want {
-		if !got[selector] {
-			t.Fatalf("shipped launchpad selectors %v miss %s", shipped, selector)
-		}
-	}
-
 	h := newHarness(t)
 	h.policy = New(doc)
 	buy, err := contract.Pack("buy", common.HexToAddress(sidiora), big.NewInt(10), big.NewInt(9), big.NewInt(1_900_000_000))
@@ -433,16 +452,22 @@ func TestShippedPolicyAllowsWalletLaunchpadWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	expect(t, h.policy.Evaluate(testAccount, h.tx(t, launchpad, big.NewInt(0), buy), h.ledger), CodeAllowed)
-
-	other := contract.Methods["claimAirdrop0"]
-	if other.Sig != "claimAirdrop(address,address)" {
-		t.Fatalf("launchpad abi overload is %s", other.Sig)
-	}
-	unlisted, err := contract.Pack(other.Name, common.HexToAddress(friend), common.HexToAddress(sidiora))
+	unlisted, err := contract.Pack("claimAirdrop0", common.HexToAddress(friend), common.HexToAddress(sidiora))
 	if err != nil {
 		t.Fatal(err)
 	}
 	expect(t, h.policy.Evaluate(testAccount, h.tx(t, launchpad, big.NewInt(0), unlisted), h.ledger), CodeSelectorNotAllowed)
+
+	feeABI, err := evm.PrecompileABI("feetoken")
+	if err != nil {
+		t.Fatal(err)
+	}
+	feetoken, _ := evm.PrecompileAddress("feetoken")
+	setDenom, err := feeABI.Pack("setFeeDenom", "usid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, h.policy.Evaluate(testAccount, h.tx(t, feetoken, big.NewInt(0), setDenom), h.ledger), CodeAllowed)
 }
 
 func TestShippedPolicyAllowsLaunchpadApproveThenBuy(t *testing.T) {
@@ -459,7 +484,7 @@ func TestShippedPolicyAllowsLaunchpadApproveThenBuy(t *testing.T) {
 		t.Fatal(err)
 	}
 	launchpad, _ := evm.PrecompileAddress("launchpad")
-	feetoken, _ := evm.PrecompileAddress("feetoken")
+	custody, _ := evm.PrecompileAddress("layerxcustody")
 	usdl := common.HexToAddress("0x85FcD13735F4309833A503EE804ea32395851479")
 	amount := big.NewInt(25_000_000)
 	h := newHarness(t)
@@ -480,7 +505,7 @@ func TestShippedPolicyAllowsLaunchpadApproveThenBuy(t *testing.T) {
 	}
 	expect(t, h.policy.Evaluate(testAccount, h.tx(t, launchpad, big.NewInt(0), buy), h.ledger), CodeAllowed)
 
-	unlistedSpender, err := erc20.Pack("approve", feetoken, amount)
+	unlistedSpender, err := erc20.Pack("approve", custody, amount)
 	if err != nil {
 		t.Fatal(err)
 	}
