@@ -280,10 +280,11 @@ func testPolicy() *policy.Document {
 	return &policy.Document{
 		Version: policy.Version,
 		Defaults: policy.Rules{
-			ChainID:       &chain,
-			Kinds:         append([]string{policy.KindSponsoredBatch, policy.KindAuthorization}, SignKinds()...),
-			Caps:          map[string]policy.Cap{policy.AssetNative: {PerTransaction: "1000000000000000000", Daily: "10000000000000000000"}},
-			RatePerMinute: &rate,
+			ChainID:                &chain,
+			Kinds:                  append([]string{policy.KindSponsoredBatch, policy.KindAuthorization}, SignKinds()...),
+			Caps:                   map[string]policy.Cap{policy.AssetNative: {PerTransaction: "1000000000000000000", Daily: "10000000000000000000"}},
+			RatePerMinute:          &rate,
+			AuthorizationDelegates: []string{"0x2222222222222222222222222222222222222222"},
 		},
 	}
 }

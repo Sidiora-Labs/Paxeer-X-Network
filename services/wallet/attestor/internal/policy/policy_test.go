@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/holiman/uint256"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/policy/evm"
 )
@@ -54,7 +56,8 @@ func testDocument(t *testing.T) []byte {
     },
     "rate_per_minute": 3,
     "destinations_deny": ["` + deniedAddr + `"],
-    "selectors": {"` + addr.Hex() + `": ["` + selectorHex(t, "addr", "bindLayerX") + `"]}
+    "selectors": {"` + addr.Hex() + `": ["` + selectorHex(t, "addr", "bindLayerX") + `"]},
+    "authorization_delegates": ["0x4444444444444444444444444444444444444444"]
   },
   "accounts": {
     "` + strictUser + `": {"kinds": ["personal_message"], "rate_per_minute": 1}
@@ -388,6 +391,17 @@ func TestShippedPolicyAllowsWalletSDKWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	engine := New(doc)
+	for _, kind := range doc.Defaults.Kinds {
+		if _, ok := engine.inspector(kind); !ok && !slices.Contains(KernelKinds(), kind) {
+			t.Fatalf("shipped kind %q has no inspector", kind)
+		}
+	}
+	for _, kind := range []string{KindSponsoredBatch, KindAuthorization} {
+		if !effective.kinds[kind] {
+			t.Fatalf("shipped policy does not allow %s", kind)
+		}
+	}
 	for _, row := range []struct {
 		precompile string
 		writes     []string
@@ -536,4 +550,48 @@ func TestShippedPolicyAllowsLaunchpadApproveThenBuy(t *testing.T) {
 		t.Fatal(err)
 	}
 	expect(t, h.policy.Evaluate(testAccount, h.tx(t, launchpad, big.NewInt(0), unlisted), h.ledger), CodeSelectorNotAllowed)
+}
+
+func TestShippedPolicySponsoredFeeAndPaymasterDelegation(t *testing.T) {
+	doc, err := LoadFile(filepath.Join("..", "..", "..", "deploy", "attestor-policy.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	paymaster := common.HexToAddress("0x5555555555555555555555555555555555555555")
+	custody, _ := evm.PrecompileAddress("layerxcustody")
+	authorization := func(delegate common.Address) Request {
+		digest, err := evm.AuthorizationDigest(chainID, delegate, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Request{Kind: KindAuthorization, View: &evm.AuthorizationClaim{ChainID: chainID, Address: delegate, Nonce: 1, ClaimedDigest: digest}}
+	}
+	h := newHarness(t)
+	h.policy = New(doc)
+
+	batch := sponsoredBatch()
+	digest, err := evm.SponsoredBatchDigest(batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, h.policy.Evaluate(testAccount, Request{Kind: KindSponsoredBatch, View: &evm.SponsoredBatchClaim{Batch: batch, ClaimedDigest: digest}}, h.ledger), CodeAllowed)
+	expect(t, h.policy.Evaluate(testAccount, authorization(paymaster), h.ledger), CodeDelegateNotAllowed)
+	expect(t, h.policy.Evaluate(testAccount, Request{Kind: "eth_sign_digest", View: []byte{1}}, h.ledger), CodeUnknownKind)
+
+	doc.Defaults.AuthorizationDelegates = []string{paymaster.Hex()}
+	h.policy = New(doc)
+	expect(t, h.policy.Evaluate(testAccount, authorization(paymaster), h.ledger), CodeAllowed)
+	expect(t, h.policy.Evaluate(testAccount, authorization(common.HexToAddress(friend)), h.ledger), CodeDelegateNotAllowed)
+	expect(t, h.policy.Evaluate(testAccount, authorization(custody), h.ledger), CodeDelegateNotAllowed)
+
+	to := common.HexToAddress(friend)
+	setCode := func(delegate common.Address) Request {
+		return Request{Kind: KindEVMTransaction, View: &evm.Transaction{
+			Type: 4, ChainID: chainID, To: &to, Value: big.NewInt(0),
+			Authorizations: []types.SetCodeAuthorization{{ChainID: *uint256.NewInt(125), Address: delegate, Nonce: 1}},
+		}}
+	}
+	h.now = h.now.Add(RateWindow)
+	expect(t, h.policy.Evaluate(testAccount, setCode(paymaster), h.ledger), CodeAllowed)
+	expect(t, h.policy.Evaluate(testAccount, setCode(common.HexToAddress(friend)), h.ledger), CodeDelegateNotAllowed)
 }

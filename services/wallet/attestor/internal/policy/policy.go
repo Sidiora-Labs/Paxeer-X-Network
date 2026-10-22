@@ -48,6 +48,7 @@ const (
 	CodeValueCap           = "value_cap"
 	CodeDailyCap           = "daily_cap"
 	CodeUnlimitedApproval  = "unlimited_approval"
+	CodeDelegateNotAllowed = "delegate_not_allowed"
 	CodeLedgerError        = "ledger_error"
 )
 
@@ -72,6 +73,9 @@ type Rules struct {
 	DestinationsDeny  []string            `json:"destinations_deny,omitempty"`
 	Selectors         map[string][]string `json:"selectors,omitempty"`
 	TrustedSpenders   []string            `json:"trusted_spenders,omitempty"`
+	// AuthorizationDelegates are the only addresses an EIP-7702
+	// authorization may delegate the account to; none listed refuses all.
+	AuthorizationDelegates []string `json:"authorization_delegates,omitempty"`
 }
 
 type Document struct {
@@ -134,6 +138,9 @@ func merge(defaults, override Rules) Rules {
 	if override.DestinationsDeny != nil {
 		out.DestinationsDeny = override.DestinationsDeny
 	}
+	if override.AuthorizationDelegates != nil {
+		out.AuthorizationDelegates = override.AuthorizationDelegates
+	}
 	if override.TrustedSpenders != nil {
 		out.TrustedSpenders = override.TrustedSpenders
 	}
@@ -174,6 +181,7 @@ type compiled struct {
 	deny      map[common.Address]bool
 	selectors map[common.Address]map[[4]byte]bool
 	trusted   map[common.Address]bool
+	delegates map[common.Address]bool
 }
 
 type missingField string
@@ -267,6 +275,9 @@ func compile(r Rules) (*compiled, error) {
 	if c.trusted, err = parseAddresses(r.TrustedSpenders); err != nil {
 		return nil, err
 	}
+	if c.delegates, err = parseAddresses(r.AuthorizationDelegates); err != nil {
+		return nil, err
+	}
 	for destination, list := range r.Selectors {
 		if !common.IsHexAddress(destination) {
 			return nil, fmt.Errorf("selector destination %q is not an address", destination)
@@ -314,6 +325,8 @@ type Spend struct {
 type Inspection struct {
 	Destinations []Destination
 	Spends       []Spend
+	// Delegates are the EIP-7702 delegation targets the request signs.
+	Delegates []common.Address
 }
 
 type Inspector func(ctx Context, view any) (Inspection, error)
@@ -423,6 +436,11 @@ func (p *Policy) Evaluate(account string, req Request, ledger Ledger) Decision {
 			return denied(refusal.Code, "%s", refusal.Reason)
 		}
 		return denied(CodeDecodeError, "%v", err)
+	}
+	for _, delegate := range inspection.Delegates {
+		if !effective.delegates[delegate] {
+			return denied(CodeDelegateNotAllowed, "delegation to %s is not an allowed authorization delegate", delegate.Hex())
+		}
 	}
 	for _, destination := range inspection.Destinations {
 		if decision, ok := checkDestination(effective, destination); !ok {
@@ -616,6 +634,7 @@ func inspectTransaction(ctx Context, view any) (Inspection, error) {
 			return Inspection{}, refuse(CodeChainMismatch, "authorization chain id %v is not %v", auth.ChainID.ToBig(), ctx.ChainID)
 		}
 		out.Destinations = append(out.Destinations, Destination{Address: auth.Address, Precompile: evm.IsPrecompile(auth.Address)})
+		out.Delegates = append(out.Delegates, auth.Address)
 	}
 	return out, nil
 }
@@ -755,5 +774,8 @@ func inspectAuthorization(ctx Context, view any) (Inspection, error) {
 		}
 		return Inspection{}, err
 	}
-	return Inspection{Destinations: []Destination{{Address: claim.Address, Precompile: evm.IsPrecompile(claim.Address)}}}, nil
+	return Inspection{
+		Destinations: []Destination{{Address: claim.Address, Precompile: evm.IsPrecompile(claim.Address)}},
+		Delegates:    []common.Address{claim.Address},
+	}, nil
 }

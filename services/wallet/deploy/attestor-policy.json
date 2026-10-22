@@ -6,7 +6,8 @@
       "evm_tx",
       "eip712",
       "personal_message",
-      "eth_sign_digest",
+      "sponsored_batch",
+      "eip7702_authorization",
       "lx_activity",
       "lx_bind",
       "lx_grant"
@@ -15,6 +16,10 @@
       "native": {
         "per_transaction": "1000000000000000000",
         "daily": "10000000000000000000"
+      },
+      "0x21f7b20a555199fa73a238b1a91fd0f549068fee": {
+        "per_transaction": "5000000",
+        "daily": "50000000"
       },
       "0x85fcd13735f4309833a503ee804ea32395851479": {
         "per_transaction": "1000000000",
@@ -50,6 +55,7 @@
         "0xd7194ccb"
       ]
     },
+    "authorization_delegates": [],
     "trusted_spenders": [
       "0x0000000000000000000000000000000000001017"
     ]
