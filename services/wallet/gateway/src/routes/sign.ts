@@ -30,8 +30,9 @@ import {
   type ActivityApprovalWire,
   lxSigningPreimage,
 } from '../attestor/client.js';
-import { NonceConflictError, RpcPool, RpcResponseError, sharedRpcPool } from '../rpc/pool.js';
-import { NonceBelowLatestError, NonceStore, NonceUnresolvedError, broadcastReserved, sharedNonceStore } from '../nonce/store.js';
+import { BroadcastOutcomeUnknownError, NonceConflictError, outcomeUnknownBody, RpcPool, RpcResponseError, sharedRpcPool } from '../rpc/pool.js';
+import { NonceBelowLatestError, NonceOutstandingError, NonceStore, NonceUnresolvedError, broadcastReserved, sharedNonceStore } from '../nonce/store.js';
+import { BROADCAST_GRACE_MS } from '../chain.js';
 import {
   RateLimitedError,
   RateLimiter,
@@ -353,7 +354,13 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       if (err instanceof CustodyAuthorizationError) return refuse(409,err.code,{error:err.code});
       if(err instanceof CustodyAuthorityError) return refuse(503,err.code,{error:err.code,replication_pending:true});
       if (err instanceof NonceUnresolvedError) {
-        return refuse(503, 'nonce_unresolved', { error: 'nonce_unresolved', nonce: err.nonce, unreachable: err.members });
+        return refuse(503, 'nonce_unresolved', { error: 'nonce_unresolved', nonce: err.nonce, unreachable: err.unreachable, members: err.memberCount });
+      }
+      if (err instanceof NonceBelowLatestError) {
+        return refuse(409, 'nonce_below_latest', { error: 'nonce_below_latest', nonce: err.nonce, latest: err.latest });
+      }
+      if (err instanceof NonceOutstandingError) {
+        return refuse(409, 'nonce_outstanding', { error: 'nonce_outstanding', nonce: err.nonce });
       }
       if (err instanceof AttestorError) {
         return refuse(attestorErrorStatus(err), `${err.category}:${err.code}`, attestorErrorBody(err));
@@ -518,9 +525,15 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       valueWei,
       async ({ sw, signer }) => {
         const prepared = await prepareTx(signer, tx);
+        const broadcastDeadline = new Date(Date.now() + BROADCAST_GRACE_MS).toISOString();
         const { nonce, signed } = await nonces.withLock(sw.row.address, async (lease) => {
-          if (tx.nonce !== undefined) return { nonce: tx.nonce, signed: await signer.signTransaction({ ...prepared, nonce: tx.nonce }) };
-          const nonce = await lease.next();
+          let nonce: number;
+          if (tx.nonce !== undefined) {
+            await lease.reserveClientNonce(tx.nonce);
+            nonce = tx.nonce;
+          } else {
+            nonce = await lease.next();
+          }
           const signed = await signer.signTransaction({ ...prepared, nonce });
           await lease.track(nonce, keccak256(signed.value), null);
           return { nonce, signed };
@@ -539,7 +552,7 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
         };
         return {
           status: 200,
-          body: { signed_tx: signed.value, address: sw.row.address, chain_id: chainId },
+          body: { signed_tx: signed.value, address: sw.row.address, chain_id: chainId, nonce, broadcast_deadline: broadcastDeadline },
           decision: 'signed',
           path: signer.path,
           account: sw.row.address,
@@ -603,7 +616,8 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
         if (!outcome.ok && outcome.error instanceof NonceConflictError) {
           return {
             status: 409,
-            body: { error: 'nonce_conflict', nonce: outcome.nonce, detail: outcome.error.message, retry: 'prepare' },
+            body: { error: 'nonce_conflict', nonce: outcome.nonce, detail: outcome.error.message, retry: 'prepare',
+              member: outcome.error.member, members: outcome.error.members },
             decision: 'broadcast_failed',
             path: signer.path,
             account: sw.row.address,
@@ -612,6 +626,20 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
             txHash: null,
             nonce: outcome.nonce,
             reasonCode: 'nonce_conflict',
+          };
+        }
+        if (!outcome.ok && outcome.error instanceof BroadcastOutcomeUnknownError) {
+          return {
+            status: 202,
+            body: outcomeUnknownBody(outcome.error),
+            decision: 'broadcast_failed',
+            path: signer.path,
+            account: sw.row.address,
+            walletId: sw.row.id,
+            attestor: outcome.signed.attestor,
+            txHash: outcome.error.hash,
+            nonce: outcome.nonce,
+            reasonCode: 'broadcast_outcome_unknown',
           };
         }
         if (!outcome.ok) {

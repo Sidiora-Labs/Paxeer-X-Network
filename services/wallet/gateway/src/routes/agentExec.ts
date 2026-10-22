@@ -15,7 +15,8 @@ import { evaluateAgent, type AgentTxIntent } from '../policy/agent.js';
 import { AttestorError, AttestorTokenError, AttestorReauthorizationRequired, attestorErrorBody, attestorErrorStatus } from '../attestor/client.js';
 import { resolveGas } from '../chainReads.js';
 import { NonceBelowLatestError, NonceOutstandingError, NonceUnresolvedError, broadcastReserved, type NonceLease } from '../nonce/store.js';
-import { NonceConflictError, TransactionRejectedError, sharedRpcPool } from '../rpc/pool.js';
+import { BroadcastOutcomeUnknownError, NonceConflictError, TransactionRejectedError, outcomeUnknownBody, sharedRpcPool } from '../rpc/pool.js';
+import { BROADCAST_GRACE_MS } from '../chain.js';
 
 /**
  * Shared agent execution core.
@@ -80,10 +81,13 @@ export function custodyRefusal(error: unknown): ExecResult | null {
     return { status: 409, body: { error: 'nonce_outstanding', nonce: error.nonce } };
   }
   if (error instanceof NonceUnresolvedError) {
-    return { status: 503, body: { error: 'nonce_unresolved', nonce: error.nonce, unreachable: error.members } };
+    return { status: 503, body: { error: 'nonce_unresolved', nonce: error.nonce, unreachable: error.unreachable, members: error.memberCount } };
   }
   if (error instanceof NonceConflictError) {
-    return { status: 409, body: { error: 'nonce_conflict', detail: error.message, retry: 'prepare' } };
+    return { status: 409, body: { error: 'nonce_conflict', detail: error.message, retry: 'prepare', member: error.member, members: error.members } };
+  }
+  if (error instanceof BroadcastOutcomeUnknownError) {
+    return { status: 202, body: outcomeUnknownBody(error) };
   }
   return error instanceof AttestorError
     ? { status: attestorErrorStatus(error), body: attestorErrorBody(error) } : null;
@@ -181,6 +185,7 @@ export async function executeAgentTransaction(args: {
   let txHash: Hex | null = null;
   let signedTx: Hex | null = null;
   let custodyBudgetReservationId: string | null = null;
+  const broadcastDeadline = new Date(Date.now() + BROADCAST_GRACE_MS).toISOString();
   try {
     const signed = await withWalletLock(wallet.address, async (lease) => {
       const account = await getMigrationAwareSigningAccountForRow(wallet, ctx.custody ? {
@@ -247,7 +252,7 @@ export async function executeAgentTransaction(args: {
     status: 200,
     body: broadcast
       ? { tx_hash: txHash, address: wallet.address, chain_id: chainId, op: args.label ?? 'send' }
-      : { signed_tx: signedTx, address: wallet.address, chain_id: chainId, op: args.label ?? 'sign' },
+      : { signed_tx: signedTx, address: wallet.address, chain_id: chainId, op: args.label ?? 'sign', broadcast_deadline: broadcastDeadline },
   };
 }
 

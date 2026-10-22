@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { fork } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import pg from 'pg';
 import { keccak256, toHex } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { readFileSync } from 'node:fs';
 import { startPostgres, type EphemeralPostgres } from './support/postgres.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -443,7 +445,8 @@ describe('NonceStore', () => {
       await age(address);
       const partitioned = await allocate(store, address).catch((err: unknown) => err);
       expect(partitioned).toBeInstanceOf(storeMod.NonceUnresolvedError);
-      expect(partitioned).toMatchObject({ nonce: 100, members: [rpcUrl] });
+      expect(partitioned).toMatchObject({ nonce: 100, unreachable: [0], memberCount: 2 });
+      expect(JSON.stringify(partitioned)).not.toContain('127.0.0.1');
       const { rows: held } = await pool.query<{ nonce: string }>(
         'select nonce::text from nonce_outstanding where address = $1 order by nonce_outstanding.nonce', [address]);
       expect(held.map((r) => r.nonce)).toEqual(['100', '101', '103']);
@@ -600,31 +603,121 @@ describe('NonceStore', () => {
     expect(rows).toEqual([{ nonce: '130', tx_hash: keccak256('0x02d9') }]);
     const { custodyRefusal } = await import('../src/routes/agentExec.js');
     expect(custodyRefusal(new poolMod.NonceConflictError(-32000, 'replacement transaction underpriced', null))).toEqual({
-      status: 409, body: { error: 'nonce_conflict', detail: 'replacement transaction underpriced', retry: 'prepare' } });
+      status: 409, body: { error: 'nonce_conflict', detail: 'replacement transaction underpriced', retry: 'prepare', member: null, members: 0 } });
     await age(address);
     expect(await allocate(store, address)).toBe(130);
   });
 
-  it('takes nonce too low as success only when our hash is known and as a conflict otherwise', async () => {
-    const address = '0x00000000000000000000000000000000000000d5';
+  it('takes nonce too low as success when our hash is known, as a conflict when latest has not passed our nonce and as outcome unknown when it has', async () => {
+    const signer = privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d');
+    const address = signer.address.toLowerCase();
+    const sign = (nonce: number) => signer.signTransaction({ chainId: 125, type: 'eip1559', nonce, to: ADDRESS, value: 1n, gas: 21_000n,
+      maxFeePerGas: 2_000_000_000n, maxPriorityFeePerGas: 1_000_000_000n });
     const store = makeStore();
+    const { custodyRefusal } = await import('../src/routes/agentExec.js');
     pendingCount = 140;
     sendError = 'nonce too low: next nonce 150, tx nonce 140';
+    const raw140 = await sign(140);
+    const raw142 = await sign(142);
     try {
-      const unknown = await lockedSend(store, address, '0x02e0');
-      expect(unknown.nonce).toBe(140);
-      expect(unknown.error).toBeInstanceOf(poolMod.NonceConflictError);
+      const conflict = await lockedSend(store, address, raw140);
+      expect(conflict.nonce).toBe(140);
+      expect(conflict.error).toBeInstanceOf(poolMod.NonceConflictError);
+      expect(conflict.error).toMatchObject({ member: 0, members: 1 });
+      const refused = custodyRefusal(conflict.error);
+      expect(refused).toMatchObject({ status: 409, body: { error: 'nonce_conflict', retry: 'prepare', member: 0, members: 1 } });
+      expect(JSON.stringify(refused)).not.toContain('127.0.0.1');
       knownHashes.add(keccak256('0x02e1'));
       expect(await lockedSend(store, address, '0x02e1')).toEqual({ nonce: 141, error: null });
+      pendingCount = 143;
+      const unknown = await makeRpc().sendRawTransactionVia(raw142).catch((err: unknown) => err);
+      expect(unknown).toBeInstanceOf(poolMod.BroadcastOutcomeUnknownError);
+      expect(unknown).not.toBeInstanceOf(poolMod.NonceConflictError);
+      expect(unknown).toMatchObject({ hash: keccak256(raw142), nonce: 142 });
+      expect(custodyRefusal(unknown)).toEqual({ status: 202, body: { error: 'outcome_unknown', tx_hash: keccak256(raw142), nonce: 142,
+        retry: 'poll_receipt', poll: 'eth_getTransactionReceipt', must_not_resubmit: true, member: 0, members: 1 } });
     } finally {
       sendError = null;
     }
     const { rows } = await pool.query<{ nonce: string; tx_hash: string }>(
       'select nonce::text, tx_hash from nonce_outstanding where address = $1 order by nonce_outstanding.nonce', [address]);
     expect(rows).toEqual([
-      { nonce: '140', tx_hash: keccak256('0x02e0') },
+      { nonce: '140', tx_hash: keccak256(raw140) },
       { nonce: '141', tx_hash: keccak256('0x02e1') },
     ]);
+  });
+
+  it('drops a member that failed every request for longer than the grace period out of the not-known quorum and never drops the last answer', async () => {
+    const address = '0x00000000000000000000000000000000000000d8';
+    const dead = 'http://127.0.0.1:1';
+    const withDead = new poolMod.RpcPool({ urls: [rpcUrl, dead], chainId: 125, lagThresholdBlocks: 20, timeoutMs: 2_000, healthIntervalMs: 60_000 });
+    const latest = makeRpc();
+    const store = new storeMod.NonceStore({
+      pool,
+      chainId: 125,
+      pendingCount: (a) => latest.getTransactionCount(a, 'latest'),
+      lookupTransaction: (h, m) => withDead.lookupTransaction(h, m),
+    });
+    const { BROADCAST_GRACE_MS } = await import('../src/chain.js');
+    pendingCount = 170;
+    sendError = null;
+    expect(await lockedSend(store, address, '0x02d8')).toEqual({ nonce: 170, error: null });
+    knownHashes.delete(keccak256('0x02d8'));
+    await age(address);
+    const blocked = await allocate(store, address).catch((err: unknown) => err);
+    expect(blocked).toBeInstanceOf(storeMod.NonceUnresolvedError);
+    expect(blocked).toMatchObject({ nonce: 170, unreachable: [1], memberCount: 2 });
+    const realNow = Date.now.bind(Date);
+    const later = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + BROADCAST_GRACE_MS + 1_000);
+    try {
+      expect(await allocate(store, address)).toBe(170);
+      const alone = new poolMod.RpcPool({ urls: [dead], chainId: 125, lagThresholdBlocks: 20, timeoutMs: 2_000, healthIntervalMs: 60_000 });
+      expect(await alone.lookupTransaction(keccak256('0x02d8'), null)).toEqual({ known: false, unreachable: [0], members: 1 });
+      later.mockImplementation(() => realNow() + 3 * BROADCAST_GRACE_MS);
+      expect(await alone.lookupTransaction(keccak256('0x02d8'), null)).toEqual({ known: false, unreachable: [0], members: 1 });
+    } finally {
+      later.mockRestore();
+    }
+  });
+
+  it('brings a database at either form of migration 015 to the same schema and keeps held rows with their created_at', async () => {
+    const { runMigrations } = await import('../src/db/migrate.js');
+    const migrations = join(gatewayDir, 'migrations');
+    const seed = readFileSync(join(migrations, '015_nonce_outstanding_seed.sql'), 'utf8');
+    const shipped = 'delete from nonce_outstanding where tx_hash is null;\nalter table nonce_allocations drop column if exists outstanding_seeded;\n';
+    const schema = async () => (await pool.query(
+      `select table_name, column_name, data_type, is_nullable, column_default from information_schema.columns
+        where table_name in ('nonce_allocations', 'nonce_outstanding') order by table_name, column_name`)).rows;
+    const applied = async () => (await pool.query<{ filename: string }>(
+      "select filename from _migrations where filename like '01_\\_nonce%' order by filename")).rows.map((r) => r.filename);
+    const address = '0x00000000000000000000000000000000000000d9';
+    const { BROADCAST_GRACE_MS } = await import('../src/chain.js');
+
+    await pool.query("delete from _migrations where filename = '016_nonce_outstanding_hash.sql'");
+    await pool.query(seed);
+    await pool.query(
+      `insert into nonce_outstanding (address, nonce, tx_hash, created_at) values
+         ($1, 180, null, now() - make_interval(secs => $2::double precision / 1000 + 5)), ($1, 181, null, now())`,
+      [address, BROADCAST_GRACE_MS]);
+    const { rows: before } = await pool.query<{ nonce: string; created_at: Date }>(
+      'select nonce::text, created_at from nonce_outstanding where address = $1 order by nonce_outstanding.nonce', [address]);
+    await runMigrations();
+    const fromSeed = await schema();
+    expect(fromSeed.some((c) => c.column_name === 'outstanding_seeded')).toBe(false);
+    const { rows: after } = await pool.query<{ nonce: string; created_at: Date }>(
+      'select nonce::text, created_at from nonce_outstanding where address = $1 order by nonce_outstanding.nonce', [address]);
+    expect(after).toEqual(before);
+    pendingCount = 180;
+    const store = makeStore();
+    expect(await allocate(store, address)).toBe(180);
+    expect(await allocate(store, address)).toBe(182);
+
+    await pool.query("delete from _migrations where filename in ('015_nonce_outstanding_seed.sql', '016_nonce_outstanding_hash.sql')");
+    await pool.query("insert into _migrations (filename) values ('015_nonce_outstanding_hash.sql')");
+    await pool.query(shipped);
+    await runMigrations();
+    expect(await schema()).toEqual(fromSeed);
+    expect(await applied()).toEqual(['014_nonce_outstanding.sql', '015_nonce_outstanding_hash.sql', '015_nonce_outstanding_seed.sql', '016_nonce_outstanding_hash.sql']);
   });
 
   it('retries a timed-out send on another member with the same bytes and takes already known as our hash', async () => {

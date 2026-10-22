@@ -72,10 +72,13 @@ export class NonceOutstandingError extends Error {
   }
 }
 
-/** The next nonce depends on an outstanding one that pool members could not resolve; nothing is released. */
+/**
+ * The next nonce depends on an outstanding one that pool members could not resolve; nothing is released.
+ * Members are named by index out of `memberCount`, never by URL.
+ */
 export class NonceUnresolvedError extends Error {
-  constructor(readonly nonce: number, readonly members: string[]) {
-    super(`nonce ${nonce} cannot be resolved: ${members.join(', ')} did not answer`);
+  constructor(readonly nonce: number, readonly unreachable: number[], readonly memberCount: number) {
+    super(`nonce ${nonce} cannot be resolved: members ${unreachable.join(', ')} of ${memberCount} did not answer`);
     this.name = 'NonceUnresolvedError';
   }
 }
@@ -171,20 +174,30 @@ class Lease implements NonceLease {
     );
     const floor = Number(seen[0]!.latest_seen);
     await this.client.query('delete from nonce_outstanding where address = $1 and nonce < $2', [this.address, floor]);
-    const { rows: aged } = await this.client.query<{ nonce: string; tx_hash: Hex; member: string | null }>(
+    const { rows: aged } = await this.client.query<{ nonce: string; tx_hash: Hex | null; member: string | null }>(
       `select nonce::text as nonce, tx_hash, member
          from nonce_outstanding
-        where address = $1 and tx_hash is not null and nonce <= $2
+        where address = $1 and nonce <= $2
           and created_at <= now() - make_interval(secs => $3::double precision / 1000)
         order by nonce_outstanding.nonce`,
       [this.address, floor + RECONCILE_WINDOW, BROADCAST_GRACE_MS],
     );
-    const unresolved: Array<{ nonce: number; members: string[] }> = [];
+    const unresolved: Array<{ nonce: number; unreachable: number[]; members: number }> = [];
     for (const row of aged) {
-      const { known, unreachable } = await this.lookup(row.tx_hash, row.member);
-      if (known) continue;
-      if (unreachable.length > 0) unresolved.push({ nonce: Number(row.nonce), members: unreachable });
-      else await this.client.query('delete from nonce_outstanding where address = $1 and nonce = $2', [this.address, row.nonce]);
+      // Only a hold committed before every reservation carried a hash has none; it is past the grace period like any other.
+      if (row.tx_hash !== null) {
+        const { known, unreachable, members } = await this.lookup(row.tx_hash, row.member);
+        if (known) continue;
+        if (unreachable.length > 0) {
+          unresolved.push({ nonce: Number(row.nonce), unreachable, members });
+          continue;
+        }
+      }
+      // ponytail: a sign-only nonce is held for the broadcast grace period only; a caller must broadcast
+      // its signed bytes before the deadline the sign response returns. A later broadcast after this nonce
+      // was reissued is refused by the node as nonce too low, so nothing double-pays; hold until the
+      // floor passes it if callers need longer.
+      await this.client.query('delete from nonce_outstanding where address = $1 and nonce = $2', [this.address, row.nonce]);
     }
     const { rows } = await this.client.query<{ nonce: string }>(
       'select nonce::text as nonce from nonce_outstanding where address = $1 order by nonce_outstanding.nonce',
@@ -197,7 +210,7 @@ class Lease implements NonceLease {
     }
     if (!Number.isSafeInteger(next)) throw new Error(`nonce store: next nonce ${next} is not a safe integer`);
     const blocking = unresolved.find((u) => u.nonce < next);
-    if (blocking) throw new NonceUnresolvedError(blocking.nonce, blocking.members);
+    if (blocking) throw new NonceUnresolvedError(blocking.nonce, blocking.unreachable, blocking.members);
     return { floor, next };
   }
 
