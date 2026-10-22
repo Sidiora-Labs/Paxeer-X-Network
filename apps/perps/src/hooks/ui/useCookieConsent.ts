@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { create } from "zustand";
 
 const STORAGE_KEY = "hyperpax_cookie_consent";
 
@@ -15,31 +16,51 @@ export interface CookieConsent {
   decline: () => void;
 }
 
-export function useCookieConsent(): CookieConsent {
-  const [value, setValue] = useState<CookieConsentValue>(null);
-  const [loading, setLoading] = useState(true);
+interface CookieConsentStore extends CookieConsent {
+  hydrate: () => void;
+}
 
-  useEffect(() => {
+function store(value: "accepted" | "declined") {
+  try { localStorage.setItem(STORAGE_KEY, value); } catch { /* ignore */ }
+}
+
+/** One consent state shared by every consumer (policy page controls and the global banner). */
+export const cookieConsentStore = create<CookieConsentStore>()((set, get) => ({
+  value: null,
+  loading: true,
+  hydrate: () => {
+    if (!get().loading) return;
+    let value: CookieConsentValue = null;
     try {
-      const stored = localStorage.getItem(STORAGE_KEY) as CookieConsentValue | null;
+      const stored = localStorage.getItem(STORAGE_KEY);
       if (stored === "accepted" || stored === "declined") {
-        setValue(stored);
+        value = stored;
       }
     } catch {
       // localStorage unavailable — treat as not-yet-decided
     }
-    setLoading(false);
-  }, []);
+    set({ value, loading: false });
+  },
+  accept: () => {
+    set({ value: "accepted", loading: false });
+    store("accepted");
+  },
+  decline: () => {
+    set({ value: "declined", loading: false });
+    store("declined");
+  },
+}));
 
-  const accept = () => {
-    setValue("accepted");
-    try { localStorage.setItem(STORAGE_KEY, "accepted"); } catch { /* ignore */ }
-  };
+export function useCookieConsent(): CookieConsent {
+  const value = cookieConsentStore((s) => s.value);
+  const loading = cookieConsentStore((s) => s.loading);
+  const accept = cookieConsentStore((s) => s.accept);
+  const decline = cookieConsentStore((s) => s.decline);
+  const hydrate = cookieConsentStore((s) => s.hydrate);
 
-  const decline = () => {
-    setValue("declined");
-    try { localStorage.setItem(STORAGE_KEY, "declined"); } catch { /* ignore */ }
-  };
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
 
   return { value, loading, accept, decline };
 }
