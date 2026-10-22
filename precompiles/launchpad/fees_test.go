@@ -640,3 +640,43 @@ func (e *feeTestEnv) setStrategy(old, next types.FeeStrategy) {
 	require.True(e.t, found)
 	require.Equal(e.t, next, market.FeeStrategy)
 }
+
+// TestDirectOverloadsReachTheirRole sends the two FeeAccumulator address
+// overloads, which abi.json declares after the FeesRouter fee-right
+// overloads of the same names, and one FeesRouter fee-right overload straight
+// to 0x1017: each reaches its role handler and reverts exactly as the same
+// call through the role's surface does.
+func TestDirectOverloadsReachTheirRole(t *testing.T) {
+	e := newFeeTestEnv(t)
+	direct := readABI(t, "abi.json")
+	bySig := map[string]abi.Method{}
+	for _, m := range direct.Methods {
+		bySig[m.Sig] = m
+	}
+	errorString := crypto.Keccak256([]byte("Error(string)"))[:4]
+	for _, tc := range []struct {
+		role, name, sig string
+		args            []interface{}
+	}{
+		{types.RoleFeeAccumulator, "claimAirdrop", "claimAirdrop(address,address)",
+			[]interface{}{e.pool, e.holder}},
+		{types.RoleFeeAccumulator, "claimAirdropEpoch", "claimAirdropEpoch(address,address,uint256)",
+			[]interface{}{e.pool, e.holder, big.NewInt(1)}},
+		{types.RoleFeesRouter, "claimAirdrop", "claimAirdrop(uint256)", []interface{}{big.NewInt(2)}},
+	} {
+		m, ok := bySig[tc.sig]
+		require.True(t, ok, tc.sig)
+		packed, err := m.Inputs.Pack(tc.args...)
+		require.NoError(t, err, tc.sig)
+		input := append(common.CopyBytes(m.ID), packed...)
+		require.Equal(t, e.input(tc.role, tc.name, tc.args...), input, tc.sig)
+
+		ret, _, err := e.evm.Call(e.outsider, common.HexToAddress(types.LaunchpadAddress), input, feeTestCallGas,
+			uint256.NewInt(0))
+		require.ErrorIs(t, err, vm.ErrExecutionReverted, tc.sig)
+		require.GreaterOrEqual(t, len(ret), 4, tc.sig)
+		require.NotEqual(t, errorString, ret[:4], "%s reverted with a reason: %x", tc.sig, ret)
+		_, surfaceRevert := e.send(tc.role, e.outsider, tc.name, tc.args...)
+		require.Equal(t, surfaceRevert, ret, tc.sig)
+	}
+}

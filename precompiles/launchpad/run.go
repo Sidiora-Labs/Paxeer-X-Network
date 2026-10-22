@@ -262,16 +262,23 @@ func (p PrecompileExecutor) resolve(ctx sdk.Context, caller common.Address, inpu
 	return c, nil
 }
 
-// resolveDirect resolves selector through abi.json and names the first role
-// of directCallRoles that declares the method.
+// resolveDirect resolves selector through abi.json, names the first role of
+// directCallRoles that declares the method and returns that role's own
+// method for the selector: abi.json suffixes the names of overloads it
+// merges from several roles, and role handlers dispatch on the role's name.
 func (p PrecompileExecutor) resolveDirect(selector []byte) (string, *abi.Method, error) {
-	method, err := p.abi.MethodById(selector)
+	merged, err := p.abi.MethodById(selector)
 	if err != nil {
 		return "", nil, errUnknownSelector
 	}
-	role, ok := directRole[method.Sig]
+	role, ok := directRole[merged.Sig]
 	if !ok {
-		return "", nil, fmt.Errorf("launchpad: %s at %s is declared by no direct role", method.Sig, p.address.Hex())
+		return "", nil, fmt.Errorf("launchpad: %s at %s is declared by no direct role", merged.Sig, p.address.Hex())
+	}
+	roleABI := roleABIs[role]
+	method, err := roleABI.MethodById(selector)
+	if err != nil {
+		return "", nil, fmt.Errorf("launchpad: %s at %s is not in the %s ABI", merged.Sig, p.address.Hex(), role)
 	}
 	return role, method, nil
 }
