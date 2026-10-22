@@ -14,12 +14,12 @@ quote/commit path:
 
 ## Register
 
-No `lx_register` wrapper. Catalog constant
+No `px_register` wrapper. Catalog constant
 `GeneratedSchema.AgentOperations.AGENT_REGISTER` (`"agent.register"`)
 can be sent with `ProductionClient.agent` when
 `HttpProductionTransport` is constructed with an agent RPC URL.
 That operation is daemon/agent registration, not public
-`lx_register`. Use [Public JSON-RPC](PublicRpc.md) or the Rust SDK
+`px_register`. Use [Public JSON-RPC](PublicRpc.md) or the Rust SDK
 for self-service principal creation.
 
 ---

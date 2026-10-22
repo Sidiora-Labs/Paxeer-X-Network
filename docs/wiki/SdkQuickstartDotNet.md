@@ -7,7 +7,7 @@ JSON-RPC client in this package.
 
 ## Register
 
-No `lx_register` wrapper. Generated
+No `px_register` wrapper. Generated
 `PlatformClient.AgentAgentRegisterAsync` /
 `MutateAsync(PlatformOperation.AgentAgentRegister, …)` sends
 `"agent.register"`. `HumanHttpTransport` is the human plane. Use

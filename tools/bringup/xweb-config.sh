@@ -41,7 +41,7 @@ inventory prints, one line each, the read-backs the paid search and web
 
 register  registers the Ed25519 key of XWEB_REGISTER_KEY_FILE (32 hex bytes
           as the sidecar reads it, a regular file readable by its owner only,
-          never printed) with the gateway's lx_register, signing the beta
+          never printed) with the gateway's px_register, signing the beta
           tenant binding, and checks the answer names exactly that key, the
           beta tenant and the subject the key derives; registering a key
           again answers the same principal. Prints the public key and subject.
@@ -475,7 +475,7 @@ sys.exit(1 if failures else 0)
 ' "$xweb_gateway" "$prices" ${names[@]+"${names[@]}"}
 }
 
-# xweb_register: registers XWEB_REGISTER_KEY_FILE's key with lx_register and
+# xweb_register: registers XWEB_REGISTER_KEY_FILE's key with px_register and
 # checks the answer names exactly it.
 xweb_register() {
 	xweb_need XWEB_REGISTER_KEY_FILE
@@ -511,12 +511,12 @@ def tagged(domain):
     return digest.digest()
 subject = "beta." + tagged(b"layerx-register-subject-v1").hex()[:32]
 signature = key.sign(tagged(b"layerx-register-binding-v1"))
-result, error = rpc(gateway, "lx_register", [public.hex(), signature.hex()])
+result, error = rpc(gateway, "px_register", [public.hex(), signature.hex()])
 if error:
-    fail("lx_register " + error, 1)
+    fail("px_register " + error, 1)
 if (not isinstance(result, dict) or result.get("tenant") != "beta" or result.get("sub") != subject
         or result.get("allowed_signer_public_keys") != [public.hex()]):
-    fail("lx_register answered a principal that is not this key", 1)
+    fail("px_register answered a principal that is not this key", 1)
 print("registered public_key=%s did=did:layerx:%s sub=%s tenant=beta" % (public.hex(), public.hex(), subject))
 ' "$xweb_gateway" "$XWEB_REGISTER_KEY_FILE"
 }

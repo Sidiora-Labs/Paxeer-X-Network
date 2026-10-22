@@ -8,6 +8,8 @@ use std::time::Duration;
 pub const LIST_ASSETS_DEFAULT_PAGE: u16 = 64;
 /// Largest page the published `lx_listAssets` contract accepts.
 pub const LIST_ASSETS_MAX_PAGE: u16 = 256;
+/// The gateway JSON-RPC method that creates a self-service principal.
+pub const REGISTER_METHOD: &str = "px_register";
 
 use crate::programs::{LayerXKeyCredential, ProgramOperationError};
 
@@ -762,7 +764,7 @@ impl RpcClient {
         signature: &[u8; 64],
     ) -> Result<crate::register::Registration, RpcError> {
         let params = json!([encode_hex(&signer_public_key), encode_hex(signature)]);
-        crate::register::decode(signer_public_key, self.call("lx_register", &params)?)
+        crate::register::decode(signer_public_key, self.call(REGISTER_METHOD, &params)?)
     }
 
     /// Claims one testnet faucet grant for the authenticated identity principal.
@@ -1044,6 +1046,30 @@ pub(crate) fn encode_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn register_method_and_params_are_the_ones_the_gateway_publishes() {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../platform/hosted/gateway/openrpc.json"
+        ))
+        .unwrap_or_else(|error| panic!("{error}"));
+        let methods = schema["methods"]
+            .as_array()
+            .unwrap_or_else(|| panic!("gateway schema lists no methods"));
+        let served = methods
+            .iter()
+            .find(|entry| entry["name"] == REGISTER_METHOD)
+            .unwrap_or_else(|| panic!("gateway does not publish {REGISTER_METHOD}"));
+        assert!(!methods.iter().any(|entry| entry["name"] == "lx_register"));
+        assert_eq!(served["paramStructure"], "by-position");
+        let names: Vec<&str> = served["params"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{REGISTER_METHOD} lists no params"))
+            .iter()
+            .filter_map(|param| param["name"].as_str())
+            .collect();
+        assert_eq!(names, ["signer_public_key", "registration_signature"]);
+    }
+
     #[test]
     fn wallet_account_vectors_preserve_native_and_token_namespaces() {
         assert_eq!(

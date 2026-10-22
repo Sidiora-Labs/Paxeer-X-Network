@@ -86,7 +86,7 @@ pub fn request(method: &str, params: &Value) -> Result<Value, String> {
         .as_array()
         .ok_or("RPC parameters must be positional")?;
     match method {
-        "lx_register" => registration_params(args)?,
+        "px_register" => registration_params(args)?,
         "lx_requestFunds" => faucet_params(args)?,
         "lx_getNodeInfo" if args.is_empty() => {}
         "lx_listAssets" => asset_page_params(args)?,
@@ -289,10 +289,10 @@ fn asset_page_params(args: &[Value]) -> Result<(), String> {
 
 fn registration_params(args: &[Value]) -> Result<(), String> {
     let [Value::String(signer), Value::String(signature)] = args else {
-        return Err("lx_register requires signer_public_key and registration_signature".into());
+        return Err("px_register requires signer_public_key and registration_signature".into());
     };
     if !lowercase_hex(signer, 32) || !lowercase_hex(signature, 64) {
-        return Err("lx_register requires a lowercase 32-byte key and 64-byte signature".into());
+        return Err("px_register requires a lowercase 32-byte key and 64-byte signature".into());
     }
     Ok(())
 }
@@ -622,7 +622,8 @@ mod tests {
     #[test]
     fn positional_requests_match_published_contract() -> Result<(), String> {
         let fixture = include_str!("../tests/fixtures/openrpc.json");
-        let published_source = include_str!("../../../../services/platform/hosted/gateway/openrpc.json");
+        let published_source =
+            include_str!("../../../../services/platform/hosted/gateway/openrpc.json");
         assert_eq!(fixture, published_source);
         let published: Value = serde_json::from_str(fixture).map_err(|error| error.to_string())?;
         let methods = published["methods"]

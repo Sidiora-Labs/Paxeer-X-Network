@@ -37,8 +37,8 @@ fn registration() -> Result<(String, String), String> {
 fn registration_request_preserves_the_real_proof_and_exact_contract() -> Result<(), String> {
     let (key, signature) = registration()?;
     assert_eq!(
-        request("lx_register", &json!([key, signature]))?,
-        json!({"jsonrpc":"2.0","id":1,"method":"lx_register","params":[key,signature]})
+        request("px_register", &json!([key, signature]))?,
+        json!({"jsonrpc":"2.0","id":1,"method":"px_register","params":[key,signature]})
     );
     for args in [
         json!([]),
@@ -55,7 +55,7 @@ fn registration_request_preserves_the_real_proof_and_exact_contract() -> Result<
         json!([key, "gg".repeat(64)]),
         json!([1, signature]),
     ] {
-        assert!(request("lx_register", &args).is_err());
+        assert!(request("px_register", &args).is_err());
     }
     Ok(())
 }
@@ -136,7 +136,7 @@ fn identity_sessions_and_gateway_credentials_are_distinct() -> Result<(), String
 
 #[test]
 fn identity_rpc_responses_remain_bound_and_preserve_all_refusal_fields() -> Result<(), String> {
-    for method in ["lx_register", "lx_requestFunds"] {
+    for method in ["px_register", "lx_requestFunds"] {
         let result = json!({"state":"upstream-record"});
         assert_eq!(
             decode_response(method, &json!({"jsonrpc":"2.0","id":1,"result":result}))?,

@@ -8,7 +8,7 @@ module.
 
 ## Register
 
-No `lx_register` wrapper. The agent catalog constant
+No `px_register` wrapper. The agent catalog constant
 `AgentOperationAgentRegister` (`"agent.register"`) can be sent
 with `Client.Agent` **if** you supply a `Transport` that implements
 the agent plane. This module ships `NewHumanHTTPTransport` only

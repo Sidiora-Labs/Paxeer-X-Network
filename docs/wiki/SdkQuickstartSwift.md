@@ -7,7 +7,7 @@ public JSON-RPC client in this package.
 
 ## Register
 
-No `lx_register` wrapper. Generated
+No `px_register` wrapper. Generated
 `PlatformClient.agentAgentRegister` / `mutate(.agentAgentRegister, …)`
 sends `"agent:agent.register"`. `AgentHTTPTransport` is
 programs-only. Use [Public JSON-RPC](PublicRpc.md) or the Rust SDK

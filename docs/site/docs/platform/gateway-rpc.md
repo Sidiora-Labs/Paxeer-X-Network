@@ -30,7 +30,7 @@ limit enforced by the gateway is 8 MiB. Parameters are positional.
 
 | Method | Positional parameters | Result |
 | --- | --- | --- |
-| `lx_register` | `[signer_public_key, registration_signature]` | Identity principal record for a self-registered signer |
+| `px_register` | `[signer_public_key, registration_signature]` | Identity principal record for a self-registered signer |
 | `lx_requestFunds` | `[did, signer_public_key]` | One bounded beta faucet grant the faucet confirmed as funded |
 | `lx_getAccount` | `[account_id]` | Authenticated account snapshot |
 | `lx_getBalance` | `[account_id]` | The same account object; use its `balance` and `asset_id` |
@@ -55,7 +55,7 @@ limit enforced by the gateway is 8 MiB. Parameters are positional.
 Although `lx_getSequence` has two parameter forms, it is one method; the table
 therefore describes all 18 method names.
 
-`lx_register` and `lx_requestFunds` are the onboarding pair. `lx_register`
+`px_register` and `lx_requestFunds` are the onboarding pair. `px_register`
 takes a lowercase-hex 32-byte Ed25519 public key and its 64-byte signature over
 the registration binding and returns the principal record; the subject is
 derived from the key, so it is idempotent and cannot name another holder's
@@ -177,7 +177,7 @@ number), `result_code`, `state_root`, `receipt`, `idempotency_key`, and
 
 ## Authentication and scopes
 
-Read methods require no credential. `lx_register` requires no credential; it
+Read methods require no credential. `px_register` requires no credential; it
 proves possession of the named signer key by signature. `lx_requestFunds`
 requires a hosted identity session, not a gateway key:
 

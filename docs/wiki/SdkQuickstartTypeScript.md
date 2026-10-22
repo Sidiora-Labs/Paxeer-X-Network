@@ -11,7 +11,7 @@ is `verifyReceipt` in `src/verifier.ts`. The hosted human plane is
 
 `JsonRpcClient` has no `register` method. Its private `call` is not
 part of the public surface, so this package cannot invoke
-`lx_register`.
+`px_register`.
 
 The generated agent operation `"agent.register"` exists on
 `Client.call` and `ProductionClient.agent`. That is daemon/agent
@@ -19,7 +19,7 @@ registration, not public self-service principal creation.
 `AgentHttpTransport` only routes `program.*` operations; calling
 `agent.register` through it returns `unavailable-capability`.
 
-Use [Public JSON-RPC](PublicRpc.md) `lx_register` over HTTPS, or the
+Use [Public JSON-RPC](PublicRpc.md) `px_register` over HTTPS, or the
 Rust SDK's `RpcClient::register`.
 
 ---
@@ -61,7 +61,7 @@ export function send(
 `getAccount`, `getBalance`, `getBalances`, `getSequence`,
 `getIdentitySequence`, `getBatchHeader`, `getCheckpoint`,
 `getNodeInfo`, `listAssets`, `getAsset`, `estimateFee`, `getProof`,
-`subscribe`, and `subscribeFrom`. It does not wrap `lx_register` or
+`subscribe`, and `subscribeFrom`. It does not wrap `px_register` or
 `lx_requestFunds`.
 
 Hosted human-plane send (quote then commit), as in

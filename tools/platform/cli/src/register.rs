@@ -44,7 +44,7 @@ fn request(signer_public_key: &[u8; 32], signature: &[u8; 64]) -> Value {
     json!({
         "jsonrpc": "2.0",
         "id": "register",
-        "method": "lx_register",
+        "method": layerx_sdk::rpc::REGISTER_METHOD,
         "params": [hex_encode(signer_public_key), hex_encode(signature)],
     })
 }
@@ -172,13 +172,13 @@ mod tests {
             .to_bytes();
         let envelope = request(&signer_public_key, &signature);
         assert_eq!(envelope["jsonrpc"], "2.0");
-        assert_eq!(envelope["method"], "lx_register");
+        assert_eq!(envelope["method"], "px_register");
         assert_eq!(envelope["params"][0], hex_encode(&signer_public_key));
         assert_eq!(envelope["params"][1], hex_encode(&signature));
         assert_eq!(
             envelope["params"].as_array().map(Vec::len),
             Some(2),
-            "lx_register takes exactly two positional arguments"
+            "px_register takes exactly two positional arguments"
         );
         layerx_crypto::ed25519::verify_digest(
             &signer_public_key,
@@ -192,6 +192,40 @@ mod tests {
             &binding("gamma", &signer_public_key),
         )
         .is_err());
+    }
+
+    #[test]
+    fn the_request_names_the_method_and_params_the_gateway_serves() {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../services/platform/hosted/gateway/openrpc.json"
+        ))
+        .unwrap_or_else(|error| panic!("{error}"));
+        let methods = schema["methods"]
+            .as_array()
+            .unwrap_or_else(|| panic!("gateway schema lists no methods"));
+        let envelope = request(&[0xab; 32], &[0xcd; 64]);
+        let served = methods
+            .iter()
+            .find(|entry| entry["name"] == envelope["method"])
+            .unwrap_or_else(|| panic!("gateway does not serve {}", envelope["method"]));
+        assert!(!methods.iter().any(|entry| entry["name"] == "lx_register"));
+        assert_eq!(served["paramStructure"], "by-position");
+        let names: Vec<&str> = served["params"]
+            .as_array()
+            .unwrap_or_else(|| panic!("served method lists no params"))
+            .iter()
+            .filter_map(|param| param["name"].as_str())
+            .collect();
+        assert_eq!(names, ["signer_public_key", "registration_signature"]);
+        assert_eq!(
+            envelope["params"].as_array().map(Vec::len),
+            Some(names.len())
+        );
+        layerx_platform_cli::rpc::request(
+            envelope["method"].as_str().unwrap_or_default(),
+            &envelope["params"],
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
     }
 
     #[test]

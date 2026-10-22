@@ -4,7 +4,7 @@ Package: `layerx-sdk` at `services/agent/crates/layerx-sdk`. There is no
 `sdk/platform/rust`.
 
 This crate is the only shipped SDK with typed public JSON-RPC
-wrappers for `lx_register`, `lx_requestFunds`, and
+wrappers for `px_register`, `lx_requestFunds`, and
 `lx_sendActivity` (`services/agent/crates/layerx-sdk/src/rpc.rs`,
 `services/agent/crates/layerx-sdk/src/register.rs`).
 

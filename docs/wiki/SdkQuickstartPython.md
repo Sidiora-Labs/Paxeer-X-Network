@@ -10,13 +10,13 @@ module of typed `lx_*` wrappers. `PaymentRpc` in
 
 ## Register
 
-No `register()` helper. `PaymentRpc.call` can send `lx_register`:
+No `register()` helper. `PaymentRpc.call` can send `px_register`:
 
 ```python
 from layerx_sdk import PaymentRpc
 
 def register(rpc: PaymentRpc, signer_public_key: str, registration_signature: str) -> dict:
-    return rpc.call("lx_register", [signer_public_key, registration_signature])
+    return rpc.call("px_register", [signer_public_key, registration_signature])
 ```
 
 Both arguments are lowercase hex as required by
