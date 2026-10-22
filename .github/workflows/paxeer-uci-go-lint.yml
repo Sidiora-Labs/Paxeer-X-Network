@@ -158,6 +158,15 @@ jobs:
         with:
           go-version: '1.25.6'
           cache-dependency-path: go.sum
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install --yes build-essential libssl-dev
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.91.1 --profile minimal
+
+      - name: Build native libraries
+        run: make paxd-native-libs
+
       - name: Check module tidiness
         run: |
           had_sum=$( [ -f go.sum ] && echo true || echo false )

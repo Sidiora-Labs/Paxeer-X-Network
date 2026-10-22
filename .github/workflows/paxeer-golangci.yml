@@ -151,6 +151,15 @@ jobs:
         with:
           go-version: '1.25.6'
           cache-dependency-path: go.sum
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install --yes build-essential libssl-dev
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.91.1 --profile minimal
+
+      - name: Build native libraries
+        run: make paxd-native-libs
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8
         with:

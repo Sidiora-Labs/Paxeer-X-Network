@@ -172,7 +172,7 @@ go.sum: go.mod
 		@echo "--> Ensure dependencies have not been modified"
 		@go mod verify
 
-lint:
+lint: paxd-native-libs
 	@command -v "$(GOLANGCI_LINT)" >/dev/null || { echo "golangci-lint is required; run make workspace-install" >&2; exit 1; }
 	GOPROXY=off "$(GOLANGCI_LINT)" run
 	@test -z "$$(find . \( -path ./.git -o -path ./services/platform -o -path ./spec -o -name node_modules \) -prune -o -type f -name '*.go' -print0 | xargs -0 gofmt -l)"
