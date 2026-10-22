@@ -34,6 +34,8 @@ var (
 	Commit = ""
 	// build tags
 	BuildTags = ""
+	// sha256 of the native archives linked into the binary
+	NativeArchiveDigest = ""
 )
 
 func getSDKVersion() string {
@@ -53,27 +55,29 @@ func getSDKVersion() string {
 
 // Info defines the application version information.
 type Info struct {
-	Name             string     `json:"name" yaml:"name"`
-	AppName          string     `json:"server_name" yaml:"server_name"`
-	Version          string     `json:"version" yaml:"version"`
-	GitCommit        string     `json:"commit" yaml:"commit"`
-	BuildTags        string     `json:"build_tags" yaml:"build_tags"`
-	GoVersion        string     `json:"go" yaml:"go"`
-	BuildDeps        []buildDep `json:"build_deps" yaml:"build_deps"`
-	CosmosSdkVersion string     `json:"cosmos_sdk_version" yaml:"cosmos_sdk_version"`
+	Name                string     `json:"name" yaml:"name"`
+	AppName             string     `json:"server_name" yaml:"server_name"`
+	Version             string     `json:"version" yaml:"version"`
+	GitCommit           string     `json:"commit" yaml:"commit"`
+	BuildTags           string     `json:"build_tags" yaml:"build_tags"`
+	NativeArchiveDigest string     `json:"native_archive_digest,omitempty" yaml:"native_archive_digest,omitempty"`
+	GoVersion           string     `json:"go" yaml:"go"`
+	BuildDeps           []buildDep `json:"build_deps" yaml:"build_deps"`
+	CosmosSdkVersion    string     `json:"cosmos_sdk_version" yaml:"cosmos_sdk_version"`
 }
 
 func NewInfo() Info {
 	sdkVersion := getSDKVersion()
 	return Info{
-		Name:             Name,
-		AppName:          AppName,
-		Version:          Version,
-		GitCommit:        Commit,
-		BuildTags:        BuildTags,
-		GoVersion:        fmt.Sprintf("go version %s %s/%s", runtime.Version(), runtime.GOOS, runtime.GOARCH),
-		BuildDeps:        depsFromBuildInfo(),
-		CosmosSdkVersion: sdkVersion,
+		Name:                Name,
+		AppName:             AppName,
+		Version:             Version,
+		GitCommit:           Commit,
+		BuildTags:           BuildTags,
+		NativeArchiveDigest: NativeArchiveDigest,
+		GoVersion:           fmt.Sprintf("go version %s %s/%s", runtime.Version(), runtime.GOOS, runtime.GOARCH),
+		BuildDeps:           depsFromBuildInfo(),
+		CosmosSdkVersion:    sdkVersion,
 	}
 }
 

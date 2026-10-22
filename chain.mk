@@ -80,10 +80,20 @@ endif
 ldflags += $(LDFLAGS)
 ldflags := $(strip $(ldflags))
 
-# BUILD_FLAGS := -tags "$(build_tags)" -ldflags '$(ldflags)' -race
-BUILD_FLAGS := -tags "$(build_tags)" -ldflags '$(ldflags)'
-BUILD_FLAGS_MOCK_BALANCES := -tags "$(build_tags) mock_balances" -ldflags '$(ldflags)'
-BUILD_FLAGS_BENCHMARK := -tags "$(build_tags) benchmark mock_balances" -ldflags '$(ldflags)'
+# Go's link action ID does not cover the contents of the native archives that
+# lxphost links, so an existing build/paxd would be reused after a native-only
+# change. Stamping their digest into the link flags makes paxd relink whenever
+# they change and lets `paxd version --long` show which native build it carries.
+# The flags are recursive so the digest is taken when a recipe runs, after
+# paxd-native-libs has rebuilt the archives.
+NATIVE_ARCHIVES := $(PAXEER_PROJECT_HOME)/build/liblayerx.a $(PAXEER_PROJECT_HOME)/programs/target/release/liblayerx_programs_sandbox.a
+native_archive_digest = $(if $(filter-out $(wildcard $(NATIVE_ARCHIVES)),$(NATIVE_ARCHIVES)),$(error native archives missing: $(filter-out $(wildcard $(NATIVE_ARCHIVES)),$(NATIVE_ARCHIVES)); run paxd-native-libs),$(firstword $(shell cat $(NATIVE_ARCHIVES) | sha256sum)))
+paxd_ldflags = $(ldflags) -X github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version.NativeArchiveDigest=$(native_archive_digest)
+
+# BUILD_FLAGS = -tags "$(build_tags)" -ldflags '$(paxd_ldflags)' -race
+BUILD_FLAGS = -tags "$(build_tags)" -ldflags '$(paxd_ldflags)'
+BUILD_FLAGS_MOCK_BALANCES = -tags "$(build_tags) mock_balances" -ldflags '$(paxd_ldflags)'
+BUILD_FLAGS_BENCHMARK = -tags "$(build_tags) benchmark mock_balances" -ldflags '$(paxd_ldflags)'
 
 #### Command List ####
 
@@ -153,7 +163,7 @@ build-rocksdb: rocksdb-source-check
 		CXXFLAGS='-march=native -DNDEBUG' $(MAKE) -C "$$source_dir" -j"$$(nproc)" shared_lib
 
 # Install paxd with RocksDB backend support
-install-rocksdb: go.sum
+install-rocksdb: go.sum paxd-native-libs
 	@echo "Checking for RocksDB installation..."
 	@if ! ldconfig -p | grep -q librocksdb; then \
 		echo "Error: RocksDB not found. Please run 'make build-rocksdb' first."; \
@@ -166,7 +176,7 @@ install-rocksdb: go.sum
 	@echo "paxd installed with RocksDB backend support!"
 
 loadtest: go.sum
-		go build $(BUILD_FLAGS) -o ./build/loadtest ./tools/benchmark/loadtest/
+		go build -tags "$(build_tags)" -ldflags '$(ldflags)' -o ./build/loadtest ./tools/benchmark/loadtest/
 
 go.sum: go.mod
 		@echo "--> Ensure dependencies have not been modified"
@@ -194,6 +204,11 @@ build: paxd-native-libs
 
 build-verbose: paxd-native-libs
 	go build -x -v $(BUILD_FLAGS) -o ./build/paxd ./daemon/paxd
+
+# Fails when build/paxd does not carry the digest of the current native archives.
+.PHONY: paxd-native-digest-check
+paxd-native-digest-check:
+	sh scripts/check-paxd-native-digest.sh
 
 # build/ is shared with the LayerX root Makefile; remove only chain outputs.
 clean:
