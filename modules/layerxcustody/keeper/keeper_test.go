@@ -1,11 +1,15 @@
 package keeper_test
 
 import (
+	"bytes"
+	"crypto/ed25519"
 	"testing"
 	"time"
 
 	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/codec"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/testvectors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/verify"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
@@ -398,6 +402,44 @@ func TestForcedExitByEmergencyWithDelay(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, result.Queued)
 	require.Equal(t, claim.ClaimId, result.Claim.ClaimId)
+	e.solvent()
+}
+
+func TestForcedExitPaysABalanceOnceAcrossCheckpoints(t *testing.T) {
+	e := newEnv(t, 0)
+	e.deposit(e.exit.Fields["asset"], 6_000_000)
+	e.deposit(e.exit.Fields["asset"], 5_000_000)
+	firstBatch := vectorNumber(t, e.withdrawal, "batch_number") + 1
+	require.NoError(t, e.k.RegisterCheckpoint(e.ctx, firstBatch, vectorArray(t, e.exit, "state_root"), [32]byte{7}))
+	require.NoError(t, e.k.SetEmergency(e.ctx, true))
+	paid, err := e.k.ExecuteForcedExit(e.ctx, e.exitEvidence(firstBatch))
+	require.NoError(t, err)
+	require.Equal(t, e.exit.Fields["balance"], paid.Claim.Amount)
+
+	// The next finalized checkpoint still proves the same, never debited,
+	// balance under a new state root, signed by the account authority.
+	witness := vectorBytes(t, e.exit, "witness")
+	witness[len(witness)-1] ^= 0x01
+	decoded, err := codec.DecodeStateWitness(witness)
+	require.NoError(t, err)
+	root, err := decoded.Root()
+	require.NoError(t, err)
+	require.NotEqual(t, vectorArray(t, e.exit, "state_root"), root)
+	require.NoError(t, e.k.RegisterCheckpoint(e.ctx, firstBatch+1, root, [32]byte{8}))
+	again := e.exitEvidence(firstBatch + 1)
+	again.Witness = witness
+	again.RecipientSignature = ed25519.Sign(ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x61}, 32)),
+		verify.ExitRecipientMessage(e.k.GetParams(e.ctx).NetworkId, again.Account, again.AssetID, again.Recipient, root))
+	_, err = e.k.VerifyForcedExit(e.ctx, again)
+	require.NoError(t, err, "the second root is a valid forced-exit proof")
+
+	_, err = e.k.ExecuteForcedExit(e.ctx, again)
+	require.ErrorIs(t, err, types.ErrExitConsumed)
+	_, err = e.k.RequestForcedExit(e.ctx, again)
+	require.ErrorIs(t, err, types.ErrExitConsumed)
+	recipient := testkeeper.EVMTestApp.EvmKeeper.GetPaxAddressOrDefault(e.ctx, again.Recipient)
+	require.Equal(t, sdk.NewInt(5_000_000), e.balance(recipient, tokenDenom))
+	require.Equal(t, sdk.NewInt(6_000_000), e.balance(e.k.ModuleAddress(), tokenDenom))
 	e.solvent()
 }
 

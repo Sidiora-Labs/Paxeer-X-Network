@@ -1,6 +1,9 @@
 package keeper
 
 import (
+	"encoding/binary"
+	"math/big"
+
 	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/codec"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/verify"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
@@ -381,16 +384,43 @@ func (k *Keeper) VerifyForcedExit(ctx sdk.Context, evidence ExitEvidence) (pendi
 	}, nil
 }
 
+// queueExit queues the part of the proven balance that no earlier forced exit
+// of the same account and asset has already taken. LayerX never debits an
+// exited balance, so every later state root still proves it; without this
+// deduction each newly finalized checkpoint would pay the same balance again.
 func (k *Keeper) queueExit(ctx sdk.Context, pending pendingClaim) (types.Claim, error) {
 	if k.BalanceConsumed(ctx, pending.account, pending.assetID, pending.anchor) {
 		return types.Claim{}, types.ErrExitConsumed
 	}
+	remaining := new(big.Int).Sub(types.AmountInt(pending.amount), k.exitedAmount(ctx, pending.account, pending.assetID))
+	if remaining.Sign() <= 0 {
+		return types.Claim{}, types.ErrExitConsumed
+	}
+	var amount [16]byte
+	remaining.FillBytes(amount[:])
+	pending.amount = codec.U128{Hi: binary.BigEndian.Uint64(amount[:8]), Lo: binary.BigEndian.Uint64(amount[8:])}
 	claim, err := k.queue(ctx, pending)
 	if err != nil {
 		return types.Claim{}, err
 	}
 	k.store(ctx).Set(types.ConsumedKey(pending.account, pending.assetID, pending.anchor), []byte{1})
 	return claim, nil
+}
+
+// exitedAmount sums the forced exits of an account and asset that are queued
+// or paid; a cancelled exit took nothing from custody.
+// ponytail: scans every claim, keep a per-(account, asset) total if claims grow large.
+func (k *Keeper) exitedAmount(ctx sdk.Context, account, assetID [32]byte) *big.Int {
+	total := new(big.Int)
+	k.IterateClaims(ctx, func(claim types.Claim) bool {
+		if claim.Kind == types.ClaimKind_CLAIM_KIND_FORCED_EXIT && claim.Status != types.ClaimStatus_CLAIM_STATUS_CANCELLED &&
+			claim.Account == types.Hash32(account) && claim.AssetId == types.Hash32(assetID) {
+			amount, _ := sdk.NewIntFromString(claim.Amount)
+			total.Add(total, amount.BigInt())
+		}
+		return false
+	})
+	return total
 }
 
 // RequestForcedExit verifies the evidence, marks the balance consumed at its
