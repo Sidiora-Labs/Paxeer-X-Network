@@ -27,7 +27,7 @@ _HEX_QUANTITY = re.compile(r"^0x[0-9a-f]{1,32}$")
 
 _MAX_U256 = (1 << 256) - 1
 _ROW_ID = re.compile(r"^[1-9][0-9]*$")
-_CURSOR = re.compile(r"^[0-9A-Za-z]{1,32}$")
+_CURSOR = re.compile(r"^[0-9a-f]{32}$")
 _KIND = re.compile(r"^[a-z0-9_]{1,64}$")
 
 PX_MAXIMUM_JOINED_ASSETS = 1024
@@ -55,7 +55,6 @@ PX_METHODS: tuple[PxMethod, ...] = (
     "px_getHistory",
     "px_getUnifiedHistory",
 )
-_GATEWAY_METHODS = (*PX_METHODS, "lx_getHistory")
 
 
 @dataclass(frozen=True)
@@ -190,6 +189,9 @@ class HistoryRow:
     final: bool
     decoded: object
     asset_metadata: HistoryAssetMetadata | None
+    block_height: int
+    tx_index: int
+    log_index: int
     side: str | None
 
 
@@ -306,7 +308,7 @@ class PxClient:
         kind: str | None = None,
     ) -> HistoryPage:
         params = history_params(
-            paxeer_history_account(account), cursor=cursor, limit=limit, kind=kind
+            history_account(account), cursor=cursor, limit=limit, kind=kind
         )
         return decode_paxeer_history_page(
             self.call("px_getHistory", params), limit or HISTORY_DEFAULT_LIMIT
@@ -321,31 +323,16 @@ class PxClient:
         kind: str | None = None,
     ) -> UnifiedHistoryPage:
         params = history_params(
-            px_account_key(account), cursor=cursor, limit=limit, kind=kind
+            history_account(account), cursor=cursor, limit=limit, kind=kind
         )
         return decode_unified_history_page(
             self.call("px_getUnifiedHistory", params), limit or HISTORY_DEFAULT_LIMIT
         )
 
-    def get_layerx_history(
-        self,
-        account: str,
-        *,
-        cursor: str | None = None,
-        limit: int | None = None,
-        kind: str | None = None,
-    ) -> HistoryPage:
-        params = history_params(
-            layerx_history_account(account), cursor=cursor, limit=limit, kind=kind
-        )
-        return decode_layerx_history_page(
-            self.call("lx_getHistory", params), limit or HISTORY_DEFAULT_LIMIT
-        )
-
     def call(
         self, method: str, params: list[object]
     ) -> Mapping[str, object] | list[object]:
-        if method not in _GATEWAY_METHODS or not isinstance(params, list):
+        if method not in PX_METHODS or not isinstance(params, list):
             raise ValueError("invalid-px-method")
         self._id += 1
         request_id = self._id
@@ -672,24 +659,12 @@ def history_params(
     return [account, cursor, limit, kind]
 
 
-def layerx_history_account(account: str) -> str:
+def history_account(account: str) -> str:
+    """An EVM address or did:layerx DID, the forms px_getHistory and px_getUnifiedHistory take."""
     lowered = account.strip().lower() if isinstance(account, str) else ""
-    if _HEX32.fullmatch(lowered) is None or lowered == "00" * 32:
-        raise ValueError("invalid-layerx-account")
+    if _EVM_ADDRESS.fullmatch(lowered) is None and _DID.fullmatch(lowered) is None:
+        raise ValueError("invalid-account-identifier")
     return lowered
-
-
-def paxeer_history_account(account: str) -> str:
-    lowered = account.strip().lower() if isinstance(account, str) else ""
-    if _EVM_ADDRESS.fullmatch(lowered) is None:
-        raise ValueError("invalid-paxeer-address")
-    return lowered
-
-
-def decode_layerx_history_page(
-    value: object, limit: int = HISTORY_MAXIMUM_LIMIT
-) -> HistoryPage:
-    return _decode_history_page(value, _HEX32, limit)
 
 
 def decode_paxeer_history_page(
@@ -717,9 +692,6 @@ def decode_unified_history_page(
             raise ValueError("invalid-history-account")
         accounts.append(HistorySide(name, account))
     items = _history_rows(document["items"], True, limit)
-    for newer, older in zip(items, items[1:]):
-        if newer.id <= older.id:
-            raise ValueError("unordered-unified-history")
     return UnifiedHistoryPage(
         MappingProxyType(dict(_document(document["account"]))),
         tuple(accounts),
@@ -747,6 +719,9 @@ def decode_history_row(value: object, unified: bool = False) -> HistoryRow:
             "final",
             "decoded",
             "asset_metadata",
+            "blockHeight",
+            "txIndex",
+            "logIndex",
         ),
     )
     direction = row["direction"]
@@ -779,6 +754,9 @@ def decode_history_row(value: object, unified: bool = False) -> HistoryRow:
         final,
         row["decoded"],
         decode_history_asset_metadata(row["asset_metadata"], asset),
+        _history_position(row["blockHeight"], (1 << 53) - 1),
+        _history_position(row["txIndex"], 0xFFFFFFFF),
+        _history_position(row["logIndex"], 0xFFFFFFFF),
         _history_chain(row["side"]) if unified else None,
     )
 
@@ -839,7 +817,21 @@ def _decode_history_page(
 def _history_rows(value: object, unified: bool, limit: int) -> tuple[HistoryRow, ...]:
     if not isinstance(value, list) or len(value) > limit:
         raise ValueError("invalid-history-page")
-    return tuple(decode_history_row(row, unified) for row in value)
+    items = tuple(decode_history_row(row, unified) for row in value)
+    for before, after in zip(items, items[1:]):
+        if (before.block_height, before.tx_index, before.log_index) > (
+            after.block_height,
+            after.tx_index,
+            after.log_index,
+        ):
+            raise ValueError("unordered-history-page")
+    return items
+
+
+def _history_position(value: object, maximum: int) -> int:
+    if type(value) is not int or not 0 <= value <= maximum:
+        raise ValueError("invalid-history-position")
+    return value
 
 
 def _history_cursor(value: object, items: tuple[HistoryRow, ...]) -> str | None:

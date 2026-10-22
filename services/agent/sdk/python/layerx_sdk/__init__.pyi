@@ -120,12 +120,10 @@ from .px import HistorySide as HistorySide
 from .px import UnifiedHistoryPage as UnifiedHistoryPage
 from .px import decode_history_asset_metadata as decode_history_asset_metadata
 from .px import decode_history_row as decode_history_row
-from .px import decode_layerx_history_page as decode_layerx_history_page
 from .px import decode_paxeer_history_page as decode_paxeer_history_page
 from .px import decode_unified_history_page as decode_unified_history_page
 from .px import history_params as history_params
-from .px import layerx_history_account as layerx_history_account
-from .px import paxeer_history_account as paxeer_history_account
+from .px import history_account as history_account
 from .px import PX_MAXIMUM_JOINED_ASSETS as PX_MAXIMUM_JOINED_ASSETS
 from .px import PX_METHODS as PX_METHODS
 from .px import PxAccountBalances as PxAccountBalances

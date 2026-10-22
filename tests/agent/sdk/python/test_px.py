@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import threading
 import unittest
+from pathlib import Path
+from typing import Any
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from layerx_sdk import (
@@ -12,7 +14,6 @@ from layerx_sdk import (
     PxPaxeerAssetBalance,
     PxRpcError,
     decode_history_asset_metadata,
-    decode_layerx_history_page,
     decode_paxeer_history_page,
     decode_px_account_balances,
     decode_px_account_join,
@@ -20,6 +21,7 @@ from layerx_sdk import (
     decode_px_network_head,
     decode_px_resolved_identities,
     decode_unified_history_page,
+    history_account,
     history_params,
     px_account_key,
     px_optional_quantity,
@@ -297,58 +299,21 @@ class UnifiedNetworkReadTest(unittest.TestCase):
             PxClient("https://example.com/rpc").get_balances("not-an-account")
 
 
-# Recorded gateway answers for the three history reads, as the gateway joins the
-# indexer's rows with its /v1/assets records and the LayerX registry.
-LXP = "11" * 32
-ALICE = "aa" * 32
+# A px_getUnifiedHistory answer recorded from the gateway history read over a
+# loopback indexer store; the gateway's own tests keep it equal to what the
+# gateway answers. Its px_getHistory page is the same rows without "side".
+RECORDED_UNIFIED: dict[str, Any] = json.loads(
+    (Path(__file__).resolve().parents[4] / "apps/web/e2e/fixtures/px-get-unified-history.json").read_text("utf-8")
+)["result"]
 EVE = "0x" + "ee" * 20
-FRANK = "0x" + "ff" * 20
-POINTER = "0x" + "cc" * 20
-LXP_METADATA = {
-    "asset": LXP, "chain": "layerx", "kind": "layerx", "address": None, "denom": None, "symbol": "LXP",
-    "decimals": 6, "native_id": LXP, "pointer": None, "metadata": {"supply": "100"},
+CURSOR = "0000000000000000000000000000000c"
+ROWS: list[dict[str, Any]] = RECORDED_UNIFIED["items"]
+RECORDED_PAXEER: dict[str, Any] = {
+    **{key: value for key, value in RECORDED_UNIFIED.items() if key != "accounts"},
+    "account": EVE,
+    "items": [{key: value for key, value in row.items() if key != "side"} for row in ROWS],
 }
-POINTER_METADATA = {
-    "asset": "evm:" + POINTER, "chain": "paxeer", "kind": "pointer", "address": POINTER, "denom": "ulxp",
-    "symbol": "LXP", "decimals": 6, "native_id": LXP, "pointer": POINTER, "metadata": {},
-}
-NATIVE_METADATA = {
-    "asset": "evm:native", "chain": "paxeer", "kind": "native", "address": None, "denom": None, "symbol": None,
-    "decimals": 18, "native_id": None, "pointer": None, "metadata": {},
-}
-
-
-def history_row(
-    row_id: str, height: str, chain: str, kind: str, direction: str, account: str, counterparty: str | None,
-    asset: str, amount: str, metadata: dict[str, object] | None,
-) -> dict[str, object]:
-    return {
-        "id": row_id, "height_or_seq": height, "chain": chain, "kind": kind, "direction": direction,
-        "account": account, "counterparty": counterparty, "asset": asset, "amount": amount,
-        "tx_id": f"{kind}-{height}", "ordinal": "0", "final": chain == "layerx",
-        "decoded": {"position": height}, "asset_metadata": metadata,
-    }
-
-
-CUSTODY_ROW = history_row("8", "11", "paxeer", "custody_deposit", "in", ALICE, EVE, LXP, "9", LXP_METADATA)
-POINTER_ROW = history_row(
-    "6", "11", "paxeer", "pointer_transfer", "in", EVE, FRANK, "evm:" + POINTER, "3", POINTER_METADATA,
-)
-CREDIT_ROW = history_row("5", "2", "layerx", "lxp_credit", "in", ALICE, None, LXP, "7", LXP_METADATA)
-NATIVE_ROW = history_row(
-    "3", "10", "paxeer", "native_transfer", "out", EVE, FRANK, "evm:native", "1000000000000000000", NATIVE_METADATA,
-)
-UNKNOWN_ROW = history_row(
-    "11", "12", "paxeer", "erc20_transfer", "in", EVE, FRANK, "evm:0x" + "00" * 18 + "0abc", str((1 << 256) - 1), None,
-)
-RECORDED_LAYERX = {"items": [CUSTODY_ROW, CREDIT_ROW], "next_cursor": "5", "account": ALICE}
-RECORDED_PAXEER = {"items": [UNKNOWN_ROW, POINTER_ROW, NATIVE_ROW], "next_cursor": None, "account": EVE}
-RECORDED_UNIFIED = {
-    "items": [{**CUSTODY_ROW, "side": "layerx"}, {**POINTER_ROW, "side": "paxeer"}, {**CREDIT_ROW, "side": "layerx"}],
-    "next_cursor": "5",
-    "account": IDENTITIES,
-    "accounts": [{"side": "paxeer", "account": EVE}, {"side": "layerx", "account": ALICE}],
-}
+NATIVE_ROW, POINTER_ROW = ROWS[0], ROWS[1]
 
 
 def history_handler(observed: list[dict[str, object]]) -> type[BaseHTTPRequestHandler]:
@@ -357,10 +322,7 @@ def history_handler(observed: list[dict[str, object]]) -> type[BaseHTTPRequestHa
             length = int(self.headers["Content-Length"])
             body = json.loads(self.rfile.read(length).decode("utf-8"))
             observed.append({"method": body["method"], "params": body["params"]})
-            result = {
-                "lx_getHistory": RECORDED_LAYERX,
-                "px_getHistory": RECORDED_PAXEER,
-            }.get(body["method"], RECORDED_UNIFIED)
+            result = RECORDED_PAXEER if body["method"] == "px_getHistory" else RECORDED_UNIFIED
             encoded = json.dumps({"jsonrpc": "2.0", "id": body["id"], "result": result}).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -376,79 +338,74 @@ def history_handler(observed: list[dict[str, object]]) -> type[BaseHTTPRequestHa
 
 class HistoryReadTest(unittest.TestCase):
     def test_history_params_are_positional_and_bounded(self) -> None:
-        self.assertEqual(history_params(ALICE), [ALICE, None, None, None])
+        self.assertEqual(history_params(EVE), [EVE, None, None, None])
         self.assertEqual(
-            history_params(EVE, cursor="42", limit=7, kind="erc20_transfer"), [EVE, "42", 7, "erc20_transfer"],
+            history_params(EVE, cursor=CURSOR, limit=7, kind="erc20_transfer"), [EVE, CURSOR, 7, "erc20_transfer"],
         )
         for refused in (
-            {"cursor": ""}, {"cursor": "1&limit=500"}, {"cursor": "x" * 33}, {"limit": 0}, {"limit": 101},
-            {"limit": True}, {"kind": "Transfer"}, {"kind": ""},
+            {"cursor": ""}, {"cursor": "9"}, {"cursor": "1&limit=500"}, {"cursor": CURSOR.upper()},
+            {"cursor": CURSOR + "00"}, {"limit": 0}, {"limit": 101}, {"limit": True}, {"kind": "Transfer"},
+            {"kind": ""},
         ):
             with self.assertRaises(ValueError):
                 history_params(EVE, **refused)  # type: ignore[arg-type]
         self.assertEqual(HISTORY_DEFAULT_LIMIT, 50)
+        self.assertEqual(history_account(f" {DID.upper()} "), DID)
+        self.assertEqual(history_account(EVE.upper().replace("0X", "0x")), EVE)
+        for refused_account in (ACCOUNT, "not-an-account"):
+            with self.assertRaises(ValueError):
+                history_account(refused_account)
 
     def test_recorded_pages_decode_rows_and_joined_asset_metadata(self) -> None:
-        layerx = decode_layerx_history_page(RECORDED_LAYERX)
-        self.assertEqual(layerx.account, ALICE)
-        self.assertEqual(layerx.next_cursor, "5")
-        self.assertEqual([row.id for row in layerx.items], [8, 5])
-        self.assertEqual(layerx.items[0].chain, "paxeer")
-        self.assertIsNone(layerx.items[0].side)
-        credit = layerx.items[1]
-        self.assertIsNone(credit.counterparty)
-        self.assertEqual(credit.amount, 7)
-        self.assertTrue(credit.final)
-        assert credit.asset_metadata is not None
-        self.assertEqual(credit.asset_metadata.symbol, "LXP")
-        self.assertEqual(credit.asset_metadata.decimals, 6)
-        self.assertEqual(credit.asset_metadata.native_id, LXP)
-        self.assertEqual(credit.asset_metadata.metadata, {"supply": "100"})
-
-        paxeer = decode_paxeer_history_page(RECORDED_PAXEER)
-        self.assertIsNone(paxeer.next_cursor)
-        self.assertIsNone(paxeer.items[0].asset_metadata)
-        self.assertEqual(paxeer.items[0].amount, (1 << 256) - 1)
-        pointer = paxeer.items[1].asset_metadata
-        assert pointer is not None
-        self.assertEqual(pointer.pointer, POINTER)
-        self.assertEqual(pointer.denom, "ulxp")
-        native = paxeer.items[2].asset_metadata
-        assert native is not None
-        self.assertEqual(native.decimals, 18)
-        self.assertIsNone(native.symbol)
-        self.assertEqual(paxeer.items[2].direction, "out")
-
         unified = decode_unified_history_page(RECORDED_UNIFIED)
         self.assertEqual(
-            [(row.id, row.side, row.chain) for row in unified.items],
-            [(8, "layerx", "paxeer"), (6, "paxeer", "paxeer"), (5, "layerx", "layerx")],
+            [(row.id, row.side, row.block_height, row.tx_index, row.log_index) for row in unified.items],
+            [(3, "paxeer", 10, 0, 0), (6, "paxeer", 11, 0, 0), (9, "paxeer", 12, 0, 0), (11, "paxeer", 12, 1, 0)],
         )
-        self.assertEqual([(side.side, side.account) for side in unified.accounts], [("paxeer", EVE), ("layerx", ALICE)])
-        self.assertEqual(unified.next_cursor, "5")
-        self.assertEqual(unified.account["evm_address"], EVM)
-        self.assertEqual(decode_layerx_history_page({"items": [], "next_cursor": None, "account": ALICE}).items, ())
+        self.assertEqual([(side.side, side.account) for side in unified.accounts], [("paxeer", EVE)])
+        self.assertIsNone(unified.next_cursor)
+        self.assertEqual(unified.account["evm_address"], EVE)
+        native = unified.items[0]
+        self.assertEqual(native.direction, "out")
+        self.assertEqual(native.amount, 10**18)
+        assert native.asset_metadata is not None
+        self.assertEqual(native.asset_metadata.decimals, 18)
+        self.assertIsNone(native.asset_metadata.symbol)
+        pointer = unified.items[1].asset_metadata
+        assert pointer is not None
+        self.assertEqual(pointer.pointer, "0x" + "cc" * 20)
+        self.assertEqual(pointer.denom, "ulxp")
+        self.assertEqual(pointer.symbol, "LXP")
+        self.assertIsNone(unified.items[3].asset_metadata)
+
+        paxeer = decode_paxeer_history_page(RECORDED_PAXEER)
+        self.assertEqual(paxeer.account, EVE)
+        self.assertIsNone(paxeer.next_cursor)
+        self.assertEqual([(row.id, row.side) for row in paxeer.items], [(3, None), (6, None), (9, None), (11, None)])
+        self.assertEqual(decode_paxeer_history_page({**RECORDED_PAXEER, "items": []}).items, ())
+        self.assertEqual(decode_paxeer_history_page({**RECORDED_PAXEER, "next_cursor": CURSOR}).next_cursor, CURSOR)
 
     def test_malformed_pages_are_refused(self) -> None:
-        items = RECORDED_UNIFIED["items"]
-        assert isinstance(items, list)
         refusals = (
-            lambda: decode_unified_history_page({**RECORDED_UNIFIED, "items": [items[2], items[0]]}),
-            lambda: decode_unified_history_page({**RECORDED_UNIFIED, "items": [CUSTODY_ROW]}),
-            lambda: decode_layerx_history_page({**RECORDED_LAYERX, "account": EVE}),
-            lambda: decode_paxeer_history_page({**RECORDED_PAXEER, "next_cursor": "1&x"}),
-            lambda: decode_layerx_history_page({"items": [], "next_cursor": "5", "account": ALICE}),
-            lambda: decode_layerx_history_page({**RECORDED_LAYERX, "items": [{**CREDIT_ROW, "amount": "-7"}]}),
-            lambda: decode_layerx_history_page({**RECORDED_LAYERX, "items": [{**CREDIT_ROW, "direction": "sideways"}]}),
-            lambda: decode_layerx_history_page({
-                **RECORDED_LAYERX, "items": [{**CREDIT_ROW, "asset_metadata": {**LXP_METADATA, "asset": "evm:native"}}],
+            lambda: decode_unified_history_page({**RECORDED_UNIFIED, "items": ROWS[::-1]}),
+            lambda: decode_unified_history_page({**RECORDED_UNIFIED, "items": [NATIVE_ROW, RECORDED_PAXEER["items"][1]]}),
+            lambda: decode_unified_history_page({**RECORDED_UNIFIED, "items": [NATIVE_ROW, {**POINTER_ROW, "txIndex": "0"}]}),
+            lambda: decode_paxeer_history_page({**RECORDED_PAXEER, "account": DID}),
+            lambda: decode_paxeer_history_page({**RECORDED_PAXEER, "next_cursor": "9"}),
+            lambda: decode_paxeer_history_page({**RECORDED_PAXEER, "items": [], "next_cursor": CURSOR}),
+            lambda: decode_unified_history_page({**RECORDED_UNIFIED, "items": [{**NATIVE_ROW, "amount": "-7"}]}),
+            lambda: decode_unified_history_page({**RECORDED_UNIFIED, "items": [{**NATIVE_ROW, "direction": "sideways"}]}),
+            lambda: decode_unified_history_page({
+                **RECORDED_UNIFIED, "items": [{**NATIVE_ROW, "asset_metadata": POINTER_ROW["asset_metadata"]}],
             }),
-            lambda: decode_layerx_history_page(RECORDED_LAYERX, 1),
-            lambda: decode_history_asset_metadata({**NATIVE_METADATA, "decimals": 256}),
+            lambda: decode_unified_history_page(RECORDED_UNIFIED, 3),
+            lambda: decode_history_asset_metadata({**NATIVE_ROW["asset_metadata"], "decimals": 256}),
+            lambda: PxClient("https://example.com/rpc").call("lx_getHistory", [EVE]),
         )
         for refusal in refusals:
             with self.assertRaises(ValueError):
                 refusal()
+        self.assertFalse(hasattr(PxClient, "get_layerx_history"))
 
     def test_history_reads_round_trip_over_loopback(self) -> None:
         observed: list[dict[str, object]] = []
@@ -457,22 +414,19 @@ class HistoryReadTest(unittest.TestCase):
         thread.start()
         try:
             client = PxClient(f"http://127.0.0.1:{server.server_port}/rpc")
-            unified = client.get_unified_history(DID.upper().replace("DID:LAYERX:", "did:layerx:"), limit=3)
-            self.assertEqual([row.id for row in unified.items], [8, 6, 5])
-            paxeer = client.get_history(EVE.upper().replace("0X", "0x"), kind="erc20_transfer")
-            self.assertEqual(len(paxeer.items), 3)
-            layerx = client.get_layerx_history(ALICE, cursor="9", limit=2)
-            self.assertEqual(layerx.next_cursor, "5")
+            unified = client.get_unified_history(DID.upper().replace("DID:LAYERX:", "did:layerx:"), limit=4)
+            self.assertEqual([row.id for row in unified.items], [3, 6, 9, 11])
+            paxeer = client.get_history(DID, cursor=CURSOR, kind="erc20_transfer")
+            self.assertEqual(len(paxeer.items), 4)
+            client.get_history(EVE.upper().replace("0X", "0x"))
             with self.assertRaises(ValueError):
                 client.get_unified_history(EVE, limit=2)
             with self.assertRaises(ValueError):
-                client.get_history(ALICE)
-            with self.assertRaises(ValueError):
-                client.get_layerx_history(EVE)
+                client.get_history(ACCOUNT)
             self.assertEqual(observed, [
-                {"method": "px_getUnifiedHistory", "params": [DID, None, 3, None]},
-                {"method": "px_getHistory", "params": [EVE, None, None, "erc20_transfer"]},
-                {"method": "lx_getHistory", "params": [ALICE, "9", 2, None]},
+                {"method": "px_getUnifiedHistory", "params": [DID, None, 4, None]},
+                {"method": "px_getHistory", "params": [DID, CURSOR, None, "erc20_transfer"]},
+                {"method": "px_getHistory", "params": [EVE, None, None, None]},
                 {"method": "px_getUnifiedHistory", "params": [EVE, None, 2, None]},
             ])
         finally:

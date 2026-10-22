@@ -7,8 +7,7 @@ import {
   decodePaxeerHistoryPage,
   decodeUnifiedHistoryPage,
   historyParams,
-  paxeerHistoryAccount,
-  unifiedHistoryAccount,
+  historyAccount,
   type HistoryOptions,
   type HistoryPage,
   type UnifiedHistoryPage,
@@ -186,24 +185,24 @@ export class PxClient {
     return decodePxReceiptKeys((await this.call("px_getReceiptKeys", [])).keys);
   }
 
-  /** The indexed history of one Paxeer EVM address, newest first. */
+  /** The indexed history of one EVM address or bound DID, oldest first by position. */
   public async getHistory(
     account: string,
     options: HistoryOptions = {},
   ): Promise<HistoryPage> {
-    const params = historyParams(paxeerHistoryAccount(account), options);
+    const params = historyParams(historyAccount(account), options);
     return decodePaxeerHistoryPage(
       await this.call("px_getHistory", params),
       options.limit ?? HISTORY_DEFAULT_LIMIT,
     );
   }
 
-  /** Both halves of one unified account merged newest first, each row tagged with its side. */
+  /** The unified history of one EVM address or bound DID, oldest first by position, each row tagged with its side. */
   public async getUnifiedHistory(
     account: string,
     options: HistoryOptions = {},
   ): Promise<UnifiedHistoryPage> {
-    const params = historyParams(unifiedHistoryAccount(account), options);
+    const params = historyParams(historyAccount(account), options);
     return decodeUnifiedHistoryPage(
       await this.call("px_getUnifiedHistory", params),
       options.limit ?? HISTORY_DEFAULT_LIMIT,

@@ -11,7 +11,7 @@ const MAX_U256 = (1n << 256n) - 1n;
 const MAX_U64 = 18446744073709551615n;
 const DECIMAL = /^(0|[1-9][0-9]*)$/u;
 const ROW_ID = /^[1-9][0-9]*$/u;
-const CURSOR = /^[0-9A-Za-z]{1,32}$/u;
+const CURSOR = /^[0-9a-f]{32}$/u;
 const KIND = /^[a-z0-9_]{1,64}$/u;
 const HEX32 = /^[0-9a-f]{64}$/u;
 const EVM_ADDRESS = /^0x[0-9a-f]{40}$/u;
@@ -21,7 +21,7 @@ export type HistoryChain = "layerx" | "paxeer";
 export type HistoryDirection = "in" | "out";
 
 export interface HistoryOptions {
-  /** The opaque `nextCursor` of the previous page. */
+  /** The `nextCursor` of the previous page: the indexer's 32-lowercase-hex position cursor. */
   readonly cursor?: string;
   readonly limit?: number;
   /** Only rows of this indexer kind, such as `lxp_transfer` or `erc20_transfer`. */
@@ -56,6 +56,10 @@ export interface HistoryRow {
   readonly final: boolean;
   readonly decoded: unknown;
   readonly assetMetadata: HistoryAssetMetadata | null;
+  /** The `(blockHeight, txIndex, logIndex)` position rows are ordered by, oldest first. */
+  readonly blockHeight: number;
+  readonly txIndex: number;
+  readonly logIndex: number;
   /** Which half of a unified account the row belongs to; null outside unified history. */
   readonly side: HistoryChain | null;
 }
@@ -87,24 +91,10 @@ export function historyParams(account: string, options: HistoryOptions = {}): re
   return Object.freeze([account, cursor ?? null, limit ?? null, kind ?? null]);
 }
 
-/** A LayerX account id as `lx_getHistory` takes it. */
-export function layerxHistoryAccount(account: string): string {
+/** An EVM address or `did:layerx:` DID, the account forms `px_getHistory` and `px_getUnifiedHistory` take. */
+export function historyAccount(account: string): string {
   const lowered = typeof account === "string" ? account.trim().toLowerCase() : "";
-  if (!HEX32.test(lowered) || lowered === "00".repeat(32)) throw new Error("Invalid LayerX account");
-  return lowered;
-}
-
-/** A Paxeer EVM address as `px_getHistory` takes it. */
-export function paxeerHistoryAccount(account: string): string {
-  const lowered = typeof account === "string" ? account.trim().toLowerCase() : "";
-  if (!EVM_ADDRESS.test(lowered)) throw new Error("Invalid Paxeer address");
-  return lowered;
-}
-
-/** Any unified account spelling `px_getUnifiedHistory` resolves. */
-export function unifiedHistoryAccount(account: string): string {
-  const lowered = typeof account === "string" ? account.trim().toLowerCase() : "";
-  if (EVM_ADDRESS.test(lowered) || DID.test(lowered) || HEX32.test(lowered)) return lowered;
+  if (EVM_ADDRESS.test(lowered) || DID.test(lowered)) return lowered;
   throw new Error("Invalid account identifier");
 }
 
@@ -115,10 +105,6 @@ export function decodeHistoryPage(value: unknown, pattern: RegExp, limit = HISTO
   if (typeof account !== "string" || !pattern.test(account)) throw new Error("Invalid history account");
   const items = rows(document.items, false, limit);
   return Object.freeze({ account, items, nextCursor: nextCursor(document.next_cursor, items) });
-}
-
-export function decodeLayerxHistoryPage(value: unknown, limit?: number): HistoryPage {
-  return decodeHistoryPage(value, HEX32, limit);
 }
 
 export function decodePaxeerHistoryPage(value: unknown, limit?: number): HistoryPage {
@@ -139,15 +125,12 @@ export function decodeUnifiedHistoryPage(value: unknown, limit = HISTORY_MAXIMUM
     return Object.freeze({ side: name, account });
   }));
   const items = rows(document.items, true, limit);
-  for (let index = 1; index < items.length; index += 1) {
-    if (items[index - 1]!.id <= items[index]!.id) throw new Error("Unordered unified history");
-  }
   return Object.freeze({ account: object(document.account), accounts, items, nextCursor: nextCursor(document.next_cursor, items) });
 }
 
 export function decodeHistoryRow(value: unknown, unified: boolean): HistoryRow {
   const row = object(value);
-  present(row, ["id", "height_or_seq", "chain", "kind", "direction", "account", "counterparty", "asset", "amount", "tx_id", "ordinal", "final", "decoded", "asset_metadata"]);
+  present(row, ["id", "height_or_seq", "chain", "kind", "direction", "account", "counterparty", "asset", "amount", "tx_id", "ordinal", "final", "decoded", "asset_metadata", "blockHeight", "txIndex", "logIndex"]);
   const direction = row.direction;
   if (direction !== "in" && direction !== "out") throw new Error("Invalid history direction");
   if (typeof row.final !== "boolean") throw new Error("Invalid history finality");
@@ -171,6 +154,9 @@ export function decodeHistoryRow(value: unknown, unified: boolean): HistoryRow {
     final: row.final,
     decoded: row.decoded,
     assetMetadata: decodeHistoryAssetMetadata(row.asset_metadata, row.asset as string),
+    blockHeight: integer(row.blockHeight, Number.MAX_SAFE_INTEGER),
+    txIndex: integer(row.txIndex, 0xffffffff),
+    logIndex: integer(row.logIndex, 0xffffffff),
     side: unified ? chain(row.side) : null,
   });
 }
@@ -199,7 +185,13 @@ export function decodeHistoryAssetMetadata(value: unknown, asset?: string): Hist
 
 function rows(value: unknown, unified: boolean, limit: number): readonly HistoryRow[] {
   if (!Array.isArray(value) || value.length > limit) throw new Error("Invalid history page");
-  return Object.freeze(value.map((row) => decodeHistoryRow(row, unified)));
+  const items = Object.freeze(value.map((row) => decodeHistoryRow(row, unified)));
+  for (let index = 1; index < items.length; index += 1) {
+    const [before, after] = [items[index - 1]!, items[index]!];
+    const order = before.blockHeight - after.blockHeight || before.txIndex - after.txIndex || before.logIndex - after.logIndex;
+    if (order > 0) throw new Error("Unordered history page");
+  }
+  return items;
 }
 
 function nextCursor(value: unknown, items: readonly HistoryRow[]): string | null {
@@ -218,6 +210,11 @@ function decimal(value: unknown, maximum: bigint): bigint {
   const parsed = BigInt(value);
   if (parsed > maximum) throw new Error("Invalid history decimal");
   return parsed;
+}
+
+function integer(value: unknown, maximum: number): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) > maximum) throw new Error("Invalid history position");
+  return value as number;
 }
 
 function object(value: unknown): Readonly<Record<string, unknown>> {
