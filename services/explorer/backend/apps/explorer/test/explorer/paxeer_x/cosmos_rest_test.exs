@@ -6,6 +6,8 @@ defmodule Explorer.PaxeerX.CosmosRestTest do
   @fixtures Path.expand("../../support/fixture/paxeer_x/price_feed", __DIR__)
   @height 1_000
   @empty_height 1_001
+  @pruned "height #{@height} is not available, lowest height is #{@height + 50}"
+  @ahead "height #{@height} must be less than or equal to the current blockchain height #{@height - 50}"
   @hash "0xa57f246774eee2ec5ac6ac506b279d22682af01a62812d9aa642447751b0fadf"
 
   setup do
@@ -103,6 +105,83 @@ defmodule Explorer.PaxeerX.CosmosRestTest do
     assert {:error, :no_urls} = CosmosRest.block_price_updates([], [context.rpc_url], @height)
   end
 
+  test "starts the next request at the node that last answered", context do
+    failing = Bypass.open()
+    failing_calls = :counters.new(1, [])
+
+    Bypass.expect(failing, "GET", "/block_results", fn conn ->
+      :counters.add(failing_calls, 1, 1)
+      Plug.Conn.resp(conn, 503, ~s({"code":14,"message":"unavailable"}))
+    end)
+
+    Bypass.expect(context.rpc, "GET", "/block_results", fn conn ->
+      Plug.Conn.resp(conn, 200, fixture("block_results_empty.json"))
+    end)
+
+    urls = [url(failing), context.rpc_url]
+
+    assert {:ok, []} = CosmosRest.fetch_block_results(urls, @empty_height)
+    assert {:ok, []} = CosmosRest.fetch_block_results(urls, @empty_height)
+    assert {:ok, []} = CosmosRest.fetch_block_results(urls, @empty_height)
+    assert :counters.get(failing_calls, 1) == 1
+  end
+
+  test "reports a height every node has pruned as unavailable", context do
+    other = Bypass.open()
+
+    Bypass.expect(context.rest, "GET", "/cosmos/tx/v1beta1/txs/block/#{@height}", fn conn ->
+      Plug.Conn.resp(conn, 500, ~s({"code":2,"message":"rpc error: code = Unknown desc = #{@pruned}","details":[]}))
+    end)
+
+    Bypass.expect(other, "GET", "/cosmos/tx/v1beta1/txs/block/#{@height}", fn conn ->
+      Plug.Conn.resp(conn, 500, ~s({"code":2,"message":"#{@pruned}","details":[]}))
+    end)
+
+    assert {:error, {:height_unavailable, _}} =
+             CosmosRest.block_price_updates([context.rest_url, url(other)], [context.rpc_url], @height)
+
+    Bypass.expect(context.rpc, "GET", "/block_results", fn conn ->
+      Plug.Conn.resp(conn, 200, rpc_error(@pruned))
+    end)
+
+    assert {:error, {:height_unavailable, _}} = CosmosRest.fetch_block_results([context.rpc_url], @height)
+  end
+
+  test "moves past a node whose head is below the height and asks for a retry when none serves it", context do
+    behind = Bypass.open()
+    pruned = Bypass.open()
+
+    Bypass.expect(behind, "GET", "/block_results", fn conn ->
+      Plug.Conn.resp(conn, 200, rpc_error(@ahead))
+    end)
+
+    Bypass.expect(pruned, "GET", "/block_results", fn conn ->
+      Plug.Conn.resp(conn, 200, rpc_error(@pruned))
+    end)
+
+    behind_url = url(behind)
+
+    assert {:error, {:height_ahead, ^behind_url}} =
+             CosmosRest.fetch_block_results([behind_url, url(pruned)], @height)
+
+    Bypass.expect(context.rpc, "GET", "/block_results", fn conn ->
+      Plug.Conn.resp(conn, 200, fixture("block_results_empty.json"))
+    end)
+
+    assert {:ok, []} = CosmosRest.fetch_block_results([behind_url, context.rpc_url], @height)
+  end
+
+  test "a pruned node next to an unreachable one is not reported unavailable", context do
+    down = Bypass.open()
+    Bypass.down(down)
+
+    Bypass.expect(context.rpc, "GET", "/block_results", fn conn ->
+      Plug.Conn.resp(conn, 200, rpc_error(@pruned))
+    end)
+
+    assert {:error, {:unreachable, _}} = CosmosRest.fetch_block_results([context.rpc_url, url(down)], @height)
+  end
+
   test "refuses a submission whose feeder is not a pax account" do
     body = Jason.decode!(fixture("block_txs.json"))
 
@@ -125,6 +204,9 @@ defmodule Explorer.PaxeerX.CosmosRestTest do
       Plug.Conn.resp(conn, 200, body)
     end)
   end
+
+  defp rpc_error(data),
+    do: Jason.encode!(%{jsonrpc: "2.0", id: -1, error: %{code: -32_603, message: "Internal error", data: data}})
 
   defp fixture(name), do: File.read!(Path.join(@fixtures, name))
 

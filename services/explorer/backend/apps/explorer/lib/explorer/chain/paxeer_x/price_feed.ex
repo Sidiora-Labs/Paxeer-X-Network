@@ -56,44 +56,71 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
   @doc """
   Every known market in id order with its latest consensus observation and that
   observation's submission preloaded, or `nil` when the market has none.
+
+  Each market reads only its newest observations through the `(market_id, block_number
+  desc)` index, so the cost follows the number of markets, not the stored history.
   """
   @spec latest_per_market() :: [{PriceMarket.t(), PriceObservation.t() | nil}]
   def latest_per_market do
+    rows = Repo.all(latest_per_market_query())
+
     latest =
+      rows
+      |> Enum.flat_map(fn
+        {_market, %PriceObservation{update_hash: %Hash{}} = observation} -> [observation]
+        _ -> []
+      end)
+      |> Repo.preload(:update)
+      |> Map.new(&{&1.market_id, &1})
+
+    Enum.map(rows, fn {market, _} -> {market, Map.get(latest, market.market_id)} end)
+  end
+
+  @doc false
+  def latest_per_market_query do
+    newest =
       from(observation in PriceObservation,
         inner_join: update in assoc(observation, :update),
         inner_join: block in Block,
         on: block.hash == update.block_hash and block.consensus == true,
-        distinct: observation.market_id,
-        order_by: [asc: observation.market_id, desc: observation.block_number, desc: update.index],
-        preload: [update: update]
+        where: observation.market_id == parent_as(:market).market_id,
+        order_by: [desc: observation.block_number, desc: update.index],
+        limit: 1,
+        select: observation
       )
-      |> Repo.all()
-      |> Map.new(&{&1.market_id, &1})
 
-    PriceMarket
-    |> order_by(asc: :market_id)
-    |> Repo.all()
-    |> Enum.map(&{&1, Map.get(latest, &1.market_id)})
+    from(market in PriceMarket,
+      as: :market,
+      left_lateral_join: newest in subquery(newest),
+      on: true,
+      order_by: [asc: market.market_id],
+      select: {market, newest}
+    )
   end
 
   @doc """
   A page of one market's observations, newest first, each with its submission preloaded.
+  Paging walks the `(market_id, block_number desc)` index: `key` is the
+  `{block_number, index}` of the last item shown.
   """
   @spec market_updates(non_neg_integer(), PagingOptions.t()) :: [PriceObservation.t()]
   def market_updates(market_id, %PagingOptions{} = paging_options) when is_integer(market_id) do
+    market_updates_query(market_id, paging_options)
+    |> Repo.all()
+  end
+
+  @doc false
+  def market_updates_query(market_id, %PagingOptions{} = paging_options) do
     from(observation in PriceObservation,
       inner_join: update in assoc(observation, :update),
-      as: :update,
       inner_join: block in Block,
       on: block.hash == update.block_hash and block.consensus == true,
       where: observation.market_id == ^market_id,
       order_by: [desc: observation.block_number, desc: update.index],
       preload: [update: update]
     )
-    |> page_updates(paging_options)
+    |> page_observations(paging_options)
     |> limit(^page_size(paging_options))
-    |> Repo.all()
   end
 
   @doc """
@@ -148,13 +175,28 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
       {count, _} = Repo.insert_all(PriceUpdate, update_rows)
       Repo.insert_all(PriceObservation, observation_rows)
 
-      Repo.insert_all(PriceFeedScannedBlock, [%{block_number: number}],
-        on_conflict: :nothing,
-        conflict_target: :block_number
-      )
+      mark_scanned(number, "scanned", nil)
 
       count
     end)
+  end
+
+  @doc """
+  Records that the height could not be scanned: `"unavailable"` when the nodes no longer
+  serve it, `"failed"` when its scan kept failing. Catch-up then skips the height until a
+  rescan or a refetch stores it.
+  """
+  @spec mark_unscannable(non_neg_integer(), String.t(), String.t()) :: :ok
+  def mark_unscannable(number, status, error) when status in ["unavailable", "failed"] do
+    mark_scanned(number, status, error)
+    :ok
+  end
+
+  defp mark_scanned(number, status, error) do
+    Repo.insert_all(PriceFeedScannedBlock, [%{block_number: number, status: status, error: error}],
+      on_conflict: {:replace, [:status, :error]},
+      conflict_target: :block_number
+    )
   end
 
   @doc """
@@ -266,6 +308,17 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
   end
 
   defp page_updates(query, _paging_options), do: query
+
+  defp page_observations(query, %PagingOptions{key: {block_number, index}}) do
+    where(
+      query,
+      [observation, update],
+      observation.block_number <= ^block_number and
+        (observation.block_number < ^block_number or update.index < ^index)
+    )
+  end
+
+  defp page_observations(query, _paging_options), do: query
 
   defp page_size(%PagingOptions{page_size: page_size}) when is_integer(page_size) and page_size > 0, do: page_size
   defp page_size(_paging_options), do: @default_page_size

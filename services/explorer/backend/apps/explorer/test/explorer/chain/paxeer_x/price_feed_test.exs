@@ -131,6 +131,80 @@ defmodule Explorer.Chain.PaxeerX.PriceFeedTest do
     end
   end
 
+  describe "query shape" do
+    test "latest_per_market reads each market's newest observations through the market index" do
+      plan = explain(PriceFeed.latest_per_market_query())
+
+      assert plan =~
+               ~r/Index Scan using "?paxeer_x_price_observations_market_id_block_number\w*"? on paxeer_x_price_observations/
+
+      assert plan =~ ~r/Index Cond: \(market_id = \w+\.market_id\)/
+      assert plan =~ "Limit"
+      assert length(Regex.scan(~r/on paxeer_x_price_observations/, plan)) == 1
+      refute plan =~ "Seq Scan on paxeer_x_price_observations"
+    end
+
+    test "market_updates pages by a range on the market index" do
+      plan = explain(PriceFeed.market_updates_query(0, %PagingOptions{page_size: 10, key: {11, 0}}))
+
+      assert plan =~
+               ~r/Index Scan using "?paxeer_x_price_observations_market_id_block_number\w*"? on paxeer_x_price_observations/
+
+      assert plan =~ ~r/Index Cond: \(\(market_id = 0\) AND \(block_number <= '?11'?(::bigint)?\)\)/
+      refute plan =~ "Seq Scan on paxeer_x_price_observations"
+    end
+
+    test "latest_per_market picks the newest block and the higher index within it on a seeded history", %{
+      update: update
+    } do
+      observation = hd(update.observations)
+
+      for number <- 1..40 do
+        block = insert(:block, number: number)
+
+        updates =
+          for index <- 0..1 do
+            %{
+              update
+              | hash: "0x" <> String.pad_leading(Integer.to_string(number * 2 + index, 16), 64, "0"),
+                index: index,
+                observations: [%{observation | sequence: number * 2 + index}]
+            }
+          end
+
+        {:ok, 2} = PriceFeed.replace_block_updates(block, updates)
+      end
+
+      Repo.update_all(from(b in Block, where: b.number == 40), set: [consensus: false])
+      PriceFeed.upsert_markets([%{market_id: 0, symbol: "BTC", chainflow_symbol: "BTC"}])
+
+      assert [{%PriceMarket{market_id: 0}, %PriceObservation{block_number: 39, sequence: 79, update: %{index: 1}}}] =
+               PriceFeed.latest_per_market()
+
+      assert [%{block_number: 38, update: %{index: 1}}, %{block_number: 38, update: %{index: 0}}] =
+               PriceFeed.market_updates(0, %PagingOptions{page_size: 2, key: {39, 0}})
+    end
+  end
+
+  describe "mark_unscannable/3" do
+    test "records a distinct state that catch-up skips and a later scan clears", %{update: update} do
+      Enum.each([30, 31], &insert(:block, number: &1))
+
+      assert :ok = PriceFeed.mark_unscannable(30, "unavailable", "{:height_unavailable, \"node\"}")
+      assert :ok = PriceFeed.mark_unscannable(31, "failed", "{:unreachable, \"node\"}")
+
+      assert %PriceFeedScannedBlock{status: "unavailable"} = Repo.get(PriceFeedScannedBlock, 30)
+
+      assert %PriceFeedScannedBlock{status: "failed", error: "{:unreachable, \"node\"}"} =
+               Repo.get(PriceFeedScannedBlock, 31)
+
+      assert {:ok, []} = PriceFeed.stream_unscanned_block_numbers([], &[&1 | &2], 30)
+
+      {:ok, 1} = PriceFeed.replace_block_updates(Repo.get_by!(Block, number: 30), [update])
+      assert %PriceFeedScannedBlock{status: "scanned", error: nil} = Repo.get(PriceFeedScannedBlock, 30)
+    end
+  end
+
   describe "stream_unscanned_block_numbers/3" do
     test "selects consensus heights at or above the start that are not scanned yet", %{update: update} do
       Enum.each([4, 5, 7], &insert(:block, number: &1))
@@ -140,6 +214,12 @@ defmodule Explorer.Chain.PaxeerX.PriceFeedTest do
       assert {:ok, numbers} = PriceFeed.stream_unscanned_block_numbers([], &[&1 | &2], 5)
       assert Enum.reverse(numbers) == [5]
     end
+  end
+
+  defp explain(query) do
+    Repo.query!("SET LOCAL enable_seqscan = off")
+    Repo.query!("SET LOCAL enable_bitmapscan = off")
+    Ecto.Adapters.SQL.explain(Repo, :all, query)
   end
 
   defp cast_address(hex) do

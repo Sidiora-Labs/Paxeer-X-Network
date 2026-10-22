@@ -153,8 +153,14 @@ the shape of the explorer:
 | accounts and media | `ACCOUNT_ENABLED`, `NFT_MEDIA_HANDLER_ENABLED` |
 | runtime | `DISABLE_FILE_LOGGING`, `HEART_BEAT_TIMEOUT`, `TXS_STATS_DAYS_TO_COMPILE_AT_INIT`, `COIN_BALANCE_HISTORY_DAYS` |
 
-Price feed — off by default; once `PAXEER_X_PRICE_FEED_ENABLED` is `true` the
-first three below must be set or the release refuses to boot:
+Price feed — off by default; once `PAXEER_X_PRICE_FEED_ENABLED` is `true`,
+`PAXEER_X_COSMOS_REST_URLS`, `PAXEER_X_COMETBFT_RPC_URLS` and
+`PAXEER_X_PRICE_FEED_START_BLOCK` must be set as well or the release refuses to
+boot. Nodes prune old heights, so the start block must lie within the history
+the configured nodes still serve, for both `txs/block` and `block_results`; a
+height every node reports as no longer available is recorded as unavailable and
+not retried, and a height above a lagging node's head is tried on the next node
+and then retried with a growing delay.
 
 | Name | What it selects |
 | --- | --- |

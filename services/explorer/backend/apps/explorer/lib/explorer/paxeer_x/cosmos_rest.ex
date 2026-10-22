@@ -10,8 +10,12 @@ defmodule Explorer.PaxeerX.CosmosRest do
   `GET /block_results?height={height}`, which is read only when the block carries a
   submission.
 
-  Every request tries the configured URLs in order and goes round them at most
-  `@rounds` times; the last failure is returned as a typed error.
+  Every request starts at the URL that last answered for the same URL list and goes
+  round the list at most `@rounds` times, so one dead node costs one short connect
+  timeout until another node answers. A node that no longer serves the height answers
+  `height_unavailable`, which is returned only when every attempt answered so; a node
+  whose head is below the height answers `height_ahead`, which wins over any other
+  failure so the caller retries later. Otherwise the last failure is returned.
   """
 
   alias Explorer.Chain.PaxeerX.Identity
@@ -21,12 +25,14 @@ defmodule Explorer.PaxeerX.CosmosRest do
   @rounds 2
   @retry_delay_ms 200
   @max_body_bytes 33_554_432
-  @http_options [recv_timeout: 30_000, timeout: 10_000, follow_redirect: false]
+  @http_options [recv_timeout: 5_000, timeout: 2_000, follow_redirect: false]
   @max_int64 9_223_372_036_854_775_807
   @max_int32 2_147_483_647
 
   @type error ::
           :no_urls
+          | {:height_unavailable, String.t()}
+          | {:height_ahead, String.t()}
           | {:unreachable, String.t()}
           | {:http_status, non_neg_integer(), String.t()}
           | {:too_large, String.t()}
@@ -286,18 +292,51 @@ defmodule Explorer.PaxeerX.CosmosRest do
   defp get_json([], _path, _accept?), do: {:error, :no_urls}
 
   defp get_json(urls, path, accept?) do
-    attempts = for _round <- 1..@rounds, url <- urls, do: url
+    count = length(urls)
+    preferred = preferred_url(urls)
+    start = :atomics.get(preferred, 1)
 
-    attempts
-    |> Enum.with_index()
-    |> Enum.reduce_while({:error, :no_urls}, fn {url, attempt}, _last ->
-      if attempt >= length(urls), do: Process.sleep(@retry_delay_ms)
+    0..(@rounds * count - 1)
+    |> Enum.reduce_while([], fn attempt, errors ->
+      if attempt >= count, do: Process.sleep(@retry_delay_ms)
+      position = rem(start + attempt, count)
 
-      case get_once(url, path, accept?) do
-        {:ok, _} = ok -> {:halt, ok}
-        error -> {:cont, error}
+      case get_once(Enum.at(urls, position), path, accept?) do
+        {:ok, _} = ok ->
+          :atomics.put(preferred, 1, position)
+          {:halt, ok}
+
+        {:error, reason} ->
+          {:cont, [reason | errors]}
       end
     end)
+    |> case do
+      {:ok, _} = ok -> ok
+      errors -> {:error, pick_error(Enum.reverse(errors))}
+    end
+  end
+
+  defp pick_error(errors) do
+    cond do
+      Enum.all?(errors, &match?({:height_unavailable, _}, &1)) -> List.last(errors)
+      ahead = Enum.find(errors, &match?({:height_ahead, _}, &1)) -> ahead
+      true -> errors |> Enum.reject(&match?({:height_unavailable, _}, &1)) |> List.last()
+    end
+  end
+
+  # ponytail: one atomic per distinct URL list, created once; the lists come from config.
+  defp preferred_url(urls) do
+    key = {__MODULE__, :preferred, urls}
+
+    case :persistent_term.get(key, nil) do
+      nil ->
+        ref = :atomics.new(1, [])
+        :persistent_term.put(key, ref)
+        ref
+
+      ref ->
+        ref
+    end
   end
 
   defp get_once(url, path, accept?) do
@@ -307,21 +346,36 @@ defmodule Explorer.PaxeerX.CosmosRest do
 
       {:ok, %HTTPoison.Response{status_code: status, body: body}} ->
         case {status, Jason.decode(body)} do
+          {200, {:ok, %{"error" => _}}} ->
+            node_error(status, body, url)
+
           {200, {:ok, %{} = decoded}} ->
             {:ok, decoded}
 
           {_, {:ok, %{} = decoded}} ->
-            if accept?.(status, decoded), do: {:ok, :empty}, else: {:error, {:http_status, status, url}}
+            if accept?.(status, decoded), do: {:ok, :empty}, else: node_error(status, body, url)
 
           {200, _} ->
             {:error, {:malformed, "response from #{url} is not a JSON object"}}
 
           _ ->
-            {:error, {:http_status, status, url}}
+            node_error(status, body, url)
         end
 
       {:error, %HTTPoison.Error{}} ->
         {:error, {:unreachable, url}}
+    end
+  end
+
+  # CometBFT answers "height N is not available, lowest height is M" below its retained
+  # history and "height N must be less than or equal to the current blockchain height M"
+  # above its head; the Cosmos REST route wraps the same texts or says the height is
+  # greater than the current height.
+  defp node_error(status, body, url) do
+    cond do
+      body =~ "is not available" -> {:error, {:height_unavailable, url}}
+      body =~ ~r/must be less than or equal to|greater than the current height/ -> {:error, {:height_ahead, url}}
+      true -> {:error, {:http_status, status, url}}
     end
   end
 end

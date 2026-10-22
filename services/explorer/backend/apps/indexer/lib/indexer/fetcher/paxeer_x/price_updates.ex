@@ -8,10 +8,17 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdates do
   height. Catch-up: on start the consensus heights at or above the start block that
   have no scanned row are buffered, lowest first.
 
+  A height the nodes no longer serve is recorded as unavailable and not retried. Any
+  other failure, a node whose head is still below the height among them, requeues the
+  height as `{number, attempts, not_before}` with a doubling delay, and after
+  `@max_attempts` failed scans the height is recorded as failed with its last error.
+  Either record is logged once.
+
   The market list is read from the price-feed precompile with `getMarketCount()` and
   `getMarket(uint256)` over the indexer's JSON-RPC when it is older than the refresh
   interval or a submission names a market it does not hold, and only for a block that
-  carries a submission.
+  carries a submission. Attempts are spaced by the refresh interval, kept in the fetcher
+  state, so a market the precompile does not list costs no calls per block.
   """
 
   use Indexer.Fetcher, restart: :permanent
@@ -34,6 +41,8 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdates do
   @get_market_count "fd69f3c2"
   @get_market "eb44fdd3"
   @max_markets 1024
+  @max_attempts 10
+  @max_backoff_ms 300_000
 
   @abi [
     %{
@@ -110,7 +119,8 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdates do
       cometbft_rpc_urls: config[:cometbft_rpc_urls],
       start_block: config[:start_block],
       precompile: config[:precompile] || @default_precompile,
-      markets_refresh_seconds: config[:markets_refresh_seconds]
+      markets_refresh_seconds: config[:markets_refresh_seconds],
+      markets_attempted_at: nil
     }
   end
 
@@ -121,52 +131,108 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdates do
   end
 
   @impl BufferedTask
-  def run(block_numbers, state) do
-    case Enum.reject(block_numbers, &(scan_block(&1, state) == :ok)) do
-      [] -> :ok
-      failed -> {:retry, failed}
+  def run(entries, state) do
+    now = System.monotonic_time(:millisecond)
+
+    {retry, state} =
+      Enum.reduce(entries, {[], state}, fn entry, {retry, state} ->
+        {number, attempts, not_before} = normalize(entry)
+
+        if is_integer(not_before) and not_before > now do
+          {[entry | retry], state}
+        else
+          {result, state} = scan_block(number, state)
+          {after_scan(result, number, attempts + 1, now) ++ retry, state}
+        end
+      end)
+
+    case retry do
+      [] -> {:ok, state}
+      _ -> {:retry, Enum.reverse(retry), state}
     end
   end
+
+  defp normalize(number) when is_integer(number), do: {number, 0, nil}
+  defp normalize({_number, _attempts, _not_before} = entry), do: entry
+
+  defp after_scan(:ok, _number, _attempts, _now), do: []
+
+  defp after_scan({:error, {:height_unavailable, _} = reason}, number, _attempts, _now) do
+    Logger.warning("price feed block #{number} is no longer served by the configured nodes: #{inspect(reason)}")
+    PriceFeed.mark_unscannable(number, "unavailable", inspect(reason))
+    []
+  end
+
+  defp after_scan({:error, reason}, number, attempts, _now) when attempts >= @max_attempts do
+    Logger.error("price feed scan of block #{number} failed #{attempts} times: #{inspect(reason)}")
+    PriceFeed.mark_unscannable(number, "failed", inspect(reason))
+    []
+  end
+
+  defp after_scan({:error, reason}, number, attempts, now) do
+    Logger.debug("price feed scan of block #{number} failed, attempt #{attempts}: #{inspect(reason)}")
+    [{number, attempts, now + backoff_ms(attempts)}]
+  end
+
+  @doc false
+  def backoff_ms(attempts), do: min(1_000 * Integer.pow(2, attempts - 1), @max_backoff_ms)
 
   defp scan_block(number, state) do
     case Repo.one(from(block in Block, where: block.number == ^number and block.consensus == true)) do
       nil ->
-        :ok
+        {:ok, state}
 
       block ->
-        with {:ok, updates} <- CosmosRest.block_price_updates(state.cosmos_rest_urls, state.cometbft_rpc_urls, number),
-             _ <- maybe_refresh_markets(updates, state),
-             {:ok, _count} <- PriceFeed.replace_block_updates(block, updates) do
-          :ok
-        else
-          {:error, reason} ->
-            Logger.error("price feed scan of block #{number} failed: #{inspect(reason)}")
-            :error
+        case CosmosRest.block_price_updates(state.cosmos_rest_urls, state.cometbft_rpc_urls, number) do
+          {:ok, updates} ->
+            state = maybe_refresh_markets(updates, state)
+
+            case PriceFeed.replace_block_updates(block, updates) do
+              {:ok, _count} -> {:ok, state}
+              {:error, _} = error -> {error, state}
+            end
+
+          {:error, _} = error ->
+            {error, state}
         end
     end
   end
 
-  defp maybe_refresh_markets([], _state), do: :ok
+  defp maybe_refresh_markets([], state), do: state
 
   defp maybe_refresh_markets(updates, state) do
-    market_ids = for update <- updates, observation <- update.observations, do: observation.market_id
-    refreshed_at = PriceFeed.markets_refreshed_at()
+    now = System.monotonic_time(:millisecond)
+    attempted_at = Map.get(state, :markets_attempted_at)
 
-    stale? =
-      is_nil(refreshed_at) or
-        DateTime.diff(DateTime.utc_now(), refreshed_at) >= state.markets_refresh_seconds
+    if is_nil(attempted_at) or now - attempted_at >= state.markets_refresh_seconds * 1_000 do
+      market_ids = for update <- updates, observation <- update.observations, do: observation.market_id
+      refreshed_at = PriceFeed.markets_refreshed_at()
 
-    if stale? or PriceFeed.unknown_market_ids(market_ids) != [] do
-      case refresh_markets(state) do
-        {:ok, _count} ->
-          :ok
+      stale? =
+        is_nil(refreshed_at) or
+          DateTime.diff(DateTime.utc_now(), refreshed_at) >= state.markets_refresh_seconds
 
-        {:error, reason} ->
-          Logger.error("price feed market refresh failed: #{inspect(reason)}")
-          :error
+      if stale? or PriceFeed.unknown_market_ids(market_ids) != [] do
+        refresh_and_report(market_ids, state)
+        Map.put(state, :markets_attempted_at, now)
+      else
+        state
       end
     else
-      :ok
+      state
+    end
+  end
+
+  defp refresh_and_report(market_ids, state) do
+    case refresh_markets(state) do
+      {:ok, _count} ->
+        case PriceFeed.unknown_market_ids(market_ids) do
+          [] -> :ok
+          unknown -> Logger.warning("price feed markets #{inspect(unknown)} are still unknown after a refresh")
+        end
+
+      {:error, reason} ->
+        Logger.error("price feed market refresh failed: #{inspect(reason)}")
     end
   end
 

@@ -49,7 +49,7 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdatesTest do
       serve(rpc, "/block_results", 200, "block_results.json")
       expect_markets()
 
-      assert PriceUpdates.run([10], state) == :ok
+      assert {:ok, _state} = PriceUpdates.run([10], state)
 
       assert [%PriceUpdate{status: 1, observation_count: 18} = update] = PriceFeed.block_updates(10)
       assert update.block_hash == block.hash
@@ -66,7 +66,7 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdatesTest do
       insert(:block, number: 11)
       serve(rest, "/cosmos/tx/v1beta1/txs/block/11", 400, "block_txs_empty.json")
 
-      assert PriceUpdates.run([11], state) == :ok
+      assert {:ok, _state} = PriceUpdates.run([11], state)
       assert PriceFeed.block_updates(11) == []
       assert Repo.get(PriceFeedScannedBlock, 11)
     end
@@ -76,27 +76,96 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdatesTest do
       serve(rest, "/cosmos/tx/v1beta1/txs/block/12", 200, "block_txs.json")
       serve(rpc, "/block_results", 200, "block_results.json")
       expect_markets()
-      assert PriceUpdates.run([12], state) == :ok
+      assert {:ok, _state} = PriceUpdates.run([12], state)
 
       Repo.update_all(from(b in Block, where: b.hash == ^old.hash), set: [consensus: false])
       new = insert(:block, number: 12)
 
-      assert PriceUpdates.run([12], state) == :ok
+      assert {:ok, _state} = PriceUpdates.run([12], state)
       assert [%PriceUpdate{block_hash: block_hash}] = Repo.all(PriceUpdate)
       assert block_hash == new.hash
     end
 
-    test "retries a height whose node read fails and stores nothing", %{state: state} do
+    test "requeues a height whose node read fails with a delay and stores nothing", %{state: state} do
       insert(:block, number: 13)
-      down = Bypass.open()
-      Bypass.down(down)
+      before = System.monotonic_time(:millisecond)
 
-      assert PriceUpdates.run([13], %{state | cosmos_rest_urls: ["http://localhost:#{down.port}"]}) == {:retry, [13]}
+      assert {:retry, [{13, 1, not_before}], _state} = PriceUpdates.run([13], down(state))
+      assert not_before >= before + PriceUpdates.backoff_ms(1)
       assert Repo.get(PriceFeedScannedBlock, 13) == nil
+
+      assert {:retry, [{13, 2, later}], _state} = PriceUpdates.run([{13, 1, nil}], down(state))
+      assert later - System.monotonic_time(:millisecond) > PriceUpdates.backoff_ms(1)
+      assert PriceUpdates.backoff_ms(20) == 300_000
+    end
+
+    test "leaves a requeued height alone until its delay has passed", %{state: state} do
+      insert(:block, number: 13)
+      entry = {13, 3, System.monotonic_time(:millisecond) + 60_000}
+
+      assert {:retry, [^entry], _state} = PriceUpdates.run([entry], state)
+    end
+
+    test "records a height as failed once its attempts run out", %{state: state} do
+      insert(:block, number: 13)
+
+      assert {:ok, _state} = PriceUpdates.run([{13, 9, nil}], down(state))
+      assert %PriceFeedScannedBlock{status: "failed", error: error} = Repo.get(PriceFeedScannedBlock, 13)
+      assert error =~ "unreachable"
+      assert PriceUpdates.init([], &[&1 | &2], state) == []
+    end
+
+    test "records a height the nodes no longer serve as unavailable without retrying", %{rest: rest, state: state} do
+      insert(:block, number: 15)
+
+      Bypass.expect(rest, "GET", "/cosmos/tx/v1beta1/txs/block/15", fn conn ->
+        Plug.Conn.resp(conn, 500, ~s({"code":2,"message":"height 15 is not available, lowest height is 60"}))
+      end)
+
+      assert {:ok, _state} = PriceUpdates.run([15], state)
+      assert %PriceFeedScannedBlock{status: "unavailable"} = Repo.get(PriceFeedScannedBlock, 15)
+      assert PriceFeed.block_updates(15) == []
+    end
+
+    test "requeues a height above the nodes' head instead of recording it", %{rest: rest, state: state} do
+      insert(:block, number: 16)
+
+      Bypass.expect(rest, "GET", "/cosmos/tx/v1beta1/txs/block/16", fn conn ->
+        Plug.Conn.resp(
+          conn,
+          500,
+          ~s({"code":2,"message":"height 16 must be less than or equal to the current blockchain height 9"})
+        )
+      end)
+
+      assert {:retry, [{16, 1, _}], _state} = PriceUpdates.run([16], state)
+      assert Repo.get(PriceFeedScannedBlock, 16) == nil
+    end
+
+    test "spaces market refreshes by the refresh interval when a market stays unknown", %{
+      rest: rest,
+      rpc: rpc,
+      state: state
+    } do
+      insert(:block, number: 10)
+      serve(rest, "/cosmos/tx/v1beta1/txs/block/10", 200, "block_txs.json")
+      serve(rpc, "/block_results", 200, "block_results.json")
+      expect_markets(4, 17)
+
+      assert {:ok, %{markets_attempted_at: attempted_at} = state} = PriceUpdates.run([10], state)
+      assert is_integer(attempted_at)
+      assert PriceFeed.unknown_market_ids([0, 17]) == [17]
+
+      assert {:ok, %{markets_attempted_at: ^attempted_at} = state} = PriceUpdates.run([10], state)
+
+      expired = %{state | markets_attempted_at: attempted_at - 301_000}
+      assert {:ok, %{markets_attempted_at: refreshed}} = PriceUpdates.run([10], expired)
+      assert refreshed > attempted_at - 301_000
+      assert PriceFeed.unknown_market_ids([17]) == [17]
     end
 
     test "skips a height with no consensus block", %{state: state} do
-      assert PriceUpdates.run([14], state) == :ok
+      assert {:ok, _state} = PriceUpdates.run([14], state)
       assert Repo.get(PriceFeedScannedBlock, 14) == nil
     end
   end
@@ -104,6 +173,33 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdatesTest do
   defp serve(bypass, path, status, fixture) do
     Bypass.expect(bypass, "GET", path, fn conn ->
       Plug.Conn.resp(conn, status, File.read!(Path.join(@fixtures, fixture)))
+    end)
+  end
+
+  defp down(state) do
+    down = Bypass.open()
+    Bypass.down(down)
+    %{state | cosmos_rest_urls: ["http://localhost:#{down.port}"]}
+  end
+
+  defp expect_markets(calls, failing_market_id) do
+    recorded = @fixtures |> Path.join("markets.json") |> File.read!() |> Jason.decode!()
+
+    expect(EthereumJSONRPC.Mox, :json_rpc, calls, fn requests, _options ->
+      {:ok,
+       Enum.map(requests, fn
+         %{id: id, method: "eth_call", params: [%{to: @precompile, data: @get_market_count}, "latest"]} ->
+           %{id: id, jsonrpc: "2.0", result: recorded["getMarketCount"]}
+
+         %{id: id, method: "eth_call", params: [%{to: @precompile, data: @get_market <> argument}, "latest"]} ->
+           case Integer.parse(argument, 16) do
+             {^failing_market_id, ""} ->
+               %{id: id, jsonrpc: "2.0", error: %{code: -32_000, message: "execution reverted"}}
+
+             {market_id, ""} ->
+               %{id: id, jsonrpc: "2.0", result: Map.fetch!(recorded["getMarket"], to_string(market_id))}
+           end
+       end)}
     end)
   end
 
