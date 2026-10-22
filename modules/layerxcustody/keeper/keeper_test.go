@@ -520,6 +520,51 @@ func TestForcedExitRefusesABalanceMovedToAnotherAccount(t *testing.T) {
 	e.solvent()
 }
 
+func TestForcedExitClosesDepositsWithAConstantFreezeRead(t *testing.T) {
+	e := newEnv(t, 600)
+	freezeReadGas := func() uint64 {
+		ctx := e.ctx.WithGasMeter(sdk.NewInfiniteGasMeter(1, 1))
+		_, frozen := e.k.ExitCheckpoint(ctx)
+		require.False(t, frozen)
+		return ctx.GasMeter().GasConsumed()
+	}
+	empty := freezeReadGas()
+	e.deposit(e.withdrawal.Fields["asset"], 1_000)
+	e.deposit(e.exit.Fields["asset"], 6_000_000)
+	_, err := e.k.RequestWithdrawal(e.ctx, e.evidence())
+	require.NoError(t, err)
+	require.Equal(t, empty, freezeReadGas(), "the freeze read does not grow with the claim store")
+
+	params := e.k.GetParams(e.ctx)
+	params.ForcedExitDelaySeconds = 120
+	require.NoError(t, e.k.SetParams(e.ctx, params))
+	exitBatch := vectorNumber(t, e.withdrawal, "batch_number") + 1
+	require.NoError(t, e.k.RegisterCheckpoint(e.ctx, exitBatch, vectorArray(t, e.exit, "state_root"), [32]byte{7}))
+	require.NoError(t, e.k.SetEmergency(e.ctx, true))
+	exit, err := e.k.RequestForcedExit(e.ctx, e.exitEvidence(exitBatch))
+	require.NoError(t, err)
+	frozenAt, frozen := e.k.ExitCheckpoint(e.ctx)
+	require.True(t, frozen)
+	require.Equal(t, exitBatch, frozenAt)
+
+	// A deposit now could only be credited after the exit checkpoint, where
+	// it could be neither withdrawn nor force-exited.
+	assetID := vectorArray(t, e.exit, "asset")
+	_, err = e.k.Deposit(e.ctx, e.payer, e.payerAcc, assetID, [32]byte{0xbe, 0xef}, sdk.NewInt(1_000))
+	require.ErrorIs(t, err, types.ErrDepositFrozen)
+	require.Equal(t, sdk.NewInt(6_000_000), e.balance(e.k.ModuleAddress(), tokenDenom))
+
+	// A cancelled exit took nothing, so it lifts the freeze.
+	claimID, err := types.ParseHash32(exit.ClaimId)
+	require.NoError(t, err)
+	_, err = e.k.CancelClaim(e.ctx, claimID)
+	require.NoError(t, err)
+	_, frozen = e.k.ExitCheckpoint(e.ctx)
+	require.False(t, frozen)
+	e.deposit(e.exit.Fields["asset"], 1_000)
+	e.solvent()
+}
+
 func TestGenesisRoundTrip(t *testing.T) {
 	e := newEnv(t, 600)
 	e.deposit(e.withdrawal.Fields["asset"], 1_000)

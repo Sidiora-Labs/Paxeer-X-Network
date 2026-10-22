@@ -416,6 +416,7 @@ func (k *Keeper) queueExit(ctx sdk.Context, pending pendingClaim) (types.Claim, 
 		return types.Claim{}, err
 	}
 	k.store(ctx).Set(types.ConsumedKey(pending.account, pending.assetID, pending.anchor), []byte{1})
+	k.store(ctx).Set(types.ExitCheckpointKey, binary.BigEndian.AppendUint64(nil, pending.batchNumber))
 	return claim, nil
 }
 
@@ -437,21 +438,31 @@ func (k *Keeper) exitedAmount(ctx sdk.Context, account, assetID [32]byte) *big.I
 
 // ExitCheckpoint is the batch of the first queued or paid forced exit. LayerX
 // never debits an exited balance, so from then on custody pays only against
-// that checkpoint: forced exits must prove it, and withdrawals included in a
-// later batch are refused, since their balance is still in that checkpoint.
-// A cancelled exit took nothing and does not count. Clearing the emergency
-// does not lift this; only a kernel debit of exited balances could.
-// ponytail: scans every claim, keep the batch in its own key if claims grow large.
+// that checkpoint: forced exits must prove it, withdrawals included in a later
+// batch are refused, since their balance is still in that checkpoint, and
+// deposits are refused, since no checkpoint custody pays against can hold
+// them. A cancelled exit took nothing and does not count. Clearing the
+// emergency does not lift this; only a kernel debit of exited balances could.
+// It is one keyed read, set when the first exit is queued.
 func (k *Keeper) ExitCheckpoint(ctx sdk.Context) (uint64, bool) {
-	var batch uint64
-	found := false
+	bz := k.store(ctx).Get(types.ExitCheckpointKey)
+	if bz == nil {
+		return 0, false
+	}
+	return binary.BigEndian.Uint64(bz), true
+}
+
+// syncExitCheckpoint rebuilds the exit checkpoint from the stored claims. It
+// scans every claim, so it runs only when an exit is cancelled and at genesis.
+func (k *Keeper) syncExitCheckpoint(ctx sdk.Context) {
+	k.store(ctx).Delete(types.ExitCheckpointKey)
 	k.IterateClaims(ctx, func(claim types.Claim) bool {
 		if claim.Kind == types.ClaimKind_CLAIM_KIND_FORCED_EXIT && claim.Status != types.ClaimStatus_CLAIM_STATUS_CANCELLED {
-			batch, found = claim.BatchNumber, true
+			k.store(ctx).Set(types.ExitCheckpointKey, binary.BigEndian.AppendUint64(nil, claim.BatchNumber))
+			return true
 		}
-		return found
+		return false
 	})
-	return batch, found
 }
 
 // RequestForcedExit verifies the evidence, marks the balance consumed at its
@@ -467,9 +478,9 @@ func (k *Keeper) RequestForcedExit(ctx sdk.Context, evidence ExitEvidence) (type
 }
 
 // ExecuteForcedExit pays a forced exit. An exit that was requested earlier is
-// identified by re-deriving its claim from the same evidence, which is
-// re-verified only while the exit is still against the latest checkpoint; a
-// queued exit stays payable after newer checkpoints are finalized.
+// identified by re-deriving its claim from the same evidence and stays payable
+// after newer checkpoints are finalized; a new exit is verified against the
+// exit checkpoint, or the latest checkpoint while no exit is live.
 func (k *Keeper) ExecuteForcedExit(ctx sdk.Context, evidence ExitEvidence) (ClaimResult, error) {
 	return atomically(ctx, func(ctx sdk.Context) (ClaimResult, error) {
 		if claim, found := k.queuedExit(ctx, evidence); found {
@@ -524,6 +535,9 @@ func (k *Keeper) CancelClaim(ctx sdk.Context, claimID [32]byte) (types.Claim, er
 		}
 		claim.Status = types.ClaimStatus_CLAIM_STATUS_CANCELLED
 		k.setClaim(ctx, claim)
+		if claim.Kind == types.ClaimKind_CLAIM_KIND_FORCED_EXIT {
+			k.syncExitCheckpoint(ctx)
+		}
 		assetID, _ := types.ParseHash32(claim.AssetId)
 		amount, _ := sdk.NewIntFromString(claim.Amount)
 		custodied, released, pending := k.totals(ctx, assetID)

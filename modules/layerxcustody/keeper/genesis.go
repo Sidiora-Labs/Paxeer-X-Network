@@ -36,6 +36,7 @@ func (k *Keeper) InitGenesis(ctx sdk.Context, gs types.GenesisState) {
 	for _, claim := range gs.Claims {
 		k.setClaim(ctx, claim)
 	}
+	k.syncExitCheckpoint(ctx)
 	for _, nullifier := range gs.Nullifiers {
 		k.setNullifier(ctx, nullifier)
 	}

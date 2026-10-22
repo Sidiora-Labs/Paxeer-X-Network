@@ -32,6 +32,7 @@ var (
 	ConsumedPrefix     = []byte{0x42}
 	CheckpointPrefix   = []byte{0x50}
 	LatestCheckpoint   = []byte{0x51}
+	ExitCheckpointKey  = []byte{0x52}
 	DepositRootPrefix  = []byte{0x60}
 )
 

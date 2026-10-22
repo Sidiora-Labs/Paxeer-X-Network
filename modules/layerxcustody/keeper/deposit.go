@@ -70,6 +70,9 @@ func (k *Keeper) Deposit(ctx sdk.Context, payer common.Address, payerAccount sdk
 	if !asset.Enabled || asset.Paused {
 		return types.Deposit{}, types.ErrAssetDisabled
 	}
+	if exitBatch, frozen := k.ExitCheckpoint(ctx); frozen {
+		return types.Deposit{}, sdkerrors.Wrapf(types.ErrDepositFrozen, "forced exits are live from batch %d", exitBatch)
+	}
 	minimum, _ := asset.Minimum()
 	if beneficiary == ([32]byte{}) || !amount.IsPositive() || amount.LT(minimum) || amount.BigInt().BitLen() > 128 {
 		return types.Deposit{}, sdkerrors.Wrap(types.ErrInvalidDeposit, "beneficiary or amount")

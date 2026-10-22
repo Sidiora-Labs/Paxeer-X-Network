@@ -31,4 +31,5 @@ var (
 	ErrGovernanceNotActive = sdkerrors.Register(ModuleName, 25, "custody governance execution is not active")
 	ErrExitCheckpoint      = sdkerrors.Register(ModuleName, 26, "forced exits are proven against the checkpoint of the first forced exit")
 	ErrExitFrozen          = sdkerrors.Register(ModuleName, 27, "withdrawals from batches after the forced-exit checkpoint are frozen")
+	ErrDepositFrozen       = sdkerrors.Register(ModuleName, 28, "deposits are closed after the first forced exit")
 )
