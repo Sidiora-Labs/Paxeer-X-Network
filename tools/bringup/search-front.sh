@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The host map, the Fly helpers and rpc_unit are the probe's.
+# The host map and rpc_unit are the probe's.
 # shellcheck source=tools/bringup/check-live.sh
 check_live_path="$(dirname "${BASH_SOURCE[0]}")/check-live.sh"
 if [ "$(grep -Fxc 'mode="${1:-}"' "$check_live_path")" != 1 ]; then
@@ -16,10 +16,10 @@ usage() {
 	cat <<'EOF'
 usage: tools/bringup/search-front.sh names | render | config | deploy
 
-The search front of search.paxeer.network: the nginx Fly app of
-services/interop/deploy/search-front/fly.toml that keeps each client address on one
-serving RPC name. Runs on the edge host, the operator host that holds the Fly
-login; names reads the host map from BRINGUP_HOSTS_FILE without printing it.
+The search front of search.paxeer.network: the Railway service configured by
+services/interop/deploy/search-front/railway.env.example and built from
+docker/search-front/Dockerfile. It keeps each client address on one serving
+RPC name; names reads the host map from BRINGUP_HOSTS_FILE without printing it.
 
 names     asks every RPC_HOSTS destination over ssh which apiN site its nginx
           serves (rpc_unit of tools/bringup/check-live.sh) and prints one line
@@ -45,36 +45,25 @@ config    prints the serving sidecar configuration of
           dropped. Exits 1 naming every unset or empty variable, never a
           value.
 
-deploy    creates the app in FLY_ORG when it does not exist, imports the
-          rendered list base64-encoded as the [[files]] secret
-          SEARCH_FRONT_UPSTREAMS through flyctl secrets import on standard
-          input, builds docker/search-front/Dockerfile from the repository
-          root, deploys it and scales it to one machine in each of
-          SEARCH_FRONT_REGIONS. search.paxeer.network reaches the app through
-          the edge host's nginx, which the *.paxeer.network wildcard lands on:
-          when tools/bringup/edge.sh exists it registers the name with the
-          app's fly.dev name as upstream, otherwise one line says the name
-          awaits edge registration and names that upstream.
+deploy    retired: exits 2 and points to the Railway deployment inputs.
+          Configure the Railway service using
+          services/interop/deploy/search-front/railway.env.example and
+          docker/search-front/Dockerfile; this script does not deploy it.
 
 Environment:
   BRINGUP_HOSTS_FILE   the private host map, as tools/bringup/check-live.sh
   CHECK_LIVE_TIMEOUT   seconds per ssh call, default 30
-  FLY_ORG              the Fly organisation, default paxlabs-inc
-  SEARCH_FRONT_REGIONS comma-separated regions, default ams,fra
   SEARCH_FRONT_PRIMARY the pinned serving name, default api15.paxeer.network
   SEARCH_FRONT_BACKUP  the serving name pinned while the primary is not
                        ready, default api1.paxeer.network
   SEARCH_FRONT_READINESS_TIMEOUT seconds per HTTPS readiness probe, default 5
 
-Exits 1 when a destination, a docker or a flyctl step fails; 2 on a usage
-error or a host map lacking a role.
+Exits 1 when a destination or configuration step fails; 2 on a usage
+error, a host map lacking a role, or the retired deploy command.
 EOF
 }
 
-search_front_toml="services/interop/deploy/search-front/fly.toml"
 search_front_host="search.paxeer.network"
-search_front_secret="SEARCH_FRONT_UPSTREAMS"
-search_front_regions="${SEARCH_FRONT_REGIONS:-ams,fra}"
 search_front_primary="${SEARCH_FRONT_PRIMARY:-api15.paxeer.network}"
 search_front_backup="${SEARCH_FRONT_BACKUP:-api1.paxeer.network}"
 search_front_config_template="services/interop/crates/x-websearch/config.example.json"
@@ -276,29 +265,6 @@ print(json.dumps(config, indent=2))
 PY
 }
 
-search_front() {
-	local app list image regions
-	app="$(fly_app "$search_front_toml")" || {
-		echo "search-front: $search_front_toml names no app" >&2
-		return 1
-	}
-	list="$(search_front_render)" || return 1
-	if ! flyctl status --app "$app" >/dev/null 2>&1; then
-		flyctl apps create "$app" --org "${FLY_ORG:-paxlabs-inc}"
-	fi
-	printf '%s=%s\n' "$search_front_secret" "$(printf '%s\n' "$list" | base64 -w 0)" |
-		flyctl secrets import --app "$app" --stage
-	image="$app:$(git -C "$repo_root" rev-parse --short=12 HEAD)"
-	docker build -f "$repo_root/docker/search-front/Dockerfile" -t "$image" "$repo_root"
-	flyctl deploy --config "$repo_root/$search_front_toml" --app "$app" --image "$image" --local-only --ha=false --yes
-	regions="$(tr ',' '\n' <<<"$search_front_regions" | grep -c .)"
-	flyctl scale count "$regions" --app "$app" --region "$search_front_regions" --max-per-region 1 --yes
-	if [ -x "$repo_root/tools/bringup/edge.sh" ]; then
-		"$repo_root/tools/bringup/edge.sh" register "$search_front_host" "$app.fly.dev"
-	else
-		echo "$search_front_host awaits edge registration: upstream $app.fly.dev"
-	fi
-}
 
 mode="${1:-}"
 case "$mode" in
@@ -306,7 +272,11 @@ case "$mode" in
 	usage
 	exit 0
 	;;
-names | render | config | deploy) ;;
+deploy)
+	echo "search-front: deploy is retired; use services/interop/deploy/search-front/railway.env.example and docker/search-front/Dockerfile for the Railway service" >&2
+	exit 2
+	;;
+names | render | config) ;;
 *)
 	usage >&2
 	exit 2
@@ -320,7 +290,6 @@ fi
 tools=(timeout)
 [ "$mode" != names ] || tools+=(ssh sort)
 [ "$mode" = names ] || tools+=(python3)
-[ "$mode" != deploy ] || tools+=(flyctl docker git base64)
 for tool in "${tools[@]}"; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "search-front: $tool is required" >&2
@@ -335,5 +304,4 @@ names)
 	;;
 render) search_front_render ;;
 config) search_front_config ;;
-deploy) search_front ;;
 esac

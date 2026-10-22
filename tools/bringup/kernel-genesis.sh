@@ -8,7 +8,11 @@
 #       step A: generates the sequencer key, the checkpoint authority key, the
 #       deposit authority key and the publication recipient key under
 #       /data/layerx/keys and prints their public values, which the custody
-#       governance proposals of tools/bringup/custody-governance.sh carry.
+#       governance proposals must carry. Submit and enact those separately;
+#       tools/qualification/paxeer-x/custody_governance.py only qualifies the
+#       governance implementation: python3 tools/qualification/paxeer-x/custody_governance.py
+#       --produce ARTIFACT_DIR builds test artifacts; --manifest
+#       ARTIFACT_DIR/manifest.json runs them without compiling.
 #       rotate first runs the identity preflight of kernel-init
 #       --identity-generation and retires the kernel keys, the genesis outputs,
 #       the registry material and the node data into
@@ -147,7 +151,7 @@ keys_step() {
 	echo "checkpoint_authority_public_key=$(pem_public "$keys/checkpoint-authority/key.pem")"
 	echo "deposit_authority_public_key=$(pem_public "$deposit_key")"
 	echo "publication_recipient=0x$recipient"
-	echo "custody keys=$keys next=custody-governance.sh then kernel-genesis.sh genesis"
+	echo "custody keys=$keys next=submit and enact custody governance separately; qualify with python3 tools/qualification/paxeer-x/custody_governance.py --produce ARTIFACT_DIR then python3 tools/qualification/paxeer-x/custody_governance.py --manifest ARTIFACT_DIR/manifest.json; after governance is enacted run kernel-genesis.sh genesis"
 }
 
 # call <data>: the eth_call answer of the custody precompile, or of $to.
