@@ -227,7 +227,9 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
       %PriceUpdate{} = update ->
         conn
         |> put_status(200)
-        |> json(FeedView.prepare_update(update, PriceFeed.market_symbols(), Chain.block_height(@api_true)))
+        |> json(
+          FeedView.prepare_update(update, PriceFeed.update_market_symbols([update]), Chain.block_height(@api_true))
+        )
 
       nil ->
         not_found

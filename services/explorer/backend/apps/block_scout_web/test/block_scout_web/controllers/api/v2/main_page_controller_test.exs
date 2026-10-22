@@ -3,6 +3,7 @@ defmodule BlockScoutWeb.API.V2.MainPageControllerTest do
 
   alias Explorer.Account.{Identity, WatchlistAddress}
   alias Explorer.Chain.{Address, Block, Transaction}
+  alias Explorer.Chain.PaxeerX.PriceFeed
   alias Explorer.Repo
 
   import Explorer.Chain, only: [hash_to_lower_case_string: 1]
@@ -51,6 +52,27 @@ defmodule BlockScoutWeb.API.V2.MainPageControllerTest do
       for i <- 0..5 do
         compare_item(Enum.at(transactions, i), Enum.at(response, i))
       end
+    end
+
+    test "interleaves the newest submissions with the newest EVM transactions", %{conn: conn} do
+      older = insert(:block, number: 100)
+      newer = insert(:block, number: 101)
+
+      older_transactions = 2 |> insert_list(:transaction) |> with_block(older)
+      newer_transactions = 3 |> insert_list(:transaction) |> with_block(newer)
+
+      [older_update] = store(older, [submission(0)])
+      [newer_update] = store(newer, [submission(0)])
+
+      response = json_response(get(conn, "/api/v2/main-page/transactions"), 200)
+
+      expected =
+        [newer_update] ++
+          (newer_transactions |> Enum.reverse() |> Enum.map(&to_string(&1.hash))) ++
+          [older_update, to_string(List.last(older_transactions).hash)]
+
+      assert Enum.map(response, & &1["hash"]) == expected
+      assert %{"transaction_types" => ["price_update"], "type" => 127} = hd(response)
     end
   end
 
@@ -134,6 +156,32 @@ defmodule BlockScoutWeb.API.V2.MainPageControllerTest do
       assert Map.has_key?(request, "indexed_blocks_ratio")
       assert Map.has_key?(request, "indexed_internal_transactions_ratio")
     end
+  end
+
+  defp store(block, submissions) do
+    {:ok, _count} = PriceFeed.replace_block_updates(block, submissions)
+    Enum.map(submissions, & &1.hash)
+  end
+
+  defp submission(index) do
+    %{
+      hash: "0x" <> Base.encode16(:crypto.strong_rand_bytes(32), case: :lower),
+      index: index,
+      feeder_bech32: "pax1h9lpwllxuuqakt8ctsd6zvrk3qtxxxxvyfs9jc",
+      feeder_hash: "0xb97e177fe6e701db2cf85c1ba1307688166318cc",
+      status: 1,
+      gas_used: 100_000,
+      gas_wanted: 200_000,
+      observations: [
+        %{
+          market_id: 0,
+          sequence: 1,
+          index_price: 1_000_000_000_000_000_000,
+          mark_price: 2_000_000_000_000_000_000,
+          source_timestamp_ms: 1_792_636_042_001
+        }
+      ]
+    }
   end
 
   defp compare_item(%Block{} = block, json) do

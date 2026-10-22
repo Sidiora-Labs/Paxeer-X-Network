@@ -115,7 +115,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.FeedController do
     |> put_view(FeedView)
     |> render(:updates, %{
       updates: updates,
-      symbols: PriceFeed.market_symbols(),
+      symbols: PriceFeed.update_market_symbols(updates),
       block_height: Chain.block_height(@api_true),
       next_page_params: next_page_params(next_page, updates, params, false, &update_paging_params/1)
     })
@@ -143,7 +143,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.FeedController do
         |> put_view(FeedView)
         |> render(:update, %{
           update: update,
-          symbols: PriceFeed.market_symbols(),
+          symbols: PriceFeed.update_market_symbols([update]),
           block_height: Chain.block_height(@api_true)
         })
 
@@ -180,7 +180,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.FeedController do
     |> put_status(200)
     |> put_view(FeedView)
     |> render(:market_updates, %{
-      symbol: Map.get(PriceFeed.market_symbols(), market_id),
+      symbol: Map.get(PriceFeed.market_symbols([market_id]), market_id),
       observations: observations,
       next_page_params:
         next_page_params(next_page, observations, Map.delete(params, :market_id), false, &observation_paging_params/1)

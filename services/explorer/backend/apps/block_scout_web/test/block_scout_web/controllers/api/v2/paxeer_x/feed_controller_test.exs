@@ -212,7 +212,9 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.FeedControllerTest do
   end
 
   describe "GET /api/v2/paxeer-x/capabilities" do
-    test "carries price_feed only while the price feed is enabled and the indexer runs", %{conn: conn} do
+    test "with no scanned block carries price_feed only while the price feed is enabled and the indexer runs", %{
+      conn: conn
+    } do
       previous_fetcher = Application.get_env(:indexer, @supervisor)
       previous_indexer = Application.get_env(:indexer, Indexer.Supervisor)
 
@@ -231,28 +233,22 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.FeedControllerTest do
       Application.put_env(:indexer, Indexer.Supervisor, enabled: false)
       refute Map.has_key?(json_response(get(conn, "/api/v2/paxeer-x/capabilities"), 200), "price_feed")
     end
-  end
 
-  describe "GET /api/v2/main-page/transactions" do
-    test "interleaves the newest submissions with the newest EVM transactions", %{conn: conn} do
-      older = insert(:block, number: 100)
-      newer = insert(:block, number: 101)
+    test "carries price_feed on a node without an indexer once another indexer has scanned a block", %{conn: conn} do
+      previous_fetcher = Application.get_env(:indexer, @supervisor)
+      previous_indexer = Application.get_env(:indexer, Indexer.Supervisor)
 
-      older_transactions = 2 |> insert_list(:transaction) |> with_block(older)
-      newer_transactions = 3 |> insert_list(:transaction) |> with_block(newer)
+      on_exit(fn ->
+        Application.put_env(:indexer, @supervisor, previous_fetcher || [])
+        Application.put_env(:indexer, Indexer.Supervisor, previous_indexer || [])
+      end)
 
-      [older_update] = store(older, [submission(0)])
-      [newer_update] = store(newer, [submission(0)])
+      Application.put_env(:indexer, Indexer.Supervisor, enabled: false)
+      Application.put_env(:indexer, @supervisor, disabled?: true)
+      refute Map.has_key?(json_response(get(conn, "/api/v2/paxeer-x/capabilities"), 200), "price_feed")
 
-      response = json_response(get(conn, "/api/v2/main-page/transactions"), 200)
-
-      expected =
-        [newer_update] ++
-          (newer_transactions |> Enum.reverse() |> Enum.map(&to_string(&1.hash))) ++
-          [older_update, to_string(List.last(older_transactions).hash)]
-
-      assert Enum.map(response, & &1["hash"]) == expected
-      assert %{"transaction_types" => ["price_update"], "type" => 127} = hd(response)
+      store(insert(:block, number: 30), [])
+      assert %{"price_feed" => true} = json_response(get(conn, "/api/v2/paxeer-x/capabilities"), 200)
     end
   end
 
@@ -384,9 +380,11 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.FeedControllerTest do
       assert %{"type" => "price_update", "hash" => ^hash, "block_number" => 91} =
                Enum.find(response["items"], &(&1["type"] == "price_update"))
 
-      quick = json_response(get(conn, "/api/v2/search/quick", %{"q" => "0x" <> String.upcase(hex)}), 200)
+      for query <- ["0x" <> String.upcase(hex), "0X" <> String.upcase(hex), String.upcase(hex)] do
+        quick = json_response(get(conn, "/api/v2/search/quick", %{"q" => query}), 200)
 
-      assert %{"type" => "price_update", "hash" => ^hash} = Enum.find(quick, &(&1["type"] == "price_update"))
+        assert %{"type" => "price_update", "hash" => ^hash} = Enum.find(quick, &(&1["type"] == "price_update"))
+      end
     end
   end
 
@@ -396,7 +394,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.FeedControllerTest do
       [hash] = store(block, [submission(0)])
       "0x" <> hex = hash
 
-      for query <- [hash, String.upcase(hex)] do
+      for query <- [hash, "0X" <> hex, String.upcase(hex)] do
         assert %{"redirect" => true, "type" => "price_update", "parameter" => ^hash} =
                  json_response(get(conn, "/api/v2/search/check-redirect", %{"q" => query}), 200)
       end

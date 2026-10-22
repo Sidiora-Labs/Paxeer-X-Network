@@ -249,14 +249,35 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
   end
 
   @doc """
-  The symbol of every known market, by market id.
+  Whether any block height has been scanned for submissions, by this node or by any
+  indexer writing to the same database.
   """
-  @spec market_symbols() :: %{non_neg_integer() => String.t()}
-  def market_symbols do
+  @spec scanned_any?() :: boolean()
+  def scanned_any?, do: Repo.exists?(PriceFeedScannedBlock)
+
+  @doc """
+  The symbol of each known market among `market_ids`, by market id.
+  """
+  @spec market_symbols([non_neg_integer()]) :: %{non_neg_integer() => String.t()}
+  def market_symbols([]), do: %{}
+
+  def market_symbols(market_ids) do
     PriceMarket
+    |> where([market], market.market_id in ^Enum.uniq(market_ids))
     |> select([market], {market.market_id, market.symbol})
     |> Repo.all()
     |> Map.new()
+  end
+
+  @doc """
+  The symbol of each known market the given submissions carry an observation for, by
+  market id.
+  """
+  @spec update_market_symbols([PriceUpdate.t()]) :: %{non_neg_integer() => String.t()}
+  def update_market_symbols(updates) do
+    updates
+    |> Enum.flat_map(fn update -> Enum.map(update.observations, & &1.market_id) end)
+    |> market_symbols()
   end
 
   @doc """

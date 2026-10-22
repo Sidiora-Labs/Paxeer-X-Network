@@ -93,7 +93,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.PriceUpdateList do
           })
       end
 
-    symbols = PriceFeed.market_symbols()
+    symbols = page |> Enum.filter(&match?(%PriceUpdate{}, &1)) |> PriceFeed.update_market_symbols()
     block_height = Chain.block_height(api?: true)
 
     {items, []} =

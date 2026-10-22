@@ -156,8 +156,8 @@ defmodule BlockScoutWeb.API.V2.SearchController do
   # Cosmos tooling prints a submission hash as 64 upper-case hex characters without 0x.
   defp price_update(query) do
     case String.trim(query) do
-      "0x" <> hex when byte_size(hex) == 64 -> PriceFeed.update_by_hash("0x" <> String.downcase(hex))
-      hex when byte_size(hex) == 64 -> PriceFeed.update_by_hash("0x" <> String.downcase(hex))
+      <<"0", x, hex::binary-size(64)>> when x in [?x, ?X] -> PriceFeed.update_by_hash("0x" <> hex)
+      hex when byte_size(hex) == 64 -> PriceFeed.update_by_hash("0x" <> hex)
       _other -> nil
     end
   end
