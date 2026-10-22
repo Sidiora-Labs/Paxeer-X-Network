@@ -163,6 +163,78 @@ def encode_abi_call(
     )
 
 
+def _split_types(types: str) -> list[str]:
+    out: list[str] = []
+    depth = start = 0
+    for index, char in enumerate(types):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "," and depth == 0:
+            out.append(types[start:index])
+            start = index + 1
+    if types:
+        out.append(types[start:])
+    return out
+
+
+def _is_dynamic(kind: str) -> bool:
+    if kind in ("string", "bytes") or kind.endswith("[]"):
+        return True
+    return kind.startswith("(") and any(_is_dynamic(item) for item in _split_types(kind[1:-1]))
+
+
+def _encode_value(kind: str, value: object, label: str) -> bytes:
+    if kind.endswith("[]") or kind.startswith("("):
+        if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+            raise PrecompileAbiError("invalid_value", label)
+        if kind.endswith("[]"):
+            return _uint(len(value), 256, label) + _encode_sequence([kind[:-2]] * len(value), value, label)
+        return _encode_sequence(_split_types(kind[1:-1]), value, label)
+    if kind == "string":
+        if not isinstance(value, str):
+            raise PrecompileAbiError("invalid_value", label)
+        return _dynamic_bytes(value.encode())
+    if kind == "bytes":
+        return _dynamic_bytes(_unhex(value, label))  # type: ignore[arg-type]
+    if kind.startswith("bytes") and kind[5:].isdigit():
+        raw = _unhex(value, label)  # type: ignore[arg-type]
+        if len(raw) != int(kind[5:]):
+            raise PrecompileAbiError("invalid_value", label)
+        return _padded(raw)
+    if kind.startswith("uint") and kind[4:].isdigit():
+        return _uint(value, int(kind[4:]), label)  # type: ignore[arg-type]
+    if kind in ("address", "bool"):
+        return _static(kind, value, label)  # type: ignore[arg-type]
+    raise PrecompileAbiError("invalid_value", f"{label} type {kind}")
+
+
+def _encode_sequence(kinds: Sequence[str], values: Sequence[object], label: str) -> bytes:
+    if len(kinds) != len(values):
+        raise PrecompileAbiError("invalid_value", f"{label} argument count")
+    encoded = [(_is_dynamic(kind), _encode_value(kind, value, f"{label} {index}")) for index, (kind, value) in enumerate(zip(kinds, values))]
+    offset = sum(_WORD if dynamic else len(raw) for dynamic, raw in encoded)
+    heads: list[bytes] = []
+    tails: list[bytes] = []
+    for dynamic, raw in encoded:
+        if dynamic:
+            heads.append(_uint(offset, 256, label))
+            tails.append(raw)
+            offset += len(raw)
+        else:
+            heads.append(raw)
+    return b"".join(heads) + b"".join(tails)
+
+
+def encode_signature_call(signature: str, values: Sequence[object]) -> str:
+    """ABI-encodes a call to the canonical ``signature`` (tuples, arrays, bytesN and uintN included) with ``values``."""
+    if not signature.endswith(")") or "(" not in signature:
+        raise PrecompileAbiError("invalid_value", signature)
+    kinds = _split_types(signature[signature.index("(") + 1 : -1])
+    return abi_selector(signature) + _encode_sequence(kinds, values, signature).hex()
+
+
 def precompile_transaction_request(sender: str, call: PrecompileCall) -> dict[str, str]:
     """The transaction fields a signer or wallet sends for a precompile write."""
     if not _ADDRESS.match(sender):

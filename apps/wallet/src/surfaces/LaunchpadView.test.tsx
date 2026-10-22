@@ -40,7 +40,7 @@ const send = (container: HTMLElement) => container.querySelector<HTMLButtonEleme
 
 describe('LaunchpadView', () => {
     it('launchpad_view_buys_through_the_module_and_shows_the_decoded_swap', async () => {
-        const fixture = callFixtures().launchpad.buy as { token: string; amountIn: string; minOut: string; deadline: string };
+        const fixture = callFixtures().launchpad.buy as { pool: string; amountIn: string; minOut: string; deadline: string };
         const vector = eventVectors('launchpad').find((candidate) => candidate.event === 'Swap');
         if (!vector) throw new Error('no Swap vector');
         chain.logsFor = () => [vectorLog(LAUNCHPAD_PRECOMPILE, LAUNCHPAD_EVENTS, vector)];
@@ -48,7 +48,7 @@ describe('LaunchpadView', () => {
         mounted = await mountSurface(chain, <LaunchpadView sidRate={null} now={now} />);
         const { container } = mounted;
 
-        await typeInto(container, 'token', fixture.token);
+        await typeInto(container, 'pool', fixture.pool);
         await typeInto(container, 'amountIn', '1');
         await typeInto(container, 'minOut', fixture.minOut);
         await until(() => send(container)?.disabled === false, 'send enabled');
@@ -56,15 +56,14 @@ describe('LaunchpadView', () => {
         await until(() => text(container, '[data-role="status"]') === 'confirmed', 'receipt');
 
         const order = {
-            token: fixture.token,
+            pool: fixture.pool,
             amountIn: BigInt(fixture.amountIn),
             minOut: BigInt(fixture.minOut),
-            recipient: chain.address,
             deadline: BigInt(fixture.deadline),
         };
         const expected = launchpadBuyCall(order);
         expect(chain.sent).toEqual([{ from: chain.address, to: LAUNCHPAD_PRECOMPILE, data: expected.data, value: '0x0' }]);
-        expect(chain.sent[0]?.data.startsWith(abiSelector('buy(address,uint256,uint256,address,uint256)'))).toBe(true);
+        expect(chain.sent[0]?.data.startsWith(abiSelector('buy(address,uint256,uint256,uint256)'))).toBe(true);
         expect(chain.sent[0]?.data).toBe(launchpad(chain).buy(order).data);
 
         const spec = LAUNCHPAD_EVENTS.find((candidate) => candidate.name === 'Swap');
@@ -94,7 +93,11 @@ describe('LaunchpadView', () => {
 
         const expected = launchpadCreateMarketCall(fixture.name, fixture.symbol, fixture.feeStrategy);
         expect(chain.sent).toEqual([{ from: chain.address, to: LAUNCHPAD_PRECOMPILE, data: expected.data, value: '0x0' }]);
-        expect(chain.sent[0]?.data.startsWith(abiSelector('createMarket(string,string,uint8)'))).toBe(true);
-        expect(container.querySelector('[data-event="MarketCreated"] [data-field="symbol"]')?.textContent).toBe(String(vector.fields.symbol));
+        expect(chain.sent[0]?.data.startsWith(abiSelector('createMarket(string,string,uint8,address)'))).toBe(true);
+        const spec = LAUNCHPAD_EVENTS.find((candidate) => candidate.name === 'MarketCreated');
+        if (!spec) throw new Error('no MarketCreated spec');
+        expect(container.querySelector('[data-event="MarketCreated"] [data-field="pool"]')?.textContent).toBe(
+            expectedField(spec, 'pool', vector.fields.pool),
+        );
     });
 });

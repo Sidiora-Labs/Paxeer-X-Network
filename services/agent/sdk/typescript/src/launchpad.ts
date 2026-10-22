@@ -1,111 +1,75 @@
-/** Calldata builders, wallet send helpers and event decoders for the Launchpad precompile. */
+/**
+ * Calldata builders, wallet send helpers and event decoders for the Launchpad
+ * precompile. Every selector, argument type and event comes from
+ * precompiles/launchpad/abi.json through src/generated/precompile-writes.ts.
+ */
 
 import type { Eip1193Requester } from "./account-derivation.js";
 import {
   decodeEventFrom,
-  encodeAbiCall,
+  precompileWriteCall,
   sendPrecompileCall,
+  type AbiArgument,
   type DecodedPrecompileEvent,
-  type PrecompileAbiType,
-  type PrecompileAbiValue,
   type PrecompileCall,
-  type PrecompileEventInput,
-  type PrecompileEventSpec,
   type PrecompileLog,
 } from "./exchange.js";
+import { LAUNCHPAD_EVENTS, LAUNCHPAD_PRECOMPILE, LAUNCHPAD_WRITES } from "./generated/precompile-writes.js";
 
-export const LAUNCHPAD_PRECOMPILE = "0x0000000000000000000000000000000000001017";
+export { LAUNCHPAD_EVENTS, LAUNCHPAD_PRECOMPILE, LAUNCHPAD_WRITES } from "./generated/precompile-writes.js";
 
-function event(name: string, inputs: readonly PrecompileEventInput[]): PrecompileEventSpec {
-  return { name, precompile: LAUNCHPAD_PRECOMPILE, inputs };
-}
-
-function field(name: string, type: PrecompileAbiType, indexed = false): PrecompileEventInput {
-  return { name, type, indexed };
-}
-
-export const LAUNCHPAD_EVENTS: readonly PrecompileEventSpec[] = [
-  event("AirdropClaimed", [field("token", "address", true), field("holder", "address", true), field("amount", "uint256"), field("epoch", "uint256")]),
-  event("AirdropExecuted", [field("token", "address", true), field("amount", "uint256"), field("epoch", "uint256")]),
-  event("FeeRecorded", [field("token", "address", true), field("feeAmount", "uint256"), field("protocolCut", "uint256"), field("poolCut", "uint256")]),
-  event("FeeStrategyChanged", [field("token", "address", true), field("oldStrategy", "uint8"), field("newStrategy", "uint8")]),
-  event("FeesBurned", [field("token", "address", true), field("amount", "uint256")]),
-  event("FeesClaimed", [field("token", "address", true), field("recipient", "address", true), field("amount", "uint256")]),
-  event("LpRewardsExecuted", [field("token", "address", true), field("amount", "uint256")]),
-  event("MarketCreated", [
-    field("token", "address", true),
-    field("creator", "address", true),
-    field("denom", "string"),
-    field("name", "string"),
-    field("symbol", "string"),
-    field("feeStrategy", "uint8"),
-  ]),
-  event("PauseToggled", [field("token", "address", true), field("paused", "bool")]),
-  event("Swap", [
-    field("token", "address", true),
-    field("trader", "address", true),
-    field("recipient", "address", true),
-    field("isBuy", "bool"),
-    field("amountIn", "uint256"),
-    field("amountOut", "uint256"),
-    field("feeAmount", "uint256"),
-    field("price", "uint256"),
-  ]),
-];
+const NO_OPTICAL = "0x0000000000000000000000000000000000000000";
 
 /** Decodes a Launchpad precompile log. */
 export function decodeLaunchpadEvent(log: PrecompileLog): DecodedPrecompileEvent {
   return decodeEventFrom(LAUNCHPAD_EVENTS, log);
 }
 
-function launchpadCall(name: string, types: readonly PrecompileAbiType[], values: readonly PrecompileAbiValue[]): PrecompileCall {
-  return { to: LAUNCHPAD_PRECOMPILE, data: encodeAbiCall(name, types, values), value: 0n };
+export type LaunchpadWrite = keyof typeof LAUNCHPAD_WRITES;
+
+/** Builds a call of any launchpad write a direct call to the precompile resolves, by canonical signature. */
+export function launchpadCall(method: LaunchpadWrite, args: readonly AbiArgument[], value = 0n): PrecompileCall {
+  return precompileWriteCall(LAUNCHPAD_PRECOMPILE, method, LAUNCHPAD_WRITES[method], args, value);
 }
 
+/** A Router swap: `amountIn` is the USDL paid in for a buy and the tokens sold for a sell; the Router pays the caller. */
 export interface LaunchpadSwapOrder {
-  readonly token: string;
+  readonly pool: string;
   readonly amountIn: bigint;
   readonly minOut: bigint;
-  readonly recipient: string;
   readonly deadline: bigint;
 }
 
-const SWAP_TYPES: readonly PrecompileAbiType[] = ["address", "uint256", "uint256", "address", "uint256"];
-
-function swapValues(order: LaunchpadSwapOrder): readonly PrecompileAbiValue[] {
-  return [order.token, order.amountIn, order.minOut, order.recipient, order.deadline];
-}
-
-/** `buy(address,uint256,uint256,address,uint256)`; `amountIn` is the quote paid in. */
+/** `buy(address pool,uint256 usdlAmountIn,uint256 minTokensOut,uint256 deadline)`. */
 export function launchpadBuyCall(order: LaunchpadSwapOrder): PrecompileCall {
-  return launchpadCall("buy", SWAP_TYPES, swapValues(order));
+  return launchpadCall("buy(address,uint256,uint256,uint256)", [order.pool, order.amountIn, order.minOut, order.deadline]);
 }
 
-/** `sell(address,uint256,uint256,address,uint256)`. */
+/** `sell(address pool,uint256 tokenAmountIn,uint256 minUsdlOut,uint256 deadline)`. */
 export function launchpadSellCall(order: LaunchpadSwapOrder): PrecompileCall {
-  return launchpadCall("sell", SWAP_TYPES, swapValues(order));
+  return launchpadCall("sell(address,uint256,uint256,uint256)", [order.pool, order.amountIn, order.minOut, order.deadline]);
 }
 
-/** `createMarket(string,string,uint8)`. */
-export function launchpadCreateMarketCall(name: string, symbol: string, feeStrategy: number): PrecompileCall {
-  return launchpadCall("createMarket", ["string", "string", "uint8"], [name, symbol, BigInt(feeStrategy)]);
+/** `createMarket(string name,string symbol,uint8 feeStrategy,address optical)`; the zero optical means none. */
+export function launchpadCreateMarketCall(name: string, symbol: string, feeStrategy: number, optical: string = NO_OPTICAL): PrecompileCall {
+  return launchpadCall("createMarket(string,string,uint8,address)", [name, symbol, BigInt(feeStrategy), optical]);
 }
 
-/** `setFeeStrategy(address,uint8)`. */
-export function launchpadSetFeeStrategyCall(token: string, feeStrategy: number): PrecompileCall {
-  return launchpadCall("setFeeStrategy", ["address", "uint8"], [token, BigInt(feeStrategy)]);
+/** `setFeeStrategy(uint256 nftId,uint8 newStrategy)` by the holder of the market's fee-rights NFT. */
+export function launchpadSetFeeStrategyCall(nftId: bigint, feeStrategy: number): PrecompileCall {
+  return launchpadCall("setFeeStrategy(uint256,uint8)", [nftId, BigInt(feeStrategy)]);
 }
 
-/** `claimFees(address,address)`. */
-export function launchpadClaimFeesCall(token: string, recipient: string): PrecompileCall {
-  return launchpadCall("claimFees", ["address", "address"], [token, recipient]);
+/** `claimFees(uint256 nftId)`; the fees go to the NFT holder. */
+export function launchpadClaimFeesCall(nftId: bigint): PrecompileCall {
+  return launchpadCall("claimFees(uint256)", [nftId]);
 }
 
-export type LaunchpadTokenWrite = "claimAirdrop" | "executeAirdrop" | "executeBurn" | "executeLpRewards" | "pause" | "unpause";
+export type LaunchpadNftWrite = "claimAirdrop" | "executeAirdrop" | "executeBurn" | "executeLpRewards";
 
-/** `claimAirdrop`, `executeAirdrop`, `executeBurn`, `executeLpRewards`, `pause` or `unpause` on `(address)`. */
-export function launchpadTokenCall(write: LaunchpadTokenWrite, token: string): PrecompileCall {
-  return launchpadCall(write, ["address"], [token]);
+/** `claimAirdrop`, `executeAirdrop`, `executeBurn` or `executeLpRewards` on `(uint256 nftId)`. */
+export function launchpadNftCall(write: LaunchpadNftWrite, nftId: bigint): PrecompileCall {
+  return launchpadCall(`${write}(uint256)`, [nftId]);
 }
 
 export const sendLaunchpadBuy = (wallet: Eip1193Requester, from: string, order: LaunchpadSwapOrder): Promise<string> =>
@@ -120,25 +84,22 @@ export const sendLaunchpadCreateMarket = (
   name: string,
   symbol: string,
   feeStrategy: number,
-): Promise<string> => sendPrecompileCall(wallet, from, launchpadCreateMarketCall(name, symbol, feeStrategy));
+  optical: string = NO_OPTICAL,
+): Promise<string> => sendPrecompileCall(wallet, from, launchpadCreateMarketCall(name, symbol, feeStrategy, optical));
 
 export const sendLaunchpadSetFeeStrategy = (
   wallet: Eip1193Requester,
   from: string,
-  token: string,
+  nftId: bigint,
   feeStrategy: number,
-): Promise<string> => sendPrecompileCall(wallet, from, launchpadSetFeeStrategyCall(token, feeStrategy));
+): Promise<string> => sendPrecompileCall(wallet, from, launchpadSetFeeStrategyCall(nftId, feeStrategy));
 
-export const sendLaunchpadClaimFees = (
+export const sendLaunchpadClaimFees = (wallet: Eip1193Requester, from: string, nftId: bigint): Promise<string> =>
+  sendPrecompileCall(wallet, from, launchpadClaimFeesCall(nftId));
+
+export const sendLaunchpadNftWrite = (
   wallet: Eip1193Requester,
   from: string,
-  token: string,
-  recipient: string,
-): Promise<string> => sendPrecompileCall(wallet, from, launchpadClaimFeesCall(token, recipient));
-
-export const sendLaunchpadTokenWrite = (
-  wallet: Eip1193Requester,
-  from: string,
-  write: LaunchpadTokenWrite,
-  token: string,
-): Promise<string> => sendPrecompileCall(wallet, from, launchpadTokenCall(write, token));
+  write: LaunchpadNftWrite,
+  nftId: bigint,
+): Promise<string> => sendPrecompileCall(wallet, from, launchpadNftCall(write, nftId));

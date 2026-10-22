@@ -7,6 +7,9 @@
 import { keccak_256 } from "@noble/hashes/sha3.js";
 
 import type { Eip1193Requester, WalletRequest } from "./account-derivation.js";
+import type { PrecompileWrite } from "./generated/precompile-writes.js";
+
+export type { PrecompileWrite } from "./generated/precompile-writes.js";
 
 export const LAYERX_EXCHANGE_PRECOMPILE = "0x0000000000000000000000000000000000001015";
 
@@ -227,6 +230,125 @@ export function encodeAbiCall(
     }
   });
   return abiSelector(abiSignature(name, types)) + hex(concat([...heads, ...tails])).slice(2);
+}
+
+/**
+ * A value of a canonical ABI type: `bigint` for integers, `boolean`, a hex
+ * `string` for address and bytes, a `string` for string, and an array for
+ * arrays and tuples.
+ */
+export type AbiArgument = bigint | boolean | string | readonly AbiArgument[];
+
+function tupleTypes(type: string): readonly string[] {
+  const body = type.slice(1, -1);
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index];
+    if (char === "(") {
+      depth += 1;
+    } else if (char === ")") {
+      depth -= 1;
+    } else if (char === "," && depth === 0) {
+      parts.push(body.slice(start, index));
+      start = index + 1;
+    }
+  }
+  if (body.length > 0) {
+    parts.push(body.slice(start));
+  }
+  return parts;
+}
+
+function dynamicType(type: string): boolean {
+  if (type.endsWith("[]") || type === "string" || type === "bytes") {
+    return true;
+  }
+  return type.startsWith("(") && tupleTypes(type).some(dynamicType);
+}
+
+function encodeSequence(types: readonly string[], values: readonly AbiArgument[], label: string): Uint8Array {
+  if (types.length !== values.length) {
+    throw new PrecompileAbiError("invalid_value", `${label} argument count`);
+  }
+  const heads: Uint8Array[] = [];
+  const tails: Uint8Array[] = [];
+  let tailOffset = types.length * WORD;
+  types.forEach((type, index) => {
+    const encoded = encodeArgument(type, values[index] as AbiArgument, `${label} argument ${index}`);
+    if (dynamicType(type)) {
+      heads.push(uintWord(BigInt(tailOffset), 256, label));
+      tails.push(encoded);
+      tailOffset += encoded.length;
+    } else {
+      heads.push(encoded);
+    }
+  });
+  return concat([...heads, ...tails]);
+}
+
+function encodeArgument(type: string, value: AbiArgument, label: string): Uint8Array {
+  if (type.endsWith("[]")) {
+    if (!Array.isArray(value)) {
+      throw new PrecompileAbiError("invalid_value", label);
+    }
+    const items = value as readonly AbiArgument[];
+    const item = type.slice(0, -2);
+    return concat([uintWord(BigInt(items.length), 256, label), encodeSequence(items.map(() => item), items, label)]);
+  }
+  if (type.startsWith("(") && type.endsWith(")")) {
+    if (!Array.isArray(value)) {
+      throw new PrecompileAbiError("invalid_value", label);
+    }
+    return encodeSequence(tupleTypes(type), value as readonly AbiArgument[], label);
+  }
+  if (type === "string" || type === "bytes") {
+    if (typeof value !== "string") {
+      throw new PrecompileAbiError("invalid_value", label);
+    }
+    return dynamicBytes(type === "string" ? new TextEncoder().encode(value) : unhex(value, label));
+  }
+  if (type === "address" || type === "bool") {
+    return encodeStatic(type, value as PrecompileAbiValue, label);
+  }
+  const fixed = /^bytes([1-9][0-9]?)$/u.exec(type);
+  if (fixed !== null && Number(fixed[1]) <= WORD) {
+    const bytes = typeof value === "string" ? unhex(value, label) : undefined;
+    if (bytes === undefined || bytes.length !== Number(fixed[1])) {
+      throw new PrecompileAbiError("invalid_value", label);
+    }
+    const out = new Uint8Array(WORD);
+    out.set(bytes);
+    return out;
+  }
+  const unsigned = /^uint([1-9][0-9]{0,2})$/u.exec(type);
+  const width = unsigned === null ? 0 : Number(unsigned[1]);
+  if (width > 0 && width <= 256 && width % 8 === 0) {
+    if (typeof value !== "bigint") {
+      throw new PrecompileAbiError("invalid_value", label);
+    }
+    return uintWord(value, width, label);
+  }
+  throw new PrecompileAbiError("invalid_value", `${label}: unsupported type ${type}`);
+}
+
+/**
+ * Builds the call of the generated ABI write `signature` on `to`. The
+ * selector and every argument type come from the precompile ABI the table was
+ * generated from; `value` is refused on a nonpayable method.
+ */
+export function precompileWriteCall(
+  to: string,
+  signature: string,
+  write: PrecompileWrite,
+  args: readonly AbiArgument[],
+  value = 0n,
+): PrecompileCall {
+  if (value < 0n || (!write.payable && value !== 0n)) {
+    throw new PrecompileAbiError("invalid_value", `${signature} value`);
+  }
+  return { to, data: abiSelector(signature) + hex(encodeSequence(write.types, args, signature)).slice(2), value };
 }
 
 /** The `eth_sendTransaction` request a browser wallet sends for a precompile write. */

@@ -29,14 +29,14 @@ import {
   launchpadCreateMarketCall,
   launchpadSellCall,
   launchpadSetFeeStrategyCall,
-  launchpadTokenCall,
+  launchpadNftCall,
   sponsoredBatchCall,
   sponsoredBatchDigest,
   sponsoredConsent,
   xwebApiRequestCall,
   type GasQuote,
   type GasResult,
-  type LaunchpadTokenWrite,
+  type LaunchpadNftWrite,
   type PrecompileCall,
   type SponsoredBatch,
   type SponsoredConsent,
@@ -512,13 +512,7 @@ describe('modules', () => {
     const module = launchpad(signer);
     const swap = (entry: unknown) => {
       const order = entry as Json;
-      return {
-        token: text(order.token),
-        amountIn: big(order.amountIn),
-        minOut: big(order.minOut),
-        recipient: text(order.recipient),
-        deadline: big(order.deadline),
-      };
+      return { pool: text(order.pool), amountIn: big(order.amountIn), minOut: big(order.minOut), deadline: big(order.deadline) };
     };
     const market = args.createMarket as Json;
     const strategy = args.setFeeStrategy as Json;
@@ -531,16 +525,20 @@ describe('modules', () => {
         launchpadCreateMarketCall(text(market.name), text(market.symbol), market.feeStrategy as number),
       ],
       [
-        module.setFeeStrategy(text(strategy.token), strategy.feeStrategy as number),
-        launchpadSetFeeStrategyCall(text(strategy.token), strategy.feeStrategy as number),
+        module.createMarket(text(market.name), text(market.symbol), market.feeStrategy as number, text(market.optical)),
+        launchpadCreateMarketCall(text(market.name), text(market.symbol), market.feeStrategy as number, text(market.optical)),
       ],
-      [module.claimFees(text(claim.token), text(claim.recipient)), launchpadClaimFeesCall(text(claim.token), text(claim.recipient))],
-      ...(args.tokenWrite as LaunchpadTokenWrite[]).map(
-        (write): [PrecompileCall, PrecompileCall] => [module.tokenWrite(write, text(claim.token)), launchpadTokenCall(write, text(claim.token))],
+      [
+        module.setFeeStrategy(big(strategy.nftId), strategy.feeStrategy as number),
+        launchpadSetFeeStrategyCall(big(strategy.nftId), strategy.feeStrategy as number),
+      ],
+      [module.claimFees(big(claim.nftId)), launchpadClaimFeesCall(big(claim.nftId))],
+      ...(args.nftWrite as LaunchpadNftWrite[]).map(
+        (write): [PrecompileCall, PrecompileCall] => [module.nftWrite(write, big(claim.nftId)), launchpadNftCall(write, big(claim.nftId))],
       ),
     ];
     const known = selectors(abi('launchpad'));
-    expect(pairs).toHaveLength(11);
+    expect(pairs).toHaveLength(10);
     for (const [ours, theirs] of pairs) {
       expect(ours).toEqual(theirs);
       expect(known.has(ours.data.slice(0, 10))).toBe(true);

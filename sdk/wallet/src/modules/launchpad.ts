@@ -7,9 +7,9 @@ import {
   launchpadCreateMarketCall,
   launchpadSellCall,
   launchpadSetFeeStrategyCall,
-  launchpadTokenCall,
+  launchpadNftCall,
   type LaunchpadSwapOrder,
-  type LaunchpadTokenWrite,
+  type LaunchpadNftWrite,
   type PrecompileEventSpec,
 } from '@sidiora/layerx-sdk/browser';
 
@@ -29,10 +29,10 @@ export interface LaunchpadModule {
   readonly events: readonly PrecompileEventSpec[];
   buy(order: LaunchpadSwapOrder): ModuleTransaction;
   sell(order: LaunchpadSwapOrder): ModuleTransaction;
-  createMarket(name: string, symbol: string, feeStrategy: number): ModuleTransaction;
-  setFeeStrategy(token: string, feeStrategy: number): ModuleTransaction;
-  claimFees(token: string, recipient: string): ModuleTransaction;
-  tokenWrite(write: LaunchpadTokenWrite, token: string): ModuleTransaction;
+  createMarket(name: string, symbol: string, feeStrategy: number, optical?: string): ModuleTransaction;
+  setFeeStrategy(nftId: bigint, feeStrategy: number): ModuleTransaction;
+  claimFees(nftId: bigint): ModuleTransaction;
+  nftWrite(write: LaunchpadNftWrite, nftId: bigint): ModuleTransaction;
   send(from: string, tx: ModuleTransaction): Promise<string>;
   decodeEvent(log: ModuleLog): ModuleEvent;
 }
@@ -45,10 +45,11 @@ export function launchpad(provider: ModuleProvider, address: string = LAUNCHPAD_
     events,
     buy: (order) => retarget(launchpadBuyCall(order), target),
     sell: (order) => retarget(launchpadSellCall(order), target),
-    createMarket: (name, symbol, feeStrategy) => retarget(launchpadCreateMarketCall(name, symbol, feeStrategy), target),
-    setFeeStrategy: (token, feeStrategy) => retarget(launchpadSetFeeStrategyCall(token, feeStrategy), target),
-    claimFees: (token, recipient) => retarget(launchpadClaimFeesCall(token, recipient), target),
-    tokenWrite: (write, token) => retarget(launchpadTokenCall(write, token), target),
+    createMarket: (name, symbol, feeStrategy, optical) =>
+      retarget(optical === undefined ? launchpadCreateMarketCall(name, symbol, feeStrategy) : launchpadCreateMarketCall(name, symbol, feeStrategy, optical), target),
+    setFeeStrategy: (nftId, feeStrategy) => retarget(launchpadSetFeeStrategyCall(nftId, feeStrategy), target),
+    claimFees: (nftId) => retarget(launchpadClaimFeesCall(nftId), target),
+    nftWrite: (write, nftId) => retarget(launchpadNftCall(write, nftId), target),
     send: (from, tx) => sendModuleTransaction(provider, from, tx),
     decodeEvent: (log) => decodeEventFrom(events, log),
   };

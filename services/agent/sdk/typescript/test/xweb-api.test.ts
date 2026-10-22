@@ -596,20 +596,18 @@ test("calldata_unchanged", () => {
     ],
     [
       launchpadBuyCall({
-        token: address("aa"),
+        pool: address("aa"),
         amountIn: 100n,
         minOut: 90n,
-        recipient: address("bb"),
         deadline: (1n << 256n) - 1n,
       }),
       {
         to: "0x0000000000000000000000000000000000001017",
         data:
-          selector("buy(address,uint256,uint256,address,uint256)") +
+          selector("buy(address,uint256,uint256,uint256)") +
           addressWord("aa") +
           word(100n) +
           word(90n) +
-          addressWord("bb") +
           "ff".repeat(32),
         value: 0n,
       },

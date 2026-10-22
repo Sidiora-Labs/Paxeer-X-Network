@@ -1,4 +1,6 @@
-"""Calldata builders, wallet send helpers and event decoders for the Launchpad precompile."""
+"""Calldata builders, wallet send helpers and event decoders for the Launchpad precompile.
+
+Every write signature and event comes from precompiles/launchpad/abi.json through generated/precompile_writes.py."""
 
 from __future__ import annotations
 
@@ -6,62 +8,25 @@ from collections.abc import Sequence
 from typing import Literal
 
 from .exchange import (
-    AbiType,
-    AbiValue,
     DecodedEvent,
     EventInput,
     EventSpec,
+    PrecompileAbiError,
     PrecompileCall,
     WalletRequest,
     decode_event_from,
-    encode_abi_call,
+    encode_signature_call,
     send_precompile_call,
 )
+from .generated.precompile_writes import LAUNCHPAD_EVENT_INPUTS, LAUNCHPAD_PRECOMPILE, LAUNCHPAD_WRITES
 
-LAUNCHPAD_PRECOMPILE = "0x0000000000000000000000000000000000001017"
+NO_OPTICAL = "0x0000000000000000000000000000000000000000"
 
-LaunchpadTokenWrite = Literal["claimAirdrop", "executeAirdrop", "executeBurn", "executeLpRewards", "pause", "unpause"]
+LaunchpadNftWrite = Literal["claimAirdrop", "executeAirdrop", "executeBurn", "executeLpRewards"]
 
-
-def _event(name: str, *inputs: tuple[str, AbiType, bool]) -> EventSpec:
-    return EventSpec(name, LAUNCHPAD_PRECOMPILE, tuple(EventInput(*item) for item in inputs))
-
-
-LAUNCHPAD_EVENTS: tuple[EventSpec, ...] = (
-    _event("AirdropClaimed", ("token", "address", True), ("holder", "address", True), ("amount", "uint256", False), ("epoch", "uint256", False)),
-    _event("AirdropExecuted", ("token", "address", True), ("amount", "uint256", False), ("epoch", "uint256", False)),
-    _event(
-        "FeeRecorded",
-        ("token", "address", True),
-        ("feeAmount", "uint256", False),
-        ("protocolCut", "uint256", False),
-        ("poolCut", "uint256", False),
-    ),
-    _event("FeeStrategyChanged", ("token", "address", True), ("oldStrategy", "uint8", False), ("newStrategy", "uint8", False)),
-    _event("FeesBurned", ("token", "address", True), ("amount", "uint256", False)),
-    _event("FeesClaimed", ("token", "address", True), ("recipient", "address", True), ("amount", "uint256", False)),
-    _event("LpRewardsExecuted", ("token", "address", True), ("amount", "uint256", False)),
-    _event(
-        "MarketCreated",
-        ("token", "address", True),
-        ("creator", "address", True),
-        ("denom", "string", False),
-        ("name", "string", False),
-        ("symbol", "string", False),
-        ("feeStrategy", "uint8", False),
-    ),
-    _event("PauseToggled", ("token", "address", True), ("paused", "bool", False)),
-    _event(
-        "Swap",
-        ("token", "address", True),
-        ("trader", "address", True),
-        ("recipient", "address", True),
-        ("isBuy", "bool", False),
-        ("amountIn", "uint256", False),
-        ("amountOut", "uint256", False),
-        ("feeAmount", "uint256", False),
-        ("price", "uint256", False),
-    ),
+LAUNCHPAD_EVENTS: tuple[EventSpec, ...] = tuple(
+    EventSpec(name, LAUNCHPAD_PRECOMPILE, tuple(EventInput(*item) for item in inputs))  # type: ignore[arg-type]
+    for name, inputs in LAUNCHPAD_EVENT_INPUTS
 )
 
 
@@ -69,62 +34,67 @@ def decode_launchpad_event(address: str, topics: Sequence[str], data: str) -> De
     return decode_event_from(LAUNCHPAD_EVENTS, address, topics, data)
 
 
-def _call(name: str, types: Sequence[AbiType], values: Sequence[AbiValue]) -> PrecompileCall:
-    return PrecompileCall(LAUNCHPAD_PRECOMPILE, encode_abi_call(name, types, values))
+def launchpad_call(signature: str, values: Sequence[object], value: int = 0) -> PrecompileCall:
+    """Any launchpad write a direct call to the precompile resolves, by canonical signature."""
+    payable = LAUNCHPAD_WRITES.get(signature)
+    if payable is None:
+        raise PrecompileAbiError("invalid_value", f"{signature} is not a launchpad write")
+    if not isinstance(value, int) or value < 0 or (value and not payable):
+        raise PrecompileAbiError("invalid_value", f"{signature} value")
+    return PrecompileCall(LAUNCHPAD_PRECOMPILE, encode_signature_call(signature, values), value)
 
 
-_SWAP: list[AbiType] = ["address", "uint256", "uint256", "address", "uint256"]
+def launchpad_buy_call(pool: str, usdl_in: int, min_tokens_out: int, deadline: int) -> PrecompileCall:
+    """``buy(address pool,uint256 usdlAmountIn,uint256 minTokensOut,uint256 deadline)``; the Router pays the caller."""
+    return launchpad_call("buy(address,uint256,uint256,uint256)", [pool, usdl_in, min_tokens_out, deadline])
 
 
-def launchpad_buy_call(token: str, quote_in: int, min_out: int, recipient: str, deadline: int) -> PrecompileCall:
-    """``buy(address,uint256,uint256,address,uint256)``."""
-    return _call("buy", _SWAP, [token, quote_in, min_out, recipient, deadline])
+def launchpad_sell_call(pool: str, tokens_in: int, min_usdl_out: int, deadline: int) -> PrecompileCall:
+    """``sell(address pool,uint256 tokenAmountIn,uint256 minUsdlOut,uint256 deadline)``."""
+    return launchpad_call("sell(address,uint256,uint256,uint256)", [pool, tokens_in, min_usdl_out, deadline])
 
 
-def launchpad_sell_call(token: str, amount_in: int, min_out: int, recipient: str, deadline: int) -> PrecompileCall:
-    """``sell(address,uint256,uint256,address,uint256)``."""
-    return _call("sell", _SWAP, [token, amount_in, min_out, recipient, deadline])
+def launchpad_create_market_call(name: str, symbol: str, fee_strategy: int, optical: str = NO_OPTICAL) -> PrecompileCall:
+    """``createMarket(string,string,uint8,address optical)``; the zero optical means none."""
+    return launchpad_call("createMarket(string,string,uint8,address)", [name, symbol, fee_strategy, optical])
 
 
-def launchpad_create_market_call(name: str, symbol: str, fee_strategy: int) -> PrecompileCall:
-    """``createMarket(string,string,uint8)``."""
-    return _call("createMarket", ["string", "string", "uint8"], [name, symbol, fee_strategy])
+def launchpad_set_fee_strategy_call(nft_id: int, fee_strategy: int) -> PrecompileCall:
+    """``setFeeStrategy(uint256 nftId,uint8 newStrategy)`` by the holder of the market's fee-rights NFT."""
+    return launchpad_call("setFeeStrategy(uint256,uint8)", [nft_id, fee_strategy])
 
 
-def launchpad_set_fee_strategy_call(token: str, fee_strategy: int) -> PrecompileCall:
-    """``setFeeStrategy(address,uint8)``."""
-    return _call("setFeeStrategy", ["address", "uint8"], [token, fee_strategy])
+def launchpad_claim_fees_call(nft_id: int) -> PrecompileCall:
+    """``claimFees(uint256 nftId)``; the fees go to the NFT holder."""
+    return launchpad_call("claimFees(uint256)", [nft_id])
 
 
-def launchpad_claim_fees_call(token: str, recipient: str) -> PrecompileCall:
-    """``claimFees(address,address)``."""
-    return _call("claimFees", ["address", "address"], [token, recipient])
+def launchpad_nft_call(write: LaunchpadNftWrite, nft_id: int) -> PrecompileCall:
+    """``claimAirdrop``, ``executeAirdrop``, ``executeBurn`` or ``executeLpRewards`` on ``(uint256 nftId)``."""
+    return launchpad_call(f"{write}(uint256)", [nft_id])
 
 
-def launchpad_token_call(write: LaunchpadTokenWrite, token: str) -> PrecompileCall:
-    """``claimAirdrop``, ``executeAirdrop``, ``executeBurn``, ``executeLpRewards``, ``pause`` or ``unpause``."""
-    return _call(write, ["address"], [token])
+def send_launchpad_buy(request: WalletRequest, sender: str, pool: str, usdl_in: int, min_tokens_out: int, deadline: int) -> str:
+    return send_precompile_call(request, sender, launchpad_buy_call(pool, usdl_in, min_tokens_out, deadline))
 
 
-def send_launchpad_buy(request: WalletRequest, sender: str, token: str, quote_in: int, min_out: int, recipient: str, deadline: int) -> str:
-    return send_precompile_call(request, sender, launchpad_buy_call(token, quote_in, min_out, recipient, deadline))
+def send_launchpad_sell(request: WalletRequest, sender: str, pool: str, tokens_in: int, min_usdl_out: int, deadline: int) -> str:
+    return send_precompile_call(request, sender, launchpad_sell_call(pool, tokens_in, min_usdl_out, deadline))
 
 
-def send_launchpad_sell(request: WalletRequest, sender: str, token: str, amount_in: int, min_out: int, recipient: str, deadline: int) -> str:
-    return send_precompile_call(request, sender, launchpad_sell_call(token, amount_in, min_out, recipient, deadline))
+def send_launchpad_create_market(
+    request: WalletRequest, sender: str, name: str, symbol: str, fee_strategy: int, optical: str = NO_OPTICAL
+) -> str:
+    return send_precompile_call(request, sender, launchpad_create_market_call(name, symbol, fee_strategy, optical))
 
 
-def send_launchpad_create_market(request: WalletRequest, sender: str, name: str, symbol: str, fee_strategy: int) -> str:
-    return send_precompile_call(request, sender, launchpad_create_market_call(name, symbol, fee_strategy))
+def send_launchpad_set_fee_strategy(request: WalletRequest, sender: str, nft_id: int, fee_strategy: int) -> str:
+    return send_precompile_call(request, sender, launchpad_set_fee_strategy_call(nft_id, fee_strategy))
 
 
-def send_launchpad_set_fee_strategy(request: WalletRequest, sender: str, token: str, fee_strategy: int) -> str:
-    return send_precompile_call(request, sender, launchpad_set_fee_strategy_call(token, fee_strategy))
+def send_launchpad_claim_fees(request: WalletRequest, sender: str, nft_id: int) -> str:
+    return send_precompile_call(request, sender, launchpad_claim_fees_call(nft_id))
 
 
-def send_launchpad_claim_fees(request: WalletRequest, sender: str, token: str, recipient: str) -> str:
-    return send_precompile_call(request, sender, launchpad_claim_fees_call(token, recipient))
-
-
-def send_launchpad_token_write(request: WalletRequest, sender: str, write: LaunchpadTokenWrite, token: str) -> str:
-    return send_precompile_call(request, sender, launchpad_token_call(write, token))
+def send_launchpad_nft_write(request: WalletRequest, sender: str, write: LaunchpadNftWrite, nft_id: int) -> str:
+    return send_precompile_call(request, sender, launchpad_nft_call(write, nft_id))

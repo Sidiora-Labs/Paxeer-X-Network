@@ -23,14 +23,16 @@ from layerx_sdk.exchange import (
 from layerx_sdk.launchpad import (
     LAUNCHPAD_EVENTS,
     LAUNCHPAD_PRECOMPILE,
+    LAUNCHPAD_WRITES,
     decode_launchpad_event,
     launchpad_buy_call,
+    launchpad_call,
     launchpad_claim_fees_call,
     launchpad_create_market_call,
+    launchpad_nft_call,
     launchpad_sell_call,
     launchpad_set_fee_strategy_call,
-    launchpad_token_call,
-    send_launchpad_token_write,
+    send_launchpad_nft_write,
 )
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -42,18 +44,30 @@ TOPICS = {
     "SettlementRequested": "70d5b9c37994017669de2a991c65a88ebeb34999f37c6dc6d0c44462d57eb655",
     "BridgeIn": "4352fb2e09bdaa35c4d407ce85dfa93eaec318876eddd6f5a490cce830c3f274",
     "BridgeOut": "3e990eb54009dcdca53d8fa87307210f07097f37dcf6185dee71a42f8e7d524e",
-    "AirdropClaimed": "d399c6e7fad358fc300beda3f056717c94a04c7233ce92683de6500ba509022e",
-    "AirdropExecuted": "171b2f9dc7a4c7eaa8ca718bcac62fbec15d147f033f38e42971b7ccabe9a469",
-    "FeeRecorded": "b4d4d3bd2f97a7d6f1657ee69f7191d7aa7dbd5b6864a2d7a9d14efc1322552f",
-    "FeeStrategyChanged": "66c2a2c42cf36fad89e5da817a0b5de0fd78d7481cbfdc59f604148252da2261",
-    "FeesBurned": "0d9575a73e2a7da16cfde907df749d23d901528ff2e7c832b731babdecca000b",
-    "FeesClaimed": "fe3464cd748424446c37877c28ce5b700222c5bc9f90d908afcc4e5cb22707ff",
-    "LpRewardsExecuted": "a9e7850d400945e0434ddd18a194aff01f31efaae577a63486c3dc865c5ab759",
-    "MarketCreated": "d8ad483b7300b5831650c4747b4d85390539f25f7d7d8c635eb3f8147daf198e",
-    "PauseToggled": "79a5bc58b021076f821571d0fe8b0ae3d9e0a666563bb064fdbf0bf69281331c",
-    "Swap": "f3369c7e0aa652773c7246b5481ca4b1ee0b408d90467d2ce93b165b9938fde5",
+    "ConfigUpdated": "2903b3642d2105b7fbd127326de888ab50e8d975bf819398337fb58407c1b10e",
+    "FeeDistributed": "f7ab826cedf9d005102eddf95e65f43597aef36a55ff09ee4f452204c83f4afc",
+    "FeeFlow": "626e3fd5d9323ca4b7ffa3ca51c21c02766b638d15eb8896a36a4e0e97ae6de4",
+    "FeeStrategyChanged": "337fd9f9304e9da4c04886a5b8bf56e74032b459758212a860bc61d3544353dd",
+    "MarketCreated": "b0a9c7605389f1127c2299d4a3ed85f0b2fc19894ab5411d76b453bb29f9f47b",
+    "NftMint": "d2917d37031c0dfe5016665c7a83360cbf2ff32063096b2caf61ba66c06832e5",
+    "NftTransfer": "021f03e8a1315704c74c03e8c022c12bc80c4a2bd4fec8bd36b217322c340ad3",
+    "PoolRegistered": "da5568642b67660133b1de538c867c58f3037a5722b0e231a959ee8ca11b2ed7",
+    "PoolStateUpdated": "8155a4b38a877d212b271811786986f8f7d78074c82fce4526c58defcc6d7ebd",
+    "RouterTrade": "17c1899a3fd431f2b2200b90e738d270bb856a4222040c5650bfa208acb3b650",
+    "Swap": "a234ab85728295548823d8a26077ecc77aa5815f9ed8f4c5e6fd390ac851d4cc",
+    "TokenDeployed": "ad187874b793634c55d977f35d4828526eb48170a9531c71d88f8fd10cf9c237",
 }
 SOURCES = (("layerxexchange", EXCHANGE_EVENTS), ("layerxbridge", BRIDGE_EVENTS), ("launchpad", LAUNCHPAD_EVENTS))
+
+
+def canonical(item: dict) -> str:
+    if item["type"].startswith("tuple"):
+        return "(" + ",".join(canonical(part) for part in item["components"]) + ")" + item["type"][5:]
+    return item["type"]
+
+
+def signature_of(entry: dict) -> str:
+    return f"{entry['name']}({','.join(canonical(item) for item in entry['inputs'])})"
 
 
 def abi(directory: str) -> list[dict]:
@@ -82,7 +96,7 @@ def text(value: str) -> str:
 
 
 FROM = address("12")
-SWAP = address_word("aa") + word(100) + word(90) + address_word("bb") + word(1700000000)
+SWAP = address_word("aa") + word(100) + word(90) + word(1700000000)
 WRITES = [
     ("layerxexchange", "placeOrder(bytes32,uint8,uint256,uint256,uint8)",
      exchange_place_order_call(ident("11"), 2, 18446744073709551618, 5000, 0), LAYERX_EXCHANGE_PRECOMPILE,
@@ -102,19 +116,29 @@ WRITES = [
      + word(2) + word(64) + word(128) + word(2) + "0102".ljust(64, "0") + word(33) + ("ee" * 33).ljust(128, "0")),
     ("layerxbridge", "bridgeOut(uint64,address,uint256,address)", bridge_out_call(8, address("dd"), 5, address("ee")),
      LAYERX_BRIDGE_PRECOMPILE, word(8) + address_word("dd") + word(5) + address_word("ee")),
-    ("launchpad", "buy(address,uint256,uint256,address,uint256)",
-     launchpad_buy_call(address("aa"), 100, 90, address("bb"), 1700000000), LAUNCHPAD_PRECOMPILE, SWAP),
-    ("launchpad", "sell(address,uint256,uint256,address,uint256)",
-     launchpad_sell_call(address("aa"), 100, 90, address("bb"), 1700000000), LAUNCHPAD_PRECOMPILE, SWAP),
-    ("launchpad", "createMarket(string,string,uint8)", launchpad_create_market_call("Paxeer Dog", "PDOG", 2), LAUNCHPAD_PRECOMPILE,
-     word(96) + word(160) + word(2) + text("Paxeer Dog") + text("PDOG")),
-    ("launchpad", "setFeeStrategy(address,uint8)", launchpad_set_fee_strategy_call(address("aa"), 1), LAUNCHPAD_PRECOMPILE,
-     address_word("aa") + word(1)),
-    ("launchpad", "claimFees(address,address)", launchpad_claim_fees_call(address("aa"), address("bb")), LAUNCHPAD_PRECOMPILE,
-     address_word("aa") + address_word("bb")),
+    ("launchpad", "buy(address,uint256,uint256,uint256)",
+     launchpad_buy_call(address("aa"), 100, 90, 1700000000), LAUNCHPAD_PRECOMPILE, SWAP),
+    ("launchpad", "sell(address,uint256,uint256,uint256)",
+     launchpad_sell_call(address("aa"), 100, 90, 1700000000), LAUNCHPAD_PRECOMPILE, SWAP),
+    ("launchpad", "createMarket(string,string,uint8,address)", launchpad_create_market_call("Paxeer Dog", "PDOG", 2),
+     LAUNCHPAD_PRECOMPILE, word(128) + word(192) + word(2) + word(0) + text("Paxeer Dog") + text("PDOG")),
+    ("launchpad", "createMarket(string,string,uint8,address)", launchpad_create_market_call("Paxeer Dog", "PDOG", 2, address("cc")),
+     LAUNCHPAD_PRECOMPILE, word(128) + word(192) + word(2) + address_word("cc") + text("Paxeer Dog") + text("PDOG")),
+    ("launchpad", "setFeeStrategy(uint256,uint8)", launchpad_set_fee_strategy_call(7, 1), LAUNCHPAD_PRECOMPILE, word(7) + word(1)),
+    ("launchpad", "claimFees(uint256)", launchpad_claim_fees_call(7), LAUNCHPAD_PRECOMPILE, word(7)),
+    ("launchpad", "multicall(bytes[])", launchpad_call("multicall(bytes[])", [["0x0102"]]), LAUNCHPAD_PRECOMPILE,
+     word(32) + word(1) + word(32) + word(2) + "0102".ljust(64, "0")),
+    ("launchpad", "buyWithPermit(address,uint256,uint256,uint256,(uint256,uint256,uint8,bytes32,bytes32))",
+     launchpad_call("buyWithPermit(address,uint256,uint256,uint256,(uint256,uint256,uint8,bytes32,bytes32))",
+                    [address("aa"), 100, 90, 1700000000, [5, 1700000000, 27, ident("31"), ident("41")]]),
+     LAUNCHPAD_PRECOMPILE, SWAP + word(5) + word(1700000000) + word(27) + "31" * 32 + "41" * 32),
+    ("launchpad", "claimLegacyAirdrop(address,uint256,address,uint256,bytes32[])",
+     launchpad_call("claimLegacyAirdrop(address,uint256,address,uint256,bytes32[])",
+                    [address("aa"), 1, address("bb"), 2, [ident("31"), ident("41")]]),
+     LAUNCHPAD_PRECOMPILE, address_word("aa") + word(1) + address_word("bb") + word(2) + word(160) + word(2) + "31" * 32 + "41" * 32),
 ] + [
-    ("launchpad", f"{write}(address)", launchpad_token_call(write, address("aa")), LAUNCHPAD_PRECOMPILE, address_word("aa"))
-    for write in ("claimAirdrop", "executeAirdrop", "executeBurn", "executeLpRewards", "pause", "unpause")
+    ("launchpad", f"{write}(uint256)", launchpad_nft_call(write, 7), LAUNCHPAD_PRECOMPILE, word(7))
+    for write in ("claimAirdrop", "executeAirdrop", "executeBurn", "executeLpRewards")
 ]
 
 
@@ -132,7 +156,7 @@ class PrecompileCallsTest(unittest.TestCase):
                 )
                 self.assertEqual(spec.topic0, "0x" + TOPICS[spec.name])
                 declared += 1
-        self.assertEqual(declared, 17)
+        self.assertEqual(declared, 19)
 
     def test_every_write_encodes_its_abi_calldata(self) -> None:
         self.assertEqual(abi_selector("transfer(address,uint256)"), "0xa9059cbb")
@@ -140,16 +164,32 @@ class PrecompileCallsTest(unittest.TestCase):
             self.assertEqual(call.to, to, signature)
             self.assertEqual(call.data, abi_selector(signature) + body, signature)
             self.assertEqual(call.value, 7 if signature.startswith("depositMargin(") else 0, signature)
-            name = signature.split("(")[0]
-            entry = next(item for item in abi(directory) if item["type"] == "function" and item["name"] == name)
-            self.assertEqual(f"{name}({','.join(item['type'] for item in entry['inputs'])})", signature)
+            self.assertTrue(
+                any(item["type"] == "function" and signature_of(item) == signature for item in abi(directory)), signature
+            )
+        launchpad_writes = {
+            signature_of(entry): entry.get("stateMutability") == "payable"
+            for entry in abi("launchpad")
+            if entry["type"] == "function" and entry.get("stateMutability") not in ("view", "pure")
+        }
+        self.assertEqual(LAUNCHPAD_WRITES, launchpad_writes)
         for directory, _ in SOURCES:
             for entry in abi(directory):
                 if entry["type"] == "function" and entry.get("stateMutability") not in ("view", "pure"):
                     self.assertTrue(
-                        any(source == directory and sig.startswith(entry["name"] + "(") for source, sig, *_ in WRITES),
+                        any(source == directory and sig.startswith(entry["name"] + "(") for source, sig, *_ in WRITES)
+                        or (directory == "launchpad" and signature_of(entry) in LAUNCHPAD_WRITES),
                         entry["name"],
                     )
+        for signature, values, value in (
+            ("claimFees(uint256)", [1], 1),
+            ("claimFees(uint256)", [], 0),
+            ("setFeeStrategy(uint256,uint8)", [1, 256], 0),
+            ("pause(address)", [address("aa")], 0),
+            ("buy(address,uint256,uint256,uint256)", ["0x12", 1, 1, 1], 0),
+        ):
+            with self.assertRaises(PrecompileAbiError):
+                launchpad_call(signature, values, value)
         with self.assertRaises(PrecompileAbiError):
             exchange_deposit_margin_call(ident("51"), 0)
         with self.assertRaises(PrecompileAbiError):
@@ -163,12 +203,12 @@ class PrecompileCallsTest(unittest.TestCase):
             return ident("fe")
 
         self.assertEqual(send_exchange_deposit_margin(request, FROM, ident("51"), 255), ident("fe"))
-        self.assertEqual(send_launchpad_token_write(request, FROM, "pause", address("aa")), ident("fe"))
+        self.assertEqual(send_launchpad_nft_write(request, FROM, "executeBurn", 9), ident("fe"))
         self.assertEqual(sent, [
             ("eth_sendTransaction", [{"from": FROM, "to": LAYERX_EXCHANGE_PRECOMPILE,
                                       "data": abi_selector("depositMargin(bytes32)") + "51" * 32, "value": "0xff"}]),
             ("eth_sendTransaction", [{"from": FROM, "to": LAUNCHPAD_PRECOMPILE,
-                                      "data": abi_selector("pause(address)") + address_word("aa"), "value": "0x0"}]),
+                                      "data": abi_selector("executeBurn(uint256)") + word(9), "value": "0x0"}]),
         ])
         self.assertEqual(precompile_transaction_request(FROM, exchange_cancel_order_call(ident("31")))["value"], "0x0")
         with self.assertRaises(PrecompileAbiError) as caught:
@@ -210,23 +250,22 @@ class PrecompileCallsTest(unittest.TestCase):
         self.assertEqual(bridge_out.fields, {"chain": 8, "asset": address("dd"), "amount": 5, "recipient": address("ee"), "nonce": 9})
         created = decode_launchpad_event(
             LAUNCHPAD_PRECOMPILE,
-            ["0x" + TOPICS["MarketCreated"], "0x" + address_word("aa"), "0x" + address_word("12")],
-            "0x" + word(128) + word(192) + word(256) + word(2) + text("factory/pdog") + text("Paxeer Dog") + text("PDOG"),
+            ["0x" + TOPICS["MarketCreated"], ident("a1"), "0x" + address_word("aa"), "0x" + address_word("12")],
+            "0x" + address_word("bb") + address_word("cc") + word(1700000000) + word(42),
         )
         self.assertEqual(created.fields, {
-            "token": address("aa"), "creator": FROM, "denom": "factory/pdog", "name": "Paxeer Dog", "symbol": "PDOG", "feeStrategy": 2,
+            "poolId": ident("a1"), "token": address("aa"), "creator": FROM, "pool": address("bb"), "optical": address("cc"),
+            "timestamp": 1700000000, "blockNumber": 42,
+        })
+        swap_topics = ["0x" + TOPICS["Swap"], ident("a1"), "0x" + address_word("12")]
+        swap_data = "0x" + word(1) + word(100) + word(95) + word(1) + word(7) + word(1700000000) + word(42)
+        swap = decode_launchpad_event(LAUNCHPAD_PRECOMPILE, swap_topics, swap_data)
+        self.assertEqual(swap.fields, {
+            "poolId": ident("a1"), "sender": FROM, "isBuy": True, "amountIn": 100, "amountOut": 95, "fee": 1, "price": 7,
+            "timestamp": 1700000000, "blockNumber": 42,
         })
         with self.assertRaises(PrecompileAbiError):
-            decode_launchpad_event(LAUNCHPAD_PRECOMPILE, ["0x" + TOPICS["PauseToggled"], "0x" + address_word("aa")], "0x" + word(2))
-        swap = decode_launchpad_event(
-            LAUNCHPAD_PRECOMPILE,
-            ["0x" + TOPICS["Swap"], "0x" + address_word("aa"), "0x" + address_word("12"), "0x" + address_word("bb")],
-            "0x" + word(1) + word(100) + word(95) + word(1) + word(7),
-        )
-        self.assertEqual(swap.fields, {
-            "token": address("aa"), "trader": FROM, "recipient": address("bb"), "isBuy": True,
-            "amountIn": 100, "amountOut": 95, "feeAmount": 1, "price": 7,
-        })
+            decode_launchpad_event(LAUNCHPAD_PRECOMPILE, swap_topics, "0x" + word(2) + swap_data[66:])
 
 
 if __name__ == "__main__":

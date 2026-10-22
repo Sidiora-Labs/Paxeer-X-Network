@@ -2,31 +2,34 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 
 import {
   AccountDerivationError,
-  LAYERX_EXCHANGE_PRECOMPILE,
+  PERPS_PRECOMPILE,
+  PERPS_WRITES,
+  PrecompileAbiError,
+  SPOT_PRECOMPILES,
+  SPOT_WRITES,
   PERPS_ACTIVITY_TYPES,
   SPOT_ACTIVITY_TYPES,
   TradingPayloadError,
   TradingWriter,
   abiSelector,
-  buildPerpsActivity,
-  buildSpotActivity,
   decodePerpsActivity,
   decodeSpotActivity,
   encodePerpsActivity,
   encodeSpotActivity,
   deriveFromSeed,
   perpsActivityType,
+  perpsCall,
   spotActivityType,
+  spotCall,
   type BindFees,
-  type PerpsCallActivity,
   type PrecompileCall,
-  type SpotCallActivity,
+  type SpotContract,
+  type SpotWrite,
   type PerpsActivity,
   type SpotActivity,
 } from "../src/index.js";
@@ -249,549 +252,129 @@ function calldata(
 }
 
 function exactCall(call: PrecompileCall, data: string): void {
-  assert.deepEqual(call, { to: LAYERX_EXCHANGE_PRECOMPILE, data, value: 0n });
+  assert.deepEqual(call, { to: PERPS_PRECOMPILE, data, value: 0n });
   assert.deepEqual(Object.keys(call).sort(), ["data", "to", "value"]);
 }
 
-function perpsInput<T extends PerpsActivity["activity"]>(
-  name: string,
-  kind: T,
-): Extract<PerpsActivity, { activity: T }> {
-  const decoded = decodePerpsActivity(
-    vector(name).activity_type,
-    bytes(vector(name).bytes),
-  );
-  assert.equal(decoded.activity, kind);
-  return decoded as Extract<PerpsActivity, { activity: T }>;
+const ROOT = new URL("../../../../../../", import.meta.url);
+
+interface AbiParameter {
+  readonly type: string;
+  readonly components?: readonly AbiParameter[];
 }
 
-function spotInput<T extends SpotActivity["activity"]>(
-  name: string,
-  kind: T,
-): Extract<SpotActivity, { activity: T }> {
-  const decoded = decodeSpotActivity(
-    vector(name).activity_type,
-    bytes(vector(name).bytes),
-  );
-  assert.equal(decoded.activity, kind);
-  return decoded as Extract<SpotActivity, { activity: T }>;
+function canonical(input: AbiParameter): string {
+  return input.type.startsWith("tuple")
+    ? `(${(input.components ?? []).map(canonical).join(",")})${input.type.slice(5)}`
+    : input.type;
 }
 
-test("perps_builder_is_abi", () => {
-  const order = perpsInput("perps_order_place", "order_place");
-  const { orderId, ...placed } = order;
-  for (const timeInForce of [0, 1, 2, 3] as const) {
-    exactCall(
-      buildPerpsActivity({ ...placed, timeInForce }),
-      calldata(
-        "0xf9835781",
-        order.marketId,
-        order.ownerAccountId,
-        order.side,
-        order.price,
-        order.quantity,
-        timeInForce,
-      ),
+function abiWrites(path: string): Map<string, boolean> {
+  const entries = JSON.parse(readFileSync(new URL(path, ROOT), "utf8")) as readonly {
+    readonly type: string;
+    readonly name?: string;
+    readonly stateMutability?: string;
+    readonly inputs?: readonly AbiParameter[];
+  }[];
+  const out = new Map<string, boolean>();
+  for (const entry of entries) {
+    if (entry.type !== "function" || entry.stateMutability === "view" || entry.stateMutability === "pure") continue;
+    out.set(`${entry.name ?? ""}(${(entry.inputs ?? []).map(canonical).join(",")})`, entry.stateMutability === "payable");
+  }
+  return out;
+}
+
+function goAddress(path: string, constant: string): string {
+  const match = new RegExp(`${constant}\\s*=\\s*"(0x[0-9a-fA-F]{40})"`, "u").exec(readFileSync(new URL(path, ROOT), "utf8"));
+  assert.ok(match?.[1], constant);
+  return match[1];
+}
+
+const SPOT_SOURCES = {
+  pecor: ["PECORAddress", "pecor.json"],
+  orders: ["PECOROrdersAddress", "orders.json"],
+  stopOrders: ["PECORStopOrdersAddress", "stoporders.json"],
+  quoter: ["PECORQuoterAddress", "quoter.json"],
+  vault: ["PECORVaultAddress", "vault.json"],
+} as const;
+
+test("perps and spot write tables are exactly the precompile ABIs at the served addresses", () => {
+  assert.equal(PERPS_PRECOMPILE, goAddress("modules/layerxexchange/types/ids.go", "ExchangeAddress"));
+  const perpsAbi = abiWrites("precompiles/perps/abi/abi.json");
+  assert.deepEqual(
+    new Map(Object.entries(PERPS_WRITES).map(([signature, write]) => [signature, write.payable])),
+    perpsAbi,
+  );
+  for (const signature of perpsAbi.keys()) {
+    const write = PERPS_WRITES[signature as keyof typeof PERPS_WRITES];
+    assert.equal(`${signature.slice(0, signature.indexOf("("))}(${write.types.join(",")})`, signature);
+  }
+  assert.deepEqual(Object.keys(SPOT_PRECOMPILES).sort(), Object.keys(SPOT_SOURCES).sort());
+  for (const [contract, [constant, file]] of Object.entries(SPOT_SOURCES)) {
+    const key = contract as SpotContract;
+    assert.equal(SPOT_PRECOMPILES[key], goAddress("modules/spot/types/keys.go", constant));
+    assert.deepEqual(
+      new Map(Object.entries(SPOT_WRITES[key]).map(([signature, write]) => [signature, write.payable])),
+      abiWrites(`precompiles/spot/abi/${file}`),
+      contract,
     );
   }
-  assert.equal(
-    buildPerpsActivity(placed).data,
-    buildPerpsActivity({ ...placed, timeInForce: 0 }).data,
-  );
-  assert.equal(
-    buildPerpsActivity(order).data,
-    buildPerpsActivity({ ...placed, orderId: "not-an-id" }).data,
-  );
-  assert.ok(!buildPerpsActivity(order).data.includes(orderId));
-  const open = perpsInput("perps_position_open", "position_open");
-  const { positionId, entryNotional, ...opening } = open;
+});
+
+test("perpsCall encodes perps writes to the perps precompile", () => {
   exactCall(
-    buildPerpsActivity(opening),
-    calldata(
-      "0xb14bfbe6",
-      open.marketId,
-      open.marginAccountId,
-      open.side,
-      open.size,
-      open.marginAmount,
+    perpsCall("openPosition(uint256,address,uint256,uint256,bool)", [3n, `0x${"ab".repeat(20)}`, 5000n, 10n, true]),
+    calldata(abiSelector("openPosition(uint256,address,uint256,uint256,bool)"), 3n, `${"0".repeat(24)}${"ab".repeat(20)}`, 5000n, 10n, true),
+  );
+  exactCall(perpsCall("cancelOrder(uint256)", [9n]), calldata(abiSelector("cancelOrder(uint256)"), 9n));
+  exactCall(
+    perpsCall("cancelByCloid(uint256,bytes16)", [3n, `0x${"cd".repeat(16)}`]),
+    calldata(abiSelector("cancelByCloid(uint256,bytes16)"), 3n, "cd".repeat(16).padEnd(64, "0")),
+  );
+  const order = "placeOrder((uint256,bool,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,bool,uint256,uint256,uint64,bytes16))";
+  const fields = [3n, true, 1n, 0n, 100n, 200n, 5000n, 10n, 0n, 0n, false, 0n, 0n, 1700000000n, `0x${"ee".repeat(16)}`] as const;
+  exactCall(
+    perpsCall(order, [fields]),
+    calldata(abiSelector(order), ...fields.slice(0, 14), "ee".repeat(16).padEnd(64, "0")),
+  );
+  assert.throws(() => perpsCall("cancelOrder(uint256)", []), PrecompileAbiError);
+  assert.throws(() => perpsCall("cancelOrder(uint256)", [-1n]), PrecompileAbiError);
+  assert.throws(() => perpsCall("closePositionWithParams(uint256,uint256,uint256,uint64)", [1n, 1n, 1n, 1n << 64n]), PrecompileAbiError);
+  assert.throws(() => perpsCall("cancelByCloid(uint256,bytes16)", [1n, `0x${"cd".repeat(15)}`]), PrecompileAbiError);
+  assert.throws(() => perpsCall(order, [fields.slice(1)]), PrecompileAbiError);
+  assert.throws(() => perpsCall("deposit(address,uint256)", ["0x12", 1n]), PrecompileAbiError);
+});
+
+test("spotCall encodes PECOR writes to their own precompiles", () => {
+  const usdl = `0x${"11".repeat(20)}`;
+  const token = `0x${"22".repeat(20)}`;
+  const word20 = (value: string): string => value.slice(2).padStart(64, "0");
+  assert.deepEqual(
+    spotCall("pecor", "marketBuy(address,address,uint256,uint256,uint256)", [usdl, token, 1000n, 900n, 1700000000n]),
+    {
+      to: SPOT_PRECOMPILES.pecor,
+      data: calldata(abiSelector("marketBuy(address,address,uint256,uint256,uint256)"), word20(usdl), word20(token), 1000n, 900n, 1700000000n),
+      value: 0n,
+    },
+  );
+  assert.deepEqual(spotCall("pecor", "swapExactInNative(address,uint256,uint256)", [token, 1n, 2n], 7n), {
+    to: SPOT_PRECOMPILES.pecor,
+    data: calldata(abiSelector("swapExactInNative(address,uint256,uint256)"), word20(token), 1n, 2n),
+    value: 7n,
+  });
+  assert.deepEqual(spotCall("orders", "cancelLimitOrder(uint256)", [4n]).to, SPOT_PRECOMPILES.orders);
+  assert.deepEqual(spotCall("stopOrders", "cancelStopLossOrder(uint256)", [4n]).to, SPOT_PRECOMPILES.stopOrders);
+  assert.deepEqual(spotCall("vault", "depositBatch(address[],uint256[])", [[usdl, token], [5n, 6n]]), {
+    to: SPOT_PRECOMPILES.vault,
+    data: calldata(
+      abiSelector("depositBatch(address[],uint256[])"),
+      64n, 160n, 2n, word20(usdl), word20(token), 2n, 5n, 6n,
     ),
-  );
-  exactCall(
-    buildPerpsActivity({
-      ...opening,
-      positionId: open.marginAccountId,
-      entryNotional,
-    }),
-    buildPerpsActivity(opening).data,
-  );
-  assert.ok(!buildPerpsActivity(opening).data.includes(positionId));
-  const increase = perpsInput("perps_position_increase", "position_increase");
-  const { notionalDelta, ...increasing } = increase;
-  exactCall(
-    buildPerpsActivity(increasing),
-    calldata(
-      "0xf9f467f3",
-      increase.marketId,
-      increase.positionId,
-      increase.sizeDelta,
-      increase.marginAmount,
-    ),
-  );
-  assert.equal(notionalDelta, 0n);
-  const cancel = perpsInput("perps_order_cancel", "order_cancel");
-  exactCall(
-    buildPerpsActivity(cancel),
-    calldata("0xa47d9d33", cancel.marketId, cancel.orderId),
-  );
-  const close = perpsInput("perps_position_close", "position_close");
-  exactCall(
-    buildPerpsActivity(close),
-    calldata("0x9c49d053", close.marketId, close.positionId),
-  );
-  const funding = perpsInput("perps_funding_tick", "funding_tick");
-  exactCall(
-    buildPerpsActivity(funding),
-    calldata("0x2b6edb1e", funding.marketId),
-  );
-  const liquidation = perpsInput("perps_liquidate", "liquidate");
-  exactCall(
-    buildPerpsActivity(liquidation),
-    calldata(
-      "0xd5b3e4d9",
-      liquidation.marketId,
-      liquidation.positionId,
-      liquidation.liquidatorAccountId,
-    ),
-  );
-  const halt = perpsInput("perps_market_halt", "market_halt");
-  exactCall(
-    buildPerpsActivity(halt),
-    calldata("0x141053a4", halt.marketId, true),
-  );
-  exactCall(
-    buildPerpsActivity({ ...halt, halted: false }),
-    calldata("0x141053a4", halt.marketId, false),
-  );
-});
-
-test("spot_builder_is_abi", () => {
-  const market = spotInput("spot_market_create", "market_create");
-  exactCall(
-    buildSpotActivity(market),
-    calldata(
-      "0xdba301bc",
-      market.marketId,
-      market.baseAsset,
-      market.quoteAsset,
-      market.administrator,
-      market.tickSize,
-      market.lotSize,
-    ),
-  );
-  for (const name of ["spot_order_place_limit", "spot_order_place_market"]) {
-    const order = spotInput(name, "order_place");
-    const { orderId, ...placed } = order;
-    exactCall(
-      buildSpotActivity(placed),
-      calldata(
-        "0x91a861ce",
-        order.marketId,
-        order.baseAccountId,
-        order.quoteAccountId,
-        order.side,
-        order.kind,
-        order.timeInForce,
-        order.price,
-        order.quantity,
-      ),
-    );
-    assert.equal(
-      buildSpotActivity(order).data,
-      buildSpotActivity({ ...placed, orderId: "not-an-id" }).data,
-    );
-    assert.ok(!buildSpotActivity(placed).data.includes(orderId));
-  }
-  const cancel = spotInput("spot_order_cancel", "order_cancel");
-  exactCall(
-    buildSpotActivity(cancel),
-    calldata("0x7f94da73", cancel.marketId, cancel.orderId),
-  );
-  const halt = spotInput("spot_market_halt", "market_halt");
-  exactCall(
-    buildSpotActivity(halt),
-    calldata("0x9b89e0a4", halt.marketId, true),
-  );
-  exactCall(
-    buildSpotActivity(spotInput("spot_market_resume", "market_resume")),
-    calldata("0x9b89e0a4", halt.marketId, false),
-  );
-});
-
-test("perps market creation encodes the dynamic tuple in contract order", () => {
-  const market = perpsInput("perps_market_create", "market_create");
-  const signature =
-    "createPerpsMarket((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,uint256,uint256,uint256,uint32,uint32,uint32,uint32,uint32,uint32,uint64,uint64,uint256,uint256,bytes32[],uint32))";
-  const expected = calldata(
-    abiSelector(signature),
-    32n,
-    market.marketId,
-    market.quoteAsset,
-    market.administrator,
-    market.liquidityAccountId,
-    market.longFundingAccountId,
-    market.shortFundingAccountId,
-    market.insuranceAccountId,
-    market.contractSize,
-    market.tickSize,
-    market.lotSize,
-    market.priceScale,
-    market.initialMarginRatioBps,
-    market.maintenanceMarginRatioBps,
-    market.liquidationFeeBps,
-    market.liquidatorShareBps,
-    market.maximumFundingRateBps,
-    market.maximumDeviationBasisPoints,
-    market.fundingIntervalMs,
-    market.maximumOracleStalenessMs,
-    market.minimumPrice,
-    market.maximumPrice,
-    736n,
-    market.parameterVersion,
-    BigInt(market.permittedOracleKeys.length),
-    ...market.permittedOracleKeys,
-  );
-  exactCall(buildPerpsActivity(market), expected);
-  const { halted, ...creating } = market;
-  assert.equal(halted, false);
-  exactCall(buildPerpsActivity(creating), expected);
-  assert.equal((expected.length - 2) / 2, 868);
-  const keys = Array.from({ length: 9 }, (_, index) => word(BigInt(index + 1)));
-  for (const count of [1, 8]) {
-    const permittedOracleKeys = keys.slice(0, count);
-    exactCall(
-      buildPerpsActivity({ ...market, permittedOracleKeys }),
-      expected.slice(0, 10 + 24 * 64) +
-        word(count) +
-        permittedOracleKeys.join(""),
-    );
-  }
-  refuses(
-    () => buildPerpsActivity({ ...market, halted: true }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildPerpsActivity({ ...market, parameterVersion: 1n << 32n }),
-    "non_canonical",
-  );
-  refuses(
-    () =>
-      buildPerpsActivity({ ...market, maximumOracleStalenessMs: 1n << 64n }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildPerpsActivity({ ...market, maximumPrice: 1n << 128n }),
-    "non_canonical",
-  );
-  refuses(
-    () =>
-      buildPerpsActivity({
-        ...market,
-        initialMarginRatioBps: market.maintenanceMarginRatioBps,
-      }),
-    "parameter_bounds",
-  );
-  refuses(
-    () => buildPerpsActivity({ ...market, permittedOracleKeys: [] }),
-    "parameter_bounds",
-  );
-  refuses(
-    () => buildPerpsActivity({ ...market, permittedOracleKeys: keys }),
-    "parameter_bounds",
-  );
-  refuses(
-    () =>
-      buildPerpsActivity({
-        ...market,
-        permittedOracleKeys: [market.marketId, market.marketId],
-      }),
-    "parameter_bounds",
-  );
-  refuses(
-    () =>
-      buildPerpsActivity({
-        ...market,
-        permittedOracleKeys: [...market.permittedOracleKeys].reverse(),
-      }),
-    "parameter_bounds",
-  );
-});
-
-test("oracle calldata retains signed canonical observation bytes", () => {
-  const oracle = perpsInput("perps_oracle_push", "oracle_push");
-  const observation = bytes(vector("perps_oracle_push").bytes);
-  const domain = new TextEncoder().encode("LXP:ORACLE:OBSERVATION:v1");
-  const message = new Uint8Array(domain.length + observation.length);
-  message.set(domain);
-  message.set(observation, domain.length);
-  const seed = bytes("01".repeat(32));
-  const signature = ed25519.sign(message, seed);
-  assert.equal(
-    ed25519.verify(signature, message, ed25519.getPublicKey(seed)),
-    true,
-  );
-  const expected =
-    calldata("0x0e4d9382", 64n, 192n, 72n) +
-    hex(observation).padEnd(192, "0") +
-    word(64n) +
-    hex(signature);
-  exactCall(buildPerpsActivity({ ...oracle, signature }), expected);
-  assert.equal((expected.length - 2) / 2, 292);
-  for (const length of [0, 63, 65]) {
-    const malformed = new Uint8Array(length);
-    malformed.set(signature.subarray(0, Math.min(length, signature.length)));
-    refuses(
-      () => buildPerpsActivity({ ...oracle, signature: malformed }),
-      "length",
-    );
-  }
-  refuses(() => buildPerpsActivity(oracle as PerpsCallActivity), "length");
-  refuses(
-    () =>
-      buildPerpsActivity({
-        ...oracle,
-        signature,
-        observationSequence: 1n << 64n,
-      }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildPerpsActivity({ ...oracle, signature, price: 1n << 128n }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildPerpsActivity({ ...oracle, signature, sourceIdentifier: 0n }),
-    "non_canonical",
-  );
-});
-
-test("perps ABI builders preserve bounds and refuse incompatible legacy fields", () => {
-  const order = perpsInput("perps_order_place", "order_place");
-  refuses(
-    () =>
-      buildPerpsActivity({ ...order, side: 3 } as unknown as PerpsCallActivity),
-    "non_canonical",
-  );
-  refuses(
-    () =>
-      buildPerpsActivity({
-        ...order,
-        timeInForce: 4,
-      } as unknown as PerpsCallActivity),
-    "non_canonical",
-  );
-  refuses(
-    () =>
-      buildPerpsActivity({
-        ...order,
-        timeInForce: 1.5,
-      } as unknown as PerpsCallActivity),
-    "non_canonical",
-  );
-  refuses(() => buildPerpsActivity({ ...order, price: -1n }), "non_canonical");
-  refuses(() => buildPerpsActivity({ ...order, price: 0n }), "non_canonical");
-  refuses(
-    () => buildPerpsActivity({ ...order, quantity: 0n }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildPerpsActivity({ ...order, quantity: 1n << 128n }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildPerpsActivity({ ...order, ownerAccountId: "0".repeat(64) }),
-    "non_canonical",
-  );
-  const open = perpsInput("perps_position_open", "position_open");
-  refuses(() => buildPerpsActivity(open), "non_canonical");
-  refuses(
-    () =>
-      buildPerpsActivity({
-        ...open,
-        positionId: open.marginAccountId,
-        entryNotional: 1n,
-      }),
-    "non_canonical",
-  );
-  const increase = perpsInput("perps_position_increase", "position_increase");
-  refuses(
-    () => buildPerpsActivity({ ...increase, notionalDelta: 1n }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildPerpsActivity({ ...increase, sizeDelta: 1n << 128n }),
-    "non_canonical",
-  );
-  const halt = perpsInput("perps_market_halt", "market_halt");
-  refuses(
-    () =>
-      buildPerpsActivity({
-        ...halt,
-        activity: "unsupported",
-      } as unknown as PerpsCallActivity),
-    "unknown_activity",
-  );
-});
-
-test("ADL calldata uses a sorted array bounded to sixteen positions", () => {
-  const adl = perpsInput("perps_adl", "adl");
-  exactCall(
-    buildPerpsActivity(adl),
-    calldata(
-      "0xc293c109",
-      adl.marketId,
-      64n,
-      BigInt(adl.positionIds.length),
-      ...adl.positionIds,
-    ),
-  );
-  const ids = Array.from({ length: 17 }, (_, index) => word(BigInt(index + 1)));
-  for (const count of [1, 16]) {
-    exactCall(
-      buildPerpsActivity({ ...adl, positionIds: ids.slice(0, count) }),
-      calldata("0xc293c109", adl.marketId, 64n, count, ...ids.slice(0, count)),
-    );
-  }
-  refuses(() => buildPerpsActivity({ ...adl, positionIds: ids }), "length");
-  refuses(
-    () => buildPerpsActivity({ ...adl, positionIds: [] }),
-    "non_canonical",
-  );
-  refuses(
-    () =>
-      buildPerpsActivity({
-        ...adl,
-        positionIds: [...adl.positionIds].reverse(),
-      }),
-    "unsorted_sequence",
-  );
-  refuses(
-    () =>
-      buildPerpsActivity({ ...adl, positionIds: [adl.marketId, adl.marketId] }),
-    "unsorted_sequence",
-  );
-  assert.equal(encodePerpsActivity({ ...adl, positionIds: ids }).length, 577);
-});
-
-test("spot ABI builders preserve exact refusal codes", () => {
-  const order = spotInput("spot_order_place_limit", "order_place");
-  refuses(() => buildSpotActivity({ ...order, price: 0n }), "non_canonical");
-  refuses(() => buildSpotActivity({ ...order, quantity: 0n }), "non_canonical");
-  refuses(
-    () => buildSpotActivity({ ...order, quantity: -1n }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildSpotActivity({ ...order, quantity: 1n << 128n }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildSpotActivity({ ...order, quoteAccountId: order.baseAccountId }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildSpotActivity({ ...order, marketId: "0".repeat(64) }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildSpotActivity({ ...order, baseAccountId: "ff" }),
-    "non_canonical",
-  );
-  for (const field of ["side", "kind", "timeInForce"]) {
-    refuses(
-      () =>
-        buildSpotActivity({
-          ...order,
-          [field]: 3,
-        } as unknown as SpotCallActivity),
-      "non_canonical",
-    );
-  }
-  const marketOrder = spotInput("spot_order_place_market", "order_place");
-  refuses(
-    () => buildSpotActivity({ ...marketOrder, timeInForce: 1 }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildSpotActivity({ ...marketOrder, price: 1n }),
-    "non_canonical",
-  );
-  const market = spotInput("spot_market_create", "market_create");
-  refuses(
-    () => buildSpotActivity({ ...market, baseAsset: market.quoteAsset }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildSpotActivity({ ...market, administrator: "0".repeat(64) }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildSpotActivity({ ...market, tickSize: 0n }),
-    "non_canonical",
-  );
-  refuses(
-    () => buildSpotActivity({ ...market, lotSize: 1n << 128n }),
-    "non_canonical",
-  );
-  refuses(
-    () =>
-      buildSpotActivity({
-        ...market,
-        activity: "unsupported",
-      } as unknown as SpotCallActivity),
-    "unknown_activity",
-  );
-});
-
-test("targets_from_address_table", () => {
-  const table = readFileSync(
-    new URL(
-      "../../../../../../spec/layerx-merge/contracts/address-table.md",
-      import.meta.url,
-    ),
-    "utf8",
-  );
-  const row = table
-    .split("\n")
-    .find((line) => line.includes("| layerxExchange |"));
-  assert.ok(row);
-  const address = row.split("|")[1]?.trim();
-  assert.equal(address, LAYERX_EXCHANGE_PRECOMPILE);
-  for (const item of perps) {
-    const input = perpsInput(
-      item.name,
-      activity(item).activity as PerpsActivity["activity"],
-    );
-    let call: PrecompileCall;
-    if (input.activity === "oracle_push") {
-      const observation = encodePerpsActivity(input);
-      const domain = new TextEncoder().encode("LXP:ORACLE:OBSERVATION:v1");
-      const message = new Uint8Array(domain.length + observation.length);
-      message.set(domain);
-      message.set(observation, domain.length);
-      call = buildPerpsActivity({
-        ...input,
-        signature: ed25519.sign(message, bytes("01".repeat(32))),
-      });
-    } else {
-      call =
-        input.activity === "position_open"
-          ? buildPerpsActivity({ ...input, positionId: input.marginAccountId })
-          : buildPerpsActivity(input);
-    }
-    assert.equal(call.to, address);
-  }
-  for (const item of spot)
-    assert.equal(buildSpotActivity(activity(item) as SpotActivity).to, address);
+    value: 0n,
+  });
+  assert.throws(() => spotCall("pecor", "marketBuy(address,address,uint256,uint256,uint256)", [usdl, token, 1n, 1n, 1n], 1n), PrecompileAbiError);
+  assert.throws(() => spotCall("pecor", "swapExactInNative(address,uint256,uint256)", [token, 1n, 2n], -1n), PrecompileAbiError);
+  assert.throws(() => spotCall("orders", "marketBuy(address,address,uint256,uint256,uint256)" as unknown as SpotWrite<"orders">, []), PrecompileAbiError);
 });
 
 function transactionFields(
@@ -847,11 +430,13 @@ const fees: BindFees = {
 
 test("TradingWriter signs real type-2 transactions with the existing account key", () => {
   const derived = deriveFromSeed(bytes("000102030405060708090a0b0c0d0e0f"));
-  const open = perpsInput("perps_position_open", "position_open");
-  const call = buildPerpsActivity({
-    ...open,
-    positionId: open.marginAccountId,
-  });
+  const call = perpsCall("openPosition(uint256,address,uint256,uint256,bool)", [
+    3n,
+    `0x${"ab".repeat(20)}`,
+    5000n,
+    10n,
+    true,
+  ]);
   const request = TradingWriter.transactionRequest(derived, 125n, call, fees);
   assert.equal(request.method, "eth_sendRawTransaction");
   assert.equal(request.params.length, 1);
@@ -872,7 +457,7 @@ test("TradingWriter signs real type-2 transactions with the existing account key
       "02",
       "09",
       "013880",
-      LAYERX_EXCHANGE_PRECOMPILE.slice(2),
+      PERPS_PRECOMPILE.slice(2),
       "",
       call.data.slice(2),
       "",
@@ -916,9 +501,7 @@ test("TradingWriter signs real type-2 transactions with the existing account key
 
 test("TradingWriter refuses invalid transaction bounds and unavailable signer keys", () => {
   const derived = deriveFromSeed(bytes("000102030405060708090a0b0c0d0e0f"));
-  const call = buildPerpsActivity(
-    perpsInput("perps_funding_tick", "funding_tick"),
-  );
+  const call = perpsCall("cancelOrder(uint256)", [9n]);
   for (const changes of [
     { evmNonce: -1n },
     { evmNonce: 1n << 64n },

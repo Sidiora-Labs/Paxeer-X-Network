@@ -17,11 +17,22 @@ import {
   requireLayerXBinding,
 } from "./account-derivation.js";
 import {
-  LAYERX_EXCHANGE_PRECOMPILE,
-  abiSelector,
-  encodeAbiCall,
+  precompileWriteCall,
+  type AbiArgument,
   type PrecompileCall,
 } from "./exchange.js";
+import {
+  PERPS_PRECOMPILE,
+  PERPS_WRITES,
+  SPOT_PRECOMPILES,
+} from "./generated/precompile-writes.js";
+
+export { PERPS_PRECOMPILE, PERPS_WRITES } from "./generated/precompile-writes.js";
+
+const TRADING_PRECOMPILES: ReadonlySet<string> = new Set([
+  PERPS_PRECOMPILE,
+  ...Object.values(SPOT_PRECOMPILES),
+]);
 
 const ID = /^[0-9a-f]{64}$/u;
 const MAX_ORACLE_KEYS = 8;
@@ -167,40 +178,6 @@ export interface EncodedActivity {
   readonly payload: Uint8Array;
 }
 
-export type PerpsCallActivity =
-  | Exclude<
-      PerpsActivity,
-      {
-        activity:
-          | "market_create"
-          | "oracle_push"
-          | "order_place"
-          | "position_open"
-          | "position_increase";
-      }
-    >
-  | (Omit<Extract<PerpsActivity, { activity: "market_create" }>, "halted"> & {
-      readonly halted?: boolean;
-    })
-  | (Extract<PerpsActivity, { activity: "oracle_push" }> & {
-      readonly signature: Uint8Array;
-    })
-  | (Omit<Extract<PerpsActivity, { activity: "order_place" }>, "orderId"> & {
-      readonly orderId?: TradingId;
-      readonly timeInForce?: 0 | 1 | 2 | 3;
-    })
-  | (Omit<
-      Extract<PerpsActivity, { activity: "position_open" }>,
-      "positionId" | "entryNotional"
-    > & {
-      readonly positionId?: TradingId;
-      readonly entryNotional?: bigint;
-    })
-  | (Omit<
-      Extract<PerpsActivity, { activity: "position_increase" }>,
-      "notionalDelta"
-    > & { readonly notionalDelta?: bigint });
-
 function tradingHex(value: Uint8Array): string {
   return Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join(
     "",
@@ -298,7 +275,7 @@ export class TradingWriter {
   }
 
   /**
-   * Signs an exchange precompile call offline. Precondition: the caller has
+   * Signs a perps or spot precompile call offline. Precondition: the caller has
    * established that `derived.evmAddress` is bound to `derived.layerxPublicKey`
    * through `readLayerXBindState` and `requireLayerXBinding`; this primitive
    * reads no chain state. `TradingWriter.send` performs that check itself
@@ -324,7 +301,7 @@ export class TradingWriter {
       throw new AccountDerivationError("invalid_chain_id");
     }
     if (
-      call.to.toLowerCase() !== LAYERX_EXCHANGE_PRECOMPILE ||
+      !TRADING_PRECOMPILES.has(call.to.toLowerCase()) ||
       fees.gasLimit <= 0n ||
       fees.maxPriorityFeePerGas > fees.maxFeePerGas
     ) {
@@ -727,244 +704,14 @@ export function encodePerpsActivity(activity: PerpsActivity): Uint8Array {
   return writer.bytes();
 }
 
-/** Builds a perps precompile call. */
-export function buildPerpsActivity(
-  activity: PerpsCallActivity,
-): PrecompileCall {
-  let data: string;
-  const market = `0x${activity.marketId}`;
-  switch (activity.activity) {
-    case "market_create": {
-      if (activity.halted !== undefined && activity.halted !== false) {
-        throw new TradingPayloadError(
-          "non_canonical",
-          "new market must be active",
-        );
-      }
-      encodeMarket(new TradingWriter(), { ...activity, halted: false });
-      const types = [
-        "bytes32",
-        "bytes32",
-        "bytes32",
-        "bytes32",
-        "bytes32",
-        "bytes32",
-        "bytes32",
-        "uint256",
-        "uint256",
-        "uint256",
-        "uint256",
-        "uint32",
-        "uint32",
-        "uint32",
-        "uint32",
-        "uint32",
-        "uint32",
-        "uint64",
-        "uint64",
-        "uint256",
-        "uint256",
-        "bytes32[]",
-        "uint32",
-      ];
-      const writer = new TradingWriter()
-        .uint(32n, 32)
-        .id(activity.marketId)
-        .id(activity.quoteAsset)
-        .id(activity.administrator)
-        .id(activity.liquidityAccountId)
-        .id(activity.longFundingAccountId)
-        .id(activity.shortFundingAccountId)
-        .id(activity.insuranceAccountId)
-        .uint(activity.contractSize, 32)
-        .uint(activity.tickSize, 32)
-        .uint(activity.lotSize, 32)
-        .uint(activity.priceScale, 32)
-        .uint(activity.initialMarginRatioBps, 32)
-        .uint(activity.maintenanceMarginRatioBps, 32)
-        .uint(activity.liquidationFeeBps, 32)
-        .uint(activity.liquidatorShareBps, 32)
-        .uint(activity.maximumFundingRateBps, 32)
-        .uint(activity.maximumDeviationBasisPoints, 32)
-        .uint(activity.fundingIntervalMs, 32)
-        .uint(activity.maximumOracleStalenessMs, 32)
-        .uint(activity.minimumPrice, 32)
-        .uint(activity.maximumPrice, 32)
-        .uint(BigInt(types.length * 32), 32)
-        .uint(activity.parameterVersion, 32)
-        .uint(BigInt(activity.permittedOracleKeys.length), 32);
-      for (const key of activity.permittedOracleKeys) {
-        writer.id(key);
-      }
-      data =
-        abiSelector(`createPerpsMarket((${types.join(",")}))`) +
-        tradingHex(writer.bytes());
-      break;
-    }
-    case "oracle_push": {
-      const observation = encodePerpsActivity(activity);
-      if (
-        !(activity.signature instanceof Uint8Array) ||
-        activity.signature.length !== 64
-      ) {
-        throw new TradingPayloadError("length", "oracle signature");
-      }
-      const heads = new TradingWriter()
-        .uint(64n, 32)
-        .uint(192n, 32)
-        .uint(72n, 32)
-        .bytes();
-      data =
-        abiSelector("pushOracle(bytes,bytes)") +
-        tradingHex(
-          tradingConcat(
-            heads,
-            observation,
-            new Uint8Array(24),
-            new TradingWriter().uint(64n, 32).bytes(),
-            activity.signature,
-          ),
-        );
-      break;
-    }
-    case "order_place": {
-      nonzero(activity.price, activity.quantity);
-      new TradingWriter()
-        .id(activity.marketId)
-        .id(activity.ownerAccountId)
-        .byte(side(activity.side))
-        .uint(activity.price, 16)
-        .uint(activity.quantity, 16);
-      const tif = activity.timeInForce ?? 0;
-      if (!Number.isInteger(tif) || tif < 0 || tif > 3) {
-        throw new TradingPayloadError("non_canonical", "time in force");
-      }
-      data = encodeAbiCall(
-        "placeOrder",
-        ["bytes32", "bytes32", "uint8", "uint256", "uint256", "uint8"],
-        [
-          market,
-          `0x${activity.ownerAccountId}`,
-          BigInt(activity.side),
-          activity.price,
-          activity.quantity,
-          BigInt(tif),
-        ],
-      );
-      break;
-    }
-    case "position_open":
-      nonzero(activity.size, activity.marginAmount);
-      if (
-        (activity.entryNotional !== undefined &&
-          activity.entryNotional !== 0n) ||
-        (activity.positionId !== undefined &&
-          activity.positionId !== activity.marginAccountId)
-      ) {
-        throw new TradingPayloadError(
-          "non_canonical",
-          "position identity or entry notional",
-        );
-      }
-      new TradingWriter()
-        .id(activity.marketId)
-        .id(activity.marginAccountId)
-        .byte(side(activity.side))
-        .uint(activity.size, 16)
-        .uint(activity.marginAmount, 16);
-      data = encodeAbiCall(
-        "openPosition",
-        ["bytes32", "bytes32", "uint8", "uint256", "uint256"],
-        [
-          market,
-          `0x${activity.marginAccountId}`,
-          BigInt(activity.side),
-          activity.size,
-          activity.marginAmount,
-        ],
-      );
-      break;
-    case "position_increase":
-      if (
-        activity.notionalDelta !== undefined &&
-        activity.notionalDelta !== 0n
-      ) {
-        throw new TradingPayloadError(
-          "non_canonical",
-          "notional delta must be zero",
-        );
-      }
-      encodePerpsActivity({ ...activity, notionalDelta: 0n });
-      data = encodeAbiCall(
-        "increasePosition",
-        ["bytes32", "bytes32", "uint256", "uint256"],
-        [
-          market,
-          `0x${activity.positionId}`,
-          activity.sizeDelta,
-          activity.marginAmount,
-        ],
-      );
-      break;
-    case "adl": {
-      encodePerpsActivity(activity);
-      if (activity.positionIds.length > 16) {
-        throw new TradingPayloadError("length", "position count");
-      }
-      const writer = new TradingWriter()
-        .id(activity.marketId)
-        .uint(64n, 32)
-        .uint(BigInt(activity.positionIds.length), 32);
-      for (const id of activity.positionIds) {
-        writer.id(id);
-      }
-      data = abiSelector("adl(bytes32,bytes32[])") + tradingHex(writer.bytes());
-      break;
-    }
-    case "market_halt":
-      encodePerpsActivity(activity);
-      data = encodeAbiCall(
-        "setPerpsHalt",
-        ["bytes32", "bool"],
-        [market, activity.halted],
-      );
-      break;
-    case "order_cancel":
-      encodePerpsActivity(activity);
-      data = encodeAbiCall(
-        "cancelOrder",
-        ["bytes32", "bytes32"],
-        [market, `0x${activity.orderId}`],
-      );
-      break;
-    case "position_close":
-      encodePerpsActivity(activity);
-      data = encodeAbiCall(
-        "closePosition",
-        ["bytes32", "bytes32"],
-        [market, `0x${activity.positionId}`],
-      );
-      break;
-    case "funding_tick":
-      encodePerpsActivity(activity);
-      data = encodeAbiCall("fundingTick", ["bytes32"], [market]);
-      break;
-    case "liquidate":
-      encodePerpsActivity(activity);
-      data = encodeAbiCall(
-        "liquidate",
-        ["bytes32", "bytes32", "bytes32"],
-        [
-          market,
-          `0x${activity.positionId}`,
-          `0x${activity.liquidatorAccountId}`,
-        ],
-      );
-      break;
-    default:
-      throw new TradingPayloadError("unknown_activity");
-  }
-  return { to: LAYERX_EXCHANGE_PRECOMPILE, data, value: 0n };
+export type PerpsWrite = keyof typeof PERPS_WRITES;
+
+/**
+ * Builds a call of a perps precompile write. `method` is the canonical
+ * signature and the argument types come from precompiles/perps/abi/abi.json.
+ */
+export function perpsCall(method: PerpsWrite, args: readonly AbiArgument[]): PrecompileCall {
+  return precompileWriteCall(PERPS_PRECOMPILE, method, PERPS_WRITES[method], args);
 }
 
 const PERPS_LENGTHS: Readonly<Record<number, number>> = {

@@ -22,16 +22,18 @@ import {
   exchangePlaceOrderCall,
   exchangeRequestSettlementCall,
   exchangeWithdrawMarginCall,
+  LAUNCHPAD_WRITES,
   launchpadBuyCall,
+  launchpadCall,
   launchpadClaimFeesCall,
   launchpadCreateMarketCall,
+  launchpadNftCall,
   launchpadSellCall,
   launchpadSetFeeStrategyCall,
-  launchpadTokenCall,
   precompileEventSignature,
   precompileTransactionRequest,
   sendExchangeDepositMargin,
-  sendLaunchpadTokenWrite,
+  sendLaunchpadNftWrite,
   type Eip1193Requester,
   type PrecompileCall,
   type PrecompileEventSpec,
@@ -42,8 +44,20 @@ interface AbiEntry {
   readonly type: string;
   readonly name?: string;
   readonly stateMutability?: string;
-  readonly inputs?: readonly { readonly type: string; readonly indexed?: boolean; readonly name: string }[];
+  readonly inputs?: readonly AbiInput[];
 }
+
+interface AbiInput {
+  readonly type: string;
+  readonly indexed?: boolean;
+  readonly name: string;
+  readonly components?: readonly AbiInput[];
+}
+
+const canonical = (input: AbiInput): string =>
+  input.type.startsWith("tuple")
+    ? `(${(input.components ?? []).map(canonical).join(",")})${input.type.slice(5)}`
+    : input.type;
 
 function abi(directory: string): readonly AbiEntry[] {
   return JSON.parse(readFileSync(
@@ -66,16 +80,18 @@ const TOPICS: Readonly<Record<string, string>> = {
   SettlementRequested: "70d5b9c37994017669de2a991c65a88ebeb34999f37c6dc6d0c44462d57eb655",
   BridgeIn: "4352fb2e09bdaa35c4d407ce85dfa93eaec318876eddd6f5a490cce830c3f274",
   BridgeOut: "3e990eb54009dcdca53d8fa87307210f07097f37dcf6185dee71a42f8e7d524e",
-  AirdropClaimed: "d399c6e7fad358fc300beda3f056717c94a04c7233ce92683de6500ba509022e",
-  AirdropExecuted: "171b2f9dc7a4c7eaa8ca718bcac62fbec15d147f033f38e42971b7ccabe9a469",
-  FeeRecorded: "b4d4d3bd2f97a7d6f1657ee69f7191d7aa7dbd5b6864a2d7a9d14efc1322552f",
-  FeeStrategyChanged: "66c2a2c42cf36fad89e5da817a0b5de0fd78d7481cbfdc59f604148252da2261",
-  FeesBurned: "0d9575a73e2a7da16cfde907df749d23d901528ff2e7c832b731babdecca000b",
-  FeesClaimed: "fe3464cd748424446c37877c28ce5b700222c5bc9f90d908afcc4e5cb22707ff",
-  LpRewardsExecuted: "a9e7850d400945e0434ddd18a194aff01f31efaae577a63486c3dc865c5ab759",
-  MarketCreated: "d8ad483b7300b5831650c4747b4d85390539f25f7d7d8c635eb3f8147daf198e",
-  PauseToggled: "79a5bc58b021076f821571d0fe8b0ae3d9e0a666563bb064fdbf0bf69281331c",
-  Swap: "f3369c7e0aa652773c7246b5481ca4b1ee0b408d90467d2ce93b165b9938fde5",
+  ConfigUpdated: "2903b3642d2105b7fbd127326de888ab50e8d975bf819398337fb58407c1b10e",
+  FeeDistributed: "f7ab826cedf9d005102eddf95e65f43597aef36a55ff09ee4f452204c83f4afc",
+  FeeFlow: "626e3fd5d9323ca4b7ffa3ca51c21c02766b638d15eb8896a36a4e0e97ae6de4",
+  FeeStrategyChanged: "337fd9f9304e9da4c04886a5b8bf56e74032b459758212a860bc61d3544353dd",
+  MarketCreated: "b0a9c7605389f1127c2299d4a3ed85f0b2fc19894ab5411d76b453bb29f9f47b",
+  NftMint: "d2917d37031c0dfe5016665c7a83360cbf2ff32063096b2caf61ba66c06832e5",
+  NftTransfer: "021f03e8a1315704c74c03e8c022c12bc80c4a2bd4fec8bd36b217322c340ad3",
+  PoolRegistered: "da5568642b67660133b1de538c867c58f3037a5722b0e231a959ee8ca11b2ed7",
+  PoolStateUpdated: "8155a4b38a877d212b271811786986f8f7d78074c82fce4526c58defcc6d7ebd",
+  RouterTrade: "17c1899a3fd431f2b2200b90e738d270bb856a4222040c5650bfa208acb3b650",
+  Swap: "a234ab85728295548823d8a26077ecc77aa5815f9ed8f4c5e6fd390ac851d4cc",
+  TokenDeployed: "ad187874b793634c55d977f35d4828526eb48170a9531c71d88f8fd10cf9c237",
 };
 
 let declared = 0;
@@ -93,7 +109,7 @@ for (const [directory, specs] of sources) {
     declared += 1;
   }
 }
-assert.equal(declared, 17);
+assert.equal(declared, 19);
 
 const word = (value: bigint | number): string => BigInt(value).toString(16).padStart(64, "0");
 const id = (byte: string): string => `0x${byte.repeat(32)}`;
@@ -123,36 +139,48 @@ const writes: readonly (readonly [string, string, PrecompileCall, string, string
       + word(2) + word(64) + word(128) + word(2) + "0102".padEnd(64, "0") + word(33) + ("ee".repeat(33)).padEnd(128, "0")],
   ["layerxbridge", "bridgeOut(uint64,address,uint256,address)",
     bridgeOutCall(8n, address("dd"), 5n, address("ee")), LAYERX_BRIDGE_PRECOMPILE, word(8) + addressWord("dd") + word(5) + addressWord("ee")],
-  ["launchpad", "buy(address,uint256,uint256,address,uint256)",
-    launchpadBuyCall({ token: address("aa"), amountIn: 100n, minOut: 90n, recipient: address("bb"), deadline: 1700000000n }), LAUNCHPAD_PRECOMPILE,
-    addressWord("aa") + word(100) + word(90) + addressWord("bb") + word(1700000000)],
-  ["launchpad", "sell(address,uint256,uint256,address,uint256)",
-    launchpadSellCall({ token: address("aa"), amountIn: 100n, minOut: 90n, recipient: address("bb"), deadline: 1700000000n }), LAUNCHPAD_PRECOMPILE,
-    addressWord("aa") + word(100) + word(90) + addressWord("bb") + word(1700000000)],
-  ["launchpad", "createMarket(string,string,uint8)", launchpadCreateMarketCall("Paxeer Dog", "PDOG", 2), LAUNCHPAD_PRECOMPILE,
-    word(96) + word(160) + word(2) + text("Paxeer Dog") + text("PDOG")],
-  ["launchpad", "setFeeStrategy(address,uint8)", launchpadSetFeeStrategyCall(address("aa"), 1), LAUNCHPAD_PRECOMPILE, addressWord("aa") + word(1)],
-  ["launchpad", "claimFees(address,address)", launchpadClaimFeesCall(address("aa"), address("bb")), LAUNCHPAD_PRECOMPILE, addressWord("aa") + addressWord("bb")],
-  ...(["claimAirdrop", "executeAirdrop", "executeBurn", "executeLpRewards", "pause", "unpause"] as const).map(
-    (write) => ["launchpad", `${write}(address)`, launchpadTokenCall(write, address("aa")), LAUNCHPAD_PRECOMPILE, addressWord("aa")] as const,
+  ["launchpad", "buy(address,uint256,uint256,uint256)",
+    launchpadBuyCall({ pool: address("aa"), amountIn: 100n, minOut: 90n, deadline: 1700000000n }), LAUNCHPAD_PRECOMPILE,
+    addressWord("aa") + word(100) + word(90) + word(1700000000)],
+  ["launchpad", "sell(address,uint256,uint256,uint256)",
+    launchpadSellCall({ pool: address("aa"), amountIn: 100n, minOut: 90n, deadline: 1700000000n }), LAUNCHPAD_PRECOMPILE,
+    addressWord("aa") + word(100) + word(90) + word(1700000000)],
+  ["launchpad", "createMarket(string,string,uint8,address)", launchpadCreateMarketCall("Paxeer Dog", "PDOG", 2), LAUNCHPAD_PRECOMPILE,
+    word(128) + word(192) + word(2) + word(0) + text("Paxeer Dog") + text("PDOG")],
+  ["launchpad", "createMarket(string,string,uint8,address)", launchpadCreateMarketCall("Paxeer Dog", "PDOG", 2, address("cc")), LAUNCHPAD_PRECOMPILE,
+    word(128) + word(192) + word(2) + addressWord("cc") + text("Paxeer Dog") + text("PDOG")],
+  ["launchpad", "setFeeStrategy(uint256,uint8)", launchpadSetFeeStrategyCall(7n, 1), LAUNCHPAD_PRECOMPILE, word(7) + word(1)],
+  ["launchpad", "claimFees(uint256)", launchpadClaimFeesCall(7n), LAUNCHPAD_PRECOMPILE, word(7)],
+  ...(["claimAirdrop", "executeAirdrop", "executeBurn", "executeLpRewards"] as const).map(
+    (write) => ["launchpad", `${write}(uint256)`, launchpadNftCall(write, 7n), LAUNCHPAD_PRECOMPILE, word(7)] as const,
   ),
+  ["launchpad", "multicall(bytes[])", launchpadCall("multicall(bytes[])", [["0x0102"]]), LAUNCHPAD_PRECOMPILE,
+    word(32) + word(1) + word(32) + word(2) + "0102".padEnd(64, "0")],
+  ["launchpad", "buyWithPermit(address,uint256,uint256,uint256,(uint256,uint256,uint8,bytes32,bytes32))",
+    launchpadCall("buyWithPermit(address,uint256,uint256,uint256,(uint256,uint256,uint8,bytes32,bytes32))",
+      [address("aa"), 100n, 90n, 1700000000n, [5n, 1700000000n, 27n, id("31"), id("41")]]), LAUNCHPAD_PRECOMPILE,
+    addressWord("aa") + word(100) + word(90) + word(1700000000) + word(5) + word(1700000000) + word(27) + "31".repeat(32) + "41".repeat(32)],
 ];
 
 for (const [directory, signature, call, to, body] of writes) {
   assert.equal(call.to, to, signature);
   assert.equal(call.data, abiSelector(signature) + body, signature);
   assert.equal(call.value, signature.startsWith("depositMargin(") ? 7n : 0n, signature);
-  const name = signature.slice(0, signature.indexOf("("));
-  const entry = abi(directory).find((candidate) => candidate.type === "function" && candidate.name === name);
+  const entry = abi(directory).find((candidate) =>
+    candidate.type === "function" && `${candidate.name ?? ""}(${(candidate.inputs ?? []).map(canonical).join(",")})` === signature);
   assert.ok(entry, signature);
-  assert.equal(`${name}(${(entry.inputs ?? []).map((input) => input.type).join(",")})`, signature);
 }
+const launchpadWrites = new Set(abi("launchpad")
+  .filter((entry) => entry.type === "function" && entry.stateMutability !== "view" && entry.stateMutability !== "pure")
+  .map((entry) => `${entry.name ?? ""}(${(entry.inputs ?? []).map(canonical).join(",")})`));
+assert.deepEqual(new Set(Object.keys(LAUNCHPAD_WRITES)), launchpadWrites);
 for (const [directory] of sources) {
   const nonView = abi(directory).filter(
     (entry) => entry.type === "function" && entry.stateMutability !== "view" && entry.stateMutability !== "pure",
   );
   for (const entry of nonView) {
-    assert.ok(writes.some(([source, signature]) => source === directory && signature.startsWith(`${entry.name ?? ""}(`)), entry.name);
+    const signature = `${entry.name ?? ""}(${(entry.inputs ?? []).map(canonical).join(",")})`;
+    assert.ok(writes.some(([source, built]) => source === directory && built === signature) || (directory === "launchpad" && launchpadWrites.has(signature)), signature);
   }
 }
 assert.equal(abiSelector("transfer(address,uint256)"), "0xa9059cbb");
@@ -166,10 +194,10 @@ const wallet: Eip1193Requester = {
   },
 };
 assert.equal(await sendExchangeDepositMargin(wallet, from, id("51"), 255n), id("fe"));
-assert.equal(await sendLaunchpadTokenWrite(wallet, from, "pause", address("aa")), id("fe"));
+assert.equal(await sendLaunchpadNftWrite(wallet, from, "executeBurn", 9n), id("fe"));
 assert.deepEqual(sent, [
   { method: "eth_sendTransaction", params: [{ from, to: LAYERX_EXCHANGE_PRECOMPILE, data: abiSelector("depositMargin(bytes32)") + "51".repeat(32), value: "0xff" }] },
-  { method: "eth_sendTransaction", params: [{ from, to: LAUNCHPAD_PRECOMPILE, data: abiSelector("pause(address)") + addressWord("aa"), value: "0x0" }] },
+  { method: "eth_sendTransaction", params: [{ from, to: LAUNCHPAD_PRECOMPILE, data: abiSelector("executeBurn(uint256)") + word(9), value: "0x0" }] },
 ]);
 assert.deepEqual(precompileTransactionRequest(from, exchangeCancelOrderCall(id("31"))).params, [
   { from, to: LAYERX_EXCHANGE_PRECOMPILE, data: abiSelector("cancelOrder(bytes32)") + "31".repeat(32), value: "0x0" },
@@ -218,18 +246,20 @@ assert.deepEqual(bridgeOut.fields, { chain: 8n, asset: address("dd"), amount: 5n
 
 const created = decodeLaunchpadEvent({
   address: LAUNCHPAD_PRECOMPILE,
-  topics: [topic("MarketCreated"), `0x${addressWord("aa")}`, `0x${addressWord("12")}`],
-  data: `0x${word(128)}${word(192)}${word(256)}${word(2)}${text("factory/pdog")}${text("Paxeer Dog")}${text("PDOG")}`,
+  topics: [topic("MarketCreated"), id("a1"), `0x${addressWord("aa")}`, `0x${addressWord("12")}`],
+  data: `0x${addressWord("bb")}${addressWord("cc")}${word(1700000000)}${word(42)}`,
 });
-assert.deepEqual(created.fields, { token: address("aa"), creator: from, denom: "factory/pdog", name: "Paxeer Dog", symbol: "PDOG", feeStrategy: 2n });
-refused({
+assert.deepEqual(created.fields, { poolId: id("a1"), token: address("aa"), creator: from, pool: address("bb"), optical: address("cc"), timestamp: 1700000000n, blockNumber: 42n });
+const swapLog: PrecompileLog = {
   address: LAUNCHPAD_PRECOMPILE,
-  topics: [topic("PauseToggled"), `0x${addressWord("aa")}`],
-  data: `0x${word(2)}`,
-}, "non_canonical_word", decodeLaunchpadEvent);
-const swap = decodeLaunchpadEvent({
-  address: LAUNCHPAD_PRECOMPILE,
-  topics: [topic("Swap"), `0x${addressWord("aa")}`, `0x${addressWord("12")}`, `0x${addressWord("bb")}`],
-  data: `0x${word(1)}${word(100)}${word(95)}${word(1)}${word(7)}`,
+  topics: [topic("Swap"), id("a1"), `0x${addressWord("12")}`],
+  data: `0x${word(1)}${word(100)}${word(95)}${word(1)}${word(7)}${word(1700000000)}${word(42)}`,
+};
+assert.deepEqual(decodeLaunchpadEvent(swapLog).fields, {
+  poolId: id("a1"), sender: from, isBuy: true, amountIn: 100n, amountOut: 95n, fee: 1n, price: 7n, timestamp: 1700000000n, blockNumber: 42n,
 });
-assert.deepEqual(swap.fields, { token: address("aa"), trader: from, recipient: address("bb"), isBuy: true, amountIn: 100n, amountOut: 95n, feeAmount: 1n, price: 7n });
+refused({ ...swapLog, data: `0x${word(2)}${swapLog.data.slice(66)}` }, "non_canonical_word", decodeLaunchpadEvent);
+assert.throws(() => launchpadBuyCall({ pool: "0x12", amountIn: 1n, minOut: 1n, deadline: 1n }), PrecompileAbiError);
+assert.throws(() => launchpadCall("claimFees(uint256)", [1n], 1n), PrecompileAbiError);
+assert.throws(() => launchpadCall("claimFees(uint256)", []), PrecompileAbiError);
+assert.throws(() => launchpadSetFeeStrategyCall(1n, 256), PrecompileAbiError);

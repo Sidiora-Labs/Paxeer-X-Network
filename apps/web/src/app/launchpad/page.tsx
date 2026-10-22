@@ -120,6 +120,7 @@ export default async function LaunchpadPage({ searchParams }: Readonly<{ searchP
         quoteDenom={config?.quoteDenom ?? "quote"}
         markets={markets.map((market) => ({
           token: market.token,
+          pool: market.pool,
           label: `${market.name} (${market.symbol})`,
           paused: market.paused,
         }))}

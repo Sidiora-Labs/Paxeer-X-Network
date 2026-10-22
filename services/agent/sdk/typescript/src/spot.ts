@@ -12,10 +12,15 @@ import {
   type TradingId,
 } from "./perps.js";
 import {
-  LAYERX_EXCHANGE_PRECOMPILE,
-  encodeAbiCall,
+  PrecompileAbiError,
+  precompileWriteCall,
+  type AbiArgument,
   type PrecompileCall,
+  type PrecompileWrite,
 } from "./exchange.js";
+import { SPOT_PRECOMPILES, SPOT_WRITES } from "./generated/precompile-writes.js";
+
+export { SPOT_PRECOMPILES, SPOT_WRITES } from "./generated/precompile-writes.js";
 
 export const SPOT_MODULE_ID = 10;
 
@@ -63,15 +68,6 @@ export type SpotActivity =
   | { readonly activity: "market_halt"; readonly marketId: TradingId }
   | { readonly activity: "market_resume"; readonly marketId: TradingId };
 
-export type SpotCallActivity =
-  | Exclude<SpotActivity, { readonly activity: "order_place" }>
-  | (Omit<
-      Extract<SpotActivity, { readonly activity: "order_place" }>,
-      "orderId"
-    > & {
-      readonly orderId?: TradingId;
-    });
-
 function oneOrTwo(value: number, label: string): 1 | 2 {
   if (value !== 1 && value !== 2) {
     throw new TradingPayloadError("non_canonical", label);
@@ -80,7 +76,7 @@ function oneOrTwo(value: number, label: string): 1 | 2 {
 }
 
 function validateSpotOrder(
-  activity: Extract<SpotCallActivity, { readonly activity: "order_place" }>,
+  activity: Extract<SpotActivity, { readonly activity: "order_place" }>,
 ): void {
   const priced =
     activity.kind === 1
@@ -146,81 +142,27 @@ export function encodeSpotActivity(activity: SpotActivity): Uint8Array {
   return writer.bytes();
 }
 
-/** Builds the ABI call a spot activity submits to the exchange precompile. */
-export function buildSpotActivity(activity: SpotCallActivity): PrecompileCall {
-  let data: string;
-  switch (activity.activity) {
-    case "market_create":
-      encodeSpotActivity(activity);
-      data = encodeAbiCall(
-        "createSpotMarket",
-        ["bytes32", "bytes32", "bytes32", "bytes32", "uint256", "uint256"],
-        [
-          `0x${activity.marketId}`,
-          `0x${activity.baseAsset}`,
-          `0x${activity.quoteAsset}`,
-          `0x${activity.administrator}`,
-          activity.tickSize,
-          activity.lotSize,
-        ],
-      );
-      break;
-    case "order_place":
-      validateSpotOrder(activity);
-      new TradingWriter()
-        .id(activity.marketId)
-        .id(activity.baseAccountId)
-        .id(activity.quoteAccountId)
-        .byte(oneOrTwo(activity.side, "side"))
-        .byte(oneOrTwo(activity.kind, "kind"))
-        .byte(oneOrTwo(activity.timeInForce, "time in force"))
-        .uint(activity.price, 16)
-        .uint(activity.quantity, 16);
-      data = encodeAbiCall(
-        "placeSpotOrder",
-        [
-          "bytes32",
-          "bytes32",
-          "bytes32",
-          "uint8",
-          "uint8",
-          "uint8",
-          "uint256",
-          "uint256",
-        ],
-        [
-          `0x${activity.marketId}`,
-          `0x${activity.baseAccountId}`,
-          `0x${activity.quoteAccountId}`,
-          BigInt(activity.side),
-          BigInt(activity.kind),
-          BigInt(activity.timeInForce),
-          activity.price,
-          activity.quantity,
-        ],
-      );
-      break;
-    case "order_cancel":
-      encodeSpotActivity(activity);
-      data = encodeAbiCall(
-        "cancelSpotOrder",
-        ["bytes32", "bytes32"],
-        [`0x${activity.marketId}`, `0x${activity.orderId}`],
-      );
-      break;
-    case "market_halt":
-    case "market_resume":
-      encodeSpotActivity(activity);
-      data = encodeAbiCall(
-        "setSpotHalt",
-        ["bytes32", "bool"],
-        [`0x${activity.marketId}`, activity.activity === "market_halt"],
-      );
-      break;
-    default:
-      throw new TradingPayloadError("unknown_activity");
+export type SpotContract = keyof typeof SPOT_PRECOMPILES;
+
+export type SpotWrite<C extends SpotContract> = keyof (typeof SPOT_WRITES)[C] & string;
+
+/**
+ * Builds a call of a write of one PECOR spot precompile. `method` is the
+ * canonical signature and the argument types come from that contract's ABI
+ * under precompiles/spot/abi; `value` is native wei for a payable method.
+ */
+export function spotCall<C extends SpotContract>(
+  contract: C,
+  method: SpotWrite<C>,
+  args: readonly AbiArgument[],
+  value = 0n,
+): PrecompileCall {
+  const writes: Readonly<Record<string, PrecompileWrite>> = SPOT_WRITES[contract];
+  const write = writes[method];
+  if (write === undefined) {
+    throw new PrecompileAbiError("invalid_value", `${contract} has no ${method}`);
   }
-  return { to: LAYERX_EXCHANGE_PRECOMPILE, data, value: 0n };
+  return precompileWriteCall(SPOT_PRECOMPILES[contract], method, write, args, value);
 }
 
 const SPOT_LENGTHS: Readonly<Record<number, number>> = {

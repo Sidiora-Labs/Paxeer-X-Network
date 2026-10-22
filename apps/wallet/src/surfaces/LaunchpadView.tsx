@@ -29,7 +29,8 @@ export function LaunchpadView({ sidRate, legs, now = Date.now }: LaunchpadViewPr
     const fee = useFeeSelection(provider, address);
     const state = useModuleSend(surfaceModule, provider, address, fee);
     const [action, setAction] = useState<LaunchpadAction>('buy');
-    const [token, setToken] = useState('');
+    const [pool, setPool] = useState('');
+    const [nftId, setNftId] = useState('');
     const [amountIn, setAmountIn] = useState('');
     const [minOut, setMinOut] = useState('');
     const [deadlineMinutes, setDeadlineMinutes] = useState('10');
@@ -43,13 +44,12 @@ export function LaunchpadView({ sidRate, legs, now = Date.now }: LaunchpadViewPr
             switch (action) {
                 case 'buy':
                 case 'sell': {
-                    if (!token || !amountIn || !minOut) return null;
+                    if (!pool || !amountIn || !minOut) return null;
                     const buying = action === 'buy';
                     const order = {
-                        token,
+                        pool,
                         amountIn: buying ? parseUnits(amountIn, 18) : BigInt(amountIn),
                         minOut: buying ? BigInt(minOut) : parseUnits(minOut, 18),
-                        recipient: address,
                         deadline: BigInt(Math.floor(now() / 1000) + Number(deadlineMinutes) * 60),
                     };
                     return buying ? surfaceModule.buy(order) : surfaceModule.sell(order);
@@ -57,19 +57,20 @@ export function LaunchpadView({ sidRate, legs, now = Date.now }: LaunchpadViewPr
                 case 'create':
                     return name && symbol ? surfaceModule.createMarket(name, symbol, Number(feeStrategy)) : null;
                 case 'claim':
-                    return token ? surfaceModule.claimFees(token, address) : null;
+                    return nftId ? surfaceModule.claimFees(BigInt(nftId)) : null;
             }
         });
-    }, [surfaceModule, address, action, token, amountIn, minOut, deadlineMinutes, name, symbol, feeStrategy, now]);
+    }, [surfaceModule, address, action, pool, nftId, amountIn, minOut, deadlineMinutes, name, symbol, feeStrategy, now]);
 
     return (
         <SurfaceFrame title="Launchpad" connected={surfaceModule !== null}>
             <SegmentedControl label="Launchpad action" value={action} options={ACTIONS} onChange={setAction} />
-            {action !== 'create' && (
-                <TextField label="Token address" name="token" value={token} onChange={(e) => setToken(e.target.value)} />
+            {action === 'claim' && (
+                <TextField label="Fee NFT id" name="nftId" value={nftId} onChange={(e) => setNftId(e.target.value)} />
             )}
             {(action === 'buy' || action === 'sell') && (
                 <>
+                    <TextField label="Pool address" name="pool" value={pool} onChange={(e) => setPool(e.target.value)} />
                     <TextField
                         label={action === 'buy' ? 'Pay (PAX)' : 'Sell (token base units)'}
                         name="amountIn"

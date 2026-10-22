@@ -8,12 +8,12 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import {
   ADDR_PRECOMPILE_ADDRESS,
   AccountDerivationError,
-  LAYERX_EXCHANGE_PRECOMPILE,
+  SPOT_PRECOMPILES,
   TradingWriter,
   bindNonceCall,
   bindTransactionRequest,
   boundDidCall,
-  buildSpotActivity,
+  spotCall,
   deriveFromSeed,
   layerXBindMessage,
   layerXDidCall,
@@ -145,15 +145,11 @@ const fees: BindFees = {
   maxFeePerGas: 9n,
   gasLimit: 80_000n,
 };
-const call: PrecompileCall = buildSpotActivity({
-  activity: "market_create",
-  marketId: id(0x31),
-  baseAsset: id(0x32),
-  quoteAsset: id(0x33),
-  tickSize: 10n,
-  lotSize: 100n,
-  administrator: id(0x34),
-});
+const call: PrecompileCall = spotCall(
+  "pecor",
+  "marketBuy(address,address,uint256,uint256,uint256)",
+  [`0x${"31".repeat(20)}`, `0x${"32".repeat(20)}`, 1000n, 900n, 1700000000n],
+);
 
 /** Counts TradingWriter.transactionRequest, the only place TradingWriter.send creates a secp256k1 signature. */
 async function countingSignatures<T>(
@@ -221,7 +217,7 @@ test("TradingWriter.send signs and sends for the bound pair", async () => {
     result,
     `0x${hex(keccak_256(Buffer.from((expected.params[0] as string).slice(2), "hex")))}`,
   );
-  assert.equal(call.to, LAYERX_EXCHANGE_PRECOMPILE);
+  assert.equal(call.to, SPOT_PRECOMPILES.pecor);
   assert.deepEqual(chain.methods, [
     "eth_call",
     "eth_call",

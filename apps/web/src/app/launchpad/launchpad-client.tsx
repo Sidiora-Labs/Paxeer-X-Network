@@ -38,7 +38,7 @@ export function LaunchpadActions({
 }: Readonly<{
   account: string | undefined;
   quoteDenom: string;
-  markets: readonly Readonly<{ token: string; label: string; paused: boolean }>[];
+  markets: readonly Readonly<{ token: string; pool: string; label: string; paused: boolean }>[];
   feeStrategies: readonly string[];
 }>) {
   const router = useRouter();
@@ -82,14 +82,14 @@ export function LaunchpadActions({
   };
 
   const trade = () => {
-    if (account === undefined || quote === undefined || minOut === undefined || amountIn === undefined) {
+    const pool = markets.find((market) => market.token === token)?.pool;
+    if (account === undefined || pool === undefined || quote === undefined || minOut === undefined || amountIn === undefined) {
       return;
     }
     const order = {
-      token,
+      pool,
       amountIn,
       minOut,
-      recipient: account,
       deadline: BigInt(Math.floor(Date.now() / 1000)) + DEADLINE_SECONDS,
     };
     startTransition(async () => {

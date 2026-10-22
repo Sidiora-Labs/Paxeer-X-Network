@@ -48,26 +48,21 @@
   },
   "launchpad": {
     "buy": {
-      "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "pool": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "amountIn": "1000000000000000000",
       "minOut": "990000",
-      "recipient": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
       "deadline": "1900000000"
     },
     "sell": {
-      "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "pool": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "amountIn": "500000",
       "minOut": "400000000000000000",
-      "recipient": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
       "deadline": "1900000600"
     },
-    "createMarket": { "name": "Paxeer Dog", "symbol": "PDOG", "feeStrategy": 2 },
-    "setFeeStrategy": { "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "feeStrategy": 1 },
-    "claimFees": {
-      "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      "recipient": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
-    },
-    "tokenWrite": ["claimAirdrop", "executeAirdrop", "executeBurn", "executeLpRewards", "pause", "unpause"]
+    "createMarket": { "name": "Paxeer Dog", "symbol": "PDOG", "feeStrategy": 2, "optical": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a" },
+    "setFeeStrategy": { "nftId": "7", "feeStrategy": 1 },
+    "claimFees": { "nftId": "7" },
+    "nftWrite": ["claimAirdrop", "executeAirdrop", "executeBurn", "executeLpRewards"]
   },
   "feeToken": {
     "denom": "usid",
