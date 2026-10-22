@@ -50,6 +50,11 @@ tests
 !services/interop/Cargo.toml
 !services/platform/Cargo.toml
 !programs/Cargo.toml
+!programs/**
+!services/agent/**
+!include/**
+!src/**
+!services/platform/Makefile.inc
 !services/interop/Cargo.lock
 !services/agent/crates/layerx-agent-api/**
 !services/agent/crates/layerx-agentd/**
@@ -95,6 +100,7 @@ tests
 !services/agent/unsafe-allowlist.toml
 !contracts/config/checkpoint-settlement.json
 !services/interop/specs/vendor/x402/x402-specification-v2.md
+!spec/layerx-merge/contracts/address-table.md
 
 **/.env
 **/.env.*
@@ -142,3 +148,4 @@ tests
 **/*.zip
 **/.cache
 **/.cache/**
+!programs/vendor/**

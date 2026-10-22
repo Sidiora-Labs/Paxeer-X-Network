@@ -177,6 +177,15 @@ jobs:
       - name: Download modules
         run: go mod download
 
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install --yes build-essential libssl-dev
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.91.1 --profile minimal
+
+      - name: Build native libraries
+        run: make paxd-native-libs
+
       - name: Go test
         run: |
           set -euo pipefail
@@ -223,6 +232,18 @@ jobs:
       - name: Download modules
         if: github.event_name != 'merge_group'
         run: go mod download
+
+      - name: Install native dependencies
+        if: github.event_name != 'merge_group'
+        run: sudo apt-get update && sudo apt-get install --yes build-essential libssl-dev
+
+      - name: Install pinned Rust toolchain
+        if: github.event_name != 'merge_group'
+        run: rustup toolchain install 1.91.1 --profile minimal
+
+      - name: Build native libraries
+        if: github.event_name != 'merge_group'
+        run: make paxd-native-libs
 
       - name: Determine coverage packages (PR)
         id: cov-pkgs

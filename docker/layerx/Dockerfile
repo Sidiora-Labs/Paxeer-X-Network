@@ -4,7 +4,35 @@ FROM docker.io/golang:1.25.6-bookworm@sha256:2f768d462dbffbb0f0b3a5171009f162945
 ARG PAXCTL_VERSION
 RUN GOBIN=/usr/bin go install github.com/Paxeer-Network/paxctl@${PAXCTL_VERSION}
 
+# The LayerX kernel (C) and programs sandbox (Rust) static libraries that
+# modules/lxphost links through cgo, built by the root Makefile.
+FROM docker.io/rust:1.91.1-bookworm@sha256:c1e5f19e773b7878c3f7a805dd00a495e747acbdc76fb2337a4ebf0418896b33 AS native
+WORKDIR /src
+ENV RUSTUP_TOOLCHAIN=1.91.1
+COPY Makefile ./
+COPY tools/build/sanitizers.mk tools/build/
+COPY tools/paxeer-x/build tools/paxeer-x/build/
+COPY services/platform/Makefile.inc services/platform/
+COPY include include/
+COPY contracts/config/checkpoint-settlement.json contracts/config/
+COPY spec/layerx-merge/contracts/address-table.md spec/layerx-merge/contracts/
+COPY services/agent services/agent/
+COPY programs programs/
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    make programs-release-build
+COPY src src/
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    set -eu; \
+    make -j"$(nproc)" paxd-native-libs; \
+    mkdir -p /out/build/generated /out/programs/target/release; \
+    cp build/liblayerx.a /out/build/; \
+    cp build/generated/lxp_checkpoint_settlement.h /out/build/generated/; \
+    cp programs/target/release/liblayerx_programs_sandbox.a /out/programs/target/release/
+
 FROM docker.io/golang:1.25.6-bookworm@sha256:2f768d462dbffbb0f0b3a5171009f162945b086f326e0b2a8fd5d29c3219ff14 AS builder
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libssl-dev && \
+    rm -rf /var/lib/apt/lists/*
 WORKDIR /go/src/pax-chain
 
 ARG TARGETARCH
@@ -41,6 +69,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
 COPY . .
+COPY --from=native /out/ ./
 ENV CGO_ENABLED=1
 ARG PAX_CHAIN_REF=""
 ARG GO_BUILD_TAGS=""

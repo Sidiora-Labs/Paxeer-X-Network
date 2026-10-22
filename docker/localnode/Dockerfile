@@ -1,12 +1,13 @@
 FROM golang:1.25.6-bookworm AS go-dist
+FROM docker.io/rust:1.91.1-bookworm@sha256:c1e5f19e773b7878c3f7a805dd00a495e747acbdc76fb2337a4ebf0418896b33 AS rust-dist
 
 FROM ubuntu:24.04
-ENV HOME="/root" PATH="/root/go/bin:/pax-protocol/pax-chain/tests/integration/upgrade_module/scripts/:$PATH"
+ENV HOME="/root" RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo RUSTUP_TOOLCHAIN=1.91.1 PATH="/usr/local/cargo/bin:/root/go/bin:/pax-protocol/pax-chain/tests/integration/upgrade_module/scripts/:$PATH"
 RUN set -eux; \
     export DEBIAN_FRONTEND=noninteractive; \
     for attempt in 1 2 3 4 5; do \
       if apt-get -o Acquire::Retries=5 -o APT::Update::Error-Mode=any update && \
-         apt-get -o Acquire::Retries=5 install -y --no-install-recommends make build-essential git jq python3 curl ca-certificates vim uuid-runtime; then \
+         apt-get -o Acquire::Retries=5 install -y --no-install-recommends make build-essential libssl-dev git jq python3 curl ca-certificates vim uuid-runtime; then \
         update-ca-certificates; \
         rm -rf /var/lib/apt/lists/*; \
         break; \
@@ -18,6 +19,9 @@ RUN set -eux; \
       sleep $((attempt * 10)); \
     done
 COPY --from=go-dist /usr/local/go /usr/local/go
+COPY --from=rust-dist /usr/local/rustup /usr/local/rustup
+COPY --from=rust-dist /usr/local/cargo /usr/local/cargo
+RUN chmod -R a+rwX /usr/local/cargo
 RUN set -eux; \
     for attempt in 1 2 3 4 5; do \
       if curl -fsSL https://foundry.paradigm.xyz -o /tmp/foundry.sh && \

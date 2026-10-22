@@ -21,6 +21,13 @@ services/human
 hpx
 services/interop
 services/platform
-programs
 spec
 tools/qualification/output
+!services/platform/Makefile.inc
+!services/agent/**
+!spec/layerx-merge/contracts/address-table.md
+**/target
+**/node_modules
+!programs/vendor/**
+**/.env
+**/.env.*

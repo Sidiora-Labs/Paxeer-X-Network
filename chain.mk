@@ -89,16 +89,23 @@ BUILD_FLAGS_BENCHMARK := -tags "$(build_tags) benchmark mock_balances" -ldflags 
 
 all: lint install
 
-install: go.sum
+# paxd links the LayerX kernel (build/liblayerx.a) and the programs sandbox
+# (programs/target/release/liblayerx_programs_sandbox.a) through the cgo
+# directives in modules/lxphost; the root Makefile builds both.
+.PHONY: paxd-native-libs
+paxd-native-libs:
+	$(MAKE) -C $(PAXEER_PROJECT_HOME) -f Makefile paxd-native-libs
+
+install: go.sum paxd-native-libs
 		go install $(BUILD_FLAGS) ./daemon/paxd
 
-install-mock-balances: go.sum
+install-mock-balances: go.sum paxd-native-libs
 		go install $(BUILD_FLAGS_MOCK_BALANCES) ./daemon/paxd
 
-install-bench: go.sum
+install-bench: go.sum paxd-native-libs
 		go install $(BUILD_FLAGS_BENCHMARK) ./daemon/paxd
 
-install-with-race-detector: go.sum
+install-with-race-detector: go.sum paxd-native-libs
 		go install -race $(BUILD_FLAGS) ./daemon/paxd
 
 ###############################################################################
@@ -182,10 +189,10 @@ dblint:
 	GOPROXY=off go vet ./storage/...
 
 .PHONY: build build-verbose
-build:
+build: paxd-native-libs
 	go build $(BUILD_FLAGS) -o ./build/paxd ./daemon/paxd
 
-build-verbose:
+build-verbose: paxd-native-libs
 	go build -x -v $(BUILD_FLAGS) -o ./build/paxd ./daemon/paxd
 
 # build/ is shared with the LayerX root Makefile; remove only chain outputs.
@@ -548,7 +555,7 @@ TARGET_PACKAGE := github.com/Sidiora-Labs/Paxeer-X-Network/tests/occ
 
 split-test-packages:$(BUILDDIR)/packages.txt
 	split -d -n l/$(NUM_SPLIT) $< $<.
-test-group-%:split-test-packages
+test-group-%:split-test-packages paxd-native-libs
 	@echo "🔍 Checking for special package: $(TARGET_PACKAGE)"
 	@if grep -q "$(TARGET_PACKAGE)" $(BUILDDIR)/packages.txt.$*; then \
 		echo "🔒 Found $(TARGET_PACKAGE), running with -parallel=1"; \
