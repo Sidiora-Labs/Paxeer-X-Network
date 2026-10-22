@@ -273,6 +273,9 @@ func (k *Keeper) withdrawalClaim(ctx sdk.Context, evidence WithdrawalEvidence) (
 	if err != nil {
 		return pendingClaim{}, err
 	}
+	if exitBatch, frozen := k.ExitCheckpoint(ctx); frozen && header.BatchNumber > exitBatch {
+		return pendingClaim{}, sdkerrors.Wrapf(types.ErrExitFrozen, "batch %d is after forced-exit batch %d", header.BatchNumber, exitBatch)
+	}
 	recipient := common.Address(effect.Recipient)
 	return pendingClaim{
 		kind:         types.ClaimKind_CLAIM_KIND_WITHDRAWAL,
@@ -330,11 +333,14 @@ func (k *Keeper) FinaliseWithdrawal(ctx sdk.Context, evidence WithdrawalEvidence
 
 // ExitEligible is EmergencyExit.eligible: a finalized checkpoint exists and
 // either the authority declared an emergency or no checkpoint was finalized
-// within the liveness bound.
+// within the liveness bound. Once a forced exit is live, exits stay eligible.
 func (k *Keeper) ExitEligible(ctx sdk.Context) bool {
 	_, finalizedAt, ok := k.Anchor().LatestFinalizedBatch(ctx)
 	if !ok {
 		return false
+	}
+	if _, frozen := k.ExitCheckpoint(ctx); frozen {
+		return true
 	}
 	return k.GetEmergency(ctx) ||
 		ctx.BlockTime().Unix() >= finalizedAt+int64(k.GetParams(ctx).LivenessBoundSeconds) //nolint:gosec
@@ -350,8 +356,9 @@ func (k *Keeper) VerifyForcedExit(ctx sdk.Context, evidence ExitEvidence) (pendi
 	}
 	params := k.GetParams(ctx)
 	latest, _, _ := k.Anchor().LatestFinalizedBatch(ctx)
+	exitBatch, frozen := k.ExitCheckpoint(ctx)
 	stateRoot, ok := k.Anchor().FinalizedStateRoot(ctx, evidence.BatchNumber)
-	if !ok || evidence.BatchNumber != latest {
+	if !ok || (evidence.BatchNumber != latest && (!frozen || evidence.BatchNumber != exitBatch)) {
 		return pendingClaim{}, types.ErrNotFinalized
 	}
 	if len(evidence.RecipientSignature) != 64 || params.NetworkId == 0 {
@@ -388,6 +395,8 @@ func (k *Keeper) VerifyForcedExit(ctx sdk.Context, evidence ExitEvidence) (pendi
 // of the same account and asset has already taken. LayerX never debits an
 // exited balance, so every later state root still proves it; without this
 // deduction each newly finalized checkpoint would pay the same balance again.
+// Every forced exit is proven against the checkpoint of the first one, so a
+// balance moved on LayerX after it cannot be exited again by another account.
 func (k *Keeper) queueExit(ctx sdk.Context, pending pendingClaim) (types.Claim, error) {
 	if k.BalanceConsumed(ctx, pending.account, pending.assetID, pending.anchor) {
 		return types.Claim{}, types.ErrExitConsumed
@@ -395,6 +404,9 @@ func (k *Keeper) queueExit(ctx sdk.Context, pending pendingClaim) (types.Claim, 
 	remaining := new(big.Int).Sub(types.AmountInt(pending.amount), k.exitedAmount(ctx, pending.account, pending.assetID))
 	if remaining.Sign() <= 0 {
 		return types.Claim{}, types.ErrExitConsumed
+	}
+	if exitBatch, frozen := k.ExitCheckpoint(ctx); frozen && pending.batchNumber != exitBatch {
+		return types.Claim{}, sdkerrors.Wrapf(types.ErrExitCheckpoint, "batch %d, forced exits use batch %d", pending.batchNumber, exitBatch)
 	}
 	var amount [16]byte
 	remaining.FillBytes(amount[:])
@@ -421,6 +433,25 @@ func (k *Keeper) exitedAmount(ctx sdk.Context, account, assetID [32]byte) *big.I
 		return false
 	})
 	return total
+}
+
+// ExitCheckpoint is the batch of the first queued or paid forced exit. LayerX
+// never debits an exited balance, so from then on custody pays only against
+// that checkpoint: forced exits must prove it, and withdrawals included in a
+// later batch are refused, since their balance is still in that checkpoint.
+// A cancelled exit took nothing and does not count. Clearing the emergency
+// does not lift this; only a kernel debit of exited balances could.
+// ponytail: scans every claim, keep the batch in its own key if claims grow large.
+func (k *Keeper) ExitCheckpoint(ctx sdk.Context) (uint64, bool) {
+	var batch uint64
+	found := false
+	k.IterateClaims(ctx, func(claim types.Claim) bool {
+		if claim.Kind == types.ClaimKind_CLAIM_KIND_FORCED_EXIT && claim.Status != types.ClaimStatus_CLAIM_STATUS_CANCELLED {
+			batch, found = claim.BatchNumber, true
+		}
+		return found
+	})
+	return batch, found
 }
 
 // RequestForcedExit verifies the evidence, marks the balance consumed at its

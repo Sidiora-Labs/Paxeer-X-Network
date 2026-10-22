@@ -29,4 +29,6 @@ var (
 	ErrDepositRootProposer = sdkerrors.Register(ModuleName, 23, "deposit root registration is for the checkpoint proposer only")
 	ErrDepositRootExists   = sdkerrors.Register(ModuleName, 24, "deposit root already registered")
 	ErrGovernanceNotActive = sdkerrors.Register(ModuleName, 25, "custody governance execution is not active")
+	ErrExitCheckpoint      = sdkerrors.Register(ModuleName, 26, "forced exits are proven against the checkpoint of the first forced exit")
+	ErrExitFrozen          = sdkerrors.Register(ModuleName, 27, "withdrawals from batches after the forced-exit checkpoint are frozen")
 )

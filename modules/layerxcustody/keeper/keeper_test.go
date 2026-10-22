@@ -60,6 +60,14 @@ func vectorNumber(t *testing.T, v testvectors.Vector, key string) uint64 {
 
 func newEnv(t *testing.T, withdrawalDelay uint64) *env {
 	t.Helper()
+	e := newEnvWithoutCheckpoint(t, withdrawalDelay)
+	require.NoError(t, e.k.RegisterCheckpoint(e.ctx, vectorNumber(t, e.withdrawal, "batch_number"),
+		vectorArray(t, e.withdrawal, "header_state_root"), vectorArray(t, e.withdrawal, "header_receipt_root")))
+	return e
+}
+
+func newEnvWithoutCheckpoint(t *testing.T, withdrawalDelay uint64) *env {
+	t.Helper()
 	app := testkeeper.EVMTestApp
 	ctx, _ := app.NewContext(false, tmtypes.Header{}).WithBlockHeight(7).WithBlockTime(genesisTime).CacheContext()
 	fixture, err := testvectors.Load()
@@ -89,8 +97,6 @@ func newEnv(t *testing.T, withdrawalDelay uint64) *env {
 		Denom: sdk.MustGetBaseDenom(), Enabled: true}))
 	require.NoError(t, e.k.SetAsset(ctx, types.AssetMapping{AssetId: e.exit.Fields["asset"], Denom: tokenDenom,
 		Pointer: tokenPointer.Hex(), Enabled: true, MinimumDeposit: "10"}))
-	require.NoError(t, e.k.RegisterCheckpoint(ctx, batch, vectorArray(t, e.withdrawal, "header_state_root"),
-		vectorArray(t, e.withdrawal, "header_receipt_root")))
 	return e
 }
 
@@ -438,6 +444,77 @@ func TestForcedExitPaysABalanceOnceAcrossCheckpoints(t *testing.T) {
 	_, err = e.k.RequestForcedExit(e.ctx, again)
 	require.ErrorIs(t, err, types.ErrExitConsumed)
 	recipient := testkeeper.EVMTestApp.EvmKeeper.GetPaxAddressOrDefault(e.ctx, again.Recipient)
+	require.Equal(t, sdk.NewInt(5_000_000), e.balance(recipient, tokenDenom))
+	require.Equal(t, sdk.NewInt(6_000_000), e.balance(e.k.ModuleAddress(), tokenDenom))
+	e.solvent()
+}
+
+func TestForcedExitFreezesWithdrawalsFromLaterBatches(t *testing.T) {
+	e := newEnvWithoutCheckpoint(t, 0)
+	e.deposit(e.withdrawal.Fields["asset"], 1_000)
+	e.deposit(e.exit.Fields["asset"], 6_000_000)
+	withdrawalBatch := vectorNumber(t, e.withdrawal, "batch_number")
+	require.Positive(t, withdrawalBatch)
+	exitBatch := withdrawalBatch - 1
+	require.NoError(t, e.k.RegisterCheckpoint(e.ctx, exitBatch, vectorArray(t, e.exit, "state_root"), [32]byte{7}))
+	require.NoError(t, e.k.SetEmergency(e.ctx, true))
+	_, err := e.k.ExecuteForcedExit(e.ctx, e.exitEvidence(exitBatch))
+	require.NoError(t, err)
+
+	// A withdrawal included after the exit checkpoint spends a balance that
+	// checkpoint still holds, so it is refused, also after the emergency ends.
+	require.NoError(t, e.k.RegisterCheckpoint(e.ctx, withdrawalBatch, vectorArray(t, e.withdrawal, "header_state_root"),
+		vectorArray(t, e.withdrawal, "header_receipt_root")))
+	_, _, err = e.k.VerifyWithdrawal(e.ctx, e.evidence())
+	require.NoError(t, err, "the withdrawal proof itself is valid")
+	_, err = e.k.FinaliseWithdrawal(e.ctx, e.evidence())
+	require.ErrorIs(t, err, types.ErrExitFrozen)
+	_, err = e.k.RequestWithdrawal(e.ctx, e.evidence())
+	require.ErrorIs(t, err, types.ErrExitFrozen)
+	require.NoError(t, e.k.SetEmergency(e.ctx, false))
+	require.True(t, e.k.ExitEligible(e.ctx))
+	_, err = e.k.FinaliseWithdrawal(e.ctx, e.evidence())
+	require.ErrorIs(t, err, types.ErrExitFrozen)
+	require.True(t, e.balance(e.recipient(), sdk.MustGetBaseDenom()).IsZero())
+	require.Equal(t, sdk.NewInt(1_000), e.balance(e.k.ModuleAddress(), sdk.MustGetBaseDenom()))
+	e.solvent()
+}
+
+func TestForcedExitRefusesABalanceMovedToAnotherAccount(t *testing.T) {
+	e := newEnv(t, 0)
+	e.deposit(e.exit.Fields["asset"], 6_000_000)
+	e.deposit(e.exit.Fields["asset"], 5_000_000)
+	firstBatch := vectorNumber(t, e.withdrawal, "batch_number") + 1
+	require.NoError(t, e.k.RegisterCheckpoint(e.ctx, firstBatch, vectorArray(t, e.exit, "state_root"), [32]byte{7}))
+	require.NoError(t, e.k.SetEmergency(e.ctx, true))
+	_, err := e.k.ExecuteForcedExit(e.ctx, e.exitEvidence(firstBatch))
+	require.NoError(t, err)
+
+	// The undebited balance is moved on LayerX to another account, which
+	// proves it under the next finalized root, signed by its authority.
+	account := vectorArray(t, e.exit, "account")
+	other, err := codec.DeriveAccountID([]byte("agent:exit-lender:main"))
+	require.NoError(t, err)
+	witness := bytes.ReplaceAll(vectorBytes(t, e.exit, "witness"), account[:], other[:])
+	witness = bytes.ReplaceAll(witness, []byte("agent:exit-holder:main"), []byte("agent:exit-lender:main"))
+	decoded, err := codec.DecodeStateWitness(witness)
+	require.NoError(t, err)
+	root, err := decoded.Root()
+	require.NoError(t, err)
+	require.NoError(t, e.k.RegisterCheckpoint(e.ctx, firstBatch+1, root, [32]byte{8}))
+	moved := e.exitEvidence(firstBatch + 1)
+	moved.Account = other
+	moved.Witness = witness
+	moved.RecipientSignature = ed25519.Sign(ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x61}, 32)),
+		verify.ExitRecipientMessage(e.k.GetParams(e.ctx).NetworkId, other, moved.AssetID, moved.Recipient, root))
+	_, err = e.k.VerifyForcedExit(e.ctx, moved)
+	require.NoError(t, err, "the moved balance is a valid forced-exit proof under the new root")
+
+	_, err = e.k.ExecuteForcedExit(e.ctx, moved)
+	require.ErrorIs(t, err, types.ErrExitCheckpoint)
+	_, err = e.k.RequestForcedExit(e.ctx, moved)
+	require.ErrorIs(t, err, types.ErrExitCheckpoint)
+	recipient := testkeeper.EVMTestApp.EvmKeeper.GetPaxAddressOrDefault(e.ctx, moved.Recipient)
 	require.Equal(t, sdk.NewInt(5_000_000), e.balance(recipient, tokenDenom))
 	require.Equal(t, sdk.NewInt(6_000_000), e.balance(e.k.ModuleAddress(), tokenDenom))
 	e.solvent()
