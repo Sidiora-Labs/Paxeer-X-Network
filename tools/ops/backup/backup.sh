@@ -32,9 +32,28 @@ name="$BACKUP_PREFIX-$(date -u +%Y%m%dT%H%M%S.%NZ).tar.gz.age"
 dir=$(q "$BACKUP_DIR")
 n=$(q "$name")
 
-store "mkdir -p $dir && umask 077 && cat > $dir/$n.part && mv $dir/$n.part $dir/$n && cd $dir && sha256sum $n > $n.sha256" < <(
-  tar -czf - "${tar_args[@]}" | age -R "$BACKUP_RECIPIENTS_FILE"
-)
+# Stream into a .part file; every stage's status is checked before the archive is
+# published under its final name, and nothing is pruned unless that succeeded.
+set +e
+tar -czf - "${tar_args[@]}" | age -R "$BACKUP_RECIPIENTS_FILE" | store "mkdir -p $dir && umask 077 && cat > $dir/$n.part"
+rc=("${PIPESTATUS[@]}")
+set -e
+stages=(tar age upload) failed=
+# GNU tar exits 1 when a live file changed while read; the archive is still complete
+# enough to keep and is verified below. Exit 2 or higher is a real failure.
+if [ "${rc[0]}" -eq 1 ]; then
+  echo "backup: warning: tar stage exit 1 (file changed as we read it); keeping archive" >&2
+  rc[0]=0
+fi
+for i in 0 1 2; do
+  [ "${rc[$i]}" -eq 0 ] || failed+=" ${stages[$i]} (exit ${rc[$i]})"
+done
+if [ -n "$failed" ]; then
+  store "rm -f -- $dir/$n.part" || true
+  die "failed stage:$failed; no archive stored, nothing pruned"
+fi
+store "cd $dir && head -c 21 -- $n.part | grep -qx 'age-encryption.org/v1' && sha256sum -- $n.part | sed 's/\.part\$//' > $n.sha256.part && mv -- $n.part $n && mv -- $n.sha256.part $n.sha256 && sha256sum --quiet -c -- $n.sha256" ||
+  { store "rm -f -- $dir/$n.part $dir/$n.sha256.part $dir/$n $dir/$n.sha256" || true; die "verify failed; no archive stored, nothing pruned"; }
 
 p=$(q "$BACKUP_PREFIX")
 store "cd $dir && ls -1 -- $p-*.tar.gz.age | sort | head -n -$BACKUP_RETENTION | while read -r f; do rm -f -- \"\$f\" \"\$f.sha256\"; done"
