@@ -32,12 +32,16 @@ const MAX_RAW_TRANSACTION_BYTES: usize = 4 * 1024 * 1024;
 /// Chain JSON-RPC path under a router root configured without one.
 const CHAIN_RPC_PATH: &str = "/rpc";
 
-/// `intentNonce(address)` on the exchange precompile, answering `uint64`.
-const SELECTOR_INTENT_NONCE: [u8; 4] = [0x63, 0x4a, 0x23, 0x20];
-/// `isPaused()` on the bridge precompile, answering `bool`.
-const SELECTOR_IS_PAUSED: [u8; 4] = [0xb1, 0x87, 0xbd, 0x26];
-/// `getPoolCount()` on the launchpad precompile, answering `uint256`.
-const SELECTOR_GET_POOL_COUNT: [u8; 4] = [0x8e, 0xec, 0x5d, 0x70];
+/// The probe view of one surface: a no-argument view that the precompile
+/// serving the surface's address declares in its served ABI file.
+struct ProbeView {
+    signature: &'static str,
+    selector: [u8; 4],
+    /// The one return type, `uint256` or `bool`.
+    output: &'static str,
+    /// The served ABI file, relative to the repository root.
+    abi: &'static str,
+}
 
 /// One fork surface and the precompile that carries it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,13 +70,34 @@ impl Surface {
         }
     }
 
+    /// The probe table. 0x1015 serves the perpetuals precompile from the
+    /// v6.12.0 activation on, so the exchange surface is probed with its view.
+    const fn probe_view(self) -> ProbeView {
+        match self {
+            Self::Exchange => ProbeView {
+                signature: "totalMarkets()",
+                selector: [0x81, 0x62, 0x48, 0x6b],
+                output: "uint256",
+                abi: "precompiles/perps/abi/abi.json",
+            },
+            Self::Bridge => ProbeView {
+                signature: "isPaused()",
+                selector: [0xb1, 0x87, 0xbd, 0x26],
+                output: "bool",
+                abi: "precompiles/layerxbridge/abi.json",
+            },
+            Self::Launchpad => ProbeView {
+                signature: "getPoolCount()",
+                selector: [0x8e, 0xec, 0x5d, 0x70],
+                output: "uint256",
+                abi: "precompiles/launchpad/abi.json",
+            },
+        }
+    }
+
     /// Calldata of the cheap view the probe sends to this surface.
     fn probe_calldata(self) -> Vec<u8> {
-        match self {
-            Self::Exchange => evm::calldata_address(SELECTOR_INTENT_NONCE, &[0; 20]),
-            Self::Bridge => evm::calldata_empty(SELECTOR_IS_PAUSED),
-            Self::Launchpad => evm::calldata_empty(SELECTOR_GET_POOL_COUNT),
-        }
+        evm::calldata_empty(self.probe_view().selector)
     }
 
     /// Whether `answer` decodes as this surface's probe view return value.
@@ -81,10 +106,9 @@ impl Surface {
             return false;
         }
         let answer = evm::Answer::new(answer);
-        match self {
-            Self::Exchange => answer.u64(0).is_ok(),
-            Self::Bridge => answer.bool(0).is_ok(),
-            Self::Launchpad => answer.word(0).is_ok(),
+        match self.probe_view().output {
+            "bool" => answer.bool(0).is_ok(),
+            _ => answer.word(0).is_ok(),
         }
     }
 
@@ -517,7 +541,7 @@ mod tests {
     fn capabilities_probe_calls_each_surface_view_and_reads_a_decoded_answer_as_live() {
         assert_eq!(
             Surface::Exchange.probe_calldata(),
-            [&[0x63, 0x4a, 0x23, 0x20][..], &[0; 32]].concat()
+            vec![0x81, 0x62, 0x48, 0x6b]
         );
         assert_eq!(
             Surface::Bridge.probe_calldata(),
@@ -552,14 +576,12 @@ mod tests {
             }
         }
         assert!(!answers(Surface::Bridge, &json!({"result": word(2)})));
-        assert!(!answers(
-            Surface::Exchange,
-            &json!({"result": format!("0x01{}", "00".repeat(31))})
-        ));
-        assert!(answers(
-            Surface::Launchpad,
-            &json!({"result": format!("0x01{}", "00".repeat(31))})
-        ));
+        for surface in [Surface::Exchange, Surface::Launchpad] {
+            assert!(answers(
+                surface,
+                &json!({"result": format!("0x01{}", "00".repeat(31))})
+            ));
+        }
 
         let calls = Cell::new(0);
         let before = probe(recorded_node(false, &calls), 1_790_000_000)
@@ -617,7 +639,10 @@ mod tests {
 
     #[test]
     fn launchpad_probe_uses_get_pool_count() {
-        assert_eq!(SELECTOR_GET_POOL_COUNT, [0x8e, 0xec, 0x5d, 0x70]);
+        assert_eq!(
+            Surface::Launchpad.probe_view().selector,
+            [0x8e, 0xec, 0x5d, 0x70]
+        );
         assert_eq!(Surface::Launchpad.address(), evm::LAUNCHPAD_PRECOMPILE);
         assert_eq!(
             evm::address_hex(&evm::LAUNCHPAD_PRECOMPILE),
@@ -669,6 +694,111 @@ mod tests {
             assert!(!probed.launchpad, "{absent}");
         }
         assert_eq!(launchpad_calls.get(), 3);
+    }
+
+    #[test]
+    fn capabilities_probe_views_exist_in_the_served_abi_of_each_surface() {
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../../");
+        for surface in Surface::ALL {
+            let view = surface.probe_view();
+            let path = format!("{root}{}", view.abi);
+            let abi: Value = serde_json::from_slice(
+                &std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}")),
+            )
+            .unwrap_or_else(|e| panic!("{path}: {e}"));
+            let entries = abi
+                .as_array()
+                .unwrap_or_else(|| panic!("{path} is not an ABI"));
+            let found = entries.iter().find(|entry| {
+                let inputs = entry["inputs"].as_array().map_or(0, Vec::len);
+                entry["type"] == "function"
+                    && inputs == 0
+                    && entry["name"].as_str().map(|name| format!("{name}()"))
+                        == Some(view.signature.to_owned())
+            });
+            let entry = found.unwrap_or_else(|| {
+                panic!(
+                    "{} probe {} missing from {path}",
+                    surface.name(),
+                    view.signature
+                )
+            });
+            assert_eq!(entry["stateMutability"], "view", "{}", view.signature);
+            assert_eq!(
+                entry["outputs"].as_array().map(|outputs| outputs
+                    .iter()
+                    .map(|output| output["type"].clone())
+                    .collect::<Vec<_>>()),
+                Some(vec![json!(view.output)]),
+                "{}",
+                view.signature
+            );
+            let hash = layerx_indexer::abi::keccak(view.signature.as_bytes());
+            assert_eq!(view.selector, hash[..4], "{}", view.signature);
+            assert_eq!(surface.probe_calldata(), hash[..4], "{}", view.signature);
+        }
+    }
+
+    #[test]
+    fn capabilities_reverting_probe_marks_only_that_surface_absent() {
+        for reverting in Surface::ALL {
+            let calls = Cell::new(0);
+            let mut node = recorded_node(true, &calls);
+            let probed = probe(
+                |request: &Value| {
+                    if request["params"][0]["to"] == json!(evm::address_hex(&reverting.address())) {
+                        return Ok(json!({
+                            "jsonrpc": "2.0",
+                            "id": request["id"],
+                            "error": {"code": 3, "message": "execution reverted", "data": "0x"}
+                        }));
+                    }
+                    node(request)
+                },
+                1_790_000_090,
+            )
+            .unwrap_or_else(|code| panic!("{code}"));
+            for surface in Surface::ALL {
+                assert_eq!(
+                    probed.live(surface),
+                    surface != reverting,
+                    "{}",
+                    surface.name()
+                );
+            }
+            let params = submission(&eip1559(&reverting.address()));
+            let cache = Cache::new(Duration::from_secs(15));
+            let refused = gate_with(
+                &cache,
+                Instant::now(),
+                || Ok(probed.clone()),
+                &json!(1),
+                "eth_sendRawTransaction",
+                Some(&params),
+            )
+            .unwrap_or_else(|| panic!("{} write was relayed", reverting.name()));
+            assert_eq!(refused["error"]["data"]["surface"], reverting.name());
+            for surface in Surface::ALL
+                .into_iter()
+                .filter(|surface| *surface != reverting)
+            {
+                assert_eq!(
+                    gate_with(
+                        &cache,
+                        Instant::now(),
+                        || -> Result<Capabilities, &'static str> {
+                            panic!("the cached probe was not reused")
+                        },
+                        &json!(1),
+                        "eth_sendRawTransaction",
+                        Some(&submission(&eip1559(&surface.address()))),
+                    ),
+                    None,
+                    "{}",
+                    surface.name()
+                );
+            }
+        }
     }
 
     #[test]
