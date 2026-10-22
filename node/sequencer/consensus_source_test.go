@@ -44,8 +44,9 @@ type sourceHarness struct {
 
 // newSourceHarness builds the real App on the synchronous block path, funds the given accounts
 // (EVM-mapped), runs setup on the genesis context, writes the sequencer genesis with the test
-// receipt key pinned and the stored chain at sourceLastSeq, commits height 1, sets the
-// activation height and builds the executor, receipter and consensus source over them.
+// receipt key pinned and the stored chain at sourceLastSeq, records the merge plan as done at
+// activation-1 (never when activation is 0) so blocks from activation are sequenced, commits
+// height 1 and builds the executor, receipter and consensus source over them.
 func newSourceHarness(t *testing.T, activation int64, setup func(ctx sdk.Context, a *app.App), funded ...utils.TestAcct) *sourceHarness {
 	t.Helper()
 	app.EnableOCC = false
@@ -75,6 +76,9 @@ func newSourceHarness(t *testing.T, activation int64, setup func(ctx sdk.Context
 		LastSeq:     sourceLastSeq,
 		LastSeqHash: sourcePrevSeqHash,
 	}))
+	if activation > 0 {
+		a.UpgradeKeeper.SetDone(tw.Ctx.WithBlockHeight(activation-1), app.MergeUpgrade)
+	}
 	_, err := a.FinalizeBlock(context.Background(), &abci.RequestFinalizeBlock{
 		Header: &tmproto.Header{ChainID: testChainID, Height: committedTip},
 	})
@@ -82,7 +86,6 @@ func newSourceHarness(t *testing.T, activation int64, setup func(ctx sdk.Context
 	a.SetDeliverStateToCommit()
 	_, err = a.Commit(context.Background())
 	require.NoError(t, err)
-	require.NoError(t, a.SetActivationHeight(activation))
 
 	proposer := valPub.Address().Bytes()
 	exec, err := sequencer.NewExecutor(a, sequencer.Options{
@@ -245,13 +248,13 @@ func TestConsensusSourceBelowActivation(t *testing.T) {
 	h.open()
 	_, err := h.src.Seal(context.Background(), openHeight)
 	require.ErrorIs(t, err, sequencer.ErrNotSequenced)
-	require.EqualError(t, err, "sequencer: height is below the activation height: height 2, activation height 5")
+	require.EqualError(t, err, "sequencer: height is not sequenced: height 2")
 	require.Nil(t, h.src.Sealed())
 	_, err = h.exec.Snapshot()
 	require.NoError(t, err, "a refused seal leaves the open layer")
 
-	require.NoError(t, h.app.SetActivationHeight(0))
+	unmerged := newSourceHarness(t, 0, nil)
 	for _, height := range []int64{1, openHeight, activation, math.MaxInt64} {
-		require.False(t, h.src.Sequenced(height), "height %d", height)
+		require.False(t, unmerged.src.Sequenced(height), "height %d", height)
 	}
 }

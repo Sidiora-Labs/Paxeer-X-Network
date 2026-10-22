@@ -218,6 +218,7 @@ func TestUpgradesSequencerSwitchAtActivation(t *testing.T) {
 			require.False(t, pinned)
 			require.Equal(t, [32]byte{}, leader)
 		}
+		require.False(t, a.Sequenced(ctx, height))
 	}
 
 	a.UpgradeKeeper.ApplyUpgrade(ctx, upgradetypes.Plan{Name: MergeUpgrade, Height: mergeHeight, Info: activationInfo(t)})
@@ -228,9 +229,11 @@ func TestUpgradesSequencerSwitchAtActivation(t *testing.T) {
 	require.False(t, pinned)
 	require.Equal(t, [32]byte{}, leader)
 
-	// From H_act the leader is L[r mod len(L)], read from the module store with
-	// no node-config activation height set.
-	require.Zero(t, a.ActivationHeight())
+	// From H_act the leader is L[r mod len(L)], read from the module store. The
+	// block format reads the same state: H_act applies the plan unsequenced and
+	// every block after it carries the sequence batch.
+	require.False(t, a.Sequenced(ctx, mergeHeight))
+	require.True(t, a.Sequenced(ctx, mergeHeight+1))
 	cases := []struct {
 		height int64
 		round  int32

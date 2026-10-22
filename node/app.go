@@ -101,7 +101,6 @@ import (
 	ethrpc "github.com/ethereum/go-ethereum/rpc"
 	"github.com/holiman/uint256"
 	"github.com/paxeer-network/paxlog"
-	"github.com/spf13/cast"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
@@ -593,9 +592,6 @@ type App struct {
 
 	// openBlock is the sequencer executor's open block; nil in full-node mode.
 	openBlock OpenBlock
-
-	// activationHeight is the node-config height from which blocks are sequenced; 0 never.
-	activationHeight int64
 }
 
 type AppOption func(*App)
@@ -955,12 +951,6 @@ func New(
 		panic(fmt.Sprintf("error reading genesis import config due to %s", err))
 	}
 	app.genesisImportConfig = genesisImportConfig
-
-	activationHeight, err := ReadActivationHeight(appOpts)
-	if err != nil {
-		panic(fmt.Sprintf("error reading sequencer activation height due to %s", err))
-	}
-	app.activationHeight = activationHeight
 
 	epochModule := epochmodule.NewAppModule(appCodec, app.EpochKeeper, app.AccountKeeper, app.BankKeeper)
 
@@ -1544,9 +1534,9 @@ func (app *App) ProcessProposalHandler(ctx sdk.Context, req *abci.RequestProcess
 	// Start block processing timing (ends at FinalizeBlock)
 	app.StartBenchmarkBlockProcessing()
 
-	// From the activation height tx 0 is the sequence batch, decoded on its own; the gas check
+	// Once the merge plan is done tx 0 is the sequence batch, decoded on its own; the gas check
 	// covers the sequenced transactions behind it.
-	sequenced := app.Sequenced(req.Header.Height)
+	sequenced := app.Sequenced(ctx, req.Header.Height)
 	var batch seqtypes.MsgSequenceBatch
 	blockTxs := req.Txs
 	if sequenced {
@@ -2242,11 +2232,11 @@ func (app *App) ProcessBlock(ctx sdk.Context, txs [][]byte, req *BlockProcessReq
 	blockSpan.SetAttributes(attribute.Int64("height", req.Height))
 	ctx = ctx.WithTraceSpanContext(blockSpanCtx)
 
-	// From the activation height tx 0 is the sequence batch: it is applied after BeginBlock and
+	// Once the merge plan is done tx 0 is the sequence batch: it is applied after BeginBlock and
 	// the transactions behind it execute at their block positions.
 	firstTx := 0
 	var batch seqtypes.MsgSequenceBatch
-	if app.Sequenced(req.Height) {
+	if app.Sequenced(ctx, req.Height) {
 		if len(txs) == 0 {
 			return nil, nil, abci.ResponseEndBlock{}, seqtypes.ErrInvalidSequenceBatch.Wrapf("sequenced block %d has no sequence batch", req.Height)
 		}
@@ -3101,48 +3091,14 @@ const lxpModuleReservedCount uint16 = 11
 // kernel module set, so no kernel module id is reused.
 const EVMReceiptModuleID = lxpModuleReservedCount + 1
 
-// FlagSequencerActivationHeight is the node-config height from which every block carries
-// MsgSequenceBatch at tx 0 and takes its transactions from the sealed receipt order.
-const FlagSequencerActivationHeight = "sequencer.activation-height"
-
-// ErrSequencerActivationHeight refuses an activation height that is not a non-negative integer.
-var ErrSequencerActivationHeight = errors.New("sequencer config: invalid activation-height")
-
-// ReadActivationHeight reads the sequencer activation height from the node config; unset is 0,
-// which never activates.
-func ReadActivationHeight(opts servertypes.AppOptions) (int64, error) {
-	v := opts.Get(FlagSequencerActivationHeight)
-	if v == nil {
-		return 0, nil
-	}
-	height, err := cast.ToInt64E(v)
-	if err != nil {
-		return 0, fmt.Errorf("%w: %v", ErrSequencerActivationHeight, err)
-	}
-	if height < 0 {
-		return 0, fmt.Errorf("%w: %d is negative", ErrSequencerActivationHeight, height)
-	}
-	return height, nil
-}
-
-// ActivationHeight returns the sequencer activation height read from the node config; 0 never.
-func (app *App) ActivationHeight() int64 {
-	return app.activationHeight
-}
-
-// SetActivationHeight replaces the activation height read at New with height, read through
-// ReadActivationHeight. It is called before the node processes a block.
-func (app *App) SetActivationHeight(height int64) error {
-	if height < 0 {
-		return fmt.Errorf("%w: %d is negative", ErrSequencerActivationHeight, height)
-	}
-	app.activationHeight = height
-	return nil
-}
-
-// Sequenced reports whether the block at height is built from the sealed receipt order.
-func (app *App) Sequenced(height int64) bool {
-	return app.activationHeight > 0 && height >= app.activationHeight
+// Sequenced reports whether the block at height, executing on ctx, is built from the sealed
+// receipt order: the merge plan, which brings the sequencer module up, is done in ctx at a
+// height below it. It reads chain state, never node config, so every validator agrees; the
+// block that applies the plan is not sequenced, so a write of the plan by an optimistic run of
+// that block cannot change the answer for it.
+func (app *App) Sequenced(ctx sdk.Context, height int64) bool {
+	done := app.UpgradeKeeper.GetDoneHeight(ctx.WithGasMeter(sdk.NewInfiniteGasMeter(1, 1)), MergeUpgrade)
+	return done > 0 && height > done
 }
 
 // sequenceBatchDomain prefixes the tx 0 encoding of MsgSequenceBatch.

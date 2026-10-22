@@ -24,9 +24,9 @@ import (
 )
 
 // newSealBatchHarness builds the real App as node/app_test.go builds it on the synchronous block
-// path, funds the given accounts (EVM-mapped), pins the test receipt key, commits height 1,
-// activates the sequenced block at openHeight and builds a Sequential executor that continues
-// the empty stored sequence.
+// path, funds the given accounts (EVM-mapped), pins the test receipt key, records the merge
+// plan as done at height 1 so the block at openHeight is sequenced, commits height 1 and builds
+// a Sequential executor that continues the empty stored sequence.
 func newSealBatchHarness(t *testing.T, funded ...utils.TestAcct) *harness {
 	t.Helper()
 	app.EnableOCC = false
@@ -49,6 +49,7 @@ func newSealBatchHarness(t *testing.T, funded ...utils.TestAcct) *harness {
 		FirstHeight: 1,
 		LastHeight:  math.MaxUint64,
 	}}))
+	a.UpgradeKeeper.SetDone(tw.Ctx.WithBlockHeight(openHeight-1), app.MergeUpgrade)
 	_, err := a.FinalizeBlock(context.Background(), &abci.RequestFinalizeBlock{
 		Header: &tmproto.Header{ChainID: testChainID, Height: committedTip},
 	})
@@ -56,8 +57,7 @@ func newSealBatchHarness(t *testing.T, funded ...utils.TestAcct) *harness {
 	a.SetDeliverStateToCommit()
 	_, err = a.Commit(context.Background())
 	require.NoError(t, err)
-	require.NoError(t, a.SetActivationHeight(openHeight))
-	require.True(t, a.Sequenced(openHeight))
+	require.True(t, a.Sequenced(a.GetCheckCtx(), openHeight))
 
 	proposer := valPub.Address().Bytes()
 	exec, err := sequencer.NewExecutor(a, sequencer.Options{ChainID: testChainID, ProposerAddress: proposer})

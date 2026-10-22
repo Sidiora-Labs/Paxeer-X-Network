@@ -22,20 +22,14 @@ import (
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/tests/occ/utils"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 )
 
-// resolutionActivate reads activation height from a node config and applies it to a.
-func resolutionActivate(t *testing.T, a *app.App, height int64) {
-	t.Helper()
-	opts := viper.New()
-	opts.Set(app.FlagSequencerActivationHeight, height)
-	read, err := app.ReadActivationHeight(opts)
-	require.NoError(t, err)
-	require.Equal(t, height, read)
-	require.NoError(t, a.SetActivationHeight(read))
-	require.Equal(t, height, a.ActivationHeight())
+// resolutionMerged runs resolutionBlockGas and records the merge plan as done at the genesis
+// height, so the block at openHeight is sequenced.
+func resolutionMerged(ctx sdk.Context, a *app.App) {
+	resolutionBlockGas(ctx, a)
+	a.UpgradeKeeper.SetDone(ctx, app.MergeUpgrade)
 }
 
 // resolutionBatch signs the MsgSequenceBatch of a sealed batch with the test receipt key and
@@ -153,7 +147,7 @@ func TestResolutionReceiptModuleId(t *testing.T) {
 func TestResolutionBatchInjection(t *testing.T) {
 	sender := utils.NewSigner()
 	recipient := utils.NewSigner().EvmAddress
-	rh := newReceiptHarness(t, 0, resolutionBlockGas, sender)
+	rh := newReceiptHarness(t, 0, resolutionMerged, sender)
 	ids := make([][32]byte, 0, 40)
 	for nonce := range uint64(40) {
 		signed, bz := transfer(t, sender, nonce, recipient, big.NewInt(1))
@@ -182,7 +176,6 @@ func TestResolutionBatchInjection(t *testing.T) {
 	require.Equal(t, root[:], decoded.TxRoot)
 	require.Equal(t, batch.LastSeqHash[:], decoded.LastSeqHash)
 
-	resolutionActivate(t, rh.app, openHeight)
 	at := time.UnixMilli(batch.TimestampMs).UTC()
 	require.Equal(t, abci.ResponseProcessProposal_ACCEPT, resolutionProposal(t, rh.app, openHeight, at, block))
 
@@ -326,8 +319,7 @@ func TestResolutionStandbyReplay(t *testing.T) {
 
 	// A validator replica at the same committed state accepts the standby's proposal.
 	_, batchTx := resolutionBatch(t, batch, resolutionTxRoot(ids))
-	validator := newReceiptHarness(t, 0, resolutionBlockGas, sender)
-	resolutionActivate(t, validator.app, openHeight)
+	validator := newReceiptHarness(t, 0, resolutionMerged, sender)
 	require.Equal(t, abci.ResponseProcessProposal_ACCEPT, resolutionProposal(t, validator.app, openHeight,
 		time.UnixMilli(batch.TimestampMs).UTC(), append([][]byte{batchTx}, batch.Txs...)))
 }
@@ -335,31 +327,22 @@ func TestResolutionStandbyReplay(t *testing.T) {
 func TestResolutionActivationHeight(t *testing.T) {
 	sender := utils.NewSigner()
 	h := newHarness(t, sender)
-	require.Equal(t, int64(0), h.app.ActivationHeight())
-	require.False(t, h.app.Sequenced(1))
-	require.False(t, h.app.Sequenced(1_000_000))
+	ctx := h.app.GetCheckCtx()
+	require.False(t, h.app.Sequenced(ctx, 1))
+	require.False(t, h.app.Sequenced(ctx, 1_000_000))
 
-	unset, err := app.ReadActivationHeight(viper.New())
-	require.NoError(t, err)
-	require.Equal(t, int64(0), unset)
-	for _, bad := range []any{int64(-1), "height"} {
-		opts := viper.New()
-		opts.Set(app.FlagSequencerActivationHeight, bad)
-		_, err := app.ReadActivationHeight(opts)
-		require.ErrorIs(t, err, app.ErrSequencerActivationHeight)
-	}
-	require.ErrorIs(t, h.app.SetActivationHeight(-1), app.ErrSequencerActivationHeight)
-
-	resolutionActivate(t, h.app, 1000)
-	require.False(t, h.app.Sequenced(999))
-	require.True(t, h.app.Sequenced(1000))
-	require.True(t, h.app.Sequenced(1001))
+	// The block that applies the merge plan is not sequenced; every block after it is.
+	h.app.UpgradeKeeper.SetDone(ctx.WithBlockHeight(999), app.MergeUpgrade)
+	require.False(t, h.app.Sequenced(ctx, 998))
+	require.False(t, h.app.Sequenced(ctx, 999))
+	require.True(t, h.app.Sequenced(ctx, 1000))
+	require.True(t, h.app.Sequenced(ctx, 1001))
 }
 
 func TestResolutionProposalSource(t *testing.T) {
 	sender := utils.NewSigner()
 	recipient := utils.NewSigner().EvmAddress
-	rh := newReceiptHarness(t, 0, resolutionBlockGas, sender)
+	rh := newReceiptHarness(t, 0, resolutionMerged, sender)
 	ids := make([][32]byte, 0, 3)
 	for nonce := range uint64(3) {
 		signed, bz := transfer(t, sender, nonce, recipient, big.NewInt(1))
@@ -371,14 +354,14 @@ func TestResolutionProposalSource(t *testing.T) {
 	_, batchTx := resolutionBatch(t, batch, resolutionTxRoot(ids))
 	at := time.UnixMilli(batch.TimestampMs).UTC()
 
-	// Below the activation height the proposal is the reaped transactions, with no batch.
-	resolutionActivate(t, rh.app, openHeight+1)
-	require.False(t, rh.app.Sequenced(openHeight))
-	require.Equal(t, abci.ResponseProcessProposal_ACCEPT, resolutionProposal(t, rh.app, openHeight, at, batch.Txs))
+	// On a replica that has not applied the merge plan the proposal is the reaped transactions,
+	// with no batch.
+	unmerged := newReceiptHarness(t, 0, resolutionBlockGas, sender)
+	require.False(t, unmerged.app.Sequenced(unmerged.app.GetCheckCtx(), openHeight))
+	require.Equal(t, abci.ResponseProcessProposal_ACCEPT, resolutionProposal(t, unmerged.app, openHeight, at, batch.Txs))
 
-	// From the activation height it is the sealed slice behind its batch; a reaped block is refused.
-	resolutionActivate(t, rh.app, openHeight)
-	require.True(t, rh.app.Sequenced(openHeight))
+	// Once the merge plan is done it is the sealed slice behind its batch; a reaped block is refused.
+	require.True(t, rh.app.Sequenced(rh.app.GetCheckCtx(), openHeight))
 	require.Equal(t, abci.ResponseProcessProposal_REJECT, resolutionProposal(t, rh.app, openHeight, at, batch.Txs))
 	require.Equal(t, abci.ResponseProcessProposal_REJECT, resolutionProposal(t, rh.app, openHeight, at, nil))
 	require.Equal(t, abci.ResponseProcessProposal_ACCEPT,

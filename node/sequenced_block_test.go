@@ -77,11 +77,14 @@ func initSequencerGenesis(t *testing.T, w *app.TestWrapper, genesis json.RawMess
 	w.App.InitChainer(w.Ctx, abci.RequestInitChain{AppStateBytes: appState})
 }
 
+// activate writes the sequencer genesis and records the merge plan as done at height 1, so the
+// block processBlock runs at height 2 is the first sequenced block.
 func activate(t *testing.T, w *app.TestWrapper) {
 	t.Helper()
 	initSequencerGenesis(t, w, activationGenesis(t))
-	require.NoError(t, w.App.SetActivationHeight(1))
-	require.True(t, w.App.Sequenced(w.Ctx.BlockHeight()))
+	w.App.UpgradeKeeper.SetDone(w.Ctx, app.MergeUpgrade)
+	require.False(t, w.App.Sequenced(w.Ctx, w.Ctx.BlockHeight()))
+	require.True(t, w.App.Sequenced(w.Ctx, w.Ctx.BlockHeight()+1))
 }
 
 // evmTransfer funds from and returns a signed one-wei EVM transfer to to and its hash.
@@ -119,10 +122,11 @@ func txRootOf(hashes ...common.Hash) []byte {
 	return root.Sum(nil)
 }
 
-// signedBatch encodes tx 0 for height 1 signed by the test receipt key.
+// signedBatch encodes tx 0 for height 2, the block processBlock runs, signed by the test
+// receipt key.
 func signedBatch(t *testing.T, fromSeq, toSeq uint64, prev, last, txRoot, keyID []byte) []byte {
 	t.Helper()
-	return signedBatchAt(t, 1, sequencerKeySeed, fromSeq, toSeq, prev, last, txRoot, keyID)
+	return signedBatchAt(t, 2, sequencerKeySeed, fromSeq, toSeq, prev, last, txRoot, keyID)
 }
 
 // signedBatchAt encodes tx 0 for height signed by the ed25519 key of seed.
@@ -145,9 +149,28 @@ func signedBatchAt(t *testing.T, height uint64, seed []byte, fromSeq, toSeq uint
 	return bz
 }
 
+// processBlock commits the block of w.Ctx with the state written so far, finalizes txs as the
+// next block and moves w.Ctx onto that block's state.
 func processBlock(w *app.TestWrapper, txs [][]byte) ([]*abci.ExecTxResult, error) {
-	_, results, _, err := w.App.ProcessBlock(w.Ctx, txs, &app.BlockProcessRequest{Height: w.Ctx.BlockHeight()}, abci.CommitInfo{}, false, nil)
-	return results, err
+	height, at := w.Ctx.BlockHeight(), w.Ctx.BlockTime()
+	if _, err := w.App.FinalizeBlock(context.Background(), &abci.RequestFinalizeBlock{
+		Header: &tmproto.Header{ChainID: sequencedChainID, Height: height, Time: at},
+	}); err != nil {
+		return nil, err
+	}
+	w.App.SetDeliverStateToCommit()
+	if _, err := w.App.Commit(context.Background()); err != nil {
+		return nil, err
+	}
+	resp, err := w.App.FinalizeBlock(context.Background(), &abci.RequestFinalizeBlock{
+		Txs:    txs,
+		Header: &tmproto.Header{ChainID: sequencedChainID, Height: height + 1, Time: at.Add(2 * time.Second)},
+	})
+	w.Ctx = w.App.GetContextForDeliverTx(nil)
+	if err != nil {
+		return nil, err
+	}
+	return resp.TxResults, nil
 }
 
 func requireSequencerState(t *testing.T, w *app.TestWrapper, lastSeq uint64, lastSeqHash []byte) {
@@ -200,7 +223,7 @@ func TestSequencedBlockDeliversBatchAtTxZero(t *testing.T) {
 	t.Run("below activation", func(t *testing.T) {
 		w := newSequencerWrapper(t, tm, valPub, false)
 		initSequencerGenesis(t, w, activationGenesis(t))
-		require.False(t, w.App.Sequenced(w.Ctx.BlockHeight()))
+		require.False(t, w.App.Sequenced(w.Ctx, w.Ctx.BlockHeight()+1))
 		tx1, hash1 := evmTransfer(t, w, alice, toAlice)
 		tx2, hash2 := evmTransfer(t, w, bob, toBob)
 
@@ -440,7 +463,7 @@ func TestSequencedBlockReceiptKeyRotation(t *testing.T) {
 		t.Helper()
 		w := newSequencerWrapper(t, tm, valPub, false)
 		initSequencerGenesis(t, w, activationGenesis(t))
-		require.NoError(t, w.App.SetActivationHeight(h2))
+		w.App.UpgradeKeeper.SetDone(w.Ctx.WithBlockHeight(h2-1), app.MergeUpgrade)
 		tx, hash := evmTransfer(t, w, alice, to)
 		_, err := w.App.FinalizeBlock(context.Background(), &abci.RequestFinalizeBlock{
 			Header: &tmproto.Header{ChainID: sequencedChainID, Height: h2 - 1, Time: tm},
@@ -454,7 +477,7 @@ func TestSequencedBlockReceiptKeyRotation(t *testing.T) {
 		_, err = w.App.Commit(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, int64(h2-1), w.App.LastBlockHeight())
-		require.True(t, w.App.Sequenced(h2))
+		require.True(t, w.App.Sequenced(w.App.GetCheckCtx(), h2))
 		return w, tx, hash
 	}
 

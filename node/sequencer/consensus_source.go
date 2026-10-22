@@ -14,8 +14,8 @@ import (
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
-// ErrNotSequenced refuses a seal below the activation height.
-var ErrNotSequenced = errors.New("sequencer: height is below the activation height")
+// ErrNotSequenced refuses a seal of a block that is not sequenced.
+var ErrNotSequenced = errors.New("sequencer: height is not sequenced")
 
 var _ tmtypes.SequencerSource = (*ConsensusSource)(nil)
 
@@ -37,9 +37,10 @@ func NewConsensusSource(a *app.App, exec Executor, key *ReceiptKey) (*ConsensusS
 	return &ConsensusSource{app: a, exec: exec, key: key}, nil
 }
 
-// Sequenced reports whether height is at or above the activation height.
+// Sequenced reports whether the block at height is sequenced, read from the committed state
+// the next block executes on.
 func (s *ConsensusSource) Sequenced(height int64) bool {
-	return s.app.Sequenced(height)
+	return s.app.Sequenced(s.app.GetCheckCtx(), height)
 }
 
 // Sealed returns L_N of the last Seal, or nil before the first.
@@ -56,8 +57,8 @@ func (s *ConsensusSource) Seal(ctx context.Context, height int64) (tmtypes.Seale
 	if err := ctx.Err(); err != nil {
 		return tmtypes.SealedBlock{}, err
 	}
-	if !s.app.Sequenced(height) {
-		return tmtypes.SealedBlock{}, fmt.Errorf("%w: height %d, activation height %d", ErrNotSequenced, height, s.app.ActivationHeight())
+	if !s.Sequenced(height) {
+		return tmtypes.SealedBlock{}, fmt.Errorf("%w: height %d", ErrNotSequenced, height)
 	}
 	keyID, err := s.key.KeyID(height)
 	if err != nil {
