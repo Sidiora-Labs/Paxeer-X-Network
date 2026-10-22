@@ -133,12 +133,12 @@ describe("position write planners", () => {
   });
 
   it("planCloseSendsClosePositionWithParamsAndNeverApproves", () => {
-    const input = { positionId: 7n, isLong: true, sizeUsd: 1_000n * E18, exitPrice: 61_000n * E18 };
+    const input = { positionId: 7n, isLong: true, exitPrice: 61_000n * E18 };
     const plan = planClose(input);
     assert.deepEqual(plan, [buildClosePosition(input)]);
     assert.equal(plan[0].address, PERPS);
     assert.equal(plan[0].functionName, "closePositionWithParams");
-    assert.deepEqual(plan[0].args, [7n, 1_000n * E18, 60_695n * E18, BigInt(REFERENCE_SECONDS + 60)]);
+    assert.deepEqual(plan[0].args, [7n, 0n, 60_695n * E18, BigInt(REFERENCE_SECONDS + 60)]);
   });
 
   it("planPartialCloseBoundsTheChosenSize", () => {

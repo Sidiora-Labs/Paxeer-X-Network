@@ -439,7 +439,7 @@ describe("v6120Invariants", () => {
       leverage: 5n * E18,
       quote: { entryPrice, sizeUsd: 50n * E18 },
     });
-    const close = calls.buildClosePosition({ positionId: 7n, isLong: true, sizeUsd: 2_000n * E18, exitPrice });
+    const close = calls.buildClosePosition({ positionId: 7n, isLong: true, exitPrice });
     const partial = calls.buildPartialClose({ positionId: 8n, isLong: false, closeSizeUsd: 1_000n * E18, exitPrice });
     const after = BigInt(Math.floor(Date.now() / 1000));
     const inWindow = (deadline: bigint) => deadline >= before + window && deadline <= after + window;

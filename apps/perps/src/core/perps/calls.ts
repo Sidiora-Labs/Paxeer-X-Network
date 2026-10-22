@@ -46,6 +46,8 @@ export type AccountState = ContractFunctionReturnType<PerpsAbi, "view", "getAcco
 const USDL: Address = COLLATERAL_TOKENS.usdl.address;
 const ONE_X = 10n ** 18n;
 const NO_CLOID: Hex = "0x00000000000000000000000000000000";
+/** closePositionWithParams closeSizeUsd 0 closes the whole position at execution, whatever the mark. */
+const FULL_CLOSE: bigint = 0n;
 const CLOID_RE = /^0x[0-9a-fA-F]{32}$/;
 const MAX_LADDER_ID = 1n << 96n;
 const MAX_RUNG = 2 ** 32;
@@ -217,8 +219,6 @@ export function buildAddSize(input: AddSizeInput) {
 export interface ClosePositionInput {
   positionId: bigint;
   isLong: boolean;
-  /** The position size, 18 decimals. */
-  sizeUsd: bigint;
   /** quoteClosePosition exitPrice, 18 decimals. */
   exitPrice: bigint;
 }
@@ -226,7 +226,7 @@ export interface ClosePositionInput {
 export function buildClosePosition(input: ClosePositionInput) {
   return call("closePositionWithParams", [
     input.positionId,
-    requirePositive(input.sizeUsd),
+    FULL_CLOSE,
     acceptablePrice(input.exitPrice, input.isLong, "close"),
     marketDeadline(),
   ] as const);

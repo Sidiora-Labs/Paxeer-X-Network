@@ -146,10 +146,10 @@ describe("position writes", () => {
   });
 
   it("closeLongBoundRoundsDown", () => {
-    const c = buildClosePosition({ positionId: 7n, isLong: true, sizeUsd: 2_000n * E18, exitPrice: 96_000n * E18 });
+    const c = buildClosePosition({ positionId: 7n, isLong: true, exitPrice: 96_000n * E18 });
     assert.equal(c.address, PERPS);
     assert.equal(c.functionName, "closePositionWithParams");
-    assert.deepEqual(c.args, [7n, 2_000n * E18, 95_520n * E18, 1_000_060n]);
+    assert.deepEqual(c.args, [7n, 0n, 95_520n * E18, 1_000_060n]);
     encodes(c);
   });
 
@@ -443,7 +443,7 @@ describe("refusals", () => {
     assert.throws(() => buildDeposit(0n), invalid);
     assert.throws(() => buildWithdraw(0n), invalid);
     assert.throws(() => buildPartialClose({ positionId: 7n, isLong: true, closeSizeUsd: 0n, exitPrice: E18 }), invalid);
-    assert.throws(() => buildClosePosition({ positionId: 7n, isLong: true, sizeUsd: 2_000n * E18, exitPrice: 0n }), invalid);
+    assert.throws(() => buildClosePosition({ positionId: 7n, isLong: true, exitPrice: 0n }), invalid);
     let reads = 0;
     return assert.rejects(
       buildDepositPlan(0n, async () => {

@@ -95,7 +95,7 @@ export function usePosition() {
   async function closePosition(positionId: bigint) {
     const position = await getPositionRecord(positionId);
     const { exitPrice } = await quoter.quoteClosePosition(positionId);
-    return sendPlan(planClose({ positionId, isLong: position.isLong, sizeUsd: position.sizeUsd, exitPrice }));
+    return sendPlan(planClose({ positionId, isLong: position.isLong, exitPrice }));
   }
 
   /** Close `closeSizeUsd` (18 decimals) at the quotePartialClose exit price bound. */

@@ -447,7 +447,7 @@ describe("e2eLocalNode", () => {
     const { exitPrice } = await h.quoter.quoteClosePosition(positionId);
     const restReceipts = await sendAll(
       h,
-      h.writes.planClose({ positionId, isLong: rest.isLong, sizeUsd: rest.sizeUsd, exitPrice }),
+      h.writes.planClose({ positionId, isLong: rest.isLong, exitPrice }),
     );
     const restClosed = parseEventLogs({
       abi: h.PerpsPrecompileABI,
