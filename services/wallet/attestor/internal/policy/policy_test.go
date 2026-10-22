@@ -378,3 +378,69 @@ func TestLoadFile(t *testing.T) {
 		t.Fatal("short selector accepted")
 	}
 }
+
+func TestShippedPolicyAllowsWalletLaunchpadWrites(t *testing.T) {
+	doc, err := LoadFile(filepath.Join("..", "..", "..", "deploy", "attestor-policy.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := evm.PrecompileABI("launchpad")
+	if err != nil {
+		t.Fatal(err)
+	}
+	launchpad, _ := evm.PrecompileAddress("launchpad")
+	want := map[string]bool{}
+	for _, sig := range []string{
+		"buy(address,uint256,uint256,uint256)",
+		"sell(address,uint256,uint256,uint256)",
+		"createMarket(string,string,uint8,address)",
+		"setFeeStrategy(uint256,uint8)",
+		"claimFees(uint256)",
+		"claimAirdrop(uint256)",
+		"executeAirdrop(uint256)",
+		"executeBurn(uint256)",
+		"executeLpRewards(uint256)",
+	} {
+		method, err := contract.MethodById(crypto.Keccak256([]byte(sig))[:4])
+		if err != nil || method.Sig != sig {
+			t.Fatalf("launchpad abi has no %s: %v", sig, err)
+		}
+		want["0x"+common.Bytes2Hex(method.ID)] = true
+	}
+	var shipped []string
+	for destination, list := range doc.Defaults.Selectors {
+		if common.HexToAddress(destination) == launchpad {
+			shipped = list
+		}
+	}
+	got := map[string]bool{}
+	for _, selector := range shipped {
+		got[strings.ToLower(selector)] = true
+	}
+	if len(got) != len(shipped) || len(got) != len(want) {
+		t.Fatalf("shipped launchpad selectors %v, want the wallet writes %v", shipped, want)
+	}
+	for selector := range want {
+		if !got[selector] {
+			t.Fatalf("shipped launchpad selectors %v miss %s", shipped, selector)
+		}
+	}
+
+	h := newHarness(t)
+	h.policy = New(doc)
+	buy, err := contract.Pack("buy", common.HexToAddress(sidiora), big.NewInt(10), big.NewInt(9), big.NewInt(1_900_000_000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, h.policy.Evaluate(testAccount, h.tx(t, launchpad, big.NewInt(0), buy), h.ledger), CodeAllowed)
+
+	other := contract.Methods["claimAirdrop0"]
+	if other.Sig != "claimAirdrop(address,address)" {
+		t.Fatalf("launchpad abi overload is %s", other.Sig)
+	}
+	unlisted, err := contract.Pack(other.Name, common.HexToAddress(friend), common.HexToAddress(sidiora))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, h.policy.Evaluate(testAccount, h.tx(t, launchpad, big.NewInt(0), unlisted), h.ledger), CodeSelectorNotAllowed)
+}
