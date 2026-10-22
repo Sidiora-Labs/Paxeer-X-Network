@@ -189,26 +189,6 @@ railway_service = "indexer"
 health = "/healthz"
 order = 11
 
-[service.oracle-feeder]
-target = "box"
-image = "kernel"
-box_role = "oracle-feeder"
-box_unit = "layerx-oracle-feeder.service"
-health = "/readyz"
-order = 12
-
-# Perps keeper: sender key handle LAYERX_PERPS_KEEPER, resolved by the shared
-# keystore-or-KMS EVM sender loader (key file or KMS handle, selected by env).
-# Its sender address is listed in the gas-station registered_senders before
-# the first start; its wave follows the sequencer units, the gas station and
-# the oracle feeder.
-[service.perps-keeper]
-target = "railway"
-image = "perps-keeper"
-railway_service = "perps-keeper"
-health = "/healthz"
-order = 13
-
 [service.explorer-index]
 target = "box"
 image = "kernel"

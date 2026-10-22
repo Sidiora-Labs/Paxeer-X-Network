@@ -1335,10 +1335,6 @@ dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
  "k256",
- "layerx-crypto",
- "layerx-platform-internal",
- "layerx-types",
- "layerx-wire",
  "rustls-native-certs",
  "serde",
  "serde_json",
@@ -1387,17 +1383,6 @@ dependencies = [
  "layerx-wire",
  "rustls",
  "sha3",
-]
-
-[[package]]
-name = "layerx-perps-keeper"
-version = "0.1.0"
-dependencies = [
- "layerx-platform-internal",
- "rustls-native-certs",
- "serde",
- "serde_json",
- "ureq",
 ]
 
 [[package]]
@@ -1611,14 +1596,6 @@ dependencies = [
  "subtle",
  "ureq",
  "zeroize",
-]
-
-[[package]]
-name = "layerx-platform-sdkgen"
-version = "0.1.0"
-dependencies = [
- "layerx-platform-kvx",
- "sha2 0.10.9",
 ]
 
 [[package]]

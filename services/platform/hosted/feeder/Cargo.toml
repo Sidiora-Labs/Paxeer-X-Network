@@ -6,10 +6,6 @@ rust-version.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "layerx-oracle-feeder"
-path = "src/main.rs"
-
-[[bin]]
 name = "price-sidecar"
 path = "src/bin/price-sidecar/main.rs"
 
@@ -17,18 +13,12 @@ path = "src/bin/price-sidecar/main.rs"
 base64 = "=0.22.1"
 ed25519-dalek.workspace = true
 k256 = { version = "=0.13.4", default-features = false, features = ["ecdsa", "std"] }
-layerx-platform-internal.workspace = true
-layerx-types.workspace = true
-layerx-wire.workspace = true
 rustls-native-certs.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }
 sha2.workspace = true
 ureq.workspace = true
 zeroize.workspace = true
-
-[dev-dependencies]
-layerx-crypto.workspace = true
 
 [lints]
 workspace = true

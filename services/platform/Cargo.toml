@@ -19,7 +19,6 @@ members = [
     "hosted/dashboard",
     "hosted/testnet",
     "hosted/feeder",
-    "hosted/perps-keeper",
     "hosted/ai-evaluator",
     "tools/kvx",
     "tools/workspace-gate",
