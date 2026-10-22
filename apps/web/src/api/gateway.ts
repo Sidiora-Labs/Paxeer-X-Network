@@ -10,6 +10,7 @@ const DID = /^did:layerx:[0-9a-f]{64}$/u;
 const DECIMAL = /^(0|[1-9][0-9]*)$/u;
 const CURSOR = /^[0-9a-f]{32}$/u;
 const KIND = /^[a-z0-9_]{1,64}$/u;
+const ROW_ID = /^(explorer:)?[1-9][0-9]*$/u;
 const QUANTITY = /^0x[0-9a-fA-F]{1,64}$/u;
 const DATA = /^0x(?:[0-9a-fA-F]{2})*$/u;
 const HASH = /^0x[0-9a-fA-F]{64}$/u;
@@ -256,7 +257,7 @@ export async function pxResolveAccount(account: string): Promise<ResolvedAccount
 export type HistoryChain = "layerx" | "paxeer";
 
 export interface HistoryRow {
-  readonly id: bigint;
+  readonly id: string;
   readonly heightOrSeq: bigint;
   readonly chain: HistoryChain;
   readonly kind: string;
@@ -308,6 +309,13 @@ function decimalOf(value: unknown): bigint {
   return BigInt(value);
 }
 
+function rowIdOf(value: unknown): string {
+  if (typeof value !== "string" || !ROW_ID.test(value)) {
+    throw new GatewayUnavailableError("history answered a malformed row id");
+  }
+  return value;
+}
+
 function textOf(value: unknown): string {
   if (typeof value !== "string" || value.length === 0 || value.length > 256) {
     throw new GatewayUnavailableError("history answered malformed text");
@@ -329,7 +337,7 @@ function historyRow(value: unknown, unified: boolean): HistoryRow {
   const metadata = isObject(value.asset_metadata) ? value.asset_metadata : null;
   const decimals = metadata?.decimals;
   return {
-    id: decimalOf(value.id),
+    id: rowIdOf(value.id),
     heightOrSeq: decimalOf(value.height_or_seq),
     chain: chainOf(value.chain),
     kind: value.kind,

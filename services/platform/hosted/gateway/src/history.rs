@@ -410,8 +410,9 @@ fn join_assets(
     Ok(())
 }
 
-/// One page of the merged history of `accounts`, each tagged with the side
-/// it answers for. A single account's page and cursor are the indexer's own;
+/// One page of the merged history of `accounts`, each row tagged with the
+/// side it answers for when `tagged` (every `px_getUnifiedHistory` page,
+/// whichever branch serves it). A single account's page and cursor are the indexer's own;
 /// several accounts are merged in the indexer's own row order (position,
 /// ordinal, indexed before imported, row id) with each row tagged by
 /// `side`. Rows sharing the last position of a merged page stay together,
@@ -422,7 +423,13 @@ pub(super) fn history(
     registry: &dyn Fn() -> Vec<Value>,
     accounts: &[(&'static str, String)],
     query: &Query,
+    tagged: bool,
 ) -> Result<Value, Failure> {
+    let tag = |side: &str, item: &mut Value| {
+        if let Some(row) = item.as_object_mut().filter(|_| tagged) {
+            row.insert("side".to_owned(), json!(side));
+        }
+    };
     let limit = usize::try_from(query.limit).unwrap_or(usize::MAX);
     let mut indexed: Option<Option<u64>> = None;
     let mut lowest = |height: Option<u64>| {
@@ -431,11 +438,18 @@ pub(super) fn history(
             Some(seen) => seen.zip(height).map(|(seen, height)| seen.min(height)),
         });
     };
-    let (mut items, next_cursor): (Vec<Value>, Option<String>) = if let [(_, account)] = accounts {
+    let (mut items, next_cursor): (Vec<Value>, Option<String>) = if let [(side, account)] = accounts
+    {
         let page = page(source, account, query)?;
         lowest(page.indexed_height);
         (
-            page.items.into_iter().map(|(_, item)| item).collect(),
+            page.items
+                .into_iter()
+                .map(|(_, mut item)| {
+                    tag(side, &mut item);
+                    item
+                })
+                .collect(),
             page.next_cursor,
         )
     } else {
@@ -446,9 +460,7 @@ pub(super) fn history(
             lowest(page.indexed_height);
             more |= page.next_cursor.is_some();
             for (key, mut item) in page.items {
-                if let Some(row) = item.as_object_mut() {
-                    row.insert("side".to_owned(), json!(side));
-                }
+                tag(side, &mut item);
                 merged.entry(key).or_insert(item);
             }
         }
@@ -535,7 +547,8 @@ fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> 
         indexer,
         client: Some(&config.client),
     };
-    let mut result = match history(&source, &|| registry(config), &accounts, &query) {
+    let unified = method == "px_getUnifiedHistory";
+    let result = match history(&source, &|| registry(config), &accounts, &query, unified) {
         Ok(result) => result,
         Err(Failure::Refused(body)) => return refusal(id, -32602, "Invalid params", body),
         Err(Failure::Unavailable(code)) => {
@@ -557,11 +570,30 @@ fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> 
         Ok(height) => height,
         Err(code) => return refusal(id, -32001, "History unavailable", json!({"code": code})),
     };
+    let result = envelope(
+        result,
+        chain_height,
+        freshness,
+        document,
+        unified.then_some(&accounts[..]),
+    );
+    json!({"jsonrpc": "2.0", "id": id, "result": result})
+}
+
+/// A history page with the chain height, indexer freshness and account
+/// document, plus the merged `accounts` of a unified page.
+fn envelope(
+    mut result: Value,
+    chain_height: u64,
+    freshness: Value,
+    document: Value,
+    accounts: Option<&[(&'static str, String)]>,
+) -> Value {
     if let Some(object) = result.as_object_mut() {
         object.insert("chainHeight".to_owned(), json!(chain_height));
         object.insert("freshness".to_owned(), freshness);
         object.insert("account".to_owned(), document);
-        if method == "px_getUnifiedHistory" {
+        if let Some(accounts) = accounts {
             let sides: Vec<Value> = accounts
                 .iter()
                 .map(|(side, account)| json!({"side": side, "account": account}))
@@ -569,7 +601,7 @@ fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> 
             object.insert("accounts".to_owned(), Value::Array(sides));
         }
     }
-    json!({"jsonrpc": "2.0", "id": id, "result": result})
+    result
 }
 
 /// The record kinds `px_listHolderRecords` lists, as the indexer names them.
@@ -1040,6 +1072,7 @@ mod tests {
             &registry,
             accounts,
             query,
+            accounts.len() > 1,
         )
         .unwrap_or_else(|failure| panic!("{failure:?}"))
     }
@@ -1103,6 +1136,7 @@ mod tests {
             &registry,
             &[("layerx", ALICE.to_owned())],
             &query(Some(cursor), 10, None),
+            false,
         ) {
             Err(Failure::Refused(body)) => body["error"]["code"].clone(),
             other => panic!("cursor {cursor} answered {other:?}"),
@@ -1528,6 +1562,7 @@ mod tests {
                 &registry,
                 &[("layerx", ALICE.to_owned())],
                 &query(None, 10, None),
+                false,
             ),
             Err(Failure::Unavailable("indexer_unreachable"))
         );
@@ -1684,6 +1719,57 @@ mod tests {
         );
         assert_eq!(ids(&resolved), vec![3, 6, 9, 11]);
         assert_eq!(resolved, direct);
+    }
+
+    /// The `px_getUnifiedHistory` answer the web client test consumes,
+    /// recorded from this read over the loopback indexer store; set
+    /// `RECORD_UNIFIED_HISTORY_FIXTURE` to record it again.
+    #[test]
+    fn unified_history_single_account_tags_side_and_matches_the_web_fixture() {
+        let indexer = indexer();
+        let accounts = [("paxeer", EVE.to_owned())];
+        let page = history(
+            &Source {
+                indexer: &indexer,
+                client: None,
+            },
+            &registry,
+            &accounts,
+            &query(None, 100, None),
+            true,
+        )
+        .unwrap_or_else(|failure| panic!("{failure:?}"));
+        assert_eq!(ids(&page), vec![3, 6, 9, 11]);
+        for item in items(&page) {
+            assert_eq!(item["side"], json!("paxeer"), "{item}");
+        }
+        let untagged = read(&indexer, &accounts, &query(None, 100, None));
+        assert!(items(&untagged)
+            .iter()
+            .all(|item| item.get("side").is_none()));
+        let freshness = raw(&indexer, "/readyz", "");
+        assert!(readiness_status(&freshness).is_some(), "{freshness}");
+        let answer = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": envelope(page, 12, freshness, json!({"evm_address": EVE}), Some(&accounts)),
+        });
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../../apps/web/e2e/fixtures/px-get-unified-history.json");
+        if std::env::var_os("RECORD_UNIFIED_HISTORY_FIXTURE").is_some() {
+            let text =
+                serde_json::to_string_pretty(&answer).unwrap_or_else(|error| panic!("{error}"));
+            std::fs::write(&fixture, text + "\n").unwrap_or_else(|error| panic!("{error}"));
+        }
+        let mut recorded: Value = serde_json::from_str(
+            &std::fs::read_to_string(&fixture).unwrap_or_else(|error| panic!("{error}")),
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+        assert!(readiness_status(&recorded["result"]["freshness"]).is_some());
+        let mut answer = answer;
+        recorded["result"]["freshness"] = Value::Null;
+        answer["result"]["freshness"] = Value::Null;
+        assert_eq!(recorded, answer);
     }
 
     #[test]

@@ -31,28 +31,27 @@ registerHooks({
 
 const gateway = await import("../src/api/gateway.ts");
 
-const ADDRESS = `0x${"ab".repeat(20)}`;
 const POSITION = "00000000000000070000000100000002";
 
-function row(height: number) {
-  return {
-    id: "41",
-    height_or_seq: String(height),
-    chain: "paxeer",
-    kind: "erc20_transfer",
-    direction: "in",
-    account: ADDRESS,
-    counterparty: null,
-    asset: "0x00000000000000000000000000000000000000cd",
-    asset_metadata: { symbol: "SID", decimals: 18 },
-    amount: "1000",
-    tx_id: `0x${"11".repeat(32)}`,
-    final: true,
-    side: "paxeer",
-    blockHeight: height,
-    txIndex: 1,
-    logIndex: 2,
+// Recorded from the gateway's px_getUnifiedHistory read over the loopback
+// indexer store (history::tests in the gateway); the gateway test fails when
+// this file stops matching what the gateway answers.
+const recorded = JSON.parse(
+  readFileSync(new URL("./fixtures/px-get-unified-history.json", import.meta.url), "utf8"),
+) as {
+  result: {
+    account: { evm_address: string };
+    items: Record<string, unknown>[];
+    next_cursor: string | null;
+    indexedHeight: number | null;
+    chainHeight: number;
   };
+};
+const ADDRESS = recorded.result.account.evm_address;
+
+/** The recorded rows as px_getHistory serves them: without the unified side. */
+function paxeerRows(): Record<string, unknown>[] {
+  return recorded.result.items.map(({ side: _side, ...item }) => item);
 }
 
 async function body(request: IncomingMessage): Promise<{ id: string; method: string; params: unknown[] }> {
@@ -93,13 +92,14 @@ async function serving(
 test("px_getHistory pages by the position cursor and keeps positions and heights", async () => {
   await serving(
     () => ({
-      items: [row(7)],
+      items: paxeerRows(),
       next_cursor: POSITION,
-      indexedHeight: 9,
-      chainHeight: 12,
+      indexedHeight: recorded.result.indexedHeight,
+      chainHeight: recorded.result.chainHeight,
     }),
     async (calls) => {
       const page = await gateway.paxeerHistory(ADDRESS.toUpperCase().replace("0X", "0x"), { cursor: POSITION });
+      assert.ok(page.items.every((item) => item.side === null));
       assert.deepEqual(calls, [
         {
           method: "px_getHistory",
@@ -107,14 +107,55 @@ test("px_getHistory pages by the position cursor and keeps positions and heights
         },
       ]);
       assert.equal(page.nextCursor, POSITION);
-      assert.equal(page.indexedHeight, 9);
+      assert.equal(page.indexedHeight, 12);
       assert.equal(page.chainHeight, 12);
       assert.deepEqual(
         page.items.map((item) => [item.blockHeight, item.txIndex, item.logIndex]),
-        [[7, 1, 2]],
+        [
+          [10, 0, 0],
+          [11, 0, 0],
+          [12, 0, 0],
+          [12, 1, 0],
+        ],
       );
       await gateway.paxeerHistory(ADDRESS, { cursor: "cursor_next_page" });
       assert.equal(calls[1]?.params[1], null);
+    },
+  );
+});
+
+test("px_getUnifiedHistory reads the recorded gateway answer with side on every row", async () => {
+  await serving(
+    () => recorded.result,
+    async (calls) => {
+      const page = await gateway.unifiedHistory(ADDRESS);
+      assert.deepEqual(calls, [
+        {
+          method: "px_getUnifiedHistory",
+          params: [ADDRESS, null, gateway.HISTORY_PAGE_LIMIT, null],
+        },
+      ]);
+      assert.equal(page.nextCursor, null);
+      assert.equal(page.indexedHeight, 12);
+      assert.equal(page.chainHeight, 12);
+      assert.deepEqual(
+        page.items.map((item) => [item.id, item.side, item.chain, item.kind, item.direction]),
+        [
+          ["3", "paxeer", "paxeer", "native_transfer", "out"],
+          ["6", "paxeer", "paxeer", "pointer_transfer", "in"],
+          ["9", "paxeer", "paxeer", "bank_transfer", "out"],
+          ["11", "paxeer", "paxeer", "erc20_transfer", "in"],
+        ],
+      );
+      assert.deepEqual(
+        page.items.map((item) => [item.assetSymbol, item.assetDecimals, item.amount]),
+        [
+          [null, 18, 1000000000000000000n],
+          ["LXP", 6, 3n],
+          [null, null, 2n],
+          [null, null, 4n],
+        ],
+      );
     },
   );
 });
@@ -124,7 +165,7 @@ test("history refuses a non-position cursor, a missing position and a bare nativ
     (method) =>
       method === "px_getUnifiedHistory"
         ? {
-            items: [{ ...row(3), blockHeight: undefined }],
+            items: [{ ...recorded.result.items[0], blockHeight: undefined }],
             next_cursor: null,
             indexedHeight: null,
             chainHeight: 4,
