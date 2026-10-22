@@ -6,6 +6,7 @@ import type { AddressCoinBalanceHistoryItem, AddressTokensBalancesSocketMessage 
 import type { NewArbitrumBatchSocketResponse } from 'types/api/arbitrumL2';
 import type { NewBlockSocketResponse } from 'types/api/block';
 import type { SmartContractVerificationResponse } from 'types/api/contract';
+import type { MarketUpdate, PriceUpdateItem } from 'types/api/paxeerXFeed';
 import type { RawTracesResponse } from 'types/api/rawTrace';
 import type { TokenInstanceMetadataSocketMessage } from 'types/api/token';
 import type { TokenTransfer } from 'types/api/tokenTransfer';
@@ -46,6 +47,8 @@ SocketMessage.ContractVerification |
 SocketMessage.NewZkEvmL2Batch |
 SocketMessage.NewArbitrumL2Batch |
 SocketMessage.NewZetaChainCCTXs |
+SocketMessage.PaxeerXFeedNewUpdate |
+SocketMessage.PaxeerXFeedMarketNewUpdate |
 SocketMessage.Unknown;
 
 interface SocketMessageParamsGeneric<Event extends string | undefined, Payload extends object | unknown> {
@@ -90,5 +93,7 @@ export namespace SocketMessage {
   export type NewZkEvmL2Batch = SocketMessageParamsGeneric<'new_zkevm_confirmed_batch', NewZkEvmBatchSocketResponse>;
   export type NewArbitrumL2Batch = SocketMessageParamsGeneric<'new_arbitrum_batch', NewArbitrumBatchSocketResponse>;
   export type NewZetaChainCCTXs = SocketMessageParamsGeneric<'new_cctxs', Array<zetaChainCCTXType.CctxListItem>>;
+  export type PaxeerXFeedNewUpdate = SocketMessageParamsGeneric<'new_update', PriceUpdateItem>;
+  export type PaxeerXFeedMarketNewUpdate = SocketMessageParamsGeneric<'new_update', MarketUpdate>;
   export type Unknown = SocketMessageParamsGeneric<undefined, unknown>;
 }

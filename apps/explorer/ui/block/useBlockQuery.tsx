@@ -1,13 +1,17 @@
 import type { UseQueryResult } from '@tanstack/react-query';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React from 'react';
 import type { Chain, GetBlockReturnType } from 'viem';
 
+import type { SocketMessage } from 'lib/socket/types';
 import type { Block } from 'types/api/block';
 
 import type { ResourceError } from 'lib/api/resources';
-import useApiQuery from 'lib/api/useApiQuery';
+import useApiQuery, { getResourceKey } from 'lib/api/useApiQuery';
 import { retry } from 'lib/api/useQueryClientConfig';
+import { useMultichainContext } from 'lib/contexts/multichain';
+import useSocketChannel from 'lib/socket/useSocketChannel';
+import useSocketMessage from 'lib/socket/useSocketMessage';
 import { publicClient } from 'lib/web3/client';
 import formatBlockData from 'lib/web3/rpc/formatBlockData';
 import { BLOCK } from 'stubs/block';
@@ -94,6 +98,41 @@ export default function useBlockQuery({ heightOrHash }: Params): BlockQuery {
       setRefetchEnabled(false);
     }
   }, [ rpcQuery.data, rpcQuery.isPlaceholderData ]);
+
+  // Price updates are indexed after their block, so the block is sent again on blocks:new_block once
+  // its submissions are stored; the open block takes the count from that message.
+  const queryClient = useQueryClient();
+  const multichainContext = useMultichainContext();
+  const blockHeight = apiQuery.data?.height;
+
+  const handleNewBlockMessage: SocketMessage.NewBlock['handler'] = React.useCallback((payload) => {
+    if (payload.block.height !== blockHeight || payload.block.price_update_count === undefined) {
+      return;
+    }
+
+    const queryKey = getResourceKey('general:block', {
+      pathParams: { height_or_hash: heightOrHash },
+      chainId: multichainContext?.chain?.id,
+    });
+
+    queryClient.setQueryData(queryKey, (prevData: Block | undefined) => {
+      if (!prevData || prevData.height !== payload.block.height || prevData.price_update_count === payload.block.price_update_count) {
+        return prevData;
+      }
+
+      return { ...prevData, price_update_count: payload.block.price_update_count };
+    });
+  }, [ blockHeight, heightOrHash, multichainContext?.chain?.id, queryClient ]);
+
+  const channel = useSocketChannel({
+    topic: 'blocks:new_block',
+    isDisabled: apiQuery.isPlaceholderData || apiQuery.isError || blockHeight === undefined,
+  });
+  useSocketMessage({
+    channel,
+    event: 'new_block',
+    handler: handleNewBlockMessage,
+  });
 
   const isRpcQuery = Boolean(publicClient && (apiQuery.isError || apiQuery.isPlaceholderData) && apiQuery.errorUpdateCount > 0 && rpcQuery.data);
   const query = isRpcQuery ? rpcQuery as UseQueryResult<Block, ResourceError<{ status: number }>> : apiQuery;

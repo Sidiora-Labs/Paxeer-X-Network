@@ -2,10 +2,12 @@
 
 import React from 'react';
 
+import { SocketProvider } from 'lib/socket/context';
 import * as blockMock from 'mocks/blocks/block';
 import { render, routerState } from 'ui/shared/layout/testWrapper';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from 'vitest/lib';
+import { createTestSocket } from 'vitest/utils/socketServer';
 
 vi.mock('next/router', async() => (await import('ui/shared/layout/testWrapper')).nextRouterModule());
 
@@ -152,5 +154,37 @@ describe('BlockDetails', () => {
     await renderDetails();
 
     expect(valuesOf(card())[2].textContent).toBe('6 txns including 1 price update in this block');
+  });
+
+  it('takes the price update count from the block sent again on blocks:new_block', async() => {
+    const socket = await createTestSocket();
+
+    try {
+      render(
+        <SocketProvider url={ socket.url }>
+          <BlockDetailsWithQuery heightOrHash={ String(blockMock.base.height) }/>
+        </SocketProvider>,
+      );
+
+      await screen.findByText(blockMock.base.hash);
+      await socket.join('blocks:new_block');
+
+      expect(valuesOf(card())[2].textContent).toBe('5 txns in this block');
+
+      socket.send('blocks:new_block', 'new_block', {
+        average_block_time: '200',
+        block: { ...blockMock.base, height: blockMock.base.height + 1, price_update_count: 3 },
+      });
+      socket.send('blocks:new_block', 'new_block', {
+        average_block_time: '200',
+        block: { ...blockMock.base, price_update_count: 2 },
+      });
+
+      await waitFor(() => {
+        expect(valuesOf(card())[2].textContent).toBe('7 txns including 2 price updates in this block');
+      });
+    } finally {
+      await socket.close();
+    }
   });
 });

@@ -25,11 +25,13 @@ function getSocketParams(type: TxsSocketType, page: string) {
   }
 }
 
+// Price feed submissions reach these lists on the same topic as EVM transactions and are counted the
+// same way; only a numeric count moves the notice, whatever else a message on the topic carries.
 function assertIsNewTxResponse(response: unknown): response is { transaction: number } {
-  return typeof response === 'object' && response !== null && 'transaction' in response;
+  return typeof response === 'object' && response !== null && 'transaction' in response && typeof response.transaction === 'number';
 }
 function assertIsNewPendingTxResponse(response: unknown): response is { pending_transaction: number } {
-  return typeof response === 'object' && response !== null && 'pending_transaction' in response;
+  return typeof response === 'object' && response !== null && 'pending_transaction' in response && typeof response.pending_transaction === 'number';
 }
 
 interface Params {

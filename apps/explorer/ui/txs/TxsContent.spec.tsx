@@ -4,12 +4,14 @@ import React from 'react';
 
 import type { PaginationParams } from 'ui/shared/pagination/types';
 
+import { SocketProvider } from 'lib/socket/context';
 import * as addressMock from 'mocks/address/address';
 import * as statsMock from 'mocks/stats/index';
 import * as txMock from 'mocks/txs/tx';
 import { render } from 'ui/shared/layout/testWrapper';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { waitFor } from 'vitest/lib';
+import { screen, waitFor } from 'vitest/lib';
+import { createTestSocket } from 'vitest/utils/socketServer';
 
 vi.mock('next/router', async() => (await import('ui/shared/layout/testWrapper')).nextRouterModule());
 
@@ -154,5 +156,38 @@ describe('TxsContent', () => {
 
     expect(container.querySelector('[data-scan-table-card]')).toBeNull();
     expect(container.textContent).toContain('There are no transactions.');
+  });
+
+  it('counts the price updates the transaction topic announces next to the rows it already shows', async() => {
+    const socket = await createTestSocket();
+
+    try {
+      const { container } = render(
+        <SocketProvider url={ socket.url }>
+          <TxsContent
+            pagination={ paginationParams() }
+            items={ [ txMock.priceUpdate, txMock.base ] }
+            isPlaceholderData={ false }
+            isError={ false }
+            sort="default"
+            socketType="txs_validated"
+            stickyHeader={ false }
+          />
+        </SocketProvider>,
+      );
+
+      await socket.join('transactions:new_transaction');
+
+      socket.send('transactions:new_transaction', 'transaction', { transaction: txMock.priceUpdate });
+      socket.send('transactions:new_transaction', 'transaction', { transaction: 2 });
+
+      await waitFor(() => {
+        expect(screen.getAllByText('2 more transactions').length).toBeGreaterThan(0);
+      }, { timeout: 10_000 });
+
+      expect(container.querySelector(`a[href="/feed/update/${ txMock.priceUpdate.hash }"]`)).not.toBeNull();
+    } finally {
+      await socket.close();
+    }
   });
 });
