@@ -7,6 +7,7 @@ defmodule BlockScoutWeb.API.V2.MainPageController do
   use OpenApiSpex.ControllerSpecs
 
   alias BlockScoutWeb.API.V2.{BlockView, TransactionView}
+  alias BlockScoutWeb.API.V2.PaxeerX.PriceUpdateList
   alias Explorer.Account.WatchlistAddress
   alias Explorer.{Chain, PagingOptions, Repo}
   alias Explorer.Chain.Transaction
@@ -81,14 +82,16 @@ defmodule BlockScoutWeb.API.V2.MainPageController do
 
   operation :transactions,
     summary: "Retrieve recent transactions as displayed on Blockscout homepage",
-    description: "Retrieves a limited set of recent transactions displayed on the home page.",
+    description:
+      "Retrieves a limited set of recent transactions displayed on the home page, interleaved with the " <>
+        "native price-feed submissions of the same blocks.",
     parameters: base_params(),
     responses: [
       ok:
         {"List of recent transactions on the home page.", "application/json",
          %Schema{
            type: :array,
-           items: Schemas.Transaction.Response,
+           items: %Schema{anyOf: [Schemas.Transaction.Response, Schemas.PaxeerX.PriceFeed.Update]},
            nullable: false
          }},
       unprocessable_entity: JsonErrorResponse.response()
@@ -100,11 +103,22 @@ defmodule BlockScoutWeb.API.V2.MainPageController do
   @spec transactions(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def transactions(conn, _params) do
     recent_transactions = Transaction.recent_collated_transactions(false, @transactions_options)
+    paging_options = @transactions_options[:paging_options]
 
-    conn
-    |> put_status(200)
-    |> put_view(TransactionView)
-    |> render(:transactions, %{transactions: recent_transactions |> maybe_preload_metadata()})
+    case PriceUpdateList.recent_updates(paging_options) do
+      [] ->
+        conn
+        |> put_status(200)
+        |> put_view(TransactionView)
+        |> render(:transactions, %{transactions: recent_transactions |> maybe_preload_metadata()})
+
+      updates ->
+        page = PriceUpdateList.merge(recent_transactions, updates, :desc, paging_options.page_size)
+
+        conn
+        |> put_status(200)
+        |> json(PriceUpdateList.render_items(conn, page))
+    end
   end
 
   operation :watchlist_transactions,

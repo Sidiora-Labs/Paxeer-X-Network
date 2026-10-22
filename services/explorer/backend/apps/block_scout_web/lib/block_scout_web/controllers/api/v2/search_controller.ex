@@ -77,7 +77,7 @@ defmodule BlockScoutWeb.API.V2.SearchController do
              redirect: %Schema{type: :boolean, nullable: true},
              type: %Schema{
                type: :string,
-               enum: ["address", "block", "transaction", "user_operation", "blob"],
+               enum: ["address", "block", "transaction", "user_operation", "blob", "price_update"],
                nullable: true
              }
            }
@@ -91,9 +91,13 @@ defmodule BlockScoutWeb.API.V2.SearchController do
   @spec check_redirect(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def check_redirect(conn, %{q: query}) do
     result =
-      query
-      |> String.trim()
-      |> from_param()
+      with {:error, :not_found} <- query |> String.trim() |> from_param(),
+           %PriceUpdate{} = update <- price_update(query) do
+        {:ok, update}
+      else
+        nil -> {:error, :not_found}
+        found -> found
+      end
 
     conn
     |> put_status(200)
@@ -135,7 +139,7 @@ defmodule BlockScoutWeb.API.V2.SearchController do
   # A native price-feed submission is found by its hash on the first page only.
   defp price_update_results(query, params) do
     with false <- Map.has_key?(params, :next_page_params_type),
-         %PriceUpdate{} = update <- query |> String.trim() |> PriceFeed.update_by_hash() do
+         %PriceUpdate{} = update <- price_update(query) do
       [
         %{
           type: "price_update",
@@ -146,6 +150,15 @@ defmodule BlockScoutWeb.API.V2.SearchController do
       ]
     else
       _not_found -> []
+    end
+  end
+
+  # Cosmos tooling prints a submission hash as 64 upper-case hex characters without 0x.
+  defp price_update(query) do
+    case String.trim(query) do
+      "0x" <> hex when byte_size(hex) == 64 -> PriceFeed.update_by_hash("0x" <> String.downcase(hex))
+      hex when byte_size(hex) == 64 -> PriceFeed.update_by_hash("0x" <> String.downcase(hex))
+      _other -> nil
     end
   end
 end

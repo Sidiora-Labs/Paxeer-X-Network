@@ -182,3 +182,31 @@ defmodule BlockScoutWeb.Schemas.API.V2.PaxeerX.PriceFeed.Markets do
     additionalProperties: false
   })
 end
+
+defmodule BlockScoutWeb.Schemas.API.V2.PaxeerX.PriceFeed.MarketUpdates do
+  @moduledoc """
+  This module defines the schema for a page of one price-feed market's observations.
+  """
+  require OpenApiSpex
+
+  alias BlockScoutWeb.Schemas.API.V2.PaxeerX.PriceFeed.Latest
+  alias OpenApiSpex.Schema
+
+  OpenApiSpex.schema(%{
+    title: "PaxeerXPriceMarketUpdates",
+    description: "A page of one market's consensus observations, newest first, with the market's symbol.",
+    type: :object,
+    properties: %{
+      symbol: %Schema{type: :string, nullable: true, description: "Market symbol, null while the market is unknown"},
+      items: %Schema{type: :array, items: Latest, nullable: false},
+      next_page_params: %Schema{
+        type: :object,
+        nullable: true,
+        example: %{"block_number" => 1_000, "index" => 0, "items_count" => 50}
+      }
+    },
+    required: [:symbol, :items, :next_page_params],
+    nullable: false,
+    additionalProperties: false
+  })
+end

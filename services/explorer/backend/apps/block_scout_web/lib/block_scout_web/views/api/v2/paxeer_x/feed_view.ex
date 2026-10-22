@@ -35,8 +35,12 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.FeedView do
     prepare_update(update, symbols, block_height)
   end
 
-  def render("market_updates.json", %{observations: observations, next_page_params: next_page_params}) do
-    %{"items" => Enum.map(observations, &prepare_observation_update/1), "next_page_params" => next_page_params}
+  def render("market_updates.json", %{symbol: symbol, observations: observations, next_page_params: next_page_params}) do
+    %{
+      "symbol" => symbol,
+      "items" => Enum.map(observations, &prepare_observation_update/1),
+      "next_page_params" => next_page_params
+    }
   end
 
   @doc """

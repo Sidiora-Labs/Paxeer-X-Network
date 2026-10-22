@@ -156,13 +156,13 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.FeedController do
     summary: "List the observations of one price-feed market of Paxeer X Network",
     description:
       "Retrieves a paginated list of one market's observations from consensus blocks, newest first, each " <>
-        "with the submission that carried it.",
+        "with the submission that carried it, and the market's symbol, null while the market is unknown.",
     parameters:
       [@market_id_path_param | base_params()] ++ define_paging_params(["block_number", "index", "items_count"]),
     responses: [
       ok:
-        {"Market observations with pagination.", "application/json",
-         paginated_response(items: Schemas.PaxeerX.PriceFeed.Latest, next_page_params_example: @paging_example)},
+        {"Market observations with pagination, and the market's symbol.", "application/json",
+         Schemas.PaxeerX.PriceFeed.MarketUpdates},
       unprocessable_entity: JsonErrorResponse.response()
     ]
 
@@ -180,6 +180,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.FeedController do
     |> put_status(200)
     |> put_view(FeedView)
     |> render(:market_updates, %{
+      symbol: Map.get(PriceFeed.market_symbols(), market_id),
       observations: observations,
       next_page_params:
         next_page_params(next_page, observations, Map.delete(params, :market_id), false, &observation_paging_params/1)

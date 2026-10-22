@@ -6,7 +6,8 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.CapabilitiesController do
   precompile addresses on a timer. `addr` is the addr precompile, published
   under the name the unified surfaces read it by; a surface no probe has
   answered for yet reads as false. `price_feed` is present, and true, only
-  while native price-feed submissions are indexed.
+  while native price-feed submissions are indexed: the price-feed fetcher is
+  enabled and the indexer runs.
   """
 
   use BlockScoutWeb, :controller
@@ -54,9 +55,9 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.CapabilitiesController do
   end
 
   defp price_feed do
-    case Application.get_env(:indexer, Indexer.Fetcher.PaxeerX.PriceUpdates.Supervisor, [])[:disabled?] do
-      false -> %{"price_feed" => true}
-      _disabled -> %{}
-    end
+    indexer_enabled? = Application.get_env(:indexer, Indexer.Supervisor, [])[:enabled] == true
+    fetcher_disabled? = Application.get_env(:indexer, Indexer.Fetcher.PaxeerX.PriceUpdates.Supervisor, [])[:disabled?]
+
+    if indexer_enabled? and fetcher_disabled? == false, do: %{"price_feed" => true}, else: %{}
   end
 end

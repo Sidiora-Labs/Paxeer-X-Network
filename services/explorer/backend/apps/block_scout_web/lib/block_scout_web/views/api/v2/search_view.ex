@@ -5,6 +5,7 @@ defmodule BlockScoutWeb.API.V2.SearchView do
   alias BlockScoutWeb.{BlockView, Endpoint}
   alias Explorer.Chain
   alias Explorer.Chain.{Address, Beacon.Blob, Block, Hash, Transaction, UserOperation}
+  alias Explorer.Chain.PaxeerX.PriceUpdate
   alias Plug.Conn.Query
 
   def render("search_results.json", %{search_results: search_results, next_page_params: next_page_params}) do
@@ -204,6 +205,10 @@ defmodule BlockScoutWeb.API.V2.SearchView do
 
   defp redirect_search_results(%Blob{} = item) do
     %{"type" => "blob", "parameter" => to_string(item.hash)}
+  end
+
+  defp redirect_search_results(%PriceUpdate{} = item) do
+    %{"type" => "price_update", "parameter" => to_string(item.hash)}
   end
 
   case @chain_type do
