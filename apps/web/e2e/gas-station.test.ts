@@ -18,6 +18,7 @@ registerHooks({
         if (existsSync(source)) return nextResolve(source.href, context);
       }
     }
+    if (specifier === "server-only") return { url: "data:text/javascript,", shortCircuit: true };
     if (specifier === "next/navigation") return nextResolve("next/navigation.js", context);
     if (specifier === "next/link") return nextResolve("next/link.js", context);
     return nextResolve(specifier, context);
@@ -220,4 +221,104 @@ test("private sponsorship carries exact SDK constructions and binds every approv
   assert.equal(wallet.sidioraQuotePresentation(quoted, quoted.batch.quote.deadline), undefined);
   await assert.rejects(provider.request({ method: "eth_sign", params: [quoted.batch.account, digest.value] }));
   assert.deepEqual(await wallet.resumeWalletSponsoredSubmission(quoted.batch.account), { outcome: "unavailable" });
+});
+
+class MemoryStorage {
+  readonly #items = new Map<string, string>();
+  getItem(key: string): string | null { return this.#items.get(key) ?? null; }
+  setItem(key: string, value: string): void { this.#items.set(key, value); }
+  removeItem(key: string): void { this.#items.delete(key); }
+}
+
+const ZERO_WORD = `0x${"0".repeat(64)}`;
+
+function walletWindow(answer: (method: string, params: readonly unknown[]) => unknown) {
+  const methods: string[] = [];
+  const paxeer = {
+    isPaxeer: true,
+    request: async ({ method, params = [] }: { method: string; params?: readonly unknown[] }) => {
+      methods.push(method);
+      return answer(method, params);
+    },
+  };
+  Object.assign(globalThis, { window: { paxeer, localStorage: new MemoryStorage(), sessionStorage: new MemoryStorage(), confirm: () => true } });
+  return methods;
+}
+
+test("a write never resumes another call's retained sponsored submission as its own", async () => {
+  const { privateKeyToAccount } = await import("viem/accounts");
+  const signer = privateKeyToAccount(`0x${"0b".repeat(32)}`);
+  const account = signer.address.toLowerCase();
+  const fixture = quoteFixture();
+  const approveCall = { to: `0x${"66".repeat(20)}`, value: 0n, data: "0x095ea7b3" };
+  const writeCall = { to: `0x${"77".repeat(20)}`, value: 0n, data: "0x12345678" };
+  const approveHash = `0x${"aa".repeat(32)}`;
+  const relayer = privateKeyToAccount(`0x${"0c".repeat(32)}`);
+  const quote = { ...fixture.batch.quote, sponsor: relayer.address.toLowerCase() };
+  const quoteDigest = sdk.gasQuoteDigest(fixture.batch.chainId, account, quote);
+  assert.ok(quoteDigest.ok);
+  const quoted: SidioraGasQuote = {
+    ...fixture, batch: { ...fixture.batch, account, calls: [approveCall], quote },
+    relayerSignature: await relayer.sign({ hash: quoteDigest.value as `0x${string}` }),
+  };
+  const pendingReport = { status: "pending", tx_hash: approveHash, station: null };
+  const methods = walletWindow(async (method, params) => {
+    switch (method) {
+      case "eth_accounts": return [account];
+      case "eth_chainId": return `0x${quoted.batch.chainId.toString(16)}`;
+      case "eth_getCode": return `0xef0100${quoted.paymaster.slice(2)}`;
+      case "eth_call": return ZERO_WORD;
+      case "eth_getTransactionCount": return "0x0";
+      case "eth_sign": return signer.sign({ hash: params[1] as `0x${string}` });
+      case "paxeer_submitSponsored": case "paxeer_sponsoredStatus": return pendingReport;
+      default: throw new Error(`unexpected ${method}`);
+    }
+  });
+  try {
+    const review = wallet.sidioraQuotePresentation(quoted);
+    assert.ok(review);
+    assert.deepEqual(await wallet.sendWalletSponsoredBatch(quoted, review.identity), { outcome: "sent", transactionHash: approveHash });
+    assert.deepEqual(await wallet.resumeWalletSponsoredSubmission(account, writeCall), { outcome: "unavailable" });
+    assert.deepEqual(await wallet.resumeWalletSponsoredSubmission(account, approveCall), { outcome: "sent", transactionHash: approveHash });
+    assert.equal(wallet.chooseWalletFee("sidiora", "2.1"), true);
+    methods.length = 0;
+    assert.deepEqual(await wallet.sendWalletPrecompileCall(account, () => writeCall), { outcome: "unavailable" });
+    assert.ok(!methods.includes("eth_estimateGas"));
+    assert.ok(!methods.includes("paxeer_submitSponsored"));
+  } finally {
+    wallet.chooseWalletFee("paxeer", "");
+    delete (globalThis as { window?: unknown }).window;
+  }
+});
+
+test("the launchpad refuses an approve under the sponsored SID fee before sending anything", async () => {
+  const launchpad = await import("../src/app/launchpad/launchpad-client.tsx");
+  const { SendOutcome } = await import("../src/app/_markets/send-outcome.tsx");
+  const account = `0x${"11".repeat(20)}`;
+  const usdl = `0x${"88".repeat(20)}`;
+  const methods = walletWindow(async (method, params) => {
+    if (method !== "eth_call") throw new Error(`unexpected ${method}`);
+    const call = params[0] as { to: string };
+    return call.to.toLowerCase() === usdl ? ZERO_WORD : `0x${"0".repeat(24)}${usdl.slice(2)}`;
+  });
+  const writes: unknown[] = [];
+  const approving: boolean[] = [];
+  try {
+    assert.equal(wallet.chooseWalletFee("sidiora", "2.1"), true);
+    const order = { pool: `0x${"99".repeat(20)}`, amountIn: 5_000_000n, minOut: 1n, deadline: 2_000_000_000n };
+    const outcome = await launchpad.sendWithApproval(account, { kind: "buy", order }, () => {
+      writes.push(order);
+      return sdk.launchpadBuyCall(order);
+    }, (active) => approving.push(active));
+    assert.deepEqual(outcome, { outcome: "failed", detail: launchpad.SPONSORED_APPROVE_UNSUPPORTED });
+    assert.deepEqual(writes, []);
+    assert.ok(methods.every((method) => method === "eth_call"));
+    assert.ok(!approving.includes(true));
+    const html = renderToStaticMarkup(createElement(SendOutcome, { outcome }));
+    assert.doesNotMatch(html, /Sent\./u);
+    assert.ok(html.includes(launchpad.SPONSORED_APPROVE_UNSUPPORTED));
+  } finally {
+    wallet.chooseWalletFee("paxeer", "");
+    delete (globalThis as { window?: unknown }).window;
+  }
 });

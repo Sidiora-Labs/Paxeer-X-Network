@@ -59,7 +59,8 @@ export async function sendWalletPrecompileCall(from: string, build: () => Precom
     const preference = walletFeePreference();
     if (preference.currency === "sidiora") {
       if (preference.maximum === undefined) return { outcome: "rejected" };
-      const recovered = await resumeWalletSponsoredSubmission(from);
+      const call = build();
+      const recovered = await resumeWalletSponsoredSubmission(from, call);
       if (recovered !== undefined) return recovered;
       const metadata = await sidioraStationMetadata();
       if (metadata === undefined) return { outcome: "unavailable" };
@@ -67,7 +68,6 @@ export async function sendWalletPrecompileCall(from: string, build: () => Precom
       if (chainId.toString() !== metadata.chainId) return { outcome: "rejected" };
       const module = gasStation(wallet, { chainId, sponsor: metadata.sponsor, paymaster: metadata.paymaster });
       const nonce = await module.batchNonce(from);
-      const call = build();
       const gas = rpcQuantity(await wallet.request({ method: "eth_estimateGas", params: [{
         from, to: call.to, data: call.data, value: `0x${call.value.toString(16)}`,
       }] }));
@@ -164,7 +164,18 @@ function statusOutcome(report: SponsoredSubmissionEvidence): PrecompileSendOutco
   return report.tx_hash === null ? { outcome: "unavailable" } : { outcome: "sent", transactionHash: report.tx_hash };
 }
 
-export async function resumeWalletSponsoredSubmission(account: string): Promise<PrecompileSendOutcome | undefined> {
+function sameCalls(calls: readonly PrecompileCall[], call: PrecompileCall): boolean {
+  return calls.length === 1 && calls[0]!.to.toLowerCase() === call.to.toLowerCase()
+    && calls[0]!.value === call.value && calls[0]!.data.toLowerCase() === call.data.toLowerCase();
+}
+
+/**
+ * Resumes the account's retained sponsored submission. Given `call`, a retained
+ * submission for any other call is driven to completion but never reported as
+ * this call's outcome: undefined once it has finished, unavailable while it is
+ * still pending.
+ */
+export async function resumeWalletSponsoredSubmission(account: string, call?: PrecompileCall): Promise<PrecompileSendOutcome | undefined> {
   const wallet = windowWalletProvider();
   if (wallet === undefined) return { outcome: "unavailable" };
   try {
@@ -187,6 +198,7 @@ export async function resumeWalletSponsoredSubmission(account: string): Promise<
     if (!digest.ok || context.identity !== `${digest.value}:${context.paymaster.toLowerCase()}:${retained.relayerSignature.toLowerCase()}`) return { outcome: "rejected" };
     const report = await module.resume(retained.batch, retained.relayerSignature);
     if (report.status !== "pending") store.removeItem(sponsoredContextKey(account));
+    if (call !== undefined && !sameCalls(retained.batch.calls, call)) return report.status === "pending" ? { outcome: "unavailable" } : undefined;
     return statusOutcome(report);
   } catch (error) { return walletSendFailure(error); }
 }

@@ -12,7 +12,7 @@ import {
   type LaunchpadSpend,
   type PrecompileCall,
 } from "../../api/sdk";
-import { sendWalletPrecompileCall, walletSendFailure, type PrecompileSendOutcome } from "../../api/wallet";
+import { sendWalletPrecompileCall, walletFeePreference, walletSendFailure, type PrecompileSendOutcome } from "../../api/wallet";
 import { windowWalletProvider } from "../../journeys/custody/handoff";
 import { KitButton } from "../../kit/control";
 import { ExplorerPanel } from "../../kit/explorer";
@@ -37,6 +37,43 @@ interface PreviewedQuote {
   readonly amountIn: bigint;
   readonly slippageBps: bigint;
   readonly answer: LaunchpadQuoteAnswer;
+}
+
+export const SPONSORED_APPROVE_UNSUPPORTED = "the allowance approve cannot be sponsored; choose the PAX gas fee for it";
+
+// The 0x1017 Router pulls its input by transferFrom, so a short allowance
+// gets one approve for the exact amount, mined before the write is sent.
+// A sponsored quote covers exactly one call, so the approve is refused up
+// front under the sponsored SID fee instead of being sent.
+export async function sendWithApproval(
+  from: string,
+  spend: LaunchpadSpend,
+  build: () => PrecompileCall,
+  onApproving: (active: boolean) => void,
+): Promise<PrecompileSendOutcome> {
+  const wallet = windowWalletProvider();
+  if (wallet === undefined) {
+    return { outcome: "unavailable" };
+  }
+  try {
+    const approve = await launchpadApproval(wallet, from, spend);
+    if (approve !== undefined) {
+      if (walletFeePreference().currency === "sidiora") {
+        return { outcome: "failed", detail: SPONSORED_APPROVE_UNSUPPORTED };
+      }
+      onApproving(true);
+      const approved = await sendWalletPrecompileCall(from, () => approve);
+      if (approved.outcome !== "sent") {
+        return approved;
+      }
+      await waitLaunchpadApproval(wallet, approved.transactionHash);
+    }
+  } catch (error) {
+    return walletSendFailure(error);
+  } finally {
+    onApproving(false);
+  }
+  return sendWalletPrecompileCall(from, build);
 }
 
 export function LaunchpadActions({
@@ -91,36 +128,6 @@ export function LaunchpadActions({
     });
   };
 
-  // The 0x1017 Router pulls its input by transferFrom, so a short allowance
-  // gets one approve for the exact amount, mined before the write is sent.
-  const sendWithApproval = async (
-    from: string,
-    step: "trade" | "create",
-    spend: LaunchpadSpend,
-    build: () => PrecompileCall,
-  ): Promise<PrecompileSendOutcome> => {
-    const wallet = windowWalletProvider();
-    if (wallet === undefined) {
-      return { outcome: "unavailable" };
-    }
-    try {
-      const approve = await launchpadApproval(wallet, from, spend);
-      if (approve !== undefined) {
-        setApproving(step);
-        const approved = await sendWalletPrecompileCall(from, () => approve);
-        if (approved.outcome !== "sent") {
-          return approved;
-        }
-        await waitLaunchpadApproval(wallet, approved.transactionHash);
-      }
-    } catch (error) {
-      return walletSendFailure(error);
-    } finally {
-      setApproving(undefined);
-    }
-    return sendWalletPrecompileCall(from, build);
-  };
-
   const trade = () => {
     const pool = markets.find((market) => market.token === token)?.pool;
     if (account === undefined || pool === undefined || quote === undefined || minOut === undefined || amountIn === undefined) {
@@ -133,8 +140,13 @@ export function LaunchpadActions({
       deadline: BigInt(Math.floor(Date.now() / 1000)) + DEADLINE_SECONDS,
     };
     startTransition(async () => {
-      const outcome = await sendWithApproval(account, "trade", { kind: side, order }, () =>
-        side === "buy" ? launchpadBuyCall(order) : launchpadSellCall(order),
+      const outcome = await sendWithApproval(
+        account,
+        { kind: side, order },
+        () => (side === "buy" ? launchpadBuyCall(order) : launchpadSellCall(order)),
+        (active) => {
+          setApproving(active ? "trade" : undefined);
+        },
       );
       setTradeOutcome(outcome);
       if (outcome.outcome === "sent") {
@@ -149,8 +161,13 @@ export function LaunchpadActions({
       return;
     }
     startTransition(async () => {
-      const outcome = await sendWithApproval(account, "create", { kind: "create" }, () =>
-        launchpadCreateMarketCall(name.trim(), symbol.trim(), Number(strategy)),
+      const outcome = await sendWithApproval(
+        account,
+        { kind: "create" },
+        () => launchpadCreateMarketCall(name.trim(), symbol.trim(), Number(strategy)),
+        (active) => {
+          setApproving(active ? "create" : undefined);
+        },
       );
       setCreateOutcome(outcome);
       if (outcome.outcome === "sent") {
