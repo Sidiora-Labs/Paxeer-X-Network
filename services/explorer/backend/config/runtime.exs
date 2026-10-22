@@ -1946,6 +1946,17 @@ config :indexer, Indexer.Fetcher.PaxeerX.PriceUpdates,
     System.get_env("PAXEER_X_PRICE_FEED_PRECOMPILE", "0x0000000000000000000000000000000000001020")
     |> String.downcase()
 
+paxeer_x_price_feed_retention_days = ConfigHelper.parse_integer_or_nil_env_var("PAXEER_X_PRICE_FEED_RETENTION_DAYS")
+
+if System.get_env("PAXEER_X_PRICE_FEED_RETENTION_DAYS", "") != "" and
+     not (is_integer(paxeer_x_price_feed_retention_days) and paxeer_x_price_feed_retention_days > 0) do
+  raise ArgumentError, "PAXEER_X_PRICE_FEED_RETENTION_DAYS must be a positive number of days when set"
+end
+
+config :indexer, Indexer.Fetcher.PaxeerX.PriceFeedMaintenance,
+  enabled: paxeer_x_price_feed_enabled?,
+  retention_days: paxeer_x_price_feed_retention_days
+
 config :indexer, Indexer.Fetcher.Beacon.Blob.Supervisor,
   disabled?:
     ConfigHelper.chain_type() != :ethereum ||

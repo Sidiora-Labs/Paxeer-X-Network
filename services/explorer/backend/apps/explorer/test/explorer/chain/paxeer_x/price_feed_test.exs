@@ -154,6 +154,73 @@ defmodule Explorer.Chain.PaxeerX.PriceFeedTest do
       refute plan =~ "Seq Scan on paxeer_x_price_observations"
     end
 
+    test "list_updates walks the block and index order and ranges deep pages on it" do
+      %{rows: [[index_definition]]} =
+        Repo.query!(
+          "SELECT indexdef FROM pg_indexes WHERE tablename = 'paxeer_x_price_updates' AND indexname = $1",
+          ["paxeer_x_price_updates_block_number_DESC_index_DESC_index"]
+        )
+
+      assert index_definition =~ "(block_number DESC, index DESC)"
+
+      for paging <- [%PagingOptions{page_size: 50}, %PagingOptions{page_size: 50, key: {11, 2}}] do
+        plan = explain(PriceFeed.list_updates_query(paging))
+
+        assert plan =~ ~r/Index Scan using "?paxeer_x_price_updates_block_number_DESC_index_DESC_index"?/
+        refute plan =~ "Seq Scan on paxeer_x_price_updates"
+      end
+
+      plan = explain(PriceFeed.list_updates_query(%PagingOptions{page_size: 50, key: {11, 2}}))
+      assert plan =~ ~r/Index Cond: \(block_number <= '?11'?(::bigint)?\)/
+    end
+
+    test "list_updates of one feeder reads the feeder index in page order" do
+      plan =
+        explain(
+          PriceFeed.list_updates_query(%PagingOptions{page_size: 50, key: {11, 2}}, feeder: cast_address(@feeder))
+        )
+
+      assert plan =~ ~r/Index Scan using "?paxeer_x_price_updates_feeder_hash_block_number_DESC_index_DESC"?/
+
+      assert plan =~
+               ~r/Index Cond: \(\(feeder_hash = '\\x[0-9a-f]{40}'::bytea\) AND \(block_number <= '?11'?(::bigint)?\)\)/
+
+      refute plan =~ "Sort Key"
+    end
+
+    test "update_by_hash, updates_in_blocks and block_update_count read one index each" do
+      {:ok, hash} = Explorer.Chain.Hash.Full.cast("0x" <> String.duplicate("ab", 32))
+
+      assert explain(PriceFeed.update_by_hash_query(hash)) =~
+               ~r/Index Scan using paxeer_x_price_updates_pkey on paxeer_x_price_updates/
+
+      plan = explain(PriceFeed.updates_in_blocks_query([11]))
+      assert plan =~ ~r/Index Scan using "?paxeer_x_price_updates_block_number_DESC_index_DESC_index"?/
+      assert plan =~ ~r/Index Cond: \(block_number = ANY/
+
+      assert explain(PriceFeed.block_update_count_query(hash)) =~
+               ~r/Index (Only )?Scan using paxeer_x_price_updates_block_hash_index on paxeer_x_price_updates/
+    end
+
+    test "catch-up and compaction range over the scanned key from the watermark" do
+      plan = explain(PriceFeed.unscanned_block_numbers_query(100))
+      assert plan =~ ~r/Index Cond: \(number >= '?100'?(::bigint)?\)/
+      assert plan =~ ~r/Index (Only )?Scan using paxeer_x_price_feed_scanned_blocks_pkey/
+      refute plan =~ "Seq Scan"
+
+      plan = explain(PriceFeed.contiguous_scanned_query(100, 10_000))
+      assert plan =~ ~r/Index (Only )?Scan using paxeer_x_price_feed_scanned_blocks_pkey/
+      assert plan =~ ~r/Index Cond: \(block_number > '?100'?(::bigint)?\)/
+      assert plan =~ "Limit"
+    end
+
+    test "retention reads the oldest submissions from the block and index order" do
+      plan = explain(PriceFeed.oldest_updates_query(1_000))
+      assert plan =~ ~r/Index Scan Backward using "?paxeer_x_price_updates_block_number_DESC_index_DESC_index"?/
+      assert plan =~ "Limit"
+      refute plan =~ "Sort Key"
+    end
+
     test "latest_per_market picks the newest block and the higher index within it on a seeded history", %{
       update: update
     } do
@@ -183,6 +250,63 @@ defmodule Explorer.Chain.PaxeerX.PriceFeedTest do
 
       assert [%{block_number: 38, update: %{index: 1}}, %{block_number: 38, update: %{index: 0}}] =
                PriceFeed.market_updates(0, %PagingOptions{page_size: 2, key: {39, 0}})
+    end
+  end
+
+  describe "scanned watermark" do
+    test "compact_scanned_blocks advances over contiguous rows, keeps unscannable rows and bounds catch-up" do
+      Enum.each(10..20, &insert(:block, number: &1))
+      Repo.insert_all(PriceFeedScannedBlock, Enum.map([10, 11, 12, 13, 14, 16, 18], &%{block_number: &1}))
+      :ok = PriceFeed.mark_unscannable(15, "failed", "{:unreachable, \"node\"}")
+
+      assert PriceFeed.scanned_through(10) == 9
+      assert PriceFeed.compact_scanned_blocks(10, 2) == 11
+      assert PriceFeed.scanned_through(10) == 11
+      refute Repo.get(PriceFeedScannedBlock, 10)
+      refute Repo.get(PriceFeedScannedBlock, 11)
+      assert Repo.get(PriceFeedScannedBlock, 12)
+
+      assert PriceFeed.compact_scanned_blocks(10, 100) == 16
+      assert PriceFeed.compact_scanned_blocks(10, 100) == 16
+
+      assert Repo.all(from(s in PriceFeedScannedBlock, order_by: s.block_number, select: {s.block_number, s.status})) ==
+               [{15, "failed"}, {18, "scanned"}]
+
+      assert {:ok, numbers} = PriceFeed.stream_unscanned_block_numbers([], &[&1 | &2], 10)
+      assert Enum.reverse(numbers) == [17, 19, 20]
+
+      assert PriceFeed.scanned_through(5) == 4
+      assert {:ok, numbers} = PriceFeed.stream_unscanned_block_numbers([], &[&1 | &2], 5)
+      assert Enum.reverse(numbers) == [10, 11, 12, 13, 14, 16, 17, 19, 20]
+    end
+
+    test "a status outside the known set is refused" do
+      assert_raise Postgrex.Error, ~r/paxeer_x_price_feed_scanned_blocks_status_check/, fn ->
+        Repo.insert_all(PriceFeedScannedBlock, [%{block_number: 1, status: "done"}])
+      end
+    end
+  end
+
+  describe "delete_expired_updates/2" do
+    test "deletes the submissions older than the retention period oldest first in bounded batches", %{
+      update: update
+    } do
+      now = DateTime.utc_now()
+
+      for {number, age_days} <- [{1, 40}, {2, 35}, {3, 31}, {4, 1}] do
+        block = insert(:block, number: number, timestamp: DateTime.add(now, -age_days * 86_400, :second))
+        hash = "0x" <> String.pad_leading(Integer.to_string(number, 16), 64, "0")
+        {:ok, 1} = PriceFeed.replace_block_updates(block, [%{update | hash: hash}])
+      end
+
+      assert Repo.aggregate(PriceObservation, :count) == 4 * 18
+
+      assert PriceFeed.delete_expired_updates(30, 2) == 2
+      assert Repo.all(from(u in PriceUpdate, order_by: u.block_number, select: u.block_number)) == [3, 4]
+      assert PriceFeed.delete_expired_updates(30, 2) == 1
+      assert PriceFeed.delete_expired_updates(30, 2) == 0
+      assert Repo.all(from(u in PriceUpdate, select: u.block_number)) == [4]
+      assert Repo.all(from(o in PriceObservation, distinct: true, select: o.block_number)) == [4]
     end
   end
 

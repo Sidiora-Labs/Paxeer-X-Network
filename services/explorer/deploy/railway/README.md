@@ -160,7 +160,11 @@ boot. Nodes prune old heights, so the start block must lie within the history
 the configured nodes still serve, for both `txs/block` and `block_results`; a
 height every node reports as no longer available is recorded as unavailable and
 not retried, and a height above a lagging node's head is tried on the next node
-and then retried with a growing delay.
+and then retried with a growing delay. Once a minute the indexer drops the
+scanned-height rows below the height through which every block is scanned, and,
+when `PAXEER_X_PRICE_FEED_RETENTION_DAYS` is set, deletes the submissions older
+than that many days with their observations, so the tables stop growing with
+the chain.
 
 | Name | What it selects |
 | --- | --- |
@@ -171,6 +175,7 @@ and then retried with a growing delay.
 | `PAXEER_X_PRICE_FEED_CONCURRENCY` | blocks scanned in parallel, `4` by default |
 | `PAXEER_X_PRICE_FEED_MARKETS_REFRESH_SECONDS` | age after which the market list is read again, `300` by default |
 | `PAXEER_X_PRICE_FEED_PRECOMPILE` | price-feed precompile address, `0x0000000000000000000000000000000000001020` by default |
+| `PAXEER_X_PRICE_FEED_RETENTION_DAYS` | days a submission and its observations are kept, unset keeps them for good; must be a positive integer when set |
 
 Without `API_RATE_LIMIT_HAMMER_REDIS_URL` the rate limiter falls back to an
 in-process ETS table, which is correct for a single replica and wrong for

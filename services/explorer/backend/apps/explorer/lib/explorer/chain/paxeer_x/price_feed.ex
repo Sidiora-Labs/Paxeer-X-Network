@@ -10,11 +10,19 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
   Writes replace a whole block at a time: `replace_block_updates/2` deletes the updates
   stored for the block's height, inserts the ones just read and marks the height scanned
   in one transaction, so rescanning a refetched block leaves no stale row behind.
+
+  Scanned heights are compacted behind a watermark: `compact_scanned_blocks/2` advances
+  the height through which every height has a scanned row and deletes the plain scanned
+  rows at or below it, so catch-up reads only the heights above the watermark and the
+  table holds the recent heights and the unscannable ones. `delete_expired_updates/2`
+  deletes the oldest submissions, with their observations, once they are older than the
+  retention period.
   """
 
   import Ecto.Query
 
   alias Explorer.Chain.{Block, Hash}
+  alias Explorer.Chain.Cache.Counters.LastFetchedCounter
   alias Explorer.Chain.PaxeerX.{PriceFeedScannedBlock, PriceMarket, PriceObservation, PriceUpdate}
   alias Explorer.{PagingOptions, Repo}
 
@@ -27,13 +35,19 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
   """
   @spec list_updates(PagingOptions.t(), filters()) :: [PriceUpdate.t()]
   def list_updates(%PagingOptions{} = paging_options, filters \\ []) do
+    paging_options
+    |> list_updates_query(filters)
+    |> preload_observations()
+    |> Repo.all()
+  end
+
+  @doc false
+  def list_updates_query(%PagingOptions{} = paging_options, filters \\ []) do
     consensus_updates_query()
     |> filter_feeder(filters[:feeder])
     |> filter_market(filters[:market_id])
     |> page_updates(paging_options)
     |> limit(^page_size(paging_options))
-    |> preload_observations()
-    |> Repo.all()
   end
 
   @doc """
@@ -43,8 +57,8 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
   def update_by_hash(hash) do
     case Hash.Full.cast(hash) do
       {:ok, hash} ->
-        consensus_updates_query()
-        |> where([update], update.hash == ^hash)
+        hash
+        |> update_by_hash_query()
         |> preload_observations()
         |> Repo.one()
 
@@ -52,6 +66,9 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
         nil
     end
   end
+
+  @doc false
+  def update_by_hash_query(%Hash{} = hash), do: where(consensus_updates_query(), [update], update.hash == ^hash)
 
   @doc """
   Every known market in id order with its latest consensus observation and that
@@ -128,11 +145,15 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
   """
   @spec updates_in_blocks([non_neg_integer()]) :: [PriceUpdate.t()]
   def updates_in_blocks(block_numbers) when is_list(block_numbers) do
-    consensus_updates_query()
-    |> where([update], update.block_number in ^block_numbers)
+    block_numbers
+    |> updates_in_blocks_query()
     |> preload_observations()
     |> Repo.all()
   end
+
+  @doc false
+  def updates_in_blocks_query(block_numbers),
+    do: where(consensus_updates_query(), [update], update.block_number in ^block_numbers)
 
   @doc """
   The submissions of one height in transaction order, newest first.
@@ -233,19 +254,128 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
 
   @doc """
   Reduces over the consensus block heights at or above `start_block` that have not been
-  scanned yet, lowest first.
+  scanned yet, lowest first. Only the heights above the scanned watermark are read.
   """
   @spec stream_unscanned_block_numbers(acc, (non_neg_integer(), acc -> acc), non_neg_integer()) :: {:ok, acc}
         when acc: term()
   def stream_unscanned_block_numbers(initial, reducer, start_block) when is_function(reducer, 2) do
+    start_block
+    |> scanned_through()
+    |> Kernel.+(1)
+    |> unscanned_block_numbers_query()
+    |> Repo.stream_reduce(initial, reducer)
+  end
+
+  @doc false
+  def unscanned_block_numbers_query(from_block) do
     from(block in Block,
       left_join: scanned in PriceFeedScannedBlock,
       on: scanned.block_number == block.number,
-      where: block.consensus == true and block.number >= ^start_block and is_nil(scanned.block_number),
+      where: block.consensus == true and block.number >= ^from_block and is_nil(scanned.block_number),
       order_by: [asc: block.number],
       select: block.number
     )
-    |> Repo.stream_reduce(initial, reducer)
+  end
+
+  @doc """
+  The height through which every height from `start_block` on has a scanned row, or
+  `start_block - 1` before the first compaction. The watermark is kept per start block,
+  so a changed start block is scanned from its own start.
+  """
+  @spec scanned_through(non_neg_integer()) :: integer()
+  def scanned_through(start_block) do
+    case LastFetchedCounter.get(scanned_through_counter(start_block), nullable: true) do
+      nil -> start_block - 1
+      value -> max(Decimal.to_integer(value), start_block - 1)
+    end
+  end
+
+  @doc """
+  Advances the scanned watermark over the next at most `batch_size` contiguous heights
+  that have a scanned row, and deletes the rows of those heights whose status is
+  `"scanned"`; unavailable and failed rows stay for a rescan. Returns the new watermark.
+  """
+  @spec compact_scanned_blocks(non_neg_integer(), pos_integer()) :: integer()
+  def compact_scanned_blocks(start_block, batch_size) when is_integer(batch_size) and batch_size > 0 do
+    through = scanned_through(start_block)
+
+    case Repo.one(contiguous_scanned_query(through, batch_size)) do
+      nil ->
+        through
+
+      new_through ->
+        {:ok, _} =
+          Repo.transaction(fn ->
+            {:ok, _} =
+              LastFetchedCounter.upsert(%{counter_type: scanned_through_counter(start_block), value: new_through})
+
+            Repo.delete_all(
+              from(scanned in PriceFeedScannedBlock,
+                where:
+                  scanned.block_number > ^through and scanned.block_number <= ^new_through and
+                    scanned.status == "scanned"
+              )
+            )
+          end)
+
+        new_through
+    end
+  end
+
+  @doc false
+  def contiguous_scanned_query(through, batch_size) do
+    next =
+      from(scanned in PriceFeedScannedBlock,
+        where: scanned.block_number > ^through,
+        order_by: [asc: scanned.block_number],
+        limit: ^batch_size,
+        select: %{block_number: scanned.block_number}
+      )
+
+    numbered =
+      from(scanned in subquery(next),
+        select: %{
+          block_number: scanned.block_number,
+          gap: scanned.block_number - over(row_number(), order_by: scanned.block_number)
+        }
+      )
+
+    from(scanned in subquery(numbered), where: scanned.gap == ^through, select: max(scanned.block_number))
+  end
+
+  defp scanned_through_counter(start_block), do: "paxeer_x_price_feed_scanned_through_#{start_block}"
+
+  @doc """
+  Deletes, oldest first, at most `batch_size` submissions whose block is older than
+  `retention_days` days, with their observations. Returns how many were deleted; fewer
+  than `batch_size` means nothing older is left.
+  """
+  @spec delete_expired_updates(pos_integer(), pos_integer()) :: non_neg_integer()
+  def delete_expired_updates(retention_days, batch_size)
+      when is_integer(retention_days) and retention_days > 0 and is_integer(batch_size) and batch_size > 0 do
+    cutoff = DateTime.add(DateTime.utc_now(), -retention_days * 86_400, :second)
+
+    case for(
+           {hash, timestamp} <- Repo.all(oldest_updates_query(batch_size)),
+           DateTime.compare(timestamp, cutoff) == :lt,
+           do: hash
+         ) do
+      [] ->
+        0
+
+      hashes ->
+        {count, _} = Repo.delete_all(from(update in PriceUpdate, where: update.hash in ^hashes))
+        count
+    end
+  end
+
+  @doc false
+  def oldest_updates_query(batch_size) do
+    from(update in PriceUpdate,
+      order_by: [asc: update.block_number, asc: update.index],
+      limit: ^batch_size,
+      select: {update.hash, update.timestamp}
+    )
   end
 
   @doc """
@@ -284,9 +414,11 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
   How many submissions the block with the given hash carries.
   """
   @spec block_update_count(Hash.Full.t()) :: non_neg_integer()
-  def block_update_count(block_hash) do
-    Repo.aggregate(from(update in PriceUpdate, where: update.block_hash == ^block_hash), :count)
-  end
+  def block_update_count(block_hash), do: Repo.one(block_update_count_query(block_hash))
+
+  @doc false
+  def block_update_count_query(block_hash),
+    do: from(update in PriceUpdate, where: update.block_hash == ^block_hash, select: count())
 
   defp cast_hashes(%{hash: hash, feeder_hash: feeder_hash} = update) do
     {:ok, hash} = Hash.Full.cast(hash)
@@ -324,7 +456,8 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
     where(
       query,
       [update: update],
-      update.block_number < ^block_number or (update.block_number == ^block_number and update.index < ^index)
+      update.block_number <= ^block_number and
+        (update.block_number < ^block_number or update.index < ^index)
     )
   end
 
