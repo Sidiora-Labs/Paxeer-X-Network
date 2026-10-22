@@ -369,7 +369,7 @@ fn asset_metadata(asset: &str, record: &Value, registry: &[Value]) -> Value {
 
 fn join_assets(
     source: &Source<'_>,
-    registry: &dyn Fn() -> Vec<Value>,
+    registry: &dyn Fn() -> Result<Vec<Value>, Failure>,
     items: &mut [Value],
 ) -> Result<(), Failure> {
     if items.is_empty() {
@@ -397,7 +397,7 @@ fn join_assets(
         };
         records.insert(asset.to_owned(), record);
     }
-    let registry = registry();
+    let registry = registry()?;
     for item in items.iter_mut() {
         let asset = text(item, "asset").unwrap_or_default().to_owned();
         let joined = records.get(&asset).map_or(Value::Null, |record| {
@@ -420,7 +420,7 @@ fn join_assets(
 /// repeats nor skips a row.
 pub(super) fn history(
     source: &Source<'_>,
-    registry: &dyn Fn() -> Vec<Value>,
+    registry: &dyn Fn() -> Result<Vec<Value>, Failure>,
     accounts: &[(&'static str, String)],
     query: &Query,
     tagged: bool,
@@ -500,10 +500,17 @@ fn refusal(id: &Value, code: i32, message: &str, data: Value) -> Value {
     refusal
 }
 
-fn registry(config: &Config) -> Vec<Value> {
-    super::rpc::read_result(config, "/v1/assets")
-        .and_then(|result| result.get("assets").and_then(Value::as_array).cloned())
-        .unwrap_or_default()
+fn registry(config: &Config) -> Result<Vec<Value>, Failure> {
+    registry_result(super::rpc::read_result(config, "/v1/assets"))
+}
+
+fn registry_result(result: Option<Value>) -> Result<Vec<Value>, Failure> {
+    let result = result.ok_or(Failure::Unavailable("registry_unavailable"))?;
+    result
+        .get("assets")
+        .and_then(Value::as_array)
+        .cloned()
+        .ok_or(Failure::Unavailable("invalid_registry_response"))
 }
 
 fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> Value {
@@ -526,7 +533,7 @@ fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> 
 fn served(
     node: &mut super::paxeer::Node<'_>,
     source: Option<&Source<'_>>,
-    registry: &dyn Fn() -> Vec<Value>,
+    registry: &dyn Fn() -> Result<Vec<Value>, Failure>,
     method: &str,
     id: &Value,
     params: Option<&Value>,
@@ -1071,10 +1078,10 @@ mod tests {
         Indexer::parse(&format!("http://{address}")).unwrap_or_else(|error| panic!("{error}"))
     }
 
-    fn registry() -> Vec<Value> {
-        vec![
+    fn registry() -> Result<Vec<Value>, Failure> {
+        Ok(vec![
             json!({"asset_id": LXP, "symbol": "LXP", "name": "LayerX Points", "decimals": 6, "denom": "ulxp"}),
-        ]
+        ])
     }
 
     fn query(cursor: Option<&str>, limit: u64, kind: Option<&str>) -> Query {
@@ -1820,6 +1827,46 @@ mod tests {
             &json!(1),
             Some(params),
         )
+    }
+
+    #[test]
+    fn history_registry_read_failures_refuse_both_rpc_methods() {
+        let indexer = indexer();
+        let source = Source {
+            indexer: &indexer,
+            client: None,
+        };
+        for (result, code) in [
+            (None, "registry_unavailable"),
+            (Some(json!({})), "invalid_registry_response"),
+            (Some(json!({"assets": null})), "invalid_registry_response"),
+            (Some(json!({"assets": {}})), "invalid_registry_response"),
+        ] {
+            for method in ["px_getHistory", "px_getUnifiedHistory"] {
+                let answer = served(
+                    &mut chain,
+                    Some(&source),
+                    &|| registry_result(result.clone()),
+                    method,
+                    &json!(7),
+                    Some(&json!([EVE, null, 100])),
+                );
+                assert_eq!(
+                    answer,
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": 7,
+                        "error": {
+                            "code": -32001,
+                            "message": "History unavailable",
+                            "data": {"code": code}
+                        }
+                    }),
+                    "{method} {result:?}"
+                );
+            }
+        }
+        assert_eq!(registry_result(Some(json!({"assets": []}))), Ok(vec![]));
     }
 
     #[test]
