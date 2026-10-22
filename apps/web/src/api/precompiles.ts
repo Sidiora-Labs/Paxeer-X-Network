@@ -82,50 +82,31 @@ function newestFirst(events: readonly (ObservedEvent | undefined)[]): readonly O
 
 /* Launchpad */
 
-const LAUNCHPAD_MARKET_FIELDS: readonly AbiReadField[] = [
-  { name: "token", type: "address" },
-  { name: "denom", type: "string" },
-  { name: "index", type: "uint64" },
-  { name: "name", type: "string" },
-  { name: "symbol", type: "string" },
-  { name: "creator", type: "address" },
-  { name: "guardian", type: "address" },
-  { name: "feeRightsHolder", type: "address" },
-  { name: "feeStrategy", type: "uint8" },
-  { name: "paused", type: "bool" },
-  { name: "totalSupply", type: "uint256" },
-  { name: "virtualQuoteReserve", type: "uint256" },
-  { name: "realQuoteBalance", type: "uint256" },
+const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
+
+const LAUNCHPAD_POOL_STATS: readonly AbiReadField[] = [
+  { name: "virtualUsdl", type: "uint256" },
+  { name: "realUsdl", type: "uint256" },
   { name: "tokenReserve", type: "uint256" },
-  { name: "createdAt", type: "uint256" },
   { name: "cumulativeVolume", type: "uint256" },
-  { name: "accumulatedQuoteFees", type: "uint256" },
-  { name: "accumulatedTokenFees", type: "uint256" },
-  { name: "accumulatedFees", type: "uint256" },
-  { name: "airdropEpoch", type: "uint256" },
-  { name: "airdropBalance", type: "uint256" },
+  { name: "currentFeeBps", type: "uint256" },
+  { name: "poolAge", type: "uint256" },
+  { name: "marketCap", type: "uint256" },
   { name: "price", type: "uint256" },
 ];
 
-const LAUNCHPAD_CONFIG_FIELDS: readonly AbiReadField[] = [
-  { name: "quoteDenom", type: "string" },
-  { name: "virtualQuoteDefault", type: "uint256" },
-  { name: "virtualTokenDefault", type: "uint256" },
-  { name: "minFeeBps", type: "uint256" },
-  { name: "maxFeeBps", type: "uint256" },
-  { name: "baseFeeBps", type: "uint256" },
-  { name: "protocolFeeBps", type: "uint256" },
-  { name: "feeDecayRate", type: "uint256" },
-  { name: "volatilityWeight", type: "uint256" },
-  { name: "concentrationWeight", type: "uint256" },
-  { name: "creationFee", type: "uint256" },
-  { name: "protocolFeesPending", type: "uint256" },
+const LAUNCHPAD_POOL_METADATA: readonly AbiReadField[] = [
+  { name: "creator", type: "address" },
+  { name: "token", type: "address" },
+  { name: "optical", type: "address" },
+  { name: "nftId", type: "uint256" },
+  { name: "createdAt", type: "uint256" },
+  { name: "createdBlock", type: "uint256" },
 ];
 
 export interface LaunchpadMarket {
+  readonly pool: string;
   readonly token: string;
-  readonly denom: string;
-  readonly index: bigint;
   readonly name: string;
   readonly symbol: string;
   readonly creator: string;
@@ -146,75 +127,122 @@ export interface LaunchpadConfig {
   readonly baseFeeBps: bigint;
 }
 
-function launchpadMarket(value: AbiReadRecord): LaunchpadMarket {
-  return {
-    token: readText(value.token, "token"),
-    denom: readText(value.denom, "denom"),
-    index: readUint(value.index, "index"),
-    name: readText(value.name, "name"),
-    symbol: readText(value.symbol, "symbol"),
-    creator: readText(value.creator, "creator"),
-    feeStrategy: readUint(value.feeStrategy, "feeStrategy"),
-    paused: readFlag(value.paused, "paused"),
-    totalSupply: readUint(value.totalSupply, "totalSupply"),
-    tokenReserve: readUint(value.tokenReserve, "tokenReserve"),
-    realQuoteBalance: readUint(value.realQuoteBalance, "realQuoteBalance"),
-    cumulativeVolume: readUint(value.cumulativeVolume, "cumulativeVolume"),
-    price: readUint(value.price, "price"),
-  };
+async function viewUint(to: string, name: string, types: readonly ("address" | "uint256")[] = [], values: readonly (string | bigint)[] = []): Promise<bigint> {
+  const result = await view(to, encodeAbiCall(name, types, values), [{ name: "value", type: "uint256" }]);
+  return readUint(result.value, name);
 }
 
+async function viewAddress(to: string, name: string, types: readonly "address"[] = [], values: readonly string[] = []): Promise<string> {
+  const result = await view(to, encodeAbiCall(name, types, values), [{ name: "value", type: "address" }]);
+  return readText(result.value, name);
+}
+
+async function viewString(to: string, name: string): Promise<string> {
+  const result = await view(to, encodeAbiCall(name, [], []), [{ name: "value", type: "string" }]);
+  return readText(result.value, name);
+}
+
+async function viewFlag(to: string, name: string): Promise<boolean> {
+  const result = await view(to, encodeAbiCall(name, [], []), [{ name: "value", type: "bool" }]);
+  return readFlag(result.value, name);
+}
+
+/** PoolRegistry `getPoolCount()` on the launchpad precompile. */
 export async function launchpadMarketCount(): Promise<bigint> {
-  const result = await view(LAUNCHPAD_PRECOMPILE, encodeAbiCall("getMarketCount", [], []), [
-    { name: "count", type: "uint256" },
-  ]);
-  return readUint(result.count, "count");
+  return viewUint(LAUNCHPAD_PRECOMPILE, "getPoolCount");
 }
 
-export async function launchpadMarkets(offset: bigint, limit: bigint): Promise<readonly LaunchpadMarket[]> {
-  const result = await view(
-    LAUNCHPAD_PRECOMPILE,
-    encodeAbiCall("getMarkets", ["uint256", "uint256"], [offset, limit]),
-    [{ name: "markets", type: { array: { tuple: LAUNCHPAD_MARKET_FIELDS } } }],
-  );
-  return readList(result.markets, "markets").map((entry) => launchpadMarket(readRecord(entry, "market")));
-}
-
-export async function launchpadConfig(): Promise<LaunchpadConfig> {
-  const result = await view(LAUNCHPAD_PRECOMPILE, encodeAbiCall("getConfig", [], []), [
-    { name: "config", type: { tuple: LAUNCHPAD_CONFIG_FIELDS } },
+async function launchpadMarket(pool: string, feeRights: string): Promise<LaunchpadMarket> {
+  const [statsResult, metadataResult, paused] = await Promise.all([
+    view(LAUNCHPAD_PRECOMPILE, encodeAbiCall("getPoolStats", ["address"], [pool]), [
+      { name: "stats", type: { tuple: LAUNCHPAD_POOL_STATS } },
+    ]),
+    view(LAUNCHPAD_PRECOMPILE, encodeAbiCall("getPoolMetadata", ["address"], [pool]), LAUNCHPAD_POOL_METADATA),
+    viewFlag(pool, "paused"),
   ]);
-  const config = readRecord(result.config, "config");
+  const stats = readRecord(statsResult.stats, "stats");
+  const token = readText(metadataResult.token, "token");
+  const [name, symbol, totalSupply, feeStrategy] = await Promise.all([
+    viewString(token, "name"),
+    viewString(token, "symbol"),
+    viewUint(token, "totalSupply"),
+    view(feeRights, encodeAbiCall("getFeeStrategy", ["uint256"], [readUint(metadataResult.nftId, "nftId")]), [
+      { name: "strategy", type: "uint8" },
+    ]),
+  ]);
   return {
-    quoteDenom: readText(config.quoteDenom, "quoteDenom"),
-    creationFee: readUint(config.creationFee, "creationFee"),
-    minFeeBps: readUint(config.minFeeBps, "minFeeBps"),
-    maxFeeBps: readUint(config.maxFeeBps, "maxFeeBps"),
-    baseFeeBps: readUint(config.baseFeeBps, "baseFeeBps"),
+    pool,
+    token,
+    name,
+    symbol,
+    creator: readText(metadataResult.creator, "creator"),
+    feeStrategy: readUint(feeStrategy.strategy, "strategy"),
+    paused,
+    totalSupply,
+    tokenReserve: readUint(stats.tokenReserve, "tokenReserve"),
+    realQuoteBalance: readUint(stats.realUsdl, "realUsdl"),
+    cumulativeVolume: readUint(stats.cumulativeVolume, "cumulativeVolume"),
+    price: readUint(stats.price, "price"),
   };
+}
+
+/** PoolRegistry `getAllPools(offset, limit)`, each pool read through the Quoter, its pool surface, its token and its fee right. */
+export async function launchpadMarkets(offset: bigint, limit: bigint): Promise<readonly LaunchpadMarket[]> {
+  const [result, feeRights] = await Promise.all([
+    view(LAUNCHPAD_PRECOMPILE, encodeAbiCall("getAllPools", ["uint256", "uint256"], [offset, limit]), [
+      { name: "pools", type: { array: "address" } },
+    ]),
+    viewAddress(LAUNCHPAD_PRECOMPILE, "nftContract"),
+  ]);
+  const pools = readList(result.pools, "pools").map((pool) => readText(pool, "pool"));
+  return Promise.all(pools.map((pool) => launchpadMarket(pool, feeRights)));
+}
+
+/** The ProtocolConfig getters, with the quote asset named by the USDL token's symbol. */
+export async function launchpadConfig(): Promise<LaunchpadConfig> {
+  const [usdl, creationFee, minFeeBps, maxFeeBps, baseFeeBps] = await Promise.all([
+    viewAddress(LAUNCHPAD_PRECOMPILE, "usdlAddress"),
+    viewUint(LAUNCHPAD_PRECOMPILE, "creationFee"),
+    viewUint(LAUNCHPAD_PRECOMPILE, "minFeeBps"),
+    viewUint(LAUNCHPAD_PRECOMPILE, "maxFeeBps"),
+    viewUint(LAUNCHPAD_PRECOMPILE, "baseFeeBps"),
+  ]);
+  return { quoteDenom: await viewString(usdl, "symbol"), creationFee, minFeeBps, maxFeeBps, baseFeeBps };
 }
 
 export interface LaunchpadQuote {
   readonly amountOut: bigint;
-  readonly feeBps: bigint;
   readonly feeAmount: bigint;
+  readonly priceImpactBps: bigint;
 }
 
-/** The curve's `quoteBuy`/`quoteSell` answer for `amountIn` against `token`. */
+/** The Quoter's `quoteExactInput` answer for `amountIn` against the pool of `token`. */
 export async function launchpadQuote(token: string, side: "buy" | "sell", amountIn: bigint): Promise<LaunchpadQuote> {
+  const pool = await viewAddress(LAUNCHPAD_PRECOMPILE, "getPoolByToken", ["address"], [token]);
+  if (pool === ZERO_ADDRESS) {
+    throw new RangeError(`no launchpad pool trades ${token}`);
+  }
   const result = await view(
     LAUNCHPAD_PRECOMPILE,
-    encodeAbiCall(side === "buy" ? "quoteBuy" : "quoteSell", ["address", "uint256"], [token, amountIn]),
+    encodeAbiCall("quoteExactInput", ["address", "uint256", "bool"], [pool, amountIn, side === "buy"]),
     [
-      { name: "amountOut", type: "uint256" },
-      { name: "feeBps", type: "uint256" },
-      { name: "feeAmount", type: "uint256" },
+      {
+        name: "result",
+        type: {
+          tuple: [
+            { name: "amountOut", type: "uint256" },
+            { name: "feeAmount", type: "uint256" },
+            { name: "priceImpactBps", type: "uint256" },
+          ],
+        },
+      },
     ],
   );
+  const quote = readRecord(result.result, "result");
   return {
-    amountOut: readUint(result.amountOut, "amountOut"),
-    feeBps: readUint(result.feeBps, "feeBps"),
-    feeAmount: readUint(result.feeAmount, "feeAmount"),
+    amountOut: readUint(quote.amountOut, "amountOut"),
+    feeAmount: readUint(quote.feeAmount, "feeAmount"),
+    priceImpactBps: readUint(quote.priceImpactBps, "priceImpactBps"),
   };
 }
 

@@ -181,7 +181,8 @@ export function LaunchpadActions({
             {quote === undefined || minOut === undefined ? null : (
               <div className="flex flex-wrap gap-6">
                 <LabelValue label={`You receive (${receiveDenom})`} value={formatUnits(BigInt(quote.amountOut), LAUNCHPAD_DECIMALS)} />
-                <LabelValue label="Fee" value={`${formatUnits(BigInt(quote.feeAmount), LAUNCHPAD_DECIMALS)} (${quote.feeBps} bps)`} />
+                <LabelValue label="Fee" value={formatUnits(BigInt(quote.feeAmount), LAUNCHPAD_DECIMALS)} />
+                <LabelValue label="Price impact" value={`${quote.priceImpactBps} bps`} />
                 <LabelValue label="Minimum received" value={formatUnits(minOut, LAUNCHPAD_DECIMALS)} />
               </div>
             )}
