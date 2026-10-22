@@ -11,7 +11,7 @@ import {
   waitForReceipt,
 } from '../../chainReads.js';
 import { findPrincipal, getPolicy, listRules } from '../../db/agents.js';
-import { evaluateAgent, type AgentTxIntent } from '../../policy/agent.js';
+import { evaluateAgent } from '../../policy/agent.js';
 import { findWalletByAddress, getMigrationAwareSigningAccountForRow, type WalletRow } from '../../db/wallets.js';
 import { getDepositByTx, layerxEnabled } from '../../layerx/db.js';
 import { AttestorError, AttestorReauthorizationRequired, type AgentOriginalRequest, type AgentReauthorization } from '../../attestor/client.js';
@@ -24,7 +24,7 @@ import {
   type ActionErrorCode,
   type ActionPhase,
 } from './errors.js';
-import { approvalCalldata, type ActionPlan } from './plan.js';
+import { actionLegIntent, approvalCalldata, type ActionPlan } from './plan.js';
 import { actionLegExecution, getAction, releaseActionBudget, releaseActionNonce, releaseUnsignedActionNonce, reserveActionBudget, retainActionTransactionDraft, retainActionSignedTransaction, updateAction, type ActionLeg, type ActionSignedTransaction, type ActionRow, type ActionStatus } from '../../db/actions.js';
 
 /**
@@ -158,25 +158,16 @@ async function validate(row: ActionRow): Promise<void> {
   const amountWei = BigInt(plan.amountWei);
 
   // Policy-gate BOTH legs: the approve and the primary call.
-  const approveIntent: AgentTxIntent = {
-    kind: 'transaction',
+  const approveIntent = actionLegIntent(plan, 'approval', {
     to: plan.token,
     value: 0n,
     data: approvalCalldata(plan),
-    tokenContract: plan.token,
-    tokenRecipient: plan.spender,
-    tokenAmount: amountWei,
-    isApprove: true,
-  };
-  const callIntent: AgentTxIntent = {
-    kind: 'transaction',
+  });
+  const callIntent = actionLegIntent(plan, 'call', {
     to: plan.contract,
     value: BigInt(plan.callValueWei),
     data: plan.callData,
-    tokenContract: plan.token,
-    tokenRecipient: plan.spender,
-    tokenAmount: amountWei,
-  };
+  });
 
   for (const intent of [approveIntent, callIntent]) {
     const decision = await evaluateAgent({ principal, policy, rules, intent, reserveBudget: (args) => reserveActionBudget(row.id, args) });
@@ -506,8 +497,7 @@ async function broadcastLeg(
     const plan = current.plan as unknown as ActionPlan;
     const decision = await evaluateAgent({
       principal, policy, rules,
-      intent: { kind: 'transaction', to: tx.to, data: tx.data, value: tx.value,
-        tokenContract: plan.token, tokenRecipient: plan.spender, tokenAmount: BigInt(plan.amountWei), isApprove: leg === 'approval' },
+      intent: actionLegIntent(plan, leg, tx),
       reserveBudget: (args) => reserveActionBudget(current.id, args),
     });
     if (!decision.allow) {

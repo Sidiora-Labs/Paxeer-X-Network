@@ -28,6 +28,35 @@ export const PRECOMPILE_ADDRESSES = {
   p256: '0x0000000000000000000000000000000000001011',
 } as const satisfies Record<string, `0x${string}`>;
 
+/**
+ * Route keys whose address the node does not serve. No precompile constructor
+ * for 0x0901-0x0908 is linked into the node, so these addresses hold no code:
+ * a read fails and a payable write would leave its value at a codeless address.
+ * Builders and reads for them throw PrecompileNotServedError until the node
+ * serves them.
+ */
+export const UNSERVED_PRECOMPILES: ReadonlySet<keyof typeof PRECOMPILE_ADDRESSES> = new Set([
+  'orob',
+  'clearing',
+  'oracle',
+  'pofq',
+  'scheduler',
+  'streams',
+  'teeAttestor',
+  'eip712',
+] as const);
+
+export class PrecompileNotServedError extends Error {
+  constructor(public readonly precompile: keyof typeof PRECOMPILE_ADDRESSES) {
+    super(`precompile ${precompile} at ${PRECOMPILE_ADDRESSES[precompile]} is not served by the node`);
+  }
+}
+
+export function servedAddress(key: keyof typeof PRECOMPILE_ADDRESSES): `0x${string}` {
+  if (UNSERVED_PRECOMPILES.has(key)) throw new PrecompileNotServedError(key);
+  return PRECOMPILE_ADDRESSES[key];
+}
+
 /** TEE attestation families — order matches x/attestor/types/keys.go + ITEEAttestor.sol. */
 export const TEE_FAMILIES = {
   intel_tdx: 0,
@@ -299,20 +328,20 @@ export const scheduler = {
       args: [args.target, args.callData ?? '0x', args.executeAtBlock, args.gasLimit],
     });
     return {
-      to: PRECOMPILE_ADDRESSES.scheduler,
+      to: servedAddress('scheduler'),
       data,
       value: args.depositWei !== undefined ? args.depositWei.toString() : undefined,
     };
   },
   cancel(jobId: bigint): BuiltCall {
     return {
-      to: PRECOMPILE_ADDRESSES.scheduler,
+      to: servedAddress('scheduler'),
       data: encodeFunctionData({ abi: SCHEDULER_ABI, functionName: 'cancel', args: [jobId] }),
     };
   },
   reschedule(jobId: bigint, newBlock: bigint): BuiltCall {
     return {
-      to: PRECOMPILE_ADDRESSES.scheduler,
+      to: servedAddress('scheduler'),
       data: encodeFunctionData({
         abi: SCHEDULER_ABI,
         functionName: 'reschedule',
@@ -331,7 +360,7 @@ export const scheduler = {
     active: boolean;
   } | null> {
     const r = (await publicClient().readContract({
-      address: PRECOMPILE_ADDRESSES.scheduler,
+      address: servedAddress('scheduler'),
       abi: SCHEDULER_ABI,
       functionName: 'getJob',
       args: [jobId],
@@ -359,7 +388,7 @@ export const scheduler = {
   },
   async pending(creator: `0x${string}`): Promise<string[]> {
     const r = (await publicClient().readContract({
-      address: PRECOMPILE_ADDRESSES.scheduler,
+      address: servedAddress('scheduler'),
       abi: SCHEDULER_ABI,
       functionName: 'pending',
       args: [creator],
@@ -393,23 +422,23 @@ export const streams = {
         args.cap,
       ],
     });
-    return { to: PRECOMPILE_ADDRESSES.streams, data };
+    return { to: servedAddress('streams'), data };
   },
   settle(streamId: bigint): BuiltCall {
     return {
-      to: PRECOMPILE_ADDRESSES.streams,
+      to: servedAddress('streams'),
       data: encodeFunctionData({ abi: STREAMS_ABI, functionName: 'settle', args: [streamId] }),
     };
   },
   close(streamId: bigint): BuiltCall {
     return {
-      to: PRECOMPILE_ADDRESSES.streams,
+      to: servedAddress('streams'),
       data: encodeFunctionData({ abi: STREAMS_ABI, functionName: 'close', args: [streamId] }),
     };
   },
   updateRate(streamId: bigint, newRate: bigint): BuiltCall {
     return {
-      to: PRECOMPILE_ADDRESSES.streams,
+      to: servedAddress('streams'),
       data: encodeFunctionData({
         abi: STREAMS_ABI,
         functionName: 'updateRate',
@@ -419,7 +448,7 @@ export const streams = {
   },
   async accrued(streamId: bigint): Promise<string> {
     const r = (await publicClient().readContract({
-      address: PRECOMPILE_ADDRESSES.streams,
+      address: servedAddress('streams'),
       abi: STREAMS_ABI,
       functionName: 'accrued',
       args: [streamId],
@@ -428,7 +457,7 @@ export const streams = {
   },
   async getStream(streamId: bigint): Promise<Record<string, string | boolean> | null> {
     const r = (await publicClient().readContract({
-      address: PRECOMPILE_ADDRESSES.streams,
+      address: servedAddress('streams'),
       abi: STREAMS_ABI,
       functionName: 'getStream',
       args: [streamId],
@@ -467,7 +496,7 @@ export const streams = {
 export const eip712 = {
   async hashTypedData(domainSeparator: Hex, structHash: Hex): Promise<Hex> {
     return (await publicClient().readContract({
-      address: PRECOMPILE_ADDRESSES.eip712,
+      address: servedAddress('eip712'),
       abi: EIP712_ABI,
       functionName: 'hashTypedData',
       args: [domainSeparator, structHash],
@@ -480,7 +509,7 @@ export const eip712 = {
     verifyingContract: `0x${string}`;
   }): Promise<Hex> {
     return (await publicClient().readContract({
-      address: PRECOMPILE_ADDRESSES.eip712,
+      address: servedAddress('eip712'),
       abi: EIP712_ABI,
       functionName: 'domainSeparator',
       args: [args.name, args.version, args.chainId, args.verifyingContract],
@@ -488,7 +517,7 @@ export const eip712 = {
   },
   async recoverTypedSigner(domainSeparator: Hex, structHash: Hex, signature: Hex): Promise<Hex> {
     return (await publicClient().readContract({
-      address: PRECOMPILE_ADDRESSES.eip712,
+      address: servedAddress('eip712'),
       abi: EIP712_ABI,
       functionName: 'recoverTypedSigner',
       args: [domainSeparator, structHash, signature],
@@ -534,7 +563,7 @@ function shapeAttestation(r: {
 export const teeAttestor = {
   async verify(family: number, quote: Hex): Promise<Attestation> {
     const r = (await publicClient().readContract({
-      address: PRECOMPILE_ADDRESSES.teeAttestor,
+      address: servedAddress('teeAttestor'),
       abi: TEE_ATTESTOR_ABI,
       functionName: 'verify',
       args: [family, quote],
@@ -543,7 +572,7 @@ export const teeAttestor = {
   },
   async verifyAndExpect(family: number, quote: Hex, expectedReportData: Hex): Promise<Attestation> {
     const r = (await publicClient().readContract({
-      address: PRECOMPILE_ADDRESSES.teeAttestor,
+      address: servedAddress('teeAttestor'),
       abi: TEE_ATTESTOR_ABI,
       functionName: 'verifyAndExpect',
       args: [family, quote, expectedReportData],
@@ -552,7 +581,7 @@ export const teeAttestor = {
   },
   async rootOf(family: number, index: bigint): Promise<Hex> {
     return (await publicClient().readContract({
-      address: PRECOMPILE_ADDRESSES.teeAttestor,
+      address: servedAddress('teeAttestor'),
       abi: TEE_ATTESTOR_ABI,
       functionName: 'rootOf',
       args: [family, index],
@@ -560,7 +589,7 @@ export const teeAttestor = {
   },
   async rootCount(family: number): Promise<string> {
     const r = (await publicClient().readContract({
-      address: PRECOMPILE_ADDRESSES.teeAttestor,
+      address: servedAddress('teeAttestor'),
       abi: TEE_ATTESTOR_ABI,
       functionName: 'rootCount',
       args: [family],

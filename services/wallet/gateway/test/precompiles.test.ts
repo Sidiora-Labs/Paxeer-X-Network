@@ -1,12 +1,19 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { toFunctionSelector, toFunctionSignature, type Abi } from 'viem';
 import {
   EIP712_ABI,
   PRECOMPILE_ADDRESSES,
+  PrecompileNotServedError,
   SCHEDULER_ABI,
   STREAMS_ABI,
   TEE_ATTESTOR_ABI,
+  UNSERVED_PRECOMPILES,
+  eip712,
+  scheduler,
+  streams,
+  teeAttestor,
 } from '../src/precompiles.js';
 
 function readRepositoryFile(path: string): string {
@@ -154,4 +161,55 @@ describe('agent ABI selectors', () => {
       expect(new Set(actual.map(([, selector]) => selector)).size, key).toBe(count);
     }
   );
+});
+
+function goSources(): string[] {
+  return execFileSync('git', ['ls-files', '*.go'], {
+    cwd: new URL('../../../../', import.meta.url),
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  })
+    .split('\n')
+    .filter((file) => file.endsWith('.go') && !file.endsWith('_test.go'));
+}
+
+describe('unserved agent precompiles', () => {
+  it('lists every 0x09xx route while no node package links a layerxagent precompile', () => {
+    const agentKeys = routeKeys.filter((key) => !registrationSources.some((source) => source.key === key));
+    expect([...UNSERVED_PRECOMPILES].sort()).toEqual([...agentKeys].sort());
+    const linking = goSources()
+      .filter((file) => !file.startsWith('precompiles/layerxagent/'))
+      .filter((file) => /"[^"]*\/precompiles\/layerxagent\/(?!common")[^"]*"/.test(readRepositoryFile(file)));
+    expect(linking).toEqual([]);
+  });
+
+  it('refuses to build a scheduler deposit or a stream to an unserved address', () => {
+    expect(() =>
+      scheduler.schedule({
+        target: '0x000000000000000000000000000000000000dEaD',
+        executeAtBlock: 1n,
+        gasLimit: 1n,
+        depositWei: 1n,
+      })
+    ).toThrowError(PrecompileNotServedError);
+    expect(() => scheduler.cancel(1n)).toThrowError(PrecompileNotServedError);
+    expect(() =>
+      streams.open({
+        payee: '0x000000000000000000000000000000000000dEaD',
+        token: '0x000000000000000000000000000000000000dEaD',
+        ratePerSecond: 1n,
+        cap: 1n,
+      })
+    ).toThrowError(PrecompileNotServedError);
+  });
+
+  it('refuses reads of an unserved address before any RPC', async () => {
+    await expect(scheduler.pending('0x000000000000000000000000000000000000dEaD')).rejects.toBeInstanceOf(
+      PrecompileNotServedError
+    );
+    await expect(eip712.hashTypedData(`0x${'11'.repeat(32)}`, `0x${'22'.repeat(32)}`)).rejects.toBeInstanceOf(
+      PrecompileNotServedError
+    );
+    await expect(teeAttestor.rootCount(0)).rejects.toBeInstanceOf(PrecompileNotServedError);
+  });
 });

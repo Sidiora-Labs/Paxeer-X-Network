@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { decodeFunctionData, keccak256, toBytes } from 'viem';
 import {
+  actionLegIntent,
   buildAllowanceAndCallPlan,
   buildLayerxDepositPlan,
   didClaimFor,
@@ -112,6 +113,55 @@ describe('buildAllowanceAndCallPlan', () => {
       expect(err).toBeInstanceOf(PlanError);
       expect((err as PlanError).code).toBe('INVALID_REQUEST');
     }
+  });
+});
+
+describe('allowance-and-call token movers', () => {
+  const TOKEN = '0x85FcD13735F4309833A503EE804ea32395851479';
+  const SINK = '0x000000000000000000000000000000000000dEaD';
+
+  it.each([
+    ['transfer(address,uint256)', [SINK, '1000']],
+    ['transferFrom(address,address,uint256)', [VAULT, SINK, '1000']],
+    ['approve(address,uint256)', [SINK, '1000']],
+  ])('refuses %s as the primary call on another contract', (method, args) => {
+    expect(() =>
+      buildAllowanceAndCallPlan({ token: TOKEN, amount: '1', spender: VAULT, contract: VAULT, method, args }),
+    ).toThrowError(/must not be an ERC-20 transfer/);
+  });
+
+  it('refuses a primary call on the approved token itself', () => {
+    expect(() =>
+      buildAllowanceAndCallPlan({
+        token: TOKEN,
+        amount: '1',
+        spender: VAULT,
+        contract: TOKEN.toLowerCase(),
+        method: 'burn(uint256)',
+        args: ['1'],
+      }),
+    ).toThrowError(/must not be the approved token/);
+  });
+
+  it('annotates only the approval leg so the call leg is decoded from its calldata', () => {
+    const plan = buildAllowanceAndCallPlan({
+      token: TOKEN,
+      amount: '250',
+      spender: VAULT,
+      contract: VAULT,
+      method: 'depositUSDL(uint256,bytes32)',
+      args: ['250', '0x' + '11'.repeat(32)],
+    });
+    const call = actionLegIntent(plan, 'call', { to: plan.contract, data: plan.callData, value: 0n });
+    expect(call).toEqual({ kind: 'transaction', to: plan.contract, value: 0n, data: plan.callData });
+    expect(call.tokenContract).toBeUndefined();
+    const approval = actionLegIntent(plan, 'approval', { to: plan.token, data: approvalCalldata(plan), value: 0n });
+    expect(approval).toMatchObject({
+      tokenContract: TOKEN,
+      tokenRecipient: VAULT,
+      tokenAmount: 250n,
+      isApprove: true,
+    });
   });
 });
 

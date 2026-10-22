@@ -2,6 +2,19 @@ import { keccak256, toBytes, type Hex } from 'viem';
 import { encodeErc20Approve, encodeCall, getErc20Metadata } from '../../chainReads.js';
 import { env } from '../../env.js';
 import { parseUnits } from 'viem';
+import type { ActionLeg } from '../../db/actions.js';
+import {
+  ERC20_APPROVE_SELECTOR,
+  ERC20_TRANSFER_FROM_SELECTOR,
+  ERC20_TRANSFER_SELECTOR,
+  type AgentTxIntent,
+} from '../../policy/agent.js';
+
+const ERC20_MOVER_SELECTORS = new Set([
+  ERC20_APPROVE_SELECTOR,
+  ERC20_TRANSFER_SELECTOR,
+  ERC20_TRANSFER_FROM_SELECTOR,
+]);
 
 /**
  * Kind-specific intent builders for the durable-action lane.
@@ -127,6 +140,14 @@ export function buildAllowanceAndCallPlan(args: {
   } catch (err) {
     throw new PlanError('INVALID_REQUEST', `could not encode call: ${(err as Error).message}`);
   }
+  // The primary call is policy-checked from its own calldata, so it must not be
+  // a token transfer or approval the approval leg's spender would stand in for.
+  if (args.contract.toLowerCase() === args.token.toLowerCase()) {
+    throw new PlanError('INVALID_REQUEST', 'the call contract must not be the approved token');
+  }
+  if (ERC20_MOVER_SELECTORS.has(encoded.selector.toLowerCase())) {
+    throw new PlanError('INVALID_REQUEST', 'the call must not be an ERC-20 transfer, transferFrom or approve');
+  }
 
   return {
     token: args.token as `0x${string}`,
@@ -145,4 +166,25 @@ export function buildAllowanceAndCallPlan(args: {
 /** Encode the approval leg for a plan. */
 export function approvalCalldata(plan: ActionPlan): Hex {
   return encodeErc20Approve(plan.spender, BigInt(plan.amountWei));
+}
+
+/**
+ * The policy intent of one leg. The approval leg names the token, spender and
+ * amount it approves; the call leg carries no token annotations, so the policy
+ * decodes its recipient from the calldata it actually sends.
+ */
+export function actionLegIntent(
+  plan: ActionPlan,
+  leg: ActionLeg,
+  tx: { to: `0x${string}`; data: Hex; value: bigint },
+): AgentTxIntent {
+  const intent: AgentTxIntent = { kind: 'transaction', to: tx.to, value: tx.value, data: tx.data };
+  if (leg === 'call') return intent;
+  return {
+    ...intent,
+    tokenContract: plan.token,
+    tokenRecipient: plan.spender,
+    tokenAmount: BigInt(plan.amountWei),
+    isApprove: true,
+  };
 }

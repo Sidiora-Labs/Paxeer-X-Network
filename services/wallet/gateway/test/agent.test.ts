@@ -374,5 +374,36 @@ describe('agent request signing', () => {
       expect(res.statusCode).toBe(401);
       expect(res.json()).toMatchObject({ error: 'agent_request_malformed' });
     });
+
+    it('refuses a signed scheduler deposit to the unserved precompile without signing', async () => {
+      const res = await signedPost(agent, '/v1/agent/precompiles/scheduler/schedule', {
+        target: '0x000000000000000000000000000000000000dEaD',
+        execute_at_block: '100',
+        gas_limit: '100000',
+        deposit_wei: '1000',
+      });
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toMatchObject({
+        error: 'precompile_not_served',
+        precompile: 'scheduler',
+        address: '0x0000000000000000000000000000000000000905',
+      });
+    });
+
+    it.each([
+      ['GET', '/v1/agent/precompiles/scheduler/pending', undefined, 'scheduler'],
+      ['GET', '/v1/agent/precompiles/streams/accrued/1', undefined, 'streams'],
+      ['POST', '/v1/agent/precompiles/eip712/hash-typed-data', { domain_separator: `0x${'11'.repeat(32)}`, struct_hash: `0x${'22'.repeat(32)}` }, 'eip712'],
+      ['POST', '/v1/agent/precompiles/tee/root-count', { family: 'intel_tdx' }, 'teeAttestor'],
+    ] as const)('refuses the read %s %s of an unserved precompile', async (method, url, payload, precompile) => {
+      const res = await app.inject({
+        method,
+        url,
+        headers: { authorization: `Bearer ${token}` },
+        ...(payload === undefined ? {} : { payload }),
+      });
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toMatchObject({ error: 'precompile_not_served', precompile });
+    });
   });
 });

@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHash } from 'node:crypto';
 import type { Hex } from 'viem';
 import { requireAgent } from '../middleware/principal.js';
@@ -7,6 +7,7 @@ import { env } from '../env.js';
 import {
   PRECOMPILE_ADDRESSES,
   TEE_FAMILIES,
+  UNSERVED_PRECOMPILES,
   eip712,
   scheduler,
   streams,
@@ -57,6 +58,18 @@ function buildAudit(req: FastifyRequest, payload: unknown): {
   };
 }
 
+function refuseUnserved(key: keyof typeof PRECOMPILE_ADDRESSES) {
+  return async (_req: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    if (!UNSERVED_PRECOMPILES.has(key)) return;
+    void reply.code(503).send({
+      error: 'precompile_not_served',
+      message: `the node does not serve the ${key} precompile`,
+      precompile: key,
+      address: PRECOMPILE_ADDRESSES[key],
+    });
+  };
+}
+
 function resolveFamily(f: string | number): number {
   return typeof f === 'number' ? f : TEE_FAMILIES[f as keyof typeof TEE_FAMILIES];
 }
@@ -64,7 +77,7 @@ function resolveFamily(f: string | number): number {
 export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void> {
   // ── Scheduler (0x0905) ─────────────────────────────────────────────────────
 
-  app.post('/v1/agent/precompiles/scheduler/schedule', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/scheduler/schedule', { preHandler: [requireSignedAgentRequest, refuseUnserved('scheduler')] }, async (req, reply) => {
     const parsed = ScheduleBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const { target, call_data, execute_at_block, gas_limit, deposit_wei } = parsed.data;
@@ -102,7 +115,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     return reply.code(res.status).send(res.body);
   });
 
-  app.post('/v1/agent/precompiles/scheduler/cancel', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/scheduler/cancel', { preHandler: [requireSignedAgentRequest, refuseUnserved('scheduler')] }, async (req, reply) => {
     const parsed = SchedulerJobIdBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const call = scheduler.cancel(BigInt(parsed.data.job_id));
@@ -117,7 +130,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     return reply.code(res.status).send(res.body);
   });
 
-  app.post('/v1/agent/precompiles/scheduler/reschedule', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/scheduler/reschedule', { preHandler: [requireSignedAgentRequest, refuseUnserved('scheduler')] }, async (req, reply) => {
     const parsed = RescheduleBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const call = scheduler.reschedule(BigInt(parsed.data.job_id), BigInt(parsed.data.new_block));
@@ -132,7 +145,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     return reply.code(res.status).send(res.body);
   });
 
-  app.get('/v1/agent/precompiles/scheduler/job/:id', { preHandler: requireAgent }, async (req, reply) => {
+  app.get('/v1/agent/precompiles/scheduler/job/:id', { preHandler: [requireAgent, refuseUnserved('scheduler')] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!/^\d{1,80}$/.test(id)) return reply.code(400).send({ error: 'invalid_job_id' });
     const job = await scheduler.getJob(BigInt(id)).catch((err) => {
@@ -143,7 +156,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     return reply.send({ job });
   });
 
-  app.get('/v1/agent/precompiles/scheduler/pending', { preHandler: requireAgent }, async (req, reply) => {
+  app.get('/v1/agent/precompiles/scheduler/pending', { preHandler: [requireAgent, refuseUnserved('scheduler')] }, async (req, reply) => {
     const wallet = await getAgentWallet(req.agent!.did);
     if (!wallet) return reply.code(404).send({ error: 'no_wallet', message: 'provision first' });
     const ids = await scheduler.pending(wallet.address).catch(() => []);
@@ -152,7 +165,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
 
   // ── PaymentStreams (0x0906) ─────────────────────────────────────────────────
 
-  app.post('/v1/agent/precompiles/streams/open', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/streams/open', { preHandler: [requireSignedAgentRequest, refuseUnserved('streams')] }, async (req, reply) => {
     const parsed = StreamOpenBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const { payee, token, rate_per_second, start_time, stop_time, cap } = parsed.data;
@@ -189,7 +202,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     ['settle', (id: bigint) => streams.settle(id)],
     ['close', (id: bigint) => streams.close(id)],
   ] as const) {
-    app.post(`/v1/agent/precompiles/streams/${path}`, { preHandler: requireSignedAgentRequest }, async (req, reply) => {
+    app.post(`/v1/agent/precompiles/streams/${path}`, { preHandler: [requireSignedAgentRequest, refuseUnserved('streams')] }, async (req, reply) => {
       const parsed = StreamIdBody.safeParse(req.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
       const call = op(BigInt(parsed.data.stream_id));
@@ -205,7 +218,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     });
   }
 
-  app.post('/v1/agent/precompiles/streams/update-rate', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/streams/update-rate', { preHandler: [requireSignedAgentRequest, refuseUnserved('streams')] }, async (req, reply) => {
     const parsed = StreamUpdateRateBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const call = streams.updateRate(BigInt(parsed.data.stream_id), BigInt(parsed.data.new_rate));
@@ -220,7 +233,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     return reply.code(res.status).send(res.body);
   });
 
-  app.get('/v1/agent/precompiles/streams/stream/:id', { preHandler: requireAgent }, async (req, reply) => {
+  app.get('/v1/agent/precompiles/streams/stream/:id', { preHandler: [requireAgent, refuseUnserved('streams')] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!/^\d{1,80}$/.test(id)) return reply.code(400).send({ error: 'invalid_stream_id' });
     const stream = await streams.getStream(BigInt(id)).catch(() => null);
@@ -228,7 +241,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     return reply.send({ stream });
   });
 
-  app.get('/v1/agent/precompiles/streams/accrued/:id', { preHandler: requireAgent }, async (req, reply) => {
+  app.get('/v1/agent/precompiles/streams/accrued/:id', { preHandler: [requireAgent, refuseUnserved('streams')] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!/^\d{1,80}$/.test(id)) return reply.code(400).send({ error: 'invalid_stream_id' });
     const accrued = await streams.accrued(BigInt(id)).catch(() => null);
@@ -238,7 +251,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
 
   // ── EIP-712 helper (0x0908) — pure views ────────────────────────────────────
 
-  app.post('/v1/agent/precompiles/eip712/domain-separator', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/eip712/domain-separator', { preHandler: [requireAgent, refuseUnserved('eip712')] }, async (req, reply) => {
     const parsed = Eip712DomainSeparatorBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const { name, version, chain_id, verifying_contract } = parsed.data;
@@ -251,7 +264,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     return reply.send({ separator });
   });
 
-  app.post('/v1/agent/precompiles/eip712/hash-typed-data', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/eip712/hash-typed-data', { preHandler: [requireAgent, refuseUnserved('eip712')] }, async (req, reply) => {
     const parsed = Eip712HashBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const digest = await eip712.hashTypedData(
@@ -261,7 +274,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     return reply.send({ digest });
   });
 
-  app.post('/v1/agent/precompiles/eip712/recover', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/eip712/recover', { preHandler: [requireAgent, refuseUnserved('eip712')] }, async (req, reply) => {
     const parsed = Eip712RecoverBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const signer = await eip712.recoverTypedSigner(
@@ -274,7 +287,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
 
   // ── TEE Attestor (0x0907) — views ───────────────────────────────────────────
 
-  app.post('/v1/agent/precompiles/tee/verify', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/tee/verify', { preHandler: [requireAgent, refuseUnserved('teeAttestor')] }, async (req, reply) => {
     const parsed = TeeVerifyBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const family = resolveFamily(parsed.data.family);
@@ -289,7 +302,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     }
   });
 
-  app.post('/v1/agent/precompiles/tee/root-count', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/tee/root-count', { preHandler: [requireAgent, refuseUnserved('teeAttestor')] }, async (req, reply) => {
     const parsed = TeeRootBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const family = resolveFamily(parsed.data.family);
@@ -298,7 +311,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     return reply.send({ family, count });
   });
 
-  app.post('/v1/agent/precompiles/tee/root-of', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/tee/root-of', { preHandler: [requireAgent, refuseUnserved('teeAttestor')] }, async (req, reply) => {
     const parsed = TeeRootBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     if (parsed.data.index === undefined) return reply.code(400).send({ error: 'index_required' });
