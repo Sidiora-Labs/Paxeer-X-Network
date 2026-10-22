@@ -74,4 +74,22 @@ describe('LatestTxsItem', () => {
     expect(labels.indexOf('tx-parties')).toBe(hashIndex + 1);
     expect(labels.indexOf('tx-value')).toBe(hashIndex + 2);
   });
+
+  it('shows a price update with its feed link, market count, feeder, the price feed and dashes for value and fee', () => {
+    const { container } = render(<LatestTxsItem tx={ txMock.priceUpdate }/>);
+
+    const row = container.querySelector(`[data-latest-tx="${ txMock.priceUpdate.hash }"]`) as HTMLElement;
+    const tags = row.querySelector('[data-label="tx-tags"]') as HTMLElement;
+    const parties = row.querySelector('[data-label="tx-parties"]') as HTMLElement;
+    const value = row.querySelector('[data-label="tx-value"]') as HTMLElement;
+
+    expect(row.querySelector(`a[href="/feed/update/${ txMock.priceUpdate.hash }"]`)).not.toBeNull();
+    expect(row.querySelector(`a[href="/tx/${ txMock.priceUpdate.hash }"]`)).toBeNull();
+    expect(tags.querySelector('[data-scan-method]')?.getAttribute('data-scan-method')).toBe('Price update · 2 markets');
+    expect(Array.from(parties.querySelectorAll('a[href^="/address/"]')).map((link) => link.getAttribute('href')))
+      .toEqual([ `/address/${ txMock.priceUpdate.from.hash }` ]);
+    expect(parties.querySelector('a[href="/feed"]')?.textContent).toBe('Price feed');
+    expect(value.textContent).toBe('-Fee -');
+    expect(row.querySelector('button[aria-label="Transaction info"]')).toBeNull();
+  });
 });

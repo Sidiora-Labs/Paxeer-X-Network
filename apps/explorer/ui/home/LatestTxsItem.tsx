@@ -10,12 +10,14 @@ import AddressEntity from 'ui/shared/entities/address/AddressEntity';
 import TxEntity from 'ui/shared/entities/tx/TxEntity';
 import EntityTag from 'ui/shared/EntityTags/EntityTag';
 import IconSvg from 'ui/shared/IconSvg';
+import ScanMethodChip from 'ui/shared/scan/ScanMethodChip';
 import TxStatus from 'ui/shared/statusTag/TxStatus';
 import TimeWithTooltip from 'ui/shared/time/TimeWithTooltip';
 import TxFee from 'ui/shared/tx/TxFee';
 import TxWatchListTags from 'ui/shared/tx/TxWatchListTags';
 import NativeCoinValue from 'ui/shared/value/NativeCoinValue';
 import TxAdditionalInfo from 'ui/txs/TxAdditionalInfo';
+import { isPriceUpdate, PriceUpdateFromTo, priceUpdateHref, priceUpdateMethod } from 'ui/txs/TxPriceUpdate';
 import TxType from 'ui/txs/TxType';
 
 type Props = {
@@ -24,9 +26,11 @@ type Props = {
 };
 
 const LatestTxsItem = ({ tx, isLoading }: Props) => {
-  const dataTo = tx.to ? tx.to : tx.created_contract;
+  const priceUpdate = isPriceUpdate(tx);
+  const evmTx = priceUpdate ? undefined : tx;
+  const dataTo = evmTx?.to ? evmTx.to : evmTx?.created_contract;
 
-  const protocolTag = tx.to?.metadata?.tags?.find(tag => tag.tagType === 'protocol');
+  const protocolTag = evmTx?.to?.metadata?.tags?.find(tag => tag.tagType === 'protocol');
 
   return (
     <Flex
@@ -53,6 +57,7 @@ const LatestTxsItem = ({ tx, isLoading }: Props) => {
         <TxEntity
           isLoading={ isLoading }
           hash={ tx.hash }
+          href={ priceUpdate ? priceUpdateHref(tx.hash) : undefined }
           noIcon
           textStyle="sm"
           fontWeight="500"
@@ -68,41 +73,47 @@ const LatestTxsItem = ({ tx, isLoading }: Props) => {
             display="block"
           />
           <HStack gap={ 1 } minW={ 0 } data-label="tx-tags" _empty={{ display: 'none' }}>
-            <TxType types={ tx.transaction_types } isLoading={ isLoading }/>
+            { priceUpdate ?
+              <ScanMethodChip method={ priceUpdateMethod(tx) } isLoading={ isLoading }/> :
+              <TxType types={ tx.transaction_types } isLoading={ isLoading }/> }
             { tx.status !== 'ok' && <TxStatus status={ tx.status } errorText={ tx.status === 'error' ? tx.result : undefined } isLoading={ isLoading }/> }
-            <TxWatchListTags tx={ tx } isLoading={ isLoading }/>
+            { evmTx && <TxWatchListTags tx={ evmTx } isLoading={ isLoading }/> }
             { protocolTag && <EntityTag data={ protocolTag } isLoading={ isLoading } minW="0" noColors/> }
           </HStack>
         </Flex>
       </Box>
       <Box minW={ 0 } flexGrow={ 1 } data-label="tx-parties">
-        <Flex alignItems="center" columnGap={ 1 } minW={ 0 }>
-          <Skeleton loading={ isLoading } textStyle="xs" color="text.muted" flexShrink={ 0 }>From</Skeleton>
-          <AddressEntity address={ tx.from } isLoading={ isLoading } noIcon truncation="constant" textStyle="xs"/>
-        </Flex>
-        { dataTo && (
-          <Flex alignItems="center" columnGap={ 1 } minW={ 0 } mt="2px">
-            <Skeleton loading={ isLoading } textStyle="xs" color="text.muted" flexShrink={ 0 }>To</Skeleton>
-            <AddressEntity address={ dataTo } isLoading={ isLoading } noIcon truncation="constant" textStyle="xs"/>
-          </Flex>
-        ) }
+        { evmTx ? (
+          <>
+            <Flex alignItems="center" columnGap={ 1 } minW={ 0 }>
+              <Skeleton loading={ isLoading } textStyle="xs" color="text.muted" flexShrink={ 0 }>From</Skeleton>
+              <AddressEntity address={ evmTx.from } isLoading={ isLoading } noIcon truncation="constant" textStyle="xs"/>
+            </Flex>
+            { dataTo && (
+              <Flex alignItems="center" columnGap={ 1 } minW={ 0 } mt="2px">
+                <Skeleton loading={ isLoading } textStyle="xs" color="text.muted" flexShrink={ 0 }>To</Skeleton>
+                <AddressEntity address={ dataTo } isLoading={ isLoading } noIcon truncation="constant" textStyle="xs"/>
+              </Flex>
+            ) }
+          </>
+        ) : <PriceUpdateFromTo tx={ tx } isLoading={ isLoading }/> }
       </Box>
       { !(config.UI.views.tx.hiddenFields?.value && config.UI.views.tx.hiddenFields?.tx_fee) && (
         <Box flexShrink={ 0 } textAlign="right" data-label="tx-value">
           { !config.UI.views.tx.hiddenFields?.value && (
             <Tag variant="outlined" loading={ isLoading }>
-              <NativeCoinValue amount={ tx.value } accuracy={ 5 } loading={ isLoading }/>
+              { evmTx ? <NativeCoinValue amount={ evmTx.value } accuracy={ 5 } loading={ isLoading }/> : '-' }
             </Tag>
           ) }
           { !config.UI.views.tx.hiddenFields?.tx_fee && (
             <Skeleton loading={ isLoading } display="flex" justifyContent="flex-end" whiteSpace="pre" textStyle="xs" color="text.muted" mt="2px">
               <Text as="span">Fee </Text>
-              <TxFee tx={ tx } accuracy={ 5 } noUsd/>
+              { evmTx ? <TxFee tx={ evmTx } accuracy={ 5 } noUsd/> : '-' }
             </Skeleton>
           ) }
         </Box>
       ) }
-      <TxAdditionalInfo tx={ tx } isLoading={ isLoading } flexShrink={ 0 }/>
+      { evmTx && <TxAdditionalInfo tx={ evmTx } isLoading={ isLoading } flexShrink={ 0 }/> }
     </Flex>
   );
 };
