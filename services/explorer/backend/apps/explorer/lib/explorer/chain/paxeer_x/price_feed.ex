@@ -204,8 +204,8 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
 
   @doc """
   Records that the height could not be scanned: `"unavailable"` when the nodes no longer
-  serve it, `"failed"` when its scan kept failing. Catch-up then skips the height until a
-  rescan or a refetch stores it.
+  serve it, `"failed"` when its scan kept failing. Catch-up skips an unavailable height
+  and scans a failed one again; a refetch scans either again.
   """
   @spec mark_unscannable(non_neg_integer(), String.t(), String.t()) :: :ok
   def mark_unscannable(number, status, error) when status in ["unavailable", "failed"] do
@@ -253,17 +253,32 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
   end
 
   @doc """
-  Reduces over the consensus block heights at or above `start_block` that have not been
-  scanned yet, lowest first. Only the heights above the scanned watermark are read.
+  Reduces over the consensus block heights at or above `start_block` whose scan failed,
+  wherever the scanned watermark is, and then over those that have not been scanned yet,
+  each lowest first. Only the heights above the scanned watermark are read for the
+  latter.
   """
   @spec stream_unscanned_block_numbers(acc, (non_neg_integer(), acc -> acc), non_neg_integer()) :: {:ok, acc}
         when acc: term()
   def stream_unscanned_block_numbers(initial, reducer, start_block) when is_function(reducer, 2) do
+    {:ok, acc} = start_block |> failed_block_numbers_query() |> Repo.stream_reduce(initial, reducer)
+
     start_block
     |> scanned_through()
     |> Kernel.+(1)
     |> unscanned_block_numbers_query()
-    |> Repo.stream_reduce(initial, reducer)
+    |> Repo.stream_reduce(acc, reducer)
+  end
+
+  @doc false
+  def failed_block_numbers_query(start_block) do
+    from(scanned in PriceFeedScannedBlock,
+      inner_join: block in Block,
+      on: block.number == scanned.block_number and block.consensus == true,
+      where: scanned.status == "failed" and scanned.block_number >= ^start_block,
+      order_by: [asc: scanned.block_number],
+      select: scanned.block_number
+    )
   end
 
   @doc false

@@ -5,14 +5,15 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdates do
 
   Realtime: every block the block fetcher imports at or above the start block is
   buffered, so a refetched block is scanned again and replaces what was stored for its
-  height. Catch-up: on start the consensus heights at or above the start block that
-  have no scanned row are buffered, lowest first.
+  height. Catch-up: on start the consensus heights at or above the start block whose
+  scan failed are buffered, then those that have no scanned row, each lowest first.
 
   A height the nodes no longer serve is recorded as unavailable and not retried. Any
-  other failure, a node whose head is still below the height among them, requeues the
-  height as `{number, attempts, not_before}` with a doubling delay, and after
-  `@max_attempts` failed scans the height is recorded as failed with its last error.
-  Either record is logged once.
+  other failure is buffered again as `{number, attempts, not_before, failures}` once a
+  doubling delay has passed. A node whose head is still below the height or a node that
+  cannot be reached is transient and retried for as long as it lasts; after
+  `@max_attempts` other failures the height is recorded as failed with its last error and
+  scanned again by the next catch-up. Either record is logged once.
 
   Once a block's submissions are committed, from either path, the height is published as a
   realtime `:paxeer_x_price_updates` chain event so the web notifier streams them.
@@ -20,8 +21,8 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdates do
   The market list is read from the price-feed precompile with `getMarketCount()` and
   `getMarket(uint256)` over the indexer's JSON-RPC when it is older than the refresh
   interval or a submission names a market it does not hold, and only for a block that
-  carries a submission. Attempts are spaced by the refresh interval, kept in the fetcher
-  state, so a market the precompile does not list costs no calls per block.
+  carries a submission. Attempts are spaced by the refresh interval across every batch,
+  so a market the precompile does not list costs no calls per block.
   """
 
   use Indexer.Fetcher, restart: :permanent
@@ -47,6 +48,8 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdates do
   @max_markets 1024
   @max_attempts 10
   @max_backoff_ms 300_000
+  @never -9_223_372_036_854_775_808
+  @transient [:height_ahead, :unreachable]
 
   @abi [
     %{
@@ -124,8 +127,18 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdates do
       start_block: config[:start_block],
       precompile: config[:precompile] || @default_precompile,
       markets_refresh_seconds: config[:markets_refresh_seconds],
-      markets_attempted_at: nil
+      markets_attempted_at: refresh_clock()
     }
+  end
+
+  @doc """
+  The market-refresh attempt time shared by every batch, unset until the first attempt.
+  """
+  @spec refresh_clock() :: :atomics.atomics_ref()
+  def refresh_clock do
+    clock = :atomics.new(1, signed: true)
+    :atomics.put(clock, 1, @never)
+    clock
   end
 
   @impl BufferedTask
@@ -138,81 +151,78 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdates do
   def run(entries, state) do
     now = System.monotonic_time(:millisecond)
 
-    {retry, state} =
-      Enum.reduce(entries, {[], state}, fn entry, {retry, state} ->
-        {number, attempts, not_before} = normalize(entry)
+    Enum.each(entries, fn entry ->
+      case normalize(entry) do
+        {_number, _attempts, not_before, _failures} = entry when is_integer(not_before) and not_before > now ->
+          schedule(entry, not_before - now)
 
-        if is_integer(not_before) and not_before > now do
-          {[entry | retry], state}
-        else
-          {result, state} = scan_block(number, state)
-          {after_scan(result, number, attempts + 1, now) ++ retry, state}
-        end
-      end)
-
-    case retry do
-      [] -> {:ok, state}
-      _ -> {:retry, Enum.reverse(retry), state}
-    end
+        {number, attempts, _not_before, failures} ->
+          number |> scan_block(state) |> after_scan(number, attempts + 1, failures, now)
+      end
+    end)
   end
 
-  defp normalize(number) when is_integer(number), do: {number, 0, nil}
-  defp normalize({_number, _attempts, _not_before} = entry), do: entry
+  defp normalize(number) when is_integer(number), do: {number, 0, nil, 0}
+  defp normalize({_number, _attempts, _not_before, _failures} = entry), do: entry
 
-  defp after_scan(:ok, _number, _attempts, _now), do: []
+  defp after_scan(:ok, _number, _attempts, _failures, _now), do: :ok
 
-  defp after_scan({:error, {:height_unavailable, _} = reason}, number, _attempts, _now) do
+  defp after_scan({:error, {:height_unavailable, _} = reason}, number, _attempts, _failures, _now) do
     Logger.warning("price feed block #{number} is no longer served by the configured nodes: #{inspect(reason)}")
     PriceFeed.mark_unscannable(number, "unavailable", inspect(reason))
-    []
   end
 
-  defp after_scan({:error, reason}, number, attempts, _now) when attempts >= @max_attempts do
-    Logger.error("price feed scan of block #{number} failed #{attempts} times: #{inspect(reason)}")
+  defp after_scan({:error, {kind, _} = reason}, number, attempts, failures, now) when kind in @transient do
+    retry(number, attempts, failures, now, reason)
+  end
+
+  defp after_scan({:error, reason}, number, _attempts, failures, _now) when failures + 1 >= @max_attempts do
+    Logger.error("price feed scan of block #{number} failed #{failures + 1} times: #{inspect(reason)}")
     PriceFeed.mark_unscannable(number, "failed", inspect(reason))
-    []
   end
 
-  defp after_scan({:error, reason}, number, attempts, now) do
+  defp after_scan({:error, reason}, number, attempts, failures, now) do
+    retry(number, attempts, failures + 1, now, reason)
+  end
+
+  defp retry(number, attempts, failures, now, reason) do
     Logger.debug("price feed scan of block #{number} failed, attempt #{attempts}: #{inspect(reason)}")
-    [{number, attempts, now + backoff_ms(attempts)}]
+    delay = backoff_ms(attempts)
+    schedule({number, attempts, now + delay, failures}, delay)
+  end
+
+  # The entry stays off the queue until it is due, so a waiting retry runs no batch.
+  # A retry still waiting when the fetcher restarts is buffered again by catch-up.
+  defp schedule(entry, delay) do
+    Process.send_after(__MODULE__, {:buffer, [entry], false}, delay)
+    :ok
   end
 
   @doc false
-  def backoff_ms(attempts), do: min(1_000 * Integer.pow(2, attempts - 1), @max_backoff_ms)
+  def backoff_ms(attempts), do: min(1_000 * Integer.pow(2, min(attempts, 20) - 1), @max_backoff_ms)
 
   defp scan_block(number, state) do
     case Repo.one(from(block in Block, where: block.number == ^number and block.consensus == true)) do
       nil ->
-        {:ok, state}
+        :ok
 
       block ->
-        case CosmosRest.block_price_updates(state.cosmos_rest_urls, state.cometbft_rpc_urls, number) do
-          {:ok, updates} ->
-            state = maybe_refresh_markets(updates, state)
-
-            case PriceFeed.replace_block_updates(block, updates) do
-              {:ok, count} ->
-                if count > 0, do: Publisher.broadcast(%{paxeer_x_price_updates: [number]}, :realtime)
-                {:ok, state}
-
-              {:error, _} = error ->
-                {error, state}
-            end
-
-          {:error, _} = error ->
-            {error, state}
+        with {:ok, updates} <- CosmosRest.block_price_updates(state.cosmos_rest_urls, state.cometbft_rpc_urls, number),
+             :ok <- maybe_refresh_markets(updates, state),
+             {:ok, count} <- PriceFeed.replace_block_updates(block, updates) do
+          if count > 0, do: Publisher.broadcast(%{paxeer_x_price_updates: [number]}, :realtime)
+          :ok
         end
     end
   end
 
-  defp maybe_refresh_markets([], state), do: state
+  defp maybe_refresh_markets([], _state), do: :ok
 
   defp maybe_refresh_markets(updates, state) do
     now = System.monotonic_time(:millisecond)
-    attempted_at = Map.get(state, :markets_attempted_at)
+    attempted_at = :atomics.get(state.markets_attempted_at, 1)
 
-    if is_nil(attempted_at) or now - attempted_at >= state.markets_refresh_seconds * 1_000 do
+    if now - attempted_at >= state.markets_refresh_seconds * 1_000 do
       market_ids = for update <- updates, observation <- update.observations, do: observation.market_id
       refreshed_at = PriceFeed.markets_refreshed_at()
 
@@ -220,15 +230,14 @@ defmodule Indexer.Fetcher.PaxeerX.PriceUpdates do
         is_nil(refreshed_at) or
           DateTime.diff(DateTime.utc_now(), refreshed_at) >= state.markets_refresh_seconds
 
-      if stale? or PriceFeed.unknown_market_ids(market_ids) != [] do
+      # Only the batch that moves the shared attempt time refreshes.
+      if (stale? or PriceFeed.unknown_market_ids(market_ids) != []) and
+           :atomics.compare_exchange(state.markets_attempted_at, 1, attempted_at, now) == :ok do
         refresh_and_report(market_ids, state)
-        Map.put(state, :markets_attempted_at, now)
-      else
-        state
       end
-    else
-      state
     end
+
+    :ok
   end
 
   defp refresh_and_report(market_ids, state) do

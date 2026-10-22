@@ -273,11 +273,11 @@ defmodule Explorer.Chain.PaxeerX.PriceFeedTest do
                [{15, "failed"}, {18, "scanned"}]
 
       assert {:ok, numbers} = PriceFeed.stream_unscanned_block_numbers([], &[&1 | &2], 10)
-      assert Enum.reverse(numbers) == [17, 19, 20]
+      assert Enum.reverse(numbers) == [15, 17, 19, 20]
 
       assert PriceFeed.scanned_through(5) == 4
       assert {:ok, numbers} = PriceFeed.stream_unscanned_block_numbers([], &[&1 | &2], 5)
-      assert Enum.reverse(numbers) == [10, 11, 12, 13, 14, 16, 17, 19, 20]
+      assert Enum.reverse(numbers) == [15, 10, 11, 12, 13, 14, 16, 17, 19, 20]
     end
 
     test "a status outside the known set is refused" do
@@ -311,7 +311,8 @@ defmodule Explorer.Chain.PaxeerX.PriceFeedTest do
   end
 
   describe "mark_unscannable/3" do
-    test "records a distinct state that catch-up skips and a later scan clears", %{update: update} do
+    test "records a distinct state that catch-up skips when unavailable, rescans when failed and a later scan clears",
+         %{update: update} do
       Enum.each([30, 31], &insert(:block, number: &1))
 
       assert :ok = PriceFeed.mark_unscannable(30, "unavailable", "{:height_unavailable, \"node\"}")
@@ -322,7 +323,7 @@ defmodule Explorer.Chain.PaxeerX.PriceFeedTest do
       assert %PriceFeedScannedBlock{status: "failed", error: "{:unreachable, \"node\"}"} =
                Repo.get(PriceFeedScannedBlock, 31)
 
-      assert {:ok, []} = PriceFeed.stream_unscanned_block_numbers([], &[&1 | &2], 30)
+      assert {:ok, [31]} = PriceFeed.stream_unscanned_block_numbers([], &[&1 | &2], 30)
 
       {:ok, 1} = PriceFeed.replace_block_updates(Repo.get_by!(Block, number: 30), [update])
       assert %PriceFeedScannedBlock{status: "scanned", error: nil} = Repo.get(PriceFeedScannedBlock, 30)

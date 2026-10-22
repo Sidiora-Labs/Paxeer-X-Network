@@ -160,11 +160,13 @@ boot. Nodes prune old heights, so the start block must lie within the history
 the configured nodes still serve, for both `txs/block` and `block_results`; a
 height every node reports as no longer available is recorded as unavailable and
 not retried, and a height above a lagging node's head is tried on the next node
-and then retried with a growing delay. Once a minute the indexer drops the
-scanned-height rows below the height through which every block is scanned, and,
-when `PAXEER_X_PRICE_FEED_RETENTION_DAYS` is set, deletes the submissions older
-than that many days with their observations, so the tables stop growing with
-the chain.
+and then retried with a growing delay for as long as no node serves it or no node
+answers. A height whose scan fails ten times for any other reason is recorded as
+failed and scanned again when the indexer next starts. Once a minute the indexer
+drops the scanned-height rows below the height through which every block is
+scanned, and, when `PAXEER_X_PRICE_FEED_RETENTION_DAYS` is set, deletes the
+submissions older than that many days with their observations, so the tables stop
+growing with the chain.
 
 | Name | What it selects |
 | --- | --- |
