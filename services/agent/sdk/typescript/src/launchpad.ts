@@ -6,7 +6,9 @@
 
 import type { Eip1193Requester } from "./account-derivation.js";
 import {
+  PrecompileAbiError,
   decodeEventFrom,
+  encodeAbiCall,
   precompileWriteCall,
   sendPrecompileCall,
   type AbiArgument,
@@ -72,11 +74,89 @@ export function launchpadNftCall(write: LaunchpadNftWrite, nftId: bigint): Preco
   return launchpadCall(`${write}(uint256)`, [nftId]);
 }
 
+/**
+ * What the 0x1017 Router pulls from the caller by transferFrom: USDL for a
+ * buy and for the creation fee of createMarket, the launch token for a sell.
+ */
+export type LaunchpadSpend =
+  | Readonly<{ kind: "buy"; order: LaunchpadSwapOrder }>
+  | Readonly<{ kind: "sell"; order: LaunchpadSwapOrder }>
+  | Readonly<{ kind: "create" }>;
+
+/** `approve(0x1017, amount)` on `token`: the exact allowance the Router spends, never an unlimited one. */
+export function launchpadApproveCall(token: string, amount: bigint): PrecompileCall {
+  return { to: token, data: encodeAbiCall("approve", ["address", "uint256"], [LAUNCHPAD_PRECOMPILE, amount]), value: 0n };
+}
+
+async function viewWord(rpc: Eip1193Requester, to: string, data: string): Promise<bigint> {
+  const answer = await rpc.request({ method: "eth_call", params: [{ to, data }, "latest"] });
+  if (typeof answer !== "string" || !/^0x[0-9a-fA-F]{64}/u.test(answer)) {
+    throw new PrecompileAbiError("malformed_wallet_answer", `eth_call ${data.slice(0, 10)} at ${to}`);
+  }
+  return BigInt(answer.slice(0, 66));
+}
+
+const wordAddress = (word: bigint): string => `0x${word.toString(16).padStart(40, "0")}`;
+
+/**
+ * Reads the token and amount the Router will pull for `spend` and the
+ * caller's allowance to 0x1017, and returns the approve call for the exact
+ * amount when the allowance is short, or undefined when it already covers it.
+ */
+export async function launchpadApproval(rpc: Eip1193Requester, owner: string, spend: LaunchpadSpend): Promise<PrecompileCall | undefined> {
+  const token = wordAddress(
+    spend.kind === "sell"
+      ? await viewWord(rpc, spend.order.pool, encodeAbiCall("tokenAddress", [], []))
+      : await viewWord(rpc, LAUNCHPAD_PRECOMPILE, encodeAbiCall("usdlAddress", [], [])),
+  );
+  const amount = spend.kind === "create" ? await viewWord(rpc, LAUNCHPAD_PRECOMPILE, encodeAbiCall("creationFee", [], [])) : spend.order.amountIn;
+  if (amount === 0n) {
+    return undefined;
+  }
+  const allowance = await viewWord(rpc, token, encodeAbiCall("allowance", ["address", "address"], [owner, LAUNCHPAD_PRECOMPILE]));
+  return allowance >= amount ? undefined : launchpadApproveCall(token, amount);
+}
+
+/** Waits for the approve transaction `hash` to be mined and throws unless it succeeded. */
+export async function waitLaunchpadApproval(rpc: Eip1193Requester, hash: string, attempts = 60, intervalMs = 1_000): Promise<void> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const receipt = await rpc.request({ method: "eth_getTransactionReceipt", params: [hash] });
+    if (typeof receipt === "object" && receipt !== null) {
+      if ((receipt as { status?: unknown }).status === "0x1") {
+        return;
+      }
+      throw new PrecompileAbiError("malformed_wallet_answer", `approve ${hash} reverted`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new PrecompileAbiError("malformed_wallet_answer", `approve ${hash} not mined`);
+}
+
+/**
+ * Sends `write` after granting 0x1017 the exact allowance `spend` needs:
+ * the approve is sent and mined first when the allowance is short, and
+ * `onApprove` is told before it is sent.
+ */
+export async function sendLaunchpadWithApproval(
+  wallet: Eip1193Requester,
+  from: string,
+  spend: LaunchpadSpend,
+  write: PrecompileCall,
+  onApprove?: (approve: PrecompileCall) => void,
+): Promise<string> {
+  const approve = await launchpadApproval(wallet, from, spend);
+  if (approve !== undefined) {
+    onApprove?.(approve);
+    await waitLaunchpadApproval(wallet, await sendPrecompileCall(wallet, from, approve));
+  }
+  return sendPrecompileCall(wallet, from, write);
+}
+
 export const sendLaunchpadBuy = (wallet: Eip1193Requester, from: string, order: LaunchpadSwapOrder): Promise<string> =>
-  sendPrecompileCall(wallet, from, launchpadBuyCall(order));
+  sendLaunchpadWithApproval(wallet, from, { kind: "buy", order }, launchpadBuyCall(order));
 
 export const sendLaunchpadSell = (wallet: Eip1193Requester, from: string, order: LaunchpadSwapOrder): Promise<string> =>
-  sendPrecompileCall(wallet, from, launchpadSellCall(order));
+  sendLaunchpadWithApproval(wallet, from, { kind: "sell", order }, launchpadSellCall(order));
 
 export const sendLaunchpadCreateMarket = (
   wallet: Eip1193Requester,
@@ -85,7 +165,7 @@ export const sendLaunchpadCreateMarket = (
   symbol: string,
   feeStrategy: number,
   optical: string = NO_OPTICAL,
-): Promise<string> => sendPrecompileCall(wallet, from, launchpadCreateMarketCall(name, symbol, feeStrategy, optical));
+): Promise<string> => sendLaunchpadWithApproval(wallet, from, { kind: "create" }, launchpadCreateMarketCall(name, symbol, feeStrategy, optical));
 
 export const sendLaunchpadSetFeeStrategy = (
   wallet: Eip1193Requester,

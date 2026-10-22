@@ -3,8 +3,17 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { launchpadBuyCall, launchpadCreateMarketCall, launchpadSellCall } from "../../api/sdk";
-import { sendWalletPrecompileCall, type PrecompileSendOutcome } from "../../api/wallet";
+import {
+  launchpadApproval,
+  launchpadBuyCall,
+  launchpadCreateMarketCall,
+  launchpadSellCall,
+  waitLaunchpadApproval,
+  type LaunchpadSpend,
+  type PrecompileCall,
+} from "../../api/sdk";
+import { sendWalletPrecompileCall, walletSendFailure, type PrecompileSendOutcome } from "../../api/wallet";
+import { windowWalletProvider } from "../../journeys/custody/handoff";
 import { KitButton } from "../../kit/control";
 import { ExplorerPanel } from "../../kit/explorer";
 import { TextField } from "../../kit/field";
@@ -53,6 +62,7 @@ export function LaunchpadActions({
   const [symbol, setSymbol] = useState("");
   const [strategy, setStrategy] = useState("0");
   const [createOutcome, setCreateOutcome] = useState<PrecompileSendOutcome | undefined>(undefined);
+  const [approving, setApproving] = useState<"trade" | "create" | undefined>(undefined);
 
   const amountIn = parseUnits(amountText, LAUNCHPAD_DECIMALS);
   const slippage = /^[0-9]{1,4}$/u.test(slippageText) ? BigInt(slippageText) : undefined;
@@ -81,6 +91,36 @@ export function LaunchpadActions({
     });
   };
 
+  // The 0x1017 Router pulls its input by transferFrom, so a short allowance
+  // gets one approve for the exact amount, mined before the write is sent.
+  const sendWithApproval = async (
+    from: string,
+    step: "trade" | "create",
+    spend: LaunchpadSpend,
+    build: () => PrecompileCall,
+  ): Promise<PrecompileSendOutcome> => {
+    const wallet = windowWalletProvider();
+    if (wallet === undefined) {
+      return { outcome: "unavailable" };
+    }
+    try {
+      const approve = await launchpadApproval(wallet, from, spend);
+      if (approve !== undefined) {
+        setApproving(step);
+        const approved = await sendWalletPrecompileCall(from, () => approve);
+        if (approved.outcome !== "sent") {
+          return approved;
+        }
+        await waitLaunchpadApproval(wallet, approved.transactionHash);
+      }
+    } catch (error) {
+      return walletSendFailure(error);
+    } finally {
+      setApproving(undefined);
+    }
+    return sendWalletPrecompileCall(from, build);
+  };
+
   const trade = () => {
     const pool = markets.find((market) => market.token === token)?.pool;
     if (account === undefined || pool === undefined || quote === undefined || minOut === undefined || amountIn === undefined) {
@@ -93,7 +133,7 @@ export function LaunchpadActions({
       deadline: BigInt(Math.floor(Date.now() / 1000)) + DEADLINE_SECONDS,
     };
     startTransition(async () => {
-      const outcome = await sendWalletPrecompileCall(account, () =>
+      const outcome = await sendWithApproval(account, "trade", { kind: side, order }, () =>
         side === "buy" ? launchpadBuyCall(order) : launchpadSellCall(order),
       );
       setTradeOutcome(outcome);
@@ -109,7 +149,7 @@ export function LaunchpadActions({
       return;
     }
     startTransition(async () => {
-      const outcome = await sendWalletPrecompileCall(account, () =>
+      const outcome = await sendWithApproval(account, "create", { kind: "create" }, () =>
         launchpadCreateMarketCall(name.trim(), symbol.trim(), Number(strategy)),
       );
       setCreateOutcome(outcome);
@@ -193,6 +233,9 @@ export function LaunchpadActions({
             >
               {side === "buy" ? "Buy" : "Sell"}
             </KitButton>
+            {approving === "trade" ? (
+              <InlineNotice>{`Approving exactly ${amountText} ${payDenom} for the launchpad router; the ${side} is sent once it confirms.`}</InlineNotice>
+            ) : null}
             <SendOutcome outcome={tradeOutcome} />
           </div>
         )}
@@ -228,6 +271,9 @@ export function LaunchpadActions({
           >
             Create market
           </KitButton>
+          {approving === "create" ? (
+            <InlineNotice>{`Approving exactly the creation fee in ${quoteDenom} for the launchpad router; the market is created once it confirms.`}</InlineNotice>
+          ) : null}
           <SendOutcome outcome={createOutcome} />
         </div>
       </ExplorerPanel>

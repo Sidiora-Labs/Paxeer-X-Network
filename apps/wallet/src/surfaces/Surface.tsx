@@ -49,7 +49,7 @@ export function SendButton({
                 if (transaction) void state.send(transaction);
             }}
         >
-            {state.sending ? 'Sending' : label}
+            {state.approving ? 'Approving' : state.sending ? 'Sending' : label}
         </Button>
     );
 }

@@ -112,13 +112,23 @@ export function errorMessage(error: unknown): string {
 
 export interface ModuleSend {
     readonly sending: boolean;
+    readonly approving: boolean;
     readonly sent: SentTransaction | null;
     readonly error: string | null;
     readonly send: (tx: ModuleTransaction) => Promise<void>;
 }
 
-export function useModuleSend(surfaceModule: SurfaceModule | null, provider: ModuleProvider | null, address: string | null, fee?: FeeSelection): ModuleSend {
+export const SPONSORED_APPROVE_UNSUPPORTED = 'the allowance approve cannot be sponsored; choose a PAX or SID gas fee for it';
+
+export function useModuleSend(
+    surfaceModule: SurfaceModule | null,
+    provider: ModuleProvider | null,
+    address: string | null,
+    fee?: FeeSelection,
+    approval?: (owner: string, tx: ModuleTransaction) => Promise<ModuleTransaction | undefined>,
+): ModuleSend {
     const [sending, setSending] = useState(false);
+    const [approving, setApproving] = useState(false);
     const [sent, setSent] = useState<SentTransaction | null>(null);
     const [error, setError] = useState<string | null>(null);
     const alive = useRef(true);
@@ -139,6 +149,15 @@ export function useModuleSend(surfaceModule: SurfaceModule | null, provider: Mod
             setError(null);
             setSent(null);
             try {
+                const approve = approval ? await approval(address, tx) : undefined;
+                if (approve) {
+                    if (fee?.choice === 'sid_sponsored') throw new Error(SPONSORED_APPROVE_UNSUPPORTED);
+                    if (alive.current) setApproving(true);
+                    const approveHash = fee ? await fee.submit(approve, () => surfaceModule.send(address, approve)) : await surfaceModule.send(address, approve);
+                    const approved = await waitForReceipt(provider, approveHash);
+                    if (receiptStatus(approved) !== 'confirmed') throw new Error(`the approve ${approveHash} did not confirm`);
+                    if (alive.current) setApproving(false);
+                }
                 const hash = fee ? await fee.submit(tx, () => surfaceModule.send(address, tx)) : await surfaceModule.send(address, tx);
                 if (alive.current) setSent({ hash, status: 'pending', events: [] });
                 const receipt = await waitForReceipt(provider, hash);
@@ -151,13 +170,16 @@ export function useModuleSend(surfaceModule: SurfaceModule | null, provider: Mod
             } catch (cause) {
                 if (alive.current) setError(errorMessage(cause));
             } finally {
-                if (alive.current) setSending(false);
+                if (alive.current) {
+                    setSending(false);
+                    setApproving(false);
+                }
             }
         },
-        [surfaceModule, provider, address, fee],
+        [surfaceModule, provider, address, fee, approval],
     );
 
-    return { sending, sent, error, send };
+    return { sending, approving, sent, error, send };
 }
 
 export interface FeeSelection {

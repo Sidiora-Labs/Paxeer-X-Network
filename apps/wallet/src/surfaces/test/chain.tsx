@@ -12,7 +12,7 @@ import {
     type ProviderEvent,
     type ProviderListener,
 } from '@paxeer/wallet';
-import { abiSelector } from '@sidiora/layerx-sdk';
+import { LAUNCHPAD_PRECOMPILE, abiSelector } from '@sidiora/layerx-sdk';
 import { custodyChoiceRepository } from '@/platform/storage/repositories';
 import { WalletProvider } from '@/wallet/WalletProvider';
 
@@ -40,6 +40,12 @@ const SET_FEE_DENOM = abiSelector('setFeeDenom(string)');
 const CLEAR_FEE_DENOM = abiSelector('clearFeeDenom()');
 const GET_FEE_DENOM = abiSelector('getFeeDenom(address)');
 const XWEB_FEE = abiSelector('fee()');
+const USDL_ADDRESS = abiSelector('usdlAddress()');
+const CREATION_FEE = abiSelector('creationFee()');
+const TOKEN_ADDRESS = abiSelector('tokenAddress()');
+const ALLOWANCE = abiSelector('allowance(address,address)');
+const APPROVE = abiSelector('approve(address,uint256)');
+const LAUNCHPAD = LAUNCHPAD_PRECOMPILE.toLowerCase();
 
 function word(value: bigint): string {
     return value.toString(16).padStart(64, '0');
@@ -58,6 +64,10 @@ export class SurfaceChain implements Eip1193Provider {
     readonly calls: Array<{ to: string; data: string }> = [];
     feeDenom = '';
     xwebFee = 0n;
+    launchpadUsdl = `0x${'a1'.repeat(20)}`;
+    launchpadToken = `0x${'b2'.repeat(20)}`;
+    launchpadCreationFee = 0n;
+    readonly allowances = new Map<string, bigint>();
     logsFor: (call: SentCall) => ChainLog[] = () => [];
     private readonly receipts = new Map<string, { status: string; logs: ChainLog[] }>();
     private readonly listeners = new Map<ProviderEvent, Set<ProviderListener>>();
@@ -114,10 +124,17 @@ export class SurfaceChain implements Eip1193Provider {
     private answer(to: string, data: string): string {
         if (to === FEE_TOKEN_PRECOMPILE && data.startsWith(GET_FEE_DENOM)) return abiString(this.feeDenom);
         if (data === XWEB_FEE) return `0x${word(this.xwebFee)}`;
+        if (to === LAUNCHPAD && data === USDL_ADDRESS) return `0x${word(BigInt(this.launchpadUsdl))}`;
+        if (to === LAUNCHPAD && data === CREATION_FEE) return `0x${word(this.launchpadCreationFee)}`;
+        if (data === TOKEN_ADDRESS) return `0x${word(BigInt(this.launchpadToken))}`;
+        if (data.startsWith(ALLOWANCE)) return `0x${word(this.allowances.get(`${to}:${data.slice(10)}`) ?? 0n)}`;
         throw Object.assign(new Error(`no contract answers ${data.slice(0, 10)} at ${to}`), { code: -32000 });
     }
 
     private apply(call: SentCall): void {
+        if (call.data.startsWith(APPROVE)) {
+            this.allowances.set(`${call.to}:${word(BigInt(call.from))}${call.data.slice(10, 74)}`, BigInt(`0x${call.data.slice(74)}`));
+        }
         if (call.to !== FEE_TOKEN_PRECOMPILE) return;
         if (call.data.startsWith(SET_FEE_DENOM)) this.feeDenom = decodeAbiString(`0x${call.data.slice(10)}`);
         if (call.data === CLEAR_FEE_DENOM) this.feeDenom = '';

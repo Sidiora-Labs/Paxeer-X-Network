@@ -28,9 +28,12 @@ export {
   LAUNCHPAD_EVENTS,
   LAUNCHPAD_PRECOMPILE,
   decodeLaunchpadEvent,
+  launchpadApproval,
   launchpadBuyCall,
   launchpadCreateMarketCall,
   launchpadSellCall,
+  waitLaunchpadApproval,
+  type LaunchpadSpend,
   type LaunchpadSwapOrder,
 } from "../../../../services/agent/sdk/typescript/src/launchpad.ts";
 export {

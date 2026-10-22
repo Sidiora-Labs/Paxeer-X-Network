@@ -5,6 +5,7 @@ import {
     LAUNCHPAD_PRECOMPILE,
     abiSelector,
     launchpadBuyCall,
+    launchpadApproveCall,
     launchpadCreateMarketCall,
 } from '@sidiora/layerx-sdk';
 import { launchpad } from '@paxeer/wallet';
@@ -62,9 +63,13 @@ describe('LaunchpadView', () => {
             deadline: BigInt(fixture.deadline),
         };
         const expected = launchpadBuyCall(order);
-        expect(chain.sent).toEqual([{ from: chain.address, to: LAUNCHPAD_PRECOMPILE, data: expected.data, value: '0x0' }]);
-        expect(chain.sent[0]?.data.startsWith(abiSelector('buy(address,uint256,uint256,uint256)'))).toBe(true);
-        expect(chain.sent[0]?.data).toBe(launchpad(chain).buy(order).data);
+        const approve = launchpadApproveCall(chain.launchpadUsdl, order.amountIn);
+        expect(chain.sent).toEqual([
+            { from: chain.address, to: chain.launchpadUsdl, data: approve.data, value: '0x0' },
+            { from: chain.address, to: LAUNCHPAD_PRECOMPILE, data: expected.data, value: '0x0' },
+        ]);
+        expect(chain.sent[1]?.data.startsWith(abiSelector('buy(address,uint256,uint256,uint256)'))).toBe(true);
+        expect(chain.sent[1]?.data).toBe(launchpad(chain).buy(order).data);
 
         const spec = LAUNCHPAD_EVENTS.find((candidate) => candidate.name === 'Swap');
         if (!spec) throw new Error('no Swap spec');
@@ -80,6 +85,7 @@ describe('LaunchpadView', () => {
         const vector = eventVectors('launchpad').find((candidate) => candidate.event === 'MarketCreated');
         if (!vector) throw new Error('no MarketCreated vector');
         chain.logsFor = () => [vectorLog(LAUNCHPAD_PRECOMPILE, LAUNCHPAD_EVENTS, vector)];
+        chain.launchpadCreationFee = 5_000_000n;
         mounted = await mountSurface(chain, <LaunchpadView sidRate={null} />);
         const { container } = mounted;
 
@@ -92,8 +98,11 @@ describe('LaunchpadView', () => {
         await until(() => text(container, '[data-role="status"]') === 'confirmed', 'receipt');
 
         const expected = launchpadCreateMarketCall(fixture.name, fixture.symbol, fixture.feeStrategy);
-        expect(chain.sent).toEqual([{ from: chain.address, to: LAUNCHPAD_PRECOMPILE, data: expected.data, value: '0x0' }]);
-        expect(chain.sent[0]?.data.startsWith(abiSelector('createMarket(string,string,uint8,address)'))).toBe(true);
+        expect(chain.sent).toEqual([
+            { from: chain.address, to: chain.launchpadUsdl, data: launchpadApproveCall(chain.launchpadUsdl, chain.launchpadCreationFee).data, value: '0x0' },
+            { from: chain.address, to: LAUNCHPAD_PRECOMPILE, data: expected.data, value: '0x0' },
+        ]);
+        expect(chain.sent[1]?.data.startsWith(abiSelector('createMarket(string,string,uint8,address)'))).toBe(true);
         const spec = LAUNCHPAD_EVENTS.find((candidate) => candidate.name === 'MarketCreated');
         if (!spec) throw new Error('no MarketCreated spec');
         expect(container.querySelector('[data-event="MarketCreated"] [data-field="pool"]')?.textContent).toBe(

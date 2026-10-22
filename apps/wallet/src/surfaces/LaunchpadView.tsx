@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { parseUnits } from 'viem';
-import { launchpad, type IntentLeg, type ModuleTransaction } from '@paxeer/wallet';
+import { launchpad, type IntentLeg, type LaunchpadSpend, type ModuleTransaction } from '@paxeer/wallet';
 import { SegmentedControl, TextField } from '@/components/ui/primitives';
 import { FeeChoice } from './FeeChoice';
 import { BuildError, SendButton, SentResult, SurfaceFrame, TransactionPreview, buildOrError } from './Surface';
@@ -27,7 +27,6 @@ export function LaunchpadView({ sidRate, legs, now = Date.now }: LaunchpadViewPr
     const { provider, address } = useSurfaceWallet();
     const surfaceModule = useMemo(() => (provider ? launchpad(provider) : null), [provider]);
     const fee = useFeeSelection(provider, address);
-    const state = useModuleSend(surfaceModule, provider, address, fee);
     const [action, setAction] = useState<LaunchpadAction>('buy');
     const [pool, setPool] = useState('');
     const [nftId, setNftId] = useState('');
@@ -40,7 +39,7 @@ export function LaunchpadView({ sidRate, legs, now = Date.now }: LaunchpadViewPr
 
     const built = useMemo(() => {
         if (!surfaceModule || !address) return { value: null, error: null };
-        return buildOrError<ModuleTransaction | null>(() => {
+        return buildOrError<{ tx: ModuleTransaction; spend?: LaunchpadSpend } | null>(() => {
             switch (action) {
                 case 'buy':
                 case 'sell': {
@@ -52,15 +51,22 @@ export function LaunchpadView({ sidRate, legs, now = Date.now }: LaunchpadViewPr
                         minOut: buying ? BigInt(minOut) : parseUnits(minOut, 18),
                         deadline: BigInt(Math.floor(now() / 1000) + Number(deadlineMinutes) * 60),
                     };
-                    return buying ? surfaceModule.buy(order) : surfaceModule.sell(order);
+                    return buying ? { tx: surfaceModule.buy(order), spend: { kind: 'buy', order } } : { tx: surfaceModule.sell(order), spend: { kind: 'sell', order } };
                 }
                 case 'create':
-                    return name && symbol ? surfaceModule.createMarket(name, symbol, Number(feeStrategy)) : null;
+                    return name && symbol ? { tx: surfaceModule.createMarket(name, symbol, Number(feeStrategy)), spend: { kind: 'create' } } : null;
                 case 'claim':
-                    return nftId ? surfaceModule.claimFees(BigInt(nftId)) : null;
+                    return nftId ? { tx: surfaceModule.claimFees(BigInt(nftId)) } : null;
             }
         });
     }, [surfaceModule, address, action, pool, nftId, amountIn, minOut, deadlineMinutes, name, symbol, feeStrategy, now]);
+    const transaction = built.value?.tx ?? null;
+    const spend = built.value?.spend;
+    const approval = useCallback(
+        async (owner: string) => (surfaceModule && spend ? surfaceModule.approval(owner, spend) : undefined),
+        [surfaceModule, spend],
+    );
+    const state = useModuleSend(surfaceModule, provider, address, fee, approval);
 
     return (
         <SurfaceFrame title="Launchpad" connected={surfaceModule !== null}>
@@ -99,9 +105,16 @@ export function LaunchpadView({ sidRate, legs, now = Date.now }: LaunchpadViewPr
                 </>
             )}
             <BuildError error={built.error} />
-            <TransactionPreview transaction={built.value} />
-            <FeeChoice provider={provider} address={address} transaction={built.value} selection={fee} sidRate={sidRate} legs={legs} />
-            <SendButton label="Send to the launchpad" transaction={built.value} blocked={fee.blocked} state={state} />
+            <TransactionPreview transaction={transaction} />
+            <FeeChoice provider={provider} address={address} transaction={transaction} selection={fee} sidRate={sidRate} legs={legs} />
+            {spend && (
+                <p data-role="approve-step" className="text-xs text-pax-muted">
+                    {state.approving
+                        ? 'Approving the exact amount for the launchpad router'
+                        : 'If the launchpad router allowance is short, one approve for the exact amount is sent first'}
+                </p>
+            )}
+            <SendButton label="Send to the launchpad" transaction={transaction} blocked={fee.blocked} state={state} />
             <SentResult state={state} />
         </SurfaceFrame>
     );
