@@ -48,7 +48,8 @@ defmodule BlockScoutWeb.Schemas.API.V2.General do
     "contract_call",
     "contract_creation",
     "token_transfer",
-    "token_creation"
+    "token_creation",
+    "price_update"
   ]
 
   case @chain_type do
@@ -371,11 +372,12 @@ defmodule BlockScoutWeb.Schemas.API.V2.General do
     %Parameter{
       name: :type,
       in: :query,
-      schema: %Schema{type: :string, enum: ["blob_transaction"]},
+      schema: %Schema{type: :string, enum: ["blob_transaction", "price_update"]},
       required: false,
       description: """
       Filter by transaction type. Comma-separated list of:
       * blob_transaction - Only show blob transactions
+      * price_update - Only show native price-feed submissions
       """
     }
   end

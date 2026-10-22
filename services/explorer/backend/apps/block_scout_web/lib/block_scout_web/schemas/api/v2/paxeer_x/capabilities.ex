@@ -18,7 +18,12 @@ defmodule BlockScoutWeb.Schemas.API.V2.PaxeerX.Capabilities do
       anchor: %Schema{type: :boolean, nullable: false, description: "The anchor precompile answers"},
       exchange: %Schema{type: :boolean, nullable: false, description: "The exchange precompile answers"},
       bridge: %Schema{type: :boolean, nullable: false, description: "The bridge precompile answers"},
-      launchpad: %Schema{type: :boolean, nullable: false, description: "The launchpad precompile answers"}
+      launchpad: %Schema{type: :boolean, nullable: false, description: "The launchpad precompile answers"},
+      price_feed: %Schema{
+        type: :boolean,
+        nullable: false,
+        description: "Native price-feed submissions are indexed; absent while they are not"
+      }
     },
     required: [:addr, :custody, :anchor, :exchange, :bridge, :launchpad],
     nullable: false,

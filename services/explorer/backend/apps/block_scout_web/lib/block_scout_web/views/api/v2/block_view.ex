@@ -8,6 +8,7 @@ defmodule BlockScoutWeb.API.V2.BlockView do
   alias BlockScoutWeb.API.V2.{ApiView, Helper}
   alias BlockScoutWeb.BlockView
   alias Explorer.Chain.Block
+  alias Explorer.Chain.PaxeerX.PriceFeed
 
   def render("message.json", assigns) do
     ApiView.render("message.json", assigns)
@@ -22,7 +23,9 @@ defmodule BlockScoutWeb.API.V2.BlockView do
   end
 
   def render("block.json", %{block: block, conn: conn}) do
-    prepare_block(block, conn, true)
+    block
+    |> prepare_block(conn, true)
+    |> Map.put("price_update_count", PriceFeed.block_update_count(block.hash))
   end
 
   def render("block.json", %{block: block, socket: _socket}) do

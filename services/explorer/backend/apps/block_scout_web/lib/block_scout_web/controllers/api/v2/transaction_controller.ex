@@ -46,6 +46,7 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
 
   alias BlockScoutWeb.AccessHelper
   alias BlockScoutWeb.API.V2.{BlobView, Ethereum.DepositController, Ethereum.DepositView}
+  alias BlockScoutWeb.API.V2.PaxeerX.{FeedView, PriceUpdateList}
   alias BlockScoutWeb.MicroserviceInterfaces.TransactionInterpretation, as: TransactionInterpretationService
   alias BlockScoutWeb.Models.TransactionStateHelper
   alias BlockScoutWeb.Schemas.API.V2.ErrorResponses.{ForbiddenResponse, NotFoundResponse}
@@ -57,6 +58,7 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
   alias Explorer.Chain.Cache.Counters.{NewPendingTransactionsCount, Transactions24hCount}
   alias Explorer.Chain.{Hash, Transaction}
   alias Explorer.Chain.Optimism.TransactionBatch, as: OptimismTransactionBatch
+  alias Explorer.Chain.PaxeerX.{PriceFeed, PriceUpdate}
   alias Explorer.Chain.PolygonZkevm.Reader, as: PolygonZkevmReader
   alias Explorer.Chain.Scroll.Reader, as: ScrollReader
   alias Explorer.Chain.Token.Instance
@@ -144,7 +146,9 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
     description: "Retrieves detailed information for a specific transaction identified by its hash.",
     parameters: [transaction_hash_param() | base_params()],
     responses: [
-      ok: {"Detailed information about the specified transaction.", "application/json", Schemas.Transaction.Response},
+      ok:
+        {"Detailed information about the specified transaction, or the native price-feed submission with that hash.",
+         "application/json", %Schema{anyOf: [Schemas.Transaction.Response, Schemas.PaxeerX.PriceFeed.Update]}},
       not_found: NotFoundResponse.response(),
       unprocessable_entity: JsonErrorResponse.response()
     ]
@@ -212,12 +216,29 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
           |> maybe_preload_ens_to_transaction()
           |> maybe_preload_metadata_to_transaction()
       })
+    else
+      {:not_found, {:error, :not_found}} = not_found -> price_update_or(conn, transaction_hash_string, not_found)
+      error -> error
+    end
+  end
+
+  defp price_update_or(conn, transaction_hash_string, not_found) do
+    case PriceFeed.update_by_hash(transaction_hash_string) do
+      %PriceUpdate{} = update ->
+        conn
+        |> put_status(200)
+        |> json(FeedView.prepare_update(update, PriceFeed.market_symbols(), Chain.block_height(@api_true)))
+
+      nil ->
+        not_found
     end
   end
 
   operation :transactions,
     summary: "List blockchain transactions with filtering options for status, type, and method",
-    description: "Retrieves a paginated list of transactions with optional filtering by status, type, and method.",
+    description:
+      "Retrieves a paginated list of transactions with optional filtering by status, type, and method. " <>
+        "Validated lists interleave native price-feed submissions, which page at their CometBFT index plus 1000000.",
     parameters:
       base_params() ++
         [transaction_filter_param(), transaction_type_param()] ++
@@ -226,7 +247,7 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
       ok:
         {"List of transactions with pagination information.", "application/json",
          paginated_response(
-           items: Schemas.Transaction.Response,
+           items: %Schema{anyOf: [Schemas.Transaction.Response, Schemas.PaxeerX.PriceFeed.Update]},
            next_page_params_example: %{
              "block_number" => 23_532_302,
              "index" => 375,
@@ -242,18 +263,51 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
   @spec transactions(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def transactions(conn, params) do
     filter_options = filter_options(params, :validated)
+    [type: types] = type_filter_options(params)
+    {evm_types, list_transactions?, list_updates?} = PriceUpdateList.split_types(types)
+    [method: methods] = method_filter_options(params)
+    [paging_options: paging] = paging_options = paging_options(params, filter_options)
 
     full_options =
       [
         necessity_by_association: @transaction_necessity_by_association
       ]
-      |> Keyword.merge(paging_options(params, filter_options))
-      |> Keyword.merge(method_filter_options(params))
-      |> Keyword.merge(type_filter_options(params))
+      |> Keyword.merge(paging_options)
+      |> Keyword.merge(method: methods)
+      |> Keyword.merge(type: evm_types)
       |> Keyword.merge(@api_true)
 
-    transactions_plus_one = Chain.recent_transactions(full_options, filter_options)
+    transactions_plus_one =
+      if list_transactions?, do: Chain.recent_transactions(full_options, filter_options), else: []
 
+    updates =
+      if list_updates? and methods == [] and :pending not in filter_options,
+        do: PriceUpdateList.recent_updates(paging),
+        else: []
+
+    if updates == [] do
+      render_transactions(conn, params, transactions_plus_one)
+    else
+      render_with_price_updates(
+        conn,
+        params,
+        PriceUpdateList.merge(transactions_plus_one, updates, :desc, paging.page_size)
+      )
+    end
+  end
+
+  defp render_with_price_updates(conn, params, page_plus_one) do
+    {page, next_page} = split_list_by_page(page_plus_one)
+
+    conn
+    |> put_status(200)
+    |> json(%{
+      "items" => PriceUpdateList.render_items(conn, page),
+      "next_page_params" => next_page_params(next_page, page, params, false, &PriceUpdateList.paging_params/1)
+    })
+  end
+
+  defp render_transactions(conn, params, transactions_plus_one) do
     {transactions, next_page} = split_list_by_page(transactions_plus_one)
 
     next_page_params = next_page |> next_page_params(transactions, params)

@@ -5,6 +5,7 @@ defmodule BlockScoutWeb.API.V2.SearchController do
   import BlockScoutWeb.Chain, only: [from_param: 1, fetch_scam_token_toggle: 2]
   import Explorer.MicroserviceInterfaces.BENS, only: [maybe_preload_ens_info_to_search_results: 1]
 
+  alias Explorer.Chain.PaxeerX.{PriceFeed, PriceUpdate}
   alias Explorer.Chain.Search
   alias Explorer.PagingOptions
   alias OpenApiSpex.Schema
@@ -57,7 +58,7 @@ defmodule BlockScoutWeb.API.V2.SearchController do
     conn
     |> put_status(200)
     |> render(:search_results, %{
-      search_results: search_results |> maybe_preload_ens_info_to_search_results(),
+      search_results: price_update_results(query, params) ++ maybe_preload_ens_info_to_search_results(search_results),
       next_page_params: next_page_params
     })
   end
@@ -126,6 +127,25 @@ defmodule BlockScoutWeb.API.V2.SearchController do
 
     conn
     |> put_status(200)
-    |> render(:search_results, %{search_results: search_results |> maybe_preload_ens_info_to_search_results()})
+    |> render(:search_results, %{
+      search_results: price_update_results(query, %{}) ++ maybe_preload_ens_info_to_search_results(search_results)
+    })
+  end
+
+  # A native price-feed submission is found by its hash on the first page only.
+  defp price_update_results(query, params) do
+    with false <- Map.has_key?(params, :next_page_params_type),
+         %PriceUpdate{} = update <- query |> String.trim() |> PriceFeed.update_by_hash() do
+      [
+        %{
+          type: "price_update",
+          hash: to_string(update.hash),
+          block_number: update.block_number,
+          timestamp: update.timestamp
+        }
+      ]
+    else
+      _not_found -> []
+    end
   end
 end

@@ -116,6 +116,15 @@ defmodule BlockScoutWeb.API.V2.SearchView do
     }
   end
 
+  def prepare_search_result(%{type: "price_update"} = search_result) do
+    %{
+      "type" => search_result.type,
+      "hash" => search_result.hash,
+      "block_number" => search_result.block_number,
+      "timestamp" => search_result.timestamp
+    }
+  end
+
   def prepare_search_result(%{type: "transaction"} = search_result) do
     transaction_hash = hash_to_string(search_result.transaction_hash)
 

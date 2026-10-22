@@ -275,6 +275,10 @@ defmodule BlockScoutWeb.Routers.ApiRouter do
       get("/anchors", V2.PaxeerX.AnchorController, :anchors)
       get("/receipts", V2.PaxeerX.ReceiptController, :receipts)
       get("/receipts/:id", V2.PaxeerX.ReceiptController, :receipt)
+      get("/feed/markets", V2.PaxeerX.FeedController, :markets)
+      get("/feed/markets/:market_id/updates", V2.PaxeerX.FeedController, :market_updates)
+      get("/feed/updates", V2.PaxeerX.FeedController, :updates)
+      get("/feed/updates/:hash", V2.PaxeerX.FeedController, :update)
     end
 
     scope "/main-page" do

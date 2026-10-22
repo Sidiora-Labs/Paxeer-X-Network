@@ -34,6 +34,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
   alias BlockScoutWeb.API.V2.{
     Ethereum.DepositController,
     Ethereum.DepositView,
+    PaxeerX.PriceUpdateList,
     TransactionView,
     WithdrawalView
   }
@@ -374,7 +375,9 @@ defmodule BlockScoutWeb.API.V2.BlockController do
 
   operation :transactions,
     summary: "List transactions and tx details included in a specific block",
-    description: "Retrieves transactions included in a specific block, ordered by transaction index.",
+    description:
+      "Retrieves transactions included in a specific block, ordered by transaction index, followed by the " <>
+        "block's native price-feed submissions, which page at their CometBFT index plus 1000000.",
     parameters:
       base_params() ++
         [block_hash_or_number_param(), block_transaction_type_param()] ++
@@ -383,7 +386,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
       ok:
         {"Transactions in the specified block, with pagination.", "application/json",
          paginated_response(
-           items: Schemas.Transaction,
+           items: %Schema{anyOf: [Schemas.Transaction, Schemas.PaxeerX.PriceFeed.Update]},
            next_page_params_example: %{
              "block_number" => 12_345_678,
              "index" => 103,
@@ -403,28 +406,60 @@ defmodule BlockScoutWeb.API.V2.BlockController do
           | Plug.Conn.t()
   def transactions(conn, %{block_hash_or_number_param: block_hash_or_number} = params) do
     with {:ok, block} <- block_param_to_block(block_hash_or_number) do
+      [type: types] = type_filter_options(params)
+      {evm_types, list_transactions?, list_updates?} = PriceUpdateList.split_types(types)
+
+      [paging_options: paging] =
+        paging_options = put_key_value_to_paging_options(paging_options(params), :is_index_in_asc_order, true)
+
       full_options =
         @transaction_necessity_by_association
-        |> Keyword.merge(put_key_value_to_paging_options(paging_options(params), :is_index_in_asc_order, true))
-        |> Keyword.merge(type_filter_options(params))
+        |> Keyword.merge(paging_options)
+        |> Keyword.merge(type: evm_types)
         |> Keyword.merge(@api_true)
 
-      transactions_plus_one = Chain.block_to_transactions(block.hash, full_options, false)
+      transactions_plus_one =
+        if list_transactions?, do: Chain.block_to_transactions(block.hash, full_options, false), else: []
 
-      {transactions, next_page} = split_list_by_page(transactions_plus_one)
+      updates = if list_updates?, do: PriceUpdateList.block_updates(block, paging), else: []
 
-      next_page_params =
-        next_page
-        |> next_page_params(transactions, params)
-
-      conn
-      |> put_status(200)
-      |> put_view(TransactionView)
-      |> render(:transactions, %{
-        transactions: transactions |> maybe_preload_ens() |> maybe_preload_metadata(),
-        next_page_params: next_page_params
-      })
+      if updates == [] do
+        render_block_transactions(conn, params, transactions_plus_one)
+      else
+        render_block_transactions_with_price_updates(
+          conn,
+          params,
+          PriceUpdateList.merge(transactions_plus_one, updates, :asc, paging.page_size)
+        )
+      end
     end
+  end
+
+  defp render_block_transactions(conn, params, transactions_plus_one) do
+    {transactions, next_page} = split_list_by_page(transactions_plus_one)
+
+    next_page_params =
+      next_page
+      |> next_page_params(transactions, params)
+
+    conn
+    |> put_status(200)
+    |> put_view(TransactionView)
+    |> render(:transactions, %{
+      transactions: transactions |> maybe_preload_ens() |> maybe_preload_metadata(),
+      next_page_params: next_page_params
+    })
+  end
+
+  defp render_block_transactions_with_price_updates(conn, params, page_plus_one) do
+    {page, next_page} = split_list_by_page(page_plus_one)
+
+    conn
+    |> put_status(200)
+    |> json(%{
+      "items" => PriceUpdateList.render_items(conn, page),
+      "next_page_params" => next_page_params(next_page, page, params, false, &PriceUpdateList.paging_params/1)
+    })
   end
 
   operation :internal_transactions,

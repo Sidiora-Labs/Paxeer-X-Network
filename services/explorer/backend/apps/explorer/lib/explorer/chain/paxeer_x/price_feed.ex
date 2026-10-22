@@ -206,6 +206,25 @@ defmodule Explorer.Chain.PaxeerX.PriceFeed do
     |> Repo.stream_reduce(initial, reducer)
   end
 
+  @doc """
+  The symbol of every known market, by market id.
+  """
+  @spec market_symbols() :: %{non_neg_integer() => String.t()}
+  def market_symbols do
+    PriceMarket
+    |> select([market], {market.market_id, market.symbol})
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  @doc """
+  How many submissions the block with the given hash carries.
+  """
+  @spec block_update_count(Hash.Full.t()) :: non_neg_integer()
+  def block_update_count(block_hash) do
+    Repo.aggregate(from(update in PriceUpdate, where: update.block_hash == ^block_hash), :count)
+  end
+
   defp cast_hashes(%{hash: hash, feeder_hash: feeder_hash} = update) do
     {:ok, hash} = Hash.Full.cast(hash)
     {:ok, feeder_hash} = Hash.Address.cast(feeder_hash)
