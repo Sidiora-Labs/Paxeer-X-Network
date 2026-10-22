@@ -209,7 +209,7 @@ func TestDecodeCalldataForEachPrecompile(t *testing.T) {
 		{"addr", "bindLayerX", []any{did, []byte{1, 2, 3}}, "didPublicKey", did},
 		{"layerxcustody", "depositToken", []any{pointer, big.NewInt(500), beneficiary}, "pointer", pointer},
 		{"layerxanchor", "finalize", []any{uint64(42)}, "batchNumber", uint64(42)},
-		{"layerxexchange", "placeOrder", []any{did, uint8(1), big.NewInt(100), big.NewInt(3), uint8(0)}, "side", uint8(1)},
+		{"perps", "deposit", []any{pointer, big.NewInt(250)}, "token", pointer},
 		{"layerxbridge", "bridgeOut", []any{uint64(1), pointer, big.NewInt(77), recipient}, "recipient", recipient},
 		{"launchpad", "buy", []any{pointer, big.NewInt(10), big.NewInt(9), big.NewInt(1000)}, "pool", pointer},
 		{"feetoken", "setFeeDenom", []any{"usid"}, "denom", "usid"},
@@ -352,6 +352,9 @@ func TestABICopiesMatchRepository(t *testing.T) {
 	sources := map[string]string{erc20Name: filepath.Join(root, "precompiles", "common", "erc20_abi.json")}
 	for _, name := range PrecompileNames() {
 		sources[name] = filepath.Join(root, "precompiles", name, "abi.json")
+		if name == "perps" {
+			sources[name] = filepath.Join(root, "precompiles", "perps", "abi", "abi.json")
+		}
 	}
 	for name, source := range sources {
 		want, err := os.ReadFile(source)

@@ -5,8 +5,9 @@ import { secp256k1 } from '@noble/curves/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
 import {
   BRIDGE_EVENTS,
-  EXCHANGE_EVENTS,
   LAUNCHPAD_EVENTS,
+  PERPS_EVENTS,
+  PERPS_PRECOMPILE,
   SIDIORA_DECIMALS,
   SIDIORA_TOKEN,
   XWEB_PRECOMPILE,
@@ -17,12 +18,6 @@ import {
   buildXWebApiRequest,
   eip7702AuthorizationDigest,
   encodeAbiCall,
-  exchangeCancelOrderCall,
-  exchangeDepositMarginCall,
-  exchangeDepositMarginTokenCall,
-  exchangePlaceOrderCall,
-  exchangeRequestSettlementCall,
-  exchangeWithdrawMarginCall,
   gasQuoteDigest,
   launchpadBuyCall,
   launchpadClaimFeesCall,
@@ -30,6 +25,11 @@ import {
   launchpadSellCall,
   launchpadSetFeeStrategyCall,
   launchpadNftCall,
+  perpsCancelOrderCall,
+  perpsClosePositionCall,
+  perpsDepositCall,
+  perpsOpenPositionCall,
+  perpsWithdrawCall,
   sponsoredBatchCall,
   sponsoredBatchDigest,
   sponsoredConsent,
@@ -90,7 +90,7 @@ const eventVectors = JSON.parse(readFileSync(new URL('./fixtures/modules/events.
 >;
 
 function abi(name: string): AbiEntry[] {
-  return JSON.parse(readFileSync(new URL(`precompiles/${name}/abi.json`, root), 'utf8')) as AbiEntry[];
+  return JSON.parse(readFileSync(new URL(`precompiles/${name === 'perps' ? 'perps/abi' : name}/abi.json`, root), 'utf8')) as AbiEntry[];
 }
 
 function section(name: string): Json {
@@ -125,6 +125,8 @@ function word(type: string, value: string | boolean): string {
   if (type === 'address') return text(value).slice(2).toLowerCase().padStart(64, '0');
   if (type === 'bytes32') return text(value).slice(2).toLowerCase();
   if (type === 'bool') return (value ? 1n : 0n).toString(16).padStart(64, '0');
+  if (type === 'bytes16') return text(value).slice(2).toLowerCase().padEnd(64, '0');
+  if (type === 'int256') return BigInt.asUintN(256, BigInt(value as string)).toString(16).padStart(64, '0');
   return BigInt(value as string).toString(16).padStart(64, '0');
 }
 
@@ -161,7 +163,7 @@ function expected(entry: AbiEntry, fields: Record<string, string | boolean>): Re
   const out: Record<string, bigint | boolean | string> = {};
   for (const input of entry.inputs ?? []) {
     const value = fields[input.name] as string | boolean;
-    if (input.type.startsWith('uint')) out[input.name] = BigInt(value as string);
+    if (input.type.startsWith('uint') || input.type.startsWith('int')) out[input.name] = BigInt(value as string);
     else if (typeof value === 'string' && input.type !== 'string') out[input.name] = value.toLowerCase();
     else out[input.name] = value;
   }
@@ -434,48 +436,38 @@ afterAll(async () => {
 });
 
 describe('modules', () => {
-  it('modules_exchange calldata equals the agent SDK builders and the ABI selectors', () => {
+  it('modules_exchange calldata equals the agent SDK perps builders and the served perps ABI selectors', () => {
     const args = section('exchange');
     const module = exchange(signer);
-    const order = args.placeOrder as Json;
-    const placeOrder = {
-      marketId: text(order.marketId),
-      side: order.side as number,
-      price: big(order.price),
-      quantity: big(order.quantity),
-      timeInForce: order.timeInForce as number,
+    const open = args.openPosition as Json;
+    const order = {
+      marketId: big(open.marketId),
+      collateralToken: text(open.collateralToken),
+      collateralAmount: big(open.collateralAmount),
+      leverage: big(open.leverage),
+      isLong: open.isLong as boolean,
     };
-    const deposit = args.depositMargin as Json;
-    const token = args.depositMarginToken as Json;
-    const withdraw = args.withdrawMargin as Json;
+    const deposit = args.deposit as Json;
+    const withdraw = args.withdraw as Json;
+    const orderId = big((args.cancelOrder as Json).orderId);
+    const positionId = big((args.closePosition as Json).positionId);
     const pairs: Array<[PrecompileCall, PrecompileCall]> = [
-      [module.placeOrder(placeOrder), exchangePlaceOrderCall(placeOrder)],
-      [module.cancelOrder(text((args.cancelOrder as Json).orderId)), exchangeCancelOrderCall(text((args.cancelOrder as Json).orderId))],
-      [
-        module.requestSettlement(text((args.requestSettlement as Json).positionId)),
-        exchangeRequestSettlementCall(text((args.requestSettlement as Json).positionId)),
-      ],
-      [
-        module.depositMargin(text(deposit.account), big(deposit.amountWei)),
-        exchangeDepositMarginCall(text(deposit.account), big(deposit.amountWei)),
-      ],
-      [
-        module.depositMarginToken(text(token.pointer), big(token.amount), text(token.account)),
-        exchangeDepositMarginTokenCall(text(token.pointer), big(token.amount), text(token.account)),
-      ],
-      [
-        module.withdrawMargin(text(withdraw.account), text(withdraw.assetId), big(withdraw.amount)),
-        exchangeWithdrawMarginCall(text(withdraw.account), text(withdraw.assetId), big(withdraw.amount)),
-      ],
+      [module.deposit(text(deposit.token), big(deposit.amount)), perpsDepositCall(text(deposit.token), big(deposit.amount))],
+      [module.withdraw(text(withdraw.token), big(withdraw.amount)), perpsWithdrawCall(text(withdraw.token), big(withdraw.amount))],
+      [module.openPosition(order), perpsOpenPositionCall(order)],
+      [module.cancelOrder(orderId), perpsCancelOrderCall(orderId)],
+      [module.closePosition(positionId), perpsClosePositionCall(positionId)],
     ];
-    const known = selectors(abi('layerxexchange'));
+    const known = selectors(abi('perps'));
     for (const [ours, theirs] of pairs) {
       expect(ours).toEqual(theirs);
+      expect(ours.to).toBe(PERPS_PRECOMPILE);
+      expect(ours.value).toBe(0n);
       expect(known.has(ours.data.slice(0, 10))).toBe(true);
     }
-    expect(module.depositMargin(text(deposit.account), big(deposit.amountWei)).value).toBe(big(deposit.amountWei));
+    expect(known.has(abiSelector('placeOrder(bytes32,uint8,uint256,uint256,uint8)'))).toBe(false);
     const moved = exchange(signer, '0x00000000000000000000000000000000000A1015');
-    expect(moved.placeOrder(placeOrder)).toEqual({ ...exchangePlaceOrderCall(placeOrder), to: '0x00000000000000000000000000000000000a1015' });
+    expect(moved.openPosition(order)).toEqual({ ...perpsOpenPositionCall(order), to: '0x00000000000000000000000000000000000a1015' });
   });
 
   it('modules_bridge calldata equals the agent SDK builders and the ABI selectors', () => {
@@ -749,11 +741,11 @@ describe('modules', () => {
 
   it('modules_events decode logs encoded from each precompile ABI', () => {
     const decoded =
-      checkEvents(eventVectors.exchange ?? [], abi('layerxexchange'), exchange(signer).address, exchange(signer).decodeEvent) +
+      checkEvents(eventVectors.exchange ?? [], abi('perps'), exchange(signer).address, exchange(signer).decodeEvent) +
       checkEvents(eventVectors.bridge ?? [], abi('layerxbridge'), bridge(signer).address, bridge(signer).decodeEvent) +
       checkEvents(eventVectors.launchpad ?? [], abi('launchpad'), launchpad(signer).address, launchpad(signer).decodeEvent) +
       checkEvents(eventVectors.webData ?? [], abi('xweb'), webData(signer).address, webData(signer).decodeEvent);
-    expect(decoded).toBe(EXCHANGE_EVENTS.length + BRIDGE_EVENTS.length + LAUNCHPAD_EVENTS.length + WEB_DATA_EVENTS.length);
+    expect(decoded).toBe(PERPS_EVENTS.length + BRIDGE_EVENTS.length + LAUNCHPAD_EVENTS.length + WEB_DATA_EVENTS.length);
     const vector = eventVectors.webData?.[0];
     const entry = abi('xweb').find((candidate) => candidate.name === vector?.event);
     if (vector === undefined || entry === undefined) throw new Error('missing web data vector');
@@ -808,7 +800,7 @@ describe('modules', () => {
       account,
       nonce: 4n,
       calls: [
-        orders.cancelOrder(`0x${'22'.repeat(32)}`),
+        orders.cancelOrder(34n),
         feeToken(signer).setFeeDenom('usid'),
         { to: `0x${'dd'.repeat(20)}`, value: 5n, data: '0x' },
       ],

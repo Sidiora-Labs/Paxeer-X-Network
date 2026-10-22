@@ -144,41 +144,31 @@ class XWebApiVectorTests(unittest.TestCase):
             },
         )
 
-    def test_exchange_writes_use_the_version_two_signatures(self) -> None:
+    def test_exchange_writes_match_the_typescript_legacy_signatures(self) -> None:
         market = "0x" + "11" * 32
-        margin = "0x" + "22" * 32
+        account = "0x" + "22" * 32
         order = "0x" + "33" * 32
         position = "0x" + "44" * 32
+        asset = "0x" + "55" * 32
         pointer = "0x" + "ab" * 20
         price = (1 << 64) + 2
         calls = (
             (
-                exchange_place_order_call(market, margin, 2, price, 5_000, 3),
-                "0xf9835781"
-                + "11" * 32
-                + "22" * 32
-                + f"{2:064x}{price:064x}{5_000:064x}{3:064x}",
+                exchange_place_order_call(market, 2, price, 5_000, 3),
+                "0x36633730" + "11" * 32 + f"{2:064x}{price:064x}{5_000:064x}{3:064x}",
+                0,
+            ),
+            (exchange_cancel_order_call(order), "0x7489ec23" + "33" * 32, 0),
+            (exchange_request_settlement_call(position), "0xe2ab32b3" + "44" * 32, 0),
+            (exchange_deposit_margin_call(account, 255), "0x4498105f" + "22" * 32, 255),
+            (
+                exchange_deposit_margin_token_call(pointer, 9, account),
+                "0x4576dad4" + "00" * 12 + "ab" * 20 + f"{9:064x}" + "22" * 32,
                 0,
             ),
             (
-                exchange_cancel_order_call(market, order),
-                "0xa47d9d33" + "11" * 32 + "33" * 32,
-                0,
-            ),
-            (
-                exchange_request_settlement_call(market, position),
-                "0x9c49d053" + "11" * 32 + "44" * 32,
-                0,
-            ),
-            (exchange_deposit_margin_call(market, 255), "0x4498105f" + "11" * 32, 255),
-            (
-                exchange_deposit_margin_token_call(pointer, 9, market),
-                "0x4576dad4" + "00" * 12 + "ab" * 20 + f"{9:064x}" + "11" * 32,
-                0,
-            ),
-            (
-                exchange_withdraw_margin_call(market, 10),
-                "0xdcea2ab6" + "11" * 32 + f"{10:064x}",
+                exchange_withdraw_margin_call(account, asset, 10),
+                "0x661e2df4" + "22" * 32 + "55" * 32 + f"{10:064x}",
                 0,
             ),
         )
@@ -189,19 +179,19 @@ class XWebApiVectorTests(unittest.TestCase):
                     call, PrecompileCall(LAYERX_EXCHANGE_PRECOMPILE, data, value)
                 )
 
-    def test_exchange_version_two_argument_refusals(self) -> None:
+    def test_exchange_argument_refusals(self) -> None:
         market = "0x" + "11" * 32
-        margin = "0x" + "22" * 32
+        account = "0x" + "22" * 32
         invalid = (
-            (exchange_place_order_call, (market, "0x22", 2, 1, 1, 0)),
-            (exchange_place_order_call, (market, margin, 256, 1, 1, 0)),
-            (exchange_place_order_call, (market, margin, True, 1, 1, 0)),
-            (exchange_place_order_call, (market, margin, 2, -1, 1, 0)),
-            (exchange_place_order_call, (market, margin, 2, 1, 1 << 256, 0)),
-            (exchange_place_order_call, (market, margin, 2, 1, 1, 256)),
-            (exchange_cancel_order_call, ("0x11", margin)),
-            (exchange_request_settlement_call, (market, "0x22")),
-            (exchange_withdraw_margin_call, (market, -1)),
+            (exchange_place_order_call, ("0x22", 2, 1, 1, 0)),
+            (exchange_place_order_call, (market, 256, 1, 1, 0)),
+            (exchange_place_order_call, (market, True, 1, 1, 0)),
+            (exchange_place_order_call, (market, 2, -1, 1, 0)),
+            (exchange_place_order_call, (market, 2, 1, 1 << 256, 0)),
+            (exchange_place_order_call, (market, 2, 1, 1, 256)),
+            (exchange_cancel_order_call, ("0x11",)),
+            (exchange_request_settlement_call, ("0x22",)),
+            (exchange_withdraw_margin_call, (account, market, -1)),
         )
         for builder, args in invalid:
             with self.subTest(builder=builder.__name__, args=args):

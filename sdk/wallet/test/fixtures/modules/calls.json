@@ -1,28 +1,26 @@
 {
   "from": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
   "exchange": {
-    "placeOrder": {
-      "marketId": "0x1111111111111111111111111111111111111111111111111111111111111111",
-      "side": 1,
-      "price": "2500000000000000000",
-      "quantity": "3000000",
-      "timeInForce": 2
+    "deposit": {
+      "token": "0x85fcd13735f4309833a503ee804ea32395851479",
+      "amount": "250000000"
     },
-    "cancelOrder": { "orderId": "0x2222222222222222222222222222222222222222222222222222222222222222" },
-    "requestSettlement": { "positionId": "0x3333333333333333333333333333333333333333333333333333333333333333" },
-    "depositMargin": {
-      "account": "0x4444444444444444444444444444444444444444444444444444444444444444",
-      "amountWei": "1000000000000000000"
+    "withdraw": {
+      "token": "0x85fcd13735f4309833a503ee804ea32395851479",
+      "amount": "30000000"
     },
-    "depositMarginToken": {
-      "pointer": "0x5555555555555555555555555555555555555555",
-      "amount": "5000000",
-      "account": "0x4444444444444444444444444444444444444444444444444444444444444444"
+    "openPosition": {
+      "marketId": "3",
+      "collateralToken": "0x85fcd13735f4309833a503ee804ea32395851479",
+      "collateralAmount": "50000000",
+      "leverage": "5",
+      "isLong": true
     },
-    "withdrawMargin": {
-      "account": "0x4444444444444444444444444444444444444444444444444444444444444444",
-      "assetId": "0x6666666666666666666666666666666666666666666666666666666666666666",
-      "amount": "42"
+    "cancelOrder": {
+      "orderId": "9"
+    },
+    "closePosition": {
+      "positionId": "7"
     }
   },
   "bridge": {
@@ -59,17 +57,35 @@
       "minOut": "400000000000000000",
       "deadline": "1900000600"
     },
-    "createMarket": { "name": "Paxeer Dog", "symbol": "PDOG", "feeStrategy": 2, "optical": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a" },
-    "setFeeStrategy": { "nftId": "7", "feeStrategy": 1 },
-    "claimFees": { "nftId": "7" },
-    "nftWrite": ["claimAirdrop", "executeAirdrop", "executeBurn", "executeLpRewards"]
+    "createMarket": {
+      "name": "Paxeer Dog",
+      "symbol": "PDOG",
+      "feeStrategy": 2,
+      "optical": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+    },
+    "setFeeStrategy": {
+      "nftId": "7",
+      "feeStrategy": 1
+    },
+    "claimFees": {
+      "nftId": "7"
+    },
+    "nftWrite": [
+      "claimAirdrop",
+      "executeAirdrop",
+      "executeBurn",
+      "executeLpRewards"
+    ]
   },
   "feeToken": {
     "denom": "usid",
     "account": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
   },
   "webData": {
-    "api": { "method": "GET", "url": "https://api.example.com/v1/price?pair=SID-PAX" },
+    "api": {
+      "method": "GET",
+      "url": "https://api.example.com/v1/price?pair=SID-PAX"
+    },
     "fetch": "https://example.com/markets/sid",
     "search": "Sidiora fee token",
     "callbackGas": "200000",

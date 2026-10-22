@@ -23,6 +23,10 @@ import {
   exchangeRequestSettlementCall,
   exchangeWithdrawMarginCall,
   LAUNCHPAD_WRITES,
+  PERPS_EVENTS,
+  PERPS_PRECOMPILE,
+  PERPS_WRITES,
+  decodePerpsEvent,
   launchpadBuyCall,
   launchpadCall,
   launchpadClaimFeesCall,
@@ -30,6 +34,11 @@ import {
   launchpadNftCall,
   launchpadSellCall,
   launchpadSetFeeStrategyCall,
+  perpsCancelOrderCall,
+  perpsClosePositionCall,
+  perpsDepositCall,
+  perpsOpenPositionCall,
+  perpsWithdrawCall,
   precompileEventSignature,
   precompileTransactionRequest,
   sendExchangeDepositMargin,
@@ -61,7 +70,7 @@ const canonical = (input: AbiInput): string =>
 
 function abi(directory: string): readonly AbiEntry[] {
   return JSON.parse(readFileSync(
-    new URL(`../../../../../../precompiles/${directory}/abi.json`, import.meta.url),
+    new URL(`../../../../../../precompiles/${directory === "perps" ? "perps/abi" : directory}/abi.json`, import.meta.url),
     "utf8",
   )) as readonly AbiEntry[];
 }
@@ -132,6 +141,13 @@ const writes: readonly (readonly [string, string, PrecompileCall, string, string
     addressWord("ab") + word(9) + "51".repeat(32)],
   ["layerxexchange", "withdrawMargin(bytes32,bytes32,uint256)",
     exchangeWithdrawMarginCall(id("51"), id("61"), 10n), LAYERX_EXCHANGE_PRECOMPILE, "51".repeat(32) + "61".repeat(32) + word(10)],
+  ["perps", "deposit(address,uint256)", perpsDepositCall(address("ab"), 250000000n), PERPS_PRECOMPILE, addressWord("ab") + word(250000000)],
+  ["perps", "withdraw(address,uint256)", perpsWithdrawCall(address("ab"), 30000000n), PERPS_PRECOMPILE, addressWord("ab") + word(30000000)],
+  ["perps", "openPosition(uint256,address,uint256,uint256,bool)",
+    perpsOpenPositionCall({ marketId: 3n, collateralToken: address("ab"), collateralAmount: 50000000n, leverage: 5n, isLong: false }),
+    PERPS_PRECOMPILE, word(3) + addressWord("ab") + word(50000000) + word(5) + word(0)],
+  ["perps", "cancelOrder(uint256)", perpsCancelOrderCall(9n), PERPS_PRECOMPILE, word(9)],
+  ["perps", "closePosition(uint256)", perpsClosePositionCall(7n), PERPS_PRECOMPILE, word(7)],
   ["layerxbridge", "bridgeIn(uint64,address,bytes32,uint64,bytes32,address,uint256,bytes[])",
     bridgeInCall({ chain: 1n, vault: address("aa"), txHash: id("bb"), logIndex: 3n, recipient: id("cc"), asset: address("dd"), amount: 5n, signatures: ["0x0102", "0x" + "ee".repeat(33)] }),
     LAYERX_BRIDGE_PRECOMPILE,
@@ -174,6 +190,20 @@ const launchpadWrites = new Set(abi("launchpad")
   .filter((entry) => entry.type === "function" && entry.stateMutability !== "view" && entry.stateMutability !== "pure")
   .map((entry) => `${entry.name ?? ""}(${(entry.inputs ?? []).map(canonical).join(",")})`));
 assert.deepEqual(new Set(Object.keys(LAUNCHPAD_WRITES)), launchpadWrites);
+const perpsWrites = new Set(abi("perps")
+  .filter((entry) => entry.type === "function" && entry.stateMutability !== "view" && entry.stateMutability !== "pure")
+  .map((entry) => `${entry.name ?? ""}(${(entry.inputs ?? []).map(canonical).join(",")})`));
+assert.deepEqual(new Set(Object.keys(PERPS_WRITES)), perpsWrites);
+for (const signature of ["placeOrder(bytes32,uint8,uint256,uint256,uint8)", "requestSettlement(bytes32)", "depositMargin(bytes32)",
+  "withdrawMargin(bytes32,bytes32,uint256)", "placeOrder(bytes32,bytes32,uint8,uint256,uint256,uint8)"]) {
+  assert.equal(perpsWrites.has(signature), false, signature);
+}
+assert.deepEqual(
+  PERPS_EVENTS.map((spec) => [spec.name, spec.precompile, spec.inputs.map((input) => [input.name, input.type, input.indexed])]),
+  abi("perps").filter((entry) => entry.type === "event").map((entry) => [
+    entry.name, PERPS_PRECOMPILE, (entry.inputs ?? []).map((input) => [input.name, input.type, input.indexed === true]),
+  ]),
+);
 for (const [directory] of sources) {
   const nonView = abi(directory).filter(
     (entry) => entry.type === "function" && entry.stateMutability !== "view" && entry.stateMutability !== "pure",
@@ -229,6 +259,28 @@ refused({ ...order, data: order.data.slice(0, -2) }, "data_length");
 refused({ ...order, data: `0x${word(256)}${order.data.slice(66)}` }, "non_canonical_word");
 refused({ ...order, address: LAUNCHPAD_PRECOMPILE }, "unknown_event");
 refused({ ...order, topics: [id("00"), ...order.topics.slice(1)] }, "unknown_event");
+
+const perpsEvent = (name: string): PrecompileEventSpec => {
+  const spec = PERPS_EVENTS.find((candidate) => candidate.name === name);
+  assert.ok(spec, name);
+  return spec;
+};
+const funding: PrecompileLog = {
+  address: PERPS_PRECOMPILE,
+  topics: [abiEventTopic(precompileEventSignature(perpsEvent("FundingSettled"))), `0x${word(3)}`],
+  data: `0x${"f".repeat(64)}${word(5)}${(2n ** 256n - 7n).toString(16)}`,
+};
+assert.deepEqual(decodePerpsEvent(funding).fields, { marketId: 3n, fundingRate: -1n, longPayment: 5n, shortPayment: -7n });
+const options: PrecompileLog = {
+  address: PERPS_PRECOMPILE,
+  topics: [abiEventTopic(precompileEventSignature(perpsEvent("OrderOptions"))), `0x${word(9)}`],
+  data: `0x${word(1)}${word(1)}${word(10)}${word(11)}${word(12)}${"ab".repeat(16)}${"0".repeat(32)}`,
+};
+assert.deepEqual(decodePerpsEvent(options).fields, {
+  orderId: 9n, timeInForce: 1n, reduceOnly: true, limitPrice: 10n, acceptablePrice: 11n, deadline: 12n, cloid: `0x${"ab".repeat(16)}`,
+});
+refused({ ...options, data: `${options.data.slice(0, -2)}01` }, "non_canonical_word", decodePerpsEvent);
+refused({ ...funding, address: LAUNCHPAD_PRECOMPILE }, "unknown_event", decodePerpsEvent);
 
 const bridgeIn = decodeBridgeEvent({
   address: LAYERX_BRIDGE_PRECOMPILE,

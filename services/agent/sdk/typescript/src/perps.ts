@@ -17,17 +17,21 @@ import {
   requireLayerXBinding,
 } from "./account-derivation.js";
 import {
+  decodeEventFrom,
   precompileWriteCall,
   type AbiArgument,
+  type DecodedPrecompileEvent,
   type PrecompileCall,
+  type PrecompileLog,
 } from "./exchange.js";
 import {
+  PERPS_EVENTS,
   PERPS_PRECOMPILE,
   PERPS_WRITES,
   SPOT_PRECOMPILES,
 } from "./generated/precompile-writes.js";
 
-export { PERPS_PRECOMPILE, PERPS_WRITES } from "./generated/precompile-writes.js";
+export { PERPS_EVENTS, PERPS_PRECOMPILE, PERPS_WRITES } from "./generated/precompile-writes.js";
 
 const TRADING_PRECOMPILES: ReadonlySet<string> = new Set([
   PERPS_PRECOMPILE,
@@ -712,6 +716,51 @@ export type PerpsWrite = keyof typeof PERPS_WRITES;
  */
 export function perpsCall(method: PerpsWrite, args: readonly AbiArgument[]): PrecompileCall {
   return precompileWriteCall(PERPS_PRECOMPILE, method, PERPS_WRITES[method], args);
+}
+
+/** A market order opening a position: USDL collateral pulled by transferFrom, so the caller approves 0x1015 first. */
+export interface PerpsOpenPosition {
+  readonly marketId: bigint;
+  readonly collateralToken: string;
+  readonly collateralAmount: bigint;
+  readonly leverage: bigint;
+  readonly isLong: boolean;
+}
+
+/** `deposit(address token,uint256 amount)`: moves USDL from the caller's wallet into its cross account. */
+export function perpsDepositCall(token: string, amount: bigint): PrecompileCall {
+  return perpsCall("deposit(address,uint256)", [token, amount]);
+}
+
+/** `withdraw(address token,uint256 amount)`: returns withdrawable USDL to the caller's wallet. */
+export function perpsWithdrawCall(token: string, amount: bigint): PrecompileCall {
+  return perpsCall("withdraw(address,uint256)", [token, amount]);
+}
+
+/** `openPosition(uint256,address,uint256,uint256,bool)`. */
+export function perpsOpenPositionCall(order: PerpsOpenPosition): PrecompileCall {
+  return perpsCall("openPosition(uint256,address,uint256,uint256,bool)", [
+    order.marketId,
+    order.collateralToken,
+    order.collateralAmount,
+    order.leverage,
+    order.isLong,
+  ]);
+}
+
+/** `cancelOrder(uint256 orderId)`. */
+export function perpsCancelOrderCall(orderId: bigint): PrecompileCall {
+  return perpsCall("cancelOrder(uint256)", [orderId]);
+}
+
+/** `closePosition(uint256 positionId)`. */
+export function perpsClosePositionCall(positionId: bigint): PrecompileCall {
+  return perpsCall("closePosition(uint256)", [positionId]);
+}
+
+/** Decodes a log of the perps precompile with the events of precompiles/perps/abi/abi.json. */
+export function decodePerpsEvent(log: PrecompileLog): DecodedPrecompileEvent {
+  return decodeEventFrom(PERPS_EVENTS, log);
 }
 
 const PERPS_LENGTHS: Readonly<Record<number, number>> = {

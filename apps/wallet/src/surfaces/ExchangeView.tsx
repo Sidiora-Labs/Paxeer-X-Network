@@ -1,104 +1,126 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { parseUnits } from 'viem';
 import { exchange, type IntentLeg, type ModuleTransaction } from '@paxeer/wallet';
 import { SegmentedControl, TextField } from '@/components/ui/primitives';
+import { TOKENS } from '@/lib/constants';
 import { FeeChoice } from './FeeChoice';
 import { BuildError, SendButton, SentResult, SurfaceFrame, TransactionPreview, buildOrError } from './Surface';
 import { useFeeSelection, useModuleSend, useSurfaceWallet } from './useSurface';
 
-export type ExchangeAction = 'order' | 'cancel' | 'deposit' | 'withdraw';
+export type ExchangeAction = 'open' | 'close' | 'cancel' | 'deposit' | 'withdraw';
 
 const ACTIONS: readonly { value: ExchangeAction; label: string }[] = [
-    { value: 'order', label: 'Order' },
+    { value: 'open', label: 'Open' },
+    { value: 'close', label: 'Close' },
     { value: 'cancel', label: 'Cancel' },
     { value: 'deposit', label: 'Deposit' },
     { value: 'withdraw', label: 'Withdraw' },
 ];
 
-const SIDES: readonly { value: '0' | '1'; label: string }[] = [
-    { value: '0', label: 'Buy' },
-    { value: '1', label: 'Sell' },
+const SIDES: readonly { value: 'long' | 'short'; label: string }[] = [
+    { value: 'long', label: 'Long' },
+    { value: 'short', label: 'Short' },
 ];
+
+const usdlToken = TOKENS.USDL;
+if (!usdlToken?.address) throw new Error('the USDL collateral address is not configured');
+export const USDL = { address: usdlToken.address, decimals: usdlToken.decimals };
 
 export interface ExchangeViewProps {
     readonly sidRate: string | null;
     readonly legs?: readonly IntentLeg[];
 }
 
+interface Built {
+    readonly tx: ModuleTransaction;
+    readonly pull: bigint;
+}
+
 export function ExchangeView({ sidRate, legs }: ExchangeViewProps) {
     const { provider, address } = useSurfaceWallet();
     const surfaceModule = useMemo(() => (provider ? exchange(provider) : null), [provider]);
     const fee = useFeeSelection(provider, address);
-    const state = useModuleSend(surfaceModule, provider, address, fee);
-    const [action, setAction] = useState<ExchangeAction>('order');
+    const [action, setAction] = useState<ExchangeAction>('open');
     const [marketId, setMarketId] = useState('');
-    const [side, setSide] = useState<'0' | '1'>('0');
-    const [price, setPrice] = useState('');
-    const [quantity, setQuantity] = useState('');
-    const [timeInForce, setTimeInForce] = useState('0');
-    const [orderId, setOrderId] = useState('');
-    const [account, setAccount] = useState('');
-    const [assetId, setAssetId] = useState('');
+    const [side, setSide] = useState<'long' | 'short'>('long');
+    const [collateral, setCollateral] = useState('');
+    const [leverage, setLeverage] = useState('');
+    const [id, setId] = useState('');
     const [amount, setAmount] = useState('');
 
     const built = useMemo(() => {
         if (!surfaceModule) return { value: null, error: null };
-        return buildOrError<ModuleTransaction | null>(() => {
+        return buildOrError<Built | null>(() => {
             switch (action) {
-                case 'order':
-                    if (!marketId || !price || !quantity) return null;
-                    return surfaceModule.placeOrder({
-                        marketId,
-                        side: Number(side),
-                        price: parseUnits(price, 18),
-                        quantity: BigInt(quantity),
-                        timeInForce: Number(timeInForce),
+                case 'open': {
+                    if (!marketId || !collateral || !leverage) return null;
+                    const collateralAmount = parseUnits(collateral, USDL.decimals);
+                    const tx = surfaceModule.openPosition({
+                        marketId: BigInt(marketId),
+                        collateralToken: USDL.address,
+                        collateralAmount,
+                        leverage: parseUnits(leverage, 18),
+                        isLong: side === 'long',
                     });
+                    return { tx, pull: collateralAmount };
+                }
+                case 'close':
+                    return id ? { tx: surfaceModule.closePosition(BigInt(id)), pull: 0n } : null;
                 case 'cancel':
-                    return orderId ? surfaceModule.cancelOrder(orderId) : null;
-                case 'deposit':
-                    return account && amount ? surfaceModule.depositMargin(account, parseUnits(amount, 18)) : null;
+                    return id ? { tx: surfaceModule.cancelOrder(BigInt(id)), pull: 0n } : null;
+                case 'deposit': {
+                    if (!amount) return null;
+                    const pull = parseUnits(amount, USDL.decimals);
+                    return { tx: surfaceModule.deposit(USDL.address, pull), pull };
+                }
                 case 'withdraw':
-                    return account && assetId && amount ? surfaceModule.withdrawMargin(account, assetId, BigInt(amount)) : null;
+                    return amount ? { tx: surfaceModule.withdraw(USDL.address, parseUnits(amount, USDL.decimals)), pull: 0n } : null;
             }
         });
-    }, [surfaceModule, action, marketId, side, price, quantity, timeInForce, orderId, account, assetId, amount]);
+    }, [surfaceModule, action, marketId, side, collateral, leverage, id, amount]);
+    const transaction = built.value?.tx ?? null;
+    const pull = built.value?.pull ?? 0n;
+    const approval = useCallback(
+        async (owner: string) => (surfaceModule && pull > 0n ? surfaceModule.approval(owner, USDL.address, pull) : undefined),
+        [surfaceModule, pull],
+    );
+    const state = useModuleSend(surfaceModule, provider, address, fee, approval);
 
     return (
         <SurfaceFrame title="Exchange" connected={surfaceModule !== null}>
             <SegmentedControl label="Exchange action" value={action} options={ACTIONS} onChange={setAction} />
-            {action === 'order' && (
+            {action === 'open' && (
                 <>
                     <TextField label="Market id" name="marketId" value={marketId} onChange={(e) => setMarketId(e.target.value)} />
                     <SegmentedControl label="Side" value={side} options={SIDES} onChange={setSide} />
-                    <TextField label="Price (PAX)" name="price" value={price} onChange={(e) => setPrice(e.target.value)} />
-                    <TextField label="Quantity (base units)" name="quantity" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-                    <TextField label="Time in force" name="timeInForce" value={timeInForce} onChange={(e) => setTimeInForce(e.target.value)} />
+                    <TextField label="Collateral (USDL)" name="collateral" value={collateral} onChange={(e) => setCollateral(e.target.value)} />
+                    <TextField label="Leverage (x)" name="leverage" value={leverage} onChange={(e) => setLeverage(e.target.value)} />
                 </>
             )}
-            {action === 'cancel' && (
-                <TextField label="Order id" name="orderId" value={orderId} onChange={(e) => setOrderId(e.target.value)} />
-            )}
-            {(action === 'deposit' || action === 'withdraw') && (
-                <TextField label="Margin account" name="account" value={account} onChange={(e) => setAccount(e.target.value)} />
-            )}
-            {action === 'withdraw' && (
-                <TextField label="Asset id" name="assetId" value={assetId} onChange={(e) => setAssetId(e.target.value)} />
-            )}
-            {(action === 'deposit' || action === 'withdraw') && (
+            {(action === 'close' || action === 'cancel') && (
                 <TextField
-                    label={action === 'deposit' ? 'Amount (PAX)' : 'Amount (base units)'}
-                    name="amount"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
+                    label={action === 'close' ? 'Position id' : 'Order id'}
+                    name="id"
+                    value={id}
+                    onChange={(e) => setId(e.target.value)}
                 />
             )}
+            {(action === 'deposit' || action === 'withdraw') && (
+                <TextField label="Amount (USDL)" name="amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            )}
+            {pull > 0n && (
+                <p data-role="approve-step" className="text-xs text-pax-muted">
+                    {state.approving
+                        ? 'Approving the exact USDL amount for the perps venue'
+                        : 'If the perps venue allowance is short, one approve for the exact USDL amount is sent first'}
+                </p>
+            )}
             <BuildError error={built.error} />
-            <TransactionPreview transaction={built.value} />
-            <FeeChoice provider={provider} address={address} transaction={built.value} selection={fee} sidRate={sidRate} legs={legs} />
-            <SendButton label="Send to the exchange" transaction={built.value} blocked={fee.blocked} state={state} />
+            <TransactionPreview transaction={transaction} />
+            <FeeChoice provider={provider} address={address} transaction={transaction} selection={fee} sidRate={sidRate} legs={legs} />
+            <SendButton label="Send to the perps venue" transaction={transaction} blocked={fee.blocked} state={state} />
             <SentResult state={state} />
         </SurfaceFrame>
     );

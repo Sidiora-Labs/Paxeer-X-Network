@@ -6,8 +6,12 @@ accepts and each decoder refuses what the kernel refuses.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, fields
 from typing import ClassVar, Literal
+
+from .exchange import PrecompileAbiError, PrecompileCall, encode_signature_call
+from .generated.precompile_writes import PERPS_PRECOMPILE, PERPS_WRITES
 
 PERPS_MODULE_ID = 6
 MAX_ORACLE_KEYS = 8
@@ -438,3 +442,40 @@ def decode_trading_activity(
 def decode_perps_activity(activity_type: int, payload: bytes) -> PerpsActivity:
     """Decodes and validates kernel payload bytes of a perps activity."""
     return decode_trading_activity(PERPS_ACTIVITIES, PERPS_MODULE_ID, activity_type, payload)  # type: ignore[return-value]
+
+
+def perps_call(signature: str, values: Sequence[object]) -> PrecompileCall:
+    """Any perps write the 0x1015 precompile serves, by canonical signature from precompiles/perps/abi/abi.json."""
+    if signature not in PERPS_WRITES:
+        raise PrecompileAbiError("invalid_value", f"{signature} is not a perps write")
+    return PrecompileCall(PERPS_PRECOMPILE, encode_signature_call(signature, values), 0)
+
+
+def perps_deposit_call(token: str, amount: int) -> PrecompileCall:
+    """``deposit(address token,uint256 amount)``; the caller approves 0x1015 for the USDL amount first."""
+    return perps_call("deposit(address,uint256)", [token, amount])
+
+
+def perps_withdraw_call(token: str, amount: int) -> PrecompileCall:
+    """``withdraw(address token,uint256 amount)``."""
+    return perps_call("withdraw(address,uint256)", [token, amount])
+
+
+def perps_open_position_call(
+    market_id: int, collateral_token: str, collateral_amount: int, leverage: int, is_long: bool
+) -> PrecompileCall:
+    """``openPosition(uint256,address,uint256,uint256,bool)``."""
+    return perps_call(
+        "openPosition(uint256,address,uint256,uint256,bool)",
+        [market_id, collateral_token, collateral_amount, leverage, is_long],
+    )
+
+
+def perps_cancel_order_call(order_id: int) -> PrecompileCall:
+    """``cancelOrder(uint256 orderId)``."""
+    return perps_call("cancelOrder(uint256)", [order_id])
+
+
+def perps_close_position_call(position_id: int) -> PrecompileCall:
+    """``closePosition(uint256 positionId)``."""
+    return perps_call("closePosition(uint256)", [position_id])

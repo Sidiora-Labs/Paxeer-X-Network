@@ -600,8 +600,7 @@ func inspectCall(to common.Address, value *big.Int, data []byte) (Inspection, er
 			}
 		}
 		out.Spends = append(out.Spends, spend)
-	case call.Destination == "layerxcustody" && call.Method == "depositToken",
-		call.Destination == "layerxexchange" && call.Method == "depositMarginToken":
+	case call.Destination == "layerxcustody" && call.Method == "depositToken":
 		err = token("pointer", "amount")
 	case call.Destination == "layerxbridge" && call.Method == "bridgeOut":
 		if err = token("asset", "amount"); err == nil {

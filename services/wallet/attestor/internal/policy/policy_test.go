@@ -418,6 +418,13 @@ func TestShippedPolicyAllowsWalletSDKWrites(t *testing.T) {
 			"executeBurn(uint256)",
 			"executeLpRewards(uint256)",
 		}, "claimAirdrop(address,address)"},
+		{"perps", []string{
+			"deposit(address,uint256)",
+			"withdraw(address,uint256)",
+			"openPosition(uint256,address,uint256,uint256,bool)",
+			"cancelOrder(uint256)",
+			"closePosition(uint256)",
+		}, "transferCollateral(address,uint256)"},
 		{"layerxbridge", []string{
 			"bridgeIn(uint64,address,bytes32,uint64,bytes32,address,uint256,bytes[])",
 			"bridgeOut(uint64,address,uint256,address)",
@@ -482,6 +489,53 @@ func TestShippedPolicyAllowsWalletSDKWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	expect(t, h.policy.Evaluate(testAccount, h.tx(t, feetoken, big.NewInt(0), setDenom), h.ledger), CodeAllowed)
+}
+
+func TestShippedPolicyAllowsPerpsApproveThenDeposit(t *testing.T) {
+	doc, err := LoadFile(filepath.Join("..", "..", "..", "deploy", "attestor-policy.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	perpsABI, err := evm.PrecompileABI("perps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	erc20, err := evm.PrecompileABI("erc20")
+	if err != nil {
+		t.Fatal(err)
+	}
+	perps, _ := evm.PrecompileAddress("perps")
+	usdl := common.HexToAddress("0x85FcD13735F4309833A503EE804ea32395851479")
+	amount := big.NewInt(50_000_000)
+	h := newHarness(t)
+	h.policy = New(doc)
+
+	approve, err := erc20.Pack("approve", perps, amount)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision := h.policy.Evaluate(testAccount, h.tx(t, usdl, big.NewInt(0), approve), h.ledger)
+	expect(t, decision, CodeAllowed)
+	if len(decision.Spends) != 1 || decision.Spends[0].Asset != TokenAsset(usdl) || decision.Spends[0].Amount.Cmp(amount) != 0 {
+		t.Fatalf("approve spends %+v, want %s of USDL", decision.Spends, amount)
+	}
+	deposit, err := perpsABI.Pack("deposit", usdl, amount)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, h.policy.Evaluate(testAccount, h.tx(t, perps, big.NewInt(0), deposit), h.ledger), CodeAllowed)
+	open, err := perpsABI.Pack("openPosition", big.NewInt(3), usdl, amount, new(big.Int).Mul(big.NewInt(5), big.NewInt(1e18)), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, h.policy.Evaluate(testAccount, h.tx(t, perps, big.NewInt(0), open), h.ledger), CodeAllowed)
+	transfer, err := perpsABI.Pack("transferCollateral", common.HexToAddress(friend), amount)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, h.policy.Evaluate(testAccount, h.tx(t, perps, big.NewInt(0), transfer), h.ledger), CodeSelectorNotAllowed)
+	legacy := append(crypto.Keccak256([]byte("placeOrder(bytes32,uint8,uint256,uint256,uint8)"))[:4], make([]byte, 160)...)
+	expect(t, h.policy.Evaluate(testAccount, h.tx(t, perps, big.NewInt(0), legacy), h.ledger), CodeDecodeError)
 }
 
 func TestShippedPolicyAllowsLaunchpadApproveThenBuy(t *testing.T) {

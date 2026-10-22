@@ -34,6 +34,16 @@ from layerx_sdk.launchpad import (
     launchpad_set_fee_strategy_call,
     send_launchpad_nft_write,
 )
+from layerx_sdk.perps import (
+    PERPS_PRECOMPILE,
+    PERPS_WRITES,
+    perps_call,
+    perps_cancel_order_call,
+    perps_close_position_call,
+    perps_deposit_call,
+    perps_open_position_call,
+    perps_withdraw_call,
+)
 
 ROOT = Path(__file__).resolve().parents[4]
 TOPICS = {
@@ -71,7 +81,7 @@ def signature_of(entry: dict) -> str:
 
 
 def abi(directory: str) -> list[dict]:
-    return json.loads((ROOT / "precompiles" / directory / "abi.json").read_text())
+    return json.loads((ROOT / "precompiles" / ("perps/abi" if directory == "perps" else directory) / "abi.json").read_text())
 
 
 def word(value: int) -> str:
@@ -109,6 +119,15 @@ WRITES = [
      address_word("ab") + word(9) + "51" * 32),
     ("layerxexchange", "withdrawMargin(bytes32,bytes32,uint256)",
      exchange_withdraw_margin_call(ident("51"), ident("61"), 10), LAYERX_EXCHANGE_PRECOMPILE, "51" * 32 + "61" * 32 + word(10)),
+    ("perps", "deposit(address,uint256)", perps_deposit_call(address("ab"), 250000000), PERPS_PRECOMPILE,
+     address_word("ab") + word(250000000)),
+    ("perps", "withdraw(address,uint256)", perps_withdraw_call(address("ab"), 30000000), PERPS_PRECOMPILE,
+     address_word("ab") + word(30000000)),
+    ("perps", "openPosition(uint256,address,uint256,uint256,bool)",
+     perps_open_position_call(3, address("ab"), 50000000, 5, False), PERPS_PRECOMPILE,
+     word(3) + address_word("ab") + word(50000000) + word(5) + word(0)),
+    ("perps", "cancelOrder(uint256)", perps_cancel_order_call(9), PERPS_PRECOMPILE, word(9)),
+    ("perps", "closePosition(uint256)", perps_close_position_call(7), PERPS_PRECOMPILE, word(7)),
     ("layerxbridge", "bridgeIn(uint64,address,bytes32,uint64,bytes32,address,uint256,bytes[])",
      bridge_in_call(1, address("aa"), ident("bb"), 3, ident("cc"), address("dd"), 5, ["0x0102", "0x" + "ee" * 33]),
      LAYERX_BRIDGE_PRECOMPILE,
@@ -173,6 +192,17 @@ class PrecompileCallsTest(unittest.TestCase):
             if entry["type"] == "function" and entry.get("stateMutability") not in ("view", "pure")
         }
         self.assertEqual(LAUNCHPAD_WRITES, launchpad_writes)
+        perps_writes = {
+            signature_of(entry): entry.get("stateMutability") == "payable"
+            for entry in abi("perps")
+            if entry["type"] == "function" and entry.get("stateMutability") not in ("view", "pure")
+        }
+        self.assertEqual(PERPS_WRITES, perps_writes)
+        for retired in ("placeOrder(bytes32,uint8,uint256,uint256,uint8)", "requestSettlement(bytes32)",
+                        "depositMargin(bytes32)", "placeOrder(bytes32,bytes32,uint8,uint256,uint256,uint8)"):
+            self.assertNotIn(retired, perps_writes)
+            with self.assertRaises(PrecompileAbiError):
+                perps_call(retired, [])
         for directory, _ in SOURCES:
             for entry in abi(directory):
                 if entry["type"] == "function" and entry.get("stateMutability") not in ("view", "pure"):

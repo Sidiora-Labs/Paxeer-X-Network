@@ -410,61 +410,59 @@ def _call(
 
 
 def exchange_place_order_call(
-    market_id: str,
-    margin_account: str,
-    side: int,
-    price: int,
-    quantity: int,
-    time_in_force: int,
+    market_id: str, side: int, price: int, quantity: int, time_in_force: int
 ) -> PrecompileCall:
-    """``placeOrder(bytes32,bytes32,uint8,uint256,uint256,uint8)``."""
+    """``placeOrder(bytes32,uint8,uint256,uint256,uint8)``."""
     return _call(
         "placeOrder",
-        ["bytes32", "bytes32", "uint8", "uint256", "uint256", "uint8"],
-        [market_id, margin_account, side, price, quantity, time_in_force],
+        ["bytes32", "uint8", "uint256", "uint256", "uint8"],
+        [market_id, side, price, quantity, time_in_force],
     )
 
 
-def exchange_cancel_order_call(market_id: str, order_id: str) -> PrecompileCall:
-    """``cancelOrder(bytes32,bytes32)``."""
-    return _call("cancelOrder", ["bytes32", "bytes32"], [market_id, order_id])
+def exchange_cancel_order_call(order_id: str) -> PrecompileCall:
+    """``cancelOrder(bytes32)``."""
+    return _call("cancelOrder", ["bytes32"], [order_id])
 
 
-def exchange_request_settlement_call(
-    market_id: str, position_id: str
-) -> PrecompileCall:
-    """``closePosition(bytes32,bytes32)``."""
-    return _call("closePosition", ["bytes32", "bytes32"], [market_id, position_id])
+def exchange_request_settlement_call(position_id: str) -> PrecompileCall:
+    """``requestSettlement(bytes32)``."""
+    return _call("requestSettlement", ["bytes32"], [position_id])
 
 
-def exchange_deposit_margin_call(market_id: str, amount_wei: int) -> PrecompileCall:
+def exchange_deposit_margin_call(account: str, amount_wei: int) -> PrecompileCall:
     """``depositMargin(bytes32)``, payable with the native amount in wei."""
     if amount_wei <= 0:
         raise PrecompileAbiError("invalid_value", "deposit amount")
-    return _call("depositMargin", ["bytes32"], [market_id], amount_wei)
+    return _call("depositMargin", ["bytes32"], [account], amount_wei)
 
 
 def exchange_deposit_margin_token_call(
-    pointer: str, amount: int, market_id: str
+    pointer: str, amount: int, account: str
 ) -> PrecompileCall:
     """``depositMarginToken(address,uint256,bytes32)``."""
     return _call(
         "depositMarginToken",
         ["address", "uint256", "bytes32"],
-        [pointer, amount, market_id],
+        [pointer, amount, account],
     )
 
 
-def exchange_withdraw_margin_call(market_id: str, amount: int) -> PrecompileCall:
-    """``withdrawMargin(bytes32,uint256)``."""
-    return _call("withdrawMargin", ["bytes32", "uint256"], [market_id, amount])
+def exchange_withdraw_margin_call(
+    account: str, asset_id: str, amount: int
+) -> PrecompileCall:
+    """``withdrawMargin(bytes32,bytes32,uint256)``."""
+    return _call(
+        "withdrawMargin",
+        ["bytes32", "bytes32", "uint256"],
+        [account, asset_id, amount],
+    )
 
 
 def send_exchange_place_order(
     request: WalletRequest,
     sender: str,
     market_id: str,
-    margin_account: str,
     side: int,
     price: int,
     quantity: int,
@@ -473,47 +471,41 @@ def send_exchange_place_order(
     return send_precompile_call(
         request,
         sender,
-        exchange_place_order_call(
-            market_id, margin_account, side, price, quantity, time_in_force
-        ),
+        exchange_place_order_call(market_id, side, price, quantity, time_in_force),
     )
 
 
-def send_exchange_cancel_order(
-    request: WalletRequest, sender: str, market_id: str, order_id: str
-) -> str:
-    return send_precompile_call(
-        request, sender, exchange_cancel_order_call(market_id, order_id)
-    )
+def send_exchange_cancel_order(request: WalletRequest, sender: str, order_id: str) -> str:
+    return send_precompile_call(request, sender, exchange_cancel_order_call(order_id))
 
 
 def send_exchange_request_settlement(
-    request: WalletRequest, sender: str, market_id: str, position_id: str
+    request: WalletRequest, sender: str, position_id: str
 ) -> str:
     return send_precompile_call(
-        request, sender, exchange_request_settlement_call(market_id, position_id)
+        request, sender, exchange_request_settlement_call(position_id)
     )
 
 
 def send_exchange_deposit_margin(
-    request: WalletRequest, sender: str, market_id: str, amount_wei: int
+    request: WalletRequest, sender: str, account: str, amount_wei: int
 ) -> str:
     return send_precompile_call(
-        request, sender, exchange_deposit_margin_call(market_id, amount_wei)
+        request, sender, exchange_deposit_margin_call(account, amount_wei)
     )
 
 
 def send_exchange_deposit_margin_token(
-    request: WalletRequest, sender: str, pointer: str, amount: int, market_id: str
+    request: WalletRequest, sender: str, pointer: str, amount: int, account: str
 ) -> str:
     return send_precompile_call(
-        request, sender, exchange_deposit_margin_token_call(pointer, amount, market_id)
+        request, sender, exchange_deposit_margin_token_call(pointer, amount, account)
     )
 
 
 def send_exchange_withdraw_margin(
-    request: WalletRequest, sender: str, market_id: str, amount: int
+    request: WalletRequest, sender: str, account: str, asset_id: str, amount: int
 ) -> str:
     return send_precompile_call(
-        request, sender, exchange_withdraw_margin_call(market_id, amount)
+        request, sender, exchange_withdraw_margin_call(account, asset_id, amount)
     )

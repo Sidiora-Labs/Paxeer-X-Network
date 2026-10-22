@@ -35,8 +35,10 @@ export class PrecompileAbiError extends Error {
 export type PrecompileAbiType =
   | "address"
   | "bool"
+  | "bytes16"
   | "bytes32"
   | "bytes[]"
+  | "int256"
   | "string"
   | "uint8"
   | "uint64"
@@ -81,6 +83,7 @@ export interface DecodedPrecompileEvent {
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
 const BYTES32 = /^0x[0-9a-fA-F]{64}$/u;
+const BYTES16 = /^0x[0-9a-fA-F]{32}$/u;
 const HEX = /^0x(?:[0-9a-fA-F]{2})*$/u;
 const WORD = 32;
 
@@ -150,6 +153,16 @@ function encodeStatic(type: PrecompileAbiType, value: PrecompileAbiValue, label:
         throw new PrecompileAbiError("invalid_value", label);
       }
       return unhex(value, label);
+    case "bytes16":
+      if (typeof value !== "string" || !BYTES16.test(value)) {
+        throw new PrecompileAbiError("invalid_value", label);
+      }
+      return padded(unhex(value, label));
+    case "int256":
+      if (typeof value !== "bigint" || value < -(1n << 255n) || value >= 1n << 255n) {
+        throw new PrecompileAbiError("invalid_value", label);
+      }
+      return uintWord(value < 0n ? (1n << 256n) + value : value, 256, label);
     case "bool":
       if (typeof value !== "boolean") {
         throw new PrecompileAbiError("invalid_value", label);
@@ -399,6 +412,15 @@ function decodeWord(type: PrecompileAbiType, bytes: Uint8Array): bigint | boolea
       return hex(bytes.subarray(12));
     case "bytes32":
       return hex(bytes);
+    case "bytes16":
+      if (bytes.subarray(16).some((byte) => byte !== 0)) {
+        throw new PrecompileAbiError("non_canonical_word", type);
+      }
+      return hex(bytes.subarray(0, 16));
+    case "int256": {
+      const value = wordInteger(bytes);
+      return value >= 1n << 255n ? value - (1n << 256n) : value;
+    }
     case "bool": {
       const value = wordInteger(bytes);
       if (value > 1n) {
