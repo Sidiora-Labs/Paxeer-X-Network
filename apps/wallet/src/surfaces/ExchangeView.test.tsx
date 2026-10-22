@@ -64,6 +64,7 @@ describe('ExchangeView', () => {
             { from: chain.address, to: usdl.toLowerCase(), data: approve(50_000_000n), value: '0x0' },
             { from: chain.address, to: PERPS_PRECOMPILE, data: expected.data, value: '0x0' },
         ]);
+        expect(chain.sent[1]?.data.startsWith(abiSelector(signature))).toBe(true);
         expect(chain.sent[1]?.data).toBe(exchange(chain).openPosition(order).data);
 
         const spec = PERPS_EVENTS.find((candidate) => candidate.name === 'OrderPlaced');
@@ -90,5 +91,6 @@ describe('ExchangeView', () => {
             { from: chain.address, to: PERPS_PRECOMPILE, data: perpsDepositCall(usdl, 1_000_000n).data, value: '0x0' },
         ]);
         expect(chain.sent[1]?.data.startsWith(abiSelector('deposit(address,uint256)'))).toBe(true);
+        expect(container.querySelectorAll('[data-event]')).toHaveLength(0);
     });
 });
