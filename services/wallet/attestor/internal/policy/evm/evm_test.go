@@ -211,7 +211,7 @@ func TestDecodeCalldataForEachPrecompile(t *testing.T) {
 		{"layerxanchor", "finalize", []any{uint64(42)}, "batchNumber", uint64(42)},
 		{"layerxexchange", "placeOrder", []any{did, uint8(1), big.NewInt(100), big.NewInt(3), uint8(0)}, "side", uint8(1)},
 		{"layerxbridge", "bridgeOut", []any{uint64(1), pointer, big.NewInt(77), recipient}, "recipient", recipient},
-		{"launchpad", "buy", []any{pointer, big.NewInt(10), big.NewInt(9), recipient, big.NewInt(1000)}, "token", pointer},
+		{"launchpad", "buy", []any{pointer, big.NewInt(10), big.NewInt(9), big.NewInt(1000)}, "pool", pointer},
 		{"feetoken", "setFeeDenom", []any{"usid"}, "denom", "usid"},
 		{"xweb", "request", []any{uint8(2), []byte("query"), uint64(50_000)}, "callbackGas", uint64(50_000)},
 	}
@@ -297,6 +297,53 @@ func TestDecodeCalldataTokensAndUnknownDestinations(t *testing.T) {
 	}
 	if native.Kind != CallNative {
 		t.Fatalf("empty calldata decoded as %+v", native)
+	}
+}
+
+func TestDecodeCalldataForEachSDKLaunchpadWrite(t *testing.T) {
+	pool := common.HexToAddress("0x21f7b20a555199fa73A238B1a91FD0f549068fEe")
+	optical := common.HexToAddress("0x5555555555555555555555555555555555555555")
+	nftID := big.NewInt(7)
+	deadline := big.NewInt(1_900_000_000)
+	writes := []struct {
+		sig  string
+		args []any
+	}{
+		{"buy(address,uint256,uint256,uint256)", []any{pool, big.NewInt(10), big.NewInt(9), deadline}},
+		{"sell(address,uint256,uint256,uint256)", []any{pool, big.NewInt(10), big.NewInt(9), deadline}},
+		{"createMarket(string,string,uint8,address)", []any{"Name", "SYM", uint8(1), optical}},
+		{"createMarket(string,string,uint8,address)", []any{"Name", "SYM", uint8(0), common.Address{}}},
+		{"setFeeStrategy(uint256,uint8)", []any{nftID, uint8(2)}},
+		{"claimFees(uint256)", []any{nftID}},
+		{"claimAirdrop(uint256)", []any{nftID}},
+		{"executeAirdrop(uint256)", []any{nftID}},
+		{"executeBurn(uint256)", []any{nftID}},
+		{"executeLpRewards(uint256)", []any{nftID}},
+	}
+	contract, err := PrecompileABI("launchpad")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address, _ := PrecompileAddress("launchpad")
+	for _, w := range writes {
+		t.Run(w.sig, func(t *testing.T) {
+			selector := crypto.Keccak256([]byte(w.sig))[:4]
+			method, err := contract.MethodById(selector)
+			if err != nil {
+				t.Fatalf("launchpad abi has no %s: %v", w.sig, err)
+			}
+			packed, err := method.Inputs.Pack(w.args...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			call, err := DecodeCalldata(address, append(common.CopyBytes(selector), packed...))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if call.Kind != CallPrecompile || call.Destination != "launchpad" || contract.Methods[call.Method].Sig != w.sig || !bytes.Equal(call.Selector, selector) {
+				t.Fatalf("%s decoded as %+v", w.sig, call)
+			}
+		})
 	}
 }
 
