@@ -993,7 +993,7 @@ func New(
 			panic(fmt.Sprintf("error building the v6.12.0 precompiles due to %s", err))
 		}
 		app.v6120Next = next
-		app.EvmKeeper.SetCustomPrecompileActivation([]evmkeeper.CustomPrecompileActivation{activationPrecompileGate(), v6120PrecompileGate()})
+		app.EvmKeeper.SetCustomPrecompileActivation([]evmkeeper.CustomPrecompileActivation{activationPrecompileGate(), v6120PrecompileGate(), mergePrecompileGate()})
 		app.setV6120Live(false)
 	}
 	app.bindV6120Hooks()

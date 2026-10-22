@@ -515,10 +515,9 @@ func activationPrecompileGate() evmkeeper.CustomPrecompileActivation {
 }
 
 // mergePrecompileGate declares the custom precompiles the merge plan brings
-// online and, for each, the module whose state it serves: the pure agent
-// helpers serve no module state, the agent oracle serves the exchange oracle
-// store, the agent streams serve the pay stream keeper, and the scheduler and
-// the attestor roots serve the agent module.
+// online and, for each, the modules required before genesis can activate it.
+// The pure helpers and oracle require the agent module so an existing exchange
+// store cannot activate them before the merge; streams require the pay module.
 func mergePrecompileGate() evmkeeper.CustomPrecompileActivation {
 	return evmkeeper.CustomPrecompileActivation{
 		Upgrade: MergeUpgrade,
@@ -527,14 +526,14 @@ func mergePrecompileGate() evmkeeper.CustomPrecompileActivation {
 			common.HexToAddress("0x000000000000000000000000000000000000101B"): {"layerxpay"},
 			common.HexToAddress("0x000000000000000000000000000000000000101C"): {layerxauthtypes.ModuleName},
 			common.HexToAddress("0x000000000000000000000000000000000000101D"): {"layerxprograms"},
-			common.HexToAddress("0x0000000000000000000000000000000000000901"): {},
-			common.HexToAddress("0x0000000000000000000000000000000000000902"): {},
-			common.HexToAddress("0x0000000000000000000000000000000000000903"): {layerxexchangetypes.ModuleName},
-			common.HexToAddress("0x0000000000000000000000000000000000000904"): {},
+			common.HexToAddress("0x0000000000000000000000000000000000000901"): {"layerxagent"},
+			common.HexToAddress("0x0000000000000000000000000000000000000902"): {"layerxagent"},
+			common.HexToAddress("0x0000000000000000000000000000000000000903"): {"layerxagent", layerxexchangetypes.ModuleName},
+			common.HexToAddress("0x0000000000000000000000000000000000000904"): {"layerxagent"},
 			common.HexToAddress("0x0000000000000000000000000000000000000905"): {"layerxagent"},
 			common.HexToAddress("0x0000000000000000000000000000000000000906"): {"layerxpay"},
 			common.HexToAddress("0x0000000000000000000000000000000000000907"): {"layerxagent"},
-			common.HexToAddress("0x0000000000000000000000000000000000000908"): {},
+			common.HexToAddress("0x0000000000000000000000000000000000000908"): {"layerxagent"},
 		},
 	}
 }
