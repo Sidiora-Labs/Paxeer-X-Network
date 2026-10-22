@@ -70,4 +70,6 @@ export interface PaxeerXCapabilities {
   exchange: boolean;
   bridge: boolean;
   launchpad: boolean;
+  // Sent only by nodes that index price feed submissions.
+  price_feed?: boolean;
 }

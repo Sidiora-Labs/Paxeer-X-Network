@@ -367,3 +367,11 @@ export const paxeerXLists: Guard = (chainConfig: typeof config) => async() => {
     };
   }
 };
+
+export const paxeerXFeed: Guard = (chainConfig: typeof config) => async() => {
+  if (!chainConfig.features.paxeerXFeed.isEnabled) {
+    return {
+      notFound: true,
+    };
+  }
+};

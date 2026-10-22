@@ -33,6 +33,7 @@ export const pools = factory([ guards.pools ]);
 export const megaEth = factory([ guards.megaEth ]);
 export const zetaChainCCTX = factory([ guards.zetaChainCCTX ]);
 export const paxeerXLists = factory([ guards.paxeerXLists ]);
+export const paxeerXFeed = factory([ guards.paxeerXFeed ]);
 export const crossChainTxs = factory([ guards.notMultichain, guards.crossChainTxs ]);
 
 // ROLLUPS

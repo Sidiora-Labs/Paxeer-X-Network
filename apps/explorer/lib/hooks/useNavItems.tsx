@@ -4,12 +4,14 @@ import React from 'react';
 import type { NavItemInternal, NavItem, NavGroupItem } from 'types/client/navigation';
 
 import config from 'configs/app';
+import useApiQuery from 'lib/api/useApiQuery';
 import { layerLabels } from 'lib/rollups/utils';
 import { rightLineArrow } from 'toolkit/utils/htmlEntities';
 
 const marketplaceFeature = config.features.marketplace;
 const beaconChainFeature = config.features.beaconChain;
 const paxeerXListsFeature = config.features.paxeerXLists;
+const paxeerXFeedFeature = config.features.paxeerXFeed;
 
 interface ReturnType {
   mainNavItems: Array<NavItem | NavGroupItem>;
@@ -29,6 +31,11 @@ export default function useNavItems(): ReturnType {
   const pathname = router.pathname;
   const query = router.query;
   const tab = query.tab;
+
+  const capabilitiesQuery = useApiQuery('general:paxeer_x_capabilities', {
+    queryOptions: { enabled: paxeerXFeedFeature.isEnabled },
+  });
+  const hasPriceFeed = paxeerXFeedFeature.isEnabled && capabilitiesQuery.data?.price_feed === true;
 
   return React.useMemo(() => {
     let blockchainNavItems: Array<NavItem> | Array<Array<NavItem>> = [];
@@ -72,6 +79,12 @@ export default function useNavItems(): ReturnType {
       nextRoute: { pathname: '/operations' as const },
       icon: 'navigation/operation',
       isActive: pathname === '/operations' || pathname === '/operation/[id]',
+    } : null;
+    const priceFeed: NavItem | null = hasPriceFeed ? {
+      text: 'Price feed',
+      nextRoute: { pathname: '/feed' as const },
+      icon: 'navigation/chain_stats',
+      isActive: pathname === '/feed' || pathname.startsWith('/feed/'),
     } : null;
     const internalTxs: NavItem | null = {
       text: 'Internal transactions',
@@ -232,6 +245,7 @@ export default function useNavItems(): ReturnType {
         cctxs,
         userOps,
         blocks,
+        priceFeed,
         epochs,
         topAccounts,
         validators,
@@ -449,5 +463,5 @@ export default function useNavItems(): ReturnType {
     ].filter(Boolean);
 
     return { mainNavItems, accountNavItems };
-  }, [ pathname, tab ]);
+  }, [ pathname, tab, hasPriceFeed ]);
 }

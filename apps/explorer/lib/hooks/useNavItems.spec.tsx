@@ -2,9 +2,10 @@
 
 import type { NavItem, NavGroupItem } from 'types/client/navigation';
 
+import * as capabilitiesMock from 'mocks/paxeerX/capabilities';
 import { routerState } from 'ui/shared/layout/testWrapper';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook } from 'vitest/lib';
+import { renderHook, waitFor, wrapper } from 'vitest/lib';
 
 vi.hoisted(() => {
   window.__envs = {
@@ -30,14 +31,22 @@ const groupOf = (items: Array<NavItem | NavGroupItem>, text: string): NavGroupIt
   return item;
 };
 
+const mockCapabilities = (payload: object) => {
+  fetchMock.resetMocks();
+  fetchMock.mockResponse(JSON.stringify(payload), { headers: { 'Content-Type': 'application/json' } });
+};
+
+const renderNavItems = () => renderHook(() => useNavItems(), { wrapper });
+
 describe('useNavItems', () => {
   beforeEach(() => {
     routerState.pathname = '/';
     routerState.query = {};
+    mockCapabilities(capabilitiesMock.allEnabled);
   });
 
   it('opens the menu with home and carries the scan groups in order', () => {
-    const { result } = renderHook(() => useNavItems());
+    const { result } = renderNavItems();
 
     const texts = textsOf(result.current.mainNavItems);
 
@@ -47,7 +56,7 @@ describe('useNavItems', () => {
   });
 
   it('points home at the root route and marks it on the home page', () => {
-    const { result } = renderHook(() => useNavItems());
+    const { result } = renderNavItems();
 
     const home = result.current.mainNavItems[0];
 
@@ -60,7 +69,7 @@ describe('useNavItems', () => {
   });
 
   it('lists the pending transactions next to the transactions', () => {
-    const { result } = renderHook(() => useNavItems());
+    const { result } = renderNavItems();
 
     const blockchain = groupOf(result.current.mainNavItems, 'Blockchain');
 
@@ -71,7 +80,7 @@ describe('useNavItems', () => {
     routerState.pathname = '/txs';
     routerState.query = { tab: 'pending' };
 
-    const { result } = renderHook(() => useNavItems());
+    const { result } = renderNavItems();
 
     const blockchain = groupOf(result.current.mainNavItems, 'Blockchain');
     const items = blockchain.subItems.flat();
@@ -84,7 +93,7 @@ describe('useNavItems', () => {
   });
 
   it('collects the kernel pages in their own group', () => {
-    const { result } = renderHook(() => useNavItems());
+    const { result } = renderNavItems();
 
     const kernel = groupOf(result.current.mainNavItems, 'Kernel');
 
@@ -92,7 +101,7 @@ describe('useNavItems', () => {
   });
 
   it('gives the account pages their own column of the more group', () => {
-    const { result } = renderHook(() => useNavItems());
+    const { result } = renderNavItems();
 
     const more = groupOf(result.current.mainNavItems, 'More');
     const columns = (more.subItems as Array<NavItem | Array<NavItem>>)
@@ -101,5 +110,45 @@ describe('useNavItems', () => {
     expect(columns).toHaveLength(2);
     expect(textsOf(columns[0])).toContain('Verify contract');
     expect(textsOf(columns[1])).toEqual(textsOf(result.current.accountNavItems));
+  });
+
+  it('lists the price feed after the blocks when the node indexes price updates', async() => {
+    mockCapabilities({ ...capabilitiesMock.allEnabled, price_feed: true });
+
+    const { result } = renderNavItems();
+
+    await waitFor(() => {
+      expect(textsOf(groupOf(result.current.mainNavItems, 'Blockchain').subItems.flat())).toContain('Price feed');
+    });
+
+    const items = groupOf(result.current.mainNavItems, 'Blockchain').subItems.flat();
+    const texts = textsOf(items);
+    const feed = items.find((item) => item.text === 'Price feed');
+
+    expect(texts.indexOf('Price feed')).toBe(texts.indexOf('Blocks') + 1);
+    expect(feed && isInternalItem(feed) && feed.nextRoute).toEqual({ pathname: '/feed' });
+  });
+
+  it('marks the price feed on a feed page', async() => {
+    mockCapabilities({ ...capabilitiesMock.allEnabled, price_feed: true });
+    routerState.pathname = '/feed/update/[hash]';
+
+    const { result } = renderNavItems();
+
+    await waitFor(() => {
+      const feed = groupOf(result.current.mainNavItems, 'Blockchain').subItems.flat().find((item) => item.text === 'Price feed');
+      expect(feed && isInternalItem(feed) && feed.isActive).toBe(true);
+    });
+    expect(groupOf(result.current.mainNavItems, 'Blockchain').isActive).toBe(true);
+  });
+
+  it('leaves the price feed out when the node does not report it', async() => {
+    const { result } = renderNavItems();
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([ url ]) => String(url).includes('/api/v2/paxeer-x/capabilities'))).toBe(true);
+    });
+
+    expect(textsOf(groupOf(result.current.mainNavItems, 'Blockchain').subItems.flat())).not.toContain('Price feed');
   });
 });
