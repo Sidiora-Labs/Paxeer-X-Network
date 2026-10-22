@@ -1086,7 +1086,7 @@ func enqueue(ctx context.Context, tx *sql.Tx, block Block, rows *decode.Result, 
 // order or position that predates the indexed blocks comes from its seed.
 var rebuildTables = []string{
 	"positions_current", "orders", "spot_orders", "account_margin", "user_stats", "user_pnl_daily",
-	"market_stats_rolling", "spot_token_seen", "keeper_cycles", "market_snapshots", "protocol_snapshots",
+	"market_stats_rolling", "leaderboard", "spot_token_seen", "keeper_cycles", "market_snapshots", "protocol_snapshots",
 }
 
 // factTable is one fact table as the store reads it back: its kinds, their
@@ -1191,7 +1191,8 @@ func loadFacts(ctx context.Context, tx *sql.Tx, from, to int64) (map[uint64][]de
 
 // Rebuild re-projects the stored facts after a rewrite of blocks [from, to]:
 // it clears the projections of Project and Snapshotter and folds every stored
-// block in order, as a fresh index of the stored blocks writes them.
+// block in order, as a fresh index of the stored blocks writes them; the
+// leaderboard is rebuilt once at the end, as of the last block that changed it.
 // ponytail: re-projects all stored blocks, O(all facts) per call; scope it to
 // the accounts and markets of [from, to] if replays outgrow it.
 func Rebuild(ctx context.Context, tx *sql.Tx, from, to int64) error {
@@ -1213,6 +1214,8 @@ func Rebuild(ctx context.Context, tx *sql.Tx, from, to int64) error {
 	if !lo.Valid {
 		return nil
 	}
+	var boardAt time.Time
+	board := false
 	for start := lo.Int64; start <= hi.Int64; start += rebuildSpan {
 		end := min(start+rebuildSpan-1, hi.Int64)
 		facts, err := loadFacts(ctx, tx, start, end)
@@ -1243,13 +1246,20 @@ func Rebuild(ctx context.Context, tx *sql.Tx, from, to int64) error {
 			return err
 		}
 		for _, b := range blocks {
-			if err := Project(ctx, tx, facts[uint64(b.number)]); err != nil {
+			changed, err := project(ctx, tx, facts[uint64(b.number)])
+			if err != nil {
 				return fmt.Errorf("store: rebuild block %d: %w", b.number, err)
+			}
+			if changed {
+				board, boardAt = true, b.at
 			}
 			if err := (Snapshotter{}).Snapshot(ctx, tx, uint64(b.number), b.at); err != nil {
 				return fmt.Errorf("store: rebuild block %d: %w", b.number, err)
 			}
 		}
+	}
+	if board {
+		return rebuildLeaderboard(ctx, tx, boardAt)
 	}
 	return nil
 }

@@ -688,3 +688,67 @@ FROM perps.spot_orders WHERE kind = $1 AND order_id = $2`
 		}
 	})
 }
+
+// leaderboardRows reads every perps.leaderboard row as text in key order.
+func (c *chain) leaderboardRows() [][]string {
+	c.t.Helper()
+	rows, err := c.tx.QueryContext(c.ctx, `SELECT "window", rank::text, encode(account, 'hex'), realized_pnl::text, volume_usd::text,
+    trades_count::text, win_rate::text, avg_hold_time_seconds::text, open_positions::text
+FROM perps.leaderboard ORDER BY "window", rank`)
+	if err != nil {
+		c.t.Fatalf("read leaderboard: %v", err)
+	}
+	var out [][]string
+	for rows.Next() {
+		r := make([]string, 9)
+		ptrs := make([]any, len(r))
+		for i := range r {
+			ptrs[i] = &r[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			c.t.Fatalf("scan leaderboard: %v", err)
+		}
+		out = append(out, r)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		c.t.Fatalf("read leaderboard: %v", err)
+	}
+	return out
+}
+
+func TestLeaderboardProjection(t *testing.T) {
+	db := testDB(t)
+	migrate(t, db)
+	c := newChain(t, db)
+	t0 := time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC)
+	const q = `SELECT rank::text, realized_pnl::text, volume_usd::text, trades_count::text, win_rate::text, avg_hold_time_seconds::text,
+    open_positions::text FROM perps.leaderboard WHERE "window" = $1 AND account = $2`
+
+	c.blockRow(60, t0)
+	c.next(60, t0)
+	c.opened("1", traderA, "0", "1000000", "60000", "100000")
+	c.settled("1", traderA, "1000000", "0", "0", "0", "0")
+	c.project()
+	c.want(q, []string{"1", "0", "1000000", "1", "0.0000", "0", "1"}, "all", traderA.Bytes())
+
+	c.blockRow(61, t0.Add(time.Hour))
+	c.next(61, t0.Add(time.Hour))
+	c.closed("1", traderA, "1000000", "500", true)
+	start := time.Now()
+	c.project()
+	t.Logf("Project of the closing block with the leaderboard rebuild took %s", time.Since(start))
+	for _, w := range []string{"all", "30d", "7d"} {
+		c.want(q, []string{"1", "500", "1000000", "1", "100.0000", "3600", "0"}, w, traderA.Bytes())
+	}
+
+	incremental := c.leaderboardRows()
+	if len(incremental) != 3 {
+		t.Fatalf("incremental leaderboard has %d rows, want 3: %q", len(incremental), incremental)
+	}
+	if err := Rebuild(c.ctx, c.tx, 60, 61); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	if rebuilt := c.leaderboardRows(); !slices.EqualFunc(rebuilt, incremental, slices.Equal[[]string]) {
+		t.Fatalf("rebuilt leaderboard differs from the incremental projection\n got  %q\n want %q", rebuilt, incremental)
+	}
+}

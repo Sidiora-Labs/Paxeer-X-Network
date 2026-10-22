@@ -58,12 +58,36 @@ const (
 // positions_current, orders and spot_orders follow their events in row order;
 // account_margin, user_stats, user_pnl_daily and market_stats_rolling are
 // recomputed from the stored facts for every key the rows touch, and
-// keeper_cycles and spot_token_seen are written from the rows of the block.
+// keeper_cycles and spot_token_seen are written from the rows of the block,
+// and perps.leaderboard is rebuilt as of the block time when the block holds a
+// PositionOpened, PositionClosed or TradeSettled (contracts/data-services.md
+// section 18).
 func Project(ctx context.Context, tx *sql.Tx, rows []decode.Row) error {
+	board, err := project(ctx, tx, rows)
+	if err != nil || !board {
+		return err
+	}
+	return rebuildLeaderboard(ctx, tx, rows[0].Common().BlockTime)
+}
+
+// rebuildLeaderboard rebuilds every window of perps.leaderboard as of at.
+// ponytail: full recompute over the closes and settlements of the venue per
+// call; fold per account if the fact tables outgrow it.
+func rebuildLeaderboard(ctx context.Context, tx *sql.Tx, at time.Time) error {
+	if err := (pnl.Leaderboard{}).Rebuild(ctx, tx, at); err != nil {
+		return fmt.Errorf("store: project leaderboard: %w", err)
+	}
+	return nil
+}
+
+// project folds the rows of one block into every projection but
+// perps.leaderboard and reports whether the block changes the leaderboard.
+func project(ctx context.Context, tx *sql.Tx, rows []decode.Row) (bool, error) {
 	if len(rows) == 0 {
-		return nil
+		return false, nil
 	}
 	first := rows[0].Common()
+	board := false
 	var (
 		margin  set[common.Address]
 		stats   set[common.Address]
@@ -74,34 +98,41 @@ func Project(ctx context.Context, tx *sql.Tx, rows []decode.Row) error {
 	for _, row := range rows {
 		f := row.Common()
 		if f.Block != first.Block {
-			return fmt.Errorf("store: Project rows span blocks %d and %d", first.Block, f.Block)
+			return false, fmt.Errorf("store: Project rows span blocks %d and %d", first.Block, f.Block)
 		}
 		if err := projectPosition(ctx, tx, row); err != nil {
-			return err
+			return false, err
 		}
 		if err := projectOrder(ctx, tx, row); err != nil {
-			return err
+			return false, err
 		}
 		switch row.Table() {
 		case spotOrderTable:
 			if err := projectSpotOrder(ctx, tx, f); err != nil {
-				return err
+				return false, err
 			}
 			if err := projectSpotTokens(ctx, tx, spotOrderTable, f); err != nil {
-				return err
+				return false, err
 			}
 		case spotSwapsTable, spotRegistryTable:
 			if err := projectSpotTokens(ctx, tx, row.Table(), f); err != nil {
-				return err
+				return false, err
 			}
 		}
 		endBlock := f.ReceiptKind == endBlockReceiptKind
 		cycle.seen = cycle.seen || endBlock
 		switch r := row.(type) {
 		case decode.CollateralDepositedRow, decode.CollateralWithdrawnRow, decode.CollateralTransferredRow,
-			decode.PositionOpenedRow, decode.PositionModifiedRow, decode.ADLExecutedRow:
+			decode.PositionModifiedRow, decode.ADLExecutedRow:
 			margin.add(f.Account)
-		case decode.PositionClosedRow, decode.PositionFundingAppliedRow, decode.FeeCollectedRow:
+		case decode.PositionOpenedRow:
+			margin.add(f.Account)
+			board = true
+		case decode.PositionClosedRow:
+			margin.add(f.Account)
+			stats.add(f.Account)
+			board = true
+		case decode.PositionFundingAppliedRow, decode.FeeCollectedRow:
 			margin.add(f.Account)
 			stats.add(f.Account)
 		case decode.LiquidationRow:
@@ -111,6 +142,7 @@ func Project(ctx context.Context, tx *sql.Tx, rows []decode.Row) error {
 				cycle.liquidations++
 			}
 		case decode.TradeSettledRow:
+			board = true
 			stats.add(f.Account)
 			daily.add(accountDay{f.Account, f.BlockTime.UTC().Truncate(24 * time.Hour)})
 		case decode.FillRow:
@@ -129,28 +161,30 @@ func Project(ctx context.Context, tx *sql.Tx, rows []decode.Row) error {
 	}
 	for _, a := range margin.list {
 		if err := projectMargin(ctx, tx, a, first.Block); err != nil {
-			return err
+			return false, err
 		}
 	}
 	for _, a := range stats.list {
 		if err := projectStats(ctx, tx, a, first.Block); err != nil {
-			return err
+			return false, err
 		}
 	}
 	for _, d := range daily.list {
 		if _, err := pnl.RebuildDaily(ctx, tx, d.account, d.day); err != nil {
-			return fmt.Errorf("store: project daily %s %s: %w", d.account.Hex(), d.day.Format(time.DateOnly), err)
+			return false, fmt.Errorf("store: project daily %s %s: %w", d.account.Hex(), d.day.Format(time.DateOnly), err)
 		}
 	}
 	for _, m := range markets.list {
 		if err := projectMarketStats(ctx, tx, m, first.Block, first.BlockTime); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if cycle.seen {
-		return projectKeeperCycle(ctx, tx, first.Block, first.BlockTime, cycle)
+		if err := projectKeeperCycle(ctx, tx, first.Block, first.BlockTime, cycle); err != nil {
+			return false, err
+		}
 	}
-	return nil
+	return board, nil
 }
 
 // set keeps the distinct keys of a block in first-seen order, so projection
