@@ -1,0 +1,382 @@
+/* ==========================================================================
+   DX UI — theme tokens
+   Drop this file into your app after `@import "tailwindcss";`
+   Light is default. Add `.dark` to <html> for dark. Add `.accent-dx-gradient`
+   to <html> for the gradient accent.
+   ========================================================================== */
+
+@theme inline {
+  --font-sans: "Google Sans Flex", "Google Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Google Sans Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 36px;
+
+  --ease-dx: cubic-bezier(0.2, 0, 0, 1);
+  --ease-dx-out: cubic-bezier(0.05, 0.7, 0.1, 1);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--background);
+  --color-container: var(--container);
+  --color-container-high: var(--container-high);
+  --color-container-higher: var(--container-higher);
+  --color-container-highest: var(--container-highest);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-container: var(--destructive-container);
+  --color-success: var(--success);
+  --color-success-container: var(--success-container);
+  --color-warning: var(--warning);
+  --color-warning-container: var(--warning-container);
+  --color-info: var(--info);
+  --color-info-container: var(--info-container);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-outline-variant: var(--outline-variant);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-overlay: var(--overlay);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root,
+.light {
+  --background: #ffffff;
+  --foreground: #121317;
+  --container: #f8f9fc;
+  --container-high: #eff2f7;
+  --container-higher: #e6eaf0;
+  --container-highest: #e1e6ec;
+  --card: #ffffff;
+  --card-foreground: #121317;
+  --popover: #ffffff;
+  --popover-foreground: #121317;
+  --primary: #121317;
+  --primary-foreground: #ffffff;
+  --primary-fill: none;
+  --secondary: #eff2f7;
+  --secondary-foreground: #121317;
+  --muted: #f8f9fc;
+  --muted-foreground: #45474d;
+  --accent: #eff2f7;
+  --accent-foreground: #121317;
+  --destructive: #be1c1b;
+  --destructive-foreground: #ffffff;
+  --destructive-container: #ffeef7;
+  --success: #008052;
+  --success-container: #daf9d4;
+  --warning: #d05600;
+  --warning-container: #fcffad;
+  --info: #2b4fda;
+  --info-container: #dcf1ff;
+  --border: rgba(33, 34, 38, 0.12);
+  --border-strong: rgba(33, 34, 38, 0.24);
+  --outline-variant: rgba(33, 34, 38, 0.06);
+  --input: rgba(33, 34, 38, 0.16);
+  --ring: #121317;
+  --overlay: rgba(18, 19, 23, 0.32);
+  --chart-1: #2b4fda;
+  --chart-2: #0ebc5f;
+  --chart-3: #ffcf03;
+  --chart-4: #de249e;
+  --chart-5: #7372fe;
+  --sidebar: #f8f9fc;
+  --sidebar-foreground: #121317;
+  --sidebar-primary: #121317;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eff2f7;
+  --sidebar-accent-foreground: #121317;
+  --sidebar-border: rgba(33, 34, 38, 0.08);
+  --sidebar-ring: #121317;
+
+  --state-hover: 0.05;
+  --state-press: 0.09;
+  --state-focus: 0.12;
+  --shadow-float: 0 1px 2px rgba(18, 19, 23, 0.04), 0 8px 24px -6px rgba(18, 19, 23, 0.12),
+    0 24px 56px -12px rgba(18, 19, 23, 0.1);
+
+  /* data-vis ramps: 1 lowest → 5 highest emphasis */
+  --dx-blue-1: #dcf1ff;
+  --dx-blue-2: #9dd2ff;
+  --dx-blue-3: #3c90ff;
+  --dx-blue-4: #2b4fda;
+  --dx-blue-5: #1e2867;
+  --dx-green-1: #daf9d4;
+  --dx-green-2: #9be69a;
+  --dx-green-3: #0ebc5f;
+  --dx-green-4: #008052;
+  --dx-green-5: #005143;
+  --dx-grey-1: #eff2f7;
+  --dx-grey-2: #e1e6ec;
+  --dx-grey-3: #b2bbc5;
+  --dx-grey-4: #45474d;
+  --dx-grey-5: #212226;
+  --dx-pink-1: #ffdbf5;
+  --dx-pink-2: #ffb5e8;
+  --dx-pink-3: #ff88d3;
+  --dx-pink-4: #de249e;
+  --dx-pink-5: #72004a;
+  --dx-purple-1: #e0e7ff;
+  --dx-purple-2: #b8c0ff;
+  --dx-purple-3: #7372fe;
+  --dx-purple-4: #4d34cf;
+  --dx-purple-5: #2e1c6d;
+  --dx-red-1: #ffeef7;
+  --dx-red-2: #ffacc2;
+  --dx-red-3: #ff4c45;
+  --dx-red-4: #be1c1b;
+  --dx-red-5: #7d0304;
+  --dx-yellow-1: #fcffad;
+  --dx-yellow-2: #fff350;
+  --dx-yellow-3: #ffcf03;
+  --dx-yellow-4: #f29900;
+  --dx-yellow-5: #d05600;
+}
+
+.dark {
+  --background: #121317;
+  --foreground: #f8f9fc;
+  --container: #18191d;
+  --container-high: #212226;
+  --container-higher: #2f3034;
+  --container-highest: #45474d;
+  --card: #18191d;
+  --card-foreground: #f8f9fc;
+  --popover: #1b1c20;
+  --popover-foreground: #f8f9fc;
+  --primary: #f8f9fc;
+  --primary-foreground: #121317;
+  --secondary: #212226;
+  --secondary-foreground: #f8f9fc;
+  --muted: #18191d;
+  --muted-foreground: #b2bbc5;
+  --accent: #212226;
+  --accent-foreground: #f8f9fc;
+  --destructive: #ff4c45;
+  --destructive-foreground: #121317;
+  --destructive-container: #3a0c0d;
+  --success: #0ebc5f;
+  --success-container: #00352c;
+  --warning: #ffcf03;
+  --warning-container: #3a2400;
+  --info: #3c90ff;
+  --info-container: #1a2150;
+  --border: rgba(230, 234, 240, 0.12);
+  --border-strong: rgba(230, 234, 240, 0.24);
+  --outline-variant: rgba(230, 234, 240, 0.06);
+  --input: rgba(230, 234, 240, 0.16);
+  --ring: #f8f9fc;
+  --overlay: rgba(0, 0, 0, 0.56);
+  --chart-1: #3c90ff;
+  --chart-2: #0ebc5f;
+  --chart-3: #ffcf03;
+  --chart-4: #ff69c3;
+  --chart-5: #6a64fd;
+  --sidebar: #18191d;
+  --sidebar-foreground: #f8f9fc;
+  --sidebar-primary: #f8f9fc;
+  --sidebar-primary-foreground: #121317;
+  --sidebar-accent: #212226;
+  --sidebar-accent-foreground: #f8f9fc;
+  --sidebar-border: rgba(230, 234, 240, 0.08);
+  --sidebar-ring: #f8f9fc;
+  --state-hover: 0.06;
+  --state-press: 0.1;
+  --state-focus: 0.14;
+  --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -8px rgba(0, 0, 0, 0.5);
+}
+
+/* DX Gradient accent: gradient primary, blue ring */
+.accent-dx-gradient {
+  --primary: #3b6bff;
+  --primary-foreground: #ffffff;
+  --primary-fill: linear-gradient(90deg, #3b6bff 0%, #2e96ff 65%, #acb7ff 100%);
+  --ring: #3b6bff;
+  --sidebar-primary: #3b6bff;
+  --sidebar-primary-foreground: #ffffff;
+}
+.dark.accent-dx-gradient,
+.accent-dx-gradient .dark {
+  --primary: #5a86ff;
+  --primary-foreground: #ffffff;
+  --ring: #7aa2ff;
+}
+
+/* ---------- Scrollbars ----------
+   Native scrollbars themed to the surface ladder: a slim, inset pill thumb on
+   a transparent track that darkens on hover. Chromium/Safari use the
+   ::-webkit-scrollbar pseudos (they ignore them once scrollbar-color is set),
+   Firefox gets scrollbar-color. Opt out per element with `scrollbar-none`. */
+:root,
+.light {
+  color-scheme: light;
+  --scrollbar-thumb: color-mix(in srgb, var(--foreground) 16%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--foreground) 30%, transparent);
+  --scrollbar-thumb-active: color-mix(in srgb, var(--foreground) 42%, transparent);
+  --scrollbar-size: 12px;
+}
+.dark {
+  color-scheme: dark;
+  --scrollbar-thumb: color-mix(in srgb, var(--foreground) 18%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--foreground) 32%, transparent);
+  --scrollbar-thumb-active: color-mix(in srgb, var(--foreground) 46%, transparent);
+}
+/* In the base layer so `scrollbar-none` / `scrollbar-hover` utilities can override it. */
+@layer base {
+  ::-webkit-scrollbar {
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
+    background: transparent;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    min-height: 40px;
+    min-width: 40px;
+    border: 3.5px solid transparent;
+    border-radius: 999px;
+    background-color: var(--scrollbar-thumb);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    border-width: 2.5px;
+    background-color: var(--scrollbar-thumb-hover);
+  }
+  ::-webkit-scrollbar-thumb:active {
+    background-color: var(--scrollbar-thumb-active);
+  }
+  ::-webkit-scrollbar-button {
+    display: none;
+  }
+  @supports (-moz-appearance: none) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar-thumb) transparent;
+    }
+  }
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Thumb stays hidden until the container is hovered or focused — for side
+   navs and panels where a permanent thumb would be noise. */
+@utility scrollbar-hover {
+  &::-webkit-scrollbar-thumb {
+    background-color: transparent;
+  }
+  &:hover::-webkit-scrollbar-thumb,
+  &:focus-within::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+  }
+  &:hover::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+  @supports (-moz-appearance: none) {
+    scrollbar-color: transparent transparent;
+    &:hover,
+    &:focus-within {
+      scrollbar-color: var(--scrollbar-thumb) transparent;
+    }
+  }
+}
+
+/* ---------- Utilities ---------- */
+
+/* Material-style state layer: overlays currentColor on hover / press / focus */
+@utility state-layer {
+  position: relative;
+  isolation: isolate;
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    z-index: -1;
+    transition: opacity 150ms var(--ease-dx);
+  }
+  @media (hover: hover) {
+    &:hover:not([data-disabled]):not(:disabled)::before {
+      opacity: var(--state-hover);
+    }
+  }
+  &:focus-visible::before {
+    opacity: var(--state-focus);
+  }
+  &:active:not([data-disabled]):not(:disabled)::before,
+  &[data-popup-open]::before,
+  &[data-pressed]::before {
+    opacity: var(--state-press);
+  }
+}
+
+/* DX double focus ring: surface gap + ink ring */
+@utility focus-ring {
+  outline: none;
+  &:focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--background),
+      0 0 0 4px var(--ring);
+  }
+}
+
+@utility primary-fill {
+  background-image: var(--primary-fill);
+}
+
+@utility shadow-float {
+  box-shadow: var(--shadow-float);
+}
+
+/* Base UI popup animation: scale + fade from the trigger */
+@utility popup-motion {
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity 160ms var(--ease-dx),
+    transform 180ms var(--ease-dx),
+    scale 180ms var(--ease-dx);
+  &[data-starting-style],
+  &[data-ending-style] {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}

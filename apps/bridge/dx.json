@@ -1,0 +1,12 @@
+{
+  "$schema": "https://dxuireact.com/schema.json",
+  "registry": "https://dxuireact.com/r/{name}.json",
+  "css": "src/app/globals.css",
+  "aliases": {
+    "components": "@/components",
+    "ui": "@/components/ui",
+    "dx": "@/components/dx",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  }
+}

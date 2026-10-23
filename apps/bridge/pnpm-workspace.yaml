@@ -1,0 +1,20 @@
+allowBuilds:
+  '@ipshipyard/node-datachannel': true
+  '@reown/appkit': true
+  '@scarf/scarf': true
+  '@specify-sh/sdk': true
+  '@tree-sitter-grammars/tree-sitter-yaml': true
+  bigint-buffer: true
+  bufferutil: true
+  core-js: true
+  core-js-pure: true
+  esbuild: true
+  iso-constants: true
+  keccak: true
+  protobufjs: true
+  sharp: false
+  tree-sitter: true
+  tree-sitter-json: true
+  tsl-apple-cloudkit: true
+  unrs-resolver: false
+  utf-8-validate: true

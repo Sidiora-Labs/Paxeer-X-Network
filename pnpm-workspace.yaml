@@ -1,0 +1,20 @@
+packages:
+  - services/agent/sdk/typescript
+  - services/platform/middleware/seller
+  - services/platform/middleware/buyer
+  - services/platform/middleware/merchant
+  - services/platform/middleware/agent
+  - services/platform/middleware/conformance
+  - sdk/integrations/agents
+  - sdk/integrations/express
+  - sdk/integrations/next
+  - sdk/integrations/next/example
+  - services/platform/examples/agent-spend
+  - services/platform/examples/buyer-agent
+  - services/platform/examples/marketplace
+  - services/platform/examples/merchant-checkout
+  - services/platform/examples/merchant-shop
+  - services/platform/examples/paid-api
+  - services/platform/docs/samples/first-payment-typescript
+  - services/platform/docs/samples/paid-endpoint-express
+  - services/platform/docs/samples/paid-route-next
